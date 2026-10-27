@@ -1,0 +1,5 @@
+#!/bin/sh
+# Keep ide.html's module fingerprints current (tools/stamp-modules.py), so a
+# browser never mixes cached old modules with new ones after an update.
+# Optional; install in a clone with:  ln -s ../../tools/pre-commit .git/hooks/pre-commit
+python3 tools/stamp-modules.py >/dev/null && git add ide.html

@@ -65,6 +65,11 @@ Online: https://nchiker.github.io/2068-Leap-IDE/ (`index.html` forwards to
 For local development, from the project root:
 
 ```
+
+When you change a `.js` file, run `tools/stamp-modules.py` before committing: it
+fingerprints the script URLs in `ide.html` so browsers never mix cached old
+code with new. `tools/pre-commit` can do this automatically as a git hook
+(`ln -s ../../tools/pre-commit .git/hooks/pre-commit`).
 python3 -m http.server 8080
 ```
 

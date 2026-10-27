@@ -852,6 +852,24 @@ tested separately.
 
 ---
 
+## Module fingerprints (browser caching)
+
+Browsers cache scripts (GitHub Pages sends `max-age=600`; `python3 -m http.server`
+lets them guess), so after an update a page could combine the new `ide.html`
+with an old `ide.js` — e.g. tab buttons that do nothing. `tools/stamp-modules.py`
+gives every module URL a hash of its contents: the two entry scripts in their
+`<script src>`, every module they import (ours and TSRun's) as
+`"./src/x.js": "./src/x.js?v=<hash>"` in the import map. Modules keep their
+plain relative imports; the import map remaps them. A changed file gets a new
+URL, an unchanged one stays cached, versions never mix.
+
+**Run `tools/stamp-modules.py` after changing any `.js` file, before committing**
+(`--check` reports whether `ide.html` is current). `tools/pre-commit` is an
+optional git hook that does it on every commit (owner's choice to install:
+`ln -s ../../tools/pre-commit .git/hooks/pre-commit`). A new module is picked up
+automatically as long as a relative `import` reaches it from `src/editor.js` or
+`ide.js`.
+
 ## Coding Conventions
 
 - Plain ES2020 modules (`type="module"`). No TypeScript, no bundler.
