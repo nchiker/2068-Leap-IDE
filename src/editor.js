@@ -220,7 +220,9 @@ const leapHover = hoverTooltip((view, pos) => {
 const autoCaps = EditorView.updateListener.of(update => {
   if (!update.docChanged || !update.transactions.some(tr => tr.isUserEvent('input'))) return;
   const { state, view } = update;
-  const head = state.selection.main.head;
+  // Only typing can leave a word half-finished; a pasted or dropped word is whole.
+  const typing = update.transactions.some(tr => tr.isUserEvent('input.type'));
+  const head = typing ? state.selection.main.head : -1;
   const fixes = new Map();   // from -> change, deduplicated across changed ranges
   update.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
     const last = state.doc.lineAt(toB).number;
