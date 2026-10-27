@@ -68,7 +68,7 @@ const CAPS_SHIFT = { row: 0, bit: 0 };
 const SPACE      = { row: 7, bit: 0 };
 
 /**
- * @typedef {'booting'|'ready'|'running'|'waiting'|'ended'|'stopped'|'error'} EmuState
+ * @typedef {'booting'|'ready'|'running'|'waiting'|'ended'|'stopped'|'paused'|'error'} EmuState
  * @typedef {{compileError: number, vmError: number, line: number}} RunResult
  *
  * @param {{
@@ -91,6 +91,11 @@ export async function createEmulator(opts) {
     state:    'booting',
     runActive: false,     // an injected program has not yet ended
     pending:  null,       // {kind: 'run'|'stop', store?, stage, frames}
+    paused:   false,      // debugger: the machine holds where it is
+    watch:    null,       // debugger: function(machine) -> true to pause before the next instruction
+    oneShot:  null,       // debugger: like watch, removed after it fires (pause())
+    skipWatch: false,     // let the instruction a pause stopped at run once on resume
+    pausedFrom: null,     // the state to return to when a pause ends
     lastNow:  0,
     carryMs:  0,
     onState:  opts.onState,
@@ -106,11 +111,25 @@ export async function createEmulator(opts) {
 
   return {
     /** Queue a run of an encoded line store (see encodeLineStore). */
-    run(store)   { emu.pending = { kind: 'run', store, stage: 'seek', frames: 0 }; },
+    run(store)   { unpause(emu); emu.pending = { kind: 'run', store, stage: 'seek', frames: 0 }; },
     /** Stop the running program: BREAK if busy, back to the editor if waiting. */
-    stop()       { if (emu.runActive) emu.pending = { kind: 'stop', stage: 'seek', frames: 0 }; },
+    stop()       { unpause(emu); if (emu.runActive) emu.pending = { kind: 'stop', stage: 'seek', frames: 0 }; },
     /** Hard reset; the ROM boots to its editor. */
-    reset()      { hardReset(emu); setState(emu, 'booting'); },
+    reset()      { hardReset(emu); emu.paused = false; setState(emu, 'booting'); },
+
+    // ── Debugger ──
+    /**
+     * Install a test run before every instruction while it is set (null to
+     * remove). Returning true pauses the machine before that instruction.
+     */
+    setWatch(fn) { emu.watch = fn; },
+    /** Pause at the next instruction outside the frame interrupt handler. */
+    pause()      { if (!emu.paused) emu.oneShot = m => m.cpu.iff1; },
+    /** Continue from a pause. */
+    resume()     { if (emu.paused) { emu.paused = false; emu.skipWatch = true; setState(emu, emu.pausedFrom); } },
+    /** While paused, execute exactly one Z80 instruction. */
+    stepInstruction() { if (emu.paused) stepOneInstruction(emu); },
+    get paused() { return emu.paused; },
     get rom()    { return emu.rom; },
     get machine() { return emu.machine; },
   };
@@ -234,7 +253,7 @@ function onFrame(emu, now) {
 // The audio worklet asks for frames when its queue runs low; they count
 // against the wall-clock budget so the display loop does not run them twice.
 function fillSoundQueue(emu) {
-  if (!emu.sfx || !soundIsRunning(emu.sfx)) return;
+  if (!emu.sfx || !soundIsRunning(emu.sfx) || emu.paused) return;
   for (let ran = 0; ran < 4 && soundWantsFrame(emu.sfx); ran++) {
     stepMachine(emu);
     emu.carryMs = Math.max(emu.carryMs - FRAME_MS, -4 * FRAME_MS);
@@ -242,13 +261,13 @@ function fillSoundQueue(emu) {
 }
 
 function stepMachine(emu) {
+  if (emu.paused) return;
   const m = emu.machine;
-  if (stepToKeyWait(emu)) {
-    atKeyWait(emu);
-  } else if (emu.pending) {
-    advancePending(emu);
-  } else if (emu.runActive) {
-    setState(emu, 'running');
+  const seen = runWatched(emu);
+  if (seen === 'paused') return;     // stopped part way through the frame
+  if (seen !== 'wait') {
+    if (emu.pending) advancePending(emu);
+    else if (emu.runActive) setState(emu, 'running');
   }
   setVideoOn(m, true);
   enableSound(m, emu.sfx !== null && soundIsRunning(emu.sfx));
@@ -258,23 +277,61 @@ function stepMachine(emu) {
 }
 
 /**
- * Execute this frame one instruction at a time until the CPU is in the ROM's
- * key-wait loop with the EXROM paged in, or the frame's T-states run out.
- * runFrame() then finishes the frame either way. runZ80 with a budget of 1
- * executes exactly one instruction.
+ * Execute this frame one instruction at a time (runZ80 with a budget of 1
+ * executes exactly one), so that:
+ *  - the ROM's key wait is noticed (atKeyWait: run/stop/state), and
+ *  - the debugger's watch can pause before any instruction.
+ * Without a watch the frame is handed to runFrame() as soon as the key wait
+ * has been seen; runFrame() always finishes the frame and takes the interrupt.
+ *
+ * @returns {'wait'|'busy'|'paused'}
  */
-function stepToKeyWait(emu) {
+function runWatched(emu) {
   const m = emu.machine, cpu = m.cpu, rom = emu.rom;
   const end = m.frameStart + tStatesPerFrame;
+  let seen = 'busy';
   while (m.tstates < end) {
-    if (cpu.pc >= rom.keyWait && cpu.pc < rom.keyWaitEnd &&
+    if (seen === 'busy' && cpu.pc >= rom.keyWait && cpu.pc < rom.keyWaitEnd &&
         (m.portF4 & PORT_F4_CHUNK6) && (m.portFF & PORT_FF_EXROM)) {
-      return true;
+      seen = 'wait';
+      atKeyWait(emu);
+      if (!emu.watch && !emu.oneShot) return seen;
     }
-    if (cpu.halted || cpu.nmiPending) return false;   // leave these to runFrame
+    if (cpu.halted || cpu.nmiPending) break;           // leave these to runFrame
+    if (!emu.skipWatch && ((emu.oneShot && emu.oneShot(m)) || (emu.watch && emu.watch(m)))) {
+      emu.oneShot = null;
+      enterPause(emu);
+      return 'paused';
+    }
+    emu.skipWatch = false;
     runZ80(cpu, m.bus, 1, m);
   }
-  return false;
+  return seen;
+}
+
+/** Leave a pause without announcing a state; the caller's action decides it. */
+function unpause(emu) {
+  if (!emu.paused) return;
+  emu.paused = false;
+  emu.skipWatch = true;
+  emu.state = emu.pausedFrom;
+}
+
+function enterPause(emu) {
+  emu.paused = true;
+  emu.pausedFrom = emu.state === 'paused' ? emu.pausedFrom : emu.state;
+  setState(emu, 'paused', { pc: emu.machine.cpu.pc });
+}
+
+/** One instruction while paused; finishes the frame if that crossed its end. */
+function stepOneInstruction(emu) {
+  const m = emu.machine;
+  runZ80(m.cpu, m.bus, 1, m);
+  if (m.tstates >= m.frameStart + tStatesPerFrame) {
+    runFrame(m);       // nothing left to run: paints, mixes and takes the interrupt
+    takeAudio(m);
+  }
+  setState(emu, 'paused', { pc: m.cpu.pc });
 }
 
 function atKeyWait(emu) {

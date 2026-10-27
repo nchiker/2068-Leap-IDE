@@ -423,3 +423,18 @@ html, body {
   .panel-debugger { min-height: 300px; }
   .toolbar-actions .btn span:not([class]) { display: none; }
 }
+
+/* ── Debugger additions (Phase 3) ─────────────────────────────── */
+#mem-addr {
+  width: 52px;
+  margin-left: 6px;
+  padding: 1px 4px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border-hi);
+  border-radius: 3px;
+}
+.var-tbl td.var-val { word-break: break-all; }
+.csframe, .bpitem { cursor: pointer; }

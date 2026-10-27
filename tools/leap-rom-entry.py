@@ -25,6 +25,25 @@ SYMBOLS = {
     "vmErrorCode":      "VM_ERROR_CODE",
     "curEditIndex":     "CUR_EDIT_INDEX",
     "kbdKeyHit":        "KBD_KEYHIT",
+    # Debugger (Phase 3): compiler and VM hooks, run-time tables
+    "compileStmt":      "COMPILE_STATEMENT_LIST.loop",
+    "lexLine":          "LEX_LINE",
+    "emitPtr":          "EMIT_PTR",
+    "tokType":          "TOK_TYPE",
+    "runIsStored":      "V2_RUN_IS_STORED",
+    "vmLoop":           "VM_RUN.loop",
+    "vmIp":             "VM_IP",
+    "vmHalted":         "VM_HALTED",
+    "vmCodeBase":       "VM_CODE_BASE",
+    "symBase":          "SYM_BASE_V",
+    "symEnd":           "SYM_END_V",
+    "rtSymtab":         "RT_SYMTAB_PTR",
+    "rtFloattab":       "RT_FLOATTAB_PTR",
+    "rtStrtab":         "RT_STRTAB_PTR",
+    "rtArrPtr":         "RT_ARRPTR_PTR",
+    "rtStrArrPtr":      "RT_STRARRPTR_PTR",
+    "vmCsp":            "VM_CSP",
+    "varsStart":        "VARS_START",
 }
 
 

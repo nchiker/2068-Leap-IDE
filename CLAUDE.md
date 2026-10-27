@@ -49,7 +49,8 @@ Leap-IDE/
 │   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip (Phase 2, done)
 │   ├── leap-lang.js  ← Language mode, token classes, scanSymbols (Phase 2, done)
 │   ├── leap-keywords.js ← GENERATED keyword data from the manual; never hand-edit
-│   ├── debugger.js   ← Registers, variables, breakpoints, call stack (Phase 3)
+│   ├── debugger.js   ← Debugger controller (breakpoints, step) + panel (Phase 3, done)
+│   ├── leap-debug.js ← Line table, VM position, variables, call stack from machine RAM (Phase 3, done)
 │   └── export.js     ← Tape + DCK builders (Phase 6; current layout is wrong)
 ├── tools/
 │   ├── leap-rom-entry.py  ← Prints a leap-roms.js entry for a 2068-Leap build
@@ -267,7 +268,7 @@ expected to fix that, and the jump is the workaround until then.
 
 `window.leapIDE` exposes `lintLeap`, `encodeSource`, `refreshDebugger`,
 `setStatus` and `emulator` (the object from `createEmulator`: `run`/`stop`/
-`reset`, `rom`, `machine`), which is useful for tests and the Phase 3 debugger.
+`reset`, `rom`, `machine`), which is useful for tests and the debugger.
 
 Verified in headless Chromium: hello world, compile error with line, BREAK
 stop, `INPUT` stop, re-run while busy.
@@ -277,11 +278,14 @@ stop, `INPUT` stop, re-run while busy.
 1. In a 2068-Leap checkout at the release tag, `make build`.
 2. `tools/leap-rom-entry.py <checkout> <version>` prints a `KNOWN_ROMS` entry
    (the script also checks that the key-wait spin loop still has the expected
-   bytes).
+   bytes). Its `SYMBOLS` table includes the debugger's compiler, VM and run-time
+   table symbols, so the 2.1 entry must be regenerated this way, not copied
+   from 2.0.2.
 3. Paste the entry into `src/leap-roms.js` and put the new
    `leap-0.rom`/`leap-1.rom` in `tsrun/roms/` by moving the submodule to a TSRun
    commit that carries them.
-4. Re-run the Phase 1 checks (hello world, compile error, BREAK, `INPUT`).
+4. Re-run the Phase 1 checks (hello world, compile error, BREAK, `INPUT`) and
+   a debugger check (breakpoint, step, variables).
    Update the memory-map table above if the layout moved.
 
 ---
@@ -438,23 +442,76 @@ Verified in headless Chromium.
 
 ---
 
-## Debugger Panel (Phase 3 — not started)
+## Debugger (Phase 3 — done, `src/leap-debug.js` + `src/debugger.js`)
 
-Read Z80 state from `machine.cpu` after each step/break. Display:
+Verified in headless Chromium and Node against the real 2.0.2 ROM. The program
+is bytecode run by a VM, so everything is read from the ROM's own state, not
+from Z80 `CALL`/`RET`.
 
-- **Registers:** AF, AF′, BC, BC′, DE, DE′, HL, HL′, IX, IY, SP, PC
-- **Flags:** C N P/V H Z S decoded from F
-- **Variables:** the Leap test harness reads numeric scalars from
-  `RT_SYMTAB_PTR` (`$B80D` in 2.0.2) as 3-byte entries (tag, value LE16). This
-  is a starting point only — unverified beyond that; strings, floats and arrays
-  are not yet understood. Inspect the ROM source and RAM after a run.
-- **Call stack:** unverified design — track `PROC` entry/exit through the
-  bytecode VM's control stack (12 bytes per active `CALL`/`FOR`) rather than
-  Z80 `CALL`/`RET`; the program is bytecode, not Z80 code.
-- **Breakpoints/step:** Leap source breakpoints must map to VM state, not Z80
-  PCs; the design is open. Z80-level stepping is available through `runZ80`.
-- **Memory inspector:** hex dump of an arbitrary 256-byte window via
-  `machine.bus.read`, address editable.
+**Line table.** Leap bytecode carries no line numbers, so the table is built by
+watching the compiler. At `COMPILE_STATEMENT_LIST.loop` (reached once per
+statement) `LEX_LINE & $7FFF` is the store line and `EMIT_PTR` is the address
+of the statement's first bytecode. Statements whose `TOK_TYPE` is colon or EOF
+are skipped, and only the stored program counts (`V2_RUN_IS_STORED` = 1).
+Code is emitted in source order, so the line of an address is the last
+statement start at or below it. Every VM instruction starts at `VM_RUN.loop`
+with `VM_IP` (`$B600`) at the opcode; a nonzero `VM_HALTED` means the VM is
+stopping. These hooks are in the HOME ROM.
+
+**Emulator hook** (`src/emulator.js`): `setWatch(fn)` runs `fn(machine)` before
+every Z80 instruction while set (returning true pauses before it); `pause()`,
+`resume()`, `stepInstruction()` (one Z80 instruction while paused) and the
+`paused` getter. `run()` and `stop()` leave a pause. With a watch installed the
+frame loop single-steps (`runZ80` budget 1), so it is slower than a free run.
+The `'paused'` state is reported through `onEmulatorState`.
+
+**Controller** (`createDebugger` in `src/debugger.js`): `beginRun()` resets the
+line table and installs the watch, `endRun()` removes it. Breakpoints are
+editor lines (the gutter), mapped to store lines through the last run
+(`toStoreLine` / `toEditorLine` in `ide.js`; blank lines are not stored). A
+breakpoint on a line without code (label, `REM`, blank) stops at the next line
+with code. A breakpoint on a `PROC` line also stops at the procedure's entry:
+its code starts with a jump over the body and calls enter 3 bytes later, at
+`PARAM_BIND`. Step runs to the next statement start (it steps into `PROC`s;
+`ENDP` gets a stop). Pause stops at the next statement. Breakpoints can be
+added while running. Stop while paused ends the program as BREAK does
+(`VM_ERROR_CODE` 66, `VM_HALTED` 1), so its screen stays up.
+
+**Panel** (`#debugger-mount`; every value HTML-escaped, since strings can hold
+any character):
+
+- **Registers and flags** from `machine.cpu` (`a`, `f`, … `xh`, `xl`, `yh`,
+  `yl`, `sp`, `pc`): AF, AF′, BC, BC′, DE, DE′, HL, HL′, IX, IY, SP, PC and
+  C N P/V H Z S.
+- **Variables** by name from the compile symbol table at `SYM_BASE_V`: records
+  `[len][kind][namelen][index][name][extra]`, kinds 0 number, 1 string, 2 array,
+  3 string array, 4 label / `PROC` / `DEF FN`. Numbers are int16 or 5-byte
+  Sinclair calculator floats (`RT_FLOATTAB`), strings are 32-byte slots, arrays
+  show their first 8 elements. Variables stay visible after a run ends (Leap
+  keeps the session).
+- **Call stack** from `VM_CSP` up to `VARS_START`, frames tagged FOR (12 bytes,
+  `[1][var][limit 5][step 5]`), CALL (3 bytes, `[2][return LE16]`) and PARAM
+  (9 bytes, `[3]…`). A `PROC` is named by matching the CALL operand (an offset
+  from `VM_CODE_BASE`) with the kind-4 symbol records. Shown innermost first:
+  the current `PROC` (or the main program) and line, "called from line N",
+  "FOR i".
+- **Breakpoints** list; **memory inspector**: a 256-byte hex dump with an
+  editable start address. Clicking a breakpoint or stack line scrolls the
+  editor there. The panel refreshes every 300 ms while a program runs.
+
+**Editor and toolbar.** The execution line is highlighted with an arrow in the
+breakpoint gutter (a coral arrow when it is on a breakpoint line).
+`window.leapEditor` gained `toggleBreakpoint(line)`, `onBreakpointsChanged(fn)`
+and `setExecutionLine(line|null)`. The toolbar has Run, Stop, Pause/Continue
+(F8) and Step (F10); the status bar reads "Paused at line N".
+
+**Known limits.**
+
+- `FOR` frames carry no line, so loops show without one.
+- While a package statement runs, the EXROM is paged out: do not read `$C000`
+  and up then.
+- Z80-level breakpoints exist only as the `setWatch` API; there is no UI for
+  them yet.
 
 ---
 
@@ -522,7 +579,7 @@ returning `[{line, col, message}]` mapped to CM6 `Diagnostic`s. Rules to cover
 |-------|-----------------------------------------------------|-------------------------|--------|
 | 1     | Shell + TSRun embedded + program runs               | `ide.html`, `ide.js`, `src/emulator.js`, `src/leap-roms.js` | **Done**, verified |
 | 2     | CodeMirror 6 editor + Leap V2 syntax                | `src/editor.js`, `src/leap-lang.js`, `src/leap-keywords.js` (generated) | **Done**, verified |
-| 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`       | Not started |
+| 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
 | 5     | Structure linter wired to CM6 lint extension        | `ide.js` (or `src/lint.js`) | Rewrite needed |
 | 6     | Tape + DCK export                                   | `src/export.js`         | Format to derive |
@@ -557,21 +614,13 @@ returning `[{line, col, message}]` mapped to CM6 `Diagnostic`s. Rules to cover
 
 ---
 
-## What Claude Code Should Do Next — Phase 3
+## What Claude Code Should Do Next — Phase 5
 
-Phases 1, 2 and 4 work: the emulator runs injected programs, the editor has
-highlighting, autocomplete and hover help, and keys reach `INPUT`. Now build the
-debugger panel (`src/debugger.js`), following "Debugger Panel" above:
-
-1. **Registers and flags** from `machine.cpu`, reachable through
-   `window.leapIDE.emulator.machine`; show them after a stop, an error or a
-   single step (`runZ80` with a budget of 1).
-2. **Memory inspector** over `machine.bus.read`, with an editable address.
-3. **Variables** from `RT_SYMTAB_PTR` as described above (unverified beyond
-   numeric scalars; inspect the ROM source and RAM after a run first).
-4. **Call stack:** the design is open and unverified (VM control stack, not Z80
-   `CALL`/`RET`). `scanSymbols()` from `src/leap-lang.js` gives the `PROC` names
-   and their source lines, which a call-stack view can use to show where each
-   active `PROC` is defined.
-5. Verify in the browser that the panel updates after a run, an error and a
-   BREAK, and that Run still works.
+Phases 1 to 4 work: programs run, the editor has Leap highlighting and help,
+keys reach `INPUT`, and the debugger steps, pauses and breaks on editor lines.
+Next is the structure linter (Phase 5), following "Structure Linter" above:
+rewrite `lintLeap` from the language reference and manual Appendix B, return
+`[{line, col, message}]` mapped to CM6 `Diagnostic`s, and cover the rules
+listed there, quoting the ROM compile error code in each message. Check each
+rule against the ROM's behaviour before relying on it; the "unverified" items
+(nested `PROC`, package statements) must be settled first.

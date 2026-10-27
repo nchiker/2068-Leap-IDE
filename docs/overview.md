@@ -96,7 +96,8 @@ ide.html
 ├── src/editor.js     ← CodeMirror 6 editor setup
 ├── src/leap-lang.js  ← Leap V2 StreamLanguage mode, token classes, scanSymbols
 ├── src/leap-keywords.js ← generated from the Leap manual (tools/gen-leap-keywords.py)
-├── src/debugger.js   ← register/variable/breakpoint UI
+├── src/debugger.js   ← debugger controller (breakpoints, step) + panel UI
+├── src/leap-debug.js ← line table, variables, call stack read from machine RAM
 ├── src/export.js     ← tape + DCK builders
 └── ide.js            ← orchestrator (prepare source → run → status/debug)
 ```
@@ -107,7 +108,7 @@ The three panels share the window:
 |----------|--------|---------------------------------------------------|
 | Editor   | ~46%   | CodeMirror 6, line numbers, breakpoint gutter     |
 | Emulator | ~28%   | TS2068 256×192 canvas + bezel                     |
-| Debugger | ~26%   | Registers, variables, breakpoints, call stack     |
+| Debugger | ~26%   | Registers, variables, breakpoints, call stack, memory |
 
 The emulator receives keyboard input only while a program is running and its
 screen has focus; click the screen to type into it.
@@ -327,13 +328,40 @@ sounds like. Clicking the diagram plays it through the Web Audio API.
 
 ## Debugger — Phase 3
 
-Registers, flags and a memory window come straight from `machine.cpu` and
-`machine.bus`. Leap variables: the Leap test harness reads numeric scalars from
-`RT_SYMTAB_PTR` (`$B80D` in 2.0.2) as 3-byte entries (tag, value LE16); that is
-the starting point for the variables panel and is unverified beyond that
-(strings, floats and arrays are not yet understood). Programs are bytecode run
-by a VM, so breakpoints and a call stack at Leap-source level need a design
-based on the VM, not on Z80 `CALL`/`RET`; this is open.
+Done and verified against the real 2.0.2 ROM. Run, Stop, Pause/Continue (F8)
+and Step (F10) are in the toolbar; the status bar shows "Paused at line N".
+
+Leap programs are bytecode run by a VM, and the bytecode has no line numbers.
+The IDE therefore watches the emulator: a hook runs before every Z80
+instruction (`setWatch` in `src/emulator.js`). While the ROM compiles, the hook
+records the source line and the bytecode address of every statement, which
+gives a line table for the run. While the VM runs, it stops on breakpoints, or
+at the next statement when stepping. Because the hook sees every instruction,
+a debugged program runs slower than a free one.
+
+- **Breakpoints** are set in the editor gutter and can be added while the
+  program runs. A breakpoint on a line without code (a label, `REM` or blank
+  line) stops at the next line that has code. A breakpoint on a `PROC` line
+  also stops when the procedure is entered.
+- **Step** runs to the next statement and steps into `PROC`s; **Pause** stops at
+  the next statement. The line the program is about to run is marked with an
+  arrow in the gutter (coral when it is on a breakpoint line). Stop while paused
+  ends the program like BREAK, leaving its screen up.
+- **Registers and flags:** AF, BC, DE, HL (and primed pairs), IX, IY, SP, PC,
+  with C N P/V H Z S decoded from F.
+- **Variables** are listed by name from the compiler's symbol table, with their
+  current values: integers and floats, strings, and the first 8 elements of
+  arrays. They stay visible after the run ends.
+- **Call stack** is read from the VM's control stack, innermost first: the
+  current `PROC` (or the main program) and line, "called from line N", and
+  active `FOR` loops. Clicking a stack or breakpoint line scrolls the editor.
+- **Memory inspector:** a 256-byte hex dump with an editable start address.
+
+The panel refreshes every 300 ms while a program runs. Limits: `FOR` frames
+hold no line, so loops are listed without one; while a package statement runs
+the EXROM is paged out, so `$C000` and up are not readable; Z80-level
+breakpoints exist only as the `setWatch` API, with no UI yet. Technical detail
+(addresses, layouts) is in `CLAUDE.md`.
 
 ---
 
@@ -357,7 +385,7 @@ The formats are not yet known:
 |-------|------------------------------------|--------|--------|
 | 1     | IDE shell + TSRun + program runs   | High   | Done, verified |
 | 2     | CodeMirror 6 + Leap syntax         | High   | Done, verified |
-| 3     | Debugger (registers, step)         | High   | Not started |
+| 3     | Debugger (registers, step)         | High   | Done, verified |
 | 4     | Keyboard translation + INPUT mode  | Medium | Done, verified |
 | 5     | Structure linter                   | Medium | Rewrite needed |
 | 6     | Tape + DCK export                  | Medium | Format to derive |

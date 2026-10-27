@@ -29,6 +29,24 @@ export const KNOWN_ROMS = {
     vmErrorCode:      0xB683,   // VM_ERROR_CODE
     curEditIndex:     0x80F2,   // CUR_EDIT_INDEX
     kbdKeyHit:        0x816C,   // KBD_KEYHIT
+    compileStmt:      0x3942,   // COMPILE_STATEMENT_LIST.loop
+    lexLine:          0xB95C,   // LEX_LINE
+    emitPtr:          0xBA02,   // EMIT_PTR
+    tokType:          0xBA04,   // TOK_TYPE
+    runIsStored:      0xBE84,   // V2_RUN_IS_STORED
+    vmLoop:           0x1161,   // VM_RUN.loop
+    vmIp:             0xB600,   // VM_IP
+    vmHalted:         0xB684,   // VM_HALTED
+    vmCodeBase:       0xA655,   // VM_CODE_BASE
+    symBase:          0xB805,   // SYM_BASE_V
+    symEnd:           0xB807,   // SYM_END_V
+    rtSymtab:         0xB80D,   // RT_SYMTAB_PTR
+    rtFloattab:       0xB80F,   // RT_FLOATTAB_PTR
+    rtStrtab:         0xB811,   // RT_STRTAB_PTR
+    rtArrPtr:         0xB813,   // RT_ARRPTR_PTR
+    rtStrArrPtr:      0xB815,   // RT_STRARRPTR_PTR
+    vmCsp:            0xB819,   // VM_CSP
+    varsStart:        0x822F,   // VARS_START
     keyWaitEnd:       0x043B,   // end of the spin loop (exclusive)
   },
 };

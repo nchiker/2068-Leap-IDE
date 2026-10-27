@@ -11,13 +11,14 @@
  * Depends on:
  *  - src/emulator.js: createEmulator(), encodeLineStore()
  *  - src/editor.js:   window.leapEditor = { getSource(), setDiagnostics() }
- *  - src/debugger.js: window.leapDebugger (Phase 3)
+ *  - src/debugger.js: createDebugger() — breakpoints, step, pause, panel
  *  - src/export.js:   window.leapExport = { buildTAP(bytes), buildDCK(bytes) }
  */
 
 "use strict";
 
 import { createEmulator, encodeLineStore } from './src/emulator.js';
+import { createDebugger } from './src/debugger.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -26,6 +27,9 @@ const VM_ERROR_BREAK = 66;    // VM_ERROR_CODE after the BREAK key
 // ── Module state ─────────────────────────────────────────────────
 let emulator = null;       // from createEmulator()
 let lastRun = null;        // {text, editorLine[]} of the program last sent to the ROM
+let debug = null;          // from createDebugger()
+let emuState = 'booting';
+const DEBUG_REFRESH_MS = 300;   // panel refresh while a program runs
 
 // ── Boot the emulator ─────────────────────────────────────────────
 async function bootEmulator() {
@@ -45,6 +49,38 @@ async function bootEmulator() {
   const version = 'Leap ' + emulator.rom.version;
   document.getElementById('emu-rom').textContent = version;
   document.getElementById('sb-rom').textContent = version;
+
+  debug = createDebugger({
+    emulator,
+    toEditorLine,
+    toStoreLine,
+    onBreakpointClick: line => window.leapEditor.scrollToLine(line),
+    onLineClick:       line => window.leapEditor.scrollToLine(line),
+  });
+  if (window.leapEditor) {
+    window.leapEditor.onBreakpointsChanged(() => debug.setBreakpoints(window.leapEditor.getBreakpoints()));
+    debug.setBreakpoints(window.leapEditor.getBreakpoints());
+  }
+  setInterval(() => {
+    if (emuState === 'running' || emuState === 'waiting') debug.refresh();
+  }, DEBUG_REFRESH_MS);
+}
+
+// ── Store lines <-> editor lines ──────────────────────────────────
+// The ROM numbers the lines it was given (blank lines are dropped before
+// injection); the editor numbers all lines from 1. Both use the last run.
+
+/** Store line index -> 1-based editor line, or -1. */
+function toEditorLine(storeLine) {
+  if (!lastRun || storeLine < 0) return -1;
+  const i = Math.min(storeLine, lastRun.editorLine.length - 1);
+  return i < 0 ? -1 : lastRun.editorLine[i] + 1;
+}
+
+/** 1-based editor line -> the store line at or after it, or -1. */
+function toStoreLine(editorLine) {
+  if (!lastRun) return -1;
+  return lastRun.editorLine.findIndex(l => l >= editorLine - 1);
 }
 
 // ── Inject source text and run ────────────────────────────────────
@@ -114,6 +150,7 @@ function injectProgram(prepared) {
     return;
   }
   lastRun = { text: getSource(), editorLine: prepared.editorLine };
+  debug.beginRun();
   emulator.run(store);
   updateProgInfo(store.length);
   setStatus('Starting…', 'run');
@@ -121,14 +158,28 @@ function injectProgram(prepared) {
 
 // ── Emulator state → UI ───────────────────────────────────────────
 function onEmulatorState(state, detail) {
+  emuState = state;
+  if (state !== 'paused') window.leapEditor?.setExecutionLine(null);
+  setPaused(state === 'paused');
   switch (state) {
   case 'booting': setRunning(false); setStatus('Booting…', 'idle'); break;
   case 'ready':   setRunning(false); setStatus('Ready', 'idle'); break;
   case 'running': setRunning(true);  setStatus('Running…', 'run'); break;
   case 'waiting': setRunning(true);  setStatus('Waiting for input — click the screen to type', 'run'); break;
+  case 'paused': {
+    setRunning(true);
+    const line = debug ? debug.pausedHere() : -1;
+    window.leapEditor?.setExecutionLine(line > 0 ? line : null);
+    setStatus(line > 0 ? `Paused at line ${line}` : 'Paused', 'run');
+    break;
+  }
   case 'stopped': setRunning(false); setStatus('Stopped', 'idle'); break;
   case 'ended':   setRunning(false); showRunResult(detail); break;
   case 'error':   setRunning(false); setStatus(detail.message, 'error'); break;
+  }
+  if (debug) {
+    if (!['running', 'waiting', 'paused'].includes(state)) debug.endRun();
+    debug.refresh();
   }
 }
 
@@ -163,12 +214,21 @@ function getSource() {
 
 // ── Stop ──────────────────────────────────────────────────────────
 function stopProgram() {
-  if (emulator) emulator.stop();
+  if (!emulator) return;
+  // Paused inside the VM: end the program as BREAK does, keeping its screen.
+  if (debug && debug.haltPaused()) return;
+  emulator.stop();
 }
 
-// ── Step ──────────────────────────────────────────────────────────
+// ── Step / pause / continue ───────────────────────────────────────
 function stepProgram() {
-  // Phase 3 (debugger).
+  if (debug) debug.step();
+}
+
+function pauseOrContinue() {
+  if (!debug || !debug.active) return;
+  if (emulator.paused) debug.resume();
+  else debug.pause();
 }
 
 // ── Structure linter ─────────────────────────────────────────────
@@ -310,9 +370,12 @@ function refreshDebugger() {
 
 // ── UI helpers ────────────────────────────────────────────────────
 // Run stays enabled while a program runs: it restarts with the editor's text.
-// Step stays disabled until the debugger lands (Phase 3).
 function setRunning(yes) {
-  document.getElementById('btn-stop').disabled = !yes;
+  for (const id of ['btn-stop', 'btn-step', 'btn-pause']) document.getElementById(id).disabled = !yes;
+}
+
+function setPaused(yes) {
+  document.getElementById('btn-pause').textContent = yes ? '▶ Continue' : '⏸ Pause';
 }
 
 function setStatus(text, mode) {
@@ -341,6 +404,8 @@ function updateProgInfo(bytes) {
 document.getElementById('btn-run').addEventListener('click', runProgram);
 document.getElementById('btn-stop').addEventListener('click', stopProgram);
 document.getElementById('btn-step').addEventListener('click', stepProgram);
+document.getElementById('btn-pause').addEventListener('click', pauseOrContinue);
+document.getElementById('btn-refresh-debug').addEventListener('click', () => debug?.refresh());
 document.getElementById('btn-lint').addEventListener('click', () => {
   const src = window.leapEditor ? window.leapEditor.getSource() : '';
   const errors = lintLeap(src);
@@ -380,6 +445,7 @@ document.getElementById('btn-dck').addEventListener('click', async () => {
 document.addEventListener('keydown', e => {
   if (e.key === 'F5') { e.preventDefault(); runProgram(); }
   if (e.key === 'F6') { e.preventDefault(); stopProgram(); }
+  if (e.key === 'F8')  { e.preventDefault(); pauseOrContinue(); }
   if (e.key === 'F10') { e.preventDefault(); stepProgram(); }
 });
 

@@ -20,7 +20,7 @@ import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor,
   rectangularSelection, crosshairCursor, highlightActiveLine,
-  tooltips, hoverTooltip, GutterMarker, gutter,
+  tooltips, hoverTooltip, GutterMarker, gutter, Decoration,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirror/commands';
 import {
@@ -83,9 +83,49 @@ const breakpointState = StateField.define({
   },
 });
 
+// ── Execution line (debugger) ─────────────────────────────────────
+// The line the paused program will run next: a highlighted line and an
+// arrow in the breakpoint gutter. null when not paused.
+
+const setExecLine = StateEffect.define();
+const execLineDeco = Decoration.line({ class: 'cm-exec-line' });
+
+class ExecMarker extends GutterMarker {
+  constructor(onBreakpoint) { super(); this.onBreakpoint = onBreakpoint; }
+  eq(other) { return other.onBreakpoint === this.onBreakpoint; }
+  toDOM() {
+    const el = document.createElement('span');
+    el.className = 'exec-gutter-arrow' + (this.onBreakpoint ? ' on-bp' : '');
+    el.textContent = '➜';
+    return el;
+  }
+}
+// One gutter cell is too narrow for an arrow and a dot; on a breakpoint line
+// the arrow takes the breakpoint's colour instead.
+const execMarker = new ExecMarker(false);
+const execOnBreakpoint = new ExecMarker(true);
+
+const execLineState = StateField.define({
+  create() { return null; },        // position of the line start, or null
+  update(pos, tr) {
+    for (const e of tr.effects) if (e.is(setExecLine)) return e.value;
+    return pos === null ? null : tr.changes.mapPos(pos);
+  },
+  provide: f => EditorView.decorations.from(f, pos =>
+    pos === null ? Decoration.none : Decoration.set([execLineDeco.range(pos)])),
+});
+
 const breakpointGutter = gutter({
   class: 'cm-breakpoint-gutter',
-  markers: v => v.state.field(breakpointState),
+  markers: v => {
+    const exec = v.state.field(execLineState);
+    const bps = v.state.field(breakpointState);
+    if (exec === null) return bps;
+    let onBp = false;
+    bps.between(exec, exec, () => { onBp = true; });
+    const others = bps.update({ filter: from => from !== exec });
+    return others.update({ add: [(onBp ? execOnBreakpoint : execMarker).range(exec)] });
+  },
   initialSpacer: () => breakpointMark,
   domEventHandlers: {
     mousedown(view, line) {
@@ -250,6 +290,14 @@ const autoCaps = EditorView.updateListener.of(update => {
   });
 });
 
+// Tell the debugger when breakpoints are added, removed or moved by edits.
+let onBreakpointsChanged = null;
+const breakpointListener = EditorView.updateListener.of(update => {
+  if (onBreakpointsChanged && update.startState.field(breakpointState) !== update.state.field(breakpointState)) {
+    onBreakpointsChanged();
+  }
+});
+
 // ── Status bar cursor sync ────────────────────────────────────────
 const cursorPlugin = EditorView.updateListener.of(update => {
   if (!update.selectionSet) return;
@@ -291,6 +339,9 @@ const leapTheme = EditorView.theme({
     boxShadow: '0 0 4px rgba(247,129,102,0.5)',
   },
   '.cm-foldGutter': { padding: '0 4px' },
+  '.cm-exec-line': { background: 'rgba(227,179,65,0.18)', boxShadow: 'inset 3px 0 0 #e3b341' },
+  '.exec-gutter-arrow': { color: '#e3b341', fontSize: '11px', lineHeight: '1', marginLeft: '2px' },
+  '.exec-gutter-arrow.on-bp': { color: '#f78166' },
   '.cm-leap-tooltip': {
     padding: '8px 12px',
     background: '#1c2128',
@@ -346,7 +397,9 @@ const startState = EditorState.create({
     crosshairCursor(),
     indentUnit.of('  '),
     breakpointState,
+    execLineState,
     breakpointGutter,
+    breakpointListener,
     leapLanguage,
     leapHighlight,
     leapHover,
@@ -404,6 +457,24 @@ window.leapEditor = {
       iter.next();
     }
     return positions;
+  },
+
+  /** Toggle the breakpoint on a 1-based line */
+  toggleBreakpoint(lineNum) {
+    view.dispatch({ effects: toggleBreakpoint.of(view.state.doc.line(lineNum).from) });
+  },
+
+  /** Called (no arguments) whenever the set of breakpoint lines changes */
+  onBreakpointsChanged(fn) { onBreakpointsChanged = fn; },
+
+  /** Mark the 1-based line the paused program runs next (null clears it) */
+  setExecutionLine(lineNum) {
+    if (lineNum === null || lineNum < 1 || lineNum > view.state.doc.lines) {
+      view.dispatch({ effects: setExecLine.of(null) });
+      return;
+    }
+    const from = view.state.doc.line(lineNum).from;
+    view.dispatch({ effects: [setExecLine.of(from), EditorView.scrollIntoView(from, { y: 'nearest' })] });
   },
 
   /** Scroll editor to a given line number */

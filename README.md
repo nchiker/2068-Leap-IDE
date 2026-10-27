@@ -2,7 +2,7 @@
 
 A browser-based IDE for writing and running programs in **Leap V2 BASIC** on
 the **Timex Sinclair 2068**. It has a CodeMirror 6 editor, a TS2068 emulator
-(the TSRun emulator running the real Leap V2 ROMs) and, later, a debugger. No
+(the TSRun emulator running the real Leap V2 ROMs) and a debugger. No
 build step and no npm; it only needs a static file server.
 
 Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
@@ -11,10 +11,12 @@ Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
 Leap V2 is documented at https://github.com/nchiker/2068-Leap (the manual and
 `docs/V2_LANGUAGE_REFERENCE.md`). Current release: 2.0.2-emu.1.
 
-Status: Phases 1, 2 and 4 are done (the emulator boots, Run injects the editor text
+Status: Phases 1 to 4 are done (the emulator boots, Run injects the editor text
 into the ROM and runs it, compile and run-time errors come back with the line;
 PC keys are translated for `INPUT`, `INKEY$` and `PAUSE 0`; the editor has
-Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of keywords). See
+Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of keywords; the debugger sets breakpoints in
+the editor gutter, pauses and steps by statement (F8 / F10), and shows registers,
+variables, the call stack and memory). See
 `CLAUDE.md` for the phase list and technical brief, and `docs/overview.md` for
 the design.
 
@@ -71,12 +73,15 @@ jumping into ROM routines, so each ROM build has its own entry in
 1. In a 2068-Leap checkout at the release tag, run `make build`.
 2. Run `tools/leap-rom-entry.py <checkout> <version>`; it prints a
    `KNOWN_ROMS` entry keyed by the SHA-256 of HOME + EXROM.
+   The script's `SYMBOLS` table also covers the debugger's compiler and VM
+   symbols, so a new entry must be generated, not copied from an older one.
 3. Paste the entry into `src/leap-roms.js`.
 4. Move the submodule to a TSRun commit that carries the release's
    `leap-0.rom` and `leap-1.rom` in `roms/`:
    `git -C tsrun fetch && git -C tsrun checkout <commit>`, then commit the
    submodule bump.
-5. Reload and re-check hello world, a compile error, BREAK and `INPUT`.
+5. Reload and re-check hello world, a compile error, BREAK, `INPUT` and a
+   breakpoint / step.
 
 Nothing else in the IDE should need to change, except the editor's keyword data,
 which is generated from the release's manual. Regenerate it at the release tag:
