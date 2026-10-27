@@ -14,7 +14,7 @@
  *  - src/debugger.js: createDebugger() — breakpoints, step, pause, panel
  *  - src/leap-check.js: createChecker() — the ROM's compiler as the linter
  *  - src/leap-errors.js: error messages from the manual (generated)
- *  - src/export.js:   window.leapExport = { buildTAP(bytes), buildDCK(bytes) }
+ *  - src/export.js:   buildTAP() — the program as Leap's SAVE writes it
  */
 
 "use strict";
@@ -23,6 +23,7 @@ import { createEmulator, encodeLineStore } from './src/emulator.js';
 import { createDebugger } from './src/debugger.js';
 import { createChecker } from './src/leap-check.js';
 import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
+import { buildTAP, checkTapeName } from './src/export.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -268,6 +269,44 @@ function getSource() {
   return window.leapEditor ? window.leapEditor.getSource() : '';
 }
 
+// ── Export ────────────────────────────────────────────────────────
+
+/**
+ * Download the program as a .tap that Leap's LOAD reads (byte-identical to
+ * what SAVE "name" writes). Load it with LOAD "" or LOAD "name", then RUN.
+ */
+function exportTape() {
+  if (!emulator) return;
+  const prepared = prepareSource(getSource());
+  if (prepared.problems.length > 0 || prepared.lines.length === 0) {
+    setStatus(prepared.lines.length === 0 ? 'Nothing to save' : prepared.problems[0].message, 'error');
+    return;
+  }
+  const fallback = document.getElementById('filename-display').textContent.replace(/\.[^.]*$/, '');
+  const name = window.prompt('Tape name (up to 10 characters; LOAD "name" must match it exactly):',
+    fallback.slice(0, 10) || 'program');
+  if (name === null) return;
+  const problem = checkTapeName(name);
+  if (problem) {
+    setStatus(problem, 'error');
+    return;
+  }
+  const store = encodeLineStore(prepared.lines);
+  const room = emulator.rom.sourceEnd - emulator.rom.progAreaStart;
+  if (store.length > room) {
+    setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
+    return;
+  }
+  const tap = buildTAP(store, name, emulator.rom.tapeFormatWord);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([tap], { type: 'application/octet-stream' }));
+  a.download = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
+  a.click();
+  // Revoking at once can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  setStatus(`Saved ${a.download}: on the TS2068, LOAD "${name}" then RUN`, 'idle');
+}
+
 // ── Stop ──────────────────────────────────────────────────────────
 function stopProgram() {
   if (!emulator) return;
@@ -334,28 +373,59 @@ document.getElementById('btn-lint').addEventListener('click', () => {
 document.getElementById('btn-reset-emu').addEventListener('click', () => {
   if (emulator) emulator.reset();
 });
-document.getElementById('btn-export').addEventListener('click', async () => {
-  if (!window.leapExport) { alert('Export module not loaded'); return; }
-  const src = window.leapEditor ? window.leapEditor.getSource() : '';
-  const bytes = encodeSource(src);
-  const tap = window.leapExport.buildTAP(bytes, 'program');
-  const blob = new Blob([tap], { type: 'application/octet-stream' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'program.tap';
-  a.click();
+document.getElementById('btn-export').addEventListener('click', exportTape);
+document.getElementById('btn-dck').addEventListener('click', () => {
+  // Leap 2.0.2 starts only from its own HOME ROM and never looks at the dock,
+  // so a cartridge that runs on a stock TS2068 needs a cartridge build of Leap
+  // (see CLAUDE.md, Export Formats).
+  setStatus('DCK export needs a Leap cartridge build (planned); use TAP for now', 'idle');
 });
-document.getElementById('btn-dck').addEventListener('click', async () => {
-  if (!window.leapExport) { alert('Export module not loaded'); return; }
-  const src = window.leapEditor ? window.leapEditor.getSource() : '';
-  const bytes = encodeSource(src);
-  const dck = await window.leapExport.buildDCK(bytes);
-  const blob = new Blob([dck], { type: 'application/octet-stream' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'program.dck';
-  a.click();
-});
+
+// ── Display zoom ──────────────────────────────────────────────────
+// TSRun draws a 320x240 frame (256x192 screen plus border). Scaling it by a
+// fraction gives some pixel columns one display pixel and others two, so
+// one-pixel strokes look uneven. The screen box is therefore always a whole
+// multiple of the frame in device pixels, and the emulator panel is widened
+// to fit the chosen zoom.
+
+const FRAME_W = 320, FRAME_H = 240;
+const PANEL_CHROME = 24 + 22 + 4;      // emulator-body padding + bezel padding/border + panel border slack
+const MIN_SIDE_ROOM = 340 + 400;       // debugger panel + the least editor width to keep
+const ZOOM_KEY = 'leap-ide.zoom';
+let zoom = 2;                          // chosen zoom (remembered)
+let shownZoom = 2;                     // zoom actually shown (window may be too narrow)
+try { zoom = Number(localStorage.getItem(ZOOM_KEY)) || (window.innerWidth >= 1500 ? 2 : 1); } catch { /* storage unavailable */ }
+
+function applyZoom() {
+  const dpr = window.devicePixelRatio || 1;
+  // Side by side, the emulator panel shares the width; stacked (narrow
+  // windows, see ide.css), it has the whole width to itself.
+  const stacked = getComputedStyle(document.querySelector('.workspace')).flexDirection === 'column';
+  const room = window.innerWidth - (stacked ? 0 : MIN_SIDE_ROOM);
+  // The largest zoom that fits, but at least 1×.
+  const fits = z => Math.round(z * dpr) * FRAME_W / dpr + PANEL_CHROME <= room;
+  let z = Math.max(1, Math.min(zoom, 3));
+  while (z > 1 && !fits(z)) z--;
+  const k = Math.max(1, Math.round(z * dpr));     // device pixels per frame pixel
+  const w = k * FRAME_W / dpr, h = k * FRAME_H / dpr;
+  const bezel = document.getElementById('ts-bezel');
+  bezel.style.width = w + 'px';
+  bezel.style.height = h + 'px';
+  document.getElementById('emulator-panel').style.flexBasis = stacked ? '' : (w + PANEL_CHROME) + 'px';
+  document.getElementById('zoom-label').textContent = z + '×';
+  shownZoom = z;
+}
+
+function setZoom(z) {
+  zoom = Math.max(1, Math.min(z, 3));
+  try { localStorage.setItem(ZOOM_KEY, String(zoom)); } catch { /* storage unavailable */ }
+  applyZoom();
+}
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => setZoom(shownZoom + 1));
+document.getElementById('btn-zoom-out').addEventListener('click', () => setZoom(shownZoom - 1));
+window.addEventListener('resize', applyZoom);
+applyZoom();
 
 // ── Keyboard shortcuts ────────────────────────────────────────────
 document.addEventListener('keydown', e => {

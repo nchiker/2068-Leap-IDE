@@ -16,7 +16,10 @@ into the ROM and runs it, compile and run-time errors come back with the line;
 PC keys are translated for `INPUT`, `INKEY$` and `PAUSE 0`; the editor has
 Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of keywords; the editor underlines compile errors as you type, using the ROM's own compiler on a hidden machine so they match what Run reports; the debugger sets breakpoints in
 the editor gutter, pauses and steps by statement (F8 / F10), and shows registers,
-variables, the call stack and memory). See
+variables, the call stack and memory). Phase 6 is half done: "⬇ TAP" saves exactly
+what Leap's own `SAVE` writes (verified: Leap's real `LOAD` reads it back); the DCK
+cartridge needs a runtime-only Leap build first, specified in
+`docs/LEAP_CARTRIDGE_BUILD.md`. See
 `CLAUDE.md` for the phase list and technical brief, and `docs/overview.md` for
 the design.
 
@@ -58,6 +61,17 @@ python3 -m http.server 8080
 
 Open http://localhost:8080/ide.html. CodeMirror 6 is loaded from jsDelivr
 through an import map in `ide.html`, so the first load needs network access.
+
+The "− 2× +" control in the TS2068 Display panel header sets the screen zoom
+(1×, 2× or 3×, always a whole number of device pixels so text stays even; the
+choice is remembered, and it drops by itself in a narrow window).
+
+To run a program on a real TS2068 or in another emulator, use "⬇ TAP": it asks for
+a tape name (up to 10 characters) and downloads a `.tap`; on the TS2068 type
+`LOAD "name"` (or `LOAD ""`), then `RUN` (Leap V2 has no autorun). In the
+TSRun fork, loading it also needs the tape-loading fix (TSRun issue #3), which
+is committed locally and not yet pushed, so the submodule pin below does not
+include it yet.
 
 Click the TS2068 screen to give it keyboard focus. Keys reach the emulated
 machine only while it is focused and a program is running (`INPUT`, `INKEY$`,

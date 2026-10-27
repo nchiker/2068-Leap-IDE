@@ -21,6 +21,7 @@ SYMBOLS = {
     "resetEdit":        "V2_RESET_EDIT",
     "runStored":        "V2_RUN_STORED",
     "compileStored":    "V2_COMPILE_STORED",
+    "tapeFormatWord":   "V2_FORMAT_WORD",      # header "autostart" field of a SAVE tape
     "commandLoop":      "V2_COMMAND_LOOP.loop",
     "compileErrorCode": "COMPILE_ERROR_CODE",
     "vmErrorCode":      "VM_ERROR_CODE",

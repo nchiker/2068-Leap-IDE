@@ -308,13 +308,14 @@ function renderMemory(m) {
   const input = document.getElementById('mem-addr');
   const base = parseInt(input.value, 16);
   const start = Number.isNaN(base) ? 0x825A : base & 0xFFFF;
+  // 8 bytes a row, 32 rows: 256 bytes that fit the debugger column.
   let out = '';
-  for (let row = 0; row < 16; row++) {
-    const addr = (start + row * 16) & 0xFFFF;
+  for (let row = 0; row < 32; row++) {
+    const addr = (start + row * 8) & 0xFFFF;
     let bytes = '', chars = '';
-    for (let col = 0; col < 16; col++) {
+    for (let col = 0; col < 8; col++) {
       const b = m.bus.read((addr + col) & 0xFFFF);
-      bytes += hex2(b) + (col === 7 ? '  ' : ' ');
+      bytes += hex2(b) + ' ';
       chars += b >= 0x20 && b < 0x7F ? String.fromCharCode(b) : '·';
     }
     out += `<span class="hex-addr">$${hex4(addr)}</span>  <span class="hex-byte">${bytes}</span> <span class="hex-char">${esc(chars)}</span>\n`;

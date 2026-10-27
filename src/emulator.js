@@ -86,6 +86,7 @@ export async function createEmulator(opts) {
     keyMatrix,
     kbd:      createPcKeyboard(keyMatrix),
     gfx:      null,
+    crt:      false,
     sfx:      null,
     rom:      null,       // entry from KNOWN_ROMS
     state:    'booting',
@@ -130,6 +131,8 @@ export async function createEmulator(opts) {
     /** While paused, execute exactly one Z80 instruction. */
     stepInstruction() { if (emu.paused) stepOneInstruction(emu); },
     get paused() { return emu.paused; },
+    /** TSRun's CRT filter: rounded, slightly blended pixels and scanlines. */
+    setCrt(on)   { emu.crt = on; if (emu.gfx) { setCrt(emu.gfx, on); resizeScreen(emu.gfx); } },
     get rom()    { return emu.rom; },
     /** The ROM images in use (for src/leap-check.js's own machine). */
     get romImages() { return emu.romImages; },
@@ -198,7 +201,8 @@ function initDisplay(emu, canvas) {
         return;
       }
       emu.gfx = gfx;
-      setCrt(gfx, false);   // sharp pixels read better next to an editor
+      setCrt(gfx, emu.crt);
+      resizeScreen(gfx);
     });
   });
   // screen.js fits the canvas to its parent box.

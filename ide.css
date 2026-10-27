@@ -201,7 +201,7 @@ html, body {
 .phbtn:hover { background: var(--bg-hover); color: var(--fg); }
 
 /* ── Editor panel ────────────────────────────────────────────── */
-.panel-editor { flex: 0 0 46%; }
+.panel-editor { flex: 1 1 0; min-width: 300px; }   /* takes what the emulator (zoom) and debugger leave */
 
 .editor-mount {
   flex: 1;
@@ -235,10 +235,12 @@ html, body {
               inset 0 0 14px rgba(0,0,0,.4);
   /* TSRun's resizeScreen() fits the canvas to this content box, so the box
      itself carries the 4:3 shape (padding 2×8 + border 2×3 = 22px). */
+  /* Sized by ide.js (applyZoom) to a whole multiple of the 320x240 frame in
+     device pixels; TSRun's resizeScreen() then fits the canvas exactly. */
   box-sizing: content-box;
-  width: calc(100% - 22px);
-  max-width: 640px;
-  aspect-ratio: 4/3;
+  width: 320px;
+  height: 240px;
+  flex-shrink: 0;
   cursor: text;
 }
 .bezel:focus { outline: none; border-color: var(--blue-fg); }
@@ -252,7 +254,6 @@ html, body {
   flex-direction: column;
   gap: 5px;
   width: 100%;
-  max-width: 662px;
   font-size: 11px;
   color: var(--fg-muted);
   font-family: var(--font-code);
@@ -260,7 +261,8 @@ html, body {
 
 /* ── Debugger panel ──────────────────────────────────────────── */
 .panel-debugger {
-  flex: 1;
+  flex: 0 1 340px;
+  min-width: 240px;
   overflow-y: auto;
   background: var(--bg);
 }
@@ -438,3 +440,6 @@ html, body {
 }
 .var-tbl td.var-val { word-break: break-all; }
 .csframe, .bpitem { cursor: pointer; }
+
+/* Display zoom (− 2× +) */
+.zoom-label { font-family: var(--font-code); font-size: 11px; color: var(--fg-muted); min-width: 22px; text-align: center; }

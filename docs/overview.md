@@ -50,7 +50,8 @@ pinned at commit `f65de5a`. The fork's
 - TS2068 screen rendering with WebGL2 (`screen.js`)
 - AY-3-8912 sound through an AudioWorklet (`sound.js`)
 - Keyboard matrix (`keyboard.js`; the IDE uses its own `src/pc-keyboard.js`)
-- Tape loading (`tape.js`) and dock cartridges (`dock.js`, parse only)
+- Tape loading (`tape.js`) and dock cartridges (`dock.js`, parse only; accepts
+  banks 0 DOCK, 254 EXROM, 255 HOME)
 
 TSRun files are ES modules. TSRun's own `host.js` is tied to its emulator-page
 desk UI, so the IDE has its own slim host in `src/emulator.js` that imports
@@ -63,6 +64,15 @@ The only change in the fork so far is in `sound.js`: it loads its worklet with
 that lives outside TSRun's directory. It is committed on the fork's `main`
 branch (commit `f65de5a`, pushed; the submodule pin). The IDE no longer uses
 TSRun's `keyboard.js` (see Keyboard below), and no `hostBits` patch is planned.
+
+A second fork change is committed locally but **not pushed**: the owner's tape
+loading patch (commit `4db1f1e` on `main`; TSRun issue #3 in
+josef-jelinek/TSRun). Tape loading used to stop mid-load for loaders outside
+EXROM chunk 0, so Leap's `LOAD` failed in TSRun. With the patch, stock-ROM tape
+autoload and autostart are unchanged and Leap `LOAD ""` of the IDE's `.tap`
+loads (the tape even starts by itself) and `RUN` works. The submodule is still
+at `f65de5a`; once the owner approves, the fork is pushed and the submodule
+moved.
 
 The submodule is pinned because the TSRun version must match the ROM table in
 `src/leap-roms.js`: a TSRun update (e.g. new Leap ROMs) cannot break the IDE
@@ -100,7 +110,7 @@ ide.html
 ├── src/leap-errors.js ← generated error text from the manual (tools/gen-leap-errors.py)
 ├── src/debugger.js   ← debugger controller (breakpoints, step) + panel UI
 ├── src/leap-debug.js ← line table, variables, call stack read from machine RAM
-├── src/export.js     ← tape + DCK builders
+├── src/export.js     ← TAP builder (DCK waits for the Leap cartridge build; see docs/LEAP_CARTRIDGE_BUILD.md)
 └── ide.js            ← orchestrator (prepare source → run → status/debug)
 ```
 
@@ -108,12 +118,23 @@ The three panels share the window:
 
 | Panel    | Width  | Contents                                          |
 |----------|--------|---------------------------------------------------|
-| Editor   | ~46%   | CodeMirror 6, line numbers, breakpoint gutter     |
-| Emulator | ~28%   | TS2068 256×192 canvas + bezel                     |
-| Debugger | ~26%   | Registers, variables, breakpoints, call stack, memory |
+| Editor   | rest   | CodeMirror 6, line numbers, breakpoint gutter     |
+| Emulator | zoom 1×–3× | TS2068 256×192 canvas + bezel; "− 2× +" zoom control |
+| Debugger | 340 px (min 240) | Registers, variables, breakpoints, call stack, memory |
 
 The emulator receives keyboard input only while a program is running and its
 screen has focus; click the screen to type into it.
+
+**Display zoom.** TSRun's 320×240 frame (screen plus border) is always scaled by
+a whole number of device pixels; a fractional scale made some pixel columns 1
+and others 2 display pixels wide, so text looked uneven and thin. The "− 2× +"
+control in the Display panel header picks 1×, 2× or 3×: the emulator panel
+widens to fit, the editor takes the remaining width, and the zoom drops by
+itself if the window is too narrow. The default is 2× when the window is at
+least 1500 px wide; the choice is remembered in `localStorage`. HiDPI and
+fractional `devicePixelRatio` are handled. The CRT filter is off (`setCrt(on)`
+exists in the emulator API, with no UI). Leap's own font has 1-pixel strokes,
+so 1× looks light by nature.
 
 ---
 
@@ -369,7 +390,8 @@ a debugged program runs slower than a free one.
 - **Call stack** is read from the VM's control stack, innermost first: the
   current `PROC` (or the main program) and line, "called from line N", and
   active `FOR` loops. Clicking a stack or breakpoint line scrolls the editor.
-- **Memory inspector:** a 256-byte hex dump with an editable start address.
+- **Memory inspector:** a 256-byte hex dump (8 bytes a row, 32 rows, to fit the
+  column) with an editable start address.
 
 The panel refreshes every 300 ms while a program runs. Limits: `FOR` frames
 hold no line, so loops are listed without one; while a package statement runs
@@ -381,15 +403,47 @@ breakpoints exist only as the `setWatch` API, with no UI yet. Technical detail
 
 ## Export — Phase 6
 
-The formats are not yet known:
+**Tape: done and verified** (toolbar "⬇ TAP", `buildTAP` in `src/export.js`).
+The file is exactly what Leap's own `SAVE "name"` writes:
 
-- **Tape.** Leap V2 `SAVE` uses its own TS2068-framed tape format (see
-  `docs/V2_SAVE_ALL_FORMAT.md` and the storage code in the 2068-Leap
-  repository). The export must be derived from Leap's `SAVE` and verified by
-  `LOAD`ing the result in the emulator. The earlier idea of a standard type-3
-  code block at `$825A` with an autostart flag was invented and is dropped.
-- **DCK.** Structure per TSRun's `dock.js` (which currently only parses). To be
-  verified by loading the cartridge in TSRun.
+- a header block (flag `$00` + 17 bytes: type 0; the name, 10 bytes
+  space-padded, as typed, because `LOAD "name"` is a case-sensitive exact match;
+  the line-store length; **Leap's tape format word** `V2_FORMAT_WORD`, `$8101`
+  in 2.0.2, in the stock "autostart" field, which `LOAD` insists on; the program
+  length, equal to the length for a plain program);
+- a data block (flag `$FF`) holding the line store exactly as in RAM;
+- XOR checksums, and in the `.tap` file each block prefixed with its LE16
+  length. Stock ROM pulse timings, which is what `.tap` assumes.
+
+The format word is a ROM-table field (`tapeFormatWord` in `src/leap-roms.js`,
+generated by `tools/leap-rom-entry.py`). V2 has no autorun: on the TS2068, type
+`LOAD ""` (or `LOAD "name"`) and then `RUN`. Verified byte for byte against
+Leap's real `SAVE` (a `STORAGE_SEND_BLOCK` capture in Node) and loaded back by
+Leap's real `LOAD` with the program intact; the browser download is identical.
+The button prompts for the tape name (default: the file name) and reports
+`Saved X.tap: on the TS2068, LOAD "X" then RUN`. Loading it in TSRun needs the
+pending tape-loading fix described under Foundation.
+
+**DCK: needs a Leap cartridge build.** Leap 2.0.2 never looks at the dock and
+its cold start clears RAM, so a cartridge for a *stock* TS2068 requires a
+runtime-only build of Leap (planned for 2.1, no editor). The spec is
+[`LEAP_CARTRIDGE_BUILD.md`](LEAP_CARTRIDGE_BUILD.md):
+
+- Leap's HOME image in DOCK chunks 0-1 and its EXROM image in chunk 6; HSR
+  (`$F4`) = `$43` and DECR (`$FF`) bit 7 = 0 keep Leap's code mapped.
+- Four port writes change under a build flag.
+- An LROS header (type 1, chunk spec `$BC`) and a `di` entry stub let the stock
+  ROM start it.
+- The program is precompiled: the bytecode and `SYM_COUNTS` from Leap's own
+  compiler (the IDE's hidden checker machine) sit in DOCK chunk 3; cold start
+  copies them to `VM_CODE_BASE` and starts the VM.
+- Packages and tape are not in the first version.
+
+The "⬇ DCK" button only explains this in the status bar for now. The DCK
+container: a 9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM,
+2 ROM, 3 initialised RAM) then 8 KB images (reference:
+github.com/jon0x0/AISkill_TS2068). The builder follows the spec's "IDE side"
+section once the cartridge build exists.
 
 ---
 
@@ -402,7 +456,7 @@ The formats are not yet known:
 | 3     | Debugger (registers, step)         | High   | Done, verified |
 | 4     | Keyboard translation + INPUT mode  | Medium | Done, verified |
 | 5     | Error checking (ROM compiler)      | Medium | Done, verified |
-| 6     | Tape + DCK export                  | Medium | Next; format to derive |
+| 6     | Tape + DCK export                  | Medium | TAP done, verified; DCK needs the Leap cartridge build (spec written) |
 | 7     | UDG editor, symbol table           | Low    | Not started |
 | 8     | Help overlay, themes, polish       | Low    | Not started |
 
