@@ -86,12 +86,20 @@
     <!-- ── DEBUGGER PANEL ─────────────────────── -->
     <div class="panel panel-debugger" id="debugger-panel">
       <div class="panel-header">
-        <span>Debugger</span>
+        <div class="panel-tabs" role="tablist">
+          <button class="panel-tab active" data-tab="debugger">Debugger</button>
+          <button class="panel-tab" data-tab="symbols">Symbols</button>
+          <button class="panel-tab" data-tab="udg">UDG</button>
+          <button class="panel-tab" data-tab="draw">Draw</button>
+        </div>
         <div class="panel-header-btns">
-          <button class="phbtn" id="btn-refresh-debug">↺</button>
+          <button class="phbtn" id="btn-refresh-debug" title="Refresh">↺</button>
         </div>
       </div>
-      <div id="debugger-mount"></div>
+      <div class="tab-body" id="debugger-mount" data-tab="debugger"></div>
+      <div class="tab-body tool-body" id="tool-symbols" data-tab="symbols" hidden></div>
+      <div class="tab-body tool-body" id="tool-udg" data-tab="udg" hidden></div>
+      <div class="tab-body tool-body" id="tool-draw" data-tab="draw" hidden></div>
     </div>
 
   </div><!-- /workspace -->

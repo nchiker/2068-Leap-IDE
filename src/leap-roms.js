@@ -29,6 +29,9 @@ export const KNOWN_ROMS = {
     ext2ClearAll:     0x0F29,   // EXT2_CLEAR_ALL
     packageBase:      0xF400,   // EXTENSION_MODULE_BASE
     packageLen:       0xBE82,   // V2_PACKAGE_LEN
+    udgTable:         0xF180,   // UDG_TABLE
+    udgCodeBase:      0x0090,   // UDG_CODE_BASE
+    udgCount:         0x0015,   // UDG_COUNT
     commandLoop:      0xD215,   // V2_COMMAND_LOOP.loop
     compileErrorCode: 0xBA0A,   // COMPILE_ERROR_CODE
     vmErrorCode:      0xB683,   // VM_ERROR_CODE

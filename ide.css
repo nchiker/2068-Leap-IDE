@@ -503,3 +503,63 @@ html, body {
 }
 .help-tips { margin: 0; padding-left: 18px; }
 .help-tips li { margin-bottom: 6px; }
+
+/* ── Right-panel tabs: Debugger | Symbols | UDG | Draw (Phase 7) ─ */
+.panel-tabs { display: flex; gap: 2px; height: 100%; }
+.panel-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--fg-muted); font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .06em;
+  padding: 0 8px; cursor: pointer;
+}
+.panel-tab:hover { color: var(--fg); }
+.panel-tab.active { color: var(--fg); border-bottom-color: var(--amber-fg); }
+.tab-body[hidden] { display: none; }
+.tool-body { padding: 10px 12px; font: 12px var(--font-ui); color: var(--fg); }
+.tool-body .tool-note { color: var(--fg-muted); font-size: 11px; line-height: 1.45; margin: 0 0 10px; }
+.tool-body button.tool-btn {
+  font: 11px var(--font-ui); color: var(--fg); background: var(--bg-surface);
+  border: 1px solid var(--border-hi); border-radius: 4px; padding: 3px 8px; cursor: pointer;
+}
+.tool-body button.tool-btn:hover { background: var(--bg-hover); }
+.tool-body button.tool-btn:disabled { opacity: .45; cursor: default; }
+
+/* ── Draw tool (src/tools/draw.js) ── */
+.draw-stage { position: relative; width: 258px; height: 194px; border: 1px solid var(--border-hi); background: #cdcdcd; margin-bottom: 6px; }
+.draw-canvas { position: absolute; left: 0; top: 0; width: 256px; height: 192px; image-rendering: pixelated; }
+.draw-overlay { cursor: crosshair; outline: none; }
+.draw-stage:focus-within { border-color: var(--blue-fg); }
+.draw-readout { font: 11px var(--font-code); color: var(--amber-fg); height: 16px; }
+.draw-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.draw-code {
+  min-height: 48px; max-height: 140px; overflow: auto; margin: 0 0 8px; padding: 6px 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  font: 11px/1.5 var(--font-code); color: var(--fg);
+}
+
+/* ── Symbols tool (src/tools/symbols.js) ── */
+.sym-filter {
+  width: 100%; box-sizing: border-box; margin-bottom: 8px; padding: 5px 8px;
+  font: 12px var(--font-code); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border-hi); border-radius: 4px;
+}
+.sym-group { font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); margin: 10px 0 4px; }
+.sym-row {
+  display: flex; justify-content: space-between; gap: 8px; width: 100%;
+  background: none; border: none; border-radius: 3px; padding: 3px 6px; cursor: pointer; text-align: left;
+}
+.sym-row:hover { background: var(--bg-hover); }
+.sym-name { font: 12px var(--font-code); color: #dcbdfb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sym-line { font: 11px var(--font-code); color: var(--fg-muted); white-space: nowrap; }
+
+/* ── UDG tool (src/tools/udg.js) ── */
+.udg-thumbs { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 10px; }
+.udg-thumb {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px 0;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+}
+.udg-thumb canvas { image-rendering: pixelated; }
+.udg-thumb.active { border-color: var(--amber-fg); }
+.udg-code { font: 9px var(--font-code); color: var(--fg-muted); }
+.udg-title { font: 11px var(--font-code); color: var(--fg-muted); margin: 4px 0 6px; }
+.udg-grid { display: block; width: 176px; height: 176px; border: 1px solid var(--border-hi); cursor: crosshair; touch-action: none; }
+.udg-buttons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }

@@ -185,7 +185,7 @@ function leapComplete(context) {
     options: [
       ...keywordOptions,
       ...blockSnippets,
-      ...[...vars].map(v => ({ label: v, type: 'variable' })),
+      ...[...vars.keys()].map(v => ({ label: v, type: 'variable' })),
     ],
     validFor: /^[A-Za-z][A-Za-z0-9]*\$?$/,
   };
@@ -460,6 +460,28 @@ window.leapEditor = {
     if (onBreakpointsChanged) onBreakpointsChanged();
     if (onDocChanged) onDocChanged();
     forceLinting(view);
+  },
+
+  /**
+   * Insert whole lines (generated code from the tools) after the line the
+   * cursor is on, select them and scroll to them. One undo step removes them.
+   */
+  insertLines(text) {
+    const body = text.endsWith('\n') ? text : text + '\n';
+    const doc = view.state.doc;
+    const line = doc.lineAt(view.state.selection.main.head);
+    // After the cursor's line; at the very end of a document with no final
+    // newline, start a new line first.
+    const at = line.to < doc.length ? line.to + 1 : doc.length;
+    const insert = at === doc.length && doc.length > 0 && !doc.sliceString(doc.length - 1) .endsWith('\n')
+      ? '\n' + body : body;
+    const from = at + (insert.length - body.length);
+    view.dispatch({
+      changes: { from: at, insert },
+      selection: { anchor: from, head: from + body.length - 1 },
+      scrollIntoView: true,
+    });
+    view.focus();
   },
 
   /** Called (no arguments) after every change to the text */

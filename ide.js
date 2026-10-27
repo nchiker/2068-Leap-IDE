@@ -27,6 +27,9 @@ import { buildTAP, checkTapeName } from './src/export.js';
 import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
 import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
 import { toggleHelp } from './src/help.js';
+import { createSymbolsTool } from './src/tools/symbols.js';
+import { createUdgTool } from './src/tools/udg.js';
+import { createDrawTool } from './src/tools/draw.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -75,6 +78,17 @@ async function bootEmulator() {
   setInterval(() => {
     if (emuState === 'running' || emuState === 'waiting') debug.refresh();
   }, DEBUG_REFRESH_MS);
+
+  createUdgTool(document.getElementById('tool-udg'), {
+    rom: emulator.rom,
+    getSource,
+    insertCode: text => window.leapEditor.insertLines(text),
+    writeToMachine: (addr, bytes) => {
+      bytes.forEach((b, i) => emulator.machine.bus.write(addr + i, b));
+      return true;
+    },
+    setStatus,
+  });
 
   checker = createChecker(emulator.rom, emulator.romImages);
   await loadPackages();
@@ -265,6 +279,7 @@ function onEmulatorState(state, detail) {
   case 'waiting': setRunning(true);  setStatus('Waiting for input — click the screen to type', 'run'); break;
   case 'paused': {
     setRunning(true);
+    showTab('debugger');
     const line = debug ? debug.pausedHere() : -1;
     window.leapEditor?.setExecutionLine(line > 0 ? line : null);
     setStatus(line > 0 ? `Paused at line ${line}` : 'Paused', 'run');
@@ -423,7 +438,39 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
-window.leapEditor.onChange(onEditorChange);
+// ── Right-panel tabs: Debugger | Symbols | UDG | Draw ─────────────
+const TAB_KEY = 'leap-ide.tab';
+const SYMBOLS_REFRESH_MS = 300;
+let activeTab = 'debugger';
+let symbolsTimer = 0;
+
+const symbolsTool = createSymbolsTool(document.getElementById('tool-symbols'), {
+  getSource,
+  goToLine: line => { window.leapEditor.scrollToLine(line); window.leapEditor.focus(); },
+});
+createDrawTool(document.getElementById('tool-draw'), {
+  insertCode: text => window.leapEditor.insertLines(text),
+});
+
+function showTab(name) {
+  activeTab = name;
+  for (const t of document.querySelectorAll('.panel-tab')) t.classList.toggle('active', t.dataset.tab === name);
+  for (const b of document.querySelectorAll('.tab-body')) b.hidden = b.dataset.tab !== name;
+  document.getElementById('btn-refresh-debug').hidden = name !== 'debugger';
+  if (name === 'symbols') symbolsTool.refresh();
+  try { localStorage.setItem(TAB_KEY, name); } catch { /* storage blocked */ }
+}
+
+for (const t of document.querySelectorAll('.panel-tab')) t.addEventListener('click', () => showTab(t.dataset.tab));
+try { showTab(localStorage.getItem(TAB_KEY) || 'debugger'); } catch { showTab('debugger'); }
+
+window.leapEditor.onChange(() => {
+  onEditorChange();
+  if (activeTab === 'symbols') {
+    clearTimeout(symbolsTimer);
+    symbolsTimer = setTimeout(symbolsTool.refresh, SYMBOLS_REFRESH_MS);
+  }
+});
 document.getElementById('btn-help').addEventListener('click', toggleHelp);
 document.getElementById('btn-new').addEventListener('click', newProgram);
 document.getElementById('btn-open').addEventListener('click', openProgram);

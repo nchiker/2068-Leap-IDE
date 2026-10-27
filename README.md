@@ -21,11 +21,14 @@ breakpoints in the editor gutter, pauses and steps by statement (F8 / F10), and
 shows registers, variables, the call stack and memory). Also done: the program
 is auto-saved in the browser, with New / Open / Save and Leap `.tap` import;
 package statements such as `CIRCLE` work because the IDE loads the package on
-Run; "? Help" (F1) opens a searchable keyword reference. Phase 6 is half done:
+Run; "? Help" (F1) opens a searchable keyword reference. Phase 7 is done: the right panel has Symbols (click a name to jump to it),
+UDG (draw Leap's 21 user-defined characters and insert the `POKE` lines into the
+program, or load them back) and Draw (a `PLOT` / `LINE` scratchpad) tabs beside
+the debugger. Phase 6 is half done:
 "⬇ TAP" saves exactly what Leap's own `SAVE` writes (verified: Leap's real
 `LOAD` reads it back); the DCK cartridge needs a runtime-only Leap build first,
-specified in `docs/LEAP_CARTRIDGE_BUILD.md`. Still to do: the Phase 7 tools,
-Phase 8 themes, and the Leap 2.1 ROM entry. See `CLAUDE.md` for the phase list
+specified in `docs/LEAP_CARTRIDGE_BUILD.md`. Still to do: Phase 8 themes, the DCK
+export once that build exists, and the Leap 2.1 ROM entry. See `CLAUDE.md` for the phase list
 and technical brief, and `docs/overview.md` for the design.
 
 ## Setup

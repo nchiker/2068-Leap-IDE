@@ -231,16 +231,17 @@ export const leapHighlight = syntaxHighlighting(
  * @returns {{procs: Map<string, {line: number, param: string}>,
  *            fns: Map<string, {line: number, param: string}>,
  *            labels: Map<string, {line: number}>,
- *            vars: Set<string>}}   names as written; lines 1-based
+ *            vars: Map<string, number>}}   names as written -> first line; lines 1-based
  */
 export function scanSymbols(text) {
-  const procs = new Map(), fns = new Map(), labels = new Map(), vars = new Set();
+  const procs = new Map(), fns = new Map(), labels = new Map(), vars = new Map();
+  const addVar = (name, line) => { if (!vars.has(name)) vars.set(name, line); };
   text.split('\n').forEach((raw, i) => {
     const line = raw.replace(/"[^"]*"?/g, '""').replace(/\bREM\b.*$/i, '');
     let m;
     if ((m = /^\s*PROC\s+([A-Za-z][A-Za-z0-9]*)\s*\(\s*([A-Za-z][A-Za-z0-9]*\$?)?/i.exec(line))) {
       procs.set(m[1], { line: i + 1, param: m[2] ?? '' });
-      if (m[2]) vars.add(m[2]);
+      if (m[2]) addVar(m[2], i + 1);
     }
     for (const d of line.matchAll(/\bDEF\s+FN\s+([A-Za-z][A-Za-z0-9]*)\s*\(\s*([A-Za-z][A-Za-z0-9]*)?/gi)) {
       fns.set(d[1], { line: i + 1, param: d[2] ?? '' });
@@ -250,10 +251,10 @@ export function scanSymbols(text) {
     }
     // Assignments (statement start), FOR, INPUT and DIM introduce variables.
     for (const a of line.matchAll(/(?:^|:)\s*([A-Za-z][A-Za-z0-9]*\$?)\s*(?:\([^)]*\))?\s*=(?!=)/g)) {
-      if (!LEAP_WORDS.has(a[1].toUpperCase())) vars.add(a[1]);
+      if (!LEAP_WORDS.has(a[1].toUpperCase())) addVar(a[1], i + 1);
     }
     for (const a of line.matchAll(/\b(?:FOR|INPUT(?:\s*"[^"]*"\s*[;,])?|DIM)\s+([A-Za-z][A-Za-z0-9]*\$?)/gi)) {
-      vars.add(a[1]);
+      addVar(a[1], i + 1);
     }
   });
   return { procs, fns, labels, vars };

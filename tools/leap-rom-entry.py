@@ -28,6 +28,10 @@ SYMBOLS = {
     "ext2ClearAll":     "EXT2_CLEAR_ALL",
     "packageBase":      "EXTENSION_MODULE_BASE",
     "packageLen":       "V2_PACKAGE_LEN",
+    # User-defined characters: codes UDG_CODE_BASE.. (21 of them), 8 bytes each
+    "udgTable":         "UDG_TABLE",
+    "udgCodeBase":      "UDG_CODE_BASE",
+    "udgCount":         "UDG_COUNT",
     "commandLoop":      "V2_COMMAND_LOOP.loop",
     "compileErrorCode": "COMPILE_ERROR_CODE",
     "vmErrorCode":      "VM_ERROR_CODE",
