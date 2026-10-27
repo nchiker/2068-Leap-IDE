@@ -15,6 +15,7 @@
  *   keywordEntry() — manual entry for a word (DEF -> "DEF FN", EXIT -> "EXIT FOR")
  *   scanSymbols()  — the program's PROCs, DEF FNs, labels and variables
  *   keywordTokens() — keyword positions on one line (editor auto-caps)
+ *   packagesUsed()  — the packages a program's statements need
  */
 
 "use strict";
@@ -256,4 +257,36 @@ export function scanSymbols(text) {
     }
   });
   return { procs, fns, labels, vars };
+}
+
+// ── Packages ──────────────────────────────────────────────────────
+
+// Package statement word -> package name ("CIRCLE" -> "shapes"), from the manual.
+const PACKAGE_OF = new Map();
+for (const [name, e] of Object.entries(LEAP_KEYWORD_ENTRIES)) {
+  if (e.package) PACKAGE_OF.set(name, e.package);
+}
+
+/** Every package the manual documents ("cbeep", "graphics", …). */
+export const LEAP_PACKAGES = [...new Set(PACKAGE_OF.values())].sort();
+
+/**
+ * The packages a program needs: a package statement at the start of a
+ * statement (line start or after ':'), not an assignment to a variable that
+ * happens to share its name (`circle = 5`). Strings and REM text are ignored.
+ *
+ * @param {string} text
+ * @returns {Map<string, number>}  package name -> first 1-based line using it
+ */
+export function packagesUsed(text) {
+  const used = new Map();
+  text.split('\n').forEach((raw, i) => {
+    const line = raw.replace(/"[^"]*"?/g, '""').replace(/\bREM\b.*$/i, '');
+    for (const stmt of line.split(':')) {
+      const m = /^\s*([A-Za-z][A-Za-z0-9]*)(?!\s*=)/.exec(stmt);
+      const pkg = m && PACKAGE_OF.get(m[1].toUpperCase());
+      if (pkg && !used.has(pkg)) used.set(pkg, i + 1);
+    }
+  });
+  return used;
 }

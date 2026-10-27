@@ -59,12 +59,14 @@ export function createChecker(rom, images) {
 
   return {
     /**
-     * Compile a line store (see encodeLineStore) without running it.
+     * Compile a line store (see encodeLineStore) without running it. With a
+     * package image, it is installed first (as LOAD "NAME" EXT does), so its
+     * statements compile.
      * @returns {{code: number, line: number} | null}  code 0 = compiles;
      *   line = failing store line (the line count for end-of-source errors);
      *   null if the compiler did not finish.
      */
-    check(store) {
+    check(store, pkg = null) {
       m.ram.set(snapshot.ram);
       Object.assign(m.cpu, snapshot.cpu);
       m.portF4 = snapshot.portF4;
@@ -77,6 +79,15 @@ export function createChecker(rom, images) {
       w16(STACK_TOP, rom.keyWait);
       m.cpu.sp = STACK_TOP - 2;
       m.cpu.pc = rom.clearArrays;
+      if (pkg) {
+        // EXT2_CLEAR_ALL -> the package's install entry -> CLEAR_ARRAYS -> …
+        for (let i = 0; i < pkg.length; i++) m.bus.write(rom.packageBase + i, pkg[i]);
+        w16(rom.packageLen, pkg.length);
+        w16(STACK_TOP - 6, rom.packageBase);
+        w16(STACK_TOP - 4, rom.clearArrays);
+        m.cpu.sp = STACK_TOP - 6;
+        m.cpu.pc = rom.ext2ClearAll;
+      }
       m.cpu.halted = false;
 
       for (let t = 0; t < MAX_T; t += CHUNK_T) {

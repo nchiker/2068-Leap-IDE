@@ -25,6 +25,7 @@ import { createChecker } from './src/leap-check.js';
 import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
 import { buildTAP, checkTapeName } from './src/export.js';
 import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
+import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -36,6 +37,7 @@ let lastRun = null;        // {text, editorLine[]} of the program last sent to t
 let debug = null;          // from createDebugger()
 let checker = null;        // from createChecker()
 let runDiagnostic = null;  // {text, diag}: the last run's error, kept while the text is unchanged
+const packageImages = new Map();   // package name -> image (Uint8Array), fetched at start-up
 let emuState = 'booting';
 const DEBUG_REFRESH_MS = 300;   // panel refresh while a program runs
 
@@ -74,7 +76,42 @@ async function bootEmulator() {
   }, DEBUG_REFRESH_MS);
 
   checker = createChecker(emulator.rom, emulator.romImages);
+  await loadPackages();
   window.leapEditor?.relint();
+}
+
+// ── Packages ──────────────────────────────────────────────────────
+// A program that uses a package statement (CIRCLE, GRAB, MODE, …) gets that
+// package installed before it is checked or run, as LOAD "NAME" EXT would.
+// The images are the release's own (packages/<version>/<name>.bin), a few
+// hundred bytes each, so all of them are fetched once.
+
+async function loadPackages() {
+  await Promise.all(LEAP_PACKAGES.map(async name => {
+    try {
+      const resp = await fetch(emulator.rom.packageDir + name + '.bin');
+      if (resp.ok) packageImages.set(name, new Uint8Array(await resp.arrayBuffer()));
+    } catch { /* reported when a program needs it */ }
+  }));
+}
+
+/**
+ * The package a program needs.
+ * @returns {{name: string | null, image: Uint8Array | null, problem: {line: number, message: string} | null}}
+ */
+function packageFor(text) {
+  const used = [...packagesUsed(text)];
+  if (used.length === 0) return { name: null, image: null, problem: null };
+  if (used.length > 1) {
+    const [[first, firstLine], [second, secondLine]] = used;
+    return { name: null, image: null, problem: { line: secondLine,
+      message: `Leap loads one package at a time: this program uses ${first} (line ${firstLine}) and ${second}` } };
+  }
+  const [[name, line]] = used;
+  const image = packageImages.get(name) ?? null;
+  return image
+    ? { name, image, problem: null }
+    : { name, image: null, problem: { line, message: `The ${name} package could not be loaded` } };
 }
 
 // ── Checking (the editor's linter) ────────────────────────────────
@@ -111,7 +148,9 @@ function lintSource(text) {
   // marked until the text changes; otherwise a check scheduled by the edit
   // just before Run would wipe it.
   const fromRun = runDiagnostic && runDiagnostic.text === text ? [runDiagnostic.diag] : [];
-  const result = checker.check(store);
+  const pkg = packageFor(text);
+  if (pkg.problem) return [{ ...lineRange(text, pkg.problem.line - 1), severity: 'error', message: pkg.problem.message }];
+  const result = checker.check(store, pkg.image);
   if (!result || result.code === 0) return fromRun;
   // An error at the end of the source (unclosed block, unknown label) has the
   // line count as its line: put it on the last line.
@@ -201,11 +240,16 @@ function injectProgram(prepared) {
     setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
     return;
   }
+  const pkg = packageFor(getSource());
+  if (pkg.problem) {
+    setStatus(pkg.problem.message, 'error');
+    return;
+  }
   lastRun = { text: getSource(), editorLine: prepared.editorLine };
   debug.beginRun();
-  emulator.run(store);
+  emulator.run(store, pkg.image);
   updateProgInfo(store.length);
-  setStatus('Starting…', 'run');
+  setStatus(pkg.name ? `Starting… (with the ${pkg.name} package)` : 'Starting…', 'run');
 }
 
 // ── Emulator state → UI ───────────────────────────────────────────
@@ -417,7 +461,9 @@ function exportTape() {
   const tap = buildTAP(store, name, emulator.rom.tapeFormatWord);
   const tapName = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
   download(new Blob([tap], { type: 'application/octet-stream' }), tapName);
-  setStatus(`Saved ${tapName}: on the TS2068, LOAD "${name}" then RUN`, 'idle');
+  const pkg = packageFor(getSource()).name;
+  const first = pkg ? `LOAD "${pkg.toUpperCase()}" EXT, then ` : '';
+  setStatus(`Saved ${tapName}: on the TS2068, ${first}LOAD "${name}" then RUN`, 'idle');
 }
 
 // ── Stop ──────────────────────────────────────────────────────────

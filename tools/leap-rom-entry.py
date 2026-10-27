@@ -5,7 +5,9 @@ usage: tools/leap-rom-entry.py <2068-Leap checkout> <version label>
 
 Run `make build` in the checkout first (at the release tag). The entry is keyed
 by the SHA-256 of HOME + EXROM, so the IDE refuses ROMs whose addresses it does
-not know. Paste the output into KNOWN_ROMS in src/leap-roms.js.
+not know. Paste the output into KNOWN_ROMS in src/leap-roms.js, and copy the
+release's packages/v2_package_<name>.bin files to packages/<version>/<name>.bin
+(check them against the release's SHA256SUMS).
 """
 import hashlib
 import os
@@ -22,6 +24,10 @@ SYMBOLS = {
     "runStored":        "V2_RUN_STORED",
     "compileStored":    "V2_COMPILE_STORED",
     "tapeFormatWord":   "V2_FORMAT_WORD",      # header "autostart" field of a SAVE tape
+    # Packages (LOAD "NAME" EXT): clear the registry, image at the window, call it
+    "ext2ClearAll":     "EXT2_CLEAR_ALL",
+    "packageBase":      "EXTENSION_MODULE_BASE",
+    "packageLen":       "V2_PACKAGE_LEN",
     "commandLoop":      "V2_COMMAND_LOOP.loop",
     "compileErrorCode": "COMPILE_ERROR_CODE",
     "vmErrorCode":      "VM_ERROR_CODE",
@@ -79,6 +85,8 @@ def main():
     for name, sym in SYMBOLS.items():
         print("    %-17s 0x%04X,   // %s" % (name + ":", syms[sym], sym))
     print("    keyWaitEnd:       0x%04X,   // end of the spin loop (exclusive)" % (kw + 6))
+    # The release's packages/v2_package_<name>.bin, copied unchanged.
+    print("    packageDir:       'packages/%s/'," % sys.argv[2])
     print("  },")
 
 

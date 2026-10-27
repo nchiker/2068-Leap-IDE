@@ -205,8 +205,10 @@ function el(tag, cls, text) {
 function helpDom(e) {
   const dom = el('div', 'cm-leap-tooltip');
   for (const f of e.forms) dom.append(el('code', 'cm-leap-sig', f));
+  // The IDE installs a package itself when the program uses it (ide.js);
+  // a real TS2068 needs LOAD "NAME" EXT first.
   const kind = e.package
-    ? `statement · needs LOAD "${e.package.toUpperCase()}" EXT`
+    ? `statement · ${e.package} package — loaded on Run; on a TS2068: LOAD "${e.package.toUpperCase()}" EXT`
     : e.kind;
   dom.append(el('div', 'cm-leap-kind', kind));
   dom.append(el('div', 'cm-leap-desc', e.desc));

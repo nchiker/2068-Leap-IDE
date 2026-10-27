@@ -26,6 +26,9 @@ export const KNOWN_ROMS = {
     runStored:        0xD49F,   // V2_RUN_STORED
     compileStored:    0xD54F,   // V2_COMPILE_STORED
     tapeFormatWord:   0x8101,   // V2_FORMAT_WORD
+    ext2ClearAll:     0x0F29,   // EXT2_CLEAR_ALL
+    packageBase:      0xF400,   // EXTENSION_MODULE_BASE
+    packageLen:       0xBE82,   // V2_PACKAGE_LEN
     commandLoop:      0xD215,   // V2_COMMAND_LOOP.loop
     compileErrorCode: 0xBA0A,   // COMPILE_ERROR_CODE
     vmErrorCode:      0xB683,   // VM_ERROR_CODE
@@ -50,6 +53,7 @@ export const KNOWN_ROMS = {
     vmCsp:            0xB819,   // VM_CSP
     varsStart:        0x822F,   // VARS_START
     keyWaitEnd:       0x043B,   // end of the spin loop (exclusive)
+    packageDir:       'packages/2.0.2-emu.1/',
   },
 };
 

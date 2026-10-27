@@ -111,8 +111,11 @@ export async function createEmulator(opts) {
   requestAnimationFrame(now => onFrame(emu, now));
 
   return {
-    /** Queue a run of an encoded line store (see encodeLineStore). */
-    run(store)   { unpause(emu); emu.pending = { kind: 'run', store, stage: 'seek', frames: 0 }; },
+    /**
+     * Queue a run of an encoded line store (see encodeLineStore). With a
+     * package image, it is installed first, as LOAD "NAME" EXT would.
+     */
+    run(store, pkg = null) { unpause(emu); emu.pending = { kind: 'run', store, pkg, stage: 'seek', frames: 0 }; },
     /** Stop the running program: BREAK if busy, back to the editor if waiting. */
     stop()       { unpause(emu); if (emu.runActive) emu.pending = { kind: 'stop', stage: 'seek', frames: 0 }; },
     /** Hard reset; the ROM boots to its editor. */
@@ -348,7 +351,7 @@ function atKeyWait(emu) {
 
   if (p && p.kind === 'run') {
     emu.pending = null;
-    inject(emu, p.store);
+    inject(emu, p.store, p.pkg);
     emu.runActive = true;
     setState(emu, 'running');
     return;
@@ -429,7 +432,7 @@ function poke16(m, addr, value) {
   m.bus.write(addr + 1, (value >> 8) & 0xFF);
 }
 
-function inject(emu, store) {
+function inject(emu, store, pkg) {
   const m = emu.machine, rom = emu.rom;
   // Writes go through the bus so they land where the CPU would see them.
   for (let i = 0; i < store.length; i++) m.bus.write(rom.progAreaStart + i, store[i]);
@@ -439,7 +442,24 @@ function inject(emu, store) {
   poke16(m, CHAIN_BASE,     rom.resetEdit);
   poke16(m, CHAIN_BASE + 2, rom.runStored);
   poke16(m, STACK_TOP,      rom.commandLoop);
-  jumpTo(emu, rom.clearArrays, CHAIN_BASE);
+  if (!pkg) {
+    jumpTo(emu, rom.clearArrays, CHAIN_BASE);
+    return;
+  }
+  // A package goes in first, as LOAD "NAME" EXT does it (package ABI 2.0):
+  // clear the registry, image and length in the window, then its install
+  // entry at the window start registers the statements. EXT2_CLEAR_ALL
+  // returns into the install, which returns into CLEAR_ARRAYS.
+  installPackageImage(m, rom, pkg);
+  poke16(m, CHAIN_BASE - 4, rom.packageBase);
+  poke16(m, CHAIN_BASE - 2, rom.clearArrays);
+  jumpTo(emu, rom.ext2ClearAll, CHAIN_BASE - 4);
+}
+
+/** Copy a package image into its window and record its length. */
+function installPackageImage(m, rom, pkg) {
+  for (let i = 0; i < pkg.length; i++) m.bus.write(rom.packageBase + i, pkg[i]);
+  poke16(m, rom.packageLen, pkg.length);
 }
 
 function jumpTo(emu, pc, sp) {
