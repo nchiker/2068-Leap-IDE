@@ -106,6 +106,8 @@ ide.html
 ├── src/pc-keyboard.js ← PC key -> TS2068 matrix translation
 ├── src/leap-roms.js  ← known ROM builds (SHA-256 -> addresses)
 ├── src/editor.js     ← CodeMirror 6 editor setup
+├── src/files.js      ← browser auto-save, text files, Leap .tap -> source
+├── src/help.js       ← Help overlay (keywords, keys and tips)
 ├── src/leap-lang.js  ← Leap V2 StreamLanguage mode, token classes, scanSymbols
 ├── src/leap-keywords.js ← generated from the Leap manual (tools/gen-leap-keywords.py)
 ├── src/leap-check.js ← editor error check: the ROM's compiler on a hidden machine
@@ -113,14 +115,15 @@ ide.html
 ├── src/debugger.js   ← debugger controller (breakpoints, step) + panel UI
 ├── src/leap-debug.js ← line table, variables, call stack read from machine RAM
 ├── src/export.js     ← TAP builder (DCK waits for the Leap cartridge build; see docs/LEAP_CARTRIDGE_BUILD.md)
-└── ide.js            ← orchestrator (prepare source → run → status/debug)
+├── packages/<version>/ ← the release's package images (<name>.bin), installed on Run
+└── ide.js            ← orchestrator (prepare source → run → status/debug, files, packages)
 ```
 
 The three panels share the window:
 
 | Panel    | Width  | Contents                                          |
 |----------|--------|---------------------------------------------------|
-| Editor   | rest   | CodeMirror 6, line numbers, breakpoint gutter     |
+| Editor   | rest   | CodeMirror 6, line numbers, breakpoint gutter; New / Open / Save and the file name in the toolbar |
 | Emulator | zoom 1×–3× | TS2068 256×192 canvas + bezel; "− 2× +" zoom control |
 | Debugger | 340 px (min 240) | Registers, variables, breakpoints, call stack, memory |
 
@@ -163,7 +166,9 @@ Implemented and verified (hello world, compile error with line, BREAK stop,
    `V2_CLEAR_ARRAYS`, which flows through `V2_RESET_EDIT` into
    `V2_RUN_STORED` (what typing `RUN` does): the ROM compiles to bytecode,
    clears the screen, runs, and waits for a key. No code is written outside
-   the stack.
+   the stack. If the program uses a package statement (`CIRCLE`, `GRAB`, …),
+   the package is installed first, exactly as `LOAD "NAME" EXT` does (see
+   "Packages"), so those statements compile and run.
 5. **Report** — when the machine is back at the key wait with the stack at
    `$FF00` the run is over. The ROM's compile and run-time error codes are
    read from RAM; after a compile error the failing line is mapped back to the
@@ -187,6 +192,45 @@ adding one entry (see `README.md`).
 
 The editor checks the program with the same compiler before Run (see "Syntax
 Assistance"), so its errors and Run's are the same.
+
+### Packages
+
+Package statements are not in the ROM: on a TS2068 a program loads a package
+with `LOAD "NAME" EXT` first (Leap holds one package at a time). The IDE does
+that for the user. The release's six package images (`cbeep graphics mode
+printer shapes sprite`) are in `packages/2.0.2-emu.1/<name>.bin`, copied
+unchanged from the release zip and checked against its `SHA256SUMS`; they are
+fetched once at start-up. `packagesUsed(text)` (`src/leap-lang.js`) finds the
+package statements at the start of a statement (not `circle = 5`); a program
+that uses two packages is an error on the line of the second.
+
+Run and the editor's error check install the package first, following the
+package ABI 2.0: `EXT2_CLEAR_ALL`, the image at `$F400`
+(`EXTENSION_MODULE_BASE`) with its length in `V2_PACKAGE_LEN`, then the
+image's install entry at `$F400`, chained before `V2_CLEAR_ARRAYS` on the ROM
+stack. `CIRCLE` and `FILL` are verified drawing. `FILL` runs at real TS2068
+speed (a radius-40 fill takes a few seconds). The ROM-table fields are
+`ext2ClearAll`, `packageBase`, `packageLen` and `packageDir`; for a new release
+also copy its package binaries to `packages/<version>/`. The TAP export's status
+names the `LOAD "NAME" EXT` a real TS2068 needs before `LOAD "name"`.
+
+### Files
+
+The program is kept in this browser: the text, the file name and the text as
+last saved are auto-saved to `localStorage` (key `leap-ide.document`) 500 ms
+after each change and restored at start-up, so a reload loses nothing. The
+toolbar next to the file name has **New** (asks before discarding unsaved
+changes), **Open** (`.leap` `.txt` `.bas` `.tap`; Ctrl+O) and **Save**
+(downloads a text file to the browser's download folder; asks for a name the
+first time; Ctrl+S). Clicking the name renames, and a `•` shows while the text
+differs from the last save or open.
+
+Opening a Leap `.tap` (from Leap's `SAVE` or the IDE's TAP export) reads the
+first program back into source (`tapeToText` in `src/files.js`: a type 0
+header with a `$81xx` format word, then the line-store records). Stock
+Sinclair/Timex BASIC tapes are refused with a message, checksum errors are
+warned about, and the result is marked unsaved. New and Open start a fresh
+document with its own undo history and no breakpoints.
 
 ---
 
@@ -230,7 +274,8 @@ Leap release means rerunning the generator, not editing a table.
 
 Hovering over a keyword for 500ms shows a tooltip:
 - Every syntax form (e.g. `LINE x0,y0 TO x1,y1`, `BEEP seconds,semitones`)
-- The kind; package statements say `needs LOAD "NAME" EXT`
+- The kind; package statements say the IDE loads the package on Run (and
+  `LOAD "NAME" EXT` on a real TS2068)
 - The description (the manual's first paragraph) and an example in a small
   code block
 
@@ -239,8 +284,16 @@ words that V2 lacks (`LET`, `GOSUB`, `DRAW`, …) say "not in Leap V2 (language
 reference §12)". Hovering a `PROC`, `DEF FN` or label name shows the line where
 it is defined. The tooltips are built from DOM nodes with `textContent`.
 
-A `?` button in the toolbar is planned (Phase 8) to open a full help overlay
-with all keywords searchable, built from the same generated data — no network.
+**Help overlay** (`src/help.js`): "? Help" in the toolbar or F1; Escape or a
+click outside closes it. The *Keywords* tab lists all 100 manual entries grouped
+as Statements, Functions, Operators, Package statements and Commands, with a
+search box that filters by name and description; selecting one shows its forms,
+kind, description, example and a link to its section of the manual on GitHub at
+the release tag. The *Keys & tips* tab has the shortcuts (F5 Run, F6 Stop, F8
+Pause/Continue, F10 Step, Ctrl+S, Ctrl+O, Ctrl+Space completions, F1 help,
+Escape = BREAK in the TS2068 screen) and short usage tips. It is built from the
+same generated data, with DOM nodes and `textContent`.
+
 Leap differs from Sinclair BASIC (for example `INT` truncates toward zero,
 `RND(n)` returns 0..n-1, `AT` and `TAB` are statements, there is no `LET`), so
 the help comes from the manual, not from memory of Sinclair BASIC.
@@ -355,7 +408,8 @@ A 256×192 canvas (the same size as the TS2068 screen; y runs from the top)
 where you can draw `PLOT` / `LINE` paths with the mouse. The scratchpad
 generates the Leap V2 `PLOT x,y` / `LINE x0,y0 TO x1,y1` statements and lets
 you copy them to the clipboard or insert them at the cursor position.
-`CIRCLE` and `FILL` belong to the SHAPES package and need `LOAD "SHAPES" EXT`.
+`CIRCLE` and `FILL` belong to the SHAPES package, which the IDE loads on Run
+(a real TS2068 needs `LOAD "SHAPES" EXT`).
 
 ### Waveform / Sound Preview
 For `BEEP seconds,semitones` calls, a mini waveform diagram shows what the note
@@ -423,7 +477,8 @@ generated by `tools/leap-rom-entry.py`). V2 has no autorun: on the TS2068, type
 Leap's real `SAVE` (a `STORAGE_SEND_BLOCK` capture in Node) and loaded back by
 Leap's real `LOAD` with the program intact; the browser download is identical.
 The button prompts for the tape name (default: the file name) and reports
-`Saved X.tap: on the TS2068, LOAD "X" then RUN`. Loading it in TSRun needs the
+`Saved X.tap: on the TS2068, LOAD "X" then RUN` (with `LOAD "NAME" EXT` first
+when the program uses a package). Loading it in TSRun needs the
 pending tape-loading fix described under Foundation.
 
 **DCK: needs a Leap cartridge build.** Leap 2.0.2 never looks at the dock and
@@ -460,7 +515,8 @@ section once the cartridge build exists.
 | 5     | Error checking (ROM compiler)      | Medium | Done, verified |
 | 6     | Tape + DCK export                  | Medium | TAP done, verified; DCK needs the Leap cartridge build (spec written) |
 | 7     | UDG editor, symbol table           | Low    | Not started |
-| 8     | Help overlay, themes, polish       | Low    | Not started |
+| 8     | Help overlay, themes, polish       | Low    | Help overlay and keys cheat-sheet done; themes remain |
+| —     | Files (auto-save, Open/Save) and packages | Medium | Done, verified |
 
 ---
 

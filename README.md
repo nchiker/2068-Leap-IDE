@@ -14,14 +14,19 @@ Leap V2 is documented at https://github.com/nchiker/2068-Leap (the manual and
 Status: Phases 1 to 5 are done (the emulator boots, Run injects the editor text
 into the ROM and runs it, compile and run-time errors come back with the line;
 PC keys are translated for `INPUT`, `INKEY$` and `PAUSE 0`; the editor has
-Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of keywords; the editor underlines compile errors as you type, using the ROM's own compiler on a hidden machine so they match what Run reports; the debugger sets breakpoints in
-the editor gutter, pauses and steps by statement (F8 / F10), and shows registers,
-variables, the call stack and memory). Phase 6 is half done: "⬇ TAP" saves exactly
-what Leap's own `SAVE` writes (verified: Leap's real `LOAD` reads it back); the DCK
-cartridge needs a runtime-only Leap build first, specified in
-`docs/LEAP_CARTRIDGE_BUILD.md`. See
-`CLAUDE.md` for the phase list and technical brief, and `docs/overview.md` for
-the design.
+Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of
+keywords; the editor underlines compile errors as you type, using the ROM's own
+compiler on a hidden machine so they match what Run reports; the debugger sets
+breakpoints in the editor gutter, pauses and steps by statement (F8 / F10), and
+shows registers, variables, the call stack and memory). Also done: the program
+is auto-saved in the browser, with New / Open / Save and Leap `.tap` import;
+package statements such as `CIRCLE` work because the IDE loads the package on
+Run; "? Help" (F1) opens a searchable keyword reference. Phase 6 is half done:
+"⬇ TAP" saves exactly what Leap's own `SAVE` writes (verified: Leap's real
+`LOAD` reads it back); the DCK cartridge needs a runtime-only Leap build first,
+specified in `docs/LEAP_CARTRIDGE_BUILD.md`. Still to do: the Phase 7 tools,
+Phase 8 themes, and the Leap 2.1 ROM entry. See `CLAUDE.md` for the phase list
+and technical brief, and `docs/overview.md` for the design.
 
 ## Setup
 
@@ -75,6 +80,22 @@ submodule pin above), which keeps the tape playing for ROM-style loaders
 outside EXROM chunk 0; Leap `LOAD ""` of the `.tap` loads and the tape starts
 by itself.
 
+Your program is auto-saved in the browser (`localStorage`) as you type, so a
+reload loses nothing. **New**, **Open** (`.leap` `.txt` `.bas` `.tap`; Ctrl+O)
+and **Save** (downloads a text file; Ctrl+S) are next to the file name; click
+the name to rename it, and a `•` marks unsaved changes. Opening a Leap `.tap`
+reads the program back into source (stock Sinclair BASIC tapes are refused).
+
+Package statements (`CIRCLE`, `FILL`, `GRAB`, `MODE`, …) work directly: Run and
+the error check install the program's package first, as `LOAD "NAME" EXT` does
+(the images are in `packages/<version>/`). Leap loads one package at a time, so
+a program may use only one. On a real TS2068, type `LOAD "NAME" EXT` before
+`LOAD "name"`; the TAP export's status says which.
+
+"? Help" or F1 opens the Help overlay: every keyword of the manual, searchable,
+with a link to the manual, plus the keyboard shortcuts (F5 Run, F6 Stop, F8
+Pause/Continue, F10 Step, Ctrl+S, Ctrl+O, Ctrl+Space). Escape closes it.
+
 Click the TS2068 screen to give it keyboard focus. Keys reach the emulated
 machine only while it is focused and a program is running (`INPUT`, `INKEY$`,
 `PAUSE 0`); programs are always edited in the CodeMirror editor, never in
@@ -91,13 +112,17 @@ jumping into ROM routines, so each ROM build has its own entry in
    `KNOWN_ROMS` entry keyed by the SHA-256 of HOME + EXROM.
    The script's `SYMBOLS` table also covers the debugger's compiler and VM
    symbols, so a new entry must be generated, not copied from an older one.
-3. Paste the entry into `src/leap-roms.js`.
+3. Paste the entry into `src/leap-roms.js`. It includes the package fields
+   `ext2ClearAll`, `packageBase`, `packageLen` and `packageDir`.
+   Copy the release's package binaries (`v2_package_<name>.bin`) to
+   `packages/<version>/<name>.bin`, unchanged, and check them against the
+   release's `SHA256SUMS`.
 4. Move the submodule to a TSRun commit that carries the release's
    `leap-0.rom` and `leap-1.rom` in `roms/`:
    `git -C tsrun fetch && git -C tsrun checkout <commit>`, then commit the
    submodule bump.
-5. Reload and re-check hello world, a compile error, BREAK, `INPUT` and a
-   breakpoint / step.
+5. Reload and re-check hello world, a compile error, BREAK, `INPUT`, a
+   breakpoint / step and a program with `CIRCLE`.
 
 Nothing else in the IDE should need to change, except the editor's keyword data
 and error text, which are generated from the release's manual. Regenerate them

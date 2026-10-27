@@ -26,6 +26,7 @@ import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
 import { buildTAP, checkTapeName } from './src/export.js';
 import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
 import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
+import { toggleHelp } from './src/help.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -423,6 +424,7 @@ function download(blob, name) {
 }
 
 window.leapEditor.onChange(onEditorChange);
+document.getElementById('btn-help').addEventListener('click', toggleHelp);
 document.getElementById('btn-new').addEventListener('click', newProgram);
 document.getElementById('btn-open').addEventListener('click', openProgram);
 document.getElementById('btn-save').addEventListener('click', saveProgram);
@@ -590,6 +592,7 @@ applyZoom();
 document.addEventListener('keydown', e => {
   if (e.key === 'F5') { e.preventDefault(); runProgram(); }
   if (e.key === 'F6') { e.preventDefault(); stopProgram(); }
+  if (e.key === 'F1')  { e.preventDefault(); toggleHelp(); }
   if (e.key === 'F8')  { e.preventDefault(); pauseOrContinue(); }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     if (e.key === 's') { e.preventDefault(); saveProgram(); }
