@@ -1,0 +1,366 @@
+# Leap V2 Web IDE — Project Overview
+
+*October 2026 (facts corrected against the Leap manual, ROM source and TSRun)*
+
+---
+
+## What This Is
+
+A self-contained, browser-based IDE for writing, running, and debugging
+programs in **Leap V2 BASIC** on the **Timex Sinclair 2068**. The editor, the
+TS2068 emulator and the debugger all run in the browser. No build step, no
+npm; it only needs a static file server (`python3 -m http.server`) because ES
+modules do not load from `file://`.
+
+The target user is someone writing Leap V2 programs who wants a modern
+editing experience without leaving the browser: keyword autocomplete,
+inline help, syntax errors before the ROM sees the code, and a real
+debugger showing Z80 registers and Leap variables.
+
+Leap here is **V2** (current release 2.0.2-emu.1; 2.1 is in development).
+The manual and `docs/V2_LANGUAGE_REFERENCE.md` in
+https://github.com/nchiker/2068-Leap are the authority for the language. V1
+is archived and irrelevant.
+
+---
+
+## Goals
+
+1. Write Leap V2 source in a proper editor (CodeMirror 6) with syntax
+   highlighting, autocomplete, and a structure linter.
+2. Click Run — the program loads into the emulated TS2068 and executes.
+3. Step through code in the debugger, inspect Z80 registers and Leap
+   variable values, set breakpoints.
+4. Export the finished program as a Leap tape file or a DCK dock cartridge
+   (formats still to be derived; see Export below).
+
+---
+
+## Foundation — TSRun
+
+**TSRun** is an open-source TS2068 emulator written in plain JavaScript. The
+IDE uses the fork https://github.com/nchiker/TSRun (upstream
+josef-jelinek/TSRun), linked into the project as `./tsrun`. The fork's
+`roms/` folder carries the Leap V2 ROMs (`leap-0.rom`, 16K HOME, and
+`leap-1.rom`, 8K EXROM; the 2.0.2-emu.1 release images). TSRun provides:
+
+- Z80 CPU emulation (`z80.js`)
+- Machine, memory bus and ROM/EXROM paging (`machine.js`)
+- TS2068 screen rendering with WebGL2 (`screen.js`)
+- AY-3-8912 sound through an AudioWorklet (`sound.js`)
+- Keyboard matrix (`keyboard.js`; the IDE uses its own `src/pc-keyboard.js`)
+- Tape loading (`tape.js`) and dock cartridges (`dock.js`, parse only)
+
+TSRun files are ES modules. TSRun's own `host.js` is tied to its emulator-page
+desk UI, so the IDE has its own slim host in `src/emulator.js` that imports
+`machine.js`, `z80.js`, `screen.js` and `sound.js`. There is no
+`machine.run()` / `step()` / `poke()` API: memory goes through
+`machine.bus.read/write`, and registers are fields of `machine.cpu`.
+
+The only change in the fork so far is in `sound.js`: it loads its worklet with
+`new URL("sound.worklet.js", import.meta.url)`, so audio works from a page
+that lives outside TSRun's directory. It is committed on the fork's `main`
+branch (a local commit; pushing it is up to the owner). The IDE no longer uses
+TSRun's `keyboard.js` (see Keyboard below), and no `hostBits` patch is planned.
+
+---
+
+## Architecture
+
+```
+ide.html
+│
+├── tsrun/ (symlink to the TSRun fork; ES modules imported by src/emulator.js)
+│   ├── machine.js    ← machine, bus, ROM paging, frame loop
+│   ├── z80.js        ← CPU
+│   ├── screen.js     ← WebGL2 canvas renderer
+│   ├── sound.js      ← AY audio
+│   └── roms/         ← leap-0.rom, leap-1.rom
+│
+├── src/emulator.js   ← slim TSRun host + RAM-injection run/stop
+├── src/pc-keyboard.js ← PC key -> TS2068 matrix translation
+├── src/leap-roms.js  ← known ROM builds (SHA-256 -> addresses)
+├── src/editor.js     ← CodeMirror 6 editor setup
+├── src/leap-lang.js  ← Leap V2 StreamLanguage mode, token classes, scanSymbols
+├── src/leap-keywords.js ← generated from the Leap manual (tools/gen-leap-keywords.py)
+├── src/debugger.js   ← register/variable/breakpoint UI
+├── src/export.js     ← tape + DCK builders
+└── ide.js            ← orchestrator (prepare source → run → status/debug)
+```
+
+The three panels share the window:
+
+| Panel    | Width  | Contents                                          |
+|----------|--------|---------------------------------------------------|
+| Editor   | ~46%   | CodeMirror 6, line numbers, breakpoint gutter     |
+| Emulator | ~28%   | TS2068 256×192 canvas + bezel                     |
+| Debugger | ~26%   | Registers, variables, breakpoints, call stack     |
+
+The emulator receives keyboard input only while a program is running and its
+screen has focus; click the screen to type into it.
+
+---
+
+## How Run Works
+
+Implemented and verified (hello world, compile error with line, BREAK stop,
+`INPUT` stop, re-run while busy). The technical detail is in `CLAUDE.md`.
+`window.leapIDE.emulator` exposes the emulator object (`run`/`stop`/`reset`,
+`rom`, `machine`) for tests and the debugger.
+
+1. **Prepare** — the editor text becomes Leap's line store: per line, LE16
+   (length + 1), the text verbatim, `$0D`. There are no line numbers and no
+   tokenising. Blank lines are dropped (the ROM editor never stores them) and
+   a map back to editor line numbers is kept. Non-printable characters, lines
+   over 127 characters and programs larger than the 9211-byte pool are
+   refused before anything is sent.
+2. **Reach a safe point** — wait until the CPU is in the ROM's key-wait loop
+   (where the editor, `INPUT` and the end-of-run "press a key" idle). A busy
+   program is stopped with BREAK first; if that fails, the machine is reset
+   and booted to the editor (about 66 frames).
+3. **Inject** — write the line store at `$825A` (`PROG_AREA_START`) and the end
+   address to `PROG_END` at `$8002`.
+4. **Enter the ROM** — put a return chain on the ROM's stack and jump to
+   `V2_CLEAR_ARRAYS`, which flows through `V2_RESET_EDIT` into
+   `V2_RUN_STORED` (what typing `RUN` does): the ROM compiles to bytecode,
+   clears the screen, runs, and waits for a key. No code is written outside
+   the stack.
+5. **Report** — when the machine is back at the key wait with the stack at
+   `$FF00` the run is over. The ROM's compile and run-time error codes are
+   read from RAM; after a compile error the failing line is mapped back to the
+   editor line and marked. The status bar shows Finished, Compile error N on
+   line L, Runtime error N, or Stopped (BREAK); a program waiting at `INPUT`
+   or `PAUSE 0` shows "Waiting for input — click the screen to type". A
+   finished run's output stays on screen (see Keyboard); Run injects at the
+   "press a key" wait as before.
+
+Stop is BREAK; if the program is waiting at `INPUT` or `PAUSE 0` the IDE
+jumps straight back to the ROM's command loop, because BREAK alone does not
+end an `INPUT` wait in 2.0.2. Leap 2.1 (in testing) is expected to fix that.
+
+The IDE refuses ROMs it does not recognise: injection jumps to ROM routine
+addresses that change between releases, so each ROM pair is identified by
+SHA-256 and looked up in `src/leap-roms.js`. Supporting a new release means
+adding one entry (see `README.md`).
+
+A client-side lint pass before Run is planned (Phase 5) but is not run today;
+the ROM compiler is the check, and its errors already come back with a line.
+
+---
+
+## Editor Features
+
+### Keyword Prediction and Autocomplete
+CodeMirror 6 autocomplete opens as you type. Completions come from:
+- The Leap V2 keywords in the manual (statements, built-in functions, word
+  operators and package statements; the commands `RUN`, `LIST`, … are left
+  out because they are not valid in a program)
+- The program's own `PROC` names, `DEF FN` names and labels
+- Variable names the program assigns
+
+The popup shows the keyword's first syntax form, and an info panel beside it
+shows the full help. Built-in functions insert `NAME(`, since Leap functions
+are always written with brackets. Block snippets with tab-stops (CM6 snippet
+extension) cover `IF` … `ENDIF`, `IF` … `ELSE` … `ENDIF`, `FOR v = a TO b` …
+`NEXT v`, `PROC name(p):` … `ENDP` and `DEF FN`. Completion is context-aware:
+after `CALL` only `PROC` names are offered (with the parameter and line), after
+`GOTO` only labels, after `FN` only `DEF FN` names.
+
+### Auto-caps
+Keywords are upper-cased automatically, with no option: after typing, Enter or
+paste, `print` becomes `PRINT` (statements, built-in functions, `AND` `OR`
+`NOT`, package statements). Names, strings, `REM` text, commands (`RUN`,
+`SAVE`, …) and words not in V2 (`LET`, `GOSUB`, …) stay as typed, and the
+latter keep their red error marking. The word under the cursor is left alone
+until it is finished, and only whole words count (`tomato` stays `tomato`).
+Ctrl+Z straight after restores what was typed. It is deliberately not a caps
+lock: Leap stores lines verbatim and prints strings as written, so full caps
+would turn `PRINT "Hello"` into `"HELLO"`. Typing into a running program
+(`INPUT`) is data and is not changed.
+
+### Built-in Help
+The keyword data is generated, not written by hand:
+`tools/gen-leap-keywords.py` reads the Leap manual's keyword chapter
+(`docs/manual/03_keywords.md`) at a release tag and writes
+`src/leap-keywords.js` (100 entries: kind, package, syntax forms, description,
+example). Help therefore follows the release's own documentation, and a new
+Leap release means rerunning the generator, not editing a table.
+
+Hovering over a keyword for 500ms shows a tooltip:
+- Every syntax form (e.g. `LINE x0,y0 TO x1,y1`, `BEEP seconds,semitones`)
+- The kind; package statements say `needs LOAD "NAME" EXT`
+- The description (the manual's first paragraph) and an example in a small
+  code block
+
+Commands such as `RUN` say they are typed at the Leap prompt. Familiar BASIC
+words that V2 lacks (`LET`, `GOSUB`, `DRAW`, …) say "not in Leap V2 (language
+reference §12)". Hovering a `PROC`, `DEF FN` or label name shows the line where
+it is defined. The tooltips are built from DOM nodes with `textContent`.
+
+A `?` button in the toolbar is planned (Phase 8) to open a full help overlay
+with all keywords searchable, built from the same generated data — no network.
+Leap differs from Sinclair BASIC (for example `INT` truncates toward zero,
+`RND(n)` returns 0..n-1, `AT` and `TAB` are statements, there is no `LET`), so
+the help comes from the manual, not from memory of Sinclair BASIC.
+
+### Syntax Assistance (Structure Linter) — Phase 5
+`lintLeap()` is planned to run on every edit (debounced 400ms) and check,
+against the rules of the real compiler (language reference and manual
+Appendix B):
+- `IF`/`ENDIF`, `FOR`/`NEXT`, `PROC`/`ENDP` pairing, allowing the one-line
+  `IF cond THEN GOTO label`
+- `GOTO` to an undefined label; duplicate labels, `PROC`s and `DEF FN`s
+- Words that are not in V2 (`LET`, `GOSUB`, `RETURN`, `DRAW`, …)
+- Names longer than 31 characters; string literals longer than 31 characters
+- Package statements used without a loaded package
+- Nested `PROC` definitions (unverified: check against the ROM)
+
+Errors appear as red squiggles in the editor and a list in the gutter, quoting
+the ROM's own error code where there is one. The existing `lintLeap` was
+written to wrong rules (16/64 limits, no one-line `IF … THEN GOTO`) and is
+disabled until rewritten.
+
+### Keyword Syntax Highlighting
+Token classes via CM6 StreamLanguage (`src/leap-lang.js`), classified from the
+generated keyword data. Identifiers are a letter then letters/digits, with an
+optional trailing `$` and no underscore; words match whole (`tomato` is not
+`TO`).
+- **Statements and their parts** — amber `#e3b341`, bold (`PROC`, `IF`,
+  `FOR`, `PRINT`…); the word operators `AND` `OR` `NOT` are amber
+- **Package statements** — orange `#f0883e`, bold (`CIRCLE` etc.)
+- **Built-in functions** — cyan `#56d4dd`
+- **Strings** — phosphor green `#8ddb8c`
+- **Numbers** — blue `#79c0ff` (no hex or exponent in Leap)
+- **Comments** — dim grey `#545d68` (italic); `REM` runs to end of line,
+  including any `:`, and `'` is not a comment character in Leap
+- **Labels** — coral `#f78166` (italic): `name:` at the start of a line and the
+  name after `GOTO`
+- **PROC names** — lavender `#dcbdfb`: after `PROC` (definition) and after
+  `CALL` / `FN`
+- **Variables** — light grey `#cdd9e5`
+- **Invalid** — red with a wavy underline: the commands (`RUN`, `LIST`, `NEW`,
+  `SAVE`, `LOAD`, `VERIFY`, `ALL`, `ARRAY`, `EXT`) anywhere, and the words V2
+  lacks (`LET`, `GOSUB`, `RETURN`, `DRAW`, `DATA`, `READ`, `RESTORE`, `COPY`,
+  `ELSEIF`, `CONTINUE`, `RANDOMIZE`) only at the start of a statement and not
+  followed by `=` or `(`. V2 does not reserve those words, so `data = 5` is a
+  valid assignment.
+
+`scanSymbols(text)` in the same module returns the program's PROCs, DEF FNs,
+labels and variables with line numbers. Autocomplete and hover use it, and the
+Phase 7 symbol table can reuse it.
+
+---
+
+## Keyboard
+
+The finished IDE never allows typing in Leap's own ROM editor: all program
+editing happens in CodeMirror. Keys reach the TS2068 only while an injected
+program is running (`INPUT`, `INKEY$`, `PAUSE 0`) and the emulator screen has
+focus. When a run ends its output stays on screen, since no keypress can
+dismiss it into the Leap editor.
+
+The TS2068 keyboard is an 8×5 matrix; symbols such as `(`, `)`, `<`, `>`, `:`,
+`$` and `"` are SYMBOL SHIFT combinations. `src/pc-keyboard.js` (Phase 4, done)
+maps keys as a PC keyboard is labelled: the character the PC key produces
+(`e.key`) is translated to the combo that makes Leap's own key decoder
+(2068-Leap `kernel/io/io.asm`, as of 2.0.2) produce that character. A PC `"`
+sends SYMBOL SHIFT+P, Shift+8 `(` sends SYMBOL SHIFT+8 without CAPS SHIFT, and
+`A` sends CAPS SHIFT+A (Leap gives lowercase for plain letters). Enter,
+Backspace/Delete (CAPS SHIFT+0), the arrows (CAPS SHIFT+5/6/7/8, for `INPUT`
+line editing) and Escape (BREAK) are mapped too. Characters Leap has no key for
+(`` ^ [ ] { } \ | ~ ` ``), Ctrl/Alt/Meta combos and Tab (which would be
+delete-line) are ignored. If Leap 2.1 changes its key tables, `SYMBOLS` in
+`pc-keyboard.js` must follow. Verified: a 28-character string of every mapped
+symbol typed into an `INPUT` came back exactly.
+
+TSRun's `keyboard.js` maps physical keys (`e.code`) to matrix bits
+unconditionally, so it cannot be told "type `(` on Shift+8" without breaking
+the bare `8` key. An earlier draft proposed seven extra `hostBits` lines
+(Digit8, Digit9, KeyR, KeyT, KeyZ, Digit4, KeyP). They were checked and
+**rejected**: they would make 8, 9, 4, R, T, Z and P untypable everywhere.
+`keyboard.js` is therefore no longer used by the IDE and is not patched.
+
+The editor panel (CodeMirror) is plain text and needs no translation.
+
+---
+
+## Additional Tools (Phase 7)
+
+### UDG Editor
+21 characters (codes 144–164), each an 8×8 pixel grid. Click pixels to toggle.
+Live preview. A "Write to RAM" button copies the 21 × 8 = 168 bytes to
+`$F180`–`$F227` in the emulator before RUN. (Leap has no UDG statement; the
+table is filled with `POKE` and printed with `CHR$(144)`…`CHR$(164)`. The
+table survives `RUN`, `CLEAR` and `NEW`, but is not saved on tape and is not
+initialised at start-up.)
+
+### Symbol Table
+Scans source text for all `PROC` and `DEF FN` definitions, label definitions
+and variable names (assignments, `DIM`, `FOR`). Shows name, type and line
+number. Clicking a symbol scrolls the editor to its definition.
+
+### Graphics Scratchpad
+A 256×192 canvas (the same size as the TS2068 screen; y runs from the top)
+where you can draw `PLOT` / `LINE` paths with the mouse. The scratchpad
+generates the Leap V2 `PLOT x,y` / `LINE x0,y0 TO x1,y1` statements and lets
+you copy them to the clipboard or insert them at the cursor position.
+`CIRCLE` and `FILL` belong to the SHAPES package and need `LOAD "SHAPES" EXT`.
+
+### Waveform / Sound Preview
+For `BEEP seconds,semitones` calls, a mini waveform diagram shows what the note
+sounds like. Clicking the diagram plays it through the Web Audio API.
+
+---
+
+## Debugger — Phase 3
+
+Registers, flags and a memory window come straight from `machine.cpu` and
+`machine.bus`. Leap variables: the Leap test harness reads numeric scalars from
+`RT_SYMTAB_PTR` (`$B80D` in 2.0.2) as 3-byte entries (tag, value LE16); that is
+the starting point for the variables panel and is unverified beyond that
+(strings, floats and arrays are not yet understood). Programs are bytecode run
+by a VM, so breakpoints and a call stack at Leap-source level need a design
+based on the VM, not on Z80 `CALL`/`RET`; this is open.
+
+---
+
+## Export — Phase 6
+
+The formats are not yet known:
+
+- **Tape.** Leap V2 `SAVE` uses its own TS2068-framed tape format (see
+  `docs/V2_SAVE_ALL_FORMAT.md` and the storage code in the 2068-Leap
+  repository). The export must be derived from Leap's `SAVE` and verified by
+  `LOAD`ing the result in the emulator. The earlier idea of a standard type-3
+  code block at `$825A` with an autostart flag was invented and is dropped.
+- **DCK.** Structure per TSRun's `dock.js` (which currently only parses). To be
+  verified by loading the cartridge in TSRun.
+
+---
+
+## Build Priority
+
+| Phase | Feature                            | Effort | Status |
+|-------|------------------------------------|--------|--------|
+| 1     | IDE shell + TSRun + program runs   | High   | Done, verified |
+| 2     | CodeMirror 6 + Leap syntax         | High   | Done, verified |
+| 3     | Debugger (registers, step)         | High   | Not started |
+| 4     | Keyboard translation + INPUT mode  | Medium | Done, verified |
+| 5     | Structure linter                   | Medium | Rewrite needed |
+| 6     | Tape + DCK export                  | Medium | Format to derive |
+| 7     | UDG editor, symbol table           | Low    | Not started |
+| 8     | Help overlay, themes, polish       | Low    | Not started |
+
+---
+
+## Source Repositories
+
+- **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap
+  (local clone `~/2068-Leap`)
+- **TSRun** (emulator): fork https://github.com/nchiker/TSRun, upstream
+  https://github.com/josef-jelinek/TSRun (local clone `~/TSRun`, linked as
+  `./tsrun`)
+- **This project**: `/home/charlie.day/Projects/Leap-IDE`
+- **Leap V2 ROMs**: `tsrun/roms/leap-0.rom` / `leap-1.rom` (not stored in this
+  repo)
+- **Mock-up**: `docs/mockup.html` (open in browser; a visual target only)

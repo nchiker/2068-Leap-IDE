@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leap V2 IDE</title>
+  <link rel="stylesheet" href="ide.css">
+  <!-- TSRun (ES modules) is imported by src/emulator.js through the ./tsrun link -->
+</head>
+<body>
+
+<div class="ide-root">
+
+  <!-- ═══ TOOLBAR ══════════════════════════════════════════════════ -->
+  <header class="toolbar">
+    <div class="toolbar-logo">
+      <span class="logo-icon">⬡</span>
+      <span class="logo-name">Leap V2 IDE</span>
+      <span class="logo-tag">TS2068</span>
+    </div>
+
+    <div class="toolbar-file" id="filename-display">untitled.leap</div>
+
+    <div class="toolbar-actions">
+      <button id="btn-run"    class="btn btn-run"   title="Run (F5)">▶ Run</button>
+      <button id="btn-stop"   class="btn btn-stop"  title="Stop (F6)" disabled>■ Stop</button>
+      <button id="btn-step"   class="btn"           title="Step Into (F10)" disabled>↷ Step</button>
+      <button id="btn-export" class="btn"           title="Export TAP">⬇ TAP</button>
+      <button id="btn-dck"    class="btn"           title="Export DCK">⬇ DCK</button>
+      <button id="btn-help"   class="btn"           title="Help">? Help</button>
+    </div>
+
+    <div class="status-chip" id="status-chip">
+      <span class="status-dot"></span>
+      <span id="status-text">Ready</span>
+    </div>
+  </header>
+
+  <!-- ═══ WORKSPACE ════════════════════════════════════════════════ -->
+  <div class="workspace">
+
+    <!-- ── EDITOR PANEL ───────────────────────── -->
+    <div class="panel panel-editor" id="editor-panel">
+      <div class="panel-header">
+        <span>Editor</span>
+        <div class="panel-header-btns">
+          <button class="phbtn" id="btn-lint" title="Check structure">Lint</button>
+        </div>
+      </div>
+      <!-- CodeMirror mounts here -->
+      <div id="editor-mount" class="editor-mount"></div>
+    </div>
+
+    <!-- ── EMULATOR PANEL ─────────────────────── -->
+    <div class="panel panel-emulator" id="emulator-panel">
+      <div class="panel-header">
+        <span>TS2068 Display</span>
+        <div class="panel-header-btns">
+          <button class="phbtn" id="btn-reset-emu">Reset</button>
+        </div>
+      </div>
+      <div class="emulator-body">
+        <!-- Focus the screen (click it) to type on the TS2068 keyboard -->
+        <div class="bezel" id="ts-bezel" tabindex="0" title="Click to type into a running program">
+          <!-- TSRun renders into this canvas -->
+          <canvas id="ts-screen"></canvas>
+        </div>
+        <div class="emu-meta">
+          <span id="emu-rom">Leap V2</span>
+          <span id="emu-clock">3.528 MHz</span>
+          <span id="emu-prog">PROG: —</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DEBUGGER PANEL ─────────────────────── -->
+    <div class="panel panel-debugger" id="debugger-panel">
+      <div class="panel-header">
+        <span>Debugger</span>
+        <div class="panel-header-btns">
+          <button class="phbtn" id="btn-refresh-debug">↺</button>
+        </div>
+      </div>
+      <div id="debugger-mount"></div>
+    </div>
+
+  </div><!-- /workspace -->
+
+  <!-- ═══ STATUS BAR ═══════════════════════════════════════════════ -->
+  <div class="statusbar">
+    <span id="sb-state">Ready</span>
+    <span class="sb-sep">·</span>
+    <span id="sb-prog">—</span>
+    <span class="sb-sep">·</span>
+    <span id="sb-cursor">Ln 1, Col 1</span>
+    <span class="sb-right" id="sb-rom">Leap V2</span>
+  </div>
+
+</div><!-- /ide-root -->
+
+<!-- ── IDE modules (type=module — loaded after DOM) ── -->
+<script type="importmap">
+{
+  "imports": {
+    "@codemirror/state":        "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/dist/index.js",
+    "@codemirror/view":         "https://cdn.jsdelivr.net/npm/@codemirror/view@6.34.3/dist/index.js",
+    "@codemirror/language":     "https://cdn.jsdelivr.net/npm/@codemirror/language@6.10.3/dist/index.js",
+    "@codemirror/commands":     "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.7.1/dist/index.js",
+    "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.18.3/dist/index.js",
+    "@codemirror/lint":         "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.8.2/dist/index.js",
+    "@lezer/highlight":         "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.1/dist/index.js",
+    "@lezer/common":            "https://cdn.jsdelivr.net/npm/@lezer/common@1.2.3/dist/index.js",
+    "@lezer/lr":                "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.2/dist/index.js",
+    "style-mod":                "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
+    "w3c-keyname":              "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
+    "crelt":                    "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js"
+  }
+}
+</script>
+<script type="module" src="src/editor.js"></script>
+<script type="module" src="src/debugger.js"></script>
+<script type="module" src="src/export.js"></script>
+<script type="module" src="ide.js"></script>
+
+</body>
+</html>

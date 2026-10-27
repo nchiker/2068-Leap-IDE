@@ -1,0 +1,1072 @@
+<title>Leap V2 IDE</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+/* ============================================================
+   Leap V2 Web IDE — dark IDE, phosphor-era syntax accent
+   Layout: header | [editor | emulator | debugger] | statusbar
+   ============================================================ */
+:root {
+  --bg:          #0d1117;
+  --bg-panel:    #13171f;
+  --bg-surface:  #1c2128;
+  --bg-hover:    #22292f;
+  --bg-active:   #2d333b;
+  --border:      #2d333b;
+  --border-hi:   #444c56;
+
+  --fg:          #cdd9e5;
+  --fg-muted:    #768390;
+  --fg-dim:      #3d444c;
+
+  --syn-kw:      #e3b341;
+  --syn-str:     #8ddb8c;
+  --syn-num:     #79c0ff;
+  --syn-label:   #f78166;
+  --syn-cmt:     #545d68;
+  --syn-proc:    #dcbdfb;
+  --syn-op:      #adbac7;
+
+  --green:       #347d39;
+  --green-hi:    #4caf50;
+  --green-fg:    #8ddb8c;
+  --red-bg:      #6e0f14;
+  --red-fg:      #f78166;
+  --amber-fg:    #e3b341;
+  --blue-fg:     #79c0ff;
+
+  --font-ui:   'Inter', system-ui, sans-serif;
+  --font-code: 'JetBrains Mono', 'Cascadia Code', 'Menlo', monospace;
+
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/* ── IDE shell ─────────────────────────── */
+.ide-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── Header ────────────────────────────── */
+.ide-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  height: 48px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.logo-badge {
+  background: var(--green);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.file-pill {
+  flex: 1;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-pill em { color: var(--fg); font-style: normal; }
+
+.actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border-hi);
+  background: var(--bg-surface);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+.btn:hover  { background: var(--bg-hover); }
+.btn:active { background: var(--bg-active); }
+.btn-icon   { font-size: 11px; line-height: 1; }
+
+.btn-run  { background: var(--green); border-color: var(--green-hi); color: #fff; }
+.btn-run:hover  { background: #3d8b42; }
+.btn-stop { background: var(--red-bg); border-color: #993333; color: var(--red-fg); }
+.btn-stop:hover { background: #7a1216; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.chip-bp {
+  background: rgba(227,179,65,0.12);
+  color: var(--amber-fg);
+  border: 1px solid rgba(227,179,65,0.3);
+}
+.chip-run {
+  background: rgba(52,125,57,0.2);
+  color: var(--green-fg);
+  border: 1px solid rgba(76,175,80,0.3);
+}
+.chip-idle {
+  background: var(--bg-surface);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+.chip-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chip-run .chip-dot {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* ── Workspace ─────────────────────────── */
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Panel shell ────────────────────────── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+.panel:last-child { border-right: none; }
+
+.panel-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 30px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.panel-hdr-btns { display: flex; gap: 4px; }
+.phbtn {
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  cursor: pointer;
+}
+.phbtn:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* ── Editor panel ───────────────────────── */
+.p-editor { flex: 0 0 46%; }
+
+.editor-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-panel);
+}
+
+.gutter {
+  flex-shrink: 0;
+  width: 52px;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 6px 0;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.gline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 2px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.gline:hover .bpdot { opacity: 0.4 !important; }
+.gline.hbp  { color: var(--fg-muted); }
+.gline.abp  { background: rgba(247,129,102,0.08); color: var(--fg); }
+.gline.cur  { background: rgba(227,179,65,0.09); }
+
+.bpdot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red-fg);
+  flex-shrink: 0;
+  opacity: 0;
+}
+.gline.hbp .bpdot { opacity: 1; }
+.gline.abp .bpdot {
+  background: var(--amber-fg);
+  box-shadow: 0 0 6px rgba(227,179,65,0.55);
+  opacity: 1;
+}
+
+.code-scroll {
+  flex: 1;
+  overflow: visible;
+  padding: 6px 0;
+}
+
+.cl {
+  display: block;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 20px 0 14px;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  white-space: pre;
+  color: var(--fg);
+}
+.cl.cur-line {
+  background: rgba(227,179,65,0.07);
+  border-left: 2px solid var(--amber-fg);
+  padding-left: 12px;
+}
+
+.kw  { color: var(--syn-kw);    font-weight: 600; }
+.str { color: var(--syn-str); }
+.num { color: var(--syn-num); }
+.lbl { color: var(--syn-label); font-style: italic; }
+.cmt { color: var(--syn-cmt);   font-style: italic; }
+.pn  { color: var(--syn-proc); }
+.op  { color: var(--syn-op); }
+
+/* cursor blink */
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: var(--fg);
+  vertical-align: middle;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ── Emulator panel ─────────────────────── */
+.p-emulator { flex: 0 0 28%; background: var(--bg); }
+
+.emulator-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px;
+  gap: 12px;
+}
+
+.bezel {
+  background: #1a1a20;
+  border: 3px solid #2a2a32;
+  border-radius: 5px;
+  padding: 8px;
+  box-shadow:
+    0 0 0 1px #0d0d12,
+    0 6px 28px rgba(0,0,0,0.7),
+    inset 0 0 16px rgba(0,0,0,0.4);
+  width: 100%;
+  max-width: 288px;
+}
+
+#screen {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4/3;
+  image-rendering: pixelated;
+  background: #000;
+}
+
+.emu-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 288px;
+}
+
+.emu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.emu-label {
+  font-family: var(--font-code);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.emu-val {
+  font-family: var(--font-code);
+  color: var(--fg);
+  font-size: 11px;
+}
+
+.kbd-key {
+  font-family: var(--font-code);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-bottom: 2px solid var(--border-hi);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  color: var(--fg);
+}
+
+/* ── Debugger panel ─────────────────────── */
+.p-debug {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.dsec { border-bottom: 1px solid var(--border); }
+
+.dsec-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-panel);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.dsec-hdr:hover { color: var(--fg); }
+.dsec-arrow { font-size: 8px; transition: transform 0.15s; }
+
+/* Registers */
+.reg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: var(--bg-panel);
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+.rn { color: var(--fg-muted); font-weight: 600; font-size: 10px; letter-spacing: 0.04em; }
+.rv { color: var(--blue-fg); }
+.rv.changed { color: var(--amber-fg); }
+
+.rc.wide {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  gap: 16px;
+}
+.rc.wide .rn { min-width: 28px; }
+
+/* Flags row */
+.flags-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  font-family: var(--font-code);
+  font-size: 10px;
+  margin: 0 8px 8px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+  flex-wrap: wrap;
+}
+.flag {
+  color: var(--fg-dim);
+  letter-spacing: 0.03em;
+}
+.flag.set { color: var(--amber-fg); font-weight: 600; }
+
+/* Variables */
+.var-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-code);
+  font-size: 11px;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.var-tbl th {
+  text-align: left;
+  padding: 5px 12px;
+  color: var(--fg-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.var-tbl td {
+  padding: 4px 12px;
+  border-bottom: 1px solid rgba(45,51,59,0.6);
+}
+.var-tbl td:first-child { color: var(--syn-proc); }
+.var-tbl td:nth-child(2){ color: var(--fg-muted); font-size: 10px; }
+.var-tbl td:last-child  { color: var(--blue-fg); text-align: right; }
+.var-tbl tr:hover td    { background: var(--bg-hover); }
+
+/* Breakpoints */
+.bp-list { padding: 4px 0 8px; }
+.bpitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.bpitem:hover { background: var(--bg-hover); }
+.bpind {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red-fg);
+  flex-shrink: 0;
+}
+.bpitem.active .bpind {
+  background: var(--amber-fg);
+  box-shadow: 0 0 5px rgba(227,179,65,0.5);
+}
+.bp-file { font-family: var(--font-code); font-size: 11px; flex: 1; }
+.bp-line { font-family: var(--font-code); font-size: 10px; color: var(--fg-muted); }
+.bp-del {
+  font-size: 12px;
+  color: var(--fg-dim);
+  line-height: 1;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--fg-dim);
+}
+.bp-del:hover { color: var(--red-fg); }
+
+/* Call stack */
+.callstack { padding: 4px 0 8px; font-family: var(--font-code); font-size: 11px; }
+.csframe {
+  padding: 4px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.csframe:hover { background: var(--bg-hover); cursor: pointer; }
+.csframe.current { background: rgba(227,179,65,0.06); }
+.csfn { color: var(--syn-proc); }
+.csline { color: var(--fg-muted); font-size: 10px; }
+
+/* ── Status bar ─────────────────────────── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  height: 24px;
+  background: var(--amber-fg);
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1a1000;
+  user-select: none;
+}
+
+.sb-item { padding: 0 10px; display: flex; align-items: center; gap: 5px; }
+.sb-item + .sb-item { border-left: 1px solid rgba(0,0,0,0.2); }
+.sb-right { margin-left: auto; }
+
+/* ── Autocomplete popup (decorative) ───── */
+.autocomplete {
+  position: absolute;
+  top: 420px;
+  left: 236px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: 5px;
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  font-family: var(--font-code);
+  font-size: 12px;
+  z-index: 100;
+  pointer-events: none;
+}
+.ac-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  color: var(--fg);
+}
+.ac-item.sel { background: rgba(108,182,255,0.15); }
+.ac-kind {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.ac-kw   { background: rgba(227,179,65,0.2); color: var(--syn-kw); }
+.ac-proc { background: rgba(220,189,251,0.15); color: var(--syn-proc); }
+.ac-var  { background: rgba(121,192,255,0.12); color: var(--blue-fg); }
+
+/* ── Tooltip (decorative) ───────────────── */
+.tooltip-hint {
+  position: absolute;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  padding: 8px 12px;
+  width: 220px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  z-index: 99;
+  pointer-events: none;
+}
+.tip-sig {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--fg);
+  margin-bottom: 4px;
+}
+.tip-sig .kw { font-weight: 600; }
+.tip-sig .tip-active { color: var(--amber-fg); text-decoration: underline; }
+.tip-desc {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* ── Responsive ─────────────────────────── */
+@media (max-width: 700px) {
+  html, body { overflow: auto; }
+  .ide-root { height: auto; min-height: 100%; }
+  .workspace { flex-direction: column; overflow-y: auto; }
+  .panel { flex: none; border-right: none; border-bottom: 1px solid var(--border); }
+  .p-editor { height: 45vh; }
+  .p-emulator { height: auto; }
+  .p-debug { min-height: 300px; }
+  .actions .btn .lbl { display: none; }
+  .autocomplete { display: none; }
+}
+</style>
+
+<div class="ide-root">
+
+  <!-- ═══ HEADER ════════════════════════════════════════════ -->
+  <header class="ide-header">
+    <div class="logo">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect width="20" height="20" rx="4" fill="#347d39"/>
+        <path d="M4 6h5l3 4-3 4H4l3-4-3-4z" fill="#8ddb8c"/>
+        <path d="M11 10h5" stroke="#8ddb8c" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Leap V2 IDE
+      <span class="logo-badge">TS2068</span>
+    </div>
+
+    <div class="file-pill">
+      <em>balloon_catch.leap</em> &thinsp;·&thinsp; leap-v2
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-run" id="btn-run" onclick="toggleRun()">
+        <span class="btn-icon" id="run-icon">▶</span>
+        <span class="lbl" id="run-label">Run</span>
+      </button>
+      <button class="btn btn-stop" onclick="stopRun()">
+        <span class="btn-icon">■</span>
+        <span class="lbl">Stop</span>
+      </button>
+      <button class="btn">
+        <span class="btn-icon">⬇</span>
+        <span class="lbl">TAP</span>
+      </button>
+      <button class="btn">
+        <span class="btn-icon">⬇</span>
+        <span class="lbl">DCK</span>
+      </button>
+      <div class="chip chip-bp" id="status-chip">
+        <span class="chip-dot"></span>
+        <span id="status-label">Breakpoint · line 21</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ WORKSPACE ═════════════════════════════════════════ -->
+  <div class="workspace">
+
+    <!-- ── EDITOR PANEL ─────────────────────────────────── -->
+    <div class="panel p-editor">
+      <div class="panel-hdr">
+        balloon_catch.leap
+        <div class="panel-hdr-btns">
+          <button class="phbtn">Word wrap</button>
+          <button class="phbtn">Format</button>
+        </div>
+      </div>
+
+      <div class="editor-body" style="position:relative;">
+        <!-- Gutter -->
+        <div class="gutter" id="gutter"></div>
+
+        <!-- Code -->
+        <div class="code-scroll" id="code-area"></div>
+
+        <!-- Autocomplete popup (decorative) -->
+        <div class="autocomplete" id="ac-popup" style="display:none">
+          <div class="ac-item sel">
+            <span class="ac-kind ac-kw">kw</span>PRINT AT
+          </div>
+          <div class="ac-item">
+            <span class="ac-kind ac-kw">kw</span>PRINT
+          </div>
+          <div class="ac-item">
+            <span class="ac-kind ac-proc">proc</span>PrintScore
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EMULATOR PANEL ───────────────────────────────── -->
+    <div class="panel p-emulator">
+      <div class="panel-hdr">
+        TS2068 Display
+        <div class="panel-hdr-btns">
+          <button class="phbtn">Reset</button>
+          <button class="phbtn">Pause</button>
+        </div>
+      </div>
+
+      <div class="emulator-body">
+        <div class="bezel">
+          <canvas id="screen" width="256" height="192"></canvas>
+        </div>
+
+        <div class="emu-meta">
+          <div class="emu-row">
+            <span class="emu-label">ROM</span>
+            <span class="emu-val">Leap V2 · 16K + 8K EXROM</span>
+          </div>
+          <div class="emu-row">
+            <span class="emu-label">Clock</span>
+            <span class="emu-val">3.528 MHz · Z80A</span>
+          </div>
+          <div class="emu-row">
+            <span class="emu-label">PROG_AREA</span>
+            <span class="emu-val" style="font-family:var(--font-code);color:var(--blue-fg)">$825A – $8492</span>
+          </div>
+          <div class="emu-row">
+            <span class="emu-label">Keyboard</span>
+            <span>
+              <kbd class="kbd-key">SS</kbd>&nbsp;+&nbsp;<kbd class="kbd-key">8</kbd>
+              <span style="color:var(--fg-muted);font-size:10px;margin-left:6px">→ ( </span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DEBUGGER PANEL ───────────────────────────────── -->
+    <div class="panel p-debug">
+      <div class="panel-hdr">Debugger</div>
+
+      <!-- Registers -->
+      <div class="dsec">
+        <div class="dsec-hdr">
+          Registers
+          <span class="dsec-arrow">▾</span>
+        </div>
+        <div class="reg-grid">
+          <div class="rc"><span class="rn">AF</span><span class="rv changed">3C 54</span></div>
+          <div class="rc"><span class="rn">AF'</span><span class="rv">FF 00</span></div>
+          <div class="rc"><span class="rn">BC</span><span class="rv">00 00</span></div>
+          <div class="rc"><span class="rn">BC'</span><span class="rv">17 4B</span></div>
+          <div class="rc"><span class="rn">DE</span><span class="rv changed">82 5A</span></div>
+          <div class="rc"><span class="rn">DE'</span><span class="rv">00 00</span></div>
+          <div class="rc"><span class="rn">HL</span><span class="rv">84 92</span></div>
+          <div class="rc"><span class="rn">HL'</span><span class="rv">5C 3D</span></div>
+          <div class="rc"><span class="rn">IX</span><span class="rv">FF 4A</span></div>
+          <div class="rc"><span class="rn">IY</span><span class="rv">5C 3A</span></div>
+          <div class="rc wide"><span class="rn">SP</span><span class="rv changed">FF 00</span></div>
+          <div class="rc wide"><span class="rn">PC</span><span class="rv changed">04 2C</span></div>
+        </div>
+        <div class="flags-row">
+          <span class="flag">C</span>
+          <span class="flag set">N</span>
+          <span class="flag">P/V</span>
+          <span class="flag set">H</span>
+          <span class="flag">Z</span>
+          <span class="flag">S</span>
+        </div>
+      </div>
+
+      <!-- Variables -->
+      <div class="dsec">
+        <div class="dsec-hdr">
+          Variables
+          <span class="dsec-arrow">▾</span>
+        </div>
+        <table class="var-tbl">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>Value</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>score</td><td>int</td><td>60</td></tr>
+            <tr><td>lives</td><td>int</td><td>3</td></tr>
+            <tr><td>px</td><td>int</td><td>120</td></tr>
+            <tr><td>py</td><td>int</td><td>88</td></tr>
+            <tr><td>bx</td><td>int</td><td>47</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Breakpoints -->
+      <div class="dsec">
+        <div class="dsec-hdr">
+          Breakpoints
+          <span class="dsec-arrow">▾</span>
+        </div>
+        <div class="bp-list">
+          <div class="bpitem active">
+            <span class="bpind"></span>
+            <span class="bp-file">PrintScore</span>
+            <span class="bp-line">line 21</span>
+            <button class="bp-del">✕</button>
+          </div>
+          <div class="bpitem">
+            <span class="bpind"></span>
+            <span class="bp-file">gameloop</span>
+            <span class="bp-line">line 33</span>
+            <button class="bp-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Call stack -->
+      <div class="dsec">
+        <div class="dsec-hdr">
+          Call Stack
+          <span class="dsec-arrow">▾</span>
+        </div>
+        <div class="callstack">
+          <div class="csframe current">
+            <span class="csfn">PrintScore</span>
+            <span class="csline">line 21</span>
+          </div>
+          <div class="csframe">
+            <span class="csfn">Main</span>
+            <span class="csline">line 37</span>
+          </div>
+          <div class="csframe">
+            <span class="csfn">[top level]</span>
+            <span class="csline">line 42</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /workspace -->
+
+  <!-- ═══ STATUS BAR ════════════════════════════════════════ -->
+  <div class="statusbar">
+    <div class="sb-item">⬤&ensp;Breakpoint at PrintScore · line 21</div>
+    <div class="sb-item">PROG: $825A – $8492 · 314 bytes</div>
+    <div class="sb-item sb-right">Ln 21, Col 18</div>
+    <div class="sb-item">Leap V2</div>
+    <div class="sb-item">UTF-8</div>
+  </div>
+
+</div><!-- /ide-root -->
+
+<script>
+/* ── Leap V2 sample source ─────────────────────────────── */
+const SOURCE = [
+  ["cmt", "' BALLOON CATCH  —  Leap V2 / TS2068"],
+  ["cmt", "' Arrow keys move the paddle; catch balloons for points"],
+  ["", ""],
+  ["kw", "PROC ", "pn", "DrawBorder"],
+  ["kw", "  FOR ", "op", "x ", "op", "= ", "num", "0 ", "kw", "TO ", "num", "255"],
+  ["kw", "    PLOT ", "op", "x", "op", ", ", "num", "0"],
+  ["kw", "    PLOT ", "op", "x", "op", ", ", "num", "175"],
+  ["kw", "  NEXT ", "op", "x"],
+  ["kw", "  FOR ", "op", "y ", "op", "= ", "num", "0 ", "kw", "TO ", "num", "175"],
+  ["kw", "    PLOT ", "num", "0", "op", ", ", "op", "y"],
+  ["kw", "    PLOT ", "num", "255", "op", ", ", "op", "y"],
+  ["kw", "  NEXT ", "op", "y"],
+  ["kw", "ENDP"],
+  ["", ""],
+  ["kw", "PROC ", "pn", "PrintScore ", "op", "(", "op", "s", "op", ")"],
+  ["kw", "  PRINT AT ", "num", "22", "op", ", ", "num", "1", "op", ", ", "str", '"SCORE: "'],
+  ["kw", "  PRINT ", "op", "s"],
+  ["kw", "ENDP"],
+  ["", ""],
+  ["kw", "PROC ", "pn", "Main"],
+  ["kw", "  LET ", "op", "score ", "op", "= ", "num", "0"],     // LINE 21 — breakpoint
+  ["kw", "  LET ", "op", "lives ", "op", "= ", "num", "3"],
+  ["kw", "  LET ", "op", "px ", "op", "= ", "num", "120"],
+  ["kw", "  CALL ", "pn", "DrawBorder"],
+  ["kw", "  PRINT AT ", "num", "2", "op", ", ", "num", "7", "op", ", ", "str", '"BALLOON CATCH"'],
+  ["", ""],
+  ["lbl", "  gameloop:"],
+  ["kw", "  CALL ", "pn", "PrintScore ", "op", "(", "op", "score", "op", ")"],
+  ["kw", "  IF ", "op", "score ", "op", ">= ", "num", "200 ", "kw", "THEN"],
+  ["kw", "    GOTO ", "lbl", "winner"],
+  ["kw", "  ENDIF"],
+  ["kw", "  LET ", "op", "score ", "op", "= ", "op", "score ", "op", "+ ", "num", "10"],
+  ["kw", "  GOTO ", "lbl", "gameloop"],
+  ["", ""],
+  ["lbl", "  winner:"],
+  ["kw", "  PRINT AT ", "num", "12", "op", ", ", "num", "6", "op", ", ", "str", '"** YOU WIN! **"'],
+  ["kw", "ENDP"],
+  ["", ""],
+  ["kw", "CALL ", "pn", "Main"],
+];
+
+const BREAKPOINTS = new Set([21, 33]); // 1-indexed
+const CURRENT_LINE = 21;
+
+function renderEditor() {
+  const gutter = document.getElementById('gutter');
+  const codeArea = document.getElementById('code-area');
+  let gutterHtml = '';
+  let codeHtml = '';
+
+  SOURCE.forEach((tokens, i) => {
+    const lineNum = i + 1;
+    const isBp = BREAKPOINTS.has(lineNum);
+    const isCur = lineNum === CURRENT_LINE;
+    const gClass = [isBp ? 'gline hbp' : 'gline', isCur ? 'abp' : ''].join(' ').trim();
+    gutterHtml += `<div class="${gClass}"><span class="bpdot"></span>${lineNum}</div>`;
+
+    const clClass = ['cl', isCur ? 'cur-line' : ''].join(' ').trim();
+    let lineContent = '';
+    if (tokens.length === 1 && tokens[0] === '') {
+      lineContent = '&ZeroWidthSpace;';
+    } else if (tokens[0] === 'cmt') {
+      lineContent = `<span class="cmt">${esc(tokens[1])}</span>`;
+    } else {
+      for (let t = 0; t < tokens.length; t += 2) {
+        const cls = tokens[t];
+        const txt = tokens[t + 1] || '';
+        lineContent += cls ? `<span class="${cls}">${esc(txt)}</span>` : esc(txt);
+      }
+    }
+    // Add cursor blink on current line
+    if (isCur) lineContent += '<span class="cursor"></span>';
+    codeHtml += `<span class="${clClass}">${lineContent}</span>`;
+  });
+
+  gutter.innerHTML = gutterHtml;
+  codeArea.innerHTML = codeHtml;
+
+  // Scroll current line into view
+  const curEl = codeArea.querySelectorAll('.cl')[CURRENT_LINE - 1];
+  if (curEl) curEl.scrollIntoView({ block: 'center' });
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ── TS2068 canvas display ─────────────────────────────── */
+function drawScreen() {
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d');
+  const W = 256, H = 192;
+
+  // Black background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Border from DrawBorder proc (white 1-pixel border)
+  ctx.fillStyle = '#d0d0d0';
+  ctx.fillRect(0, 0, W, 1);       // top
+  ctx.fillRect(0, 175, W, 1);     // bottom
+  ctx.fillRect(0, 0, 1, 176);     // left
+  ctx.fillRect(255, 0, 1, 176);   // right
+
+  // Title row: "BALLOON CATCH" at row 2, col 7
+  // Using TS2068-style 8px monospace rendering approximation
+  ctx.font = 'bold 7px "Courier New", Courier, monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('BALLOON CATCH', 56, 18);
+
+  // Score line at row 22
+  ctx.fillStyle = '#d0d0d0';
+  ctx.fillText('SCORE:', 8, 176);
+  ctx.fillStyle = '#79c0ff';
+  ctx.fillText('60', 56, 176);
+
+  // Score display area with simple yellow-on-black border
+  ctx.strokeStyle = '#e3b341';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(6, 170, 80, 12);
+
+  // Decorative: a simple balloon shape using plot points
+  // Balloon body (circle approximation)
+  const bx = 47, by = 60;
+  ctx.fillStyle = '#f78166';
+  for (let angle = 0; angle < Math.PI * 2; angle += 0.15) {
+    const px = Math.round(bx + 12 * Math.cos(angle));
+    const py = Math.round(by + 15 * Math.sin(angle));
+    ctx.fillRect(px, py, 1, 1);
+  }
+  // Balloon string
+  ctx.fillStyle = '#8ddb8c';
+  for (let i = 0; i < 8; i++) ctx.fillRect(bx + i % 2, by + 15 + i, 1, 1);
+
+  // Paddle at the bottom
+  ctx.fillStyle = '#8ddb8c';
+  ctx.fillRect(100, 162, 32, 3);
+
+  // Player arrow indicator
+  ctx.fillStyle = '#e3b341';
+  ctx.fillText('◀ ▶ ARROW KEYS', 68, 150);
+
+  // Second balloon
+  const bx2 = 180, by2 = 40;
+  ctx.fillStyle = '#dcbdfb';
+  for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
+    const px = Math.round(bx2 + 10 * Math.cos(angle));
+    const py = Math.round(by2 + 13 * Math.sin(angle));
+    ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.fillStyle = '#8ddb8c';
+  for (let i = 0; i < 6; i++) ctx.fillRect(bx2 + i % 2, by2 + 13 + i, 1, 1);
+
+  // Lives indicator
+  ctx.fillStyle = '#f78166';
+  ctx.fillText('LIVES: ♥ ♥ ♥', 140, 176);
+}
+
+/* ── Run/stop state toggle ─────────────────────────────── */
+let running = false;
+
+function toggleRun() {
+  running = !running;
+  const chip = document.getElementById('status-chip');
+  const label = document.getElementById('status-label');
+  const icon  = document.getElementById('run-icon');
+  const btnRun = document.getElementById('btn-run');
+
+  if (running) {
+    chip.className = 'chip chip-run';
+    label.textContent = 'Running';
+    icon.textContent = '⏸';
+    btnRun.querySelector('.lbl').textContent = 'Pause';
+  } else {
+    chip.className = 'chip chip-bp';
+    label.textContent = 'Breakpoint · line 21';
+    icon.textContent = '▶';
+    btnRun.querySelector('.lbl').textContent = 'Run';
+  }
+}
+
+function stopRun() {
+  running = false;
+  const chip = document.getElementById('status-chip');
+  const label = document.getElementById('status-label');
+  const icon  = document.getElementById('run-icon');
+  const btnRun = document.getElementById('btn-run');
+  chip.className = 'chip chip-idle';
+  label.textContent = 'Stopped';
+  icon.textContent = '▶';
+  btnRun.querySelector('.lbl').textContent = 'Run';
+}
+
+/* ── Init ──────────────────────────────────────────────── */
+renderEditor();
+drawScreen();
+</script>
