@@ -22,7 +22,7 @@ build step, no npm; it only needs a static file server (ES modules cannot load
 from `file://`). Plain HTML + JS + the TSRun emulator.
 
 - **Editor panel** — CodeMirror 6, Leap V2 syntax highlighting, keyword
-  autocomplete, built-in help, structure linter, breakpoint gutter.
+  autocomplete, built-in help, ROM-compiler error checking, breakpoint gutter.
 - **Emulator panel** — TSRun's TS2068 running the Leap V2 ROMs, 256×192 canvas.
 - **Debugger panel** — Z80 registers, Leap variables, breakpoints, call stack.
 
@@ -49,12 +49,15 @@ Leap-IDE/
 │   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip (Phase 2, done)
 │   ├── leap-lang.js  ← Language mode, token classes, scanSymbols (Phase 2, done)
 │   ├── leap-keywords.js ← GENERATED keyword data from the manual; never hand-edit
+│   ├── leap-check.js ← Editor error check: the ROM's own compiler on a hidden machine (Phase 5, done)
+│   ├── leap-errors.js ← GENERATED compile/run-time error text from the manual; never hand-edit
 │   ├── debugger.js   ← Debugger controller (breakpoints, step) + panel (Phase 3, done)
 │   ├── leap-debug.js ← Line table, VM position, variables, call stack from machine RAM (Phase 3, done)
 │   └── export.js     ← Tape + DCK builders (Phase 6; current layout is wrong)
 ├── tools/
 │   ├── leap-rom-entry.py  ← Prints a leap-roms.js entry for a 2068-Leap build
-│   └── gen-leap-keywords.py ← Generates src/leap-keywords.js from the Leap manual
+│   ├── gen-leap-keywords.py ← Generates src/leap-keywords.js from the Leap manual
+│   └── gen-leap-errors.py   ← Generates src/leap-errors.js from manual Appendix B
 ├── docs/
 │   ├── overview.md   ← Design doc
 │   └── mockup.html   ← Visual mock-up
@@ -152,8 +155,9 @@ characters `[ \ ] ^ ` { | } ~` print as blanks (the ROM font has no glyphs).
 ### Compile and run-time errors
 
 The ROM reports numeric codes; the IDE reads them from RAM (see "How Run
-Works"). Full tables: manual Appendix B. Codes the linter and status bar care
-about most:
+Works"). Full tables: manual Appendix B, which `src/leap-errors.js` is generated
+from (see "Editor Error Checking"). Codes the editor and status bar meet
+most often:
 
 | Code | Cause |
 |------|-------|
@@ -255,7 +259,12 @@ from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
    the error (VM 66 = BREAK). After a compile error `CUR_EDIT_INDEX` holds the
    failing line index, which the IDE maps back to the editor line and marks.
    The status bar shows Finished / Compile error N on line L / Runtime error N
-   / Stopped (BREAK). While a program waits at `INPUT`/`PAUSE 0` it reads
+   at line L / Stopped (BREAK) at line N, and the marked line carries the
+   manual's message (`describeError` in ide.js, text from `src/leap-errors.js`).
+   Leap reports no line for a run-time error; the IDE finds it through the
+   debugger's line table (`stopLine` in `src/debugger.js`): `VM_IP` is left
+   just past the failing instruction, so `VM_IP - 1` is looked up; after BREAK
+   `VM_IP` is the next instruction, so it is looked up as is. While a program waits at `INPUT`/`PAUSE 0` it reads
    "Waiting for input — click the screen to type".
    When a run ends its output stays on screen: nothing dismisses it into
    Leap's editor (see Keyboard). The Run button injects at that "press a key"
@@ -266,8 +275,8 @@ straight back to the ROM's command loop (`V2_COMMAND_LOOP.loop`). Observed:
 BREAK alone does not end an `INPUT` wait in 2.0.2; Leap 2.1 (in testing) is
 expected to fix that, and the jump is the workaround until then.
 
-`window.leapIDE` exposes `lintLeap`, `encodeSource`, `refreshDebugger`,
-`setStatus` and `emulator` (the object from `createEmulator`: `run`/`stop`/
+`window.leapIDE` exposes `lintSource`, `encodeSource`, `setStatus` and
+`emulator` (the object from `createEmulator`: `run`/`stop`/
 `reset`, `rom`, `machine`), which is useful for tests and the debugger.
 
 Verified in headless Chromium: hello world, compile error with line, BREAK
@@ -358,7 +367,7 @@ bundler). The map in `ide.html` is authoritative; it currently is:
 
 Notes: `style-mod`'s entry is `src/style-mod.js` (not `dist/`); `@lezer/lr` is
 required by `@codemirror/language`; `@codemirror/lint` is needed for the
-Phase 5 diagnostics.
+the Phase 5 diagnostics.
 
 ### Keyword data (generated)
 
@@ -515,7 +524,7 @@ and `setExecutionLine(line|null)`. The toolbar has Run, Stop, Pause/Continue
 
 ---
 
-## Export Formats (Phase 6 — layout to be derived)
+## Export Formats (Phase 6 — next; layout to be derived)
 
 ### Tape
 The TAP layout in earlier drafts (a type-3 code block at `$825A` with an
@@ -533,31 +542,61 @@ a builder has to be written and verified by loading it in TSRun.
 
 ---
 
-## Structure Linter (Phase 5 — to be rewritten)
+## Editor Error Checking (Phase 5 — done, `src/leap-check.js`)
 
-`lintLeap` in `ide.js` was written to the wrong rules (16-character names and
-64-character strings instead of 31 and 31; one-line `IF … THEN stmt` treated
-as an unclosed block; unaware of the real syntax). It is **not run before
-Run**; the ROM compiler is the check for now, and its error code and line are
-already surfaced.
+**Design decision: the linter is the ROM's own compiler, not a
+re-implementation.** The editor's errors are therefore always the errors Run
+reports, for whichever Leap release is loaded; nothing in the checker changes
+for 2.1 beyond its ROM entry. As in the ROM, it stops at the first error, so
+the editor shows one error at a time.
 
-Phase 5 must rewrite it from the language reference and manual Appendix B,
-returning `[{line, col, message}]` mapped to CM6 `Diagnostic`s. Rules to cover
-(each tied to a ROM compile error, so the IDE message can quote the code):
+**`src/leap-check.js`** — `createChecker(rom, images)`. A second TSRun machine,
+never displayed, boots the same ROM images once to the editor key wait
+(`IO_READ_KEY.wait_hit`) and snapshots RAM, CPU and ports (about 74 ms in
+Node). `check(store)` restores the snapshot, writes the line store and
+`PROG_END`, puts a return chain on the ROM stack (`$FF00`) and calls
+`V2_CLEAR_ARRAYS` -> `V2_COMPILE_STORED` -> back into the key-wait loop. It then
+reads `COMPILE_ERROR_CODE` and `LEX_LINE & $7FFF`, the failing store line
+(for end-of-source errors such as an unclosed `IF` or `GOTO` to an unknown
+label that is the line count). It returns `{code, line}` (`code` 0 = compiles)
+or `null` if the compiler does not finish. No frame interrupts are delivered
+and nothing is drawn. Typical check about 1 ms; a 302-line program about
+120 ms. It runs on the main thread; a Web Worker is the option if that ever
+matters.
 
-- `IF … THEN` without `ENDIF` (9); `IF` without `THEN` (8); allow the one-line
-  `IF cond THEN GOTO label`
-- `FOR` without `NEXT` (65), `NEXT` for another variable (56), `EXIT FOR`
-  outside a loop (63), `FOR` without `TO` (11)
-- `PROC` without `ENDP` (16); nested `PROC` (to verify against the ROM)
-- `GOTO` to an undefined label (7); duplicate label/`PROC`/`DEF FN` (57)
-- `LET`, `GOSUB`, `RETURN`, `DRAW` and other words not in V2 (2)
-- Names over 31 characters (61); string literals over 31 characters (70);
-  underscores in names
-- Package statements (`CIRCLE`, `FILL`, `MODE`, `GRAB`, …) used without a
-  `LOAD "NAME" EXT` (2): warn, since the package is loaded at the ROM prompt
-  and the IDE does not yet have a way to load one — unverified how the IDE
-  should handle packages
+`V2_COMPILE_STORED` is the ROM symbol `compileStored` in `src/leap-roms.js`
+(`$D54F` in 2.0.2), emitted by `tools/leap-rom-entry.py`. The emulator exposes
+`romImages` for the checker.
+
+**Error text** — `src/leap-errors.js` is generated by
+`tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/leap-errors.js`
+from Appendix B of the manual. It exports `LEAP_COMPILE_ERRORS` and
+`LEAP_RUNTIME_ERRORS`, each code -> `{message, cause}`; codes such as
+"13, 14, 15" and "12 to 14" are expanded, and a code listed more than once
+keeps the first message and joins the causes. Never edit it by hand; rerun it
+for 2.1. `describeError` (ide.js) turns an entry into
+"SYNTAX ERROR 3: an expression could not start where it did (…)".
+
+**Editor wiring**
+- `src/editor.js`: the CM6 `linter(...)` source calls
+  `window.leapIDE.lintSource` 500 ms after typing stops. Until the hidden
+  machine has booted there is nothing to report; `ide.js` then calls
+  `leapEditor.relint()`.
+- `lintSource(text)` (ide.js) first reports the storage problems from
+  `prepareSource` (non-ASCII, lines over 127 characters, a program larger than
+  the pool), then compiles. A diagnostic underlines the failing editor line from
+  its first non-blank character (`lineRange`); blank lines are mapped
+  correctly, and end-of-source errors go on the last line.
+- The **Lint** button runs the same check and shows the first message, or "No
+  errors", in the status bar.
+- Run uses the same messages: a compile error reads "Compile error N on line L"
+  with the line marked; a run-time error reads "Runtime error N at line L" with
+  the line marked "RUNTIME ERROR 10: array index outside the array" (line found
+  as described in "How Run Works"); BREAK reads "Stopped (BREAK) at line N".
+
+Not implemented (the old plan listed them): a nested-`PROC` check of the
+IDE's own, several errors at once, and warnings such as unused labels.
+Verified in headless Chromium and Node against the 2.0.2 ROM.
 
 ---
 
@@ -581,8 +620,8 @@ returning `[{line, col, message}]` mapped to CM6 `Diagnostic`s. Rules to cover
 | 2     | CodeMirror 6 editor + Leap V2 syntax                | `src/editor.js`, `src/leap-lang.js`, `src/leap-keywords.js` (generated) | **Done**, verified |
 | 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
-| 5     | Structure linter wired to CM6 lint extension        | `ide.js` (or `src/lint.js`) | Rewrite needed |
-| 6     | Tape + DCK export                                   | `src/export.js`         | Format to derive |
+| 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/leap-check.js`, `src/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
+| 6     | Tape + DCK export                                   | `src/export.js`         | Next; format to derive |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools.js`          | Not started |
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`   | Not started |
 
@@ -614,13 +653,18 @@ returning `[{line, col, message}]` mapped to CM6 `Diagnostic`s. Rules to cover
 
 ---
 
-## What Claude Code Should Do Next — Phase 5
+## What Claude Code Should Do Next — Phase 6
 
-Phases 1 to 4 work: programs run, the editor has Leap highlighting and help,
-keys reach `INPUT`, and the debugger steps, pauses and breaks on editor lines.
-Next is the structure linter (Phase 5), following "Structure Linter" above:
-rewrite `lintLeap` from the language reference and manual Appendix B, return
-`[{line, col, message}]` mapped to CM6 `Diagnostic`s, and cover the rules
-listed there, quoting the ROM compile error code in each message. Check each
-rule against the ROM's behaviour before relying on it; the "unverified" items
-(nested `PROC`, package statements) must be settled first.
+Phases 1 to 5 work: programs run, the editor has Leap highlighting, help and
+error checking by the ROM's own compiler, keys reach `INPUT`, and the debugger
+steps, pauses and breaks on editor lines. Next is export (Phase 6, tape and
+DCK), following "Export Formats" above. Do not invent the formats:
+
+1. **Tape.** Derive the block layout from Leap's `SAVE`
+   (`~/2068-Leap/docs/V2_SAVE_ALL_FORMAT.md` and the ROM's storage code), write
+   it in `src/export.js` as a pure function returning `Uint8Array`, and verify
+   by `LOAD`ing the result in the emulator.
+2. **DCK.** Write a builder from the structure TSRun's `dock.js` parses, and
+   verify by loading the cartridge in TSRun.
+3. Replace the existing `src/export.js` and the Export button's use of it; both
+   were written to the wrong layouts.

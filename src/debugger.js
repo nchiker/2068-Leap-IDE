@@ -129,6 +129,18 @@ export function createDebugger(opts) {
 
     get active() { return active; },
 
+    /**
+     * 1-based editor line where the last run's VM stopped, or -1: after a
+     * runtime error VM_IP is just past the failing instruction; after BREAK
+     * it is the instruction that would have run next.
+     */
+    stopLine(isBreak) {
+      if (table.size === 0) return -1;
+      const ip = m.bus.read(rom.vmIp) | (m.bus.read(rom.vmIp + 1) << 8);
+      const line = table.lineOf(isBreak ? ip : ip - 1);
+      return line < 0 ? -1 : opts.toEditorLine(line);
+    },
+
     /** Redraw the panel from the machine. */
     refresh() {
       const c = m.cpu;

@@ -20,6 +20,7 @@ SYMBOLS = {
     "clearArrays":      "V2_CLEAR_ARRAYS",
     "resetEdit":        "V2_RESET_EDIT",
     "runStored":        "V2_RUN_STORED",
+    "compileStored":    "V2_COMPILE_STORED",
     "commandLoop":      "V2_COMMAND_LOOP.loop",
     "compileErrorCode": "COMPILE_ERROR_CODE",
     "vmErrorCode":      "VM_ERROR_CODE",

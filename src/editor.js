@@ -12,7 +12,7 @@
  *   - Cursor position → status bar (Ln/Col)
  *   - Hover help: manual entry for keywords, definition line for names
  *   - Auto-caps: keywords become upper case as each word is finished
- *   - Diagnostics pushed from ide.js (ROM compile errors; linter in Phase 5)
+ *   - Linting by the ROM's own compiler (ide.js lintSource), plus run errors
  */
 
 import { EditorState, StateField, StateEffect, RangeSet } from '@codemirror/state';
@@ -26,7 +26,7 @@ import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirr
 import {
   autocompletion, completionKeymap, snippetCompletion,
 } from '@codemirror/autocomplete';
-import { linter, lintKeymap, setDiagnostics as cmSetDiagnostics } from '@codemirror/lint';
+import { linter, lintKeymap, forceLinting, setDiagnostics as cmSetDiagnostics } from '@codemirror/lint';
 import { indentUnit } from '@codemirror/language';
 import {
   leapLanguage, leapHighlight, LEAP_WORDS, NOT_IN_V2, keywordEntry, scanSymbols, keywordTokens,
@@ -404,8 +404,10 @@ const startState = EditorState.create({
     leapHighlight,
     leapHover,
     autocompletion({ override: [leapComplete] }),
-    // No linter() source yet: diagnostics are pushed from ide.js with setDiagnostics.
-    // An empty source would re-run 400 ms after each edit and wipe them (Phase 5).
+    // The ROM's compiler checks the program 500 ms after typing stops
+    // (ide.js lintSource -> src/leap-check.js). Until the hidden machine has
+    // booted there is nothing to report; ide.js calls relint() when it has.
+    linter(v => window.leapIDE?.lintSource ? window.leapIDE.lintSource(v.state.doc.toString()) : [], { delay: 500 }),
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap,
@@ -458,6 +460,9 @@ window.leapEditor = {
     }
     return positions;
   },
+
+  /** Check the program again now (the checker has just become available) */
+  relint() { forceLinting(view); },
 
   /** Toggle the breakpoint on a 1-based line */
   toggleBreakpoint(lineNum) {

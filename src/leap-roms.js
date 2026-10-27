@@ -24,6 +24,7 @@ export const KNOWN_ROMS = {
     clearArrays:      0xD6C2,   // V2_CLEAR_ARRAYS
     resetEdit:        0xD326,   // V2_RESET_EDIT
     runStored:        0xD49F,   // V2_RUN_STORED
+    compileStored:    0xD54F,   // V2_COMPILE_STORED
     commandLoop:      0xD215,   // V2_COMMAND_LOOP.loop
     compileErrorCode: 0xBA0A,   // COMPILE_ERROR_CODE
     vmErrorCode:      0xB683,   // VM_ERROR_CODE

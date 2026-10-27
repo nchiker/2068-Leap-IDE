@@ -12,6 +12,8 @@
  *  - src/emulator.js: createEmulator(), encodeLineStore()
  *  - src/editor.js:   window.leapEditor = { getSource(), setDiagnostics() }
  *  - src/debugger.js: createDebugger() — breakpoints, step, pause, panel
+ *  - src/leap-check.js: createChecker() — the ROM's compiler as the linter
+ *  - src/leap-errors.js: error messages from the manual (generated)
  *  - src/export.js:   window.leapExport = { buildTAP(bytes), buildDCK(bytes) }
  */
 
@@ -19,6 +21,8 @@
 
 import { createEmulator, encodeLineStore } from './src/emulator.js';
 import { createDebugger } from './src/debugger.js';
+import { createChecker } from './src/leap-check.js';
+import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -28,6 +32,8 @@ const VM_ERROR_BREAK = 66;    // VM_ERROR_CODE after the BREAK key
 let emulator = null;       // from createEmulator()
 let lastRun = null;        // {text, editorLine[]} of the program last sent to the ROM
 let debug = null;          // from createDebugger()
+let checker = null;        // from createChecker()
+let runDiagnostic = null;  // {text, diag}: the last run's error, kept while the text is unchanged
 let emuState = 'booting';
 const DEBUG_REFRESH_MS = 300;   // panel refresh while a program runs
 
@@ -64,6 +70,51 @@ async function bootEmulator() {
   setInterval(() => {
     if (emuState === 'running' || emuState === 'waiting') debug.refresh();
   }, DEBUG_REFRESH_MS);
+
+  checker = createChecker(emulator.rom, emulator.romImages);
+  window.leapEditor?.relint();
+}
+
+// ── Checking (the editor's linter) ────────────────────────────────
+// The ROM's own compiler, run on a hidden machine (src/leap-check.js), so the
+// editor reports exactly what Run would. It stops at the first error.
+
+/** "SYNTAX ERROR 3: an expression could not start where it did (…)" */
+function describeError(code, table) {
+  const e = table[code];
+  if (!e) return `error ${code}`;
+  // The ROM numbers only SYNTAX ERROR on its status line; give the code for all.
+  return `${e.message} ${code}: ${e.cause}`;
+}
+
+/** Diagnostic range covering a 0-based editor line, from its first non-blank character. */
+function lineRange(text, editorLine) {
+  const lines = text.split('\n');
+  let from = 0;
+  for (let i = 0; i < editorLine; i++) from += lines[i].length + 1;
+  const indent = lines[editorLine].length - lines[editorLine].trimStart().length;
+  return { from: from + indent, to: from + lines[editorLine].length };
+}
+
+/** Diagnostics for the editor: storage problems, then the ROM compiler's error. */
+function lintSource(text) {
+  const prepared = prepareSource(text);
+  if (prepared.problems.length > 0 || !checker || prepared.lines.length === 0) return prepared.problems;
+  const store = encodeLineStore(prepared.lines);
+  const room = emulator.rom.sourceEnd - emulator.rom.progAreaStart;
+  if (store.length > room) {
+    return [{ from: 0, to: 0, severity: 'error', message: `Program is ${store.length} bytes; the Leap pool holds ${room}` }];
+  }
+  // A run's error (e.g. a runtime error, which compiling cannot find) stays
+  // marked until the text changes; otherwise a check scheduled by the edit
+  // just before Run would wipe it.
+  const fromRun = runDiagnostic && runDiagnostic.text === text ? [runDiagnostic.diag] : [];
+  const result = checker.check(store);
+  if (!result || result.code === 0) return fromRun;
+  // An error at the end of the source (unclosed block, unknown label) has the
+  // line count as its line: put it on the last line.
+  const editorLine = prepared.editorLine[Math.min(result.line, prepared.editorLine.length - 1)];
+  return [{ ...lineRange(text, editorLine), severity: 'error', message: describeError(result.code, LEAP_COMPILE_ERRORS) }];
 }
 
 // ── Store lines <-> editor lines ──────────────────────────────────
@@ -90,9 +141,8 @@ function runProgram() {
     return;
   }
   const text = getSource();
-  // Structure linting (lintLeap) is not applied here yet: its rules predate the
-  // real Leap V2 reference and reject valid programs. The ROM's own compiler is
-  // the check for now; its errors come back through onEmulatorState().
+  // Compile errors come back from the run itself (onEmulatorState); the
+  // editor's linter has usually shown them already.
   const prepared = prepareSource(text);
   if (window.leapEditor) window.leapEditor.setDiagnostics(prepared.problems);
   if (prepared.problems.length > 0) {
@@ -188,11 +238,18 @@ function showRunResult({ compileError, vmError, line }) {
     const editorLine = lastRun ? lastRun.editorLine[Math.min(line, lastRun.editorLine.length - 1)] : null;
     const where = editorLine === null || editorLine === undefined ? '' : ` on line ${editorLine + 1}`;
     setStatus(`Compile error ${compileError}${where}`, 'error');
-    markLine(editorLine, `Leap compile error ${compileError} (manual, Appendix B)`);
-  } else if (vmError === VM_ERROR_BREAK) {
-    setStatus('Stopped (BREAK)', 'idle');
+    markLine(editorLine, describeError(compileError, LEAP_COMPILE_ERRORS));
   } else if (vmError !== 0) {
-    setStatus(`Runtime error ${vmError}`, 'error');
+    // Leap reports no line for these; the debugger's line table knows where
+    // the VM was (src/debugger.js stopLine).
+    const at = debug ? debug.stopLine(vmError === VM_ERROR_BREAK) : -1;
+    const where = at > 0 ? ` at line ${at}` : '';
+    if (vmError === VM_ERROR_BREAK) {
+      setStatus(`Stopped (BREAK)${where}`, 'idle');
+    } else {
+      setStatus(`Runtime error ${vmError}${where}`, 'error');
+      if (at > 0) markLine(at - 1, describeError(vmError, LEAP_RUNTIME_ERRORS));
+    }
   } else {
     setStatus('Finished', 'idle');
   }
@@ -200,12 +257,11 @@ function showRunResult({ compileError, vmError, line }) {
 
 /** Put a diagnostic on a 0-based editor line, if the text has not changed since the run. */
 function markLine(editorLine, message) {
-  if (!window.leapEditor || editorLine === null || editorLine === undefined) return;
+  if (!window.leapEditor || editorLine === null || editorLine === undefined || editorLine < 0) return;
   if (getSource() !== lastRun.text) return;
-  const lines = lastRun.text.split('\n');
-  let from = 0;
-  for (let i = 0; i < editorLine; i++) from += lines[i].length + 1;
-  window.leapEditor.setDiagnostics([{ from, to: from + lines[editorLine].length, severity: 'error', message }]);
+  const diag = { ...lineRange(lastRun.text, editorLine), severity: 'error', message };
+  runDiagnostic = { text: lastRun.text, diag };
+  window.leapEditor.setDiagnostics([diag]);
 }
 
 function getSource() {
@@ -229,143 +285,6 @@ function pauseOrContinue() {
   if (!debug || !debug.active) return;
   if (emulator.paused) debug.resume();
   else debug.pause();
-}
-
-// ── Structure linter ─────────────────────────────────────────────
-/**
- * Checks Leap V2 source structure without running the ROM.
- * Returns an array of diagnostic objects for CodeMirror lint extension.
- *
- * @param {string} source
- * @returns {{ from: number, to: number, severity: string, message: string }[]}
- */
-function lintLeap(source) {
-  const diagnostics = [];
-  const lines = source.split(/\r\n|\r|\n/);
-
-  const ifStack   = [];  // line numbers of open IFs
-  const forStack  = [];  // loop variable names of open FORs
-  const procStack = [];  // PROC names for nested check
-
-  const definedLabels = new Set();
-  const definedProcs  = new Set();
-  const usedLabels    = [];
-  const usedProcs     = [];
-
-  let pos = 0; // character position in source
-
-  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    const line = lines[lineIdx];
-    const trimmed = line.trim();
-    const lineStart = pos;
-
-    // Track character position
-    pos += line.length + 1; // +1 for \n
-
-    if (!trimmed || trimmed.startsWith("'")) continue;
-
-    // Detect label definitions: a word followed by colon at start of (trimmed) line
-    const labelMatch = trimmed.match(/^([A-Za-z_]\w*):$/);
-    if (labelMatch) {
-      definedLabels.add(labelMatch[1]);
-      continue;
-    }
-
-    // PROC definition
-    if (/^PROC\b/i.test(trimmed)) {
-      if (procStack.length > 0) {
-        diagnostics.push({ from: lineStart, to: lineStart + line.length,
-          severity: 'error', message: 'Nested PROC definitions are not allowed' });
-      }
-      const m = trimmed.match(/^PROC\s+([A-Za-z_]\w*)/i);
-      if (m) { procStack.push(m[1]); definedProcs.add(m[1]); }
-    }
-    if (/^ENDP\b/i.test(trimmed)) { procStack.pop(); }
-
-    // IF / ENDIF
-    if (/^IF\b/i.test(trimmed))    { ifStack.push({ line: lineIdx + 1, pos: lineStart }); }
-    if (/^ENDIF\b/i.test(trimmed)) {
-      if (ifStack.length === 0) {
-        diagnostics.push({ from: lineStart, to: lineStart + line.length,
-          severity: 'error', message: 'ENDIF without matching IF' });
-      } else { ifStack.pop(); }
-    }
-
-    // FOR / NEXT
-    const forMatch = trimmed.match(/^FOR\s+(\w+)\s*=/i);
-    if (forMatch) { forStack.push({ varName: forMatch[1], line: lineIdx + 1, pos: lineStart }); }
-    const nextMatch = trimmed.match(/^NEXT\s+(\w+)/i);
-    if (nextMatch) {
-      const top = forStack[forStack.length - 1];
-      if (!top || top.varName.toLowerCase() !== nextMatch[1].toLowerCase()) {
-        diagnostics.push({ from: lineStart, to: lineStart + line.length,
-          severity: 'error', message: `NEXT ${nextMatch[1]} without matching FOR` });
-      } else { forStack.pop(); }
-    }
-
-    // GOTO / GOSUB label references
-    const gotoMatch = trimmed.match(/^(?:GOTO|GOSUB)\s+([A-Za-z_]\w*)/i);
-    if (gotoMatch) { usedLabels.push({ name: gotoMatch[1], pos: lineStart, len: line.length }); }
-
-    // CALL proc references
-    const callMatch = trimmed.match(/^CALL\s+([A-Za-z_]\w*)/i);
-    if (callMatch) { usedProcs.push({ name: callMatch[1], pos: lineStart, len: line.length }); }
-
-    // String literal length check (> 64 chars)
-    const strMatches = line.matchAll(/"([^"]*)"/g);
-    for (const sm of strMatches) {
-      if (sm[1].length > 64) {
-        diagnostics.push({ from: lineStart, to: lineStart + line.length,
-          severity: 'error', message: `String literal too long (${sm[1].length} chars, max 64)` });
-      }
-    }
-
-    // Identifier length check (> 16 chars)
-    const identMatches = line.matchAll(/\b([A-Za-z_]\w{16,})\b/g);
-    for (const im of identMatches) {
-      diagnostics.push({ from: lineStart + im.index, to: lineStart + im.index + im[1].length,
-        severity: 'error', message: `Identifier too long: '${im[1]}' (max 16 chars)` });
-    }
-  }
-
-  // Unclosed blocks
-  for (const frame of ifStack) {
-    diagnostics.push({ from: frame.pos, to: frame.pos,
-      severity: 'error', message: `IF on line ${frame.line} has no matching ENDIF` });
-  }
-  for (const frame of forStack) {
-    diagnostics.push({ from: frame.pos, to: frame.pos,
-      severity: 'error', message: `FOR ${frame.varName} on line ${frame.line} has no matching NEXT` });
-  }
-  if (procStack.length > 0) {
-    diagnostics.push({ from: 0, to: 0,
-      severity: 'error', message: `PROC '${procStack[procStack.length-1]}' has no matching ENDP` });
-  }
-
-  // Undefined label references (checked after full scan)
-  for (const ref of usedLabels) {
-    if (!definedLabels.has(ref.name)) {
-      diagnostics.push({ from: ref.pos, to: ref.pos + ref.len,
-        severity: 'warning', message: `Label '${ref.name}' is not defined` });
-    }
-  }
-
-  // Undefined PROC references
-  for (const ref of usedProcs) {
-    if (!definedProcs.has(ref.name)) {
-      diagnostics.push({ from: ref.pos, to: ref.pos + ref.len,
-        severity: 'warning', message: `PROC '${ref.name}' is not defined` });
-    }
-  }
-
-  return diagnostics;
-}
-
-// ── Debugger refresh ──────────────────────────────────────────────
-function refreshDebugger() {
-  if (!window.leapDebugger || !emulator) return;
-  // Phase 3: pass emulator.machine.cpu (TSRun's Z80 state object) to the debugger.
-  // window.leapDebugger.update(emulator.machine.cpu);
 }
 
 // ── UI helpers ────────────────────────────────────────────────────
@@ -407,13 +326,10 @@ document.getElementById('btn-step').addEventListener('click', stepProgram);
 document.getElementById('btn-pause').addEventListener('click', pauseOrContinue);
 document.getElementById('btn-refresh-debug').addEventListener('click', () => debug?.refresh());
 document.getElementById('btn-lint').addEventListener('click', () => {
-  const src = window.leapEditor ? window.leapEditor.getSource() : '';
-  const errors = lintLeap(src);
-  if (window.leapEditor) window.leapEditor.setDiagnostics(errors);
-  const eCount = errors.filter(e => e.severity === 'error').length;
-  const wCount = errors.filter(e => e.severity === 'warning').length;
-  setStatus(eCount === 0 && wCount === 0 ? 'No issues' : `${eCount} error(s), ${wCount} warning(s)`,
-    eCount > 0 ? 'error' : 'idle');
+  if (!checker) return;
+  const diags = lintSource(getSource());
+  window.leapEditor?.setDiagnostics(diags);
+  setStatus(diags.length === 0 ? 'No errors' : diags[0].message, diags.length === 0 ? 'idle' : 'error');
 });
 document.getElementById('btn-reset-emu').addEventListener('click', () => {
   if (emulator) emulator.reset();
@@ -453,4 +369,4 @@ document.addEventListener('keydown', e => {
 bootEmulator();
 
 // ── Exports for other modules ─────────────────────────────────────
-window.leapIDE = { lintLeap, encodeSource, refreshDebugger, setStatus, get emulator() { return emulator; } };
+window.leapIDE = { lintSource, encodeSource, setStatus, get emulator() { return emulator; } };

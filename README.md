@@ -11,10 +11,10 @@ Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
 Leap V2 is documented at https://github.com/nchiker/2068-Leap (the manual and
 `docs/V2_LANGUAGE_REFERENCE.md`). Current release: 2.0.2-emu.1.
 
-Status: Phases 1 to 4 are done (the emulator boots, Run injects the editor text
+Status: Phases 1 to 5 are done (the emulator boots, Run injects the editor text
 into the ROM and runs it, compile and run-time errors come back with the line;
 PC keys are translated for `INPUT`, `INKEY$` and `PAUSE 0`; the editor has
-Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of keywords; the debugger sets breakpoints in
+Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of keywords; the editor underlines compile errors as you type, using the ROM's own compiler on a hidden machine so they match what Run reports; the debugger sets breakpoints in
 the editor gutter, pauses and steps by statement (F8 / F10), and shows registers,
 variables, the call stack and memory). See
 `CLAUDE.md` for the phase list and technical brief, and `docs/overview.md` for
@@ -83,11 +83,15 @@ jumping into ROM routines, so each ROM build has its own entry in
 5. Reload and re-check hello world, a compile error, BREAK, `INPUT` and a
    breakpoint / step.
 
-Nothing else in the IDE should need to change, except the editor's keyword data,
-which is generated from the release's manual. Regenerate it at the release tag:
+Nothing else in the IDE should need to change, except the editor's keyword data
+and error text, which are generated from the release's manual. Regenerate them
+at the release tag:
 
 ```
 tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/leap-keywords.js
+tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/leap-errors.js
 ```
 
-Never edit `src/leap-keywords.js` by hand.
+Never edit `src/leap-keywords.js` or `src/leap-errors.js` by hand. The editor's
+error check (`src/leap-check.js`) needs no change: it runs the new ROM's own
+compiler, using the `compileStored` symbol in the ROM entry.

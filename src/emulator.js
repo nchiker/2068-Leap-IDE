@@ -131,6 +131,8 @@ export async function createEmulator(opts) {
     stepInstruction() { if (emu.paused) stepOneInstruction(emu); },
     get paused() { return emu.paused; },
     get rom()    { return emu.rom; },
+    /** The ROM images in use (for src/leap-check.js's own machine). */
+    get romImages() { return emu.romImages; },
     get machine() { return emu.machine; },
   };
 }
@@ -180,6 +182,7 @@ async function loadRoms(emu) {
       'Add it to src/leap-roms.js with tools/leap-rom-entry.py.');
   }
   emu.rom = rom;
+  emu.romImages = { home, exrom };
   setHomeRom(emu.machine, home);
   setExRom(emu.machine, exrom);
 }

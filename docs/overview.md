@@ -27,7 +27,7 @@ is archived and irrelevant.
 ## Goals
 
 1. Write Leap V2 source in a proper editor (CodeMirror 6) with syntax
-   highlighting, autocomplete, and a structure linter.
+   highlighting, autocomplete, and error checking by the ROM's own compiler.
 2. Click Run — the program loads into the emulated TS2068 and executes.
 3. Step through code in the debugger, inspect Z80 registers and Leap
    variable values, set breakpoints.
@@ -96,6 +96,8 @@ ide.html
 ├── src/editor.js     ← CodeMirror 6 editor setup
 ├── src/leap-lang.js  ← Leap V2 StreamLanguage mode, token classes, scanSymbols
 ├── src/leap-keywords.js ← generated from the Leap manual (tools/gen-leap-keywords.py)
+├── src/leap-check.js ← editor error check: the ROM's compiler on a hidden machine
+├── src/leap-errors.js ← generated error text from the manual (tools/gen-leap-errors.py)
 ├── src/debugger.js   ← debugger controller (breakpoints, step) + panel UI
 ├── src/leap-debug.js ← line table, variables, call stack read from machine RAM
 ├── src/export.js     ← tape + DCK builders
@@ -142,8 +144,11 @@ Implemented and verified (hello world, compile error with line, BREAK stop,
 5. **Report** — when the machine is back at the key wait with the stack at
    `$FF00` the run is over. The ROM's compile and run-time error codes are
    read from RAM; after a compile error the failing line is mapped back to the
-   editor line and marked. The status bar shows Finished, Compile error N on
-   line L, Runtime error N, or Stopped (BREAK); a program waiting at `INPUT`
+   editor line and marked with the manual's message. A run-time error gets a
+   line number too, which Leap itself cannot report: the debugger's line table
+   maps `VM_IP - 1` (`VM_IP` is left just past the failing instruction) to the
+   source line. The status bar shows Finished, Compile error N on line L,
+   Runtime error N at line L, or Stopped (BREAK) at line N; a program waiting at `INPUT`
    or `PAUSE 0` shows "Waiting for input — click the screen to type". A
    finished run's output stays on screen (see Keyboard); Run injects at the
    "press a key" wait as before.
@@ -157,8 +162,8 @@ addresses that change between releases, so each ROM pair is identified by
 SHA-256 and looked up in `src/leap-roms.js`. Supporting a new release means
 adding one entry (see `README.md`).
 
-A client-side lint pass before Run is planned (Phase 5) but is not run today;
-the ROM compiler is the check, and its errors already come back with a line.
+The editor checks the program with the same compiler before Run (see "Syntax
+Assistance"), so its errors and Run's are the same.
 
 ---
 
@@ -217,22 +222,31 @@ Leap differs from Sinclair BASIC (for example `INT` truncates toward zero,
 `RND(n)` returns 0..n-1, `AT` and `TAB` are statements, there is no `LET`), so
 the help comes from the manual, not from memory of Sinclair BASIC.
 
-### Syntax Assistance (Structure Linter) — Phase 5
-`lintLeap()` is planned to run on every edit (debounced 400ms) and check,
-against the rules of the real compiler (language reference and manual
-Appendix B):
-- `IF`/`ENDIF`, `FOR`/`NEXT`, `PROC`/`ENDP` pairing, allowing the one-line
-  `IF cond THEN GOTO label`
-- `GOTO` to an undefined label; duplicate labels, `PROC`s and `DEF FN`s
-- Words that are not in V2 (`LET`, `GOSUB`, `RETURN`, `DRAW`, …)
-- Names longer than 31 characters; string literals longer than 31 characters
-- Package statements used without a loaded package
-- Nested `PROC` definitions (unverified: check against the ROM)
+### Syntax Assistance (Error Checking) — Phase 5
+The editor's checker is **the ROM's own compiler**, not a re-implementation of
+its rules. A second TS2068 that is never displayed boots the same ROM images
+once to the editor and is snapshotted there. 500 ms after typing stops, the
+editor restores the snapshot, writes the program in, and calls the compile
+routine RUN calls (`V2_CLEAR_ARRAYS` -> `V2_COMPILE_STORED`), then reads the ROM's
+error code and failing line. Because it is the real compiler, the editor's
+errors always equal what Run reports, for whichever Leap release is loaded;
+supporting 2.1 needs no checker change beyond the ROM entry. Like the ROM, it
+stops at the first error, so one error shows at a time.
 
-Errors appear as red squiggles in the editor and a list in the gutter, quoting
-the ROM's own error code where there is one. The existing `lintLeap` was
-written to wrong rules (16/64 limits, no one-line `IF … THEN GOTO`) and is
-disabled until rewritten.
+The failing line is underlined from its first non-blank character, with a
+message from the manual's Appendix B, for example "SYNTAX ERROR 3: an
+expression could not start where it did (…)". Errors at the end of the source
+(an unclosed `IF`, a `GOTO` to an unknown label) go on the last line. The same
+pass reports the storage problems: non-ASCII characters, lines over 127
+characters, and a program larger than the pool. The Lint button runs the check
+on demand and shows the first message, or "No errors", in the status bar.
+
+A check is about 1 ms for typical programs and about 120 ms for a 302-line
+one; it runs on the main thread (a Web Worker is the option if that matters).
+The message text comes from `src/leap-errors.js`, generated from the manual by
+`tools/gen-leap-errors.py` and regenerated for each release. Not implemented:
+checks of the IDE's own (nested `PROC`), several errors at once, and warnings
+such as unused labels.
 
 ### Keyword Syntax Highlighting
 Token classes via CM6 StreamLanguage (`src/leap-lang.js`), classified from the
@@ -387,8 +401,8 @@ The formats are not yet known:
 | 2     | CodeMirror 6 + Leap syntax         | High   | Done, verified |
 | 3     | Debugger (registers, step)         | High   | Done, verified |
 | 4     | Keyboard translation + INPUT mode  | Medium | Done, verified |
-| 5     | Structure linter                   | Medium | Rewrite needed |
-| 6     | Tape + DCK export                  | Medium | Format to derive |
+| 5     | Error checking (ROM compiler)      | Medium | Done, verified |
+| 6     | Tape + DCK export                  | Medium | Next; format to derive |
 | 7     | UDG editor, symbol table           | Low    | Not started |
 | 8     | Help overlay, themes, polish       | Low    | Not started |
 
