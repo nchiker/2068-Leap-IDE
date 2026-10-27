@@ -41,7 +41,9 @@ is archived and irrelevant.
 **TSRun** is an open-source TS2068 emulator written in plain JavaScript. The
 IDE uses the fork https://github.com/nchiker/TSRun (upstream
 josef-jelinek/TSRun), included in the project as the git submodule `./tsrun`,
-pinned at commit `f65de5a`. The fork's
+pinned at commit `4db1f1e` (TSRun `main` with the 2.0.2 Leap ROMs, the
+`sound.js` worklet fix `f65de5a` and the tape-loading fix `4db1f1e`, both
+pushed). The fork's
 `roms/` folder carries the Leap V2 ROMs (`leap-0.rom`, 16K HOME, and
 `leap-1.rom`, 8K EXROM; the 2.0.2-emu.1 release images). TSRun provides:
 
@@ -59,20 +61,20 @@ desk UI, so the IDE has its own slim host in `src/emulator.js` that imports
 `machine.run()` / `step()` / `poke()` API: memory goes through
 `machine.bus.read/write`, and registers are fields of `machine.cpu`.
 
-The only change in the fork so far is in `sound.js`: it loads its worklet with
+The fork has two changes. The first is in `sound.js`: it loads its worklet with
 `new URL("sound.worklet.js", import.meta.url)`, so audio works from a page
-that lives outside TSRun's directory. It is committed on the fork's `main`
-branch (commit `f65de5a`, pushed; the submodule pin). The IDE no longer uses
-TSRun's `keyboard.js` (see Keyboard below), and no `hostBits` patch is planned.
+that lives outside TSRun's directory (commit `f65de5a`, pushed). The IDE no
+longer uses TSRun's `keyboard.js` (see Keyboard below), and no `hostBits` patch
+is planned.
 
-A second fork change is committed locally but **not pushed**: the owner's tape
-loading patch (commit `4db1f1e` on `main`; TSRun issue #3 in
-josef-jelinek/TSRun). Tape loading used to stop mid-load for loaders outside
-EXROM chunk 0, so Leap's `LOAD` failed in TSRun. With the patch, stock-ROM tape
-autoload and autostart are unchanged and Leap `LOAD ""` of the IDE's `.tap`
-loads (the tape even starts by itself) and `RUN` works. The submodule is still
-at `f65de5a`; once the owner approves, the fork is pushed and the submodule
-moved.
+The second is the owner's tape-loading fix (commit `4db1f1e` on `main`, pushed;
+TSRun issue #3 in josef-jelinek/TSRun; the submodule pin). Tape loading used to
+stop mid-load for loaders outside EXROM chunk 0, so Leap's `LOAD` failed in
+TSRun; the fix keeps the tape playing for ROM-style loaders outside EXROM chunk
+0. Verified: stock-ROM tape autoload and autostart are unchanged, and Leap
+`LOAD ""` of the IDE's `.tap` loads (the tape even starts by itself) and `RUN`
+works. The live TSRun site, which also hosts Leap's browser demo, now loads Leap
+tapes, including package tapes.
 
 The submodule is pinned because the TSRun version must match the ROM table in
 `src/leap-roms.js`: a TSRun update (e.g. new Leap ROMs) cannot break the IDE
@@ -93,7 +95,7 @@ every push, and includes the public `tsrun` submodule. `index.html` forwards to
 ```
 ide.html
 │
-├── tsrun/ (git submodule of the TSRun fork, pinned f65de5a; ES modules imported by src/emulator.js)
+├── tsrun/ (git submodule of the TSRun fork, pinned 4db1f1e; ES modules imported by src/emulator.js)
 │   ├── machine.js    ← machine, bus, ROM paging, frame loop
 │   ├── z80.js        ← CPU
 │   ├── screen.js     ← WebGL2 canvas renderer
@@ -468,7 +470,7 @@ section once the cartridge build exists.
   (local clone `~/2068-Leap`)
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, upstream
   https://github.com/josef-jelinek/TSRun (git submodule `./tsrun`, pinned at
-  `f65de5a`)
+  `4db1f1e`)
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
 - **Leap V2 ROMs**: `tsrun/roms/leap-0.rom` / `leap-1.rom` (not stored in this
   repo)

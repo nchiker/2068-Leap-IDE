@@ -33,10 +33,11 @@ the design.
 
    (In an existing clone, run `git submodule update --init`.) `tsrun/` is a git
    submodule of the TSRun fork https://github.com/nchiker/TSRun, pinned at
-   commit `f65de5a` (TSRun `main` with the 2.0.2 Leap ROMs and the `sound.js`
-   worklet fix, which loads the worklet with
+   commit `4db1f1e` (TSRun `main` with the 2.0.2 Leap ROMs, the `sound.js`
+   worklet fix `f65de5a`, which loads the worklet with
    `new URL("sound.worklet.js", import.meta.url)` so audio works from a page
-   outside TSRun's directory). No separate `~/TSRun` clone is needed.
+   outside TSRun's directory, and the tape-loading fix `4db1f1e`, both
+   pushed). No separate `~/TSRun` clone is needed.
 
 2. The Leap ROMs are not part of this repo. They load from
    `tsrun/roms/leap-0.rom` (16K HOME) and `tsrun/roms/leap-1.rom` (8K EXROM),
@@ -69,9 +70,10 @@ choice is remembered, and it drops by itself in a narrow window).
 To run a program on a real TS2068 or in another emulator, use "⬇ TAP": it asks for
 a tape name (up to 10 characters) and downloads a `.tap`; on the TS2068 type
 `LOAD "name"` (or `LOAD ""`), then `RUN` (Leap V2 has no autorun). In the
-TSRun fork, loading it also needs the tape-loading fix (TSRun issue #3), which
-is committed locally and not yet pushed, so the submodule pin below does not
-include it yet.
+TSRun fork, loading it relies on the tape-loading fix (TSRun issue #3, in the
+submodule pin above), which keeps the tape playing for ROM-style loaders
+outside EXROM chunk 0; Leap `LOAD ""` of the `.tap` loads and the tape starts
+by itself.
 
 Click the TS2068 screen to give it keyboard focus. Keys reach the emulated
 machine only while it is focused and a program is running (`INPUT`, `INKEY$`,

@@ -62,7 +62,7 @@ Leap-IDE/
 │   ├── overview.md   ← Design doc
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needs)
 │   └── mockup.html   ← Visual mock-up
-└── tsrun/            ← git submodule: TSRun fork, pinned at f65de5a
+└── tsrun/            ← git submodule: TSRun fork, pinned at 4db1f1e
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
@@ -71,21 +71,19 @@ images (SHA-256 `1fe5798f…` and `e6b507a4…` respectively).
 
 **TSRun** is the fork https://github.com/nchiker/TSRun (upstream
 josef-jelinek/TSRun), included as the git submodule `tsrun/` pinned at commit
-`f65de5a` (TSRun `main` with the 2.0.2 Leap ROMs). There is no `../josef-jelinek/`
-path and no `~/TSRun` clone is needed. Do not copy TSRun into the repo. The fork
-carries one change, committed and pushed on its `main`: `sound.js` loads its
+`4db1f1e` (TSRun `main` with the 2.0.2 Leap ROMs, the `sound.js` worklet fix
+`f65de5a` and the tape-loading fix `4db1f1e`, both pushed). There is no
+`../josef-jelinek/` path and no `~/TSRun` clone is needed. Do not copy TSRun
+into the repo. The fork carries two changes on its `main`: `sound.js` loads its
 worklet with `new URL("sound.worklet.js", import.meta.url)` instead of a
-page-relative path, so audio works from a page outside TSRun's directory.
-
-**Pending TSRun tape fix (not yet pushed).** TSRun issue #3
-(josef-jelinek/TSRun, opened by the owner): tape loading stopped mid-load for
-loaders outside EXROM chunk 0, so Leap's `LOAD` failed in TSRun. The owner's
-tested patch is committed in the local fork (commit `4db1f1e` on `main`), **not
-pushed**; the IDE's `tsrun` submodule is still at `f65de5a`. Verified with it:
-stock-ROM tape autoload and autostart are unchanged, and Leap `LOAD ""` of the
-IDE's `.tap` now loads (the tape even starts by itself) and `RUN` works. Once
-the owner approves, push the fork and move the submodule to that commit (and
-update every `f65de5a` mention in the docs).
+page-relative path, so audio works from a page outside TSRun's directory; and
+the tape-loading fix (TSRun issue #3, josef-jelinek/TSRun, opened by the
+owner), which keeps the tape playing for ROM-style loaders outside EXROM chunk
+0 (tape loading used to stop mid-load, so Leap's `LOAD` failed in TSRun).
+Verified: stock-ROM tape autoload and autostart are unchanged, and Leap
+`LOAD ""` of the IDE's `.tap` loads (the tape even starts by itself) and `RUN`
+works. The live TSRun site, which also hosts Leap's browser demo, loads Leap
+tapes, including package tapes.
 
 **Pinning matters:** the TSRun version must match the ROM table in
 `src/leap-roms.js`, so a TSRun update cannot break the IDE until the submodule
@@ -701,7 +699,7 @@ Verified in headless Chromium and Node against the 2.0.2 ROM.
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
   clone `~/2068-Leap`. V1 is archived; ignore it.
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, git submodule
-  `./tsrun` pinned at `f65de5a`.
+  `./tsrun` pinned at `4db1f1e`.
 - **This project on GitHub**: https://github.com/nchiker/2068-Leap-IDE, live at
   https://nchiker.github.io/2068-Leap-IDE/.
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
@@ -727,16 +725,11 @@ Verified in headless Chromium and Node against the 2.0.2 ROM.
 Phases 1 to 5 work, and Phase 6's tape export is done and verified (Leap's own
 `LOAD` reads the IDE's `.tap`). Next, in order:
 
-1. **TSRun tape fix.** Once the owner approves, push the TSRun fork (local
-   commit `4db1f1e`, TSRun issue #3) and move the `tsrun` submodule to it:
-   `git -C tsrun fetch && git -C tsrun checkout <commit>`, re-check hello world,
-   `INPUT`, a breakpoint / step and loading the `.tap` with `LOAD ""`, then
-   commit the bump and update the `f65de5a` mentions in the docs.
-2. **Phase 7** (`src/tools.js`), per "Additional Tools (Phase 7)" above: the UDG
+1. **Phase 7** (`src/tools.js`), per "Additional Tools (Phase 7)" above: the UDG
    editor, the symbol table (`scanSymbols()` in `src/leap-lang.js` already
    returns PROCs, FNs, labels and variables with their lines) and the graphics
    scratchpad.
-3. **DCK export**, when the Leap cartridge build exists
+2. **DCK export**, when the Leap cartridge build exists
    (`docs/LEAP_CARTRIDGE_BUILD.md`): implement it per the spec's "IDE side"
    section and verify by loading the result in TSRun with the stock ROMs. Do not
    guess the layout before then.
