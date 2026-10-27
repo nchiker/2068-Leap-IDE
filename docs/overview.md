@@ -40,7 +40,8 @@ is archived and irrelevant.
 
 **TSRun** is an open-source TS2068 emulator written in plain JavaScript. The
 IDE uses the fork https://github.com/nchiker/TSRun (upstream
-josef-jelinek/TSRun), linked into the project as `./tsrun`. The fork's
+josef-jelinek/TSRun), included in the project as the git submodule `./tsrun`,
+pinned at commit `f65de5a`. The fork's
 `roms/` folder carries the Leap V2 ROMs (`leap-0.rom`, 16K HOME, and
 `leap-1.rom`, 8K EXROM; the 2.0.2-emu.1 release images). TSRun provides:
 
@@ -60,8 +61,20 @@ desk UI, so the IDE has its own slim host in `src/emulator.js` that imports
 The only change in the fork so far is in `sound.js`: it loads its worklet with
 `new URL("sound.worklet.js", import.meta.url)`, so audio works from a page
 that lives outside TSRun's directory. It is committed on the fork's `main`
-branch (a local commit; pushing it is up to the owner). The IDE no longer uses
+branch (commit `f65de5a`, pushed; the submodule pin). The IDE no longer uses
 TSRun's `keyboard.js` (see Keyboard below), and no `hostBits` patch is planned.
+
+The submodule is pinned because the TSRun version must match the ROM table in
+`src/leap-roms.js`: a TSRun update (e.g. new Leap ROMs) cannot break the IDE
+until the pin is deliberately moved (`git -C tsrun fetch && git -C tsrun
+checkout <commit>`, add the ROM entry, regenerate keywords if the manual
+changed, commit the submodule bump).
+
+**Publishing.** The repo is public at https://github.com/nchiker/2068-Leap-IDE
+(branch `main`). GitHub Pages serves it at
+https://nchiker.github.io/2068-Leap-IDE/, built from `main` (root folder) on
+every push, and includes the public `tsrun` submodule. `index.html` forwards to
+`ide.html`; `.nojekyll` makes Pages serve the files as-is.
 
 ---
 
@@ -70,7 +83,7 @@ TSRun's `keyboard.js` (see Keyboard below), and no `hostBits` patch is planned.
 ```
 ide.html
 │
-├── tsrun/ (symlink to the TSRun fork; ES modules imported by src/emulator.js)
+├── tsrun/ (git submodule of the TSRun fork, pinned f65de5a; ES modules imported by src/emulator.js)
 │   ├── machine.js    ← machine, bus, ROM paging, frame loop
 │   ├── z80.js        ← CPU
 │   ├── screen.js     ← WebGL2 canvas renderer
@@ -358,8 +371,8 @@ The formats are not yet known:
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap
   (local clone `~/2068-Leap`)
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, upstream
-  https://github.com/josef-jelinek/TSRun (local clone `~/TSRun`, linked as
-  `./tsrun`)
+  https://github.com/josef-jelinek/TSRun (git submodule `./tsrun`, pinned at
+  `f65de5a`)
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
 - **Leap V2 ROMs**: `tsrun/roms/leap-0.rom` / `leap-1.rom` (not stored in this
   repo)

@@ -37,6 +37,8 @@ should stay the same (see "Adding a Leap ROM release").
 
 ```
 Leap-IDE/
+├── index.html        ← Forwards to ide.html (GitHub Pages entry)
+├── .nojekyll         ← Makes GitHub Pages serve files as-is
 ├── ide.html          ← Shell (three-panel layout, CM6 import map)
 ├── ide.css           ← Shell layout and theme
 ├── ide.js            ← Orchestrator: boot emulator, prepare source, run/stop, status
@@ -55,7 +57,7 @@ Leap-IDE/
 ├── docs/
 │   ├── overview.md   ← Design doc
 │   └── mockup.html   ← Visual mock-up
-└── tsrun -> ../../TSRun   ← symlink to the TSRun fork (not in git history)
+└── tsrun/            ← git submodule: TSRun fork, pinned at f65de5a
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
@@ -63,14 +65,27 @@ HOME) and `tsrun/roms/leap-1.rom` (8K EXROM). These are the 2.0.2-emu.1 release
 images (SHA-256 `1fe5798f…` and `e6b507a4…` respectively).
 
 **TSRun** is the fork https://github.com/nchiker/TSRun (upstream
-josef-jelinek/TSRun), cloned at `~/TSRun` and linked into the project root with
-`ln -s ../../TSRun tsrun`. There is no `../josef-jelinek/` path. Do not copy
-TSRun into the repo. The fork carries one change, committed on its `main`
-branch (a local commit; pushing it is up to the owner): `sound.js` loads its
+josef-jelinek/TSRun), included as the git submodule `tsrun/` pinned at commit
+`f65de5a` (TSRun `main` with the 2.0.2 Leap ROMs). There is no `../josef-jelinek/`
+path and no `~/TSRun` clone is needed. Do not copy TSRun into the repo. The fork
+carries one change, committed and pushed on its `main`: `sound.js` loads its
 worklet with `new URL("sound.worklet.js", import.meta.url)` instead of a
 page-relative path, so audio works from a page outside TSRun's directory.
 
-Serve with `python3 -m http.server 8080` from the project root and open
+**Pinning matters:** the TSRun version must match the ROM table in
+`src/leap-roms.js`, so a TSRun update cannot break the IDE until the submodule
+is deliberately moved: `git -C tsrun fetch && git -C tsrun checkout <commit>`,
+add the ROM entry (`tools/leap-rom-entry.py`), regenerate keywords if the manual
+changed, then commit the submodule bump.
+
+**Publishing:** the repo is public at https://github.com/nchiker/2068-Leap-IDE
+(branch `main`). GitHub Pages serves it at
+https://nchiker.github.io/2068-Leap-IDE/, built from `main` (root) on every
+push, and includes the public submodule.
+
+**Setup:** `git clone --recurse-submodules https://github.com/nchiker/2068-Leap-IDE.git`
+(or `git submodule update --init` in an existing clone). For local development
+serve with `python3 -m http.server 8080` from the project root and open
 http://localhost:8080/ide.html.
 
 ---
@@ -187,7 +202,7 @@ Leap's own state. The Z80 `IY` is still saved/restored by `USR`.
 ## TSRun Integration
 
 TSRun files are **ES modules** (`import`/`export`), imported by
-`src/emulator.js` through the `tsrun` symlink. They are not classic `<script>`
+`src/emulator.js` from the `tsrun` submodule. They are not classic `<script>`
 tags. TSRun's own `host.js` is tied to its desk UI, so the IDE has its own slim
 host in `src/emulator.js`. There is **no** `machine.run()` / `.stop()` /
 `.step()` / `.poke()` API.
@@ -264,7 +279,8 @@ stop, `INPUT` stop, re-run while busy.
    (the script also checks that the key-wait spin loop still has the expected
    bytes).
 3. Paste the entry into `src/leap-roms.js` and put the new
-   `leap-0.rom`/`leap-1.rom` in `tsrun/roms/` (or switch the loader to them).
+   `leap-0.rom`/`leap-1.rom` in `tsrun/roms/` by moving the submodule to a TSRun
+   commit that carries them.
 4. Re-run the Phase 1 checks (hello world, compile error, BREAK, `INPUT`).
    Update the memory-map table above if the layout moved.
 
@@ -519,8 +535,10 @@ returning `[{line, col, message}]` mapped to CM6 `Diagnostic`s. Rules to cover
 
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
   clone `~/2068-Leap`. V1 is archived; ignore it.
-- **TSRun** (emulator): fork https://github.com/nchiker/TSRun, local clone
-  `~/TSRun`, linked as `./tsrun`.
+- **TSRun** (emulator): fork https://github.com/nchiker/TSRun, git submodule
+  `./tsrun` pinned at `f65de5a`.
+- **This project on GitHub**: https://github.com/nchiker/2068-Leap-IDE, live at
+  https://nchiker.github.io/2068-Leap-IDE/.
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
 - **Mock-up**: `docs/mockup.html` — open in a browser for the visual target.
 - **Design docs**: `docs/overview.md`

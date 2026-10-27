@@ -5,6 +5,9 @@ the **Timex Sinclair 2068**. It has a CodeMirror 6 editor, a TS2068 emulator
 (the TSRun emulator running the real Leap V2 ROMs) and, later, a debugger. No
 build step and no npm; it only needs a static file server.
 
+Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
+`main` on every push). Source: https://github.com/nchiker/2068-Leap-IDE.
+
 Leap V2 is documented at https://github.com/nchiker/2068-Leap (the manual and
 `docs/V2_LANGUAGE_REFERENCE.md`). Current release: 2.0.2-emu.1.
 
@@ -17,35 +20,35 @@ the design.
 
 ## Setup
 
-1. Clone the TSRun fork next to your projects:
+1. Clone with the TSRun submodule:
 
    ```
-   git clone https://github.com/nchiker/TSRun ~/TSRun
+   git clone --recurse-submodules https://github.com/nchiker/2068-Leap-IDE.git
    ```
 
-   The project expects it through a symlink in the project root:
+   (In an existing clone, run `git submodule update --init`.) `tsrun/` is a git
+   submodule of the TSRun fork https://github.com/nchiker/TSRun, pinned at
+   commit `f65de5a` (TSRun `main` with the 2.0.2 Leap ROMs and the `sound.js`
+   worklet fix, which loads the worklet with
+   `new URL("sound.worklet.js", import.meta.url)` so audio works from a page
+   outside TSRun's directory). No separate `~/TSRun` clone is needed.
 
-   ```
-   ln -s ../../TSRun tsrun
-   ```
-
-   That link assumes `~/Projects/Leap-IDE` and `~/TSRun`. If TSRun lives
-   elsewhere, point the link at it instead (`ln -sfn /path/to/TSRun tsrun`).
-
-2. The fork needs one change from upstream in `sound.js`: the worklet must be
-   loaded with `new URL("sound.worklet.js", import.meta.url)` instead of a
-   page-relative path, so audio works from a page outside TSRun's directory.
-   (Committed on the fork's `main` branch locally; pushing it is up to the
-   owner.)
-
-3. The Leap ROMs are not part of this repo. They load from
+2. The Leap ROMs are not part of this repo. They load from
    `tsrun/roms/leap-0.rom` (16K HOME) and `tsrun/roms/leap-1.rom` (8K EXROM),
    which must be the 2.0.2-emu.1 release images. The IDE hashes the pair and
    refuses ROMs it does not know.
 
+The pin matters: the TSRun version must match the ROM table in
+`src/leap-roms.js`, so changes upstream in TSRun (such as new Leap ROMs) cannot
+break the IDE until the submodule is deliberately moved (see "Adding a new Leap
+ROM release"). GitHub Pages includes the public submodule when it publishes.
+
 ## Run
 
-From the project root:
+Online: https://nchiker.github.io/2068-Leap-IDE/ (`index.html` forwards to
+`ide.html`; `.nojekyll` makes Pages serve the files as-is).
+
+For local development, from the project root:
 
 ```
 python3 -m http.server 8080
@@ -69,7 +72,10 @@ jumping into ROM routines, so each ROM build has its own entry in
 2. Run `tools/leap-rom-entry.py <checkout> <version>`; it prints a
    `KNOWN_ROMS` entry keyed by the SHA-256 of HOME + EXROM.
 3. Paste the entry into `src/leap-roms.js`.
-4. Put the release's `leap-0.rom` and `leap-1.rom` in `tsrun/roms/`.
+4. Move the submodule to a TSRun commit that carries the release's
+   `leap-0.rom` and `leap-1.rom` in `roms/`:
+   `git -C tsrun fetch && git -C tsrun checkout <commit>`, then commit the
+   submodule bump.
 5. Reload and re-check hello world, a compile error, BREAK and `INPUT`.
 
 Nothing else in the IDE should need to change, except the editor's keyword data,
