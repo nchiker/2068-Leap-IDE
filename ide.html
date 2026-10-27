@@ -19,7 +19,13 @@
       <span class="logo-tag">TS2068</span>
     </div>
 
-    <div class="toolbar-file" id="filename-display">untitled.leap</div>
+    <div class="toolbar-file">
+      <span id="filename-display" title="Click to rename">untitled.leap</span><span id="dirty-mark" title="Not saved to a file" hidden> •</span>
+      <button class="phbtn" id="btn-new"  title="New program">New</button>
+      <button class="phbtn" id="btn-open" title="Open a .leap / .txt program or a Leap .tap (Ctrl+O)">Open</button>
+      <button class="phbtn" id="btn-save" title="Save the program as a text file (Ctrl+S)">Save</button>
+      <input type="file" id="file-input" accept=".leap,.txt,.bas,.tap" hidden>
+    </div>
 
     <div class="toolbar-actions">
       <button id="btn-run"    class="btn btn-run"   title="Run (F5)">▶ Run</button>

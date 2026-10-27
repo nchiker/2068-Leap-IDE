@@ -24,6 +24,7 @@ import { createDebugger } from './src/debugger.js';
 import { createChecker } from './src/leap-check.js';
 import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
 import { buildTAP, checkTapeName } from './src/export.js';
+import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -269,6 +270,122 @@ function getSource() {
   return window.leapEditor ? window.leapEditor.getSource() : '';
 }
 
+// ── Files ─────────────────────────────────────────────────────────
+// The program is kept in this browser as you type (src/files.js), so a reload
+// loses nothing; Save downloads it as a text file and clears the unsaved mark.
+
+const AUTOSAVE_DELAY_MS = 500;
+const UNTITLED = 'untitled.leap';
+const stored = loadAutosave();
+let fileName = stored?.name ?? UNTITLED;
+let savedText = stored?.savedText ?? getSource();   // the text as last saved to / opened from a file
+let autosaveTimer = 0;
+
+function refreshFileUi() {
+  document.getElementById('filename-display').textContent = fileName;
+  document.getElementById('dirty-mark').hidden = getSource() === savedText;
+}
+
+function autosaveNow() {
+  clearTimeout(autosaveTimer);
+  storeAutosave({ name: fileName, text: getSource(), savedText });
+  refreshFileUi();
+}
+
+function onEditorChange() {
+  refreshFileUi();
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosaveNow, AUTOSAVE_DELAY_MS);
+}
+
+/** False if the user keeps the current program instead. */
+function confirmDiscard() {
+  return getSource() === savedText ||
+    window.confirm(`${fileName} has changes that are not saved to a file. Discard them?`);
+}
+
+function withExtension(name) {
+  return /\.[A-Za-z0-9]+$/.test(name) ? name : name + '.leap';
+}
+
+function newProgram() {
+  if (!confirmDiscard()) return;
+  window.leapEditor.setSource('', { fresh: true });
+  fileName = UNTITLED;
+  savedText = '';
+  autosaveNow();
+  window.leapEditor.focus();
+  setStatus('New program', 'idle');
+}
+
+function openProgram() {
+  if (!confirmDiscard()) return;
+  document.getElementById('file-input').click();
+}
+
+async function onFileChosen(e) {
+  const file = e.target.files[0];
+  e.target.value = '';                  // choosing the same file again still fires
+  if (!file) return;
+  try {
+    if (/\.tap$/i.test(file.name)) {
+      const tape = tapeToText(new Uint8Array(await file.arrayBuffer()));
+      window.leapEditor.setSource(tape.text, { fresh: true });
+      fileName = withExtension(tape.name || 'tape');
+      savedText = '';                   // not a text file yet: shown as unsaved
+      setStatus(tape.warning ?? `Opened "${tape.name}" from ${file.name}`, tape.warning ? 'error' : 'idle');
+    } else {
+      const text = normalizeText(await file.text());
+      window.leapEditor.setSource(text, { fresh: true });
+      fileName = file.name;
+      savedText = text;
+      setStatus(`Opened ${file.name}`, 'idle');
+    }
+    autosaveNow();
+    window.leapEditor.focus();
+  } catch (err) {
+    setStatus(err.message, 'error');
+  }
+}
+
+/** Download the program as a text file (the browser's download folder). */
+function saveProgram() {
+  if (fileName === UNTITLED) {
+    const name = window.prompt('Save as:', 'program.leap');
+    if (name === null || name.trim() === '') return;
+    fileName = withExtension(name.trim());
+  }
+  const text = getSource();
+  download(new Blob([text], { type: 'text/plain' }), fileName);
+  savedText = text;
+  autosaveNow();
+  setStatus(`Saved ${fileName} to your downloads`, 'idle');
+}
+
+function renameProgram() {
+  const name = window.prompt('Program name:', fileName);
+  if (name === null || name.trim() === '') return;
+  fileName = withExtension(name.trim());
+  autosaveNow();
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  // Revoking at once can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+window.leapEditor.onChange(onEditorChange);
+document.getElementById('btn-new').addEventListener('click', newProgram);
+document.getElementById('btn-open').addEventListener('click', openProgram);
+document.getElementById('btn-save').addEventListener('click', saveProgram);
+document.getElementById('filename-display').addEventListener('click', renameProgram);
+document.getElementById('file-input').addEventListener('change', onFileChosen);
+refreshFileUi();
+
 // ── Export ────────────────────────────────────────────────────────
 
 /**
@@ -298,13 +415,9 @@ function exportTape() {
     return;
   }
   const tap = buildTAP(store, name, emulator.rom.tapeFormatWord);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([tap], { type: 'application/octet-stream' }));
-  a.download = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
-  a.click();
-  // Revoking at once can cancel the download in some browsers.
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  setStatus(`Saved ${a.download}: on the TS2068, LOAD "${name}" then RUN`, 'idle');
+  const tapName = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
+  download(new Blob([tap], { type: 'application/octet-stream' }), tapName);
+  setStatus(`Saved ${tapName}: on the TS2068, LOAD "${name}" then RUN`, 'idle');
 }
 
 // ── Stop ──────────────────────────────────────────────────────────
@@ -432,6 +545,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'F5') { e.preventDefault(); runProgram(); }
   if (e.key === 'F6') { e.preventDefault(); stopProgram(); }
   if (e.key === 'F8')  { e.preventDefault(); pauseOrContinue(); }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+    if (e.key === 's') { e.preventDefault(); saveProgram(); }
+    if (e.key === 'o') { e.preventDefault(); openProgram(); }
+  }
   if (e.key === 'F10') { e.preventDefault(); stepProgram(); }
 });
 

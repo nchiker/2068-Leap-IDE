@@ -31,6 +31,7 @@ import { indentUnit } from '@codemirror/language';
 import {
   leapLanguage, leapHighlight, LEAP_WORDS, NOT_IN_V2, keywordEntry, scanSymbols, keywordTokens,
 } from './leap-lang.js';
+import { loadAutosave } from './files.js';
 
 // ── Sample start-up source ────────────────────────────────────────
 const STARTER = `REM Leap V2 - hello world
@@ -382,10 +383,14 @@ const leapTheme = EditorView.theme({
   '.cm-completionDetail': { color: '#768390', fontSize: '11px' },
 }, { dark: true });
 
+// Tell ide.js (auto-save, unsaved mark) when the text changes.
+let onDocChanged = null;
+const changeListener = EditorView.updateListener.of(update => {
+  if (update.docChanged && onDocChanged) onDocChanged();
+});
+
 // ── Assemble editor state ─────────────────────────────────────────
-const startState = EditorState.create({
-  doc: STARTER,
-  extensions: [
+const EXTENSIONS = [
     history(),
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -415,9 +420,15 @@ const startState = EditorState.create({
       ...lintKeymap,
     ]),
     autoCaps,
+    changeListener,
     cursorPlugin,
     leapTheme,
-  ],
+];
+
+// The program kept in this browser (src/files.js) if there is one.
+const startState = EditorState.create({
+  doc: loadAutosave()?.text ?? STARTER,
+  extensions: EXTENSIONS,
 });
 
 // ── Mount ─────────────────────────────────────────────────────────
@@ -433,10 +444,27 @@ window.leapEditor = {
     return view.state.doc.toString();
   },
 
-  /** Replace the whole document (file open, tests) */
-  setSource(text) {
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  /**
+   * Replace the whole document. With {fresh: true} (New, Open) it is a new
+   * document: its own undo history, no breakpoints. Otherwise (tests) the
+   * replacement is an ordinary, undoable edit.
+   */
+  setSource(text, { fresh = false } = {}) {
+    if (!fresh) {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+      return;
+    }
+    view.setState(EditorState.create({ doc: text, extensions: EXTENSIONS }));
+    if (onBreakpointsChanged) onBreakpointsChanged();
+    if (onDocChanged) onDocChanged();
+    forceLinting(view);
   },
+
+  /** Called (no arguments) after every change to the text */
+  onChange(fn) { onDocChanged = fn; },
+
+  /** Put the keyboard focus in the editor */
+  focus() { view.focus(); },
 
   /** Push lint diagnostics from ide.js lintLeap() into CM6 */
   setDiagnostics(diags) {
