@@ -1,8 +1,9 @@
 # Leap V2 Web IDE — CLAUDE.md
 
 This is the authoritative technical brief for the Leap V2 Web IDE.
-Read this file completely before writing any code. Then read `docs/overview.md`
-for the design rationale. The mock-up is at `docs/mockup.html` (a visual
+Read this file completely before writing any code. Then read
+**`docs/HANDOFF.md`** (where the work stands, the owner's decisions, what is on
+hold, known traps) and `docs/overview.md` for the design rationale. The mock-up is at `docs/mockup.html` (a visual
 target only: its sample code and keyword list predate the language reference
 below and are partly wrong).
 
@@ -69,7 +70,11 @@ Leap-IDE/
 │   ├── leap-rom-entry.py  ← Prints a leap-roms.js entry for a 2068-Leap build
 │   ├── gen-leap-keywords.py ← Generates src/leap-keywords.js from the Leap manual
 │   └── gen-leap-errors.py   ← Generates src/leap-errors.js from manual Appendix B
+├── tests/
+│   ├── rom-checks.mjs    ← Node: run path, checker, packages, debugger, TAP vs Leap's SAVE (real ROMs)
+│   └── browser-smoke.mjs ← Headless Chrome: the whole IDE end to end
 ├── docs/
+│   ├── HANDOFF.md    ← Session handoff: status, owner decisions, on-hold items, traps
 │   ├── overview.md   ← Design doc
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needs)
 │   └── mockup.html   ← Visual mock-up
@@ -319,9 +324,12 @@ stop, `INPUT` stop, re-run while busy.
    commit that carries them. Copy the release's package binaries
    (`v2_package_<name>.bin`) unchanged to `packages/<version>/<name>.bin` and
    check them against the release's `SHA256SUMS`.
-4. Re-run the Phase 1 checks (hello world, compile error, BREAK, `INPUT`), a
-   debugger check (breakpoint, step, variables) and a package check (a program
-   with `CIRCLE`).
+4. Run `LEAP_ROMS=<dir with the new leap-0.rom/leap-1.rom> node tests/rom-checks.mjs`
+   (and again without `LEAP_ROMS` after moving the submodule), then
+   `node tests/browser-smoke.mjs`. They cover hello world, compile and run-time
+   errors, the checker, packages, the debugger and TAP export. Add the
+   release's `SAVE_SYMBOLS` to `tests/rom-checks.mjs` from its `.sym` files.
+   BREAK and `INPUT` stop are still checked by hand in the IDE.
    Update the memory-map table above if the layout moved.
 
 ---
@@ -697,9 +705,12 @@ first. The IDE does that for the user, so such programs compile and run.
 
 ## Themes (Phase 8 — done, `ide.css` + `ide.js` "Theme")
 
-The toolbar's ◐ button cycles **System** (◐, follows the OS light/dark
-setting, live) → **Light** (☀) → **Dark** (☾); the choice is remembered in
-`localStorage` (`leap-ide.theme`, default `system`).
+The toolbar's ☀ / ☾ button (after Help) switches between **light** and
+**dark**; every click visibly changes the theme. Until the user clicks it, the
+IDE follows the system setting (`prefers-color-scheme`, live). The choice is
+remembered in `localStorage` (`leap-ide.theme` = `light` | `dark`; absent =
+follow the system). (A first version cycled system → light → dark; rejected:
+two of the three clicks often looked like nothing happened.)
 
 - **Every colour is a CSS variable** in `ide.css`: the dark palette on `:root`,
   the light one on `:root[data-theme="light"]`. This includes the editor: the
@@ -897,6 +908,23 @@ optional git hook that does it on every commit (owner's choice to install:
 `ln -s ../../tools/pre-commit .git/hooks/pre-commit`). A new module is picked up
 automatically as long as a relative `import` reaches it from `src/editor.js` or
 `ide.js`.
+
+## Tests
+
+- `node tests/rom-checks.mjs` — 42 checks in about 1 s against the real ROMs in
+  Node (TSRun's machine, no browser): ROM table lookup, Run by injection
+  (finished, compile error, run-time error, package), the checker's error codes
+  and lines, packages, the debugger's line table / breakpoints / variables /
+  call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
+  helpers. `LEAP_ROMS=<dir>` tests other ROM files. Expected values were
+  recorded on 2.0.2-emu.1.
+- `node tests/browser-smoke.mjs [outdir]` — 16 checks in about 30 s, in headless
+  Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
+  modules, Run results in the status bar, the error check, auto-caps, tabs,
+  Draw zoom, theme and Help, with no page errors. It saves screenshots.
+- Run both before every commit that changes behaviour. `src/leap-lang.js`
+  imports CodeMirror, so Node cannot load it; it is covered by the browser
+  test.
 
 ## Coding Conventions
 

@@ -7,10 +7,10 @@
   <link rel="stylesheet" href="ide.css">
   <script>
     // The theme before the first paint, so a light theme never flashes dark.
-    // The choice (system | light | dark) is ide.js "Theme"; keep the two in step.
+    // The choice (light | dark; none = follow the system) is ide.js "Theme"; keep the two in step.
     (function () {
-      var t = 'system';
-      try { t = localStorage.getItem('leap-ide.theme') || 'system'; } catch (e) { /* storage blocked */ }
+      var t = null;
+      try { t = localStorage.getItem('leap-ide.theme'); } catch (e) { /* storage blocked */ }
       if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       document.documentElement.dataset.theme = t;
     })();
@@ -45,7 +45,7 @@
       <button id="btn-export" class="btn"           title="Save the program as a .tap for Leap's LOAD">⬇ TAP</button>
       <button id="btn-dck"    class="btn"           title="Cartridge export (needs a Leap cartridge build)">⬇ DCK</button>
       <button id="btn-help"   class="btn"           title="Keywords, keys and tips (F1)">? Help</button>
-      <button id="btn-theme"  class="btn btn-theme" title="Theme">◐</button>
+      <button id="btn-theme"  class="btn btn-theme" title="Switch between light and dark">☾</button>
     </div>
 
     <div class="status-chip" id="status-chip">
@@ -147,7 +147,7 @@
     "./src/emulator.js": "./src/emulator.js?v=061c88a609",
     "./src/export.js": "./src/export.js?v=794df981a9",
     "./src/files.js": "./src/files.js?v=21a47c8c07",
-    "./src/help.js": "./src/help.js?v=a7d07ac166",
+    "./src/help.js": "./src/help.js?v=48734a6e56",
     "./src/leap-check.js": "./src/leap-check.js?v=e71cd7c8f7",
     "./src/leap-debug.js": "./src/leap-debug.js?v=d2a15de644",
     "./src/leap-errors.js": "./src/leap-errors.js?v=74190e2885",
@@ -169,7 +169,7 @@
 }
 </script>
 <script type="module" src="src/editor.js?v=83de980aa9"></script>
-<script type="module" src="ide.js?v=0e6b94b160"></script>
+<script type="module" src="ide.js?v=d420094a5f"></script>
 
 </body>
 </html>

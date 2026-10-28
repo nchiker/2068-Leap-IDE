@@ -634,37 +634,35 @@ document.getElementById('btn-dck').addEventListener('click', () => {
 });
 
 // ── Theme ─────────────────────────────────────────────────────────
-// System (follows the OS light/dark setting), Light or Dark; the toolbar
-// button cycles them. ide.css holds both palettes as variables under
+// Light or dark. Until the user picks one the IDE follows the system setting
+// (live); the toolbar button then switches between the two, so every click
+// visibly changes the theme. ide.css holds both palettes as variables under
 // <html data-theme="dark|light">; ide.html's head script applies the saved
 // choice before the first paint. The editor only needs to know dark/light
 // for CodeMirror's own defaults (lint tooltip, search panel).
 
-const THEME_KEY = 'leap-ide.theme';
-const THEMES = ['system', 'light', 'dark'];
-const THEME_LABEL = { system: '◐', light: '☀', dark: '☾' };
-const THEME_NAME = { system: 'follow the system', light: 'light', dark: 'dark' };
+const THEME_KEY = 'leap-ide.theme';    // 'light' | 'dark'; absent = follow the system
 const systemLight = window.matchMedia('(prefers-color-scheme: light)');
-let themeChoice = 'system';
-try { themeChoice = localStorage.getItem(THEME_KEY) || 'system'; } catch { /* storage blocked */ }
-if (!THEMES.includes(themeChoice)) themeChoice = 'system';
+let themeChoice = null;
+try { themeChoice = localStorage.getItem(THEME_KEY); } catch { /* storage blocked */ }
+if (themeChoice !== 'light' && themeChoice !== 'dark') themeChoice = null;
 
 function applyTheme() {
-  const shown = themeChoice === 'system' ? (systemLight.matches ? 'light' : 'dark') : themeChoice;
+  const shown = themeChoice ?? (systemLight.matches ? 'light' : 'dark');
   document.documentElement.dataset.theme = shown;
   window.leapEditor.setDark(shown === 'dark');
-  const next = THEMES[(THEMES.indexOf(themeChoice) + 1) % THEMES.length];
   const btn = document.getElementById('btn-theme');
-  btn.textContent = THEME_LABEL[themeChoice];
-  btn.title = `Theme: ${THEME_NAME[themeChoice]}${themeChoice === 'system' ? ` (now ${shown})` : ''}. Click for ${THEME_NAME[next]}.`;
+  btn.textContent = shown === 'dark' ? '☾' : '☀';
+  btn.title = `${shown === 'dark' ? 'Dark' : 'Light'} theme${themeChoice ? '' : ' (following your system setting)'}` +
+    ` — click for ${shown === 'dark' ? 'light' : 'dark'}`;
 }
 
 document.getElementById('btn-theme').addEventListener('click', () => {
-  themeChoice = THEMES[(THEMES.indexOf(themeChoice) + 1) % THEMES.length];
+  themeChoice = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* storage blocked */ }
   applyTheme();
 });
-systemLight.addEventListener('change', () => { if (themeChoice === 'system') applyTheme(); });
+systemLight.addEventListener('change', () => { if (!themeChoice) applyTheme(); });
 applyTheme();
 
 // ── Display zoom ──────────────────────────────────────────────────

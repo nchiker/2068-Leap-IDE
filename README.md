@@ -24,8 +24,8 @@ package statements such as `CIRCLE` work because the IDE loads the package on
 Run; "? Help" (F1) opens a searchable keyword reference. Phase 7 is done: the right panel has Symbols (click a name to jump to it),
 UDG (draw Leap's 21 user-defined characters and insert the `POKE` lines into the
 program, or load them back) and Draw (a `PLOT` / `LINE` scratchpad) tabs beside
-the debugger. The ◐ button switches between light and dark themes or follows
-the system setting. Phase 6 is half done:
+the debugger. The ☀ / ☾ button switches between light and dark themes (until
+you choose, the IDE follows the system setting). Phase 6 is half done:
 "⬇ TAP" saves exactly what Leap's own `SAVE` writes (verified: Leap's real
 `LOAD` reads it back); the DCK cartridge needs a runtime-only Leap build first,
 specified in `docs/LEAP_CARTRIDGE_BUILD.md`. Still to do, both waiting for Leap

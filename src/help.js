@@ -45,7 +45,7 @@ const TIPS = [
   'Package statements (CIRCLE, FILL, GRAB, MODE, …) work directly: the IDE loads the package the program uses. On a real TS2068, type LOAD "NAME" EXT first.',
   'Your program is kept in this browser as you type. Save downloads it; ⬇ TAP makes a tape a TS2068 or an emulator can LOAD.',
   'Hover over a keyword for its syntax and an example; − / + next to the display change its size.',
-  'The ◐ button next to Help switches the colours: follow the system setting (◐), light (☀) or dark (☾).',
+  'The ☀ / ☾ button next to Help switches between the light and dark themes. Until you click it, the IDE follows your system\'s setting.',
 ];
 
 let overlay = null;
