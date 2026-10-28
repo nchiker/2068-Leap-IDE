@@ -695,6 +695,27 @@ first. The IDE does that for the user, so such programs compile and run.
 
 ---
 
+## Themes (Phase 8 — done, `ide.css` + `ide.js` "Theme")
+
+The toolbar's ◐ button cycles **System** (◐, follows the OS light/dark
+setting, live) → **Light** (☀) → **Dark** (☾); the choice is remembered in
+`localStorage` (`leap-ide.theme`, default `system`).
+
+- **Every colour is a CSS variable** in `ide.css`: the dark palette on `:root`,
+  the light one on `:root[data-theme="light"]`. This includes the editor: the
+  CodeMirror theme (`leapThemeSpec` in `src/editor.js`) and the syntax colours
+  (`leapHighlight` in `src/leap-lang.js`, `--syn-*` variables) use `var(...)`,
+  so switching theme only changes `<html data-theme>`. Do not add hex colours
+  to the JS or CSS rules; add a variable to both palettes.
+- `leapEditor.setDark(bool)` swaps CodeMirror's dark/light flag (through a
+  `Compartment`), which only picks CM's own defaults for the lint tooltip and
+  search panel.
+- A small inline script in `ide.html`'s `<head>` applies the saved theme
+  before the first paint, so a light page never flashes dark. It and
+  `applyTheme` in `ide.js` must agree on the key and values.
+- Unchanged in both themes: the TS2068 bezel and screen, and the TS2068
+  paper/ink in the UDG and Draw tools (they show what the machine shows).
+
 ## Help (done, `src/help.js`)
 
 "? Help" in the toolbar or F1 opens an overlay; Escape or a click outside closes
@@ -840,7 +861,7 @@ tested separately.
 | 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/leap-check.js`, `src/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
 | 6     | Tape + DCK export                                   | `src/export.js`, `docs/LEAP_CARTRIDGE_BUILD.md` | TAP done, verified; DCK needs the Leap cartridge build (spec written) |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools/symbols.js`, `udg.js`, `draw.js`, `src/editor.js` (`insertLines`), `ide.js` | **Done** |
-| 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `src/help.js` | Help overlay and cheat-sheet (Keys & tips) done; themes remain |
+| 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
 | —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/leap-check.js`, `packages/` | **Done**, verified |
 
 ---
@@ -891,17 +912,16 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## What Claude Code Should Do Next
 
-Phases 1 to 5 and 7 work, Phase 6's tape export is done and verified (Leap's own
+Phases 1 to 5, 7 and 8 work, Phase 6's tape export is done and verified (Leap's own
 `LOAD` reads the IDE's `.tap`), and saving/opening programs, packages and the
-Help overlay are done. Remaining, in order:
+Help overlay are done. **The owner has put the remaining items on hold until
+Leap 2.1 is ready**; do not start them before the owner says so:
 
-1. **Phase 8 polish:** themes (the keyboard cheat-sheet is covered by Help's
-   Keys & tips tab).
-2. **DCK export**, after the Leap cartridge build exists
+1. **DCK export**, after the Leap cartridge build exists
    (`docs/LEAP_CARTRIDGE_BUILD.md`): implement it per the spec's "IDE side"
    section and verify by loading the result in TSRun with the stock ROMs. Do not
    guess the layout before then.
-3. **The Leap 2.1 ROM entry**, when the owner says 2.1 is ready (see "Adding a
+2. **The Leap 2.1 ROM entry**, when the owner says 2.1 is ready (see "Adding a
    Leap ROM release"; also regenerate the keyword and error data and copy the
    2.1 package binaries). The entry needs `udgTable`, `udgCodeBase` and
    `udgCount` for the UDG tab; `tools/leap-rom-entry.py` generates them.

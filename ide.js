@@ -633,6 +633,40 @@ document.getElementById('btn-dck').addEventListener('click', () => {
   setStatus('DCK export needs a Leap cartridge build (planned); use TAP for now', 'idle');
 });
 
+// ── Theme ─────────────────────────────────────────────────────────
+// System (follows the OS light/dark setting), Light or Dark; the toolbar
+// button cycles them. ide.css holds both palettes as variables under
+// <html data-theme="dark|light">; ide.html's head script applies the saved
+// choice before the first paint. The editor only needs to know dark/light
+// for CodeMirror's own defaults (lint tooltip, search panel).
+
+const THEME_KEY = 'leap-ide.theme';
+const THEMES = ['system', 'light', 'dark'];
+const THEME_LABEL = { system: '◐', light: '☀', dark: '☾' };
+const THEME_NAME = { system: 'follow the system', light: 'light', dark: 'dark' };
+const systemLight = window.matchMedia('(prefers-color-scheme: light)');
+let themeChoice = 'system';
+try { themeChoice = localStorage.getItem(THEME_KEY) || 'system'; } catch { /* storage blocked */ }
+if (!THEMES.includes(themeChoice)) themeChoice = 'system';
+
+function applyTheme() {
+  const shown = themeChoice === 'system' ? (systemLight.matches ? 'light' : 'dark') : themeChoice;
+  document.documentElement.dataset.theme = shown;
+  window.leapEditor.setDark(shown === 'dark');
+  const next = THEMES[(THEMES.indexOf(themeChoice) + 1) % THEMES.length];
+  const btn = document.getElementById('btn-theme');
+  btn.textContent = THEME_LABEL[themeChoice];
+  btn.title = `Theme: ${THEME_NAME[themeChoice]}${themeChoice === 'system' ? ` (now ${shown})` : ''}. Click for ${THEME_NAME[next]}.`;
+}
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  themeChoice = THEMES[(THEMES.indexOf(themeChoice) + 1) % THEMES.length];
+  try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* storage blocked */ }
+  applyTheme();
+});
+systemLight.addEventListener('change', () => { if (themeChoice === 'system') applyTheme(); });
+applyTheme();
+
 // ── Display zoom ──────────────────────────────────────────────────
 // TSRun draws a 320x240 frame (256x192 screen plus border). Scaling it by a
 // fraction gives some pixel columns one display pixel and others two, so

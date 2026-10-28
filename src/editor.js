@@ -15,7 +15,7 @@
  *   - Linting by the ROM's own compiler (ide.js lintSource), plus run errors
  */
 
-import { EditorState, StateField, StateEffect, RangeSet } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, RangeSet, Compartment } from '@codemirror/state';
 import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor,
@@ -311,25 +311,27 @@ const cursorPlugin = EditorView.updateListener.of(update => {
   if (sb) sb.textContent = `Ln ${line.number}, Col ${col}`;
 });
 
-// ── CM6 theme (dark IDE) ──────────────────────────────────────────
-const leapTheme = EditorView.theme({
+// ── CM6 theme: colours are ide.css variables, so they follow the theme ─
+// The dark/light flag only picks CodeMirror's own defaults (lint tooltips,
+// search panel); setDark() swaps it through a compartment.
+const leapThemeSpec = {
   '&': {
     fontSize: '13px',
     fontFamily: "'JetBrains Mono', 'Cascadia Code', monospace",
     height: '100%',
-    background: '#13171f',
-    color: '#cdd9e5',
+    background: 'var(--bg-panel)',
+    color: 'var(--fg)',
   },
-  '.cm-content': { padding: '6px 0', caretColor: '#cdd9e5' },
-  '.cm-cursor': { borderLeftColor: '#cdd9e5' },
-  '.cm-selectionBackground, ::selection': { background: 'rgba(108,182,255,0.2)' },
-  '.cm-activeLine':  { background: 'rgba(227,179,65,0.06)' },
-  '.cm-activeLineGutter': { background: 'rgba(227,179,65,0.1)' },
+  '.cm-content': { padding: '6px 0', caretColor: 'var(--fg)' },
+  '.cm-cursor': { borderLeftColor: 'var(--fg)' },
+  '.cm-selectionBackground, ::selection': { background: 'var(--selection)' },
+  '.cm-activeLine':  { background: 'var(--amber-tint)' },
+  '.cm-activeLineGutter': { background: 'var(--amber-tint2)' },
   '.cm-gutters': {
-    background: '#0d1117',
-    color: '#3d444c',
+    background: 'var(--bg)',
+    color: 'var(--fg-dim)',
     border: 'none',
-    borderRight: '1px solid #2d333b',
+    borderRight: '1px solid var(--border)',
   },
   '.cm-lineNumbers .cm-gutterElement': { padding: '0 8px 0 4px', minWidth: '32px' },
   '.cm-breakpoint-gutter': { width: '16px', cursor: 'pointer' },
@@ -337,53 +339,57 @@ const leapTheme = EditorView.theme({
     display: 'inline-block',
     width: '8px', height: '8px',
     borderRadius: '50%',
-    background: '#f78166',
+    background: 'var(--red-fg)',
     margin: '0 4px',
-    boxShadow: '0 0 4px rgba(247,129,102,0.5)',
+    boxShadow: '0 0 4px var(--bp-glow)',
   },
   '.cm-foldGutter': { padding: '0 4px' },
-  '.cm-exec-line': { background: 'rgba(227,179,65,0.18)', boxShadow: 'inset 3px 0 0 #e3b341' },
-  '.exec-gutter-arrow': { color: '#e3b341', fontSize: '11px', lineHeight: '1', marginLeft: '2px' },
-  '.exec-gutter-arrow.on-bp': { color: '#f78166' },
+  '.cm-exec-line': { background: 'var(--exec-line)', boxShadow: 'inset 3px 0 0 var(--amber-fg)' },
+  '.exec-gutter-arrow': { color: 'var(--amber-fg)', fontSize: '11px', lineHeight: '1', marginLeft: '2px' },
+  '.exec-gutter-arrow.on-bp': { color: 'var(--red-fg)' },
   '.cm-leap-tooltip': {
     padding: '8px 12px',
-    background: '#1c2128',
-    border: '1px solid #444c56',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-hi)',
     borderRadius: '5px',
-    boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
+    boxShadow: '0 6px 20px var(--shadow)',
     maxWidth: '380px',
   },
   '.cm-leap-sig': {
     fontFamily: 'inherit',
-    color: '#e3b341',
+    color: 'var(--amber-fg)',
     fontSize: '12px',
     display: 'block',
     whiteSpace: 'pre-wrap',
   },
-  '.cm-leap-kind': { color: '#768390', fontSize: '10px', margin: '2px 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  '.cm-leap-desc': { color: '#adbac7', fontSize: '11px', lineHeight: '1.45' },
+  '.cm-leap-kind': { color: 'var(--fg-muted)', fontSize: '10px', margin: '2px 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  '.cm-leap-desc': { color: 'var(--fg-soft)', fontSize: '11px', lineHeight: '1.45' },
   '.cm-leap-example': {
     margin: '6px 0 0',
     padding: '6px 8px',
-    background: '#13171f',
+    background: 'var(--bg-panel)',
     borderRadius: '4px',
-    color: '#cdd9e5',
+    color: 'var(--fg)',
     fontSize: '11px',
     fontFamily: 'inherit',
   },
   '.cm-completionInfo .cm-leap-tooltip': { border: 'none', boxShadow: 'none', padding: '4px' },
   '.cm-tooltip-autocomplete': {
-    background: '#1c2128',
-    border: '1px solid #444c56',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-hi)',
     borderRadius: '5px',
   },
   '.cm-tooltip-autocomplete ul li[aria-selected]': {
-    background: 'rgba(108,182,255,0.15)',
-    color: '#cdd9e5',
+    background: 'var(--hover-sel)',
+    color: 'var(--fg)',
   },
   '.cm-completionLabel': { fontSize: '12px' },
-  '.cm-completionDetail': { color: '#768390', fontSize: '11px' },
-}, { dark: true });
+  '.cm-completionDetail': { color: 'var(--fg-muted)', fontSize: '11px' },
+};
+const themeCompartment = new Compartment();
+const leapTheme = dark => EditorView.theme(leapThemeSpec, { dark });
+// ide.html's head script has already set data-theme from the saved choice.
+let darkTheme = document.documentElement.dataset.theme !== 'light';
 
 // Tell ide.js (auto-save, unsaved mark) when the text changes.
 let onDocChanged = null;
@@ -424,7 +430,7 @@ const EXTENSIONS = [
     autoCaps,
     changeListener,
     cursorPlugin,
-    leapTheme,
+    themeCompartment.of(leapTheme(darkTheme)),
 ];
 
 // The program kept in this browser (src/files.js) if there is one.
@@ -457,6 +463,7 @@ window.leapEditor = {
       return;
     }
     view.setState(EditorState.create({ doc: text, extensions: EXTENSIONS }));
+    view.dispatch({ effects: themeCompartment.reconfigure(leapTheme(darkTheme)) });
     if (onBreakpointsChanged) onBreakpointsChanged();
     if (onDocChanged) onDocChanged();
     forceLinting(view);
@@ -482,6 +489,13 @@ window.leapEditor = {
       scrollIntoView: true,
     });
     view.focus();
+  },
+
+  /** Dark or light CodeMirror defaults (ide.js "Theme"); the colours follow ide.css by themselves. */
+  setDark(dark) {
+    if (dark === darkTheme) return;
+    darkTheme = dark;
+    view.dispatch({ effects: themeCompartment.reconfigure(leapTheme(dark)) });
   },
 
   /** Called (no arguments) after every change to the text */

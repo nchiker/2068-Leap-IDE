@@ -542,7 +542,7 @@ section once the cartridge build exists.
 | 5     | Error checking (ROM compiler)      | Medium | Done, verified |
 | 6     | Tape + DCK export                  | Medium | TAP done, verified; DCK needs the Leap cartridge build (spec written) |
 | 7     | UDG editor, symbol table, graphics scratchpad | Low | Done (tabs and symbol table verified; code insertion and runs tested) |
-| 8     | Help overlay, themes, polish       | Low    | Help overlay and keys cheat-sheet done; themes remain |
+| 8     | Help overlay, themes, polish       | Low    | Done: help overlay, keys cheat-sheet, light/dark/system themes |
 | —     | Files (auto-save, Open/Save) and packages | Medium | Done, verified |
 
 ---

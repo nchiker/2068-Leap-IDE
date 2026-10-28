@@ -206,22 +206,22 @@ export function keywordTokens(lineText) {
   return out;
 }
 
-// ── Highlight style (phosphor-era palette, dark IDE) ─────────────
+// ── Highlight style: colours are ide.css variables, so they follow the theme ─
 export const leapHighlight = syntaxHighlighting(
   HighlightStyle.define([
-    { tag: tags.keyword,                  color: '#e3b341', fontWeight: '600' },
-    { tag: tags.operatorKeyword,          color: '#e3b341' },
-    { tag: tags.moduleKeyword,            color: '#f0883e', fontWeight: '600' },
-    { tag: tags.standard(tags.variableName), color: '#56d4dd' },
-    { tag: tags.string,                   color: '#8ddb8c' },
-    { tag: tags.number,                   color: '#79c0ff' },
-    { tag: tags.comment,                  color: '#545d68', fontStyle: 'italic' },
-    { tag: tags.variableName,             color: '#cdd9e5' },
-    { tag: tags.labelName,                color: '#f78166', fontStyle: 'italic' },
-    { tag: tags.function(tags.variableName), color: '#dcbdfb' },
-    { tag: tags.operator,                 color: '#adbac7' },
-    { tag: [tags.punctuation, tags.separator], color: '#768390' },
-    { tag: tags.invalid,                  color: '#ff7b72', textDecoration: 'underline wavy #ff7b72' },
+    { tag: tags.keyword,                  color: 'var(--syn-keyword)', fontWeight: '600' },
+    { tag: tags.operatorKeyword,          color: 'var(--syn-keyword)' },
+    { tag: tags.moduleKeyword,            color: 'var(--syn-package)', fontWeight: '600' },
+    { tag: tags.standard(tags.variableName), color: 'var(--syn-builtin)' },
+    { tag: tags.string,                   color: 'var(--syn-string)' },
+    { tag: tags.number,                   color: 'var(--syn-number)' },
+    { tag: tags.comment,                  color: 'var(--syn-comment)', fontStyle: 'italic' },
+    { tag: tags.variableName,             color: 'var(--syn-var)' },
+    { tag: tags.labelName,                color: 'var(--syn-label)', fontStyle: 'italic' },
+    { tag: tags.function(tags.variableName), color: 'var(--syn-proc)' },
+    { tag: tags.operator,                 color: 'var(--syn-op)' },
+    { tag: [tags.punctuation, tags.separator], color: 'var(--syn-punct)' },
+    { tag: tags.invalid,                  color: 'var(--syn-invalid)', textDecoration: 'underline wavy var(--syn-invalid)' },
   ])
 );
 
