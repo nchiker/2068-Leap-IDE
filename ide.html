@@ -43,7 +43,7 @@
       <button id="btn-pause"  class="btn"           title="Pause / Continue (F8)" disabled>⏸ Pause</button>
       <button id="btn-step"   class="btn"           title="Step to the next statement (F10)" disabled>↷ Step</button>
       <button id="btn-export" class="btn"           title="Save the program as a .tap for Leap's LOAD">⬇ TAP</button>
-      <button id="btn-dck"    class="btn"           title="Cartridge export (needs a Leap cartridge build)">⬇ DCK</button>
+      <button id="btn-dck"    class="btn"           title="Save the program as a cartridge (.dck) that runs on a stock TS2068">⬇ DCK</button>
       <button id="btn-help"   class="btn"           title="Keywords, keys and tips (F1)">? Help</button>
       <button id="btn-theme"  class="btn btn-theme" title="Switch between light and dark">☾</button>
     </div>
@@ -143,17 +143,18 @@
     "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
     "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
     "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
+    "./src/cartridge.js": "./src/cartridge.js?v=d4e59e61b2",
     "./src/debugger.js": "./src/debugger.js?v=a88cb9bbd3",
     "./src/emulator.js": "./src/emulator.js?v=061c88a609",
     "./src/export.js": "./src/export.js?v=8c6b8c033f",
     "./src/files.js": "./src/files.js?v=21a47c8c07",
     "./src/help.js": "./src/help.js?v=48734a6e56",
-    "./src/leap-check.js": "./src/leap-check.js?v=e71cd7c8f7",
+    "./src/leap-check.js": "./src/leap-check.js?v=bfa2ad97b7",
     "./src/leap-debug.js": "./src/leap-debug.js?v=96e6212810",
     "./src/leap-errors.js": "./src/leap-errors.js?v=5578d95716",
     "./src/leap-keywords.js": "./src/leap-keywords.js?v=3eaebbd157",
     "./src/leap-lang.js": "./src/leap-lang.js?v=f1fcb9bde6",
-    "./src/leap-roms.js": "./src/leap-roms.js?v=689a107a24",
+    "./src/leap-roms.js": "./src/leap-roms.js?v=d8439a1f7b",
     "./src/pc-keyboard.js": "./src/pc-keyboard.js?v=a8de2845cd",
     "./src/tools/draw.js": "./src/tools/draw.js?v=5ff69e57cb",
     "./src/tools/symbols.js": "./src/tools/symbols.js?v=dcf70124d3",
@@ -169,7 +170,7 @@
 }
 </script>
 <script type="module" src="src/editor.js?v=83de980aa9"></script>
-<script type="module" src="ide.js?v=102a3a03d4"></script>
+<script type="module" src="ide.js?v=79e502a09e"></script>
 
 </body>
 </html>

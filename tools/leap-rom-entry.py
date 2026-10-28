@@ -48,6 +48,7 @@ SYMBOLS = {
     "vmIp":             "VM_IP",
     "vmHalted":         "VM_HALTED",
     "vmCodeBase":       "VM_CODE_BASE",
+    "symCounts":        "SYM_COUNTS",      # DCK export: the cartridge's program image carries them
     "symBase":          "SYM_BASE_V",
     "symEnd":           "SYM_END_V",
     "rtSymtab":         "RT_SYMTAB_PTR",
@@ -100,6 +101,9 @@ def main():
     print("    keyWaitEnd:       0x%04X,   // end of the spin loop (exclusive)" % (kw + 6))
     # The release's packages/v2_package_<name>.bin, copied unchanged.
     print("    packageDir:       'packages/%s/'," % sys.argv[2])
+    # The release's runtime cartridge build (leap_v2_cart_home/exrom.bin), if there is one:
+    # copy it to cartridge/<version>/ for the DCK export; without it, leave this line out.
+    print("    cartridgeDir:     'cartridge/%s/'," % sys.argv[2])
     print("  },")
 
 

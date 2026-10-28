@@ -92,6 +92,7 @@ export const KNOWN_ROMS = {
     vmIp:             0xB600,   // VM_IP
     vmHalted:         0xB684,   // VM_HALTED
     vmCodeBase:       0xA655,   // VM_CODE_BASE
+    symCounts:        0xB800,   // SYM_COUNTS
     symBase:          0xB805,   // SYM_BASE_V
     symEnd:           0xB807,   // SYM_END_V
     rtSymtab:         0xB80D,   // RT_SYMTAB_PTR
@@ -103,6 +104,7 @@ export const KNOWN_ROMS = {
     varsStart:        0x822F,   // VARS_START
     keyWaitEnd:       0x0449,   // end of the spin loop (exclusive)
     packageDir:       'packages/2.1.0-emu.1/',
+    cartridgeDir:     'cartridge/2.1.0-emu.1/',
   },
 };
 

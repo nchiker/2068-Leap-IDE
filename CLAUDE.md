@@ -2,8 +2,8 @@
 
 This is the authoritative technical brief for the Leap V2 Web IDE.
 Read this file completely before writing any code. Then read
-**`docs/HANDOFF.md`** (where the work stands, the owner's decisions, what is on
-hold, known traps) and `docs/overview.md` for the design rationale. The mock-up is at `docs/mockup.html` (a visual
+**`docs/HANDOFF.md`** (where the work stands, the owner's decisions, known
+traps) and `docs/overview.md` for the design rationale. The mock-up is at `docs/mockup.html` (a visual
 target only: its sample code and keyword list predate the language reference
 below and are partly wrong).
 
@@ -64,7 +64,10 @@ Leap-IDE/
 │   │   ├── symbols.js ← Symbols tab: procedures, functions, labels, variables; click jumps to the line
 │   │   ├── udg.js     ← UDG tab: draw the 21 user-defined characters, insert / load POKEs
 │   │   └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE
-│   └── export.js     ← TAP builder (Phase 6, done, verified); the DCK builder waits for the Leap cartridge build
+│   ├── export.js     ← TAP builder (Phase 6, done, verified)
+│   └── cartridge.js  ← DCK / flat .bin cartridge builder (Phase 6, done, verified; no DOM, Node can import it)
+├── cartridge/
+│   └── 2.1.0-emu.1/  ← Leap's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README
 ├── packages/
 │   ├── 2.0.2-emu.1/  ← Package images of that release (<name>.bin; same six as 2.1.0-emu.1)
 │   └── 2.1.0-emu.1/  ← The current release's package images: cbeep graphics mode printer shapes sprite (<name>.bin)
@@ -73,12 +76,12 @@ Leap-IDE/
 │   ├── gen-leap-keywords.py ← Generates src/leap-keywords.js from the Leap manual
 │   └── gen-leap-errors.py   ← Generates src/leap-errors.js from manual Appendix B
 ├── tests/
-│   ├── rom-checks.mjs    ← Node: run path, checker, packages, debugger, TAP vs Leap's SAVE (real ROMs)
+│   ├── rom-checks.mjs    ← Node: run path, checker, packages, debugger, TAP vs Leap's SAVE, cartridge on a stock TS2068 (real ROMs)
 │   └── browser-smoke.mjs ← Headless Chrome: the whole IDE end to end
 ├── docs/
-│   ├── HANDOFF.md    ← Session handoff: status, owner decisions, on-hold items, traps
+│   ├── HANDOFF.md    ← Session handoff: status, owner decisions, traps
 │   ├── overview.md   ← Design doc
-│   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needs)
+│   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needed; now built)
 │   └── mockup.html   ← Visual mock-up
 └── tsrun/            ← git submodule: TSRun fork, pinned at 016787f
 ```
@@ -251,12 +254,12 @@ host in `src/emulator.js`. There is **no** `machine.run()` / `.stop()` /
 
 | File          | What the IDE uses |
 |---------------|-------------------|
-| `machine.js`  | `createMachine`, `setHomeRom`, `setExRom`, `resetMachine`, `runFrame`, `setVideoOn`, `enableSound`, `setSoundRate`, `takeAudio`, `cpuHz`, `tStatesPerFrame`. Memory: `machine.bus.read(addr)` / `machine.bus.write(addr, v)`. |
+| `machine.js`  | `createMachine`, `setHomeRom`, `setExRom`, `insertDock` (tests only: a stock TS2068 with a dock cartridge), `resetMachine`, `runFrame`, `setVideoOn`, `enableSound`, `setSoundRate`, `takeAudio`, `cpuHz`, `tStatesPerFrame`. Memory: `machine.bus.read(addr)` / `machine.bus.write(addr, v)`. |
 | `z80.js`      | `runZ80(cpu, budget)` — a budget of 1 runs one instruction. CPU state is `machine.cpu` (`pc`, `sp`, `a`, `f`, `b`, `c`, …, `iff1`, `im`). |
 | `screen.js`   | `initScreen`, `resizeScreen`, `setCrt`, `drawScreen` (WebGL2) |
 | `keyboard.js` | **Not used** by the IDE; `src/pc-keyboard.js` replaces it (see Keyboard). The IDE writes `machine.keyMatrix` itself. |
 | `sound.js`    | `initSound`, `resumeSound`, `pushSound`, … (AudioWorklet, needs the fork's `import.meta.url` fix) |
-| `dock.js`     | `parseDck` only (reads a dock; accepts banks 0 DOCK, 254 EXROM, 255 HOME; reference for the DCK builder) |
+| `dock.js`     | `parseDck` only (reads a dock; accepts banks 0 DOCK, 254 EXROM, 255 HOME; not used by the IDE, the tests load the exported DCK with `insertDock` in `machine.js`) |
 | `tape.js`, `load.js` | Tape loading. The tape-loading fix below (TSRun issue #3) is needed for Leap's own `LOAD` to read the IDE's `.tap` in TSRun. |
 
 `ide.html` loads no TSRun script tags. ROMs are fetched by `src/emulator.js`
@@ -336,7 +339,8 @@ stop, `INPUT` stop, re-run while busy.
    `FALLBACK` name (2.0.2 has no `VM_RUN.next`, so `vmNext` takes
    `VM_RUN.loop`).
    It also emits the package fields `ext2ClearAll`, `packageBase`, `packageLen`
-   and `packageDir` (see "Packages").
+   and `packageDir` (see "Packages"), plus `symCounts` and, if the release has a
+   cartridge build, a `cartridgeDir` line (step 5).
 3. Paste the entry into `src/leap-roms.js` and put the new
    `leap-0.rom`/`leap-1.rom` in `tsrun/roms/` by moving the submodule to a TSRun
    commit that carries them. Copy the release's package binaries
@@ -353,6 +357,15 @@ stop, `INPUT` stop, re-run while busy.
    change such a contract again.
    BREAK and `INPUT` stop are still checked by hand in the IDE.
    Update the memory-map table above if the layout moved.
+5. Cartridge build (DCK export): build the release's cartridge version
+   (`make cart`, `-DV2_CARTRIDGE`) in `~/Projects/Leap-Cartridge` or an
+   equivalent clone, copy `leap_v2_cart_home.bin` and `leap_v2_cart_exrom.bin`
+   to `cartridge/<version>/` with a README, and keep the `cartridgeDir` line in
+   the ROM entry. Check that `cartIdentity(cartridge HOME)` equals
+   `romIdentity(release ROMs)`; export refuses a mismatch. If the release has
+   no cartridge build, leave `cartridgeDir` out and export says there is none.
+   The cartridge checks in `tests/rom-checks.mjs` (section 7) then need the new
+   identity and the release's `symCounts` address.
 
 ---
 
@@ -615,10 +628,10 @@ and `setExecutionLine(line|null)`. The toolbar has Run, Stop, Pause/Continue
 
 ---
 
-## Export Formats (Phase 6 — TAP done and verified; DCK needs the Leap cartridge build)
+## Export Formats (Phase 6 — TAP and DCK done and verified)
 
-`src/export.js` holds pure builders returning `Uint8Array`. Only the tape
-builder exists.
+`src/export.js` (tape) and `src/cartridge.js` (cartridge) hold pure builders
+returning `Uint8Array`s. Neither touches the DOM, so Node can import them.
 
 ### Tape (done, verified) — `buildTAP`, toolbar "⬇ TAP"
 Exactly what Leap's own `SAVE "name"` writes (`V2_SAVE` -> `STORAGE_SAVE` ->
@@ -649,33 +662,89 @@ tape-loading fix (TSRun section above, in the submodule pin). The button (`expor
 characters) and reports `Saved X.tap: on the TS2068, LOAD "X" then RUN`
 (for a program that uses a package: `LOAD "NAME" EXT, then LOAD "X" then RUN`).
 
-### DCK (Timex dock cartridge) — blocked on a Leap cartridge build
-Leap 2.0.2 and 2.1.0-emu.1 never look at the dock, and their cold start clears
-RAM, so a cartridge that runs on a **stock TS2068** needs a Leap "cartridge
-build": a runtime-only version with no editor. The 2.1.0-emu.1 release does not
-contain one: its `roms/leap_v2_exrom.dck` is only the EXROM as a cartridge for
-EightyOne 1.41 (it still needs Leap's HOME ROM). The spec is
-[`docs/LEAP_CARTRIDGE_BUILD.md`](docs/LEAP_CARTRIDGE_BUILD.md). In short:
+### DCK (Timex dock cartridge) — done, verified; `src/cartridge.js`, toolbar "⬇ DCK"
+The owner approved this on 2026-10-28. Leap 2.0.2 and 2.1.0-emu.1 never look at
+the dock, and their cold start clears RAM, so a cartridge that runs on a
+**stock TS2068** needs Leap's *cartridge build* (`make cart`, `-DV2_CARTRIDGE`):
+a runtime-only version with no editor. It is made in the separate project
+`~/Projects/Leap-Cartridge` (its `leap/` is a clone of 2068-Leap on branch
+`cartridge`; the details are in `~/Projects/Leap-Cartridge/Docs/CARTRIDGE_STATUS.md`).
+The original spec is [`docs/LEAP_CARTRIDGE_BUILD.md`](docs/LEAP_CARTRIDGE_BUILD.md).
+The release's `roms/leap_v2_exrom.dck` is not this: it is only the EXROM as a
+cartridge for EightyOne 1.41.
 
-- Leap's HOME image goes in DOCK chunks 0-1 and its EXROM image in chunk 6, at
-  the same addresses; the cartridge runs with HSR (port `$F4`) = `$43` and
-  DECR (port `$FF`) bit 7 = 0, so Leap's code is always the DOCK.
-- Four port writes change under a build flag, so paging never switches the
-  cartridge's own code out.
-- The stock ROM starts it through an LROS header (cartridge type 1, chunk spec
-  `$BC`) and a `di` entry stub.
-- The program arrives **precompiled**: bytecode plus `SYM_COUNTS` from Leap's
-  own compiler (the IDE's hidden checker machine) sit in DOCK chunk 3. Cold
-  start copies them to `VM_CODE_BASE` and starts the VM directly.
-- Packages and tape are not in the first version.
+**Images.** `cartridge/2.1.0-emu.1/` holds `leap_v2_cart_home.bin` (16384 bytes,
+SHA-256 `fb16d609…`) and `leap_v2_cart_exrom.bin` (8192 bytes, SHA-256
+`df50142d…`) plus a README. Every release symbol keeps its address in the
+cartridge build, so the IDE's 2.1.0-emu.1 checker produces exactly the
+bytecode the cartridge runs.
 
-The "⬇ DCK" button currently only explains this in the status bar. Container
-reference (jon0x0/AISkill_TS2068, cartridge development skill): a DCK is a
-9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM, 2 ROM,
+**`src/cartridge.js`** (pure, no DOM or CodeMirror):
+`romIdentity(home, exrom)` (CRC-16/CCITT, polynomial `$1021`, initial value
+`$FFFF`, over HOME and then EXROM), `cartIdentity(cartHome)`,
+`buildProgramImage({bytecode, symCounts, identity})`,
+`buildCartridge({home, exrom, program})` returning `{dck, bin}`,
+`pagingWrites(text)` (`OUT` statements with a literal port whose low byte is
+244/`$F4` or 255/`$FF`), and the constants `CHUNK`, `MAX_BYTECODE` (4011) and
+`SYM_COUNTS_SIZE` (5).
+
+**Layout.** LROS cartridge. DOCK chunks 0-1 are the cartridge HOME, chunk 3 is
+the program image, chunk 6 is the cartridge EXROM. The DCK header is
+`00 02 02 00 02 00 00 02 00` (bank 0 = DOCK; chunks 0, 1, 3 and 6 are ROM (2),
+the other chunks are absent (0)). The flat `.bin` is 64 KB with the chunks in address order; an
+absent chunk is `$FF`.
+
+**Program image** at `$6000`, format 1, 19-byte header: `"LEAPPROG"`, format
+LE16 = 1, identity LE16, bytecode length LE16 (1 to 4011), `SYM_COUNTS` (5
+bytes), then the bytecode. The identity for 2.1.0-emu.1 is `$E0A5`. The
+cartridge refuses any other signature, format, identity or length and shows
+`NO PROGRAM`. At run time it uses HSR (port `$F4`) = `$43` and DECR (port
+`$FF`) bit 7 = 0. The stock ROM starts it after about 2 s (103 frames). After
+the program ends, a key restarts it from cold.
+
+**Checker.** `compile(store, symCountsSize)` in `src/leap-check.js` runs
+`check(store)` (without a package) and, on code 0, also returns `bytecode`
+(RAM from `VM_CODE_BASE` to `EMIT_PTR`) and `symCounts` (from `SYM_COUNTS`).
+`src/leap-roms.js`: the 2.1.0-emu.1 entry has `symCounts: 0xB800` and
+`cartridgeDir: 'cartridge/2.1.0-emu.1/'`; the 2.0.2 entry has neither, so
+export says "There is no cartridge build for Leap 2.0.2-emu.1".
+`tools/leap-rom-entry.py` emits `symCounts` and a `cartridgeDir` line (with a
+comment to leave it out when a release has no cartridge build).
+
+**The button** (`exportCartridge` in `ide.js`, title "Save the program as a
+cartridge (.dck) that runs on a stock TS2068"), in order:
+1. Storage problems or an empty program: error.
+2. No `cartridgeDir` for the loaded ROM: error.
+3. Any package statement: refused ("Cartridges cannot carry packages yet: line
+   N uses SHAPES").
+4. Pool size check.
+5. Compiles on the checker machine. A compile error marks the line and reads
+   "Compile error N on line L: fix it before exporting".
+6. Fetches the cartridge images once (`loadCartridgeImages`) and refuses if
+   `romIdentity` of the loaded ROMs differs from `cartIdentity` of the
+   cartridge HOME.
+7. An `OUT` to port 244 or 255 (literal) asks for confirmation ("... can switch
+   Leap itself out ... Export anyway?").
+8. Prompts for a file name, default `<name>.dck`. A name ending in `.bin`
+   downloads the flat 64 KB image for a cartridge board instead.
+9. Status: "Saved X.dck (N bytes of bytecode): it runs on a stock TS2068 from
+   the dock slot".
+
+Not supported in this first version: packages, tape / Array Store, returning to
+an editor.
+
+**Verification.** `tests/rom-checks.mjs` section 7 runs the exported cartridge
+on a stock TS2068 (`tsrun/roms/ts2068-0.rom`, `ts2068-1.rom`, `insertDock`) to
+the end (see "Tests"). The IDE's DCK was also byte-identical to the
+Leap-Cartridge project's CLI `tools/leap2cart.mjs` for two programs. In that
+project, 695 corpus programs give the same screen as `RUN` on the release ROMs
+(5 expected differences, 0 failures), and ZEsarUX 13.0 with the stock ROM gives
+byte-identical screens to TSRun. Not tried: Fuse, real hardware.
+
+Container reference (jon0x0/AISkill_TS2068, cartridge development skill): a DCK
+is a 9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM, 2 ROM,
 3 initialised RAM) followed by the 8 KB images; AROS/LROS headers. TSRun's
-`dock.js` accepts banks 0 (DOCK), 254 (EXROM), 255 (HOME). Implement the
-builder per the spec's "IDE side" section once the cartridge build exists, and
-verify by loading it in TSRun with the stock ROMs.
+`dock.js` accepts banks 0 (DOCK), 254 (EXROM), 255 (HOME).
 
 ---
 
@@ -920,7 +989,7 @@ tested separately.
 | 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
 | 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/leap-check.js`, `src/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
-| 6     | Tape + DCK export                                   | `src/export.js`, `docs/LEAP_CARTRIDGE_BUILD.md` | TAP done, verified; DCK needs the Leap cartridge build (spec written) |
+| 6     | Tape + DCK export                                   | `src/export.js`, `src/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK; DCK has no packages yet) |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools/symbols.js`, `udg.js`, `draw.js`, `src/editor.js` (`insertLines`), `ide.js` | **Done** |
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
 | —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/leap-check.js`, `packages/` | **Done**, verified |
@@ -961,20 +1030,27 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## Tests
 
-- `node tests/rom-checks.mjs` — 42 checks in about 1 s against the real ROMs in
+- `node tests/rom-checks.mjs` — 47 checks in about 1 s against the real ROMs in
   Node (TSRun's machine, no browser): ROM table lookup, Run by injection
   (finished, compile error, run-time error, package), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
-  helpers. `LEAP_ROMS=<dir>` tests other ROM files. All 42 pass on 2.1.0-emu.1
+  helpers, and (section 7, "Cartridge", 8 new checks) the cartridge: the
+  identity match, the checker's bytecode and `SYM_COUNTS`, a compile error
+  giving no bytecode, the DCK layout, the flat BIN, a stock TS2068
+  (`tsrun/roms/ts2068-0.rom`/`ts2068-1.rom`, `insertDock`) running the exported
+  cartridge to the end (POKE marker 42, VM error 0, `$F4` = `$43`), a wrong
+  identity being refused, and `pagingWrites`. `LEAP_ROMS=<dir>` tests other ROM files. All 47 pass on 2.1.0-emu.1
   (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 16 checks in about 30 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 18 checks in about 30 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
-  Draw zoom, theme and Help, with no page errors. It saves screenshots.
+  Draw zoom, theme and Help, the DCK export (a cartridge downloads; the file-name
+  prompt and the download are captured in the page; a package program is
+  refused), with no page errors. It saves screenshots.
 - Run both before every commit that changes behaviour. `src/leap-lang.js`
   imports CodeMirror, so Node cannot load it; it is covered by the browser
   test.
@@ -993,16 +1069,17 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## What Claude Code Should Do Next
 
-Phases 1 to 5, 7 and 8 work, Phase 6's tape export is done and verified (Leap's own
-`LOAD` reads the IDE's `.tap`), and saving/opening programs, packages and the
-Help overlay are done. The Leap 2.1.0-emu.1 ROM entry is done (ROM table,
-generated keyword and error data, packages, tests). One item remains, **on hold**;
-do not start it before the owner says so:
+All phases are done. Phases 1 to 5, 7 and 8 work, Phase 6's tape export (Leap's
+own `LOAD` reads the IDE's `.tap`) and DCK export (a cartridge that runs on a
+stock TS2068, approved by the owner on 2026-10-28) are done and verified, and
+saving/opening programs, packages and the Help overlay are done. The Leap
+2.1.0-emu.1 ROM entry is done (ROM table, generated keyword and error data,
+packages, cartridge images, tests). Nothing is on hold. Ideas, none started:
 
-1. **DCK export**, still blocked: the 2.1.0-emu.1 release contains no cartridge
-   build. Its `roms/leap_v2_exrom.dck` is only the EXROM as a cartridge for
-   EightyOne 1.41 (it still needs Leap's HOME ROM), not the stock-TS2068 runtime
-   cartridge specified in `docs/LEAP_CARTRIDGE_BUILD.md`. When that build exists,
-   implement the IDE side per the spec's "IDE side" section and verify by
-   loading the result in TSRun with the stock ROMs. Do not guess the layout
-   before then.
+1. **Packages on cartridges.** The cartridge image carries bytecode only; a
+   program that uses a package is refused today.
+2. **Test the DCK in Fuse and on real hardware.** It has run on TSRun and on
+   ZEsarUX 13.0 with the stock ROM (same screens), not on Fuse or a real
+   TS2068.
+3. **Cartridge builds for future Leap releases** (see "Adding a Leap ROM
+   release", step 5).

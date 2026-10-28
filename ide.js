@@ -15,6 +15,7 @@
  *  - src/leap-check.js: createChecker() — the ROM's compiler as the linter
  *  - src/leap-errors.js: error messages from the manual (generated)
  *  - src/export.js:   buildTAP() — the program as Leap's SAVE writes it
+ *  - src/cartridge.js: buildCartridge() — the program as a stock-TS2068 cartridge (.dck)
  */
 
 "use strict";
@@ -24,6 +25,9 @@ import { createDebugger } from './src/debugger.js';
 import { createChecker } from './src/leap-check.js';
 import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
 import { buildTAP, checkTapeName } from './src/export.js';
+import {
+  buildProgramImage, buildCartridge, romIdentity, cartIdentity, pagingWrites, SYM_COUNTS_SIZE, CHUNK,
+} from './src/cartridge.js';
 import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
 import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
 import { toggleHelp } from './src/help.js';
@@ -42,6 +46,7 @@ let debug = null;          // from createDebugger()
 let checker = null;        // from createChecker()
 let runDiagnostic = null;  // {text, diag}: the last run's error, kept while the text is unchanged
 const packageImages = new Map();   // package name -> image (Uint8Array), fetched at start-up
+let cartImages = null;     // {home, exrom} of the release's cartridge build, fetched on first DCK export
 let emuState = 'booting';
 const DEBUG_REFRESH_MS = 300;   // panel refresh while a program runs
 
@@ -560,6 +565,108 @@ function exportTape() {
   setStatus(`Saved ${tapName}: on the TS2068, ${first}LOAD "${name}" then RUN`, 'idle');
 }
 
+/** The release's cartridge build (cartridge/<version>/), fetched once. */
+async function loadCartridgeImages() {
+  if (cartImages) return cartImages;
+  const dir = emulator.rom.cartridgeDir;
+  const get = async (name, size) => {
+    const resp = await fetch(dir + name);
+    if (!resp.ok) throw new Error(`Could not load ${dir}${name} (HTTP ${resp.status})`);
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    if (bytes.length !== size) throw new Error(`${dir}${name}: expected ${size} bytes, got ${bytes.length}`);
+    return bytes;
+  };
+  const [home, exrom] = await Promise.all([
+    get('leap_v2_cart_home.bin', 2 * CHUNK),
+    get('leap_v2_cart_exrom.bin', CHUNK),
+  ]);
+  cartImages = { home, exrom };
+  return cartImages;
+}
+
+/**
+ * Download the program as a cartridge for a stock TS2068: Leap's runtime
+ * (cartridge build, no editor) plus the bytecode compiled by the ROM's own
+ * compiler on the checker machine. The stock ROM starts it from the dock and
+ * it runs at once; a key after the end restarts it. A name ending in .bin
+ * gives the flat 64 KB image for a cartridge board instead of a .dck.
+ */
+async function exportCartridge() {
+  if (!emulator || !checker) return;
+  const text = getSource();
+  const prepared = prepareSource(text);
+  if (prepared.problems.length > 0 || prepared.lines.length === 0) {
+    setStatus(prepared.lines.length === 0 ? 'Nothing to export' : prepared.problems[0].message, 'error');
+    return;
+  }
+  if (!emulator.rom.cartridgeDir) {
+    setStatus(`There is no cartridge build for Leap ${emulator.rom.version}`, 'error');
+    return;
+  }
+  const used = [...packagesUsed(text)];
+  if (used.length > 0) {
+    const [[name, line]] = used;
+    setStatus(`Cartridges cannot carry packages yet: line ${line} uses ${name.toUpperCase()}`, 'error');
+    return;
+  }
+  const store = encodeLineStore(prepared.lines);
+  const room = emulator.rom.sourceEnd - emulator.rom.progAreaStart;
+  if (store.length > room) {
+    setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
+    return;
+  }
+  const result = checker.compile(store, SYM_COUNTS_SIZE);
+  if (!result) {
+    setStatus('The compiler did not finish', 'error');
+    return;
+  }
+  if (result.code !== 0) {
+    window.leapEditor?.setDiagnostics(lintSource(text));
+    const line = prepared.editorLine[Math.min(result.line, prepared.editorLine.length - 1)] + 1;
+    setStatus(`Compile error ${result.code} on line ${line}: fix it before exporting`, 'error');
+    return;
+  }
+
+  let images;
+  try {
+    images = await loadCartridgeImages();
+  } catch (e) {
+    setStatus(e.message, 'error');
+    return;
+  }
+  // The cartridge accepts only bytecode from the ROMs it was built from.
+  const identity = romIdentity(emulator.romImages.home, emulator.romImages.exrom);
+  if (identity !== cartIdentity(images.home)) {
+    setStatus(`The cartridge build does not match the loaded Leap ${emulator.rom.version} ROMs`, 'error');
+    return;
+  }
+  const writes = pagingWrites(text);
+  if (writes.length > 0) {
+    const w = writes[0];
+    const ok = window.confirm(`Line ${w.line} writes to port ${w.port}, which pages the TS2068's memory: ` +
+      'on a cartridge it can switch Leap itself out and crash the program. Export anyway?');
+    if (!ok) return;
+  }
+
+  const fallback = document.getElementById('filename-display').textContent.replace(/\.[^.]*$/, '');
+  const name = window.prompt('Cartridge file name (.dck for emulators, .bin for a 64 KB cartridge board):',
+    (fallback || 'program') + '.dck');
+  if (name === null || name.trim() === '') return;
+  let out;
+  try {
+    const program = buildProgramImage({ bytecode: result.bytecode, symCounts: result.symCounts, identity });
+    out = buildCartridge({ home: images.home, exrom: images.exrom, program });
+  } catch (e) {
+    setStatus(e.message, 'error');
+    return;
+  }
+  const flat = /\.bin$/i.test(name.trim());
+  const outName = name.trim().replace(/\.(dck|bin)$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_') + (flat ? '.bin' : '.dck');
+  download(new Blob([flat ? out.bin : out.dck], { type: 'application/octet-stream' }), outName);
+  setStatus(`Saved ${outName} (${result.bytecode.length} bytes of bytecode): ` +
+    'it runs on a stock TS2068 from the dock slot', 'idle');
+}
+
 // ── Stop ──────────────────────────────────────────────────────────
 function stopProgram() {
   if (!emulator) return;
@@ -627,12 +734,7 @@ document.getElementById('btn-reset-emu').addEventListener('click', () => {
   if (emulator) emulator.reset();
 });
 document.getElementById('btn-export').addEventListener('click', exportTape);
-document.getElementById('btn-dck').addEventListener('click', () => {
-  // Leap 2.0.2 starts only from its own HOME ROM and never looks at the dock,
-  // so a cartridge that runs on a stock TS2068 needs a cartridge build of Leap
-  // (see CLAUDE.md, Export Formats).
-  setStatus('DCK export needs a Leap cartridge build (planned); use TAP for now', 'idle');
-});
+document.getElementById('btn-dck').addEventListener('click', exportCartridge);
 
 // ── Theme ─────────────────────────────────────────────────────────
 // Light or dark. Until the user picks one the IDE follows the system setting

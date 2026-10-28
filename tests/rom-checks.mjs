@@ -34,6 +34,8 @@ const { encodeLineStore } = await import(join(ROOT, 'src/emulator.js'));
 const { createChecker } = await import(join(ROOT, 'src/leap-check.js'));
 const D = await import(join(ROOT, 'src/leap-debug.js'));
 const { buildTAP } = await import(join(ROOT, 'src/export.js'));
+const C = await import(join(ROOT, 'src/cartridge.js'));
+const { insertDock } = await import(join(ROOT, 'tsrun/machine.js'));
 const { tapeToText } = await import(join(ROOT, 'src/files.js'));
 const { bresenham, pathsToCode } = await import(join(ROOT, 'src/tools/draw.js'));
 const { udgPokes, pokesInSource } = await import(join(ROOT, 'src/tools/udg.js'));
@@ -225,6 +227,47 @@ same('bresenham includes both ends', [...bresenham(0, 0, 3, 1)].length, 4);
   const back = pokesInSource(text, rom.udgTable, bytes.length);
   same('UDG POKEs read back', [...back.values()], [0x3C, 0x42, 0x81, 0xA5, 0x81, 0x99, 0x42, 0x3C]);
   same('UDG POKE lines compile', checker.check(encodeLineStore(text.split('\n'))).code, 0);
+}
+
+// ── 7. Cartridge (DCK) export: the program on a stock TS2068 ──
+if (rom.cartridgeDir) {
+  console.log('\nCartridge (src/cartridge.js)');
+  const cartHome = new Uint8Array(readFileSync(join(ROOT, rom.cartridgeDir, 'leap_v2_cart_home.bin')));
+  const cartExrom = new Uint8Array(readFileSync(join(ROOT, rom.cartridgeDir, 'leap_v2_cart_exrom.bin')));
+  const stock0 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-0.rom')));
+  const stock1 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-1.rom')));
+  const identity = C.romIdentity(home, exrom);
+  same('the cartridge build accepts these ROMs\' bytecode', C.cartIdentity(cartHome), identity);
+
+  const MARK = 32000;                                  // free RAM ($7D00)
+  const prog = ['x = 6 * 7', `POKE ${MARK}, x`, 'PRINT "CART"; x'];
+  const compiled = checker.compile(encodeLineStore(prog), C.SYM_COUNTS_SIZE);
+  check('the checker returns bytecode and SYM_COUNTS', compiled.code === 0 && compiled.bytecode.length > 0 &&
+    compiled.symCounts.length === C.SYM_COUNTS_SIZE, `${compiled.bytecode?.length} bytes, counts ${json([...(compiled.symCounts ?? [])])}`);
+  same('a compile error comes back without bytecode', checker.compile(encodeLineStore(['LET y = 2']), C.SYM_COUNTS_SIZE), { code: 2, line: 0 });
+
+  /** Stock ROMs, the cartridge in the dock; run to Leap's key wait (the program's end). */
+  const runCartridge = id => {
+    const program = C.buildProgramImage({ bytecode: compiled.bytecode, symCounts: compiled.symCounts, identity: id });
+    const { dck, bin } = C.buildCartridge({ home: cartHome, exrom: cartExrom, program });
+    const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+    setHomeRom(m, stock0); setExRom(m, stock1);
+    const err = insertDock(m, dck);
+    resetMachine(m);
+    const reached = !err && run(m, () => atWait(m), 600);
+    return { dck, bin, err, reached, mark: m.bus.read(MARK), ve: m.bus.read(rom.vmErrorCode), f4: m.portF4 };
+  };
+  const ok = runCartridge(identity);
+  same('DCK layout: DOCK bank, chunks 0, 1, 3, 6 as ROM', { head: [...ok.dck.subarray(0, 9)], size: ok.dck.length },
+    { head: [0, 2, 2, 0, 2, 0, 0, 2, 0], size: 9 + 4 * C.CHUNK });
+  same('flat BIN: 64 KB, the program image at $6000', { size: ok.bin.length, magic: String.fromCharCode(...ok.bin.subarray(0x6000, 0x6008)) },
+    { size: 65536, magic: 'LEAPPROG' });
+  same('stock TS2068 runs the cartridge to the end', { err: ok.err, reached: ok.reached, mark: ok.mark, ve: ok.ve, f4: ok.f4 },
+    { err: null, reached: true, mark: 42, ve: 0, f4: 0x43 });
+  const wrong = runCartridge(identity ^ 1);
+  same('bytecode from other ROMs is refused (NO PROGRAM)', { reached: wrong.reached, mark: wrong.mark }, { reached: true, mark: 0 });
+  same('OUT to the paging ports is found', C.pagingWrites('OUT 254, 1\nx = 1: OUT 244, 3\nPRINT "OUT 255, 0"\nOUT 511, 0'),
+    [{ line: 2, port: 244 }, { line: 4, port: 511 }]);
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');

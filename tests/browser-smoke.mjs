@@ -7,7 +7,7 @@
  * ide.html in a fresh headless Chrome profile over the DevTools protocol and
  * checks: no page errors, every own module loaded with its fingerprint, boot,
  * Run (finished / compile error / run-time error with its line / package
- * program), the editor's error check, auto-caps, the right-panel tabs, Draw
+ * program), DCK export, the editor's error check, auto-caps, the right-panel tabs, Draw
  * zoom, the theme switch and the Help overlay. Screenshots go to [outdir]
  * (default: a temporary directory). Exits 1 if any check fails.
  *
@@ -149,6 +149,25 @@ try {
   const pk = await runProgram(['CLS', 'CIRCLE 128, 96, 40', 'PRINT "SHAPES"']);
   check('Run: a package program (CIRCLE) finishes', pk === 'Finished', pk);
   await shot('run-package');
+
+  // DCK export: the prompt answered and the download captured in the page
+  await evaluate(`(() => {
+    window.prompt = () => 'smoke.dck';
+    window.smokeDownloads = [];
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) fetch(this.href).then(r => r.arrayBuffer())
+        .then(b => smokeDownloads.push({ name: this.download, bytes: [...new Uint8Array(b).subarray(0, 9)], size: b.byteLength }));
+    };
+    return true; })()`);
+  await evaluate(`leapEditor.setSource('PRINT "CART"', {fresh: true})`);
+  await evaluate("document.getElementById('btn-dck').click()");
+  const dck = await waitFor('window.smokeDownloads[0] && JSON.stringify(window.smokeDownloads[0])', 5000);
+  check('DCK export downloads a cartridge', dck === JSON.stringify({ name: 'smoke.dck', bytes: [0, 2, 2, 0, 2, 0, 0, 2, 0], size: 9 + 4 * 8192 }),
+    `${dck} — ${await status()}`);
+  await evaluate(`leapEditor.setSource('CIRCLE 128, 96, 40', {fresh: true})`);
+  await evaluate("document.getElementById('btn-dck').click()");
+  const refused = await waitFor(`/packages/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent`, 3000);
+  check('DCK export refuses a package program', !!refused && (await evaluate('smokeDownloads.length')) === 1, refused || await status());
 
   // Editor
   const lint = await waitFor(`(async () => { const d = leapIDE.lintSource('x = 1\\nLET y = 2'); return d.length ? d[0].message : '' })()`);
