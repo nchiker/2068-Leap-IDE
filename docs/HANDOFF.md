@@ -36,11 +36,10 @@ either (checked in Node; its VM latches error 66 and stops after ENTER).
 program's bytecode, which the checker machine compiles (`compile` in
 `src/leap-check.js`), and from the cartridge images in
 `cartridge/2.1.0-emu.1/`. Those two images are Leap 2.1.0-emu.1's *cartridge
-build* (`make cart`), made in `~/Projects/Leap-Cartridge`. See "DCK" in
+build* (`make cart`), built by `cartridge-build/setup.sh`. See "DCK" in
 `CLAUDE.md` for the layout and the button's checks. Checked: the tests run the
 exported cartridge on a stock TS2068 in TSRun; the IDE's DCK is byte-identical
-to Leap-Cartridge's CLI (`tools/leap2cart.mjs`) for two programs; in that
-project 695 corpus programs match `RUN` on the release ROMs (5 expected
+to `cartridge-build/tools/leap2cart.mjs`'s for two programs; there 695 corpus programs match `RUN` on the release ROMs (5 expected
 differences, 0 failures) and ZEsarUX 13.0 with the stock ROM gives screens
 identical to TSRun. Not tried: Fuse, real hardware. Not supported yet:
 packages, tape / Array Store, returning to an editor.
@@ -57,7 +56,7 @@ packages, tape / Array Store, returning to an editor.
   left as typed.
 - A DCK must run on a **stock** TS2068, hence the separate cartridge build.
 - DCK export: approved 2026-10-28. The cartridge images come from
-  `~/Projects/Leap-Cartridge`.
+  `cartridge-build/` (owner's choice: in this repo, not a repo of its own).
 - TSRun fork (`nchiker/TSRun`): commit only changes that cannot break the
   TSRun that the Leap repo's browser demo uses.
 - Theme button: a plain light/dark switch; until clicked, follow the system.
@@ -107,7 +106,7 @@ this machine has Node 24.
   names the line that jump went to. `tools/leap-rom-entry.py` has a `FALLBACK`
   map (2.0.2 has no `VM_RUN.next`, so `vmNext` = `vmLoop` there).
 - **Cartridge images are per Leap release.** `cartridge/<version>/` must be
-  rebuilt (`make cart` in Leap-Cartridge or equivalent) for each new release.
+  rebuilt (`cartridge-build/setup.sh`, with the patch rebased onto the new tag) for each new release.
   The cartridge refuses a program whose identity (CRC-16 of the ROMs it was
   built with) differs, and export refuses when `romIdentity(loaded ROMs)` is not
   `cartIdentity(cartridge HOME)`. A release without a `cartridgeDir` entry
@@ -139,4 +138,4 @@ this machine has Node 24.
 | This IDE | `~/Projects/Leap-IDE`, `nchiker/2068-Leap-IDE` | local branch `master` tracks `origin/main` |
 | TSRun fork | submodule `tsrun/`, `nchiker/TSRun` | pinned at `016787f` (2.1.0-emu.1 ROMs, on top of sound worklet fix `f65de5a` + tape fix `4db1f1e`) |
 | Leap | `~/2068-Leap`, `nchiker/2068-Leap` | release tag `v2.1.0-emu.1` (commit `c005159`); the clone may be on any branch, possibly with local edits: build releases in a worktree |
-| Leap-Cartridge | `~/Projects/Leap-Cartridge` (local only, not a git repo of its own yet) | Source of `cartridge/<version>/`. Its `leap/` is a clone of 2068-Leap on branch `cartridge`, uncommitted. Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs` |
+| Cartridge build | `cartridge-build/` in this repo | Source of `cartridge/<version>/`: `leap.patch` on the `v2.1.0-emu.1` tag, applied by `setup.sh` into `leap/` (ignored). Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs`. `~/Projects/Leap-Cartridge` was the original working copy |

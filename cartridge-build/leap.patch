@@ -1,0 +1,550 @@
+From 507bc79fcbb88465bbeb86a7090ce319f4de2b4e Mon Sep 17 00:00:00 2001
+From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 07:57:20 -0400
+Subject: [PATCH] Cartridge build (V2_CARTRIDGE): Leap 2.1 runtime as an LROS
+ dock cartridge
+
+make cart builds build/cart/leap_v2_cart_{home,exrom}.bin: HOME in DOCK
+chunks 0-1, EXROM in chunk 6, a precompiled program image in chunk 3,
+started by the stock TS2068 ROM. Every release symbol keeps its address
+(tools/cart_check.py), and the release build is byte-identical.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Makefile                    | 15 ++++++-
+ include/v2_cart.inc         | 46 ++++++++++++++++++++
+ kernel/bank/bank.asm        | 27 ++++++++++++
+ rom/exrom_v2_cart.asm       | 28 ++++++++++++
+ rom/v2_cart_home.asm        | 87 +++++++++++++++++++++++++++++++++++++
+ rom/v2_exrom.asm            | 15 +++++++
+ rom/v2_home.asm             | 13 ++++++
+ rom/v2_lowrom_fill.asm      |  2 +
+ rom/v2_rst_vectors.inc      |  2 +
+ tools/cart_check.py         | 79 +++++++++++++++++++++++++++++++++
+ tools/cart_identity.py      | 27 ++++++++++++
+ tools/write_v2_crossbank.py |  3 +-
+ 12 files changed, 342 insertions(+), 2 deletions(-)
+ create mode 100644 include/v2_cart.inc
+ create mode 100644 rom/exrom_v2_cart.asm
+ create mode 100644 rom/v2_cart_home.asm
+ create mode 100644 tools/cart_check.py
+ create mode 100755 tools/cart_identity.py
+
+diff --git a/Makefile b/Makefile
+index 516d3b5..c47450b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,4 +1,4 @@
+-.PHONY: all build check repro smoke-build test qual qual-maint doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
++.PHONY: all build cart check repro smoke-build test qual qual-maint doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+ 
+ all: check build
+ 
+@@ -19,6 +19,19 @@ build:
+ 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
+ 	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
+ 
++# CART: the runtime cartridge build (include/v2_cart.inc, ../Docs/LEAP_CARTRIDGE_BUILD.md): the same
++# source with -DV2_CARTRIDGE, into build/cart/. It carries the identity of the release images `build`
++# makes, whose compiler produces the bytecode the cartridge runs.
++cart: build
++	mkdir -p build/cart
++	tools/sjasmplus_strict.sh $(EXTRA_DEFS) -DV2_CARTRIDGE -DCART_IDENTITY=$$(python3 tools/cart_identity.py v2_home.bin v2_exrom.bin) \
++	  --sym=build/cart/leap_v2_cart_home.sym --lst=build/cart/leap_v2_cart_home.lst rom/v2_home.asm
++	python3 tools/write_v2_crossbank.py build/cart/leap_v2_cart_home.sym build/cart/v2_crossbank.inc
++	tools/sjasmplus_strict.sh $(EXTRA_DEFS) -DV2_CARTRIDGE -DCART_IDENTITY=$$(python3 tools/cart_identity.py v2_home.bin v2_exrom.bin) \
++	  --sym=build/cart/leap_v2_cart_exrom.sym --lst=build/cart/leap_v2_cart_exrom.lst rom/v2_exrom.asm
++	mv leap_v2_cart_home.bin leap_v2_cart_exrom.bin build/cart/
++	python3 tools/cart_check.py
++
+ # ROM reserves kept for bug fixes (docs/V2_LEAPC_BACKPORT_PLAN.md section 0).
+ HOME_RESERVE ?= 64
+ EXROM_RESERVE ?= 32
+diff --git a/include/v2_cart.inc b/include/v2_cart.inc
+new file mode 100644
+index 0000000..085ed9c
+--- /dev/null
++++ b/include/v2_cart.inc
+@@ -0,0 +1,46 @@
++; ============================================================================
++; include/v2_cart.inc -- CART: the runtime cartridge build (-DV2_CARTRIDGE).
++;
++; The cartridge runs one precompiled program on a stock TS2068 (stock HOME ROM and EXROM
++; installed). Leap's HOME image is DOCK chunks 0-1 and its EXROM image DOCK chunk 6, both at their
++; usual addresses, so Leap's code always comes from the DOCK (port $FF bit 7 stays 0) and the stock
++; ROMs are never selected again after the stock ROM's LROS hand-off. The program image is DOCK
++; chunk 3, mapped only while it is copied to RAM. See ../Docs/LEAP_CARTRIDGE_BUILD.md.
++;
++; Every routine of the normal build keeps its address (the changes are same-size patches in
++; kernel/bank/bank.asm, the LROS header in the reset bytes, and new code in the images' free
++; space), so the compiler and the VM are byte-identical to the release the bytecode is compiled on.
++; ============================================================================
++    IFNDEF V2_CART_INC
++    DEFINE V2_CART_INC
++
++CART_HSR_RUN     EQU %01000011   ; chunks 0, 1, 6 DOCK: Leap HOME and EXROM (BANK_EXROM_DEPTH >= 1)
++CART_HSR_PKG     EQU %00000011   ; chunk 6 HOME RAM: a package's window (OP_CALL_EXT, depth 0)
++CART_HSR_LOAD    EQU %01001011   ; + chunk 3: the program image, while CART_RUN copies it
++CART_CHUNK_SPEC  EQU %10111100   ; LROS chunk spec, low-active: chunks 0, 1, 6 DOCK at the hand-off
++                                 ; (chunk 3 stays HOME: the stock ROM's hand-off runs on its stack there)
++
++; The program image at DOCK $6000 (chunk 3), written by the IDE's packer (tools/pack_cart.py).
++CART_IMAGE       EQU $6000
++CART_IMG_MAGIC   EQU CART_IMAGE      ; 8: "LEAPPROG"
++CART_IMG_FORMAT  EQU CART_IMAGE+8    ; 2: image format (CART_FORMAT)
++CART_IMG_IDENT   EQU CART_IMAGE+10   ; 2: identity of the ROM build the bytecode was compiled on
++CART_IMG_LEN     EQU CART_IMAGE+12   ; 2: bytecode length n
++CART_IMG_COUNTS  EQU CART_IMAGE+14   ; 5: SYM_COUNTS (numbers, strings, arrays, string arrays, labels)
++CART_IMG_CODE    EQU CART_IMAGE+19   ; n: the bytecode, copied to VM_CODE_BASE
++CART_FORMAT      EQU 1
++
++    IFNDEF CART_IDENTITY
++CART_IDENTITY    EQU 0               ; the Makefile passes the release build's identity (cart target)
++    ENDIF
++
++; The five header bytes the stock ROM reads at DOCK $0000 (type 1 = LROS, entry, chunk spec), then
++; a `jp` so that a jump to $0000 restarts the cartridge.
++    MACRO CART_LROS_HEADER
++    DB $00, $01
++    DW CART_COLD_START
++    DB CART_CHUNK_SPEC
++    jp CART_COLD_START
++    ENDM
++
++    ENDIF
+diff --git a/kernel/bank/bank.asm b/kernel/bank/bank.asm
+index 9abca90..b284410 100644
+--- a/kernel/bank/bank.asm
++++ b/kernel/bank/bank.asm
+@@ -79,16 +79,25 @@ BANK_PAGE_EXROM_IN:
+                                      ; still-active caller put it
+                                      ; there) — nothing to do
+     ld   a, (PORT_FF_SHADOW)
++    IFDEF V2_CARTRIDGE
++    and  %01111111                   ; CART: bit 7 = 0, the DOCK: Leap's EXROM image is DOCK
++                                     ; chunk 6 (include/v2_cart.inc). Same size as the `or`.
++    ELSE
+     or   %10000000                   ; bit 7 only — EXROM, not Dock;
+                                      ; bits 0-6 (video mode, INTEN) are
+                                      ; not this routine's to touch —
+                                      ; same shadow-preserving discipline
+                                      ; GFX_SET_MODE already established
++    ENDIF
+     ld   (PORT_FF_SHADOW), a
+     out  (PORT_SCLD), a
+ 
++    IFDEF V2_CARTRIDGE
++    ld   a, CART_HSR_RUN             ; CART: chunk 6 and the cartridge's own chunks 0-1
++    ELSE
+     ld   a, %01000000                ; bit 6 = chunk 6 only; every
+                                      ; other chunk's bit stays 0 (Home)
++    ENDIF
+     out  (PORT_BANK_HOME), a
+ .already_paged_in:
+     ei
+@@ -115,6 +124,23 @@ BANK_PAGE_EXROM_OUT:
+     ; 47 of 11,232 frames missing from FRAMES over a float loop, 1 without it
+     ; (tools/qual/fuse_frames_probe.py). The ISR touches neither BANK_EXROM_DEPTH, PORT_FF_SHADOW
+     ; nor the ports, and runs from HOME on a stack outside chunk 6, so where it lands here is moot.)
++    IFDEF V2_CARTRIDGE
++; CART: chunk 6 back to HOME RAM must keep chunks 0-1 DOCK (writing 0 would drop the running code
++; into the stock ROM): $F4 = CART_HSR_PKG. Same 7 bytes from the `ld (BANK_EXROM_DEPTH)` on as the
++; normal build, so every later routine keeps its address. An unbalanced OUT (depth already 0)
++; rewrites the same mapping, which is harmless.
++    ld   a, (BANK_EXROM_DEPTH)
++    or   a
++    jr   z, .depth_zero
++    dec  a
++    ld   (BANK_EXROM_DEPTH), a
++.depth_zero:
++    ei
++    ret  nz                           ; still nested: chunk 6 stays EXROM
++    ld   a, CART_HSR_PKG
++    out  (PORT_BANK_HOME), a
++    ret
++    ELSE
+     ld   a, (BANK_EXROM_DEPTH)
+     or   a
+     jr   z, .depth_already_zero       ; defensive: an unbalanced OUT
+@@ -133,6 +159,7 @@ BANK_PAGE_EXROM_OUT:
+ .depth_already_zero:
+     ei
+     ret
++    ENDIF
+ 
+ ; BANK_CALL_EXROM removed (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_
+ ; ROM_CONSOLIDATION_AUDIT.md): a convenience wrapper (page in / call fixed
+diff --git a/rom/exrom_v2_cart.asm b/rom/exrom_v2_cart.asm
+new file mode 100644
+index 0000000..cef4b07
+--- /dev/null
++++ b/rom/exrom_v2_cart.asm
+@@ -0,0 +1,28 @@
++; ============================================================================
++; rom/exrom_v2_cart.asm -- CART: the EXROM side of the cartridge build (include/v2_cart.inc), in the
++; free space at the end of the EXROM image. V2_EXROM_ENTRY comes here instead of the editor.
++; ============================================================================
++
++; CART_RUN -- load the program image (CART_LOAD, HOME) and run it as RUN does after a successful
++; compile (V2_COMPILE_RUN). When it ends -- normally, with an error or with BREAK -- the message (if
++; any) and a key, then `rst $00`: the cartridge starts again from cold (a program may have POKEd its
++; own bytecode, so the image is copied again).
++; In: from V2_COLD_START / V2_EXROM_ENTRY (memory initialised, PAS_END = ARR2_BASE, depth 1).
++CART_RUN:
++    ld hl,PROG_AREA_START        ; an empty compile symbol table (ARR_RUN_BIND walks nothing, and
++    ld (SYM_BASE_V),hl           ; VM_INIT puts the array arena just above it)
++    ld (SYM_END_V),hl
++    ld (hl),0
++    call CART_LOAD
++    push af
++    call V2_RESET_DISPLAY
++    pop af
++    jr nc,.run
++    call KTAB_GFX_CLS
++    ld hl,CART_MSG_BAD
++    call V2_SHOW_MESSAGE
++    rst $00
++.run:
++    call V2_SESSION_START        ; SESS_CODE_END = EMIT_PTR; VM_INIT; ARR_RUN_INIT
++    call V2_COMPILE_RUN.base     ; VM_IP, CLS, VM_RUN, then the message / a key
++    rst $00
+diff --git a/rom/v2_cart_home.asm b/rom/v2_cart_home.asm
+new file mode 100644
+index 0000000..acf1cdd
+--- /dev/null
++++ b/rom/v2_cart_home.asm
+@@ -0,0 +1,87 @@
++; ============================================================================
++; rom/v2_cart_home.asm -- CART: the HOME side of the cartridge build (include/v2_cart.inc), in the
++; free space at the end of the HOME image.
++; ============================================================================
++
++; CART_COLD_START -- the LROS entry. The stock ROM jumps here with interrupts ENABLED, IM 1, SP in its
++; own stack ($61FE, chunk 3) and port $F4 already = CART_HSR_RUN (TSRun, stock ROMs, tools/probe). An
++; interrupt before the `di` runs Leap's V2_RST_38 (chunk 0 is DOCK): KBD_ISR_TICK writes only sysvars
++; in $8000-$BFFF, which MEM_COLD_INIT zeroes next, on the stock stack in HOME RAM -- harmless.
++; Then the ordinary cold start: its BANK_PAGE_EXROM_IN (cartridge variant) keeps the DOCK selected,
++; and V2_EXROM_ENTRY goes to CART_RUN instead of the editor.
++CART_COLD_START:
++    di
++    ld a, CART_HSR_RUN
++    out (PORT_BANK_HOME), a
++    xor a
++    out (PORT_SCLD), a               ; DOCK, not EXROM, for every chunk $F4 selects; video mode 0
++; The AY as power-on leaves it (every register 0), which Leap's own boot assumes: the stock ROM has
++; already written to it before the hand-off.
++    ld b, 16
++.ay:
++    ld a, b
++    dec a
++    out (PORT_AY_REG), a
++    xor a
++    out (PORT_AY_DATA), a
++    djnz .ay
++    jp V2_COLD_START
++
++; MATH_RND_SEED -- moved from $0004 (rom/v2_lowrom_fill.asm), where the LROS chunk spec is.
++MATH_RND_SEED:
++    ld   (RND_STATE), hl
++    ret
++
++; CART_LOAD -- map the program image (DOCK chunk 3), check it, copy it, unmap it. Called by CART_RUN
++; (rom/exrom_v2_cart.asm). Copies SYM_COUNTS, the bytecode to VM_CODE_BASE, and sets EMIT_PTR to its
++; end. CF = refused: another image format or ROM build, or a bad length. Interrupts are off while
++; chunk 3 is DOCK and on again at the end. Destroys AF, BC, DE, HL.
++CART_LOAD:
++    di
++    ld a,CART_HSR_LOAD
++    out (PORT_BANK_HOME),a
++    call .copy
++    ld a,CART_HSR_RUN                ; (keeps CF)
++    out (PORT_BANK_HOME),a
++    ei
++    ret
++.copy:
++    ld hl,CART_IMAGE
++    ld de,CART_SIGNATURE
++    ld b,CART_SIGNATURE_END-CART_SIGNATURE
++.sig:
++    ld a,(de)
++    cp (hl)
++    scf
++    ret nz
++    inc hl
++    inc de
++    djnz .sig
++    ld c,(hl)
++    inc hl
++    ld b,(hl)                        ; BC = bytecode length, 1..V2_CODE_SIZE
++    inc hl
++    ld a,b
++    or c
++    scf
++    ret z
++    push hl
++    ld hl,V2_CODE_SIZE
++    sbc hl,bc                        ; (CF clear from the `or`)
++    pop hl
++    ret c
++    ld de,SYM_COUNTS
++    push bc
++    ld bc,5
++    ldir
++    pop bc
++    ld de,VM_CODE_BASE
++    ldir
++    ld (EMIT_PTR),de                 ; CF clear (ldir keeps it)
++    ret
++
++CART_SIGNATURE:
++    DB "LEAPPROG"
++    DW CART_FORMAT, CART_IDENTITY
++CART_SIGNATURE_END:
++CART_MSG_BAD: DB "NO PROGRAM",0
+diff --git a/rom/v2_exrom.asm b/rom/v2_exrom.asm
+index 0d2cd3b..2026b48 100644
+--- a/rom/v2_exrom.asm
++++ b/rom/v2_exrom.asm
+@@ -9,7 +9,12 @@ V2_RD_NEWROW    EQU $BEC4       ; STUDY: scratch of the two-line path
+ V2_RD_NEWH      EQU $BEC5
+     INCLUDE "include/sysvars.inc"
+     INCLUDE "include/v2_layout.inc"
++    INCLUDE "include/v2_cart.inc"           ; CART: constants of the cartridge build
++    IFDEF V2_CARTRIDGE
++    INCLUDE "build/cart/v2_crossbank.inc"
++    ELSE
+     INCLUDE "build/v2_crossbank.inc"
++    ENDIF
+     INCLUDE "include/keys.inc"
+     INCLUDE "include/v2_ktab.inc"
+     INCLUDE "include/v2_package_abi.inc"   ; R10.9: version words (macros are not expanded here)
+@@ -20,7 +25,11 @@ V2_RD_NEWH      EQU $BEC5
+ V2_EXROM_ENTRY:
+     ld hl,ARR2_BASE
+     ld (PAS_END),hl              ; cold start: the Array Store is empty
++    IFDEF V2_CARTRIDGE
++    jp CART_RUN                  ; CART: run the cartridge's program, no editor
++    ELSE
+     jp V2_COMMAND_LOOP
++    ENDIF
+ 
+ ; RC: the packed entry slots (include/v2_ktab.inc). Each checks the HOME/EXROM contract first.
+     MACRO V2_EXROM_SLOT slotaddr, target
+@@ -75,5 +84,11 @@ V2_VERIFY_KTAB:
+     ENDIF
+     INCLUDE "rom/exrom_editor.asm"
+     INCLUDE "rom/exrom_v2_shell.asm"
++    IFDEF V2_CARTRIDGE
++    INCLUDE "rom/exrom_v2_cart.asm"         ; CART: the run loop, in the free space at the end
++    DS V2_EXROM_IMAGE_END - $, $FF
++    SAVEBIN "leap_v2_cart_exrom.bin", V2_EXROM_ENTRY_ADDR, V2_EXROM_IMAGE_SIZE
++    ELSE
+     DS V2_EXROM_IMAGE_END - $, $FF
+     SAVEBIN "v2_exrom.bin", V2_EXROM_ENTRY_ADDR, V2_EXROM_IMAGE_SIZE
++    ENDIF
+diff --git a/rom/v2_home.asm b/rom/v2_home.asm
+index 3ca63f6..81b1bf8 100644
+--- a/rom/v2_home.asm
++++ b/rom/v2_home.asm
+@@ -3,6 +3,7 @@
+     DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
+     INCLUDE "include/sysvars.inc"
+     INCLUDE "include/v2_layout.inc"
++    INCLUDE "include/v2_cart.inc"           ; CART: constants of the cartridge build
+     DEFINE V2_PRODUCTION
+     DEFINE V2_KTAB_HOME
+     INCLUDE "include/v2_ktab.inc"
+@@ -10,8 +11,14 @@
+     INCLUDE "include/v2_package_abi.inc"
+     DEVICE NOSLOT64K
+     ORG $0000
++    IFDEF V2_CARTRIDGE
++; CART: the LROS header the stock ROM looks for at DOCK $0000 (rom/v2_cart_home.asm). As code,
++; $0000 runs `nop; ld bc,CART_COLD_START; cp h` and the `jp` at $0005, so a jump to 0 restarts.
++    CART_LROS_HEADER
++    ELSE
+     di
+     jp V2_COLD_START
++    ENDIF
+     INCLUDE "rom/v2_rst_vectors.inc"
+     jp V2_CALC_ENTRY
+     INCLUDE "rom/v2_rst30.inc"
+@@ -131,5 +138,11 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
+     INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding
+     PKG_CONST_LIST
+     PKG_PIN_LIST
++    IFDEF V2_CARTRIDGE
++    INCLUDE "rom/v2_cart_home.asm"          ; CART: the cartridge entry, in the free space at the end
++    DS V2_HOME_IMAGE_END - $, $FF
++    SAVEBIN "leap_v2_cart_home.bin", $0000, V2_HOME_IMAGE_END
++    ELSE
+     DS V2_HOME_IMAGE_END - $, $FF
+     SAVEBIN "v2_home.bin", $0000, V2_HOME_IMAGE_END
++    ENDIF
+diff --git a/rom/v2_lowrom_fill.asm b/rom/v2_lowrom_fill.asm
+index 46bdb02..6627505 100644
+--- a/rom/v2_lowrom_fill.asm
++++ b/rom/v2_lowrom_fill.asm
+@@ -5,11 +5,13 @@
+ ; ranges, only by name (call / jp / dw), and none is the fall-through target of the code before it.
+ ; ============================================================================
+ V2_LOWROM_RESUME equ $
++    IFNDEF V2_CARTRIDGE           ; CART: $0004 is the LROS chunk spec; MATH_RND_SEED is in v2_cart_home.asm
+     ORG $0004                     ; after di / jp V2_COLD_START
+ MATH_RND_SEED:
+     ld   (RND_STATE), hl
+     ret
+     ASSERT $ <= $0008
++    ENDIF
+     ORG $000B                     ; after RST $08's jp
+     IFNDEF V2_MAINT_SHARED_WAIT       ; MAINT (shared wait): its only caller, OP_PAUSE, no longer uses it
+ INT_GET_FRAMES:
+diff --git a/rom/v2_rst_vectors.inc b/rom/v2_rst_vectors.inc
+index 83b8577..003d652 100644
+--- a/rom/v2_rst_vectors.inc
++++ b/rom/v2_rst_vectors.inc
+@@ -3,7 +3,9 @@
+ ; Each vector is a plain `jp`: `rst n` = `call target` (same stack/register contract).
+ ; V2_RST_VM_ONLY: a test image without the compiler gets the VM vectors only.
+     ASSERT $ <= $0008
++    IF $ < $0008                ; CART: the cartridge's LROS header and restart jump fill $0000-$0007
+     DS $0008 - $, $FF
++    ENDIF
+     IFNDEF V2_RST_VM_ONLY
+     jp LEX_NEXT_TOKEN           ; RST $08
+     ENDIF
+diff --git a/tools/cart_check.py b/tools/cart_check.py
+new file mode 100644
+index 0000000..2ca43a9
+--- /dev/null
++++ b/tools/cart_check.py
+@@ -0,0 +1,79 @@
++#!/usr/bin/env python3
++"""CART: check that the cartridge build changes only what it means to (include/v2_cart.inc).
++
++Compares build/cart/ with the release build (`make build`):
++  - every symbol of the release build has the same value in the cartridge build, except
++    MATH_RND_SEED (moved off the LROS header) and the local labels of BANK_PAGE_EXROM_OUT;
++  - the images differ only in the reset bytes ($0000-$0007), the two bank routines, the operands of
++    `call MATH_RND_SEED`, the V2_EXROM_ENTRY jump, and the cartridge code in the free space;
++  - the LROS header is what the stock ROM expects.
++So the compiler and the VM, and everything they reference, are byte-identical to the release.
++Exit status 1 on any difference outside those.
++"""
++import re
++import sys
++
++B = "build/"
++
++
++def syms(path):
++    out = {}
++    for line in open(path):
++        m = re.match(r"(\S+): EQU 0x([0-9A-F]+)", line)
++        if m:
++            out[m.group(1)] = int(m.group(2), 16)
++    return out
++
++
++def main():
++    rel = syms(B + "test_basic.sym") | syms(B + "exrom.sym")
++    cart = syms(B + "cart/leap_v2_cart_home.sym") | syms(B + "cart/leap_v2_cart_exrom.sym")
++    bad = []
++    moved_ok = {"MATH_RND_SEED", "CART_IDENTITY"}
++    for name, v in rel.items():
++        if name in moved_ok or name.startswith("BANK_PAGE_EXROM_OUT."):
++            continue
++        if cart.get(name) != v:
++            bad.append(f"symbol {name}: release ${v:04X}, cartridge {cart.get(name)}")
++
++    def allowed_home(a):
++        return (a < 0x0008
++                or cart["BANK_PAGE_EXROM_IN"] <= a < cart["EXT2_CLEAR_ALL"]
++                or a >= cart["CART_COLD_START"])
++
++    def allowed_exrom(a):
++        return (cart["V2_EXROM_ENTRY"] <= a < cart["V2_EXROM_ENTRY"] + 9
++                or a >= cart["CART_RUN"])
++
++    home_r = open("v2_home.bin", "rb").read()
++    home_c = open(B + "cart/leap_v2_cart_home.bin", "rb").read()
++    ex_r = open("v2_exrom.bin", "rb").read()
++    ex_c = open(B + "cart/leap_v2_cart_exrom.bin", "rb").read()
++    seed_r, seed_c = rel["MATH_RND_SEED"], cart["MATH_RND_SEED"]
++    seed_calls = set()
++    for i in range(len(home_r) - 2):
++        if (home_r[i] == 0xCD and home_r[i + 1] | home_r[i + 2] << 8 == seed_r
++                and home_c[i] == 0xCD and home_c[i + 1] | home_c[i + 2] << 8 == seed_c):
++            seed_calls |= {i + 1, i + 2}
++    for a in range(16384):
++        if home_r[a] != home_c[a] and not allowed_home(a) and a not in seed_calls:
++            bad.append(f"HOME byte ${a:04X} differs")
++    for a in range(8192):
++        if ex_r[a] != ex_c[a] and not allowed_exrom(0xC000 + a):
++            bad.append(f"EXROM byte ${0xC000 + a:04X} differs")
++
++    entry = home_c[2] | home_c[3] << 8
++    if home_c[1] != 0x01 or entry != cart["CART_COLD_START"] or home_c[4] != 0xBC:
++        bad.append("LROS header wrong: %s" % home_c[:5].hex())
++
++    for b in bad[:40]:
++        print("cart_check:", b)
++    if bad:
++        sys.exit(1)
++    sig = home_c.find(b"LEAPPROG")
++    print("cart_check: OK -- only the intended bytes differ; image identity $%04X"
++          % (home_c[sig + 10] | home_c[sig + 11] << 8))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/cart_identity.py b/tools/cart_identity.py
+new file mode 100755
+index 0000000..1b99eaa
+--- /dev/null
++++ b/tools/cart_identity.py
+@@ -0,0 +1,27 @@
++#!/usr/bin/env python3
++"""CART: print the build identity a cartridge program image must carry (include/v2_cart.inc).
++
++The identity is the CRC-16/CCITT (poly $1021, init $FFFF) of the HOME image followed by the EXROM
++image of the ROM build that compiled the bytecode -- the first part of what SA_ROM_CRC (SAVE ... ALL)
++covers. The cartridge build is built with the identity of the release build from the same source,
++whose compiler and VM it carries byte for byte.
++
++Usage: cart_identity.py HOME.bin EXROM.bin   -> prints e.g. 0x1234
++"""
++import sys
++
++
++def crc16(data, crc=0xFFFF):
++    for b in data:
++        crc ^= b << 8
++        for _ in range(8):
++            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else crc << 1
++            crc &= 0xFFFF
++    return crc
++
++
++if __name__ == "__main__":
++    home, exrom = (open(p, "rb").read() for p in sys.argv[1:3])
++    if len(home) != 16384 or len(exrom) != 8192:
++        sys.exit("expected a 16384-byte HOME and an 8192-byte EXROM image")
++    print("0x%04X" % crc16(home + exrom))
+diff --git a/tools/write_v2_crossbank.py b/tools/write_v2_crossbank.py
+index 8bc2150..915668f 100644
+--- a/tools/write_v2_crossbank.py
++++ b/tools/write_v2_crossbank.py
+@@ -132,7 +132,8 @@ NAMES = (
+     "V2_VER_SCOPE",
+ )
+ # MAINT (AY BEEP): exported only when the HOME build has them (rom/v2_ay_beep.asm placement).
+-OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
++OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES",
++            "CART_LOAD", "CART_MSG_BAD")    # CART: the cartridge build only (rom/v2_cart_home.asm)
+ 
+ 
+ def main() -> None:
+-- 
+2.43.0
+

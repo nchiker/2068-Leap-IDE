@@ -1,0 +1,6 @@
+x = 5
+PRINT "HELLO FROM THE DOCK"
+PRINT x * 2
+FOR i = 1 TO 3
+PRINT i, SQR(i)
+NEXT i

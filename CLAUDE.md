@@ -66,6 +66,7 @@ Leap-IDE/
 │   │   └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE
 │   ├── export.js     ← TAP builder (Phase 6, done, verified)
 │   └── cartridge.js  ← DCK / flat .bin cartridge builder (Phase 6, done, verified; no DOM, Node can import it)
+├── cartridge-build/  ← Source of the cartridge images: leap.patch + setup.sh, CLI tools, tests, status (see its README)
 ├── cartridge/
 │   └── 2.1.0-emu.1/  ← Leap's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README
 ├── packages/
@@ -358,8 +359,8 @@ stop, `INPUT` stop, re-run while busy.
    BREAK and `INPUT` stop are still checked by hand in the IDE.
    Update the memory-map table above if the layout moved.
 5. Cartridge build (DCK export): build the release's cartridge version
-   (`make cart`, `-DV2_CARTRIDGE`) in `~/Projects/Leap-Cartridge` or an
-   equivalent clone, copy `leap_v2_cart_home.bin` and `leap_v2_cart_exrom.bin`
+   (`make cart`, `-DV2_CARTRIDGE`): rebase `cartridge-build/leap.patch` onto the
+   new tag and update `TAG` in `cartridge-build/setup.sh`, run it, copy `leap_v2_cart_home.bin` and `leap_v2_cart_exrom.bin`
    to `cartridge/<version>/` with a README, and keep the `cartridgeDir` line in
    the ROM entry. Check that `cartIdentity(cartridge HOME)` equals
    `romIdentity(release ROMs)`; export refuses a mismatch. If the release has
@@ -666,9 +667,9 @@ characters) and reports `Saved X.tap: on the TS2068, LOAD "X" then RUN`
 The owner approved this on 2026-10-28. Leap 2.0.2 and 2.1.0-emu.1 never look at
 the dock, and their cold start clears RAM, so a cartridge that runs on a
 **stock TS2068** needs Leap's *cartridge build* (`make cart`, `-DV2_CARTRIDGE`):
-a runtime-only version with no editor. It is made in the separate project
-`~/Projects/Leap-Cartridge` (its `leap/` is a clone of 2068-Leap on branch
-`cartridge`; the details are in `~/Projects/Leap-Cartridge/Docs/CARTRIDGE_STATUS.md`).
+a runtime-only version with no editor. Its source is `cartridge-build/` in this repo: `leap.patch` on Leap's
+`v2.1.0-emu.1` tag, applied and built by `setup.sh` into `cartridge-build/leap/`
+(ignored); the details are in `cartridge-build/Docs/CARTRIDGE_STATUS.md`.
 The original spec is [`docs/LEAP_CARTRIDGE_BUILD.md`](docs/LEAP_CARTRIDGE_BUILD.md).
 The release's `roms/leap_v2_exrom.dck` is not this: it is only the EXROM as a
 cartridge for EightyOne 1.41.
@@ -736,8 +737,7 @@ an editor.
 **Verification.** `tests/rom-checks.mjs` section 7 runs the exported cartridge
 on a stock TS2068 (`tsrun/roms/ts2068-0.rom`, `ts2068-1.rom`, `insertDock`) to
 the end (see "Tests"). The IDE's DCK was also byte-identical to the
-Leap-Cartridge project's CLI `tools/leap2cart.mjs` for two programs. In that
-project, 695 corpus programs give the same screen as `RUN` on the release ROMs
+CLI `cartridge-build/tools/leap2cart.mjs`'s for two programs. With those tools, 695 corpus programs give the same screen as `RUN` on the release ROMs
 (5 expected differences, 0 failures), and ZEsarUX 13.0 with the stock ROM gives
 byte-identical screens to TSRun. Not tried: Fuse, real hardware.
 
