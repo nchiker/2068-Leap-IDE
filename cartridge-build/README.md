@@ -30,7 +30,16 @@ node tools/cartrun.mjs --dck build/hello.dck --frames 200 --png build/hello.png
 Needs git, `sjasmplus`, Python 3 and Node 18+. TSRun's emulator core and the stock ROMs come from the
 IDE's `tsrun/` submodule (`TSRUN=` to override). After changing Leap sources in `leap/`, commit there
 and refresh the patch: `git -C leap format-patch -1 --stdout > leap.patch`. To run in ZEsarUX, use `--machine TS2068` with the stock `ts2068.rom`
-and smartload the `.dck`. Fuse's dock cartridge option should also take it, but that hasn't been tried.
+and smartload the `.dck` (`tests/zesarux_check.py` compares it with TSRun). Fuse 1.9.1 runs it too
+(`--machine ts2068` with the stock ROMs and the `.dck` as the file argument). To run Fuse with no window
+(it must not open one on the desktop) and keep its frames:
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout -s INT 20 \
+  fuse --machine ts2068 --rom-ts2068-0 ../tsrun/roms/ts2068-0.rom --rom-ts2068-1 ../tsrun/roms/ts2068-1.rom \
+  --no-sound --no-confirm-actions --no-autosave-settings --movie-start build/run.fmf CART.dck
+fmfconv -S build/run.fmf build/frame.scr        # one .scr (6912 bytes) per frame
+```
 
 ## Tests
 

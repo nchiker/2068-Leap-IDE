@@ -739,7 +739,8 @@ on a stock TS2068 (`tsrun/roms/ts2068-0.rom`, `ts2068-1.rom`, `insertDock`) to
 the end (see "Tests"). The IDE's DCK was also byte-identical to the
 CLI `cartridge-build/tools/leap2cart.mjs`'s for two programs. With those tools, 695 corpus programs give the same screen as `RUN` on the release ROMs
 (5 expected differences, 0 failures), and ZEsarUX 13.0 with the stock ROM gives
-byte-identical screens to TSRun. Not tried: Fuse, real hardware.
+byte-identical screens to TSRun; so does Fuse 1.9.1 for two cartridges
+downloaded from the IDE in a browser. Not tried: real hardware.
 
 Container reference (jon0x0/AISkill_TS2068, cartridge development skill): a DCK
 is a 9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM, 2 ROM,
@@ -1078,8 +1079,7 @@ packages, cartridge images, tests). Nothing is on hold. Ideas, none started:
 
 1. **Packages on cartridges.** The cartridge image carries bytecode only; a
    program that uses a package is refused today.
-2. **Test the DCK in Fuse and on real hardware.** It has run on TSRun and on
-   ZEsarUX 13.0 with the stock ROM (same screens), not on Fuse or a real
-   TS2068.
+2. **Test the DCK on real hardware.** It has run on TSRun, ZEsarUX 13.0 and
+   Fuse 1.9.1 with the stock ROM (same screens), not on a real TS2068.
 3. **Cartridge builds for future Leap releases** (see "Adding a Leap ROM
    release", step 5).

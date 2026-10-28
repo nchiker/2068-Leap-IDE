@@ -41,7 +41,8 @@ build* (`make cart`), built by `cartridge-build/setup.sh`. See "DCK" in
 exported cartridge on a stock TS2068 in TSRun; the IDE's DCK is byte-identical
 to `cartridge-build/tools/leap2cart.mjs`'s for two programs; there 695 corpus programs match `RUN` on the release ROMs (5 expected
 differences, 0 failures) and ZEsarUX 13.0 with the stock ROM gives screens
-identical to TSRun. Not tried: Fuse, real hardware. Not supported yet:
+identical to TSRun, as do Fuse 1.9.1 with two cartridges downloaded from the
+IDE. Not tried: real hardware. Not supported yet:
 packages, tape / Array Store, returning to an editor.
 
 **On hold:** nothing.

@@ -79,6 +79,10 @@ The program then runs normally (`scenarios.mjs`).
   wrong identity or a missing chunk 3, and the interrupt at the hand-off.
 - **ZEsarUX 13.0** (the qualified emulator, stock `ts2068.rom`, smartload): `hello`, `demos/smoketest`
   and `manual/prog.lines.1` give screens byte-identical to TSRun's, with `$F4 = $43` and `$FF = $00` at the end.
+- **Fuse 1.9.1** (stock `ts2068-0/1.rom`, the `.dck` given on the command line; run with no window,
+  see the README): cartridges downloaded from the IDE in a browser (`hello`, `manual/prog.lines.1`)
+  give final screens byte-identical to TSRun's (`fmfconv -S` of a 1200-frame movie). `hello`'s
+  screen is complete at frame 124. The same two downloads also match in ZEsarUX.
 - The release build's own `make check` passes on the `cartridge` branch.
 
 ## In the Leap IDE (2026-10-28)
@@ -94,5 +98,5 @@ image. The IDE's `.dck` is byte-identical to `leap2cart.mjs`'s for `hello` and `
 
 - **Packages** aren't supported in this version. A program using one doesn't compile on the release
   ROMs without the package, so it can't be packed.
-- **Fuse and hardware** haven't been tried. On a PicoROM, the flat `.bin` holds the eight chunks in
+- **Hardware** hasn't been tried. On a PicoROM, the flat `.bin` holds the eight chunks in
   address order, with `$FF` in absent ones.
