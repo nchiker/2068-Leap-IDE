@@ -36,7 +36,7 @@ const D = await import(join(ROOT, 'src/leap-debug.js'));
 const { buildTAP } = await import(join(ROOT, 'src/export.js'));
 const C = await import(join(ROOT, 'src/cartridge.js'));
 const { insertDock } = await import(join(ROOT, 'tsrun/machine.js'));
-const { tapeToText } = await import(join(ROOT, 'src/files.js'));
+const { tapeToText, encodeShare, decodeShare } = await import(join(ROOT, 'src/files.js'));
 const { bresenham, pathsToCode } = await import(join(ROOT, 'src/tools/draw.js'));
 const { udgPokes, pokesInSource } = await import(join(ROOT, 'src/tools/udg.js'));
 const { EXAMPLES } = await import(join(ROOT, 'src/examples.js'));
@@ -191,6 +191,16 @@ const tapeLines = ['REM tape test', 'x = 1.5 : name$ = "Leap"', 'FOR i = 1 TO 3'
 const tapeStore = encodeLineStore(tapeLines);
 const tap = buildTAP(tapeStore, 'MyProg', rom.tapeFormatWord);
 same('a .tap opens back as the same source', tapeToText(tap).text, tapeLines.join('\n') + '\n');
+{
+  const big = EXAMPLES.map(e => e.text).join('');                   // every example: about 3 KB of program
+  const hash = await encodeShare(big, 'all examples.leap');
+  const back = await decodeShare('#' + hash);
+  check('a share link carries the program and its name', back.text === big && back.name === 'all examples.leap',
+    `${back.text.length} characters, ${back.name}`);
+  check('a share link is short', hash.length < big.length, `${big.length} characters of program -> ${hash.length} in the link`);
+  same('a fragment with no program is ignored', await decodeShare('#section'), null);
+  same('a damaged share link is refused', await decodeShare('#v1=AAAA').catch(e => /damaged/.test(e.message)), true);
+}
 // Leap's SAVE internals are not in the ROM table (only this test needs them):
 // take them from the release's .sym files (2068-Leap build) for a new release.
 const SAVE_SYMBOLS = {

@@ -1,6 +1,6 @@
 # Handoff — Leap V2 Web IDE
 
-Last updated 2026-10-28, at packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
+Last updated 2026-10-28, at share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -21,8 +21,8 @@ is implemented.
 | Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. A program's package goes on the cartridge too (image format 2) |
 | Phase 7 | Symbols / UDG / Draw tabs (Draw zooms 1×–3×) |
 | Phase 8 | Help overlay (F1), keys & tips, light/dark themes |
-| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (61 ROM checks pass on 2.1; the 34 browser checks pass on 2.1) |
-| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/examples.js`), Z80 breakpoints and Step instruction in the debugger |
+| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (65 ROM checks pass on 2.1; the 35 browser checks pass on 2.1) |
+| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/examples.js`), Z80 breakpoints and Step instruction in the debugger, share links (Share button; program in the URL fragment, nothing uploaded) |
 
 **Done for 2.1.0-emu.1** (tag `v2.1.0-emu.1`, commit `c005159`, published
 2026-10-28): the ROM entry (key `5a42872e…`), `src/leap-keywords.js` and
@@ -104,8 +104,8 @@ panel has a "Z80 Breakpoints" section and a "Step instruction" button (see
 cd ~/Projects/Leap-IDE
 git pull && git submodule update --init
 python3 -m http.server 8080          # then http://localhost:8080/ide.html
-node tests/rom-checks.mjs             # 61 checks, ~1 s, real ROMs in Node
-node tests/browser-smoke.mjs          # 34 checks, ~30 s, headless Chrome
+node tests/rom-checks.mjs             # 65 checks, ~1 s, real ROMs in Node
+node tests/browser-smoke.mjs          # 35 checks, ~30 s, headless Chrome
 ```
 
 Both suites must print `All checks passed`. The browser test serves the repo

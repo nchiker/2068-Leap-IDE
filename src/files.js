@@ -1,5 +1,6 @@
 /**
- * src/files.js — program files: browser auto-save, text files, Leap tapes.
+ * src/files.js — program files: browser auto-save, text files, Leap tapes,
+ * share links.
  *
  * No DOM or CodeMirror here (Node can import it): the toolbar wiring is in
  * ide.js, the editor reads the auto-save at start-up (src/editor.js).
@@ -89,4 +90,60 @@ export function tapeToText(bytes) {
   throw new Error(sawStock
     ? 'This tape holds a Sinclair/Timex BASIC program, not a Leap V2 one'
     : 'No program found on this tape');
+}
+
+// ── Share links ───────────────────────────────────────────────────
+// The program travels in the URL's fragment (#…), which the browser never
+// sends to a server: #v1=<text, deflate-raw, base64url>&name=<file name>.
+// Leap programs are at most about 9 KB, which compresses to a few KB.
+
+const SHARE_VERSION = 'v1';
+
+async function pipeBytes(bytes, stream) {
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
+function toBase64Url(bytes) {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(text) {
+  const bin = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+
+/**
+ * The URL fragment (without '#') that carries a program.
+ * @param {string} text
+ * @param {string} [name]  file name, e.g. "game.leap"
+ */
+export async function encodeShare(text, name = '') {
+  const packed = await pipeBytes(new TextEncoder().encode(text), new CompressionStream('deflate-raw'));
+  const params = new URLSearchParams();
+  params.set(SHARE_VERSION, toBase64Url(packed));
+  if (name) params.set('name', name);
+  return params.toString();
+}
+
+/**
+ * The program a URL fragment carries, or null if it carries none.
+ * @param {string} hash  location.hash, with or without the '#'
+ * @returns {Promise<{text: string, name: string} | null>}
+ * @throws if the fragment has a program that cannot be read (cut short, damaged)
+ */
+export async function decodeShare(hash) {
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  const data = params.get(SHARE_VERSION);
+  if (data === null) return null;
+  let text;
+  try {
+    const bytes = await pipeBytes(fromBase64Url(data), new DecompressionStream('deflate-raw'));
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error('The shared link is damaged or cut short: the program could not be read');
+  }
+  return { text: normalizeText(text), name: params.get('name') ?? '' };
 }

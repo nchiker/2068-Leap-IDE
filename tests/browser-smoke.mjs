@@ -323,6 +323,21 @@ try {
   const helpClosed = await evaluate("document.querySelector('.help-overlay').hidden");
   check('Help opens with every keyword and Escape closes it', helpOpen >= 100 && helpClosed, `${helpOpen} keywords`);
 
+  // Share: the link opens the program in a fresh IDE (nothing kept in this browser, so no question)
+  const shareSrc = 'REM shared\nPRINT "SHARED"';
+  await evaluate(`(leapEditor.setSource(${JSON.stringify(shareSrc)}, {fresh: true}), document.getElementById('filename-display').textContent)`);
+  const link = await evaluate(`(async () => { document.getElementById('btn-share').click();
+    await new Promise(r => setTimeout(r, 500)); return navigator.clipboard.readText(); })()`);
+  await evaluate("localStorage.removeItem('leap-ide.document')");
+  await send('Page.navigate', { url: 'about:blank' });   // a real page load, not a same-page #change
+  await sleep(300);
+  await send('Page.navigate', { url: link });
+  await waitFor('window.leapIDE?.emulator?.rom?.version', 20000);
+  const opened = await waitFor(`leapEditor.getSource() === ${JSON.stringify(shareSrc)} &&
+    [document.getElementById('filename-display').textContent, location.hash, document.getElementById('status-text').textContent].join(' | ')`, 10000);
+  check('Share copies a link that opens the program (and leaves the address bar)', /#v1=/.test(link) &&
+    /^circles\.leap \|  \| Opened a shared program/.test(opened ?? ''), `${link.length} chars: ${opened}`);
+
   check('no page errors', pageErrors.length === 0, pageErrors.join(' | '));
 } catch (err) {
   check('smoke test ran to the end', false, err.message);

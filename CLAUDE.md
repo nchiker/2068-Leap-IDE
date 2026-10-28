@@ -52,7 +52,7 @@ Leap-IDE/
 │   ├── leap-roms.js  ← Known ROM builds: SHA-256 -> addresses (Phase 1, done)
 │   ├── pc-keyboard.js ← PC key -> TS2068 matrix translation (Phase 4, done)
 │   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip, find/replace, folding, indent, Tidy, go to definition, rename (Phase 2, done)
-│   ├── files.js      ← Browser auto-save, text normalising, .tap -> source (no DOM; Node can import it)
+│   ├── files.js      ← Browser auto-save, text normalising, .tap -> source, share-link encode / decode (no DOM; Node can import it)
 │   ├── help.js       ← Help overlay: searchable keywords + Keys & tips (F1, "? Help")
 │   ├── examples.js   ← The Examples menu's 12 programs (no DOM; Node can import it)
 │   ├── leap-lang.js  ← Language mode, token classes, scanSymbols, lineTokens / nameTokens / blockStructure / blockIndent (Phase 2, done)
@@ -837,7 +837,7 @@ is a 9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM, 2 ROM,
 
 ---
 
-## Files (auto-save, New / Open / Save — done, `src/files.js` + `ide.js`)
+## Files (auto-save, New / Open / Save, share links — done, `src/files.js` + `ide.js`)
 
 `src/files.js` has no DOM or CodeMirror, so Node can import it; the toolbar
 wiring is the "Files" section of `ide.js`.
@@ -862,6 +862,29 @@ wiring is the "Files" section of `ide.js`.
   (it is not a text file yet).
 - Save and TAP export are separate: Save keeps the source as text; "⬇ TAP"
   builds the tape a TS2068 loads.
+- **Share links** (`encodeShare` / `decodeShare` in `src/files.js`; "Share links"
+  section of `ide.js`, `shareProgram`, `openSharedLink`). The link carries the
+  program in the URL fragment: `v1=<UTF-8 text, deflate-raw via
+  CompressionStream, base64url>&name=<file name>` (`encodeShare(text, name)`
+  returns it without the `#`). `decodeShare(hash)` returns `{text, name}`, or
+  `null` when the fragment has no `v1`, and throws "The shared link is damaged
+  or cut short…" when it cannot be read. The fragment is never sent to a
+  server, so nothing is uploaded and GitHub Pages needs no setup.
+  - **Share** (toolbar, after Save) builds the page's address without its hash
+    plus `#` and the fragment, copies it with `navigator.clipboard` (falls back
+    to `window.prompt` showing the link), and says `Link copied (N characters): …`;
+    an empty program says `Nothing to share`.
+  - `openSharedLink` runs at start-up and on `hashchange` (a link pasted into
+    the same tab). It decodes, removes the fragment from the address bar with
+    `history.replaceState` (so a reload keeps later edits), and does nothing if
+    the text equals the editor's. Otherwise, with unsaved changes it asks
+    `confirmDiscard()` (declined: `Kept your program; the shared one was not
+    opened`), then opens the program as a new unsaved document named after the
+    link's `name` (`withExtension`, default `shared.leap`), auto-saves, and says
+    `Opened a shared program (X): press Run (F5)`. During boot that message is
+    kept and shown instead of `Ready` (`readyMessage`).
+  - Size: all 12 examples together (2674 characters) give a 1740-character
+    fragment. The Help tip mentions Share.
 - **Examples menu** (`src/examples.js`, toolbar "Examples ▾" after Open).
   `EXAMPLES` is a list of `{id, title, about, package?, input?, text}`, 12
   programs, mostly the manual's own examples: `hello`, `ball`, `lines`, `guess`
@@ -1135,25 +1158,27 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## Tests
 
-- `node tests/rom-checks.mjs` — 61 checks in about 1 s against the real ROMs in
+- `node tests/rom-checks.mjs` — 65 checks in about 1 s against the real ROMs in
   Node (TSRun's machine, no browser): ROM table lookup, Run by injection
   (finished, compile error, run-time error, package), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
   helpers, every Examples-menu program (section 3b: each finishes with no
-  error; `guess` stops at its `INPUT`), and (section 7, "Cartridge") the
+  error; `guess` stops at its `INPUT`), share links (round trip with the name,
+  shorter than the program, a fragment without a program ignored, a damaged
+  link refused), and (section 7, "Cartridge") the
   cartridge: the identity match, the checker's bytecode and `SYM_COUNTS`, a
   compile error giving no bytecode, the DCK layout, the flat BIN, a stock TS2068
   (`tsrun/roms/ts2068-0.rom`/`ts2068-1.rom`, `insertDock`) running the exported
   cartridge to the end (POKE marker 42, VM error 0, `$F4` = `$43`), a wrong
   identity being refused, `pagingWrites`, "the cartridge build takes packages
   (image format 2)" and "a SHAPES program (CIRCLE + FILL) runs from the
-  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 61 pass on 2.1.0-emu.1
+  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 65 pass on 2.1.0-emu.1
   (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 34 checks in about 30 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 35 checks in about 30 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
   Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
@@ -1165,7 +1190,9 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   `THEN GOTO`; Tidy leaves every example unchanged), block match, fold markers,
   F12, F2 rename and its refusals, line-limit marking, the Examples menu (opens
   one, closes) and running the SHAPES example, and a Z80 breakpoint pause, Step
-  instruction and continue to Finished, with no page errors. It saves screenshots. CodeMirror's search
+  instruction and continue to Finished, and Share (copies a link; loading it in
+  a fresh page opens the program, its file name, an empty hash and the status),
+  with no page errors. It saves screenshots. CodeMirror's search
   panel takes the query on keyup / change, so CDP `Input.insertText` alone does
   not set it; the test also sends a keyUp.
 - Run both before every commit that changes behaviour. `src/leap-lang.js`
@@ -1197,4 +1224,3 @@ packages, cartridge images, tests). Nothing is on hold. Ideas, none started:
    Fuse 1.9.1 with the stock ROM (same screens), not on a real TS2068.
 2. **Cartridge builds for future Leap releases** (see "Adding a Leap ROM
    release", step 5).
-3. **Share a program by a link (URL).** Suggested, not started.

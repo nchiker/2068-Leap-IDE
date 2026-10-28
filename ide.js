@@ -28,7 +28,7 @@ import { buildTAP, checkTapeName } from './src/export.js';
 import {
   buildProgramImage, buildCartridge, romIdentity, cartIdentity, cartFormat, pagingWrites, SYM_COUNTS_SIZE, CHUNK,
 } from './src/cartridge.js';
-import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
+import { loadAutosave, storeAutosave, normalizeText, tapeToText, encodeShare, decodeShare } from './src/files.js';
 import { EXAMPLES } from './src/examples.js';
 import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
 import { toggleHelp } from './src/help.js';
@@ -49,6 +49,7 @@ let runDiagnostic = null;  // {text, diag}: the last run's error, kept while the
 const packageImages = new Map();   // package name -> image (Uint8Array), fetched at start-up
 let cartImages = null;     // {home, exrom} of the release's cartridge build, fetched on first DCK export
 let emuState = 'booting';
+let readyMessage = null;   // shown instead of "Ready" when the boot ends (a shared link opened meanwhile)
 const DEBUG_REFRESH_MS = 300;   // panel refresh while a program runs
 
 // ── Boot the emulator ─────────────────────────────────────────────
@@ -284,7 +285,7 @@ function onEmulatorState(state, detail) {
   setPaused(state === 'paused');
   switch (state) {
   case 'booting': setRunning(false); setStatus('Booting…', 'idle'); break;
-  case 'ready':   setRunning(false); setStatus('Ready', 'idle'); break;
+  case 'ready':   setRunning(false); setStatus(readyMessage ?? 'Ready', 'idle'); readyMessage = null; break;
   case 'running': setRunning(true);  setStatus('Running…', 'run'); break;
   case 'waiting': setRunning(true);  setStatus('Waiting for input — click the screen to type', 'run'); break;
   case 'paused': {
@@ -388,6 +389,48 @@ function newProgram() {
   window.leapEditor.focus();
   setStatus('New program', 'idle');
 }
+
+// ── Share links (src/files.js encodeShare / decodeShare) ──────────
+// The program travels in the link's #fragment, so nothing is uploaded.
+
+async function shareProgram() {
+  const text = getSource();
+  if (text.trim() === '') { setStatus('Nothing to share', 'error'); return; }
+  const url = location.href.replace(/#.*$/, '') + '#' + await encodeShare(text, fileName);
+  try {
+    await navigator.clipboard.writeText(url);
+    setStatus(`Link copied (${url.length} characters): it opens this program in the IDE`, 'idle');
+  } catch {
+    window.prompt('Copy this link: it opens this program in the IDE', url);
+  }
+}
+
+/** Open the program a share link carries (at start-up, or a link pasted into this tab). */
+async function openSharedLink() {
+  let shared;
+  try {
+    shared = await decodeShare(location.hash);
+  } catch (e) {
+    setStatus(e.message, 'error');
+    return;
+  }
+  if (!shared) return;
+  // Take the program out of the address bar, so a reload keeps later edits.
+  history.replaceState(null, '', location.pathname + location.search);
+  if (shared.text === getSource()) return;
+  if (!confirmDiscard()) { setStatus('Kept your program; the shared one was not opened', 'idle'); return; }
+  window.leapEditor.setSource(shared.text, { fresh: true });
+  fileName = withExtension(shared.name.trim() || 'shared');
+  savedText = '';                       // not saved to a file here yet
+  autosaveNow();
+  const msg = `Opened a shared program (${fileName}): press Run (F5)`;
+  if (emuState === 'booting') readyMessage = msg;
+  setStatus(msg, 'idle');
+}
+
+document.getElementById('btn-share').addEventListener('click', shareProgram);
+window.addEventListener('hashchange', openSharedLink);
+openSharedLink();
 
 // ── Examples menu (src/examples.js) ───────────────────────────────
 const examplesBtn = document.getElementById('btn-examples');

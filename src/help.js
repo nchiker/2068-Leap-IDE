@@ -53,7 +53,7 @@ const TIPS = [
   'Click left of a line number to set a breakpoint. When the program stops there, the debugger shows its variables and call stack; Step (F10) runs one statement.',
   'Package statements (CIRCLE, FILL, GRAB, MODE, …) work directly: the IDE loads the package the program uses. On a real TS2068, type LOAD "NAME" EXT first. ⬇ DCK puts the package on the cartridge with the program.',
   'In the debugger, Z80 breakpoints pause before the instruction at an address (hex) while a program runs; "Step instruction" then runs one Z80 instruction at a time.',
-  'Your program is kept in this browser as you type. Save downloads it; ⬇ TAP makes a tape a TS2068 or an emulator can LOAD.',
+  'Your program is kept in this browser as you type. Save downloads it; ⬇ TAP makes a tape a TS2068 or an emulator can LOAD. Share copies a link that opens the program in the IDE: the program is inside the link itself, nothing is uploaded.',
   'Hover over a keyword for its syntax and an example; − / + next to the display change its size.',
   'The ☀ / ☾ button next to Help switches between the light and dark themes. Until you click it, the IDE follows your system\'s setting.',
 ];
