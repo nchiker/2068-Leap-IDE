@@ -2,7 +2,11 @@
 // leap2cart.mjs — compile a Leap V2 program with the release ROM's own compiler and pack it into a
 // runtime cartridge (.dck for emulators, flat 64 KB .bin for a physical cartridge).
 //
-//   node tools/leap2cart.mjs PROGRAM.bas -o OUT.dck [--bin OUT.bin] [--image OUT.prog]
+//   node tools/leap2cart.mjs PROGRAM.bas -o OUT.dck [--bin OUT.bin] [--image OUT.prog] [--package PKG.bin]
+//
+// --package: the program uses a package's statements (CIRCLE, ...); the image (e.g. the IDE's
+// packages/2.1.0-emu.1/shapes.bin) is installed before the compile, as LOAD "NAME" EXT does, and goes
+// on the cartridge, which installs it the same way at start-up (program image format 2).
 //
 // The compile is the Leap IDE checker's (src/leap-check.js): boot the release ROMs in a hidden TSRun
 // machine to the editor's key wait, write the line store, call V2_CLEAR_ARRAYS -> V2_COMPILE_STORED,
@@ -13,7 +17,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { buildProgramImage, buildCartridge, romIdentity, cartIdentity } from "./cartpack.js";
+import { buildProgramImage, buildCartridge, romIdentity, cartIdentity, cartFormat } from "./cartpack.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const LEAP = process.env.LEAP || join(here, "..", "leap");
@@ -60,8 +64,10 @@ function readSyms(...paths) {
 
 /**
  * Compile a program on the release ROMs. Returns {code, line, bytecode, symCounts}; code 0 = compiled.
+ * With a package image, it is installed first: EXT2_CLEAR_ALL, the image at EXTENSION_MODULE_BASE with
+ * its length in V2_PACKAGE_LEN, then its install entry (as the IDE's checker does).
  */
-export function compile(lines, home, exrom, sym) {
+export function compile(lines, home, exrom, sym, pkg = null) {
   const need = (n) => { if (!(n in sym)) throw new Error("symbol missing: " + n); return sym[n]; };
   const keyWait = need("IO_READ_KEY.wait_hit");
   const STACK_TOP = 0xFF00;
@@ -93,6 +99,16 @@ export function compile(lines, home, exrom, sym) {
   w16(STACK_TOP, keyWait);
   m.cpu.sp = STACK_TOP - 2;
   m.cpu.pc = need("V2_CLEAR_ARRAYS");
+  if (pkg) {
+    // EXT2_CLEAR_ALL -> the package's install entry -> V2_CLEAR_ARRAYS -> V2_COMPILE_STORED
+    const base = need("EXTENSION_MODULE_BASE");
+    for (let i = 0; i < pkg.length; i++) m.bus.write(base + i, pkg[i]);
+    w16(need("V2_PACKAGE_LEN"), pkg.length);
+    w16(STACK_TOP - 6, base);
+    w16(STACK_TOP - 4, need("V2_CLEAR_ARRAYS"));
+    m.cpu.sp = STACK_TOP - 6;
+    m.cpu.pc = need("EXT2_CLEAR_ALL");
+  }
   m.cpu.halted = false;
   for (let t = 0; t < 40_000_000; t += 20000) {
     Z.runZ80(m.cpu, m.bus, 20000, m);
@@ -118,11 +134,12 @@ async function main(argv) {
     if (a === "-o") opt.dck = argv[++i];
     else if (a === "--bin") opt.bin = argv[++i];
     else if (a === "--image") opt.image = argv[++i];
+    else if (a === "--package") opt.pkg = argv[++i];
     else if (!opt.src) opt.src = a;
     else throw new Error("unexpected argument " + a);
   }
   if (!opt.src || !(opt.dck || opt.bin || opt.image)) {
-    console.error("usage: leap2cart.mjs PROGRAM.bas [-o OUT.dck] [--bin OUT.bin] [--image OUT.prog]");
+    console.error("usage: leap2cart.mjs PROGRAM.bas [-o OUT.dck] [--bin OUT.bin] [--image OUT.prog] [--package PKG.bin]");
     process.exit(2);
   }
   const home = readFileSync(join(LEAP, "v2_home.bin"));
@@ -137,12 +154,13 @@ async function main(argv) {
   const sym = readSyms(join(LEAP, "build/test_basic.sym"), join(LEAP, "build/exrom.sym"));
   const lines = sourceLines(readFileSync(opt.src, "utf8"));
   if (lines.length === 0) throw new Error("the program is empty");
-  const r = compile(lines, home, exrom, sym);
+  const pkg = opt.pkg ? new Uint8Array(readFileSync(opt.pkg)) : null;
+  const r = compile(lines, home, exrom, sym, pkg);
   if (r.code !== 0) {
     console.error(`${opt.src}: compile error ${r.code} at stored line ${r.line + 1}`);
     process.exit(1);
   }
-  const program = buildProgramImage({ bytecode: r.bytecode, symCounts: r.symCounts, identity });
+  const program = buildProgramImage({ bytecode: r.bytecode, symCounts: r.symCounts, identity, pkg, format: cartFormat(cartHome) });
   const { dck, bin } = buildCartridge({ home: cartHome, exrom: cartExrom, program });
   if (opt.dck) writeFileSync(opt.dck, dck);
   if (opt.bin) writeFileSync(opt.bin, bin);

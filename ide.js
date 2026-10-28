@@ -26,9 +26,10 @@ import { createChecker } from './src/leap-check.js';
 import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
 import { buildTAP, checkTapeName } from './src/export.js';
 import {
-  buildProgramImage, buildCartridge, romIdentity, cartIdentity, pagingWrites, SYM_COUNTS_SIZE, CHUNK,
+  buildProgramImage, buildCartridge, romIdentity, cartIdentity, cartFormat, pagingWrites, SYM_COUNTS_SIZE, CHUNK,
 } from './src/cartridge.js';
 import { loadAutosave, storeAutosave, normalizeText, tapeToText } from './src/files.js';
+import { EXAMPLES } from './src/examples.js';
 import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
 import { toggleHelp } from './src/help.js';
 import { createSymbolsTool } from './src/tools/symbols.js';
@@ -75,6 +76,7 @@ async function bootEmulator() {
     toStoreLine,
     onBreakpointClick: line => window.leapEditor.scrollToLine(line),
     onLineClick:       line => window.leapEditor.scrollToLine(line),
+    onInstructionStep: () => setStatus(`Paused at $${hex4(emulator.machine.cpu.pc)} (one Z80 instruction)`, 'run'),
   });
   if (window.leapEditor) {
     window.leapEditor.onBreakpointsChanged(() => debug.setBreakpoints(window.leapEditor.getBreakpoints()));
@@ -273,6 +275,8 @@ function injectProgram(prepared) {
   setStatus(pkg.name ? `Starting… (with the ${pkg.name} package)` : 'Starting…', 'run');
 }
 
+const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
+
 // ── Emulator state → UI ───────────────────────────────────────────
 function onEmulatorState(state, detail) {
   emuState = state;
@@ -286,9 +290,10 @@ function onEmulatorState(state, detail) {
   case 'paused': {
     setRunning(true);
     showTab('debugger');
-    const line = debug ? debug.pausedHere() : -1;
+    const { line, z80 } = debug ? debug.pausedHere() : { line: -1, z80: null };
     window.leapEditor?.setExecutionLine(line > 0 ? line : null);
-    setStatus(line > 0 ? `Paused at line ${line}` : 'Paused', 'run');
+    const at = line > 0 ? ` at line ${line}` : '';
+    setStatus(z80 !== null ? `Paused at Z80 breakpoint $${hex4(z80)}${at}` : `Paused${at}`, 'run');
     break;
   }
   case 'stopped': setRunning(false); setStatus('Stopped', 'idle'); break;
@@ -382,6 +387,53 @@ function newProgram() {
   autosaveNow();
   window.leapEditor.focus();
   setStatus('New program', 'idle');
+}
+
+// ── Examples menu (src/examples.js) ───────────────────────────────
+const examplesBtn = document.getElementById('btn-examples');
+const examplesMenu = document.getElementById('examples-menu');
+
+function showExamples(open) {
+  examplesMenu.hidden = !open;
+  examplesBtn.setAttribute('aria-expanded', String(open));
+  if (open) examplesMenu.querySelector('button')?.focus();
+}
+
+for (const ex of EXAMPLES) {
+  const item = document.createElement('button');
+  item.className = 'menu-item';
+  item.setAttribute('role', 'menuitem');
+  item.dataset.example = ex.id;
+  const title = document.createElement('span');
+  title.className = 'menu-title';
+  title.textContent = ex.title;
+  const about = document.createElement('span');
+  about.className = 'menu-about';
+  about.textContent = ex.about;
+  item.append(title, about);
+  item.addEventListener('click', () => { showExamples(false); openExample(ex); });
+  examplesMenu.append(item);
+}
+examplesBtn.addEventListener('click', e => { e.stopPropagation(); showExamples(examplesMenu.hidden); });
+document.addEventListener('click', e => { if (!examplesMenu.hidden && !examplesMenu.contains(e.target)) showExamples(false); });
+examplesMenu.addEventListener('keydown', e => {
+  const items = [...examplesMenu.querySelectorAll('.menu-item')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); showExamples(false); examplesBtn.focus(); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+});
+
+/** Replace the program with an example (a new, unsaved document named after it). */
+function openExample(ex) {
+  if (!confirmDiscard()) return;
+  window.leapEditor.setSource(ex.text, { fresh: true });
+  fileName = withExtension(ex.id);
+  savedText = '';
+  autosaveNow();
+  window.leapEditor.focus();
+  const how = ex.input ? ' (it asks for input: click the screen to type)' : '';
+  setStatus(`Example "${ex.title}": press Run (F5)${how}`, 'idle');
 }
 
 function openProgram() {
@@ -603,10 +655,10 @@ async function exportCartridge() {
     setStatus(`There is no cartridge build for Leap ${emulator.rom.version}`, 'error');
     return;
   }
-  const used = [...packagesUsed(text)];
-  if (used.length > 0) {
-    const [[name, line]] = used;
-    setStatus(`Cartridges cannot carry packages yet: line ${line} uses ${name.toUpperCase()}`, 'error');
+  // A package goes on the cartridge with the program (image format 2).
+  const pkg = packageFor(text);
+  if (pkg.problem) {
+    setStatus(pkg.problem.message, 'error');
     return;
   }
   const store = encodeLineStore(prepared.lines);
@@ -615,7 +667,7 @@ async function exportCartridge() {
     setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
     return;
   }
-  const result = checker.compile(store, SYM_COUNTS_SIZE);
+  const result = checker.compile(store, SYM_COUNTS_SIZE, pkg.image);
   if (!result) {
     setStatus('The compiler did not finish', 'error');
     return;
@@ -640,6 +692,11 @@ async function exportCartridge() {
     setStatus(`The cartridge build does not match the loaded Leap ${emulator.rom.version} ROMs`, 'error');
     return;
   }
+  const format = cartFormat(images.home);
+  if (pkg.image && format < 2) {
+    setStatus(`This cartridge build cannot carry packages: the program uses ${pkg.name.toUpperCase()}`, 'error');
+    return;
+  }
   const writes = pagingWrites(text);
   if (writes.length > 0) {
     const w = writes[0];
@@ -654,7 +711,9 @@ async function exportCartridge() {
   if (name === null || name.trim() === '') return;
   let out;
   try {
-    const program = buildProgramImage({ bytecode: result.bytecode, symCounts: result.symCounts, identity });
+    const program = buildProgramImage({
+      bytecode: result.bytecode, symCounts: result.symCounts, identity, pkg: pkg.image, format,
+    });
     out = buildCartridge({ home: images.home, exrom: images.exrom, program });
   } catch (e) {
     setStatus(e.message, 'error');
@@ -663,7 +722,8 @@ async function exportCartridge() {
   const flat = /\.bin$/i.test(name.trim());
   const outName = name.trim().replace(/\.(dck|bin)$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_') + (flat ? '.bin' : '.dck');
   download(new Blob([flat ? out.bin : out.dck], { type: 'application/octet-stream' }), outName);
-  setStatus(`Saved ${outName} (${result.bytecode.length} bytes of bytecode): ` +
+  const withPkg = pkg.image ? ` and the ${pkg.name.toUpperCase()} package` : '';
+  setStatus(`Saved ${outName} (${result.bytecode.length} bytes of bytecode${withPkg}): ` +
     'it runs on a stock TS2068 from the dock slot', 'idle');
 }
 
@@ -751,6 +811,8 @@ for (const [id, op, keys] of [['btn-cut', 'cut', 'Ctrl+X'], ['btn-copy', 'copy',
   });
 }
 document.getElementById('btn-find').addEventListener('click', () => window.leapEditor?.find());
+document.getElementById('btn-tidy').addEventListener('click', () => window.leapEditor?.tidy());
+window.leapEditor?.onMessage(setStatus);
 
 document.getElementById('btn-reset-emu').addEventListener('click', () => {
   if (emulator) emulator.reset();

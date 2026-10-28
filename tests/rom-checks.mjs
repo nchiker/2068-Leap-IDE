@@ -39,6 +39,7 @@ const { insertDock } = await import(join(ROOT, 'tsrun/machine.js'));
 const { tapeToText } = await import(join(ROOT, 'src/files.js'));
 const { bresenham, pathsToCode } = await import(join(ROOT, 'src/tools/draw.js'));
 const { udgPokes, pokesInSource } = await import(join(ROOT, 'src/tools/udg.js'));
+const { EXAMPLES } = await import(join(ROOT, 'src/examples.js'));
 
 // ── tiny harness ──
 let failed = 0;
@@ -141,6 +142,17 @@ same('a plain program after a package check', checker.check(encodeLineStore(['PR
 for (const name of ['cbeep', 'graphics', 'mode', 'printer', 'shapes', 'sprite']) {
   const image = pkg(name);
   check(`package image ${name}.bin fits the window`, image.length > 0 && image.length <= 0x400, `${image.length} bytes`);
+}
+
+// ── 3b. Examples menu (src/examples.js): each compiles and runs without an error ──
+console.log('\nExamples');
+for (const ex of EXAMPLES) {
+  const lines = ex.text.split('\n').filter(l => l.trim() !== '');   // as prepareSource: blank lines are not stored
+  const image = ex.package ? pkg(ex.package) : null;
+  const r = runProgram(lines, image);
+  // An INPUT example stops at its first INPUT (a key wait deeper in the stack).
+  const ok = r.reached && r.ce === 0 && r.ve === 0 && (ex.input ? r.sp !== 0xFF00 : r.sp === 0xFF00);
+  check(`example "${ex.title}" runs${ex.input ? ' to its INPUT' : ''}`, ok, json(r));
 }
 
 // ── 4. Debugger (src/leap-debug.js) ──
@@ -247,15 +259,18 @@ if (rom.cartridgeDir) {
   same('a compile error comes back without bytecode', checker.compile(encodeLineStore(['LET y = 2']), C.SYM_COUNTS_SIZE), { code: 2, line: 0 });
 
   /** Stock ROMs, the cartridge in the dock; run to Leap's key wait (the program's end). */
-  const runCartridge = id => {
-    const program = C.buildProgramImage({ bytecode: compiled.bytecode, symCounts: compiled.symCounts, identity: id });
+  const runCartridge = (id, comp = compiled, pkgImage = null) => {
+    const program = C.buildProgramImage({ bytecode: comp.bytecode, symCounts: comp.symCounts, identity: id,
+      pkg: pkgImage, format: C.cartFormat(cartHome) });
     const { dck, bin } = C.buildCartridge({ home: cartHome, exrom: cartExrom, program });
     const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
     setHomeRom(m, stock0); setExRom(m, stock1);
     const err = insertDock(m, dck);
     resetMachine(m);
     const reached = !err && run(m, () => atWait(m), 600);
-    return { dck, bin, err, reached, mark: m.bus.read(MARK), ve: m.bus.read(rom.vmErrorCode), f4: m.portF4 };
+    let ink = 0;                                       // set pixels on the screen
+    for (let a = 0x4000; a < 0x5800; a++) for (let v = m.bus.read(a); v; v &= v - 1) ink++;
+    return { dck, bin, err, reached, mark: m.bus.read(MARK), ve: m.bus.read(rom.vmErrorCode), f4: m.portF4, ink };
   };
   const ok = runCartridge(identity);
   same('DCK layout: DOCK bank, chunks 0, 1, 3, 6 as ROM', { head: [...ok.dck.subarray(0, 9)], size: ok.dck.length },
@@ -264,6 +279,14 @@ if (rom.cartridgeDir) {
     { size: 65536, magic: 'LEAPPROG' });
   same('stock TS2068 runs the cartridge to the end', { err: ok.err, reached: ok.reached, mark: ok.mark, ve: ok.ve, f4: ok.f4 },
     { err: null, reached: true, mark: 42, ve: 0, f4: 0x43 });
+  same('the cartridge build takes packages (image format 2)', C.cartFormat(cartHome), 2);
+  const shapesCart = ['CLS', 'CIRCLE 128, 96, 40', 'FILL 128, 96', `POKE ${MARK}, 7`];
+  const shapesComp = checker.compile(encodeLineStore(shapesCart), C.SYM_COUNTS_SIZE, pkg('shapes'));
+  const shapesRun = shapesComp.code === 0 ? runCartridge(identity, shapesComp, pkg('shapes')) : null;
+  // A filled radius-40 disc is about pi * 40^2 = 5027 pixels.
+  check('a SHAPES program (CIRCLE + FILL) runs from the cartridge', shapesRun?.reached && shapesRun.mark === 7 &&
+    shapesRun.ve === 0 && shapesRun.ink > 4500 && shapesRun.ink < 5600,
+    json({ code: shapesComp.code, ...(shapesRun && { reached: shapesRun.reached, mark: shapesRun.mark, ve: shapesRun.ve, ink: shapesRun.ink }) }));
   const wrong = runCartridge(identity ^ 1);
   same('bytecode from other ROMs is refused (NO PROGRAM)', { reached: wrong.reached, mark: wrong.mark }, { reached: true, mark: 0 });
   same('OUT to the paging ports is found', C.pagingWrites('OUT 254, 1\nx = 1: OUT 244, 3\nPRINT "OUT 255, 0"\nOUT 511, 0'),

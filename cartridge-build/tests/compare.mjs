@@ -5,8 +5,9 @@
 //   A  the release ROMs, program injected into the editor's line store and RUN (as the IDE does);
 //   B  the stock TS2068 ROMs with the program's cartridge in the dock;
 // run each FRAMES frames past the start of its run and compare the display file, attributes and
-// border. Programs that do not compile on the release ROMs (package statements, deliberate compile
-// errors) are listed as skipped.
+// border. A program that does not compile is tried with each of the release's packages installed
+// (../packages/<version>/, as LOAD "NAME" EXT); one that compiles with none of them (deliberate compile
+// errors) is listed as skipped.
 //
 //   node tests/compare.mjs [--frames N] [--png-dir DIR] FILE...
 
@@ -14,7 +15,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { compile, sourceLines } from "../tools/leap2cart.mjs";
-import { buildProgramImage, buildCartridge, romIdentity } from "../tools/cartpack.js";
+import { buildProgramImage, buildCartridge, romIdentity, cartFormat } from "../tools/cartpack.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const LEAP = process.env.LEAP || join(here, "..", "leap");
@@ -30,6 +31,7 @@ const EXPECTED = {
   "kw.peek.1.bas": "PEEK(0) reads the LROS header ($00), not `di` ($F3)",
   "mem.free.1.bas": "FREE() is larger: the cartridge holds no source text",
   "mem.free.2.bas": "FREE() is larger: the cartridge holds no source text",
+  "mem.pkg.1.bas": "FREE() is larger: the cartridge holds no source text",
   "hw.stick_idle.bas": "STICK drives A8-A15 from a stale B; the reference run's B strobes a stick " +
     "(the corpus expects 0, which the cartridge prints)",
 };
@@ -53,6 +55,9 @@ for (const p of ["build/test_basic.sym", "build/exrom.sym", "build/cart/leap_v2_
 }
 const stock0 = readFileSync(join(TSRUN, "roms/ts2068-0.rom")), stock1 = readFileSync(join(TSRUN, "roms/ts2068-1.rom"));
 const identity = romIdentity(home, exrom);
+const PKG_DIR = process.env.PACKAGES || join(here, "..", "..", "packages", "2.1.0-emu.1");
+const PACKAGES = ["cbeep", "graphics", "mode", "printer", "shapes", "sprite"].map((name) =>
+  ({ name, image: new Uint8Array(readFileSync(join(PKG_DIR, name + ".bin"))) }));
 
 function machine(h, x) {
   const m = M.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
@@ -79,7 +84,7 @@ function runUntil(m, lo, hi, maxFrames) {
 const screen = (m) => m.ram.slice(0x4000, 0x5B00);
 const w16 = (m, a, v) => { m.bus.write(a, v & 0xFF); m.bus.write(a + 1, v >> 8); };
 
-function runReference(lines, frames = FRAMES) {
+function runReference(lines, frames = FRAMES, pkg = null) {
   const m = machine(home, exrom);
   const wait = sym["IO_READ_KEY.wait_hit"];
   if (!runUntil(m, wait, wait + 6, 400)) throw new Error("reference ROM did not reach the editor");
@@ -94,14 +99,23 @@ function runReference(lines, frames = FRAMES) {
   w16(m, 0xFF00, sym["V2_COMMAND_LOOP.loop"]);
   m.cpu.sp = base;
   m.cpu.pc = sym.V2_CLEAR_ARRAYS;
+  if (pkg) {
+    // EXT2_CLEAR_ALL -> the package's install entry -> CLEAR_ARRAYS (the IDE's package chain)
+    pkg.forEach((b, i) => m.bus.write(sym.EXTENSION_MODULE_BASE + i, b));
+    w16(m, sym.V2_PACKAGE_LEN, pkg.length);
+    w16(m, base - 4, sym.EXTENSION_MODULE_BASE);
+    w16(m, base - 2, sym.V2_CLEAR_ARRAYS);
+    m.cpu.sp = base - 4;
+    m.cpu.pc = sym.EXT2_CLEAR_ALL;
+  }
   m.cpu.halted = false;
   if (!runUntil(m, sym.VM_RUN, sym.VM_RUN + 1, 400)) throw new Error("reference did not start VM_RUN");
   for (let f = 0; f < frames; f++) M.runFrame(m);
   return m;
 }
 
-function runCartridge(bytecode, symCounts) {
-  const program = buildProgramImage({ bytecode, symCounts, identity });
+function runCartridge(bytecode, symCounts, pkg = null) {
+  const program = buildProgramImage({ bytecode, symCounts, identity, pkg, format: cartFormat(cartHome) });
   const { dck } = buildCartridge({ home: cartHome, exrom: cartExrom, program });
   const m = machine(stock0, stock1);
   const err = M.insertDock(m, dck);
@@ -142,11 +156,15 @@ for (const f of files) {
   let lines;
   try { lines = sourceLines(readFileSync(f, "utf8")); } catch (e) { console.log(`SKIP ${name}: ${e.message}`); skip++; continue; }
   if (!lines.length) { skip++; continue; }
-  const c = compile(lines, home, exrom, sym);
+  let c = compile(lines, home, exrom, sym), pkg = null;
+  for (const p of c.code !== 0 ? PACKAGES : []) {   // perhaps package statements (LPRINT gives 32, not 2)
+    const cp = compile(lines, home, exrom, sym, p.image);
+    if (cp.code === 0) { c = cp; pkg = p; break; }
+  }
   if (c.code !== 0) { console.log(`SKIP ${name}: compile error ${c.code} (line ${c.line + 1})`); skip++; continue; }
   try {
-    const a = runReference(lines);
-    const { m: b } = runCartridge(c.bytecode, c.symCounts);
+    const a = runReference(lines, FRAMES, pkg?.image);
+    const { m: b } = runCartridge(c.bytecode, c.symCounts, pkg?.image);
     const sa = screen(a), sb = screen(b);
     let diff = 0;
     for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) diff++;
@@ -157,7 +175,7 @@ for (const f of files) {
       continue;
     }
     const ok = same;
-    console.log(`${ok ? "PASS" : "FAIL"} ${name}: ${c.bytecode.length} B bytecode` +
+    console.log(`${ok ? "PASS" : "FAIL"} ${name}: ${c.bytecode.length} B bytecode${pkg ? ", package " + pkg.name : ""}` +
       (ok ? "" : `, ${diff} screen bytes differ, border ${a.border} vs ${b.border}`));
     ok ? pass++ : fail++;
     if (!ok) {

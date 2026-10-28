@@ -1,6 +1,6 @@
 # Handoff — Leap V2 Web IDE
 
-Last updated 2026-10-28, at editor find/replace and the edit buttons (Undo, Redo, Cut, Copy, Paste, Find).
+Last updated 2026-10-28, at packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -18,11 +18,11 @@ is implemented.
 | Phase 3 | Debugger: breakpoints, Step/Pause, variables, call stack, registers, memory |
 | Phase 4 | PC keyboard mapping (`"` is `"`), keys reach the TS2068 only while a program runs |
 | Phase 5 | Error checking by the ROM's own compiler on a hidden machine |
-| Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. No packages yet |
+| Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. A program's package goes on the cartridge too (image format 2) |
 | Phase 7 | Symbols / UDG / Draw tabs (Draw zooms 1×–3×) |
 | Phase 8 | Help overlay (F1), keys & tips, light/dark themes |
-| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (47 ROM checks pass on 2.1; the 21 browser checks pass on 2.1) |
-| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons |
+| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (61 ROM checks pass on 2.1; the 34 browser checks pass on 2.1) |
+| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/examples.js`), Z80 breakpoints and Step instruction in the debugger |
 
 **Done for 2.1.0-emu.1** (tag `v2.1.0-emu.1`, commit `c005159`, published
 2026-10-28): the ROM entry (key `5a42872e…`), `src/leap-keywords.js` and
@@ -43,7 +43,37 @@ to `cartridge-build/tools/leap2cart.mjs`'s for two programs; there 695 corpus pr
 differences, 0 failures) and ZEsarUX 13.0 with the stock ROM gives screens
 identical to TSRun, as do Fuse 1.9.1 with two cartridges downloaded from the
 IDE. Not tried: real hardware. Not supported yet:
-packages, tape / Array Store, returning to an editor.
+tape / Array Store, returning to an editor.
+
+**Packages on cartridges (done 2026-10-28).** The program image is format 2:
+after the bytecode, a package length (LE16, 0 = none, at most 1024) and the
+package image. The cartridge's `CART_LOAD` copies it to `$F400` and sets
+`V2_PACKAGE_LEN`; `CART_RUN` calls its install entry, as `LOAD "NAME" EXT`
+does. `leap.patch` is now two commits on the tag, and the cartridge images
+changed (new SHA-256 in `cartridge/2.1.0-emu.1/README.md`; identity still
+`$E0A5`). A fresh clone from GitHub plus `setup.sh` reproduces both images byte
+for byte. The export uses `packageFor` (one package at a time, as Run does) and
+refuses a package if the cartridge build's format is below 2. Checked: the 33
+`pkg=` examples of the manual, run from the cartridge against `RUN` with the
+package installed (32 pass, 1 expected difference, 0 fail), and a SHAPES
+program (`CIRCLE` + `FILL`) on a stock TS2068 in `tests/rom-checks.mjs`.
+
+**Editor tools (done 2026-10-28).** `src/leap-lang.js` gained `lineTokens`,
+`nameTokens`, `blockStructure` and `blockIndent`; `src/editor.js` builds on
+them: folding, auto-indent and dedent, Tidy, matching block keywords, go to
+definition, rename and the line-limit ruler (see "Language mode and editor" in
+`CLAUDE.md`). Indentation is stored by Leap verbatim, so Tidy's indent counts
+towards line length and the pool. Bug fixed in `setSource(text, {fresh:true})`:
+after `view.setState()` Chrome's EditContext kept the old cursor, so the next
+keystroke past the new text's end threw "Invalid change range" and was lost
+(New / Open while the editor had focus). The fix dispatches selection anchor 0
+with the theme reconfigure right after `setState`.
+
+**Examples menu and Z80 breakpoints (done 2026-10-28).** "Examples ▾" opens one
+of 12 programs from `src/examples.js` as a new unsaved document;
+`tests/rom-checks.mjs` section 3b runs each on the real ROMs. The debugger
+panel has a "Z80 Breakpoints" section and a "Step instruction" button (see
+"Debugger" in `CLAUDE.md`).
 
 **On hold:** nothing.
 
@@ -74,8 +104,8 @@ packages, tape / Array Store, returning to an editor.
 cd ~/Projects/Leap-IDE
 git pull && git submodule update --init
 python3 -m http.server 8080          # then http://localhost:8080/ide.html
-node tests/rom-checks.mjs             # 47 checks, ~1 s, real ROMs in Node
-node tests/browser-smoke.mjs          # 21 checks, ~30 s, headless Chrome
+node tests/rom-checks.mjs             # 61 checks, ~1 s, real ROMs in Node
+node tests/browser-smoke.mjs          # 34 checks, ~30 s, headless Chrome
 ```
 
 Both suites must print `All checks passed`. The browser test serves the repo
@@ -112,7 +142,7 @@ this machine has Node 24.
   built with) differs, and export refuses when `romIdentity(loaded ROMs)` is not
   `cartIdentity(cartridge HOME)`. A release without a `cartridgeDir` entry
   gives "There is no cartridge build for Leap <version>" (2.0.2 has none).
-  Programs are limited to 4011 bytes of bytecode. A literal `OUT` to port 244 or
+  Programs are limited to 4011 bytes of bytecode (and a package to 1024). A literal `OUT` to port 244 or
   255 can switch Leap itself out, so export asks first.
 - **TAP test stand-in.** `tests/rom-checks.mjs` replaces `STORAGE_SEND_BLOCK`;
   2.1's block sender reports "sent whole" with carry set, and 2.1's `SAVE` stops
@@ -139,4 +169,4 @@ this machine has Node 24.
 | This IDE | `~/Projects/Leap-IDE`, `nchiker/2068-Leap-IDE` | local branch `master` tracks `origin/main` |
 | TSRun fork | submodule `tsrun/`, `nchiker/TSRun` | pinned at `016787f` (2.1.0-emu.1 ROMs, on top of sound worklet fix `f65de5a` + tape fix `4db1f1e`) |
 | Leap | `~/2068-Leap`, `nchiker/2068-Leap` | release tag `v2.1.0-emu.1` (commit `c005159`); the clone may be on any branch, possibly with local edits: build releases in a worktree |
-| Cartridge build | `cartridge-build/` in this repo | Source of `cartridge/<version>/`: `leap.patch` on the `v2.1.0-emu.1` tag, applied by `setup.sh` into `leap/` (ignored). Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs`. `~/Projects/Leap-Cartridge` was the original working copy |
+| Cartridge build | `cartridge-build/` in this repo | Source of `cartridge/<version>/`: `leap.patch` (two commits) on the `v2.1.0-emu.1` tag, applied by `setup.sh` into `leap/` (ignored). Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs`. `~/Projects/Leap-Cartridge` was the original working copy |

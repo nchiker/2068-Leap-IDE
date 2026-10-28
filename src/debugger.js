@@ -6,12 +6,16 @@
  * instruction while a program runs:
  *  - during compile it records the line table (src/leap-debug.js);
  *  - at each bytecode instruction it stops on breakpoints, or, in step
- *    mode, at the next statement.
+ *    mode, at the next statement;
+ *  - before any Z80 instruction whose address is a Z80 breakpoint (the
+ *    panel's "Z80 breakpoints"; the PC alone, whichever ROM, cartridge or
+ *    RAM is paged in there). They act only while a program runs, since the
+ *    watch is installed only then.
  * Lines are Leap store lines inside the controller; the caller supplies the
  * mapping to and from editor lines (the IDE drops blank lines before storing).
  *
- * Panel: registers and flags, variables, breakpoints, call stack and a
- * memory window, rendered into #debugger-mount. Every value shown passes
+ * Panel: registers and flags, variables, breakpoints, Z80 breakpoints (with
+ * a one-instruction step while paused), call stack and a memory window, rendered into #debugger-mount. Every value shown passes
  * through esc(): string variables can hold any character.
  */
 
@@ -36,6 +40,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
  *   toStoreLine: (editorLine: number) => number,   // 1-based editor line -> store line, or -1
  *   onBreakpointClick: (editorLine: number) => void,
  *   onLineClick: (editorLine: number) => void,
+ *   onInstructionStep: () => void,                 // after "Step instruction" (the IDE updates its status)
  * }} opts
  */
 export function createDebugger(opts) {
@@ -50,6 +55,8 @@ export function createDebugger(opts) {
   let stepping = false;             // stop at the next statement start
   let vmStarted = false;            // this run's VM tables exist (variables readable)
   let active = false;               // a run is in progress
+  let z80Breaks = loadZ80Breaks();   // Z80 breakpoint addresses
+  let z80Hit = null;                // the Z80 breakpoint the machine paused at, or null
 
   function rebuildBreakpoints() {
     breakAddrs = new Set();
@@ -63,6 +70,7 @@ export function createDebugger(opts) {
 
   function watch(machine) {
     table.observe(machine);
+    if (z80Breaks.has(machine.cpu.pc)) { z80Hit = machine.cpu.pc; return true; }
     const ip = vmInstruction(machine, rom);
     if (ip < 0) return false;
     if (!vmStarted) { vmStarted = true; breakDirty = true; }
@@ -95,11 +103,26 @@ export function createDebugger(opts) {
       renderBreakpoints(lines, opts.onBreakpointClick);
     },
 
-    /** Called by the IDE when the emulator reports a pause. */
+    /**
+     * Called by the IDE when the emulator reports a pause: the 1-based editor
+     * line (-1 if unknown) and the Z80 breakpoint it stopped at (or null).
+     * Inside a VM instruction's Z80 code the line is the statement VM_IP is in.
+     */
     pausedHere() {
       stepping = false;
+      const z80 = z80Hit;
+      z80Hit = null;
       const ip = vmInstruction(m, rom);
-      return ip < 0 ? -1 : opts.toEditorLine(table.lineOf(ip));
+      if (ip >= 0) return { line: opts.toEditorLine(table.lineOf(ip)), z80 };
+      return { line: vmStarted ? dbg.stopLine(false) : -1, z80 };
+    },
+
+    /** While paused, run exactly one Z80 instruction. */
+    stepInstruction() {
+      if (!emulator.paused) return;
+      emulator.stepInstruction();
+      dbg.refresh();
+      opts.onInstructionStep?.();
     },
 
     /** Pause at the next statement. */
@@ -155,6 +178,8 @@ export function createDebugger(opts) {
       renderVariables(vmStarted ? readVariables(m, rom) : null);
       renderCallStack(active && vmStarted ? callStack() : null, opts.onLineClick);
       renderMemory(m);
+      document.getElementById('z80-step').disabled = !emulator.paused;
+      renderZ80Breaks(z80Breaks, removeZ80, emulator.paused ? c.pc : null);
     },
   };
 
@@ -174,7 +199,27 @@ export function createDebugger(opts) {
     return out;
   }
 
+  function setZ80Breaks(set) {
+    z80Breaks = set;
+    saveZ80Breaks(set);
+    renderZ80Breaks(set, removeZ80);
+  }
+  function removeZ80(addr) { const s = new Set(z80Breaks); s.delete(addr); setZ80Breaks(s); }
+
   buildSkeleton();
+  const z80Input = document.getElementById('z80-addr');
+  const addZ80 = () => {
+    const addr = parseHexAddr(z80Input.value);
+    if (addr === null) { z80Input.classList.add('bad'); return; }
+    z80Input.classList.remove('bad');
+    z80Input.value = '';
+    setZ80Breaks(new Set([...z80Breaks, addr].sort((a, b) => a - b)));
+  };
+  document.getElementById('z80-add').addEventListener('click', addZ80);
+  z80Input.addEventListener('keydown', e => { if (e.key === 'Enter') addZ80(); });
+  z80Input.addEventListener('input', () => z80Input.classList.remove('bad'));
+  document.getElementById('z80-step').addEventListener('click', () => dbg.stepInstruction());
+  renderZ80Breaks(z80Breaks, removeZ80);
   dbg.refresh();
   return dbg;
 }
@@ -204,6 +249,19 @@ function buildSkeleton() {
   <div class="dsec" id="dsec-bp">
     <div class="dsec-hdr">Breakpoints <span class="dsec-arrow">▾</span></div>
     <div class="bp-list" id="bp-list"></div>
+  </div>
+
+  <div class="dsec" id="dsec-z80">
+    <div class="dsec-hdr">Z80 Breakpoints <span class="dsec-arrow">▾</span></div>
+    <div>
+      <div class="z80-add-row">
+        <input id="z80-addr" type="text" maxlength="5" spellcheck="false" placeholder="e.g. F400"
+               title="Pause before the Z80 instruction at this address while a program runs">
+        <button class="z80-btn" id="z80-add">Add</button>
+        <button class="z80-btn" id="z80-step" title="While paused: run one Z80 instruction" disabled>Step instruction</button>
+      </div>
+      <div class="bp-list" id="z80-list"></div>
+    </div>
   </div>
 
   <div class="dsec" id="dsec-stack">
@@ -282,6 +340,39 @@ function renderBreakpoints(lines, onClick) {
     if (e.target.classList.contains('bp-del')) window.leapEditor.toggleBreakpoint(line);
     else if (onClick) onClick(line);
   }));
+}
+
+/** "F400", "$F400", "0xF400" or "#F400" -> 0xF400; null if not a 16-bit hex address. */
+export function parseHexAddr(text) {
+  const t = String(text).trim().replace(/^(\$|0x|#)/i, '');
+  if (!/^[0-9A-Fa-f]{1,4}$/.test(t)) return null;
+  return parseInt(t, 16);
+}
+
+const Z80_KEY = 'leap-ide.z80bp';
+function loadZ80Breaks() {
+  try {
+    const list = JSON.parse(localStorage.getItem(Z80_KEY) ?? '[]');
+    return new Set(Array.isArray(list) ? list.filter(a => Number.isInteger(a) && a >= 0 && a <= 0xFFFF) : []);
+  } catch { return new Set(); }
+}
+function saveZ80Breaks(set) {
+  try { localStorage.setItem(Z80_KEY, JSON.stringify([...set])); } catch { /* storage blocked */ }
+}
+
+/** The Z80 breakpoint list; `pc` (when paused) marks the one the machine is at. */
+function renderZ80Breaks(set, onRemove, pc = null) {
+  const list = document.getElementById('z80-list');
+  if (set.size === 0) {
+    list.innerHTML = '<div class="no-data">None. They pause before the instruction at that address while a program runs</div>';
+    return;
+  }
+  list.innerHTML = [...set].map(a => `
+    <div class="bpitem${a === pc ? ' active' : ''}" data-addr="${a}">
+      <span class="bpind"></span><span class="bp-file">$${hex4(a)}</span>
+      <button class="bp-del" data-addr="${a}" title="Remove">✕</button>
+    </div>`).join('');
+  list.querySelectorAll('.bp-del').forEach(b => b.addEventListener('click', () => onRemove(Number(b.dataset.addr))));
 }
 
 function renderCallStack(frames, onClick) {

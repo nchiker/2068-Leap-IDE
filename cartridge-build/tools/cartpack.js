@@ -8,14 +8,17 @@
  *   chunk 3    program image (below)                       DOCK ROM
  *   chunk 6    Leap EXROM image, cartridge build (8 KB)   DOCK ROM
  *
- * Program image at $6000: "LEAPPROG", format (LE16 = 1), identity (LE16),
- * bytecode length n (LE16), SYM_COUNTS (5 bytes), n bytes of bytecode.
+ * Program image at $6000: "LEAPPROG", format (LE16 = 2), identity (LE16),
+ * bytecode length n (LE16), SYM_COUNTS (5 bytes), n bytes of bytecode, then
+ * (format 2) the package length p (LE16, 0 = none) and p bytes of package
+ * image. Format 1, the first cartridge build's, ends after the bytecode.
  */
 
 "use strict";
 
 export const CHUNK = 8192;
-export const IMAGE_FORMAT = 1;
+export const IMAGE_FORMAT = 2;          // 2: a package may follow the bytecode
+export const MAX_PACKAGE = 1024;        // EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
 export const MAX_BYTECODE = 4011;           // V2_CODE_SIZE
 const MAGIC = "LEAPPROG";
 const HEADER = 19;
@@ -44,22 +47,40 @@ export function cartIdentity(cartHome) {
   return cartHome[sig + 10] | (cartHome[sig + 11] << 8);
 }
 
+/** The program image format a cartridge build accepts (1: no packages, 2: packages). */
+export function cartFormat(cartHome) {
+  const sig = findBytes(cartHome, MAGIC);
+  if (sig < 0) throw new Error("not a Leap cartridge HOME image (no LEAPPROG signature)");
+  return cartHome[sig + 8] | (cartHome[sig + 9] << 8);
+}
+
 /**
- * @param {{bytecode: Uint8Array, symCounts: Uint8Array|number[], identity: number}} p
+ * @param {{bytecode: Uint8Array, symCounts: Uint8Array|number[], identity: number,
+ *          pkg?: Uint8Array|null, format?: number}} p
+ *   pkg: the package image the program was compiled with (format 2 only)
  * @returns {Uint8Array} 8 KB chunk-3 image, $FF filled
  */
-export function buildProgramImage({ bytecode, symCounts, identity }) {
+export function buildProgramImage({ bytecode, symCounts, identity, pkg = null, format = IMAGE_FORMAT }) {
   if (bytecode.length < 1 || bytecode.length > MAX_BYTECODE) {
     throw new Error(`bytecode is ${bytecode.length} bytes; the cartridge takes 1..${MAX_BYTECODE}`);
   }
   if (symCounts.length !== 5) throw new Error("symCounts must be the 5 SYM_COUNTS bytes");
+  if (format !== 1 && format !== 2) throw new Error(`unknown program image format ${format}`);
+  if (pkg && format < 2) throw new Error("this cartridge build cannot carry packages");
+  if (pkg && (pkg.length < 1 || pkg.length > MAX_PACKAGE)) {
+    throw new Error(`the package image is ${pkg.length} bytes; the cartridge takes 1..${MAX_PACKAGE}`);
+  }
   const img = new Uint8Array(CHUNK).fill(0xFF);
   for (let i = 0; i < 8; i++) img[i] = MAGIC.charCodeAt(i);
-  le16(img, 8, IMAGE_FORMAT);
+  le16(img, 8, format);
   le16(img, 10, identity);
   le16(img, 12, bytecode.length);
   img.set(symCounts, 14);
   img.set(bytecode, HEADER);
+  if (format >= 2) {                     // then: package length (0 = none), the package image
+    le16(img, HEADER + bytecode.length, pkg ? pkg.length : 0);
+    if (pkg) img.set(pkg, HEADER + bytecode.length + 2);
+  }
   return img;
 }
 

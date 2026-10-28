@@ -15,14 +15,18 @@
  *   - Linting by the ROM's own compiler (ide.js lintSource), plus run errors
  *   - Find and replace (CodeMirror's search panel), and undo / redo / cut /
  *     copy / paste for the editor panel's buttons
+ *   - Blocks (PROC/ENDP, IF/ELSE/ENDIF, FOR/NEXT): folding, auto-indent, Tidy,
+ *     the matching keywords highlighted at the cursor
+ *   - Go to definition (F12, Ctrl+click) and rename (F2) of program names
+ *   - A ruler at Leap's 127-character line limit; text past it is marked
  */
 
-import { EditorState, StateField, StateEffect, RangeSet, Compartment } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, RangeSet, Compartment, Prec } from '@codemirror/state';
 import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor,
   rectangularSelection, crosshairCursor, highlightActiveLine,
-  tooltips, hoverTooltip, GutterMarker, gutter, Decoration,
+  tooltips, hoverTooltip, GutterMarker, gutter, Decoration, ViewPlugin,
 } from '@codemirror/view';
 import {
   defaultKeymap, history, historyKeymap, isolateHistory, undo, redo, undoDepth, redoDepth,
@@ -32,9 +36,12 @@ import {
   autocompletion, completionKeymap, snippetCompletion,
 } from '@codemirror/autocomplete';
 import { linter, lintKeymap, forceLinting, setDiagnostics as cmSetDiagnostics } from '@codemirror/lint';
-import { indentUnit } from '@codemirror/language';
+import {
+  indentUnit, indentService, indentOnInput, foldService, foldGutter, codeFolding, foldKeymap,
+} from '@codemirror/language';
 import {
   leapLanguage, leapHighlight, LEAP_WORDS, NOT_IN_V2, keywordEntry, scanSymbols, keywordTokens,
+  nameTokens, blockStructure, blockIndent,
 } from './leap-lang.js';
 import { loadAutosave } from './files.js';
 
@@ -318,6 +325,201 @@ function openReplace(view) {
   return true;
 }
 
+// ── Blocks: folding, indentation, Tidy, matching keywords ─────────
+// blockStructure (leap-lang.js) is recomputed on every change; programs are
+// at most about 9 KB, so a full scan is cheap.
+
+const INDENT = '  ';
+const linesOf = doc => doc.toString().split('\n');
+
+const blocksField = StateField.define({
+  create: state => blockStructure(linesOf(state.doc)),
+  update: (value, tr) => tr.docChanged ? blockStructure(linesOf(tr.state.doc)) : value,
+});
+
+// A block folds from the end of its first line to the end of the line before
+// its closing keyword, so ENDP / NEXT / ENDIF stay visible.
+const leapFolding = foldService.of((state, lineStart) => {
+  const { blocks } = state.field(blocksField);
+  const line = state.doc.lineAt(lineStart).number - 1;
+  for (const b of blocks) {
+    const open = b.words[0], close = b.words[b.words.length - 1];
+    if (open.line !== line || !b.closed || close.line < open.line + 2) continue;
+    return { from: state.doc.line(line + 1).to, to: state.doc.line(close.line).to };
+  }
+  return null;
+});
+
+// Enter indents the new line for the blocks it is in; typing ENDIF, NEXT,
+// ENDP or ELSE at the start of a line moves it out a level (indentOnInput).
+const leapIndent = Prec.high(indentService.of((cx, pos) => {
+  const dl = cx.state.doc.lineAt(pos);
+  const lines = linesOf(cx.state.doc);
+  let n = dl.number - 1;                       // 0-based line to indent
+  if (cx.options.simulateBreak === pos) {
+    // Enter: the line is split at pos and the new line (the text after pos) is indented.
+    lines.splice(n, 1, dl.text.slice(0, pos - dl.from), dl.text.slice(pos - dl.from));
+    n++;
+  }
+  const s = blockStructure(lines.slice(0, n + 1));
+  return blockIndent(s, n, lines[n]) * cx.unit;
+}));
+const leapIndentOnInput = EditorState.languageData.of(() => [{ indentOnInput: /^\s*(?:ENDIF|ENDP|NEXT|ELSE)$/i }]);
+
+/** Re-indent the whole program by its blocks (2 spaces a level); one undo step. */
+function tidy(view) {
+  const { state } = view;
+  const s = state.field(blocksField);
+  const changes = [];
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n);
+    const body = line.text.replace(/^\s+/, '');
+    const want = body === '' ? '' : INDENT.repeat(blockIndent(s, n - 1, body));
+    const have = line.text.slice(0, line.text.length - body.length);
+    if (have !== want) changes.push({ from: line.from, to: line.from + have.length, insert: want });
+  }
+  if (changes.length) view.dispatch({ changes, userEvent: 'tidy' });
+  return true;
+}
+
+// The keywords of the block the cursor is on: IF / ELSE / ENDIF, FOR / NEXT, PROC / ENDP.
+const blockMatchMark = Decoration.mark({ class: 'cm-block-match' });
+const blockMatch = StateField.define({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    if (!tr.docChanged && !tr.selection) return deco;
+    const { state } = tr;
+    const head = state.selection.main.head;
+    const line = state.doc.lineAt(head), col = head - line.from;
+    for (const b of state.field(blocksField).blocks) {
+      if (!b.words.some(w => w.line === line.number - 1 && w.from <= col && col <= w.to)) continue;
+      if (b.words.length < 2) return Decoration.none;
+      return Decoration.set(b.words.map(w => {
+        const from = state.doc.line(w.line + 1).from;
+        return blockMatchMark.range(from + w.from, from + w.to);
+      }));
+    }
+    return Decoration.none;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
+
+// ── Go to definition, rename ──────────────────────────────────────
+
+/** The name token at a document position, with its line. */
+function nameAt(state, pos) {
+  const line = state.doc.lineAt(pos), col = pos - line.from;
+  const t = nameTokens(line.text).find(n => n.from <= col && col <= n.to);
+  return t ? { ...t, line } : null;
+}
+
+/** Where a name is defined: the PROC / DEF FN / label line, or a variable's first assignment. */
+function definitionOf(state, name) {
+  const { procs, fns, labels, vars } = scanSymbols(state.doc.toString());
+  const find = map => [...map].find(([n]) => n.toUpperCase() === name.text.toUpperCase());
+  const hit = name.kind === 'label' ? find(labels)
+    : name.kind === 'routine' ? (find(procs) ?? find(fns))
+    : find(vars);
+  if (!hit) return null;
+  const lineNo = typeof hit[1] === 'number' ? hit[1] : hit[1].line;
+  const line = state.doc.line(lineNo);
+  const t = nameTokens(line.text).find(n => n.kind === name.kind && n.text.toUpperCase() === name.text.toUpperCase());
+  return line.from + (t ? t.from : 0);
+}
+
+function goToDefinition(view, pos = view.state.selection.main.head) {
+  const name = nameAt(view.state, pos);
+  const at = name && definitionOf(view.state, name);
+  if (at === null || at === undefined) return false;
+  view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'center' }) });
+  view.focus();
+  return true;
+}
+
+/** Every token of the same name and kind (case-insensitive). */
+function occurrences(state, name) {
+  const out = [];
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n);
+    for (const t of nameTokens(line.text)) {
+      if (t.kind === name.kind && t.text.toUpperCase() === name.text.toUpperCase()) {
+        out.push({ from: line.from + t.from, to: line.from + t.to });
+      }
+    }
+  }
+  return out;
+}
+
+const KIND_WORD = { label: 'label', routine: 'PROC / FN', variable: 'variable' };
+
+/** Why a new name cannot be used, or null. */
+function badName(name, to, state) {
+  if (!/^[A-Za-z][A-Za-z0-9]*\$?$/.test(to)) return 'A name is a letter, then letters and digits (no underscore)';
+  const bare = to.replace(/\$$/, '');
+  if (bare.length > 31) return 'A name is at most 31 characters';
+  if (LEAP_WORDS.has(bare.toUpperCase()) || LEAP_WORDS.has(to.toUpperCase()) || NOT_IN_V2.has(bare.toUpperCase())) {
+    return `${to.toUpperCase()} is a Leap keyword`;
+  }
+  if (name.kind !== 'variable' && to.endsWith('$')) return `A ${KIND_WORD[name.kind]} name has no $`;
+  if (name.kind === 'variable' && name.text.endsWith('$') !== to.endsWith('$')) {
+    return name.text.endsWith('$') ? 'A string variable keeps its $' : 'Only a string variable ends in $';
+  }
+  if (to.toUpperCase() !== name.text.toUpperCase() && occurrences(state, { kind: name.kind, text: to }).length) {
+    return `The program already has a ${KIND_WORD[name.kind]} called ${to}`;
+  }
+  return null;
+}
+
+let onEditorMessage = null;      // ide.js: show a message in the status bar
+
+/** Rename the name at the cursor everywhere (F2); one undo step. */
+function renameSymbol(view) {
+  const name = nameAt(view.state, view.state.selection.main.head);
+  if (!name) { onEditorMessage?.('Put the cursor on a variable, PROC, FN or label name to rename it', 'error'); return true; }
+  const to = window.prompt(`Rename the ${KIND_WORD[name.kind]} ${name.text} to:`, name.text);
+  if (to === null || to.trim() === '' || to.trim() === name.text) { view.focus(); return true; }
+  const why = badName(name, to.trim(), view.state);
+  if (why) { onEditorMessage?.(why, 'error'); view.focus(); return true; }
+  const spots = occurrences(view.state, name);
+  view.dispatch({ changes: spots.map(s => ({ ...s, insert: to.trim() })), userEvent: 'rename' });
+  onEditorMessage?.(`Renamed ${name.text} to ${to.trim()} in ${spots.length} place${spots.length === 1 ? '' : 's'}`, 'idle');
+  view.focus();
+  return true;
+}
+
+// Ctrl+click (Cmd+click on a Mac) on a name goes to its definition.
+const definitionClick = EditorView.domEventHandlers({
+  mousedown(e, view) {
+    if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos === null) return false;
+    if (!goToDefinition(view, pos)) return false;
+    e.preventDefault();
+    return true;
+  },
+});
+
+// ── Line length ───────────────────────────────────────────────────
+// Leap stores at most 127 characters a line. A ruler marks the limit; text
+// past it is marked (the error check also reports it).
+const MAX_LINE = 127;
+const tooLongMark = Decoration.mark({ class: 'cm-too-long', attributes: { title: `Past Leap's ${MAX_LINE}-character line limit` } });
+const lineLimit = ViewPlugin.fromClass(class {
+  constructor(view) { this.decorations = this.build(view); }
+  update(u) { if (u.docChanged || u.viewportChanged) this.decorations = this.build(u.view); }
+  build(view) {
+    const ranges = [];
+    for (const { from, to } of view.visibleRanges) {
+      for (let pos = from; pos <= to;) {
+        const line = view.state.doc.lineAt(pos);
+        if (line.length > MAX_LINE) ranges.push(tooLongMark.range(line.from + MAX_LINE, line.to));
+        pos = line.to + 1;
+      }
+    }
+    return Decoration.set(ranges);
+  }
+}, { decorations: v => v.decorations });
+
 // ── Undo / redo button state ──────────────────────────────────────
 let onHistoryChanged = null;
 let lastDepths = '';
@@ -373,7 +575,6 @@ const leapThemeSpec = {
     background: 'var(--bg-panel)',
     color: 'var(--fg)',
   },
-  '.cm-content': { padding: '6px 0', caretColor: 'var(--fg)' },
   '.cm-cursor': { borderLeftColor: 'var(--fg)' },
   '.cm-selectionBackground, ::selection': { background: 'var(--selection)' },
   '.cm-activeLine':  { background: 'var(--amber-tint)' },
@@ -395,6 +596,17 @@ const leapThemeSpec = {
     boxShadow: '0 0 4px var(--bp-glow)',
   },
   '.cm-foldGutter': { padding: '0 4px' },
+  '.cm-foldGutter .cm-gutterElement': { color: 'var(--fg-dim)', cursor: 'pointer' },
+  '.cm-foldGutter .cm-gutterElement:hover': { color: 'var(--fg)' },
+  '.cm-foldPlaceholder': { background: 'var(--bg-surface)', border: '1px solid var(--border-hi)', color: 'var(--fg-muted)' },
+  '.cm-block-match': { background: 'var(--amber-tint2)', outline: '1px solid var(--amber-fg)', borderRadius: '2px' },
+  '.cm-too-long': { background: 'var(--red-bg)', textDecoration: 'underline wavy var(--red-fg)' },
+  // Ruler at column 127 (6px: CodeMirror's left padding of a line)
+  '.cm-content': {
+    padding: '6px 0',
+    caretColor: 'var(--fg)',
+    backgroundImage: 'linear-gradient(to right, transparent calc(6px + 127ch), var(--border-hi) calc(6px + 127ch), var(--border-hi) calc(7px + 127ch), transparent calc(7px + 127ch))',
+  },
   '.cm-exec-line': { background: 'var(--exec-line)', boxShadow: 'inset 3px 0 0 var(--amber-fg)' },
   '.exec-gutter-arrow': { color: 'var(--amber-fg)', fontSize: '11px', lineHeight: '1', marginLeft: '2px' },
   '.exec-gutter-arrow.on-bp': { color: 'var(--red-fg)' },
@@ -497,6 +709,16 @@ const EXTENSIONS = [
     leapHover,
     autocompletion({ override: [leapComplete] }),
     search({ top: true }),
+    blocksField,
+    blockMatch,
+    leapFolding,
+    codeFolding(),
+    foldGutter({ markerDOM: open => Object.assign(document.createElement('span'), { textContent: open ? '▾' : '▸' }) }),
+    leapIndent,
+    leapIndentOnInput,
+    indentOnInput(),
+    definitionClick,
+    lineLimit,
     // The ROM's compiler checks the program 500 ms after typing stops
     // (ide.js lintSource -> src/leap-check.js). Until the hidden machine has
     // booted there is nothing to report; ide.js calls relint() when it has.
@@ -507,7 +729,11 @@ const EXTENSIONS = [
       ...completionKeymap,
       ...lintKeymap,
       ...searchKeymap,
+      ...foldKeymap,
       { key: 'Mod-h', run: openReplace, preventDefault: true },
+      { key: 'F12', run: v => { goToDefinition(v); return true; }, preventDefault: true },
+      { key: 'F2', run: renameSymbol, preventDefault: true },
+      { key: 'Shift-Alt-f', run: tidy, preventDefault: true },
     ]),
     autoCaps,
     changeListener,
@@ -558,7 +784,10 @@ window.leapEditor = {
       return;
     }
     view.setState(EditorState.create({ doc: text, extensions: EXTENSIONS }));
-    view.dispatch({ effects: themeCompartment.reconfigure(leapTheme(darkTheme)) });
+    // The selection is sent again: setState() leaves Chrome's EditContext (CodeMirror's
+    // text input there) with the old document's cursor, and the next keystroke at a
+    // position past the new text's end would throw.
+    view.dispatch({ selection: { anchor: 0 }, effects: themeCompartment.reconfigure(leapTheme(darkTheme)) });
     if (onBreakpointsChanged) onBreakpointsChanged();
     if (onDocChanged) onDocChanged();
     reportHistory(view.state);
@@ -623,6 +852,18 @@ window.leapEditor = {
     return true;
   },
 
+  /** Re-indent the program by its blocks (Tidy) */
+  tidy() { tidy(view); view.focus(); },
+
+  /** Go to the definition of the name at the cursor; false if there is none */
+  goToDefinition() { return goToDefinition(view); },
+
+  /** Rename the name at the cursor everywhere (asks for the new name) */
+  rename() { renameSymbol(view); },
+
+  /** Called with (text, mode) for messages such as a refused rename */
+  onMessage(fn) { onEditorMessage = fn; },
+
   /** Open the find panel (replace: true focuses the replace field) */
   find({ replace = false } = {}) {
     if (replace) openReplace(view); else openSearchPanel(view);
@@ -676,6 +917,13 @@ window.leapEditor = {
     }
     const from = view.state.doc.line(lineNum).from;
     view.dispatch({ effects: [setExecLine.of(from), EditorView.scrollIntoView(from, { y: 'nearest' })] });
+  },
+
+  /** Put the cursor at a 1-based line and 0-based column */
+  setCursor(lineNum, col = 0) {
+    const line = view.state.doc.line(lineNum);
+    const at = line.from + Math.min(col, line.length);
+    view.dispatch({ selection: { anchor: at }, scrollIntoView: true });
   },
 
   /** Scroll editor to a given line number */

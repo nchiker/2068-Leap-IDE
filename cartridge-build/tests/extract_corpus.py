@@ -3,8 +3,7 @@
 
   build/corpus/lang/<case>.bas    docs/V2_LANGUAGE_CASES.csv (lines joined by " | " there)
   build/corpus/manual/<ex>.bas    the manual's ```basic ex=... blocks (docs/manual/*.md)
-
-Examples that need a package (pkg=) are left out: the first cartridge version has no packages.
+  build/corpus/package/<ex>.bas   those of them that need a package (pkg=); compare.mjs finds which
 Usage: extract_corpus.py [LEAP_DIR]   (default: leap/)
 """
 import csv
@@ -23,12 +22,15 @@ for row in csv.DictReader(open(leap / "docs/V2_LANGUAGE_CASES.csv")):
     n += 1
 
 (out / "manual").mkdir(parents=True, exist_ok=True)
-m = 0
+(out / "package").mkdir(parents=True, exist_ok=True)
+m = p = 0
 for md in sorted((leap / "docs/manual").glob("*.md")):
     for info, body in re.findall(r"^```basic ([^\n]*)\n(.*?)^```", md.read_text(), re.S | re.M):
         attrs = dict(a.split("=", 1) for a in info.split() if "=" in a)
-        if "ex" not in attrs or "pkg" in attrs:
+        if "ex" not in attrs:
             continue
-        (out / "manual" / (safe(attrs["ex"]) + ".bas")).write_text(body)
-        m += 1
-print(f"{n} language cases, {m} manual examples -> {out}/")
+        pkg = "pkg" in attrs
+        (out / ("package" if pkg else "manual") / (safe(attrs["ex"]) + ".bas")).write_text(body)
+        p += pkg
+        m += not pkg
+print(f"{n} language cases, {m} manual examples, {p} package examples -> {out}/")

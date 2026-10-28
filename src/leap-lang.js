@@ -184,26 +184,119 @@ export const leapLanguage = StreamLanguage.define(lexer);
 const CAPS_TOKENS = new Set(['keyword', 'builtin', 'operatorKeyword', 'packageKeyword']);
 
 /**
- * Keyword tokens on one line, as the highlighter sees them: words inside
- * strings or after REM are not keywords. The lexer restarts at each line, so
- * a line can be scanned on its own.
+ * Every token on one line, as the highlighter sees it (spaces left out). The
+ * lexer restarts at each line, so a line can be scanned on its own.
+ * `atStart`: the token begins a statement (line start, after ':', THEN or ELSE).
  *
  * @param {string} lineText
- * @returns {{from: number, to: number, text: string}[]}  offsets within the line
+ * @returns {{from: number, to: number, text: string, type: string|null, atStart: boolean}[]}
+ *   offsets within the line
  */
-export function keywordTokens(lineText) {
+export function lineTokens(lineText) {
   const state = lexer.startState();
   const stream = new StringStream(lineText, 4, 2);
   const out = [];
   while (!stream.eol()) {
     stream.start = stream.pos;
+    const atStart = state.stmtStart;
     const type = lexer.token(stream, state);
     if (stream.pos === stream.start) stream.next();   // never stall
-    if (CAPS_TOKENS.has(type)) {
-      out.push({ from: stream.start, to: stream.pos, text: lineText.slice(stream.start, stream.pos) });
-    }
+    if (/^\s*$/.test(lineText.slice(stream.start, stream.pos))) continue;
+    out.push({ from: stream.start, to: stream.pos, text: lineText.slice(stream.start, stream.pos), type, atStart });
   }
   return out;
+}
+
+/**
+ * Keyword tokens on one line, as the highlighter sees them: words inside
+ * strings or after REM are not keywords.
+ *
+ * @param {string} lineText
+ * @returns {{from: number, to: number, text: string}[]}  offsets within the line
+ */
+export function keywordTokens(lineText) {
+  return lineTokens(lineText).filter(t => CAPS_TOKENS.has(t.type));
+}
+
+// ── Names (go to definition, rename) ──────────────────────────────
+// Leap names are case-insensitive; `a` and `a$` are different names. Labels,
+// PROC / DEF FN names and variables are told apart by where they appear.
+const NAME_KIND = {
+  labelDef: 'label', labelRef: 'label',
+  procDef: 'routine', procUse: 'routine',
+  variableName: 'variable',
+};
+
+/**
+ * The name tokens of one line.
+ * @returns {{from: number, to: number, text: string, kind: 'label'|'routine'|'variable', def: boolean}[]}
+ */
+export function nameTokens(lineText) {
+  const out = [];
+  for (const t of lineTokens(lineText)) {
+    const kind = NAME_KIND[t.type];
+    if (kind) out.push({ from: t.from, to: t.to, text: t.text, kind, def: t.type === 'labelDef' || t.type === 'procDef' });
+  }
+  return out;
+}
+
+// ── Blocks: PROC … ENDP, IF … [ELSE …] ENDIF, FOR … NEXT ──────────
+// Folding, auto-indent, Tidy and the matching-keyword highlight all read this.
+// IF opens a block unless it is the one-line form IF cond THEN GOTO label.
+
+const OPENERS = { PROC: 'PROC', FOR: 'FOR', IF: 'IF' };
+const CLOSERS = { ENDP: 'PROC', NEXT: 'FOR', ENDIF: 'IF' };
+
+/**
+ * @param {string[]} lines  the program's lines
+ * @returns {{
+ *   blocks: {kind: string, words: {line: number, from: number, to: number}[], closed: boolean}[],
+ *   depth: number[],      // per line (0-based index): blocks open at its start
+ *   dedent: boolean[],    // the line starts with ENDP / NEXT / ENDIF / ELSE
+ * }}  words: the block's keywords (opener, ELSE, closer); line 0-based, from/to within the line
+ */
+export function blockStructure(lines) {
+  const blocks = [], stack = [], depth = [], dedent = [];
+  lines.forEach((text, line) => {
+    depth.push(stack.length);
+    const toks = lineTokens(text);
+    dedent.push(false);
+    toks.forEach((t, i) => {
+      if (t.type !== 'keyword') return;
+      const word = t.text.toUpperCase();
+      const at = { line, from: t.from, to: t.to };
+      const first = i === 0 || (i === 1 && toks[0].type === 'labelDef');
+      if (OPENERS[word] && t.atStart) {
+        if (word === 'IF') {
+          // IF cond THEN GOTO label: no block
+          const then = toks.findIndex((u, k) => k > i && u.text.toUpperCase() === 'THEN');
+          if (then >= 0 && toks[then + 1]?.text.toUpperCase() === 'GOTO') return;
+        }
+        const b = { kind: OPENERS[word], words: [at], closed: false };
+        blocks.push(b);
+        stack.push(b);
+      } else if (word === 'ELSE') {
+        const top = stack[stack.length - 1];
+        if (top && top.kind === 'IF') top.words.push(at);
+        if (first) dedent[line] = true;
+      } else if (CLOSERS[word] && t.atStart) {
+        const top = stack[stack.length - 1];
+        if (top && top.kind === CLOSERS[word]) {
+          top.words.push(at);
+          top.closed = true;
+          stack.pop();
+        }
+        if (first) dedent[line] = true;
+      }
+    });
+  });
+  return { blocks, depth, dedent };
+}
+
+/** The indentation (in units) a line gets from the blocks around it; labels stay at column 0. */
+export function blockIndent(structure, line, lineText) {
+  if (/^\s*[A-Za-z][A-Za-z0-9]*\s*:\s*$/.test(lineText) && nameTokens(lineText)[0]?.def) return 0;
+  return Math.max(0, structure.depth[line] - (structure.dedent[line] ? 1 : 0));
 }
 
 // ── Highlight style: colours are ide.css variables, so they follow the theme ─

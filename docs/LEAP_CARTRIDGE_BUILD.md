@@ -140,7 +140,7 @@ sequence every time unless the program uses `RANDOMISE`.
 | Offset | Size | Content |
 |---|---|---|
 | 0 | 8 | `"LEAPPROG"` |
-| 8 | 2 | image format version (`1`) |
+| 8 | 2 | image format version (`1` here; the built cartridge uses `2`, which adds a package after the bytecode: see `CARTRIDGE_STATUS.md`) |
 | 10 | 2 | runtime build identity (e.g. the CRC-16 V2 already computes for `SAVE ... ALL`, `$F9E9` for 2.0.2) — the cartridge refuses an image compiled for another build |
 | 12 | 2 | bytecode length *n* (≤ 4011) |
 | 14 | 4 | `SYM_COUNTS[0..3]` |
@@ -185,6 +185,9 @@ listings show these are unreachable from the VM:
   own LROS probe), then Fuse, then hardware.
 
 ## Not in the first version
+
+*Packages have since been added (program image format 2); see `cartridge-build/Docs/CARTRIDGE_STATUS.md`.
+The text below is the original proposal.*
 
 - **Packages.** The compiler bakes a package's slot and generation into the
   bytecode, so a cartridge would need the package image at `$F400` plus

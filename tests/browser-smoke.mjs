@@ -166,8 +166,9 @@ try {
     `${dck} — ${await status()}`);
   await evaluate(`leapEditor.setSource('CIRCLE 128, 96, 40', {fresh: true})`);
   await evaluate("document.getElementById('btn-dck').click()");
-  const refused = await waitFor(`/packages/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent`, 3000);
-  check('DCK export refuses a package program', !!refused && (await evaluate('smokeDownloads.length')) === 1, refused || await status());
+  const withPkg = await waitFor('window.smokeDownloads[1] && JSON.stringify(window.smokeDownloads[1])', 5000);
+  check('DCK export carries a package (SHAPES)', withPkg === JSON.stringify({ name: 'smoke.dck', bytes: [0, 2, 2, 0, 2, 0, 0, 2, 0], size: 9 + 4 * 8192 }) &&
+    /SHAPES package/.test(await status()), `${withPkg} — ${await status()}`);
 
   // Editor
   const lint = await waitFor(`(async () => { const d = leapIDE.lintSource('x = 1\\nLET y = 2'); return d.length ? d[0].message : '' })()`);
@@ -205,6 +206,85 @@ try {
   const afterPaste = await evaluate("(async () => { document.getElementById('btn-paste').click(); await new Promise(r => setTimeout(r, 300)); return leapEditor.getSource(); })()");
   check('Cut and Paste buttons: cut the line, paste it back', afterCut === 'B = 2' && afterPaste === 'A = 1\nB = 2',
     `${JSON.stringify(afterCut)} -> ${JSON.stringify(afterPaste)} ${await status()}`);
+
+  // Blocks: auto-indent after Enter, dedent on ENDIF, Tidy, matching keywords, folding
+  await evaluate("leapEditor.setSource('', {fresh: true}), leapEditor.focus()");
+  const key = async (k, code, text) => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, ...(text && { text }) });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code });
+  };
+  // (Escape first: Enter must not accept an open completion)
+  await send('Input.insertText', { text: 'IF a = 1 THEN' });
+  await key('Escape', 'Escape');
+  await key('Enter', 'Enter', '\r');
+  await send('Input.insertText', { text: 'PRINT a' });
+  await key('Escape', 'Escape');
+  await key('Enter', 'Enter', '\r');
+  for (const ch of 'ENDIF') await key(ch, 'Key' + ch, ch);
+  const indented = 'IF a = 1 THEN\n  PRINT a\nENDIF';
+  const typed = await waitFor(`leapEditor.getSource() === ${JSON.stringify(indented)} && leapEditor.getSource()`, 3000);
+  check('auto-indent: Enter indents in a block, ENDIF moves back out', !!typed, JSON.stringify(typed || await evaluate('leapEditor.getSource()')));
+  const tidyIn = 'PROC p(n):\nFOR i = 1 TO n\nIF i > 1 THEN\nPRINT i\nELSE\nPRINT "one"\nENDIF\nNEXT i\nENDP\n    top:\nIF n THEN GOTO top';
+  const tidyOut = 'PROC p(n):\n  FOR i = 1 TO n\n    IF i > 1 THEN\n      PRINT i\n    ELSE\n      PRINT "one"\n    ENDIF\n  NEXT i\nENDP\ntop:\nIF n THEN GOTO top';
+  const tidied = await evaluate(`(leapEditor.setSource(${JSON.stringify(tidyIn)}, {fresh: true}), document.getElementById('btn-tidy').click(), leapEditor.getSource())`);
+  check('Tidy indents nested blocks, labels at column 0, IF … THEN GOTO is no block', tidied === tidyOut, JSON.stringify(tidied));
+  const untouched = await evaluate(`(async () => { const { EXAMPLES } = await import('./src/examples.js');
+    return EXAMPLES.filter(e => { leapEditor.setSource(e.text, {fresh: true}); leapEditor.tidy(); return leapEditor.getSource() !== e.text; }).map(e => e.id); })()`);
+  check('Tidy leaves every example as it is', untouched.length === 0, untouched.join());
+  const match = await evaluate(`(leapEditor.setSource(${JSON.stringify(tidyOut)}, {fresh: true}), leapEditor.setCursor(3, 5),
+    [...document.querySelectorAll('.cm-block-match')].map(e => e.textContent).join())`);
+  check('cursor on IF highlights IF, ELSE and ENDIF', match === 'IF,ELSE,ENDIF', match);
+  // (the gutter's hidden spacer element holds a marker too)
+  const folds = await evaluate("[...document.querySelectorAll('.cm-foldGutter .cm-gutterElement')].filter(e => e.style.visibility !== 'hidden' && e.querySelector('span')).length");
+  check('fold markers on the PROC, FOR and IF lines', folds === 3, String(folds));
+
+  // Go to definition (F12) and rename (F2)
+  const defSrc = 'CALL greet(3)\nEND\nPROC greet(n):\n  PRINT n\nENDP';
+  await evaluate(`leapEditor.setSource(${JSON.stringify(defSrc)}, {fresh: true}), leapEditor.setCursor(1, 6), leapEditor.focus()`);
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'F12', code: 'F12', windowsVirtualKeyCode: 123 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'F12', code: 'F12', windowsVirtualKeyCode: 123 });
+  const defAt = await evaluate("document.getElementById('sb-cursor').textContent");
+  check('F12 on a CALL goes to its PROC', defAt === 'Ln 3, Col 6', defAt);
+  const renamed = await evaluate(`(window.prompt = () => 'hello', leapEditor.rename(), leapEditor.getSource())`);
+  check('F2 renames a PROC everywhere', renamed === defSrc.replaceAll('greet', 'hello'), JSON.stringify(renamed));
+  const refusedName = await evaluate(`(window.prompt = () => 'PRINT', leapEditor.rename(), document.getElementById('status-text').textContent)`);
+  check('rename refuses a keyword', /keyword/.test(refusedName), refusedName);
+
+  // Line limit: text past column 127 is marked
+  const tooLong = await evaluate(`(leapEditor.setSource('PRINT "' + 'x'.repeat(130) + '"', {fresh: true}),
+    [...document.querySelectorAll('.cm-too-long')].map(e => e.textContent).join('').length)`);
+  check('text past column 127 is marked', tooLong === 138 - 127, String(tooLong));
+
+  // Examples menu
+  const menu = await evaluate(`(document.getElementById('btn-examples').click(),
+    !document.getElementById('examples-menu').hidden && document.querySelectorAll('#examples-menu .menu-item').length)`);
+  await shot('examples-menu');
+  await evaluate("window.confirm = () => true, document.querySelector('[data-example=circles]').click()");
+  const exSrc = await evaluate("leapEditor.getSource().split('\\n')[0] + ' | ' + document.getElementById('filename-display').textContent");
+  const menuGone = await evaluate("getComputedStyle(document.getElementById('examples-menu')).display === 'none'");
+  check('Examples menu lists the programs, opens one and closes', menu >= 10 && menuGone &&
+    exSrc === 'REM Circles: CIRCLE and FILL (SHAPES package) | circles.leap', `${menu} items, closed ${menuGone}, ${exSrc}`);
+  await evaluate("document.getElementById('btn-run').click()");
+  const exRun = await waitFor("/Finished|error/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 20000);
+  check('the SHAPES example runs', exRun === 'Finished', exRun);
+
+  // Z80 breakpoints: pause before the instruction, step one, remove, continue
+  await evaluate("document.querySelector('[data-tab=debugger].panel-tab').click()");
+  const vmNext = await evaluate('leapIDE.emulator.rom.vmNext');
+  await evaluate(`(document.getElementById('z80-addr').value = '$${vmNext.toString(16)}', document.getElementById('z80-add').click())`);
+  const listed = await evaluate("[...document.querySelectorAll('#z80-list .bp-file')].map(e => e.textContent).join()");
+  await evaluate(`leapEditor.setSource('x = 1\\nPRINT x', {fresh: true}), document.getElementById('btn-run').click()`);
+  const z80Paused = await waitFor("/Z80 breakpoint/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 20000);
+  const pc0 = await evaluate('leapIDE.emulator.machine.cpu.pc');
+  await evaluate("document.getElementById('z80-step').click()");
+  const pc1 = await evaluate('leapIDE.emulator.machine.cpu.pc');
+  check('Z80 breakpoint pauses before the instruction; Step instruction runs one',
+    listed === '$' + vmNext.toString(16).toUpperCase().padStart(4, '0') && !!z80Paused && pc0 === vmNext && pc1 !== pc0,
+    `${listed} | ${z80Paused} | pc ${pc0} -> ${pc1}`);
+  await shot('z80-breakpoint');
+  await evaluate("document.querySelector('#z80-list .bp-del').click(), document.getElementById('btn-pause').click()");
+  const z80Done = await waitFor("document.getElementById('status-text').textContent === 'Finished' && 'Finished'", 20000);
+  check('removing it and continuing finishes the run', z80Done === 'Finished', await status());
 
   // Tabs
   for (const tab of ['symbols', 'udg', 'draw', 'debugger']) {

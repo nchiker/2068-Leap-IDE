@@ -33,6 +33,10 @@
       <span id="filename-display" title="Click to rename">untitled.leap</span><span id="dirty-mark" title="Not saved to a file" hidden> •</span>
       <button class="phbtn" id="btn-new"  title="New program">New</button>
       <button class="phbtn" id="btn-open" title="Open a .leap / .txt program or a Leap .tap (Ctrl+O)">Open</button>
+      <span class="menu-anchor">
+        <button class="phbtn" id="btn-examples" title="Open one of the example programs" aria-haspopup="menu" aria-expanded="false">Examples ▾</button>
+        <div class="menu" id="examples-menu" role="menu" hidden></div>
+      </span>
       <button class="phbtn" id="btn-save" title="Save the program as a text file (Ctrl+S)">Save</button>
       <input type="file" id="file-input" accept=".leap,.txt,.bas,.tap" hidden>
     </div>
@@ -70,6 +74,7 @@
           <button class="phbtn edbtn" id="btn-paste" title="Paste (Ctrl+V)">Paste</button>
           <span class="phbtn-sep"></span>
           <button class="phbtn edbtn" id="btn-find"  title="Find and replace (Ctrl+F, Ctrl+H)">Find</button>
+          <button class="phbtn edbtn" id="btn-tidy"  title="Indent the program by its blocks (Shift+Alt+F)">Tidy</button>
           <button class="phbtn" id="btn-lint" title="Check structure">Lint</button>
         </div>
       </div>
@@ -152,17 +157,18 @@
     "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
     "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
     "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
-    "./src/cartridge.js": "./src/cartridge.js?v=d4e59e61b2",
-    "./src/debugger.js": "./src/debugger.js?v=a88cb9bbd3",
+    "./src/cartridge.js": "./src/cartridge.js?v=cb99a1e28a",
+    "./src/debugger.js": "./src/debugger.js?v=a44fd3eb66",
     "./src/emulator.js": "./src/emulator.js?v=061c88a609",
+    "./src/examples.js": "./src/examples.js?v=a63783ca0f",
     "./src/export.js": "./src/export.js?v=8c6b8c033f",
     "./src/files.js": "./src/files.js?v=21a47c8c07",
-    "./src/help.js": "./src/help.js?v=237f40f16c",
-    "./src/leap-check.js": "./src/leap-check.js?v=bfa2ad97b7",
+    "./src/help.js": "./src/help.js?v=a5f030b7f6",
+    "./src/leap-check.js": "./src/leap-check.js?v=afb240e911",
     "./src/leap-debug.js": "./src/leap-debug.js?v=96e6212810",
     "./src/leap-errors.js": "./src/leap-errors.js?v=5578d95716",
     "./src/leap-keywords.js": "./src/leap-keywords.js?v=3eaebbd157",
-    "./src/leap-lang.js": "./src/leap-lang.js?v=f1fcb9bde6",
+    "./src/leap-lang.js": "./src/leap-lang.js?v=4f8b9bf2b5",
     "./src/leap-roms.js": "./src/leap-roms.js?v=d8439a1f7b",
     "./src/pc-keyboard.js": "./src/pc-keyboard.js?v=a8de2845cd",
     "./src/tools/draw.js": "./src/tools/draw.js?v=5ff69e57cb",
@@ -178,8 +184,8 @@
   }
 }
 </script>
-<script type="module" src="src/editor.js?v=108c6dda39"></script>
-<script type="module" src="ide.js?v=61c32e663e"></script>
+<script type="module" src="src/editor.js?v=76806e2ce1"></script>
+<script type="module" src="ide.js?v=e700445808"></script>
 
 </body>
 </html>

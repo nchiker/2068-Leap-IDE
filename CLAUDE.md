@@ -51,21 +51,22 @@ Leap-IDE/
 │   ├── emulator.js   ← Slim TSRun host + RAM-injection run/stop (Phase 1, done)
 │   ├── leap-roms.js  ← Known ROM builds: SHA-256 -> addresses (Phase 1, done)
 │   ├── pc-keyboard.js ← PC key -> TS2068 matrix translation (Phase 4, done)
-│   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip, find/replace (Phase 2, done)
+│   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip, find/replace, folding, indent, Tidy, go to definition, rename (Phase 2, done)
 │   ├── files.js      ← Browser auto-save, text normalising, .tap -> source (no DOM; Node can import it)
 │   ├── help.js       ← Help overlay: searchable keywords + Keys & tips (F1, "? Help")
-│   ├── leap-lang.js  ← Language mode, token classes, scanSymbols (Phase 2, done)
+│   ├── examples.js   ← The Examples menu's 12 programs (no DOM; Node can import it)
+│   ├── leap-lang.js  ← Language mode, token classes, scanSymbols, lineTokens / nameTokens / blockStructure / blockIndent (Phase 2, done)
 │   ├── leap-keywords.js ← GENERATED keyword data from the manual; never hand-edit
 │   ├── leap-check.js ← Editor error check: the ROM's own compiler on a hidden machine (Phase 5, done)
 │   ├── leap-errors.js ← GENERATED compile/run-time error text from the manual; never hand-edit
-│   ├── debugger.js   ← Debugger controller (breakpoints, step) + panel (Phase 3, done)
+│   ├── debugger.js   ← Debugger controller (breakpoints, step, Z80 breakpoints) + panel (Phase 3, done)
 │   ├── leap-debug.js ← Line table, VM position, variables, call stack from machine RAM (Phase 3, done)
 │   ├── tools/        ← Right-panel tools (Phase 7, done)
 │   │   ├── symbols.js ← Symbols tab: procedures, functions, labels, variables; click jumps to the line
 │   │   ├── udg.js     ← UDG tab: draw the 21 user-defined characters, insert / load POKEs
 │   │   └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE
 │   ├── export.js     ← TAP builder (Phase 6, done, verified)
-│   └── cartridge.js  ← DCK / flat .bin cartridge builder (Phase 6, done, verified; no DOM, Node can import it)
+│   └── cartridge.js  ← DCK / flat .bin cartridge builder, program image format 2 with a package (Phase 6, done, verified; no DOM, Node can import it)
 ├── cartridge-build/  ← Source of the cartridge images: leap.patch + setup.sh, CLI tools, tests, status (see its README)
 ├── cartridge/
 │   └── 2.1.0-emu.1/  ← Leap's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README
@@ -483,7 +484,12 @@ release, rerun it at its tag.
 `leapHighlight`, `LEAP_WORDS` (Map word -> `{cls, entry}`), `NOT_IN_V2`,
 `keywordEntry(word)` (`DEF` -> `DEF FN`, `EXIT` -> `EXIT FOR`),
 `keywordTokens(lineText)` (`[{from, to, text}]` keyword tokens on one line,
-same lexer; used by auto-caps) and
+same lexer; used by auto-caps; built on `lineTokens`),
+`lineTokens(lineText)` (every token with its type and `atStart`),
+`nameTokens(lineText)` (names with `kind` label / routine / variable and a `def`
+flag), `blockStructure(lines)` (`{blocks, depth, dedent}`: `PROC` … `ENDP`,
+`IF` … [`ELSE`] … `ENDIF`, `FOR` … `NEXT`; `IF cond THEN GOTO label` is not a
+block), `blockIndent(structure, line, text)` (labels at column 0) and
 `scanSymbols(text)` (PROCs, DEF FNs, labels and variables with line numbers;
 `vars` is a `Map` name -> first line; used by the Phase 7 Symbols tab).
 `LEAP_KEYWORDS` and `LEAP_HELP` no
@@ -516,8 +522,13 @@ is `REM `.
 autocomplete and hover help, and exposes `window.leapEditor` (`getSource()`,
 `setSource(text, {fresh})`, `setDiagnostics()`, `onChange(fn)`, `focus()`,
 `undo()`, `redo()`, `onHistoryChanged(fn)`, `copy()`, `cut()`, `paste()`,
-`find({replace})`; `fresh: true` starts a new document with its own undo
-history and the breakpoints cleared, used by New and Open).
+`find({replace})`, `tidy()`, `goToDefinition()`, `rename()`, `onMessage(fn)`,
+`setCursor(line, col)`; `fresh: true` starts a new document with its own undo
+history and the breakpoints cleared, used by New and Open). `setSource(text,
+{fresh: true})` dispatches selection anchor 0 with the theme reconfigure right
+after `view.setState()`: Chrome's EditContext otherwise kept the old cursor, and
+the next keystroke past the new text's end threw "Invalid change range" and was
+lost (New / Open while the editor had focus).
 
 - **Autocomplete:** all manual keywords except commands, with the first form as
   the detail and the full help as the info panel; built-in functions insert
@@ -561,6 +572,28 @@ history and the breakpoints cleared, used by New and Open).
   global keydown in `ide.js` opens find (Ctrl+F) and replace (Ctrl+H) from
   anywhere except a text field (input / textarea), unless the editor already
   handled the key. The editor title ellipsises before the buttons shrink.
+
+**Structure tools** (built on `blockStructure` / `blockIndent` / `nameTokens` in
+`leap-lang.js`):
+
+- **Folding:** a `foldService` over the blocks, with a fold gutter (▾ / ▸);
+  Ctrl+Shift+[ folds and Ctrl+Shift+] unfolds the block at the cursor.
+- **Auto-indent:** Enter indents by the block depth (`indentService` at
+  `Prec.high`, 2 spaces). Typing `ENDIF`, `ENDP`, `NEXT` or `ELSE` dedents the
+  line (`indentOnInput`).
+- **Tidy** (button "Tidy" in the editor header, Shift+Alt+F): re-indents the
+  whole program by its blocks, labels at column 0, as one undo step. Leap stores
+  indentation verbatim, so it counts towards the line length and the pool.
+- **Block match:** the keywords of the block at the cursor (`PROC` / `ENDP`,
+  `IF` / `ELSE` / `ENDIF`, `FOR` / `NEXT`) are highlighted (`.cm-block-match`).
+- **Go to definition** (F12, Ctrl/Cmd+click): to the `PROC`, `FN` or label
+  definition line, or a variable's first assignment (from `scanSymbols`).
+- **Rename** (F2, `window.prompt`): the name at the cursor everywhere, one undo
+  step. Case-insensitive, same kind only. It refuses a non-name, more than 31
+  characters, a keyword, a change of the trailing `$` and a clash with another
+  name; the reason goes to the status bar through `onMessage`.
+- **Line limit:** a ruler at column 127 (a CSS gradient on `.cm-content`) and
+  text past column 127 marked (`.cm-too-long`).
 
 Verified in headless Chromium.
 
@@ -633,6 +666,18 @@ any character):
   row, 32 rows, to fit the debugger column) with an editable start address. Clicking a breakpoint or stack line scrolls the
   editor there. The panel refreshes every 300 ms while a program runs.
 
+**Z80 breakpoints** (section "Z80 Breakpoints" of the panel; Z80 level, not
+Leap statements): a hex address field (`F400`, `$F400`, `0xF400` and `#F400`
+are accepted; `parseHexAddr` is exported), Add, and a list with ✕ to remove.
+The watch compares the PC with the list after `table.observe`; the PC alone,
+whatever ROM, cartridge or RAM is paged in there. The status bar reads "Paused
+at Z80 breakpoint $XXXX at line N" (the line is from `VM_IP` when the PC is not
+at an instruction start). `pausedHere()` returns `{line, z80}`. **Step
+instruction** (enabled while paused) calls `emulator.stepInstruction()`, then
+refreshes the panel; `ide.js` reports "Paused at $XXXX (one Z80 instruction)"
+through `opts.onInstructionStep`. The list is kept in `localStorage`, key
+`leap-ide.z80bp`.
+
 **Editor and toolbar.** The execution line is highlighted with an arrow in the
 breakpoint gutter (a coral arrow when it is on a breakpoint line).
 `window.leapEditor` gained `toggleBreakpoint(line)`, `onBreakpointsChanged(fn)`
@@ -644,8 +689,8 @@ and `setExecutionLine(line|null)`. The toolbar has Run, Stop, Pause/Continue
 - `FOR` frames carry no line, so loops show without one.
 - While a package statement runs, the EXROM is paged out: do not read `$C000`
   and up then.
-- Z80-level breakpoints exist only as the `setWatch` API; there is no UI for
-  them yet.
+- Z80 breakpoints act only while a program runs: the watch is installed only
+  then.
 
 ---
 
@@ -695,18 +740,21 @@ The release's `roms/leap_v2_exrom.dck` is not this: it is only the EXROM as a
 cartridge for EightyOne 1.41.
 
 **Images.** `cartridge/2.1.0-emu.1/` holds `leap_v2_cart_home.bin` (16384 bytes,
-SHA-256 `fb16d609…`) and `leap_v2_cart_exrom.bin` (8192 bytes, SHA-256
-`df50142d…`) plus a README. Every release symbol keeps its address in the
+SHA-256 `307b0616…`) and `leap_v2_cart_exrom.bin` (8192 bytes, SHA-256
+`c54be09c…`) plus a README (before packages: `fb16d609…` / `df50142d…`). Every release symbol keeps its address in the
 cartridge build, so the IDE's 2.1.0-emu.1 checker produces exactly the
 bytecode the cartridge runs.
 
 **`src/cartridge.js`** (pure, no DOM or CodeMirror):
 `romIdentity(home, exrom)` (CRC-16/CCITT, polynomial `$1021`, initial value
 `$FFFF`, over HOME and then EXROM), `cartIdentity(cartHome)`,
-`buildProgramImage({bytecode, symCounts, identity})`,
+`cartFormat(cartHome)` (the program image format the cartridge HOME accepts,
+read from the format word of its `LEAPPROG` signature),
+`buildProgramImage({bytecode, symCounts, identity, pkg, format})` (writes
+the format the cartridge accepts; refuses a package for format 1),
 `buildCartridge({home, exrom, program})` returning `{dck, bin}`,
 `pagingWrites(text)` (`OUT` statements with a literal port whose low byte is
-244/`$F4` or 255/`$FF`), and the constants `CHUNK`, `MAX_BYTECODE` (4011) and
+244/`$F4` or 255/`$FF`), and the constants `CHUNK`, `IMAGE_FORMAT` (2), `MAX_BYTECODE` (4011), `MAX_PACKAGE` (1024) and
 `SYM_COUNTS_SIZE` (5).
 
 **Layout.** LROS cartridge. DOCK chunks 0-1 are the cartridge HOME, chunk 3 is
@@ -715,16 +763,31 @@ the program image, chunk 6 is the cartridge EXROM. The DCK header is
 the other chunks are absent (0)). The flat `.bin` is 64 KB with the chunks in address order; an
 absent chunk is `$FF`.
 
-**Program image** at `$6000`, format 1, 19-byte header: `"LEAPPROG"`, format
-LE16 = 1, identity LE16, bytecode length LE16 (1 to 4011), `SYM_COUNTS` (5
-bytes), then the bytecode. The identity for 2.1.0-emu.1 is `$E0A5`. The
+**Program image** at `$6000`, format 2, 19-byte header: `"LEAPPROG"`, format
+LE16 = 2, identity LE16, bytecode length LE16 (1 to 4011), `SYM_COUNTS` (5
+bytes), then the bytecode, then the package length LE16 (0 = none, at most
+1024) and the package image. The identity for 2.1.0-emu.1 is `$E0A5` (unchanged by packages). The
 cartridge refuses any other signature, format, identity or length and shows
 `NO PROGRAM`. At run time it uses HSR (port `$F4`) = `$43` and DECR (port
 `$FF`) bit 7 = 0. The stock ROM starts it after about 2 s (103 frames). After
 the program ends, a key restarts it from cold.
 
-**Checker.** `compile(store, symCountsSize)` in `src/leap-check.js` runs
-`check(store)` (without a package) and, on code 0, also returns `bytecode`
+**Packages on the cartridge.** `CART_LOAD` (HOME, `rom/v2_cart_home.asm` in
+`leap.patch`) copies the package to `EXTENSION_MODULE_BASE` (`$F400`) and sets
+`V2_PACKAGE_LEN` (`$BE82`; `CART_PACKAGE_LEN` in `include/v2_cart.inc`, ASSERTed
+equal in `exrom_v2_cart.asm`). `CART_RUN` (EXROM) calls the install entry at
+`$F400` when the length is nonzero, as `LOAD "NAME" EXT` does; CF from the
+install gives `NO PROGRAM`. The cold start's `EXT2_CLEAR_ALL` leaves the
+registry as on the IDE's checker (which does `EXT2_CLEAR_ALL` and then the
+install before compiling), so the bytecode's package calls, with slot and
+generation baked in, match. Free space left in the cartridge images: HOME 174
+bytes, EXROM 63. `leap.patch` is two commits on the tag; refresh it with
+`git -C leap format-patch --stdout v2.1.0-emu.1..HEAD > leap.patch`. A fresh
+clone from GitHub plus `setup.sh` reproduces both images byte for byte.
+`cartridge-build/tools/leap2cart.mjs` takes `--package PKG.bin`.
+
+**Checker.** `compile(store, symCountsSize, pkg)` in `src/leap-check.js` runs
+`check(store, pkg)` (the package is installed first, as in "Packages") and, on code 0, also returns `bytecode`
 (RAM from `VM_CODE_BASE` to `EMIT_PTR`) and `symCounts` (from `SYM_COUNTS`).
 `src/leap-roms.js`: the 2.1.0-emu.1 entry has `symCounts: 0xB800` and
 `cartridgeDir: 'cartridge/2.1.0-emu.1/'`; the 2.0.2 entry has neither, so
@@ -736,8 +799,9 @@ comment to leave it out when a release has no cartridge build).
 cartridge (.dck) that runs on a stock TS2068"), in order:
 1. Storage problems or an empty program: error.
 2. No `cartridgeDir` for the loaded ROM: error.
-3. Any package statement: refused ("Cartridges cannot carry packages yet: line
-   N uses SHAPES").
+3. Package statements: `packageFor` (one package at a time, the same message
+   as Run). A package is refused if the cartridge build's format
+   (`cartFormat`) is below 2.
 4. Pool size check.
 5. Compiles on the checker machine. A compile error marks the line and reads
    "Compile error N on line L: fix it before exporting".
@@ -749,10 +813,10 @@ cartridge (.dck) that runs on a stock TS2068"), in order:
 8. Prompts for a file name, default `<name>.dck`. A name ending in `.bin`
    downloads the flat 64 KB image for a cartridge board instead.
 9. Status: "Saved X.dck (N bytes of bytecode): it runs on a stock TS2068 from
-   the dock slot".
+   the dock slot"; for a program with a package, "Saved X.dck (N bytes of
+   bytecode and the SHAPES package): ...".
 
-Not supported in this first version: packages, tape / Array Store, returning to
-an editor.
+Not supported: tape / Array Store, returning to an editor.
 
 **Verification.** `tests/rom-checks.mjs` section 7 runs the exported cartridge
 on a stock TS2068 (`tsrun/roms/ts2068-0.rom`, `ts2068-1.rom`, `insertDock`) to
@@ -760,7 +824,11 @@ the end (see "Tests"). The IDE's DCK was also byte-identical to the
 CLI `cartridge-build/tools/leap2cart.mjs`'s for two programs. With those tools, 695 corpus programs give the same screen as `RUN` on the release ROMs
 (5 expected differences, 0 failures), and ZEsarUX 13.0 with the stock ROM gives
 byte-identical screens to TSRun; so does Fuse 1.9.1 for two cartridges
-downloaded from the IDE in a browser. Not tried: real hardware.
+downloaded from the IDE in a browser. The manual's 33 `pkg=` examples
+(`build/corpus/package/`, written by `tests/extract_corpus.py`) give the same
+screen from the cartridge as `RUN` with that package installed (32 pass, 1
+expected difference, `mem.pkg.1.bas`: `FREE()` is larger; 0 fail). Not tried:
+real hardware.
 
 Container reference (jon0x0/AISkill_TS2068, cartridge development skill): a DCK
 is a 9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM, 2 ROM,
@@ -794,6 +862,17 @@ wiring is the "Files" section of `ide.js`.
   (it is not a text file yet).
 - Save and TAP export are separate: Save keeps the source as text; "⬇ TAP"
   builds the tape a TS2068 loads.
+- **Examples menu** (`src/examples.js`, toolbar "Examples ▾" after Open).
+  `EXAMPLES` is a list of `{id, title, about, package?, input?, text}`, 12
+  programs, mostly the manual's own examples: `hello`, `ball`, `lines`, `guess`
+  (`INPUT`), `primes`, `binary`, `caesar`, `scale` (`BEEP`), `udg`, `circles`
+  (shapes), `chart` (graphics), `ship` (sprite). The module has no DOM. The
+  button opens `#examples-menu` (arrow keys move, Escape and a click outside
+  close it). Choosing one asks before discarding unsaved changes, then opens the
+  program as a new unsaved document named `<id>.leap` with the status
+  `Example "X": press Run (F5)`. `tests/rom-checks.mjs` section 3b runs every
+  example on the real ROMs: each finishes with no error (`guess` stops at its
+  `INPUT`).
 
 ---
 
@@ -876,8 +955,10 @@ it. Everything is built with DOM nodes and `textContent`.
 - **Keys & tips tab:** the shortcuts (F5 Run, F6 Stop, F8 Pause/Continue, F10
   Step, Ctrl+S, Ctrl+O, Ctrl+Space completions, Ctrl+F find (Enter / F3 next,
   Shift+F3 previous), Ctrl+H replace, Ctrl+Z undo, Ctrl+Y redo (also
-  Ctrl+Shift+Z), Ctrl+X / C / V cut / copy / paste, F1 help, Escape = BREAK in
-  the TS2068 screen) and short usage tips. This is the keyboard cheat-sheet of
+  Ctrl+Shift+Z), Ctrl+X / C / V cut / copy / paste, F12 / Ctrl+click go to
+  definition, F2 rename, Shift+Alt+F Tidy, Ctrl+Shift+[ / ] fold / unfold, F1
+  help, Escape = BREAK in the TS2068 screen) and short usage tips, among them
+  that ⬇ DCK carries the package and that Z80 breakpoints pause at an address. This is the keyboard cheat-sheet of
   Phase 8.
 - Nothing is hand-written per keyword: a new release regenerates
   `src/leap-keywords.js` and Help follows.
@@ -1012,10 +1093,11 @@ tested separately.
 | 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
 | 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/leap-check.js`, `src/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
-| 6     | Tape + DCK export                                   | `src/export.js`, `src/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK; DCK has no packages yet) |
+| 6     | Tape + DCK export                                   | `src/export.js`, `src/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages) |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools/symbols.js`, `udg.js`, `draw.js`, `src/editor.js` (`insertLines`), `ide.js` | **Done** |
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
 | —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/leap-check.js`, `packages/` | **Done**, verified |
+| —     | Editor structure tools (folding, indent, Tidy, go to definition, rename), Examples menu, Z80 breakpoints | `src/editor.js`, `src/leap-lang.js`, `src/examples.js`, `src/debugger.js`, `ide.js` | **Done**, verified |
 
 ---
 
@@ -1053,22 +1135,25 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## Tests
 
-- `node tests/rom-checks.mjs` — 47 checks in about 1 s against the real ROMs in
+- `node tests/rom-checks.mjs` — 61 checks in about 1 s against the real ROMs in
   Node (TSRun's machine, no browser): ROM table lookup, Run by injection
   (finished, compile error, run-time error, package), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
-  helpers, and (section 7, "Cartridge", 8 new checks) the cartridge: the
-  identity match, the checker's bytecode and `SYM_COUNTS`, a compile error
-  giving no bytecode, the DCK layout, the flat BIN, a stock TS2068
+  helpers, every Examples-menu program (section 3b: each finishes with no
+  error; `guess` stops at its `INPUT`), and (section 7, "Cartridge") the
+  cartridge: the identity match, the checker's bytecode and `SYM_COUNTS`, a
+  compile error giving no bytecode, the DCK layout, the flat BIN, a stock TS2068
   (`tsrun/roms/ts2068-0.rom`/`ts2068-1.rom`, `insertDock`) running the exported
   cartridge to the end (POKE marker 42, VM error 0, `$F4` = `$43`), a wrong
-  identity being refused, and `pagingWrites`. `LEAP_ROMS=<dir>` tests other ROM files. All 47 pass on 2.1.0-emu.1
+  identity being refused, `pagingWrites`, "the cartridge build takes packages
+  (image format 2)" and "a SHAPES program (CIRCLE + FILL) runs from the
+  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 61 pass on 2.1.0-emu.1
   (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 21 checks in about 30 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 34 checks in about 30 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
   Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
@@ -1076,7 +1161,11 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   Paste buttons through the system clipboard (permission granted over CDP), the
   DCK export (a cartridge downloads; the file-name
   prompt and the download are captured in the page; a package program is
-  refused), with no page errors. It saves screenshots. CodeMirror's search
+  exported with its package), auto-indent, Tidy (nested blocks, labels, `IF` …
+  `THEN GOTO`; Tidy leaves every example unchanged), block match, fold markers,
+  F12, F2 rename and its refusals, line-limit marking, the Examples menu (opens
+  one, closes) and running the SHAPES example, and a Z80 breakpoint pause, Step
+  instruction and continue to Finished, with no page errors. It saves screenshots. CodeMirror's search
   panel takes the query on keyup / change, so CDP `Input.insertText` alone does
   not set it; the test also sends a keyUp.
 - Run both before every commit that changes behaviour. `src/leap-lang.js`
@@ -1104,9 +1193,8 @@ saving/opening programs, packages and the Help overlay are done. The Leap
 2.1.0-emu.1 ROM entry is done (ROM table, generated keyword and error data,
 packages, cartridge images, tests). Nothing is on hold. Ideas, none started:
 
-1. **Packages on cartridges.** The cartridge image carries bytecode only; a
-   program that uses a package is refused today.
-2. **Test the DCK on real hardware.** It has run on TSRun, ZEsarUX 13.0 and
+1. **Test the DCK on real hardware.** It has run on TSRun, ZEsarUX 13.0 and
    Fuse 1.9.1 with the stock ROM (same screens), not on a real TS2068.
-3. **Cartridge builds for future Leap releases** (see "Adding a Leap ROM
+2. **Cartridge builds for future Leap releases** (see "Adding a Leap ROM
    release", step 5).
+3. **Share a program by a link (URL).** Suggested, not started.

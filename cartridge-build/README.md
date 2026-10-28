@@ -1,6 +1,6 @@
 # Leap cartridge build
 
-A runtime cartridge for **2068-Leap V2.1**: one compiled Leap program on a stock Timex Sinclair 2068
+A runtime cartridge for **2068-Leap V2.1**: one compiled Leap program (with the package it uses, if any) on a stock Timex Sinclair 2068
 (stock HOME ROM and EXROM installed, nothing replaced). Leap's runtime and the program's bytecode go in
 the DOCK slot as an LROS cartridge. There is no editor, command prompt or tape. Built for export from
 the Leap IDE. The design is in [../docs/LEAP_CARTRIDGE_BUILD.md](../docs/LEAP_CARTRIDGE_BUILD.md), and where
@@ -10,10 +10,10 @@ the work stands is in [Docs/CARTRIDGE_STATUS.md](Docs/CARTRIDGE_STATUS.md).
 
 | Path | What it is |
 |---|---|
-| `leap.patch` | The cartridge build (`V2_CARTRIDGE` flag, `make cart`) as one commit on top of Leap's `v2.1.0-emu.1` tag. |
+| `leap.patch` | The cartridge build (`V2_CARTRIDGE` flag, `make cart`) as two commits on top of Leap's `v2.1.0-emu.1` tag: the original build, then "Cartridge build: packages (program image format 2)". |
 | `setup.sh` | Clones 2068-Leap into `leap/` (not committed) at the tag, applies `leap.patch`, runs `make cart` and checks the result against `../cartridge/2.1.0-emu.1/`. |
-| `tools/leap2cart.mjs` | Compiles a `.bas` program with the release ROMs' own compiler and writes the `.dck` / flat 64 KB `.bin`. |
-| `tools/cartpack.js` | The packing as a plain ES module (program image, DCK, flat BIN, identity), for the IDE to import. |
+| `tools/leap2cart.mjs` | Compiles a `.bas` program with the release ROMs' own compiler and writes the `.dck` / flat 64 KB `.bin`. `--package PKG.bin` installs a package image before compiling and puts it on the cartridge. |
+| `tools/cartpack.js` | The packing as a plain ES module (program image format 2, DCK, flat BIN, identity, `cartFormat`), for the IDE to import. |
 | `tools/cartrun.mjs` | Runs a `.dck` headless on TSRun's emulator core with the stock ROMs: PNG, memory dumps, hand-off trace. |
 | `tools/mkdck.py`, `tools/probe/` | A generic DCK packer and the LROS hand-off probe cartridge. |
 | `tests/` | Equivalence with RUN (`compare.mjs`), behaviour (`scenarios.mjs`), ZEsarUX cross-check (`zesarux_check.py`). |
@@ -25,11 +25,13 @@ the work stands is in [Docs/CARTRIDGE_STATUS.md](Docs/CARTRIDGE_STATUS.md).
 mkdir -p build
 node tools/leap2cart.mjs tests/programs/hello.bas -o build/hello.dck --bin build/hello.bin
 node tools/cartrun.mjs --dck build/hello.dck --frames 200 --png build/hello.png
+# a program with a package (cbeep graphics mode printer shapes sprite, from ../packages/2.1.0-emu.1/):
+node tools/leap2cart.mjs prog.bas --package ../packages/2.1.0-emu.1/shapes.bin -o build/prog.dck
 ```
 
 Needs git, `sjasmplus`, Python 3 and Node 18+. TSRun's emulator core and the stock ROMs come from the
 IDE's `tsrun/` submodule (`TSRUN=` to override). After changing Leap sources in `leap/`, commit there
-and refresh the patch: `git -C leap format-patch -1 --stdout > leap.patch`. To run in ZEsarUX, use `--machine TS2068` with the stock `ts2068.rom`
+and refresh the patch: `git -C leap format-patch --stdout v2.1.0-emu.1..HEAD > leap.patch`. To run in ZEsarUX, use `--machine TS2068` with the stock `ts2068.rom`
 and smartload the `.dck` (`tests/zesarux_check.py` compares it with TSRun). Fuse 1.9.1 runs it too
 (`--machine ts2068` with the stock ROMs and the `.dck` as the file argument). To run Fuse with no window
 (it must not open one on the desktop) and keep its frames:
@@ -46,6 +48,10 @@ fmfconv -S build/run.fmf build/frame.scr        # one .scr (6912 bytes) per fram
 ```sh
 python3 tests/extract_corpus.py                                   # the V2 corpora -> build/corpus/
 node tests/compare.mjs build/corpus/lang/*.bas build/corpus/manual/*.bas
+node tests/compare.mjs build/corpus/package/*.bas     # the manual's pkg= examples (33)
 node tests/scenarios.mjs
 python3 tests/zesarux_check.py build/hello.dck
 ```
+
+When a program does not compile, `compare.mjs` tries each of the six release packages
+(`../packages/2.1.0-emu.1`, override with `PACKAGES=`) and compares with that package installed on both sides.

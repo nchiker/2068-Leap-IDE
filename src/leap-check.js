@@ -105,12 +105,13 @@ export function createChecker(rom, images) {
     /**
      * Compile a line store and return what the compiler produced: the bytecode
      * [VM_CODE_BASE, EMIT_PTR) and the SYM_COUNTS bytes, as a cartridge
-     * carries them (src/cartridge.js). No package is installed.
+     * carries them (src/cartridge.js). With a package image it is installed
+     * first, as in check(); the cartridge installs the same image the same way.
      * @returns {{code: number, line: number, bytecode?: Uint8Array, symCounts?: Uint8Array} | null}
      *   bytecode and symCounts only when code is 0
      */
-    compile(store, symCountsSize) {
-      const result = this.check(store);
+    compile(store, symCountsSize, pkg = null) {
+      const result = this.check(store, pkg);
       if (!result || result.code !== 0) return result;
       const end = r8(rom.emitPtr) | (r8(rom.emitPtr + 1) << 8);
       const bytecode = new Uint8Array(Math.max(0, end - rom.vmCodeBase));

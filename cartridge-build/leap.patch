@@ -1,8 +1,8 @@
-From 507bc79fcbb88465bbeb86a7090ce319f4de2b4e Mon Sep 17 00:00:00 2001
+From c4001ca73618824055f35df76a95440bb61bee69 Mon Sep 17 00:00:00 2001
 From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 07:57:20 -0400
-Subject: [PATCH] Cartridge build (V2_CARTRIDGE): Leap 2.1 runtime as an LROS
- dock cartridge
+Subject: [PATCH 1/2] Cartridge build (V2_CARTRIDGE): Leap 2.1 runtime as an
+ LROS dock cartridge
 
 make cart builds build/cart/leap_v2_cart_{home,exrom}.bin: HOME in DOCK
 chunks 0-1, EXROM in chunk 6, a precompiled program image in chunk 3,
@@ -545,6 +545,104 @@ index 8bc2150..915668f 100644
  
  
  def main() -> None:
+-- 
+2.43.0
+
+
+From fa2c4a2f1c844cbb9ad2fe0e096313b28b60779c Mon Sep 17 00:00:00 2001
+From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 10:18:27 -0400
+Subject: [PATCH 2/2] Cartridge build: packages (program image format 2)
+
+The program image may carry a package after the bytecode (length LE16,
+0 = none, then the image). CART_LOAD copies it to EXTENSION_MODULE_BASE and
+sets V2_PACKAGE_LEN; CART_RUN calls its install entry, as LOAD "NAME" EXT
+does. The registry is cleared by the cold start, as on the IDE's checker,
+so the bytecode's package calls match.
+---
+ include/v2_cart.inc   |  5 ++++-
+ rom/exrom_v2_cart.asm |  8 ++++++++
+ rom/v2_cart_home.asm  | 21 +++++++++++++++++++--
+ 3 files changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/include/v2_cart.inc b/include/v2_cart.inc
+index 085ed9c..dc949d3 100644
+--- a/include/v2_cart.inc
++++ b/include/v2_cart.inc
+@@ -28,7 +28,10 @@ CART_IMG_IDENT   EQU CART_IMAGE+10   ; 2: identity of the ROM build the bytecode
+ CART_IMG_LEN     EQU CART_IMAGE+12   ; 2: bytecode length n
+ CART_IMG_COUNTS  EQU CART_IMAGE+14   ; 5: SYM_COUNTS (numbers, strings, arrays, string arrays, labels)
+ CART_IMG_CODE    EQU CART_IMAGE+19   ; n: the bytecode, copied to VM_CODE_BASE
+-CART_FORMAT      EQU 1
++                                     ; then 2: package length p (0 = none), p: the package image,
++                                     ; copied to EXTENSION_MODULE_BASE and installed (format 2)
++CART_FORMAT      EQU 2
++CART_PACKAGE_LEN EQU $BE82           ; V2_PACKAGE_LEN (rom/exrom_v2_shell.asm; ASSERTed in exrom_v2_cart.asm)
+ 
+     IFNDEF CART_IDENTITY
+ CART_IDENTITY    EQU 0               ; the Makefile passes the release build's identity (cart target)
+diff --git a/rom/exrom_v2_cart.asm b/rom/exrom_v2_cart.asm
+index cef4b07..961aca9 100644
+--- a/rom/exrom_v2_cart.asm
++++ b/rom/exrom_v2_cart.asm
+@@ -14,6 +14,12 @@ CART_RUN:
+     ld (SYM_END_V),hl
+     ld (hl),0
+     call CART_LOAD
++    jr c,.bad
++    ld hl,(V2_PACKAGE_LEN)       ; a package: its install entry registers its statements, as
++    ld a,h                       ; LOAD "NAME" EXT does (the registry was cleared by the cold
++    or l                         ; start, as on the IDE's checker, so the bytecode's calls match)
++    call nz,EXTENSION_MODULE_BASE ; CF = the package refused to install
++.bad:
+     push af
+     call V2_RESET_DISPLAY
+     pop af
+@@ -26,3 +32,5 @@ CART_RUN:
+     call V2_SESSION_START        ; SESS_CODE_END = EMIT_PTR; VM_INIT; ARR_RUN_INIT
+     call V2_COMPILE_RUN.base     ; VM_IP, CLS, VM_RUN, then the message / a key
+     rst $00
++
++    ASSERT CART_PACKAGE_LEN == V2_PACKAGE_LEN
+diff --git a/rom/v2_cart_home.asm b/rom/v2_cart_home.asm
+index acf1cdd..0bc3ae5 100644
+--- a/rom/v2_cart_home.asm
++++ b/rom/v2_cart_home.asm
+@@ -34,7 +34,9 @@ MATH_RND_SEED:
+ 
+ ; CART_LOAD -- map the program image (DOCK chunk 3), check it, copy it, unmap it. Called by CART_RUN
+ ; (rom/exrom_v2_cart.asm). Copies SYM_COUNTS, the bytecode to VM_CODE_BASE, and sets EMIT_PTR to its
+-; end. CF = refused: another image format or ROM build, or a bad length. Interrupts are off while
++; end; copies the package image (if any) to its window and sets V2_PACKAGE_LEN, as LOAD "NAME" EXT
++; does before calling its install entry (CART_RUN calls it). CF = refused: another image format or
++; ROM build, or a bad length. Interrupts are off while
+ ; chunk 3 is DOCK and on again at the end. Destroys AF, BC, DE, HL.
+ CART_LOAD:
+     di
+@@ -77,7 +79,22 @@ CART_LOAD:
+     pop bc
+     ld de,VM_CODE_BASE
+     ldir
+-    ld (EMIT_PTR),de                 ; CF clear (ldir keeps it)
++    ld (EMIT_PTR),de
++    ld c,(hl)
++    inc hl
++    ld b,(hl)                        ; BC = package length, 0 (none) .. the window's size
++    inc hl
++    ld (CART_PACKAGE_LEN),bc
++    ld a,b
++    or c
++    ret z                            ; no package (CF clear from the `or`)
++    push hl
++    ld hl,EXTENSION_MODULE_LIMIT-EXTENSION_MODULE_BASE
++    sbc hl,bc                        ; (CF clear from the `or`)
++    pop hl
++    ret c
++    ld de,EXTENSION_MODULE_BASE
++    ldir                             ; CF clear (ldir keeps it)
+     ret
+ 
+ CART_SIGNATURE:
 -- 
 2.43.0
 

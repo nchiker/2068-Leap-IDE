@@ -10,13 +10,18 @@
  *   DOCK chunk 3    the program image (below)            ROM
  *   DOCK chunk 6    Leap EXROM, cartridge build (8 KB)   ROM
  *
- * Program image at $6000 (format 1):
+ * Program image at $6000 (format 2):
  *   0   "LEAPPROG"
- *   8   format, LE16 = 1
+ *   8   format, LE16 = 2
  *   10  identity, LE16: CRC-16/CCITT of the compiling ROMs' HOME then EXROM
  *   12  bytecode length n, LE16 (1 .. 4011)
  *   14  SYM_COUNTS, 5 bytes (numbers, strings, arrays, string arrays, labels)
  *   19  n bytes of bytecode, copied to VM_CODE_BASE at start-up
+ *   19+n  package length p, LE16 (0 = none, at most 1024)
+ *   21+n  p bytes: the package image, copied to its window ($F400) and
+ *         installed at start-up, as LOAD "NAME" EXT does
+ * Format 1 (the first cartridge build) ends after the bytecode and carries
+ * no package; buildProgramImage writes the format the cartridge HOME accepts.
  *
  * The cartridge refuses an image with another signature, format, identity or
  * length and shows NO PROGRAM, so bytecode from a different Leap build can
@@ -29,7 +34,8 @@
 "use strict";
 
 export const CHUNK = 8192;
-export const IMAGE_FORMAT = 1;
+export const IMAGE_FORMAT = 2;
+export const MAX_PACKAGE = 1024;            // EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
 export const MAX_BYTECODE = 4011;           // V2_CODE_SIZE: $A655-$B5FF
 export const SYM_COUNTS_SIZE = 5;
 const MAGIC = 'LEAPPROG';
@@ -60,22 +66,41 @@ export function cartIdentity(cartHome) {
   return cartHome[sig + 10] | (cartHome[sig + 11] << 8);
 }
 
+/** The program image format a cartridge build accepts (1: no packages, 2: packages). */
+export function cartFormat(cartHome) {
+  const sig = findBytes(cartHome, MAGIC);
+  if (sig < 0) throw new Error('Not a Leap cartridge HOME image (no LEAPPROG signature)');
+  return cartHome[sig + 8] | (cartHome[sig + 9] << 8);
+}
+
 /**
- * @param {{bytecode: Uint8Array, symCounts: Uint8Array, identity: number}} p
+ * @param {{bytecode: Uint8Array, symCounts: Uint8Array, identity: number,
+ *          pkg?: Uint8Array|null, format?: number}} p
+ *   pkg: the package image the program was compiled with (format 2 only)
  * @returns {Uint8Array}  the 8 KB chunk-3 image, $FF filled
  */
-export function buildProgramImage({ bytecode, symCounts, identity }) {
+export function buildProgramImage({ bytecode, symCounts, identity, pkg = null, format = IMAGE_FORMAT }) {
   if (bytecode.length < 1 || bytecode.length > MAX_BYTECODE) {
     throw new Error(`The program compiles to ${bytecode.length} bytes; a cartridge takes 1 to ${MAX_BYTECODE}`);
   }
   if (symCounts.length !== SYM_COUNTS_SIZE) throw new Error(`SYM_COUNTS must be ${SYM_COUNTS_SIZE} bytes`);
+  if (format !== 1 && format !== 2) throw new Error(`Unknown program image format ${format}`);
+  if (pkg && format < 2) throw new Error('This cartridge build cannot carry packages');
+  if (pkg && (pkg.length < 1 || pkg.length > MAX_PACKAGE)) {
+    throw new Error(`The package image is ${pkg.length} bytes; a cartridge takes 1 to ${MAX_PACKAGE}`);
+  }
   const img = new Uint8Array(CHUNK).fill(0xFF);
   for (let i = 0; i < MAGIC.length; i++) img[i] = MAGIC.charCodeAt(i);
-  le16(img, 8, IMAGE_FORMAT);
+  le16(img, 8, format);
   le16(img, 10, identity);
   le16(img, 12, bytecode.length);
   img.set(symCounts, 14);
   img.set(bytecode, HEADER);
+  if (format >= 2) {
+    const at = HEADER + bytecode.length;
+    le16(img, at, pkg ? pkg.length : 0);
+    if (pkg) img.set(pkg, at + 2);
+  }
   return img;
 }
 
