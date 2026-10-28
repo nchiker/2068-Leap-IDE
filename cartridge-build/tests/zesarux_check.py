@@ -2,7 +2,7 @@
 """Run a cartridge in ZEsarUX (the qualified emulator) with the stock TS2068 ROMs and compare its final
 screen with TSRun's (tools/cartrun.mjs) for the same .dck.
 
-  python3 tests/zesarux_check.py CART.dck [--seconds 6] [--port 10777]
+  python3 tests/zesarux_check.py CART.dck [--seconds 15] [--port 10777]
 
 ZEsarUX runs headless (--vo null --ao null) with ZRCP; the cartridge goes in with `smartload`, which
 resets the machine into the stock ROM's LROS probe. After SECONDS of emulated running the display
@@ -54,7 +54,7 @@ def tsrun_screen(dck):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dck")
-    ap.add_argument("--seconds", type=float, default=6)
+    ap.add_argument("--seconds", type=float, default=15)
     ap.add_argument("--port", type=int, default=10777)
     a = ap.parse_args()
     z, ports = zesarux_screen(a.dck, a.seconds, a.port)
