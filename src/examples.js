@@ -33,6 +33,8 @@ ENDP
     title: 'Bouncing ball',
     about: 'Animation with OVER 1: draw, pause, draw again to erase',
     text: `REM Bouncing ball: OVER 1 draws and erases
+PAPER 0
+CLS
 OVER 1
 x = 20
 y = 30
