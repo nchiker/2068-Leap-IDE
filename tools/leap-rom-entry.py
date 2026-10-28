@@ -21,6 +21,7 @@ SYMBOLS = {
     "keyWait":          "IO_READ_KEY.wait_hit",
     "clearArrays":      "V2_CLEAR_ARRAYS",
     "resetEdit":        "V2_RESET_EDIT",
+    "resetDisplay":     "V2_RESET_DISPLAY",    # default colours, border, video mode (the editor's)
     "runStored":        "V2_RUN_STORED",
     "compileStored":    "V2_COMPILE_STORED",
     "tapeFormatWord":   "V2_FORMAT_WORD",      # header "autostart" field of a SAVE tape

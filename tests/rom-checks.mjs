@@ -82,8 +82,8 @@ function inject(m, lines, image = null) {
   const store = encodeLineStore(lines);
   store.forEach((b, i) => m.bus.write(rom.progAreaStart + i, b));
   w16(m, rom.progEnd, rom.progAreaStart + store.length);
-  const CB = 0xFF00 - 4;
-  w16(m, CB, rom.resetEdit); w16(m, CB + 2, rom.runStored); w16(m, 0xFF00, rom.commandLoop);
+  const CB = 0xFF00 - 6;
+  w16(m, CB, rom.resetEdit); w16(m, CB + 2, rom.resetDisplay); w16(m, CB + 4, rom.runStored); w16(m, 0xFF00, rom.commandLoop);
   if (image) {
     image.forEach((b, i) => m.bus.write(rom.packageBase + i, b));
     w16(m, rom.packageLen, image.length);
@@ -110,6 +110,21 @@ same('compile error is reported (LET -> 2)', runProgram(['x = 1', 'LET y = 2']).
 same('run-time error is reported (index -> 10)', runProgram(['DIM a(3)', 'a(5) = 1']).ve, 10);
 same('package program runs (SHAPES: CIRCLE + FILL)',
   runProgram(['CLS', 'CIRCLE 128, 96, 40', 'FILL 128, 96', 'PRINT "OK"'], pkg('shapes')), { reached: true, ce: 0, ve: 0, sp: 0xFF00 });
+
+{
+  // Each Run starts with Leap's default colours, whatever the last run left set.
+  const m = bootMachine();
+  run(m, () => atWait(m), 600);
+  inject(m, ['PAPER 0', 'INK 7', 'BORDER 2', 'OVER 1', 'CLS']);
+  run(m, () => false, 2);
+  run(m, () => atWait(m), 900);
+  const after1 = m.bus.read(0x5800);
+  inject(m, ['CLS', 'PRINT 1']);
+  run(m, () => false, 2);
+  run(m, () => atWait(m), 900);
+  same('a run does not inherit the last run\'s colours (PAPER 0, INK 7 -> PAPER 7, INK 0)',
+    { first: after1, second: m.bus.read(0x5800) }, { first: 0x07, second: 0x38 });
+}
 
 // ── 2. Editor checker (the ROM's own compiler on a hidden machine) ──
 console.log('\nChecker (src/leap-check.js)');

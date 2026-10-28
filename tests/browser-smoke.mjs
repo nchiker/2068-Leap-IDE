@@ -267,6 +267,19 @@ try {
   await evaluate("document.getElementById('btn-run').click()");
   const exRun = await waitFor("/Finished|error/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 20000);
   check('the SHAPES example runs', exRun === 'Finished', exRun);
+  // Bouncing ball sets PAPER 0; Circles run after it must still get the default white paper.
+  const runEx = async id => {
+    await evaluate(`document.querySelector('[data-example=${id}]').click(), document.getElementById('btn-run').click()`);
+    await sleep(300);
+    return waitFor("/Finished|error/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 30000);
+  };
+  const paperOf = () => evaluate('(leapIDE.emulator.machine.bus.read(0x5800) >> 3) & 7');
+  await runEx('ball');
+  const ballPaper = await paperOf();
+  await runEx('circles');
+  const circlesPaper = await paperOf();
+  check('colours do not carry from one run to the next (ball: PAPER 0, then circles: PAPER 7)',
+    ballPaper === 0 && circlesPaper === 7, `ball ${ballPaper}, circles ${circlesPaper}`);
 
   // Z80 breakpoints: pause before the instruction, step one, remove, continue
   await evaluate("document.querySelector('[data-tab=debugger].panel-tab').click()");

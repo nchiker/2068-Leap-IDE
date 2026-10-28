@@ -52,7 +52,7 @@ const FRAME_MS          = 1000 / FRAMES_PER_SECOND;
 // (finished, compile error, runtime error, BREAK) waits for a key with SP back
 // at STACK_TOP; INPUT and PAUSE 0 wait deeper. Checked on 2.0.2-emu.1.
 const STACK_TOP  = 0xFF00;
-const CHAIN_BASE = STACK_TOP - 4;   // two return addresses below STACK_TOP's own
+const CHAIN_BASE = STACK_TOP - 6;   // three return addresses below STACK_TOP's own
 
 const SEEK_FRAMES  = 2;     // frames to wait for the key wait before pressing BREAK
 const BREAK_FRAMES = 60;    // frames to hold BREAK before resetting instead
@@ -437,10 +437,14 @@ function inject(emu, store, pkg) {
   // Writes go through the bus so they land where the CPU would see them.
   for (let i = 0; i < store.length; i++) m.bus.write(rom.progAreaStart + i, store[i]);
   poke16(m, rom.progEnd, rom.progAreaStart + store.length);
-  // Return chain: CLEAR_ARRAYS returns into RESET_EDIT, which returns into
-  // RUN_STORED, which returns into the command loop.
+  // Return chain: CLEAR_ARRAYS returns into RESET_EDIT, then RESET_DISPLAY,
+  // then RUN_STORED, which returns into the command loop. RESET_DISPLAY puts
+  // back INK 0, PAPER 7, BRIGHT/FLASH/INVERSE/OVER 0, a white border and video
+  // mode 0, as Leap does on every return to its editor: the IDE never goes
+  // back to the editor, so without it one run's colours carried into the next.
   poke16(m, CHAIN_BASE,     rom.resetEdit);
-  poke16(m, CHAIN_BASE + 2, rom.runStored);
+  poke16(m, CHAIN_BASE + 2, rom.resetDisplay);
+  poke16(m, CHAIN_BASE + 4, rom.runStored);
   poke16(m, STACK_TOP,      rom.commandLoop);
   if (!pkg) {
     jumpTo(emu, rom.clearArrays, CHAIN_BASE);

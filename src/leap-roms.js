@@ -23,6 +23,7 @@ export const KNOWN_ROMS = {
     keyWait:          0x0435,   // IO_READ_KEY.wait_hit
     clearArrays:      0xD6C2,   // V2_CLEAR_ARRAYS
     resetEdit:        0xD326,   // V2_RESET_EDIT
+    resetDisplay:     0xD283,   // V2_RESET_DISPLAY
     runStored:        0xD49F,   // V2_RUN_STORED
     compileStored:    0xD54F,   // V2_COMPILE_STORED
     tapeFormatWord:   0x8101,   // V2_FORMAT_WORD
@@ -68,6 +69,7 @@ export const KNOWN_ROMS = {
     keyWait:          0x0443,   // IO_READ_KEY.wait_hit
     clearArrays:      0xD5DF,   // V2_CLEAR_ARRAYS
     resetEdit:        0xD237,   // V2_RESET_EDIT
+    resetDisplay:     0xD194,   // V2_RESET_DISPLAY
     runStored:        0xD3AA,   // V2_RUN_STORED
     compileStored:    0xD45A,   // V2_COMPILE_STORED
     tapeFormatWord:   0x8101,   // V2_FORMAT_WORD

@@ -289,14 +289,19 @@ from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
    66 frames to the editor). After BREAK, clear the ROM's key latch
    `KBD_KEYHIT`, else the latched BREAK dismisses the BREAK message.
 4. **Inject and jump.** Write the store and `PROG_END`; push a return chain on
-   the ROM stack (`SP=$FEFC`: `V2_RESET_EDIT`, `V2_RUN_STORED`, then
-   `V2_COMMAND_LOOP.loop` at `$FF00`) and jump to `V2_CLEAR_ARRAYS`. If the
+   the ROM stack (`SP=$FEFA`: `V2_RESET_EDIT`, `V2_RESET_DISPLAY`,
+   `V2_RUN_STORED`, then `V2_COMMAND_LOOP.loop` at `$FF00`) and jump to
+   `V2_CLEAR_ARRAYS`. If the
    program uses a package, the jump goes to `EXT2_CLEAR_ALL` instead, with the
    package installed first (see "Packages").
    `CLEAR_ARRAYS` + `RESET_EDIT` are what `LOAD` does after replacing a
    program; `V2_RUN_STORED` is what typing `RUN` calls (it compiles, clears
-   the screen, runs, then waits for a key). No code is written outside the
-   stack. This mirrors the Leap test harness (`tools/v2_prod.py` /
+   the screen, runs, then waits for a key). `V2_RESET_DISPLAY` (ROM-table
+   field `resetDisplay`: `$D194` in 2.1, `$D283` in 2.0.2) sets INK 0, PAPER 7,
+   BRIGHT / FLASH / INVERSE / OVER 0, a white border and video mode 0, which
+   Leap does on every return to its editor; the IDE never returns there, so
+   without it one run's colours carried into the next (checked by both test
+   suites). No code is written outside the stack. This mirrors the Leap test harness (`tools/v2_prod.py` /
    `v2_headless.py` in 2068-Leap).
 5. **Result.** Back at the key wait with `SP=$FF00` means the run ended;
    `INPUT`/`PAUSE` wait deeper. `COMPILE_ERROR_CODE` and `VM_ERROR_CODE` give
@@ -1158,7 +1163,7 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## Tests
 
-- `node tests/rom-checks.mjs` — 65 checks in about 1 s against the real ROMs in
+- `node tests/rom-checks.mjs` — 66 checks in about 1 s against the real ROMs in
   Node (TSRun's machine, no browser): ROM table lookup, Run by injection
   (finished, compile error, run-time error, package), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
@@ -1173,12 +1178,12 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   cartridge to the end (POKE marker 42, VM error 0, `$F4` = `$43`), a wrong
   identity being refused, `pagingWrites`, "the cartridge build takes packages
   (image format 2)" and "a SHAPES program (CIRCLE + FILL) runs from the
-  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 65 pass on 2.1.0-emu.1
+  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 66 pass on 2.1.0-emu.1
   (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 35 checks in about 30 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 36 checks in about 30 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
   Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
