@@ -6,6 +6,11 @@
  * further point adds a LINE from the previous one. The statements are shown
  * live and can be inserted into the program or copied.
  *
+ * The area can be zoomed (1×, 2×, 3×) with its own − / + buttons; the IDE
+ * decides how much fits (ide.js, "Draw zoom") and calls setSize(). The ink is
+ * always 256x192 and scaled up pixelated; the overlay (markers, rubber band,
+ * the pixel under the pointer) is drawn at device resolution so it stays crisp.
+ *
  * Pure helpers (bresenham, pathsToCode) are exported for testing; nothing
  * touches the DOM until createDrawTool() is called.
  */
@@ -90,8 +95,15 @@ function savePaths(paths) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(paths)); } catch (e) { /* no storage: fine */ }
 }
 
-export function createDrawTool(container, { insertCode }) {
+/**
+ * @param {HTMLElement} container
+ * @param {{insertCode: (text: string) => void, onZoom: (delta: number) => void}} opts
+ *   onZoom(+1 / -1) asks the IDE for a larger / smaller area; it answers with setSize().
+ * @returns {{setSize: (cssW: number, cssH: number, k: number, zoom: number, canGrow: boolean) => void}}
+ */
+export function createDrawTool(container, { insertCode, onZoom }) {
   let paths = loadPaths();
+  let k = 1;               // overlay device pixels per screen pixel
   let open = false;        // is the last path still being extended?
   let pointer = null;      // [x, y] under the mouse, or null when outside
   let shiftHeld = false;
@@ -111,7 +123,14 @@ export function createDrawTool(container, { insertCode }) {
   overlay.setAttribute('aria-label', 'Drawing area, 256 by 192 pixels');
   stage.append(canvas, overlay);
 
-  const readout = el('div', 'draw-readout', '–');
+  const readout = el('span', 'draw-readout', '–');
+  const zoomOut = button('−', () => onZoom(-1));
+  zoomOut.title = 'Smaller drawing area';
+  const zoomLabel = el('span', 'zoom-label', '1×');
+  const zoomIn = button('+', () => onZoom(+1));
+  zoomIn.title = 'Larger drawing area';
+  const top = el('div', 'draw-top');
+  top.append(readout, el('span', 'draw-spacer'), zoomOut, zoomLabel, zoomIn);
   const code = el('pre', 'draw-code');
 
   const undoBtn = button('Undo point', undoPoint);
@@ -127,7 +146,7 @@ export function createDrawTool(container, { insertCode }) {
   const row2 = el('div', 'draw-row');
   row2.append(insertBtn, copyBtn);
 
-  container.append(note, stage, readout, row1, code, row2);
+  container.append(note, top, stage, row1, code, row2);
 
   const ctx = canvas.getContext('2d');
   const octx = overlay.getContext('2d');
@@ -219,12 +238,20 @@ export function createDrawTool(container, { insertCode }) {
     ctx.putImageData(image, 0, 0);
   }
 
-  /** Overlay: point markers and the rubber band; none of it is ink. */
+  /** Overlay: point markers, the rubber band and the pixel under the pointer; none of it is ink. */
   function renderOverlay() {
+    // Drawn in screen-pixel units, scaled to the overlay's device resolution.
+    octx.setTransform(k, 0, 0, k, 0, 0);
     octx.clearRect(0, 0, SCREEN_W, SCREEN_H);
+    octx.lineWidth = (k > 1 ? 2 : 1) / k;      // one or two device pixels
+    if (pointer && k > 1) {
+      // Zoomed in, outline the exact pixel a click would add.
+      const [px, py] = snapped(pointer, shiftHeld);
+      octx.strokeStyle = '#1060d0';
+      octx.strokeRect(px + octx.lineWidth / 2, py + octx.lineWidth / 2, 1 - octx.lineWidth, 1 - octx.lineWidth);
+    }
     if (!open) return;
     const path = paths[paths.length - 1];
-    octx.lineWidth = 1;
     octx.strokeStyle = '#d03030';
     for (const [x, y] of path) octx.strokeRect(x - 1.5, y - 1.5, 4, 4);
     const last = path[path.length - 1];
@@ -292,5 +319,25 @@ export function createDrawTool(container, { insertCode }) {
     if (ev.key === 'Shift') { shiftHeld = false; renderOverlay(); }
   });
 
+  /**
+   * Show the area at cssW x cssH CSS pixels, k device pixels per screen pixel.
+   * canGrow: whether the next zoom up fits the window.
+   */
+  function setSize(cssW, cssH, devicePerPixel, zoom, canGrow) {
+    k = devicePerPixel;
+    for (const c of [canvas, overlay]) { c.style.width = cssW + 'px'; c.style.height = cssH + 'px'; }
+    stage.style.width = (cssW + 2) + 'px';        // + the 1px border each side
+    stage.style.height = (cssH + 2) + 'px';
+    overlay.width = SCREEN_W * k;
+    overlay.height = SCREEN_H * k;
+    zoomLabel.textContent = zoom + '×';
+    zoomOut.disabled = zoom <= 1;
+    zoomIn.disabled = !canGrow;
+    zoomIn.title = canGrow ? 'Larger drawing area'
+      : zoom >= 3 ? 'Largest size' : 'No room: widen the window or make the TS2068 display smaller';
+    renderOverlay();
+  }
+
   changed();
+  return { setSize };
 }

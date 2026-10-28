@@ -524,11 +524,15 @@ html, body {
 .tool-body button.tool-btn:disabled { opacity: .45; cursor: default; }
 
 /* ── Draw tool (src/tools/draw.js) ── */
+/* Sized by ide.js ("Draw zoom") through setSize(): a whole number of device pixels per screen pixel. */
 .draw-stage { position: relative; width: 258px; height: 194px; border: 1px solid var(--border-hi); background: #cdcdcd; margin-bottom: 6px; }
 .draw-canvas { position: absolute; left: 0; top: 0; width: 256px; height: 192px; image-rendering: pixelated; }
+.draw-top { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.draw-spacer { flex: 1; }
+.draw-top .tool-btn { padding: 1px 7px; }
 .draw-overlay { cursor: crosshair; outline: none; }
 .draw-stage:focus-within { border-color: var(--blue-fg); }
-.draw-readout { font: 11px var(--font-code); color: var(--amber-fg); height: 16px; }
+.draw-readout { font: 11px var(--font-code); color: var(--amber-fg); }
 .draw-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .draw-code {
   min-height: 48px; max-height: 140px; overflow: auto; margin: 0 0 8px; padding: 6px 8px;

@@ -438,6 +438,48 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
+// ── Draw zoom ─────────────────────────────────────────────────────
+// The Draw tab's 256x192 area zooms like the display: 1×, 2× or 3×, always a
+// whole number of device pixels per screen pixel. While the Draw tab is open
+// the right panel widens to fit it; the emulator keeps its size, and the
+// drawing zoom drops when the editor would get less than EDITOR_MIN_W.
+
+const DRAW_W = 256, DRAW_H = 192;
+const DRAW_CHROME = 24 + 2 + 12;       // tool padding + stage border + scrollbar slack
+const RIGHT_PANEL_W = 340;             // the right panel's usual width (ide.css)
+const EDITOR_MIN_W = 360;
+const DRAW_ZOOM_KEY = 'leap-ide.drawZoom';
+let drawZoom = 2;                      // chosen (remembered)
+let shownDrawZoom = 1;                 // shown (the window may be too narrow)
+try { drawZoom = Number(localStorage.getItem(DRAW_ZOOM_KEY)) || 2; } catch { /* storage unavailable */ }
+
+function applyDrawZoom() {
+  const panel = document.getElementById('debugger-panel');
+  if (activeTab !== 'draw') {
+    panel.style.flexBasis = panel.style.flexShrink = '';
+    return;
+  }
+  const dpr = window.devicePixelRatio || 1;
+  const stacked = getComputedStyle(document.querySelector('.workspace')).flexDirection === 'column';
+  const emulatorW = document.getElementById('emulator-panel').getBoundingClientRect().width;
+  const room = stacked ? window.innerWidth : window.innerWidth - emulatorW - EDITOR_MIN_W;
+  const fits = z => Math.max(1, Math.round(z * dpr)) / dpr * DRAW_W + DRAW_CHROME <= room;
+  let z = Math.max(1, Math.min(drawZoom, 3));
+  while (z > 1 && !fits(z)) z--;
+  const k = Math.max(1, Math.round(z * dpr));
+  drawTool.setSize(k * DRAW_W / dpr, k * DRAW_H / dpr, k, z, z < 3 && fits(z + 1));
+  shownDrawZoom = z;
+  if (stacked) { panel.style.flexBasis = panel.style.flexShrink = ''; return; }
+  panel.style.flexBasis = Math.max(RIGHT_PANEL_W, k * DRAW_W / dpr + DRAW_CHROME) + 'px';
+  panel.style.flexShrink = '0';
+}
+
+function setDrawZoom(z) {
+  drawZoom = Math.max(1, Math.min(z, 3));
+  try { localStorage.setItem(DRAW_ZOOM_KEY, String(drawZoom)); } catch { /* storage unavailable */ }
+  applyDrawZoom();
+}
+
 // ── Right-panel tabs: Debugger | Symbols | UDG | Draw ─────────────
 const TAB_KEY = 'leap-ide.tab';
 const SYMBOLS_REFRESH_MS = 300;
@@ -448,8 +490,9 @@ const symbolsTool = createSymbolsTool(document.getElementById('tool-symbols'), {
   getSource,
   goToLine: line => { window.leapEditor.scrollToLine(line); window.leapEditor.focus(); },
 });
-createDrawTool(document.getElementById('tool-draw'), {
+const drawTool = createDrawTool(document.getElementById('tool-draw'), {
   insertCode: text => window.leapEditor.insertLines(text),
+  onZoom: delta => setDrawZoom(shownDrawZoom + delta),
 });
 
 function showTab(name) {
@@ -458,6 +501,7 @@ function showTab(name) {
   for (const b of document.querySelectorAll('.tab-body')) b.hidden = b.dataset.tab !== name;
   document.getElementById('btn-refresh-debug').hidden = name !== 'debugger';
   if (name === 'symbols') symbolsTool.refresh();
+  applyDrawZoom();             // the Draw tab widens the panel; the others give the width back
   try { localStorage.setItem(TAB_KEY, name); } catch { /* storage blocked */ }
 }
 
@@ -622,6 +666,7 @@ function applyZoom() {
   document.getElementById('emulator-panel').style.flexBasis = stacked ? '' : (w + PANEL_CHROME) + 'px';
   document.getElementById('zoom-label').textContent = z + '×';
   shownZoom = z;
+  applyDrawZoom();             // the drawing area gets the width the emulator leaves
 }
 
 function setZoom(z) {

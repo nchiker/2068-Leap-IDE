@@ -814,7 +814,14 @@ in `bootEmulator` because it needs the ROM entry and the machine.
   Bresenham (both ends inclusive) on an ink canvas, with an overlay canvas for
   markers and the rubber band. The generated code is shown live, with "Insert
   into program" and "Copy"; paths persist in `localStorage` (`leap-ide.draw`).
-  Exports `createDrawTool`, `bresenham`, `pathsToCode`.
+  The area zooms 1×, 2× or 3× with its own − / + buttons, like the display: a
+  whole number of device pixels per screen pixel, the overlay drawn at device
+  resolution, and when zoomed the pixel under the pointer is outlined. While
+  the Draw tab is open the right panel widens to fit; the zoom drops when the
+  editor would get less than 360 px (+ is then disabled, saying why). The
+  choice is remembered (`leap-ide.drawZoom`, default 2×); layout is
+  `applyDrawZoom` in `ide.js` ("Draw zoom"), and `createDrawTool` returns
+  `{setSize}`. Exports `createDrawTool`, `bresenham`, `pathsToCode`.
 
 Verified in headless Chromium: the tabs and the symbol table contents, and the
 rendering of the UDG and Draw tabs; the tools' code insertion and runs were
