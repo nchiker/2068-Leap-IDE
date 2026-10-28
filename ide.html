@@ -62,6 +62,14 @@
       <div class="panel-header">
         <span>Editor</span>
         <div class="panel-header-btns">
+          <button class="phbtn edbtn" id="btn-undo"  title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button class="phbtn edbtn" id="btn-redo"  title="Redo (Ctrl+Y)" disabled>Redo</button>
+          <span class="phbtn-sep"></span>
+          <button class="phbtn edbtn" id="btn-cut"   title="Cut (Ctrl+X)">Cut</button>
+          <button class="phbtn edbtn" id="btn-copy"  title="Copy (Ctrl+C)">Copy</button>
+          <button class="phbtn edbtn" id="btn-paste" title="Paste (Ctrl+V)">Paste</button>
+          <span class="phbtn-sep"></span>
+          <button class="phbtn edbtn" id="btn-find"  title="Find and replace (Ctrl+F, Ctrl+H)">Find</button>
           <button class="phbtn" id="btn-lint" title="Check structure">Lint</button>
         </div>
       </div>
@@ -137,6 +145,7 @@
     "@codemirror/commands": "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.7.1/dist/index.js",
     "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.18.3/dist/index.js",
     "@codemirror/lint": "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.8.2/dist/index.js",
+    "@codemirror/search": "https://cdn.jsdelivr.net/npm/@codemirror/search@6.5.8/dist/index.js",
     "@lezer/highlight": "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.1/dist/index.js",
     "@lezer/common": "https://cdn.jsdelivr.net/npm/@lezer/common@1.2.3/dist/index.js",
     "@lezer/lr": "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.2/dist/index.js",
@@ -148,7 +157,7 @@
     "./src/emulator.js": "./src/emulator.js?v=061c88a609",
     "./src/export.js": "./src/export.js?v=8c6b8c033f",
     "./src/files.js": "./src/files.js?v=21a47c8c07",
-    "./src/help.js": "./src/help.js?v=48734a6e56",
+    "./src/help.js": "./src/help.js?v=237f40f16c",
     "./src/leap-check.js": "./src/leap-check.js?v=bfa2ad97b7",
     "./src/leap-debug.js": "./src/leap-debug.js?v=96e6212810",
     "./src/leap-errors.js": "./src/leap-errors.js?v=5578d95716",
@@ -169,8 +178,8 @@
   }
 }
 </script>
-<script type="module" src="src/editor.js?v=83de980aa9"></script>
-<script type="module" src="ide.js?v=79e502a09e"></script>
+<script type="module" src="src/editor.js?v=108c6dda39"></script>
+<script type="module" src="ide.js?v=61c32e663e"></script>
 
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Handoff — Leap V2 Web IDE
 
-Last updated 2026-10-28, at the DCK (cartridge) export.
+Last updated 2026-10-28, at editor find/replace and the edit buttons (Undo, Redo, Cut, Copy, Paste, Find).
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -21,8 +21,8 @@ is implemented.
 | Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. No packages yet |
 | Phase 7 | Symbols / UDG / Draw tabs (Draw zooms 1×–3×) |
 | Phase 8 | Help overlay (F1), keys & tips, light/dark themes |
-| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (47 ROM checks pass on 2.1; the 18 browser checks pass on 2.1) |
-| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints |
+| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (47 ROM checks pass on 2.1; the 21 browser checks pass on 2.1) |
+| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons |
 
 **Done for 2.1.0-emu.1** (tag `v2.1.0-emu.1`, commit `c005159`, published
 2026-10-28): the ROM entry (key `5a42872e…`), `src/leap-keywords.js` and
@@ -75,7 +75,7 @@ cd ~/Projects/Leap-IDE
 git pull && git submodule update --init
 python3 -m http.server 8080          # then http://localhost:8080/ide.html
 node tests/rom-checks.mjs             # 47 checks, ~1 s, real ROMs in Node
-node tests/browser-smoke.mjs          # 18 checks, ~30 s, headless Chrome
+node tests/browser-smoke.mjs          # 21 checks, ~30 s, headless Chrome
 ```
 
 Both suites must print `All checks passed`. The browser test serves the repo

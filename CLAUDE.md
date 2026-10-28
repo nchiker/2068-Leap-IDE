@@ -51,7 +51,7 @@ Leap-IDE/
 │   ├── emulator.js   ← Slim TSRun host + RAM-injection run/stop (Phase 1, done)
 │   ├── leap-roms.js  ← Known ROM builds: SHA-256 -> addresses (Phase 1, done)
 │   ├── pc-keyboard.js ← PC key -> TS2068 matrix translation (Phase 4, done)
-│   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip (Phase 2, done)
+│   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip, find/replace (Phase 2, done)
 │   ├── files.js      ← Browser auto-save, text normalising, .tap -> source (no DOM; Node can import it)
 │   ├── help.js       ← Help overlay: searchable keywords + Keys & tips (F1, "? Help")
 │   ├── leap-lang.js  ← Language mode, token classes, scanSymbols (Phase 2, done)
@@ -443,6 +443,7 @@ bundler). The map in `ide.html` is authoritative; it currently is:
     "@codemirror/commands":     "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.7.1/dist/index.js",
     "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.18.3/dist/index.js",
     "@codemirror/lint":         "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.8.2/dist/index.js",
+    "@codemirror/search":       "https://cdn.jsdelivr.net/npm/@codemirror/search@6.5.8/dist/index.js",
     "@lezer/highlight":         "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.1/dist/index.js",
     "@lezer/common":            "https://cdn.jsdelivr.net/npm/@lezer/common@1.2.3/dist/index.js",
     "@lezer/lr":                "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.2/dist/index.js",
@@ -457,7 +458,7 @@ bundler). The map in `ide.html` is authoritative; it currently is:
 
 Notes: `style-mod`'s entry is `src/style-mod.js` (not `dist/`); `@lezer/lr` is
 required by `@codemirror/language`; `@codemirror/lint` is needed for the
-the Phase 5 diagnostics.
+the Phase 5 diagnostics; `@codemirror/search` is the find / replace panel.
 
 ### Keyword data (generated)
 
@@ -513,9 +514,10 @@ is `REM `.
 
 **`src/editor.js`** creates the `EditorView`, the breakpoint gutter,
 autocomplete and hover help, and exposes `window.leapEditor` (`getSource()`,
-`setSource(text, {fresh})`, `setDiagnostics()`, `onChange(fn)`, `focus()`;
-`fresh: true` starts a new document with its own undo history and the
-breakpoints cleared, used by New and Open).
+`setSource(text, {fresh})`, `setDiagnostics()`, `onChange(fn)`, `focus()`,
+`undo()`, `redo()`, `onHistoryChanged(fn)`, `copy()`, `cut()`, `paste()`,
+`find({replace})`; `fresh: true` starts a new document with its own undo
+history and the breakpoints cleared, used by New and Open).
 
 - **Autocomplete:** all manual keywords except commands, with the first form as
   the detail and the full help as the info panel; built-in functions insert
@@ -541,6 +543,24 @@ breakpoints cleared, used by New and Open).
   prints strings as written, so full caps would change output
   (`PRINT "Hello"` -> `"HELLO"`). Typing into a running program (`INPUT`) is
   data and unaffected.
+- **Find and replace, undo / clipboard buttons:** `@codemirror/search` gives the
+  panel (`search({ top: true })`, `searchKeymap`, plus `Mod-h`, which opens it on
+  the replace field); it is themed with the `ide.css` variables in
+  `leapThemeSpec`. A replacement is an `input` user event, so auto-caps applies
+  to it as to typing. The editor panel header has buttons Undo, Redo | Cut,
+  Copy, Paste | Find, then Lint (class `edbtn`; `ide.js` prevents mousedown on
+  them so the editor keeps focus). `onHistoryChanged(fn)` is called with the
+  `{undo, redo}` depths when they change, once at registration and after
+  `setSource(..., {fresh: true})`; Undo / Redo are disabled when there is
+  nothing to undo / redo (`.phbtn:disabled`). `copy()`, `cut()` and `paste()`
+  are async and go through `navigator.clipboard`; they resolve to false if the
+  browser refuses, and the status bar then says "The browser did not allow the
+  clipboard: use Ctrl+X in the editor" (or Ctrl+C / Ctrl+V). With nothing
+  selected, copy and cut take the cursor's whole line, as CodeMirror's Ctrl+C /
+  Ctrl+X do. `paste()` is an `input.paste` event, so auto-caps applies. The
+  global keydown in `ide.js` opens find (Ctrl+F) and replace (Ctrl+H) from
+  anywhere except a text field (input / textarea), unless the editor already
+  handled the key. The editor title ellipsises before the buttons shrink.
 
 Verified in headless Chromium.
 
@@ -854,8 +874,10 @@ it. Everything is built with DOM nodes and `textContent`.
   on GitHub at the release tag (`LEAP_MANUAL_REF`; GitHub heading anchors, e.g.
   `#circle--package-shapes`).
 - **Keys & tips tab:** the shortcuts (F5 Run, F6 Stop, F8 Pause/Continue, F10
-  Step, Ctrl+S, Ctrl+O, Ctrl+Space completions, F1 help, Escape = BREAK in the
-  TS2068 screen) and short usage tips. This is the keyboard cheat-sheet of
+  Step, Ctrl+S, Ctrl+O, Ctrl+Space completions, Ctrl+F find (Enter / F3 next,
+  Shift+F3 previous), Ctrl+H replace, Ctrl+Z undo, Ctrl+Y redo (also
+  Ctrl+Shift+Z), Ctrl+X / C / V cut / copy / paste, F1 help, Escape = BREAK in
+  the TS2068 screen) and short usage tips. This is the keyboard cheat-sheet of
   Phase 8.
 - Nothing is hand-written per keyword: a new release regenerates
   `src/leap-keywords.js` and Help follows.
@@ -1046,12 +1068,17 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 18 checks in about 30 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 21 checks in about 30 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
-  Draw zoom, theme and Help, the DCK export (a cartridge downloads; the file-name
+  Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
+  button is disabled for a new program, then undoes the replace), the Cut and
+  Paste buttons through the system clipboard (permission granted over CDP), the
+  DCK export (a cartridge downloads; the file-name
   prompt and the download are captured in the page; a package program is
-  refused), with no page errors. It saves screenshots.
+  refused), with no page errors. It saves screenshots. CodeMirror's search
+  panel takes the query on keyup / change, so CDP `Input.insertText` alone does
+  not set it; the test also sends a keyUp.
 - Run both before every commit that changes behaviour. `src/leap-lang.js`
   imports CodeMirror, so Node cannot load it; it is covered by the browser
   test.

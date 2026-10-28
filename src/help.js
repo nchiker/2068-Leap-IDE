@@ -34,6 +34,11 @@ const SHORTCUTS = [
   ['Ctrl+S', 'Save the program as a text file'],
   ['Ctrl+O', 'Open a .leap / .txt program or a Leap .tap'],
   ['Ctrl+Space', 'Show completions'],
+  ['Ctrl+F', 'Find in the program (Enter / F3 next, Shift+F3 previous)'],
+  ['Ctrl+H', 'Find and replace'],
+  ['Ctrl+Z', 'Undo'],
+  ['Ctrl+Y', 'Redo (also Ctrl+Shift+Z)'],
+  ['Ctrl+X / C / V', 'Cut / copy / paste (the line, if nothing is selected)'],
   ['F1', 'This help'],
   ['Escape', 'In the TS2068 screen: BREAK. In this help: close'],
 ];

@@ -13,6 +13,8 @@
  *   - Hover help: manual entry for keywords, definition line for names
  *   - Auto-caps: keywords become upper case as each word is finished
  *   - Linting by the ROM's own compiler (ide.js lintSource), plus run errors
+ *   - Find and replace (CodeMirror's search panel), and undo / redo / cut /
+ *     copy / paste for the editor panel's buttons
  */
 
 import { EditorState, StateField, StateEffect, RangeSet, Compartment } from '@codemirror/state';
@@ -22,7 +24,10 @@ import {
   rectangularSelection, crosshairCursor, highlightActiveLine,
   tooltips, hoverTooltip, GutterMarker, gutter, Decoration,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirror/commands';
+import {
+  defaultKeymap, history, historyKeymap, isolateHistory, undo, redo, undoDepth, redoDepth,
+} from '@codemirror/commands';
+import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
 import {
   autocompletion, completionKeymap, snippetCompletion,
 } from '@codemirror/autocomplete';
@@ -301,6 +306,52 @@ const breakpointListener = EditorView.updateListener.of(update => {
   }
 });
 
+// ── Find and replace ──────────────────────────────────────────────
+// CodeMirror's search panel, at the top of the editor. Ctrl+F opens it on the
+// find field, Ctrl+H on the replace field. A replacement is an 'input' event,
+// so auto-caps upper-cases keywords it brings in, like typing does.
+
+function openReplace(view) {
+  openSearchPanel(view);
+  const field = view.dom.querySelector('.cm-search input[name=replace]');
+  if (field) { field.focus(); field.select(); }
+  return true;
+}
+
+// ── Undo / redo button state ──────────────────────────────────────
+let onHistoryChanged = null;
+let lastDepths = '';
+function reportHistory(state) {
+  const depths = { undo: undoDepth(state), redo: redoDepth(state) };
+  const key = depths.undo + '/' + depths.redo;
+  if (key === lastDepths || !onHistoryChanged) return;
+  lastDepths = key;
+  onHistoryChanged(depths);
+}
+const historyListener = EditorView.updateListener.of(update => {
+  if (update.transactions.length) reportHistory(update.state);
+});
+
+// ── Clipboard (the editor panel's buttons; the keys are the browser's own) ─
+// As Ctrl+C / Ctrl+X do in CodeMirror, with nothing selected the cursor's
+// whole line is taken.
+function clipRanges(state) {
+  const sel = state.selection.ranges.filter(r => !r.empty);
+  if (sel.length) {
+    return { text: sel.map(r => state.sliceDoc(r.from, r.to)).join(state.lineBreak), ranges: sel };
+  }
+  const ranges = [];
+  let text = '', upto = -1;
+  for (const r of state.selection.ranges) {
+    const line = state.doc.lineAt(r.head);
+    if (line.number <= upto) continue;
+    upto = line.number;
+    text += line.text + state.lineBreak;
+    ranges.push({ from: line.from, to: Math.min(state.doc.length, line.to + 1) });
+  }
+  return { text, ranges };
+}
+
 // ── Status bar cursor sync ────────────────────────────────────────
 const cursorPlugin = EditorView.updateListener.of(update => {
   if (!update.selectionSet) return;
@@ -383,6 +434,34 @@ const leapThemeSpec = {
     background: 'var(--hover-sel)',
     color: 'var(--fg)',
   },
+  // Find and replace panel (top of the editor)
+  '.cm-panels': { background: 'var(--bg)', color: 'var(--fg)' },
+  '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--border)' },
+  '.cm-search': { fontFamily: 'var(--font-ui)', fontSize: '11px', padding: '4px 8px 6px' },
+  '.cm-search label': { color: 'var(--fg-muted)', fontSize: '11px' },
+  '.cm-textfield': {
+    background: 'var(--bg-panel)',
+    color: 'var(--fg)',
+    border: '1px solid var(--border-hi)',
+    borderRadius: '3px',
+    fontFamily: 'var(--font-code)',
+    fontSize: '12px',
+  },
+  '.cm-textfield:focus': { outline: '1px solid var(--amber-fg)', outlineOffset: '-1px' },
+  '.cm-button': {
+    backgroundImage: 'none',
+    background: 'var(--bg-surface)',
+    color: 'var(--fg)',
+    border: '1px solid var(--border)',
+    borderRadius: '3px',
+    fontFamily: 'var(--font-ui)',
+    fontSize: '11px',
+  },
+  '.cm-button:hover': { background: 'var(--bg-hover)' },
+  '.cm-button:active': { backgroundImage: 'none', background: 'var(--bg-active)' },
+  '.cm-search [name=close]': { color: 'var(--fg-muted)', fontSize: '16px' },
+  '.cm-searchMatch': { background: 'var(--amber-tint2)', outline: '1px solid var(--border-hi)' },
+  '.cm-searchMatch.cm-searchMatch-selected': { background: 'var(--selection)', outline: '1px solid var(--amber-fg)' },
   '.cm-completionLabel': { fontSize: '12px' },
   '.cm-completionDetail': { color: 'var(--fg-muted)', fontSize: '11px' },
 };
@@ -417,6 +496,7 @@ const EXTENSIONS = [
     leapHighlight,
     leapHover,
     autocompletion({ override: [leapComplete] }),
+    search({ top: true }),
     // The ROM's compiler checks the program 500 ms after typing stops
     // (ide.js lintSource -> src/leap-check.js). Until the hidden machine has
     // booted there is nothing to report; ide.js calls relint() when it has.
@@ -426,9 +506,12 @@ const EXTENSIONS = [
       ...historyKeymap,
       ...completionKeymap,
       ...lintKeymap,
+      ...searchKeymap,
+      { key: 'Mod-h', run: openReplace, preventDefault: true },
     ]),
     autoCaps,
     changeListener,
+    historyListener,
     cursorPlugin,
     themeCompartment.of(leapTheme(darkTheme)),
 ];
@@ -444,6 +527,18 @@ const view = new EditorView({
   state: startState,
   parent: document.getElementById('editor-mount'),
 });
+
+async function clipboardOut(cut) {
+  const state = view.state;
+  const { text, ranges } = clipRanges(state);
+  try { await navigator.clipboard.writeText(text); } catch { view.focus(); return false; }
+  // Only if nothing changed while the clipboard was being written.
+  if (cut && view.state === state) {
+    view.dispatch({ changes: ranges, scrollIntoView: true, userEvent: 'delete.cut' });
+  }
+  view.focus();
+  return true;
+}
 
 // ── Public API ────────────────────────────────────────────────────
 window.leapEditor = {
@@ -466,6 +561,7 @@ window.leapEditor = {
     view.dispatch({ effects: themeCompartment.reconfigure(leapTheme(darkTheme)) });
     if (onBreakpointsChanged) onBreakpointsChanged();
     if (onDocChanged) onDocChanged();
+    reportHistory(view.state);
     forceLinting(view);
   },
 
@@ -496,6 +592,40 @@ window.leapEditor = {
     if (dark === darkTheme) return;
     darkTheme = dark;
     view.dispatch({ effects: themeCompartment.reconfigure(leapTheme(dark)) });
+  },
+
+  /** Undo / redo the last edit; false if there is nothing to undo / redo */
+  undo() { const done = undo(view); view.focus(); return done; },
+  redo() { const done = redo(view); view.focus(); return done; },
+
+  /**
+   * Called with {undo, redo} (the number of steps each way) whenever either
+   * changes, and once now, so the buttons can be enabled.
+   */
+  onHistoryChanged(fn) { onHistoryChanged = fn; lastDepths = ''; reportHistory(view.state); },
+
+  /**
+   * Copy / cut the selection (the cursor's line if nothing is selected) to the
+   * system clipboard. Resolves to false if the browser refused the clipboard.
+   */
+  async copy() { return clipboardOut(false); },
+  async cut() { return clipboardOut(true); },
+
+  /** Paste the clipboard at the cursor; false if the browser refused to read it. */
+  async paste() {
+    let text;
+    try { text = await navigator.clipboard.readText(); } catch { view.focus(); return false; }
+    text = text.replace(/\r\n?/g, '\n');
+    if (text) {
+      view.dispatch(view.state.replaceSelection(text), { userEvent: 'input.paste', scrollIntoView: true });
+    }
+    view.focus();
+    return true;
+  },
+
+  /** Open the find panel (replace: true focuses the replace field) */
+  find({ replace = false } = {}) {
+    if (replace) openReplace(view); else openSearchPanel(view);
   },
 
   /** Called (no arguments) after every change to the text */

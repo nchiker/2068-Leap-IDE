@@ -179,6 +179,33 @@ try {
   const caps = await waitFor("leapEditor.getSource().startsWith('PRINT 1') && leapEditor.getSource()", 3000);
   check('auto-caps: print -> PRINT', !!caps, JSON.stringify(caps || await evaluate('leapEditor.getSource()')));
 
+  // Find and replace (Ctrl+H), then Undo
+  const frText = 'x = 1\nPRINT x\nx = 2';
+  await evaluate(`leapEditor.setSource(${JSON.stringify(frText)}, {fresh: true}), leapEditor.focus()`);
+  const undoOff = await evaluate("document.getElementById('btn-undo').disabled");
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'h', code: 'KeyH', modifiers: 2, windowsVirtualKeyCode: 72 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'h', code: 'KeyH', modifiers: 2, windowsVirtualKeyCode: 72 });
+  const onReplace = await evaluate("document.activeElement?.name === 'replace'");
+  await send('Input.insertText', { text: 'y' });
+  await evaluate("document.querySelector('.cm-search input[name=search]').focus()");
+  await send('Input.insertText', { text: 'x' });
+  // The panel takes the query on keyup / change, which insertText does not send
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88 });
+  const replaced = await evaluate("(document.querySelector('.cm-search button[name=replaceAll]').click(), leapEditor.getSource())");
+  check('find and replace: Ctrl+H, replace all x -> y', onReplace && replaced === 'y = 1\nPRINT y\ny = 2', `${onReplace} ${JSON.stringify(replaced)}`);
+  const undoOn = await evaluate("!document.getElementById('btn-undo').disabled");
+  const undone = await evaluate("(document.getElementById('btn-undo').click(), leapEditor.getSource())");
+  check('Undo button: off for a new program, undoes the replace', undoOff && undoOn && undone === frText, `${undoOff} ${undoOn} ${JSON.stringify(undone)}`);
+  await shot('find-replace');
+
+  // Cut / Paste buttons through the system clipboard (nothing selected: the cursor's line)
+  await send('Browser.grantPermissions', { origin: base.slice(0, -1), permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+  await evaluate(`(document.querySelector('.cm-search button[name=close]')?.click(), leapEditor.setSource('A = 1\\nB = 2', {fresh: true}), leapEditor.focus())`);
+  const afterCut = await evaluate("(async () => { document.getElementById('btn-cut').click(); await new Promise(r => setTimeout(r, 300)); return leapEditor.getSource(); })()");
+  const afterPaste = await evaluate("(async () => { document.getElementById('btn-paste').click(); await new Promise(r => setTimeout(r, 300)); return leapEditor.getSource(); })()");
+  check('Cut and Paste buttons: cut the line, paste it back', afterCut === 'B = 2' && afterPaste === 'A = 1\nB = 2',
+    `${JSON.stringify(afterCut)} -> ${JSON.stringify(afterPaste)} ${await status()}`);
+
   // Tabs
   for (const tab of ['symbols', 'udg', 'draw', 'debugger']) {
     const shown = await evaluate(`(document.querySelector('[data-tab=${tab}].panel-tab').click(),

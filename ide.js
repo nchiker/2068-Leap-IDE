@@ -730,6 +730,28 @@ document.getElementById('btn-lint').addEventListener('click', () => {
   window.leapEditor?.setDiagnostics(diags);
   setStatus(diags.length === 0 ? 'No errors' : diags[0].message, diags.length === 0 ? 'idle' : 'error');
 });
+
+// Editor buttons: undo / redo / clipboard / find. They must not take the
+// focus from the editor (its selection is what they act on).
+for (const b of document.querySelectorAll('.edbtn')) b.addEventListener('mousedown', e => e.preventDefault());
+const btnUndo = document.getElementById('btn-undo');
+const btnRedo = document.getElementById('btn-redo');
+btnUndo.addEventListener('click', () => window.leapEditor?.undo());
+btnRedo.addEventListener('click', () => window.leapEditor?.redo());
+window.leapEditor?.onHistoryChanged(({ undo, redo }) => {
+  btnUndo.disabled = undo === 0;
+  btnRedo.disabled = redo === 0;
+});
+// The browser may refuse the clipboard (paste usually asks for permission
+// first); the keys work regardless.
+for (const [id, op, keys] of [['btn-cut', 'cut', 'Ctrl+X'], ['btn-copy', 'copy', 'Ctrl+C'], ['btn-paste', 'paste', 'Ctrl+V']]) {
+  document.getElementById(id).addEventListener('click', async () => {
+    if (!window.leapEditor || await window.leapEditor[op]()) return;
+    setStatus(`The browser did not allow the clipboard: use ${keys} in the editor`, 'error');
+  });
+}
+document.getElementById('btn-find').addEventListener('click', () => window.leapEditor?.find());
+
 document.getElementById('btn-reset-emu').addEventListener('click', () => {
   if (emulator) emulator.reset();
 });
@@ -824,6 +846,12 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     if (e.key === 's') { e.preventDefault(); saveProgram(); }
     if (e.key === 'o') { e.preventDefault(); openProgram(); }
+    // Find / replace in the program from anywhere but a text field (the
+    // editor's own keymap has already handled them when it has the focus).
+    if ((e.key === 'f' || e.key === 'h') && !e.defaultPrevented && !e.target.closest?.('input, textarea')) {
+      e.preventDefault();
+      window.leapEditor?.find({ replace: e.key === 'h' });
+    }
   }
   if (e.key === 'F10') { e.preventDefault(); stepProgram(); }
 });

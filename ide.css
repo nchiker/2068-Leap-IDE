@@ -298,9 +298,15 @@ html, body {
   cursor: pointer;
 }
 .phbtn:hover { background: var(--bg-hover); color: var(--fg); }
+.phbtn:disabled { opacity: 0.45; cursor: default; }
+.phbtn:disabled:hover { background: transparent; color: var(--fg-muted); }
+.phbtn-sep { width: 1px; margin: 3px 2px; background: var(--border); }
 
 /* ── Editor panel ────────────────────────────────────────────── */
 .panel-editor { flex: 1 1 0; min-width: 300px; }   /* takes what the emulator (zoom) and debugger leave */
+/* At its narrowest the editor's buttons win over its title */
+.panel-editor .panel-header > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-editor .panel-header-btns { flex-shrink: 0; }
 
 .editor-mount {
   flex: 1;
