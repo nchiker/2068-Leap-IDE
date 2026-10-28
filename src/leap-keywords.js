@@ -1,7 +1,7 @@
 /**
  * src/leap-keywords.js — GENERATED, do not edit.
  *
- * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.0.2-emu.1.
+ * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.1.0-emu.1.
  * One entry per manual keyword heading: kind (function / statement /
  * operator / command / part of), package (null for core), syntax, the
  * individual forms, the description's first paragraph and the first example.
@@ -9,7 +9,7 @@
 
 "use strict";
 
-export const LEAP_MANUAL_REF = "v2.0.2-emu.1";
+export const LEAP_MANUAL_REF = "v2.1.0-emu.1";
 
 export const LEAP_KEYWORD_ENTRIES = {
   "ABS": {

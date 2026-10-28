@@ -9,7 +9,8 @@ Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
 `main` on every push). Source: https://github.com/nchiker/2068-Leap-IDE.
 
 Leap V2 is documented at https://github.com/nchiker/2068-Leap (the manual and
-`docs/V2_LANGUAGE_REFERENCE.md`). Current release: 2.0.2-emu.1.
+`docs/V2_LANGUAGE_REFERENCE.md`). Current release: 2.1.0-emu.1 (the ROM table
+also knows 2.0.2-emu.1).
 
 Status: Phases 1 to 5 are done (the emulator boots, Run injects the editor text
 into the ROM and runs it, compile and run-time errors come back with the line;
@@ -28,8 +29,9 @@ the debugger. The ☀ / ☾ button switches between light and dark themes (until
 you choose, the IDE follows the system setting). Phase 6 is half done:
 "⬇ TAP" saves exactly what Leap's own `SAVE` writes (verified: Leap's real
 `LOAD` reads it back); the DCK cartridge needs a runtime-only Leap build first,
-specified in `docs/LEAP_CARTRIDGE_BUILD.md`. Still to do, both waiting for Leap
-2.1: the DCK export once that build exists, and the Leap 2.1 ROM entry. See `CLAUDE.md` for the phase list
+specified in `docs/LEAP_CARTRIDGE_BUILD.md`. The Leap 2.1.0-emu.1 ROM entry is
+done. Still to do, waiting for that cartridge build (2.1.0-emu.1 does not
+contain it): the DCK export. See `CLAUDE.md` for the phase list
 and technical brief, and `docs/overview.md` for the design.
 
 ## Setup
@@ -42,16 +44,17 @@ and technical brief, and `docs/overview.md` for the design.
 
    (In an existing clone, run `git submodule update --init`.) `tsrun/` is a git
    submodule of the TSRun fork https://github.com/nchiker/TSRun, pinned at
-   commit `4db1f1e` (TSRun `main` with the 2.0.2 Leap ROMs, the `sound.js`
-   worklet fix `f65de5a`, which loads the worklet with
+   commit `016787f` (TSRun `main` with the 2.1.0-emu.1 Leap ROMs, on top of the
+   `sound.js` worklet fix `f65de5a`, which loads the worklet with
    `new URL("sound.worklet.js", import.meta.url)` so audio works from a page
    outside TSRun's directory, and the tape-loading fix `4db1f1e`, both
-   pushed). No separate `~/TSRun` clone is needed.
+   pushed; `016787f` changes only the two ROMs and the READMEs). No separate
+   `~/TSRun` clone is needed.
 
 2. The Leap ROMs are not part of this repo. They load from
    `tsrun/roms/leap-0.rom` (16K HOME) and `tsrun/roms/leap-1.rom` (8K EXROM),
-   which must be the 2.0.2-emu.1 release images. The IDE hashes the pair and
-   refuses ROMs it does not know.
+   which must be the 2.1.0-emu.1 release images (the 2.0.2-emu.1 pair also works).
+   The IDE hashes the pair and refuses ROMs it does not know.
 
 The pin matters: the TSRun version must match the ROM table in
 `src/leap-roms.js`, so changes upstream in TSRun (such as new Leap ROMs) cannot
@@ -116,11 +119,16 @@ ROM addresses change between Leap releases, and the IDE injects programs by
 jumping into ROM routines, so each ROM build has its own entry in
 `src/leap-roms.js`.
 
-1. In a 2068-Leap checkout at the release tag, run `make build`.
+1. Build the release tag in a separate detached worktree, so local edits in
+   `~/2068-Leap` are not disturbed:
+   `git -C ~/2068-Leap worktree add --detach <dir> <tag>`, then `make build`
+   in `<dir>`.
 2. Run `tools/leap-rom-entry.py <checkout> <version>`; it prints a
    `KNOWN_ROMS` entry keyed by the SHA-256 of HOME + EXROM.
    The script's `SYMBOLS` table also covers the debugger's compiler and VM
-   symbols, so a new entry must be generated, not copied from an older one.
+   symbols, so a new entry must be generated, not copied from an older one
+   (a symbol the release lacks falls back to a named older one: `vmNext` takes
+   `VM_RUN.loop` in 2.0.2).
 3. Paste the entry into `src/leap-roms.js`. It includes the package fields
    `ext2ClearAll`, `packageBase`, `packageLen` and `packageDir`.
    Copy the release's package binaries (`v2_package_<name>.bin`) to
@@ -130,7 +138,12 @@ jumping into ROM routines, so each ROM build has its own entry in
    `leap-0.rom` and `leap-1.rom` in `roms/`:
    `git -C tsrun fetch && git -C tsrun checkout <commit>`, then commit the
    submodule bump.
-5. Reload and re-check hello world, a compile error, BREAK, `INPUT`, a
+5. Add the release's `SAVE_SYMBOLS` to `tests/rom-checks.mjs` and run
+   `node tests/rom-checks.mjs` (with `LEAP_ROMS=<dir>` before the submodule
+   moves) and `node tests/browser-smoke.mjs`. A release may change a contract
+   the test relies on (2.1's `SAVE` needs the TAP check's block sender to
+   return with carry set).
+6. Reload and re-check hello world, a compile error, BREAK, `INPUT`, a
    breakpoint / step and a program with `CIRCLE`.
 
 Nothing else in the IDE should need to change, except the editor's keyword data

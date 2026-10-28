@@ -44,6 +44,7 @@ SYMBOLS = {
     "tokType":          "TOK_TYPE",
     "runIsStored":      "V2_RUN_IS_STORED",
     "vmLoop":           "VM_RUN.loop",
+    "vmNext":           "VM_RUN.next",     # 2.1: the fetch; .loop is only the BREAK poll
     "vmIp":             "VM_IP",
     "vmHalted":         "VM_HALTED",
     "vmCodeBase":       "VM_CODE_BASE",
@@ -56,6 +57,12 @@ SYMBOLS = {
     "rtStrArrPtr":      "RT_STRARRPTR_PTR",
     "vmCsp":            "VM_CSP",
     "varsStart":        "VARS_START",
+}
+
+
+# Symbols a release before 2.1 lacks: the IDE name falls back to this one.
+FALLBACK = {
+    "VM_RUN.next": "VM_RUN.loop",   # 2.0.2 polled BREAK on every instruction
 }
 
 
@@ -87,6 +94,8 @@ def main():
     print("  '%s': {" % hashlib.sha256(home + ex).hexdigest())
     print("    version: '%s'," % sys.argv[2])
     for name, sym in SYMBOLS.items():
+        if sym not in syms and sym in FALLBACK:
+            sym = FALLBACK[sym]
         print("    %-17s 0x%04X,   // %s" % (name + ":", syms[sym], sym))
     print("    keyWaitEnd:       0x%04X,   // end of the spin loop (exclusive)" % (kw + 6))
     # The release's packages/v2_package_<name>.bin, copied unchanged.

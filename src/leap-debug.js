@@ -10,10 +10,13 @@
  * pending-newline flag) and EMIT_PTR = where that statement's code begins.
  * Code is emitted in source order (PROC and DEF FN bodies inline behind a
  * skip jump), so "the last statement start at or below an address" gives the
- * line of any bytecode address. Every VM instruction starts at VM_RUN.loop
- * with VM_IP pointing at its opcode.
+ * line of any bytecode address. Every VM instruction starts at the opcode
+ * fetch with VM_IP pointing at its opcode: VM_RUN.next (ROM entry vmNext).
+ * Since 2.1 most handlers jump straight there and only taken jumps, calls and
+ * waits pass VM_RUN.loop, the BREAK poll just before it; in 2.0.2 the two
+ * were one place.
  *
- * Layouts (2068-Leap 2.0.2-emu.1 source):
+ * Layouts (2068-Leap 2.0.2-emu.1 source; the same in 2.1.0-emu.1):
  *  - compile symbol table at SYM_BASE_V: records [len][kind][namelen][index]
  *    [name][extra], ended by len 0; kinds 0 number, 1 string, 2 array,
  *    3 string array, 4 label / PROC / DEF FN (extra: code offset LE16, defined)
@@ -113,7 +116,7 @@ export function createLineTable(rom) {
 
 /** VM_IP when the CPU is about to run a bytecode instruction, else -1. */
 export function vmInstruction(m, rom) {
-  if (m.cpu.pc !== rom.vmLoop || r8(m, rom.vmHalted) !== 0) return -1;
+  if (m.cpu.pc !== rom.vmNext || r8(m, rom.vmHalted) !== 0) return -1;
   return r16(m, rom.vmIp);
 }
 
@@ -121,6 +124,10 @@ export function vmInstruction(m, rom) {
 export function haltVm(m, rom) {
   m.bus.write(rom.vmErrorCode, 66);
   m.bus.write(rom.vmHalted, 1);
+  // Paused at the fetch (2.1): go back to the BREAK poll, which sees VM_HALTED
+  // now, or the VM would run on to the next taken jump before stopping. The
+  // stack is the same at both labels, since handlers end at either.
+  if (m.cpu.pc === rom.vmNext) m.cpu.pc = rom.vmLoop;
 }
 
 // ── Numbers ───────────────────────────────────────────────────────

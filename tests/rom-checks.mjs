@@ -181,6 +181,7 @@ same('a .tap opens back as the same source', tapeToText(tap).text, tapeLines.joi
 // take them from the release's .sym files (2068-Leap build) for a new release.
 const SAVE_SYMBOLS = {
   '2.0.2-emu.1': { V2_SAVE: 0xD7E5, STORAGE_SEND_BLOCK: 0xC310, NAME_PTR: 0xBE7C, NAME_LEN: 0xBE7E, REQ: 0xBE81 },
+  '2.1.0-emu.1': { V2_SAVE: 0xD702, STORAGE_SEND_BLOCK: 0xC3F1, NAME_PTR: 0xBE7C, NAME_LEN: 0xBE7E, REQ: 0xBE81 },
 };
 const S = SAVE_SYMBOLS[rom.version];
 if (!S) {
@@ -200,6 +201,7 @@ if (!S) {
       const ix = (m.cpu.xh << 8) | m.cpu.xl, de = (m.cpu.d << 8) | m.cpu.e;
       blocks.push({ flag: m.cpu.a, bytes: Array.from({ length: de }, (_, i) => r8(ix + i)) });
       m.cpu.pc = r8(m.cpu.sp) | r8(m.cpu.sp + 1) << 8; m.cpu.sp += 2;
+      m.cpu.f |= 1;                                 // carry: sent whole (2.1 stops SAVE otherwise)
       return false;
     }
     return atWait(m) && blocks.length >= 2;

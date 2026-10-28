@@ -6,7 +6,7 @@
  * press CAPS SHIFT + 8 (cursor right) instead of typing `(`. Here the
  * character the PC key produces (e.key) is translated to the 2068 key combo
  * that makes Leap's own decoder (kernel/io/io.asm, IO_DECODE_KEY and the
- * KEY_ASCII_TABLE* tables, 2.0.2-emu.1) produce the same character.
+ * KEY_ASCII_TABLE* tables, 2.0.2-emu.1; unchanged in 2.1.0-emu.1) produce the same character.
  *
  * Programs are edited in CodeMirror, never in Leap's own editor, so only what
  * a running program reads is mapped: characters, ENTER, delete, the cursor

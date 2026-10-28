@@ -2,7 +2,7 @@
  * src/leap-errors.js — GENERATED, do not edit.
  *
  * tools/gen-leap-errors.py from 2068-Leap docs/manual/07_appendices.md
- * (Appendix B) at v2.0.2-emu.1: error code -> {message, cause}.
+ * (Appendix B) at v2.1.0-emu.1: error code -> {message, cause}.
  */
 
 "use strict";
@@ -236,27 +236,27 @@ export const LEAP_RUNTIME_ERRORS = {
     "cause": "recursion (6) or expression nesting (2) too deep"
   },
   "5": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "division by zero (/, DIV, MOD), TAN(90)"
   },
   "7": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "NEXT or return with no frame: jumping into a loop; a loop ended by CLEAR"
   },
   "8": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "SOUND register 17 or more"
   },
   "10": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "array index outside the array"
   },
   "11": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "a fraction or out-of-range number stored in a numeric array, or used as an index"
   },
   "15": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "argument out of range: CHR$, STICK, SQR of a negative number, an address of 65536 or more, BEEP seconds negative or over 273 or semitones outside -60 to 69; sprite package (see Part 5); cbeep package: CBEEP out of range"
   },
   "64": {
@@ -272,39 +272,39 @@ export const LEAP_RUNTIME_ERRORS = {
     "cause": "CAPS SHIFT + SPACE"
   },
   "67": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "a result beyond about 1.7 x 10^38"
   },
   "12": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "mode package: bad MODE, ULAPLUS, PALETTE"
   },
   "13": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "mode package: bad MODE, ULAPLUS, PALETTE"
   },
   "14": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "mode package: bad MODE, ULAPLUS, PALETTE"
   },
   "16": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "sprite package (see Part 5)"
   },
   "17": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "sprite package (see Part 5)"
   },
   "18": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "sprite package (see Part 5)"
   },
   "19": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "sprite package (see Part 5)"
   },
   "20": {
-    "message": "RUNTIME ERROR",
+    "message": "RUNTIME ERROR n",
     "cause": "sprite package (see Part 5)"
   }
 };

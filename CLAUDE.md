@@ -30,10 +30,11 @@ from `file://`). Plain HTML + JS + the TSRun emulator.
 - **Debugger panel** — Z80 registers, Leap variables, breakpoints, call stack.
   It shares the right panel with the Symbols, UDG and Draw tabs (Phase 7).
 
-Leap is **V2**; the current release is **2.0.2-emu.1**. Version 2.1 is in
-development; the owner will say when its ROMs are ready. V1 is archived and
-irrelevant. ROM addresses change between releases; everything else in the IDE
-should stay the same (see "Adding a Leap ROM release").
+Leap is **V2**; the current release is **2.1.0-emu.1** (tag `v2.1.0-emu.1`,
+commit `c005159` of nchiker/2068-Leap, published 2026-10-28). The ROM table
+also still knows 2.0.2-emu.1, which is useful with `LEAP_ROMS=<dir>`. V1 is
+archived and irrelevant. ROM addresses change between releases; everything else
+in the IDE should stay the same (see "Adding a Leap ROM release").
 
 ---
 
@@ -65,7 +66,8 @@ Leap-IDE/
 │   │   └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE
 │   └── export.js     ← TAP builder (Phase 6, done, verified); the DCK builder waits for the Leap cartridge build
 ├── packages/
-│   └── 2.0.2-emu.1/  ← The release's package images: cbeep graphics mode printer shapes sprite (<name>.bin)
+│   ├── 2.0.2-emu.1/  ← Package images of that release (<name>.bin; same six as 2.1.0-emu.1)
+│   └── 2.1.0-emu.1/  ← The current release's package images: cbeep graphics mode printer shapes sprite (<name>.bin)
 ├── tools/
 │   ├── leap-rom-entry.py  ← Prints a leap-roms.js entry for a 2068-Leap build
 │   ├── gen-leap-keywords.py ← Generates src/leap-keywords.js from the Leap manual
@@ -78,17 +80,21 @@ Leap-IDE/
 │   ├── overview.md   ← Design doc
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needs)
 │   └── mockup.html   ← Visual mock-up
-└── tsrun/            ← git submodule: TSRun fork, pinned at 4db1f1e
+└── tsrun/            ← git submodule: TSRun fork, pinned at 016787f
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
-HOME) and `tsrun/roms/leap-1.rom` (8K EXROM). These are the 2.0.2-emu.1 release
-images (SHA-256 `1fe5798f…` and `e6b507a4…` respectively).
+HOME) and `tsrun/roms/leap-1.rom` (8K EXROM). These are the 2.1.0-emu.1 release
+images (SHA-256 `8c3d6c81…` and `e46e2065…` respectively; the pair's key in
+`src/leap-roms.js` is `5a42872e…`). A `make build` of the tag is byte-identical
+to the release zip's ROMs. The 2.0.2-emu.1 pair (`1fe5798f…`, `e6b507a4…`) is
+also in the table.
 
 **TSRun** is the fork https://github.com/nchiker/TSRun (upstream
 josef-jelinek/TSRun), included as the git submodule `tsrun/` pinned at commit
-`4db1f1e` (TSRun `main` with the 2.0.2 Leap ROMs, the `sound.js` worklet fix
-`f65de5a` and the tape-loading fix `4db1f1e`, both pushed). There is no
+`016787f` (TSRun `main` with the 2.1.0-emu.1 Leap ROMs, on top of the
+`sound.js` worklet fix `f65de5a` and the tape-loading fix `4db1f1e`, both
+pushed; `016787f` itself changes only the two ROMs and the READMEs). There is no
 `../josef-jelinek/` path and no `~/TSRun` clone is needed. Do not copy TSRun
 into the repo. The fork carries two changes on its `main`: `sound.js` loads its
 worklet with `new URL("sound.worklet.js", import.meta.url)` instead of a
@@ -175,7 +181,9 @@ Not in V2 (compile error or simply absent): `LET`, `GOSUB`/`RETURN`,
 `DRAW`, `COPY`, `DATA`/`READ`/`RESTORE`, `ELSEIF`, `INSTR`, `PRINT AT` /
 colour items inside `PRINT`, multi-dimensional arrays, `DIM` with a variable
 size, exponent/hex literals, `CIRCLE`/`FILL` without the SHAPES package. The
-characters `[ \ ] ^ ` { | } ~` print as blanks (the ROM font has no glyphs).
+characters `[ \ ] ^ ` { | } ~` printed as blanks in 2.0.2 (no glyphs); 2.1 gives
+every printable ASCII character a glyph (Q-26), so they print now. Leap still
+has no key for them (see Keyboard).
 
 ### Compile and run-time errors
 
@@ -204,10 +212,14 @@ about 8.9 KB.
 
 ---
 
-## Memory Map — Critical Addresses (2.0.2-emu.1)
+## Memory Map — Critical Addresses (2.0.2-emu.1 and 2.1.0-emu.1)
 
-Addresses move between releases; the per-release values live in
-`src/leap-roms.js`. Full table: manual Appendix E.
+The data layout below is the same in both releases (checked in 2.1: the main
+pool, `V2_SOURCE_END`, the VM and compiler tables, the UDG table and the package
+window did not move). Routine addresses did move (for example `V2_COMPILE_STORED`
+is `$D54F` in 2.0.2 and `$D45A` in 2.1, `IO_READ_KEY.wait_hit` is `$0443` in
+2.1); the per-release values live in `src/leap-roms.js`. Full table: manual
+Appendix E.
 
 | Range / symbol            | Address            | Notes |
 |---------------------------|--------------------|-------|
@@ -298,9 +310,10 @@ from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
    wait as before.
 
 **Stop:** BREAK if busy; if the program is waiting at `INPUT`/`PAUSE 0`, jump
-straight back to the ROM's command loop (`V2_COMMAND_LOOP.loop`). Observed:
-BREAK alone does not end an `INPUT` wait in 2.0.2; Leap 2.1 (in testing) is
-expected to fix that, and the jump is the workaround until then.
+straight back to the ROM's command loop (`V2_COMMAND_LOOP.loop`). Observed
+(Node, both releases): BREAK alone does not end an `INPUT` wait in 2.0.2, nor in
+2.1.0-emu.1, whose VM latches error 66 and, per its source, stops only after
+ENTER. The jump is therefore still needed and behaves the same on both.
 
 `window.leapIDE` exposes `lintSource`, `encodeSource`, `setStatus` and
 `emulator` (the object from `createEmulator`: `run`/`stop`/
@@ -311,12 +324,17 @@ stop, `INPUT` stop, re-run while busy.
 
 ### Adding a Leap ROM release
 
-1. In a 2068-Leap checkout at the release tag, `make build`.
+1. Build the release tag in a separate detached worktree, not in the working
+   clone (`~/2068-Leap` may have local edits on another branch):
+   `git -C ~/2068-Leap worktree add --detach <dir> <tag>`, then `make build`
+   in `<dir>`. Compare the ROMs with the release zip's.
 2. `tools/leap-rom-entry.py <checkout> <version>` prints a `KNOWN_ROMS` entry
    (the script also checks that the key-wait spin loop still has the expected
    bytes). Its `SYMBOLS` table includes the debugger's compiler, VM and run-time
-   table symbols, so the 2.1 entry must be regenerated this way, not copied
-   from 2.0.2.
+   table symbols, so each entry must be regenerated this way, not copied from
+   another release. A symbol a release lacks is looked up under its
+   `FALLBACK` name (2.0.2 has no `VM_RUN.next`, so `vmNext` takes
+   `VM_RUN.loop`).
    It also emits the package fields `ext2ClearAll`, `packageBase`, `packageLen`
    and `packageDir` (see "Packages").
 3. Paste the entry into `src/leap-roms.js` and put the new
@@ -329,6 +347,10 @@ stop, `INPUT` stop, re-run while busy.
    `node tests/browser-smoke.mjs`. They cover hello world, compile and run-time
    errors, the checker, packages, the debugger and TAP export. Add the
    release's `SAVE_SYMBOLS` to `tests/rom-checks.mjs` from its `.sym` files.
+   The TAP check replaces the block sender with a stand-in; since 2.1 it must
+   return with carry set ("sent whole"), because 2.1's `SAVE` stops after a
+   header block that reports an abort ("SAVE abort" fix). A later release may
+   change such a contract again.
    BREAK and `INPUT` stop are still checked by hand in the IDE.
    Update the memory-map table above if the layout moved.
 
@@ -364,8 +386,11 @@ seven `hostBits` lines proposed in earlier drafts were checked and
 applied unconditionally, so `hostBits.Digit8 = [ss, key8]` would make the 8 key
 always type `(` and would make 8, 9, 4, R, T, Z and P untypable everywhere.
 
-If Leap 2.1 changes its key tables, `SYMBOLS` in `src/pc-keyboard.js` must
-follow.
+`kernel/io` (the key tables) is identical in v2.0.2-emu.1 and v2.1.0-emu.1, so
+`src/pc-keyboard.js` needed no change for 2.1. If a later release changes the
+key tables, `SYMBOLS` in `src/pc-keyboard.js` must follow. The characters
+`` ^ [ ] { } \ | ~ `` now print in 2.1 but have no Leap key, so they stay
+unmapped.
 
 Verified: typing `Hi(1)<2>;=+-*/,.:?!@#$%&'_"Z` into an `INPUT` returned
 exactly that string (`LEN` 28). The on-screen TSRun keyboard (`#ts-keyboard`)
@@ -428,12 +453,13 @@ the Phase 5 diagnostics.
 tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/leap-keywords.js
 ```
 
-It reads `docs/manual/03_keywords.md` at that ref (currently `v2.0.2-emu.1`) and
+It reads `docs/manual/03_keywords.md` at that ref (currently `v2.1.0-emu.1`) and
 emits `LEAP_KEYWORD_ENTRIES`: 100 entries, each `{kind, package, syntax, forms[],
 desc, example}`. `kind` is function / statement / operator / command / part of;
 `package` is `null` or the package name; `desc` is the first paragraph (at most
-420 characters); `example` is the first basic example (at most 6 lines). For
-Leap 2.1, rerun it at the 2.1 tag.
+420 characters); `example` is the first basic example (at most 6 lines). The
+100 entries are unchanged in content between 2.0.2 and 2.1. For the next
+release, rerun it at its tag.
 
 ### Language mode and editor (Phase 2 — done)
 
@@ -508,7 +534,8 @@ Verified in headless Chromium.
 
 ## Debugger (Phase 3 — done, `src/leap-debug.js` + `src/debugger.js`)
 
-Verified in headless Chromium and Node against the real 2.0.2 ROM. The program
+Verified in headless Chromium and Node against the real 2.0.2 ROM; all Node
+checks also pass on 2.1.0-emu.1 (after the dispatch change below). The program
 is bytecode run by a VM, so everything is read from the ROM's own state, not
 from Z80 `CALL`/`RET`.
 
@@ -518,9 +545,18 @@ statement) `LEX_LINE & $7FFF` is the store line and `EMIT_PTR` is the address
 of the statement's first bytecode. Statements whose `TOK_TYPE` is colon or EOF
 are skipped, and only the stored program counts (`V2_RUN_IS_STORED` = 1).
 Code is emitted in source order, so the line of an address is the last
-statement start at or below it. Every VM instruction starts at `VM_RUN.loop`
-with `VM_IP` (`$B600`) at the opcode; a nonzero `VM_HALTED` means the VM is
-stopping. These hooks are in the HOME ROM.
+statement start at or below it. Every VM instruction starts at the opcode
+fetch, `VM_RUN.next` (ROM-table field `vmNext`), with `VM_IP` (`$B600`) at the
+opcode; `vmInstruction` in `src/leap-debug.js` hooks it. A nonzero `VM_HALTED`
+means the VM is stopping. In 2.1 handlers end with `jp (iy)` to `.next`; only
+taken jumps, calls (`PROC`, `FN`) and waits go through `VM_RUN.loop`, which is
+now just the BREAK poll (`VM_HALTED` check) before `.next`. In 2.0.2 every
+instruction went through `.loop` (there `vmNext` equals `vmLoop`, `$1161`).
+Consequence: in 2.1 the ROM notices BREAK only at a taken jump, call or wait,
+so "Stopped (BREAK) at line N" names the line that jump went to. "Stop while
+paused" (`haltVm`) sets `VM_ERROR_CODE` 66 and `VM_HALTED` 1 and, if the PC is
+at `.next`, moves it back to `.loop`, so the halt takes effect before another
+instruction runs. These hooks are in the HOME ROM.
 
 **Emulator hook** (`src/emulator.js`): `setWatch(fn)` runs `fn(machine)` before
 every Z80 instruction while set (returning true pauses before it); `pause()`,
@@ -591,7 +627,7 @@ Exactly what Leap's own `SAVE "name"` writes (`V2_SAVE` -> `STORAGE_SAVE` ->
 - **Header block:** flag `$00`, then 17 bytes: type 0; name, 10 bytes
   space-padded, as typed (`LOAD "name"` is a case-sensitive exact match; up to
   10 printable ASCII characters, see `checkTapeName`); length of the line store
-  LE16; **Leap's tape format word** `V2_FORMAT_WORD` (`$8101` in 2.0.2) in the
+  LE16; **Leap's tape format word** `V2_FORMAT_WORD` (`$8101` in 2.0.2 and 2.1) in the
   stock "autostart" field; program length LE16 (= the length for a plain
   program). `LOAD` refuses a tape without the format word. It is a ROM-table
   field, `tapeFormatWord` in `src/leap-roms.js`, generated by
@@ -605,7 +641,8 @@ Exactly what Leap's own `SAVE "name"` writes (`V2_SAVE` -> `STORAGE_SAVE` ->
   `RUN`.
 
 Verified byte for byte against Leap's real `SAVE` (capturing
-`STORAGE_SEND_BLOCK` in Node), and loaded back by Leap's real `LOAD` with the
+`STORAGE_SEND_BLOCK` in Node; on 2.0.2 and on 2.1.0-emu.1, `V2_SAVE` `$D702`,
+`STORAGE_SEND_BLOCK` `$C3F1` there), and loaded back by Leap's real `LOAD` with the
 program intact; the browser download is identical. In TSRun this needs the
 tape-loading fix (TSRun section above, in the submodule pin). The button (`exportTape` in
 `ide.js`) prompts for the tape name (default: the file name, cut to 10
@@ -613,9 +650,11 @@ characters) and reports `Saved X.tap: on the TS2068, LOAD "X" then RUN`
 (for a program that uses a package: `LOAD "NAME" EXT, then LOAD "X" then RUN`).
 
 ### DCK (Timex dock cartridge) — blocked on a Leap cartridge build
-Leap 2.0.2 never looks at the dock, and its cold start clears RAM, so a
-cartridge that runs on a **stock TS2068** needs a Leap "cartridge build": a
-runtime-only version of 2.1 with no editor. The spec is
+Leap 2.0.2 and 2.1.0-emu.1 never look at the dock, and their cold start clears
+RAM, so a cartridge that runs on a **stock TS2068** needs a Leap "cartridge
+build": a runtime-only version with no editor. The 2.1.0-emu.1 release does not
+contain one: its `roms/leap_v2_exrom.dck` is only the EXROM as a cartridge for
+EightyOne 1.41 (it still needs Leap's HOME ROM). The spec is
 [`docs/LEAP_CARTRIDGE_BUILD.md`](docs/LEAP_CARTRIDGE_BUILD.md). In short:
 
 - Leap's HOME image goes in DOCK chunks 0-1 and its EXROM image in chunk 6, at
@@ -675,15 +714,21 @@ not in the ROM: on a TS2068 a program loads a package with `LOAD "NAME" EXT`
 first. The IDE does that for the user, so such programs compile and run.
 
 - **Images.** The release's six package images are in
-  `packages/2.0.2-emu.1/<name>.bin` (`cbeep graphics mode printer shapes sprite`),
+  `packages/2.1.0-emu.1/<name>.bin` (`cbeep graphics mode printer shapes sprite`),
   copied unchanged from the release zip and checked against its `SHA256SUMS`.
+  The six are byte-identical to 2.0.2's (`packages/2.0.2-emu.1/`, checked with
+  `cmp`; the release notes say the shipped packages are unchanged).
   `loadPackages` (ide.js) fetches them once at start-up, from the ROM entry's
   `packageDir`.
 - **Which package.** `packagesUsed(text)` (`src/leap-lang.js`; with
   `LEAP_PACKAGES`) finds package statements at the start of a statement (line
   start or after `:`), so `circle = 5` is not one; strings and `REM` text are
   ignored. Leap loads **one package at a time**, so a program that uses two is
-  an error on the line of the second (`packageFor` in ide.js).
+  an error on the line of the second (`packageFor` in ide.js). It finds package
+  *statements* only. Leap 2.1 introduces package ABI 2.1 (package functions,
+  floats, an error service); ABI 2.0 packages load unchanged and none of the
+  shipped packages uses package functions. A future package that exports
+  functions would need `packagesUsed` extended.
 - **Install, as `LOAD "NAME" EXT` does (package ABI 2.0).** `inject()` in
   `src/emulator.js` and `check()` in `src/leap-check.js` do the same thing:
   `EXT2_CLEAR_ALL`, then the image at `$F400` (`EXTENSION_MODULE_BASE`) with its
@@ -771,7 +816,7 @@ and nothing is drawn. Typical check about 1 ms; a 302-line program about
 matters.
 
 `V2_COMPILE_STORED` is the ROM symbol `compileStored` in `src/leap-roms.js`
-(`$D54F` in 2.0.2), emitted by `tools/leap-rom-entry.py`. The emulator exposes
+(`$D54F` in 2.0.2, `$D45A` in 2.1), emitted by `tools/leap-rom-entry.py`. The emulator exposes
 `romImages` for the checker.
 
 **Error text** — `src/leap-errors.js` is generated by
@@ -780,8 +825,13 @@ from Appendix B of the manual. It exports `LEAP_COMPILE_ERRORS` and
 `LEAP_RUNTIME_ERRORS`, each code -> `{message, cause}`; codes such as
 "13, 14, 15" and "12 to 14" are expanded, and a code listed more than once
 keeps the first message and joins the causes. Never edit it by hand; rerun it
-for 2.1. `describeError` (ide.js) turns an entry into
-"SYNTAX ERROR 3: an expression could not start where it did (…)".
+for the next release (last run at `v2.1.0-emu.1`; `LEAP_MANUAL_REF` in
+`src/leap-keywords.js` follows, so Help links go to the 2.1 manual). `describeError`
+(ide.js) turns an entry into
+"SYNTAX ERROR 3: an expression could not start where it did (…)". The 2.1 manual
+writes run-time messages as `RUNTIME ERROR n`; `describeError` drops a trailing
+" n" placeholder before adding the code. The 2.1 ROM itself shows the code with
+both SYNTAX ERROR n and RUNTIME ERROR n.
 
 **Editor wiring**
 - `src/editor.js`: the CM6 `linter(...)` source calls
@@ -824,7 +874,7 @@ in `bootEmulator` because it needs the ROM entry and the machine.
   while the tab is open.
 - **UDG** (`src/tools/udg.js`): Leap V2's 21 user-defined characters, codes
   144-164 (`UDG_CODE_BASE`, `UDG_COUNT`), 8 bytes each at `UDG_TABLE` (`$F180`
-  in 2.0.2). The ROM entry carries `udgTable`, `udgCodeBase` and `udgCount`,
+  in 2.0.2 and 2.1). The ROM entry carries `udgTable`, `udgCodeBase` and `udgCount`,
   generated by `tools/leap-rom-entry.py` (`SYMBOLS`). Leap programs define
   UDGs with `POKE` (no `DATA`/`READ`), and a UDG made only in the IDE would not
   exist on a real TS2068, so the tool works on the **program text**: "Insert
@@ -882,7 +932,7 @@ tested separately.
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
   clone `~/2068-Leap`. V1 is archived; ignore it.
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, git submodule
-  `./tsrun` pinned at `4db1f1e`.
+  `./tsrun` pinned at `016787f`.
 - **This project on GitHub**: https://github.com/nchiker/2068-Leap-IDE, live at
   https://nchiker.github.io/2068-Leap-IDE/.
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
@@ -916,8 +966,11 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   (finished, compile error, run-time error, package), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
-  helpers. `LEAP_ROMS=<dir>` tests other ROM files. Expected values were
-  recorded on 2.0.2-emu.1.
+  helpers. `LEAP_ROMS=<dir>` tests other ROM files. All 42 pass on 2.1.0-emu.1
+  (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
+  expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
+  the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
+  changes.
 - `node tests/browser-smoke.mjs [outdir]` — 16 checks in about 30 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
@@ -942,14 +995,14 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 Phases 1 to 5, 7 and 8 work, Phase 6's tape export is done and verified (Leap's own
 `LOAD` reads the IDE's `.tap`), and saving/opening programs, packages and the
-Help overlay are done. **The owner has put the remaining items on hold until
-Leap 2.1 is ready**; do not start them before the owner says so:
+Help overlay are done. The Leap 2.1.0-emu.1 ROM entry is done (ROM table,
+generated keyword and error data, packages, tests). One item remains, **on hold**;
+do not start it before the owner says so:
 
-1. **DCK export**, after the Leap cartridge build exists
-   (`docs/LEAP_CARTRIDGE_BUILD.md`): implement it per the spec's "IDE side"
-   section and verify by loading the result in TSRun with the stock ROMs. Do not
-   guess the layout before then.
-2. **The Leap 2.1 ROM entry**, when the owner says 2.1 is ready (see "Adding a
-   Leap ROM release"; also regenerate the keyword and error data and copy the
-   2.1 package binaries). The entry needs `udgTable`, `udgCodeBase` and
-   `udgCount` for the UDG tab; `tools/leap-rom-entry.py` generates them.
+1. **DCK export**, still blocked: the 2.1.0-emu.1 release contains no cartridge
+   build. Its `roms/leap_v2_exrom.dck` is only the EXROM as a cartridge for
+   EightyOne 1.41 (it still needs Leap's HOME ROM), not the stock-TS2068 runtime
+   cartridge specified in `docs/LEAP_CARTRIDGE_BUILD.md`. When that build exists,
+   implement the IDE side per the spec's "IDE side" section and verify by
+   loading the result in TSRun with the stock ROMs. Do not guess the layout
+   before then.

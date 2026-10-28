@@ -137,8 +137,9 @@ function packageFor(text) {
 function describeError(code, table) {
   const e = table[code];
   if (!e) return `error ${code}`;
-  // The ROM numbers only SYNTAX ERROR on its status line; give the code for all.
-  return `${e.message} ${code}: ${e.cause}`;
+  // Give the code for every error. The 2.1 manual writes some messages with the
+  // placeholder ("RUNTIME ERROR n"); 2.0.2's has none.
+  return `${e.message.replace(/ n$/, '')} ${code}: ${e.cause}`;
 }
 
 /** Diagnostic range covering a 0-based editor line, from its first non-blank character. */

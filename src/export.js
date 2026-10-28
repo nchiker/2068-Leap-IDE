@@ -1,7 +1,7 @@
 /**
  * src/export.js — save a Leap V2 program as a tape file (.tap).
  *
- * The layout is what Leap's own SAVE "name" writes (2068-Leap 2.0.2-emu.1,
+ * The layout is what Leap's own SAVE "name" writes (2068-Leap 2.0.2-emu.1 and 2.1.0-emu.1,
  * V2_SAVE -> STORAGE_SAVE -> STORAGE_SEND_BLOCK, a port of the stock
  * SA-BYTES), checked byte for byte against the ROM's SAVE:
  *
@@ -9,7 +9,7 @@
  *     0      type 0 (program)
  *     1-10   name, as typed, space-padded (LOAD "name" matches exactly)
  *     11-12  length of the line store, LE16
- *     13-14  Leap's tape format word (V2_FORMAT_WORD, $8101 in 2.0.2) where
+ *     13-14  Leap's tape format word (V2_FORMAT_WORD, $8101 in 2.0.2 and 2.1) where
  *            a stock tape has its autostart line; LOAD refuses other values
  *     15-16  program length, LE16 (= length; smaller only for SAVE ... ALL)
  *   data block: flag $FF, then the line store exactly as in RAM
