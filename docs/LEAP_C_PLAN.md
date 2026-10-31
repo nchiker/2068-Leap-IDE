@@ -67,14 +67,17 @@ Each stage ends with the tests green and is committed on its own.
   (it matters for line numbers in errors; `CC_ERRLINE` is 1-based over stored
   lines).
 - `inject`: write the store and `PROG_END` (and `ARRAYS_END` /
-  `CUR_EDIT_INDEX` as `lcharness.py` does), then start the run by the
-  **shell path** (owner, 2026-10-31): a return chain into what typing `RUN`
+  `CUR_EDIT_INDEX` as `lcharness.py` does), then start the run by the entry
+  the Leap-C project recommends (owner, 2026-10-31: no preference, whatever
+  works best for both projects; asked in `requests/LEAP_C_QUESTIONS.md` Q2).
+  The IDE's lean is the **shell path**: a return chain into what typing `RUN`
   calls (`SH_RUN`), so the ROM compiles, runs and shows its own report, and
-  ends in its key wait like V2's `V2_RUN_STORED`. Find the shell's
+  ends in its key wait like V2's `V2_RUN_STORED`; find the shell's
   command-loop re-entry for the chain end (V2: `V2_COMMAND_LOOP.loop`). The
-  direct path (`BANK_PAGE_EXROM_OUT`, `CC_PROGRAM`, `RT_RUN` with a return
-  slot at `$FF00`, `tools/exectest.py:186-216`) shows no report; it remains
-  the model for the checker (C3).
+  alternative, the direct path (`BANK_PAGE_EXROM_OUT`, `CC_PROGRAM`, `RT_RUN`
+  with a return slot at `$FF00`, `tools/exectest.py:186-216`), shows no
+  report and leaves the clean-up after a run to the IDE. The direct path is
+  the model for the checker (C3) either way.
 - `readResult`: compile error from `CC_ERRNUM` / `CC_ERRLINE` / `SH_ERR_COL`;
   run-time error from `RT_ERRNUM` / `RT_ERRLINE` (Leap-C reports the line
   itself, unlike V2); BREAK is run-time error 5. The exit status is only in HL
@@ -219,7 +222,9 @@ run both test suites.
 ## Owner decisions (2026-10-31)
 
 - **Release:** Leap-C 1.0, which will be out of beta before this starts.
-- **Run path:** the shell path (the ROM's own report on screen).
+- **Run path:** no preference; whichever works best for the IDE and Leap-C.
+  The IDE leans towards the shell path; the Leap-C project is asked to
+  recommend (Q2 of the questions).
 
 ## Still open
 

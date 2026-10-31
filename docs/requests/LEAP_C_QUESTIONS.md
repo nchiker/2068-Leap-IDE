@@ -67,30 +67,66 @@ we want; the jump back (`LOOP_BACK`) maps to the last statement of the body.
    in a cell (e.g. 3 bytes per statement: line LE16 low bits + address)? We
    expect the zero-byte answer to be enough.
 
-## Q2. Running a program the way typing `RUN` does
+## Q2. How the IDE should start a program: your recommendation
 
-The owner chose the **shell path**: the IDE wants the ROM's own report screen,
-exactly as after typing `RUN`. Plan: at the key wait in the editor, write the
-line store, `PROG_END`, `ARRAYS_END` and `CUR_EDIT_INDEX` (as
-`lcharness.py:440-447` does), then push a return address and jump to
-`SH_RUN` (`$C101`), so that after the report the shell carries on as if the
-user had typed `RUN`.
+The owner has no preference here: the IDE should use whichever entry works
+best for both projects. We would like the Leap-C project to recommend one.
+
+**What the IDE needs from a run** (this is how it drives Leap V2 today):
+
+1. **Start from the editor's key wait.** The IDE single-steps until the CPU is
+   in `IO_READ_KEY.wait_hit` (`$02C0`) with the EXROM paged in, writes the line
+   store, `PROG_END`, `ARRAYS_END` and `CUR_EDIT_INDEX` (as
+   `lcharness.py:440-447` does), pushes return addresses on the stack and
+   jumps to a ROM routine. It writes no code into RAM.
+2. **Leave the output on screen.** When the program ends (finished, error,
+   BREAK), its screen stays visible. The IDE never sends a key to dismiss it,
+   because the user does not type into the ROM's editor in the IDE.
+3. **End at a key wait the IDE can recognise** (`IO_READ_KEY.wait_hit` at a
+   known stack depth), from which the next Run can be injected the same way.
+   The IDE tells "finished" apart from "the program waits for input" by the
+   stack depth at that wait.
+4. **Read the result from RAM:** compile error (`CC_ERRNUM`, `CC_ERRLINE`,
+   `SH_ERR_COL`), run-time error (`RT_ERRNUM`, `RT_ERRLINE`), and if possible
+   the exit status.
+5. **Start in a clean state each time:** default colours, border, display mode
+   and an empty heap, as a typed `RUN` gives. (In V2 the IDE had to add the
+   ROM's display reset to the chain, because one run's colours carried into
+   the next.)
+
+**The two entries we know of:**
+
+| | Shell path | Direct path |
+|---|---|---|
+| How | A return chain into `SH_RUN` (`$C101`, EXROM): compile, run, report, as after typing `RUN` | `BANK_PAGE_EXROM_OUT`, `CC_PROGRAM`, `RT_RUN` with a return slot at `$FF00` (`tools/exectest.py:186-216`) |
+| Screen | The ROM's own report line (error with line and column, or the exit status) | The program's output only; no report |
+| Afterwards | The shell's report wait, `SH_WAIT_KEY` (`.read` `$C1E8`) | The return slot; the IDE must put the machine back somewhere idle itself |
+| Depends on | `SH_RUN`'s entry state and the shell's return point | Paging, the compile/run sequence and the ROM's clean-up after a run, done by the IDE |
+
+The IDE leans towards the **shell path**: it mirrors how the IDE runs V2 (it
+calls what typing `RUN` calls, `V2_RUN_STORED`), it shows the same report the
+user would see on a real TS2068, and the ROM keeps doing its own clean-up.
+But you know the shell; if the direct path, or another entry, fits better,
+say so.
 
 **Please answer:**
 
-1. What state does `SH_RUN` assume on entry (editor state, `CUR_EDIT_INDEX`,
-   display, the EXROM paged in, stack depth)? Is entering it from the key
-   wait inside `EDITOR_ENTER` safe, or must the IDE first unwind to
-   `SH_LOOP` / `SH_REENTER`?
-2. What should the return address be so the shell redraws the editor and
-   waits for keys as after a typed `RUN` (`SH_LOOP` `$C021`? `SH_REENTER`
-   `$C038`)? A dedicated label for "after a command" would make this stable.
-3. After the report, the ROM waits in `SH_WAIT_KEY` (`.read` `$C1E8`). Does
-   that wait go through `IO_READ_KEY.wait_hit` (`$02C0`)? The IDE detects
-   "program finished" as "at the key wait with the shell's stack depth".
-4. The exit status is only in HL when `RT_RUN` returns. Is there a cell that
-   keeps it after the report (the IDE would show "Finished (exit 9)")? If not,
-   the IDE will watch `RT_RUN.done` (`$368A`); please keep that label.
+1. Which entry do you recommend, and why?
+2. For the shell path: what state does `SH_RUN` assume on entry (editor
+   state, `CUR_EDIT_INDEX`, display, the EXROM paged in, stack depth)? Is
+   entering it from the key wait inside `EDITOR_ENTER` safe, or must the IDE
+   first unwind to `SH_LOOP` / `SH_REENTER`? What should the return address
+   be so the shell carries on as after a typed `RUN` (`SH_LOOP` `$C021`?
+   `SH_REENTER` `$C038`?); a dedicated label for "after a command" would make
+   it stable.
+3. Does `SH_WAIT_KEY` wait through `IO_READ_KEY.wait_hit`? Can the IDE inject
+   the next run from that wait (as it does in V2 at the "press a key" after a
+   run), or must it first get back to the editor?
+4. For the direct path: what does the shell do after `RT_RUN` that the IDE
+   would have to repeat (paging, border, heap, `RUNNING`, display mode)?
+5. The exit status is only in HL when `RT_RUN` returns. Is there a cell that
+   keeps it (the IDE would show "Finished (exit 9)")? If not, the IDE will
+   watch `RT_RUN.done` (`$368A`); please keep that label.
 
 ## Q3. Stopping a program that waits for input
 
