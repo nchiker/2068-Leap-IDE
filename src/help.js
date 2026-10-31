@@ -52,6 +52,7 @@ const TIPS = [
   'While a program runs, click the TS2068 screen to type into it (INPUT, INKEY$). Keys work as labelled on your keyboard: " is " — no SYMBOL SHIFT needed.',
   'Click left of a line number to set a breakpoint. When the program stops there, the debugger shows its variables and call stack; Step (F10) runs one statement.',
   'Package statements (CIRCLE, FILL, GRAB, MODE, …) work directly: the IDE loads the package the program uses. On a real TS2068, type LOAD "NAME" EXT first. ⬇ DCK puts the package on the cartridge with the program.',
+  '▶ Test DCK runs the program as a cartridge on a stock TS2068 in the emulator, exactly as ⬇ DCK would save it: the stock ROM starts it from the dock after about two seconds. Open also takes a .dck file. Keys go to the cartridge; Stop or Run goes back to Leap.',
   'In the debugger, Z80 breakpoints pause before the instruction at an address (hex) while a program runs; "Step instruction" then runs one Z80 instruction at a time.',
   'Your program is kept in this browser as you type. Save downloads it; ⬇ TAP makes a tape a TS2068 or an emulator can LOAD. Share copies a link that opens the program in the IDE: the program is inside the link itself, nothing is uploaded.',
   'Hover over a keyword for its syntax and an example; − / + next to the display change its size.',

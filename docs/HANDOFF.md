@@ -1,6 +1,6 @@
 # Handoff — Leap V2 Web IDE
 
-Last updated 2026-10-28, at share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
+Last updated 2026-10-31, at the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -18,7 +18,7 @@ is implemented.
 | Phase 3 | Debugger: breakpoints, Step/Pause, variables, call stack, registers, memory |
 | Phase 4 | PC keyboard mapping (`"` is `"`), keys reach the TS2068 only while a program runs |
 | Phase 5 | Error checking by the ROM's own compiler on a hidden machine |
-| Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. A program's package goes on the cartridge too (image format 2) |
+| Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. A program's package goes on the cartridge too (image format 2). "▶ Test DCK" and Open `.dck` run a cartridge on the stock ROMs in the IDE's emulator (2026-10-31) |
 | Phase 7 | Symbols / UDG / Draw tabs (Draw zooms 1×–3×) |
 | Phase 8 | Help overlay (F1), keys & tips, light/dark themes |
 | 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (66 ROM checks pass on 2.1; the 36 browser checks pass on 2.1) |

@@ -156,7 +156,7 @@ try {
     window.smokeDownloads = [];
     HTMLAnchorElement.prototype.click = function () {
       if (this.download) fetch(this.href).then(r => r.arrayBuffer())
-        .then(b => smokeDownloads.push({ name: this.download, bytes: [...new Uint8Array(b).subarray(0, 9)], size: b.byteLength }));
+        .then(b => { window.smokeLastFile = b; smokeDownloads.push({ name: this.download, bytes: [...new Uint8Array(b).subarray(0, 9)], size: b.byteLength }); });
     };
     return true; })()`);
   await evaluate(`leapEditor.setSource('PRINT "CART"', {fresh: true})`);
@@ -169,6 +169,46 @@ try {
   const withPkg = await waitFor('window.smokeDownloads[1] && JSON.stringify(window.smokeDownloads[1])', 5000);
   check('DCK export carries a package (SHAPES)', withPkg === JSON.stringify({ name: 'smoke.dck', bytes: [0, 2, 2, 0, 2, 0, 0, 2, 0], size: 9 + 4 * 8192 }) &&
     /SHAPES package/.test(await status()), `${withPkg} — ${await status()}`);
+
+  // ▶ Test DCK: the program's cartridge on the stock ROMs; Stop goes back to Leap
+  const MARK = 32000;
+  const marker = () => evaluate(`leapIDE.emulator.machine.bus.read(${MARK})`);
+  const romLabel = () => evaluate("document.getElementById('emu-rom').textContent");
+  const cartSrc = ['x = 6 * 7', `POKE ${MARK}, x`, 'PRINT "CART"; x'].join('\n');
+  await evaluate(`leapEditor.setSource(${JSON.stringify(cartSrc)}, {fresh: true})`);
+  await evaluate("document.getElementById('btn-dck-test').click()");
+  const cartRan = await waitFor(`leapIDE.emulator.machine.bus.read(${MARK}) === 42`, 15000);
+  const cartState = [await status(), await romLabel(),
+    await evaluate("document.getElementById('btn-step').disabled && !document.getElementById('btn-stop').disabled")];
+  check('Test DCK runs the cartridge on the stock TS2068', !!cartRan && /^Cartridge test: .*\.dck on a stock TS2068/.test(cartState[0]) &&
+    cartState[1] === 'Stock TS2068 + DCK' && cartState[2] === true, cartState.join(' | '));
+  await shot('dck-test');
+  await evaluate("document.getElementById('btn-stop').click()");
+  const back = await waitFor("document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 15000);
+  check('Stop ends the cartridge test: Leap boots again', /^Leap /.test(back ?? ''), back);
+  await evaluate(`leapIDE.emulator.machine.bus.write(${MARK}, 0)`);   // free RAM: Leap's cold start leaves it
+
+  // Open a .dck: tested in the emulator, the editor's program is left alone
+  await evaluate("window.smokeLastFile = null");
+  await evaluate("window.prompt = () => 'opened.dck', document.getElementById('btn-dck').click()");
+  await waitFor('window.smokeLastFile && window.smokeLastFile.byteLength', 5000);
+  await evaluate(`leapEditor.setSource('PRINT "KEEP"', {fresh: true})`);
+  await evaluate(`(() => { const dt = new DataTransfer();
+    dt.items.add(new File([window.smokeLastFile], 'opened.dck'));
+    const input = document.getElementById('file-input');
+    input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
+  const openedRan = await waitFor(`leapIDE.emulator.machine.bus.read(${MARK}) === 42`, 15000);
+  const openedState = [await status(), await evaluate('leapEditor.getSource()')];
+  check('Open a .dck tests it and keeps the program', !!openedRan && /^Cartridge test: opened\.dck/.test(openedState[0]) &&
+    openedState[1] === 'PRINT "KEEP"', openedState.join(' | '));
+  await evaluate("document.getElementById('btn-pause').click()");
+  const cartPaused = await waitFor("document.getElementById('status-text').textContent === 'Paused (cartridge test)'", 5000);
+  await evaluate("document.getElementById('btn-pause').click()");
+  const cartGoing = await waitFor("/^Cartridge test/.test(document.getElementById('status-text').textContent)", 5000);
+  check('Pause and Continue work in a cartridge test', !!cartPaused && !!cartGoing, await status());
+  const backRun = await runProgram(['PRINT "BACK"']);
+  check('Run during a cartridge test goes back to Leap and runs', backRun === 'Finished' && /^Leap /.test(await romLabel()),
+    `${backRun} | ${await romLabel()}`);
 
   // Editor
   const lint = await waitFor(`(async () => { const d = leapIDE.lintSource('x = 1\\nLET y = 2'); return d.length ? d[0].message : '' })()`);

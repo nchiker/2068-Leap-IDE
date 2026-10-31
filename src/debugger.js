@@ -11,6 +11,8 @@
  *    panel's "Z80 breakpoints"; the PC alone, whichever ROM, cartridge or
  *    RAM is paged in there). They act only while a program runs, since the
  *    watch is installed only then.
+ * During a cartridge test (beginCartridge) only the Z80 breakpoints and Pause
+ * act: the bytecode was compiled before, so there is no line table.
  * Lines are Leap store lines inside the controller; the caller supplies the
  * mapping to and from editor lines (the IDE drops blank lines before storing).
  *
@@ -55,6 +57,7 @@ export function createDebugger(opts) {
   let stepping = false;             // stop at the next statement start
   let vmStarted = false;            // this run's VM tables exist (variables readable)
   let active = false;               // a run is in progress
+  let cart = false;                 // a cartridge test is in progress
   let z80Breaks = loadZ80Breaks();   // Z80 breakpoint addresses
   let z80Hit = null;                // the Z80 breakpoint the machine paused at, or null
 
@@ -79,6 +82,13 @@ export function createDebugger(opts) {
     return breakAddrs.has(ip);
   }
 
+  function cartWatch(machine) {
+    if (z80Breaks.has(machine.cpu.pc)) { z80Hit = machine.cpu.pc; return true; }
+    return false;
+  }
+  /** The cartridge test's watch: only with Z80 breakpoints (it makes the frame loop single-step). */
+  function setCartWatch() { emulator.setWatch(z80Breaks.size > 0 ? cartWatch : null); }
+
   const dbg = {
     /** Before a run is injected: start a new line table and watch it. */
     beginRun() {
@@ -87,12 +97,24 @@ export function createDebugger(opts) {
       breakDirty = true;
       stepping = false;
       active = true;
+      cart = false;
       emulator.setWatch(watch);
     },
 
-    /** The run is over (finished, error, BREAK, stopped). */
+    /** Before a cartridge test: no Leap lines or variables, Z80 breakpoints only. */
+    beginCartridge() {
+      table.reset();
+      vmStarted = false;
+      stepping = false;
+      active = false;
+      cart = true;
+      setCartWatch();
+    },
+
+    /** The run is over (finished, error, BREAK, stopped), or the cartridge test. */
     endRun() {
       active = false;
+      cart = false;
       stepping = false;
       emulator.setWatch(null);
     },
@@ -112,6 +134,7 @@ export function createDebugger(opts) {
       stepping = false;
       const z80 = z80Hit;
       z80Hit = null;
+      if (cart) return { line: -1, z80 };
       const ip = vmInstruction(m, rom);
       if (ip >= 0) return { line: opts.toEditorLine(table.lineOf(ip)), z80 };
       return { line: vmStarted ? dbg.stopLine(false) : -1, z80 };
@@ -125,8 +148,11 @@ export function createDebugger(opts) {
       opts.onInstructionStep?.();
     },
 
-    /** Pause at the next statement. */
-    pause() { if (active) stepping = true; },
+    /** Pause at the next statement (in a cartridge test: the next instruction). */
+    pause() {
+      if (cart) emulator.pause();
+      else if (active) stepping = true;
+    },
 
     /** Run one statement (from a pause), or pause at the next one (while running). */
     step() {
@@ -143,7 +169,7 @@ export function createDebugger(opts) {
 
     /** End a paused program the way BREAK does, so its screen stays up. */
     haltPaused() {
-      if (!emulator.paused || vmInstruction(m, rom) < 0) return false;
+      if (cart || !emulator.paused || vmInstruction(m, rom) < 0) return false;
       haltVm(m, rom);
       stepping = false;
       emulator.resume();
@@ -151,6 +177,7 @@ export function createDebugger(opts) {
     },
 
     get active() { return active; },
+    get cartridge() { return cart; },
 
     /**
      * 1-based editor line where the last run's VM stopped, or -1: after a
@@ -175,8 +202,8 @@ export function createDebugger(opts) {
         IX: (c.xh << 8) | c.xl, IY: (c.yh << 8) | c.yl,
         SP: c.sp, PC: c.pc,
       });
-      renderVariables(vmStarted ? readVariables(m, rom) : null);
-      renderCallStack(active && vmStarted ? callStack() : null, opts.onLineClick);
+      renderVariables(cart ? 'cart' : vmStarted ? readVariables(m, rom) : null);
+      renderCallStack(cart ? 'cart' : active && vmStarted ? callStack() : null, opts.onLineClick);
       renderMemory(m);
       document.getElementById('z80-step').disabled = !emulator.paused;
       renderZ80Breaks(z80Breaks, removeZ80, emulator.paused ? c.pc : null);
@@ -203,6 +230,7 @@ export function createDebugger(opts) {
     z80Breaks = set;
     saveZ80Breaks(set);
     renderZ80Breaks(set, removeZ80);
+    if (cart) setCartWatch();
   }
   function removeZ80(addr) { const s = new Set(z80Breaks); s.delete(addr); setZ80Breaks(s); }
 
@@ -310,8 +338,14 @@ function renderRegisters(r) {
   prevRegs = r;
 }
 
+const CART_NOTE = 'Not shown in a cartridge test (Z80 breakpoints work)';
+
 function renderVariables(vars) {
   const tbody = document.getElementById('var-tbody');
+  if (vars === 'cart') {
+    tbody.innerHTML = `<tr><td colspan="3" class="no-data">${CART_NOTE}</td></tr>`;
+    return;
+  }
   if (!vars) {
     tbody.innerHTML = '<tr><td colspan="3" class="no-data">Run a program to see its variables</td></tr>';
     return;
@@ -377,6 +411,10 @@ function renderZ80Breaks(set, onRemove, pc = null) {
 
 function renderCallStack(frames, onClick) {
   const el = document.getElementById('callstack');
+  if (frames === 'cart') {
+    el.innerHTML = `<div class="no-data">${CART_NOTE}</div>`;
+    return;
+  }
   if (!frames) {
     el.innerHTML = '<div class="no-data">Not running</div>';
     return;

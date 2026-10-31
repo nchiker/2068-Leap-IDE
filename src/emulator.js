@@ -22,6 +22,12 @@
  * the TS2068 only while an injected program is running (INPUT, INKEY$,
  * PAUSE 0) and the screen has focus. When a run ends its output stays up,
  * because no keypress can dismiss it into the Leap editor.
+ *
+ * Cartridge test (testCartridge): the same machine with the stock TS2068 ROMs
+ * and a .dck in the dock, as a real TS2068 with a cartridge. The stock ROM
+ * starts the cartridge by itself; keys always reach the machine (the cartridge
+ * has no editor, and a key after the end restarts its program). Run, Stop and
+ * Reset put the Leap ROMs back.
  */
 
 "use strict";
@@ -29,7 +35,7 @@
 import {
   createMachine, setHomeRom, setExRom, resetMachine, runFrame,
   setVideoOn, enableSound, setSoundRate, takeAudio,
-  cpuHz, tStatesPerFrame, homeRomSize, exRomSize,
+  cpuHz, tStatesPerFrame, homeRomSize, exRomSize, insertDock, ejectDock,
 } from '../tsrun/machine.js';
 import { runZ80 } from '../tsrun/z80.js';
 import { initScreen, resizeScreen, setCrt, drawScreen } from '../tsrun/screen.js';
@@ -68,7 +74,7 @@ const CAPS_SHIFT = { row: 0, bit: 0 };
 const SPACE      = { row: 7, bit: 0 };
 
 /**
- * @typedef {'booting'|'ready'|'running'|'waiting'|'ended'|'stopped'|'paused'|'error'} EmuState
+ * @typedef {'booting'|'ready'|'running'|'waiting'|'ended'|'stopped'|'paused'|'cartridge'|'error'} EmuState
  * @typedef {{compileError: number, vmError: number, line: number}} RunResult
  *
  * @param {{
@@ -97,6 +103,8 @@ export async function createEmulator(opts) {
     oneShot:  null,       // debugger: like watch, removed after it fires (pause())
     skipWatch: false,     // let the instruction a pause stopped at run once on resume
     pausedFrom: null,     // the state to return to when a pause ends
+    cart:     false,      // a cartridge test: stock ROMs and a .dck in the dock
+    stockImages: null,    // {home, exrom} of the stock TS2068, fetched on the first cartridge test
     lastNow:  0,
     carryMs:  0,
     onState:  opts.onState,
@@ -115,11 +123,59 @@ export async function createEmulator(opts) {
      * Queue a run of an encoded line store (see encodeLineStore). With a
      * package image, it is installed first, as LOAD "NAME" EXT would.
      */
-    run(store, pkg = null) { unpause(emu); emu.pending = { kind: 'run', store, pkg, stage: 'seek', frames: 0 }; },
-    /** Stop the running program: BREAK if busy, back to the editor if waiting. */
-    stop()       { unpause(emu); if (emu.runActive) emu.pending = { kind: 'stop', stage: 'seek', frames: 0 }; },
-    /** Hard reset; the ROM boots to its editor. */
-    reset()      { hardReset(emu); emu.paused = false; setState(emu, 'booting'); },
+    run(store, pkg = null) {
+      unpause(emu);
+      // Out of a cartridge test the Leap ROMs boot first: wait for the key
+      // wait (stage 'reset') instead of pressing BREAK.
+      const stage = emu.cart ? 'reset' : 'seek';
+      if (emu.cart) leaveCartridge(emu);
+      emu.pending = { kind: 'run', store, pkg, stage, frames: 0 };
+    },
+    /** Stop the running program: BREAK if busy, back to the editor if waiting. A cartridge test ends. */
+    stop() {
+      unpause(emu);
+      if (emu.cart) { leaveCartridge(emu); setState(emu, 'booting'); return; }
+      if (emu.runActive) emu.pending = { kind: 'stop', stage: 'seek', frames: 0 };
+    },
+    /** Hard reset; the ROM boots to its editor. A cartridge test ends. */
+    reset() {
+      if (emu.cart) leaveCartridge(emu);
+      else hardReset(emu);
+      emu.paused = false;
+      setState(emu, 'booting');
+    },
+    /**
+     * Cartridge test: the stock TS2068 ROMs with this .dck in the dock, then a
+     * reset, as switching on a TS2068 with the cartridge in. Rejects with
+     * TSRun's message if the dock image cannot be read (the Leap ROMs stay).
+     */
+    async testCartridge(dck) {
+      if (!emu.stockImages) {
+        const [home, exrom] = await Promise.all([
+          fetchBytes('roms/ts2068-0.rom', homeRomSize),
+          fetchBytes('roms/ts2068-1.rom', exRomSize),
+        ]);
+        emu.stockImages = { home, exrom };
+      }
+      const m = emu.machine;
+      unpause(emu);
+      emu.pending = null;
+      releaseKeys(emu);
+      setHomeRom(m, emu.stockImages.home);
+      setExRom(m, emu.stockImages.exrom);
+      const err = insertDock(m, dck);
+      if (err !== null) {
+        restoreLeapRoms(emu);
+        resetMachine(m);
+        setState(emu, 'booting');
+        throw new Error(`Not a cartridge the TS2068 can take: ${err}`);
+      }
+      emu.cart = true;
+      resetMachine(m);
+      setState(emu, 'cartridge');
+    },
+    /** True during a cartridge test. */
+    get cartridge() { return emu.cart; },
 
     // ── Debugger ──
     /**
@@ -233,8 +289,9 @@ function initAudio(emu) {
 
 function initKeys(emu, focusEl) {
   // Unlike TSRun's page, keys reach the TS2068 only while the screen has focus
-  // and a program is running, so nothing ever types into Leap's own editor.
-  focusEl.addEventListener('keydown', e => { if (emu.runActive) emu.kbd.keyDown(e); });
+  // and a program is running, so nothing ever types into Leap's own editor. A
+  // cartridge has no editor: there keys always pass.
+  focusEl.addEventListener('keydown', e => { if (emu.runActive || emu.cart) emu.kbd.keyDown(e); });
   focusEl.addEventListener('keyup',   e => emu.kbd.keyUp(e));
   focusEl.addEventListener('blur',    () => emu.kbd.releaseAll());
   focusEl.addEventListener('pointerdown', () => focusEl.focus());
@@ -273,9 +330,11 @@ function fillSoundQueue(emu) {
 function stepMachine(emu) {
   if (emu.paused) return;
   const m = emu.machine;
-  const seen = runWatched(emu);
+  // A cartridge test has no key wait to look for; it single-steps only for
+  // the debugger (Z80 breakpoints, Pause).
+  const seen = emu.cart && !emu.watch && !emu.oneShot ? 'busy' : runWatched(emu);
   if (seen === 'paused') return;     // stopped part way through the frame
-  if (seen !== 'wait') {
+  if (seen !== 'wait' && !emu.cart) {
     if (emu.pending) advancePending(emu);
     else if (emu.runActive) setState(emu, 'running');
   }
@@ -301,7 +360,7 @@ function runWatched(emu) {
   const end = m.frameStart + tStatesPerFrame;
   let seen = 'busy';
   while (m.tstates < end) {
-    if (seen === 'busy' && cpu.pc >= rom.keyWait && cpu.pc < rom.keyWaitEnd &&
+    if (seen === 'busy' && !emu.cart && cpu.pc >= rom.keyWait && cpu.pc < rom.keyWaitEnd &&
         (m.portF4 & PORT_F4_CHUNK6) && (m.portFF & PORT_FF_EXROM)) {
       seen = 'wait';
       atKeyWait(emu);
@@ -414,14 +473,34 @@ function hardReset(emu) {
   resetMachine(emu.machine);
 }
 
+/** Let go of every key and stop passing them on. */
+function releaseKeys(emu) {
+  emu.runActive = false;
+  emu.kbd.releaseAll();
+}
+
+function restoreLeapRoms(emu) {
+  setHomeRom(emu.machine, emu.romImages.home);
+  setExRom(emu.machine, emu.romImages.exrom);
+}
+
+/** End a cartridge test: empty the dock, put the Leap ROMs back and reset. */
+function leaveCartridge(emu) {
+  releaseKeys(emu);
+  ejectDock(emu.machine);
+  restoreLeapRoms(emu);
+  emu.cart = false;
+  emu.pending = null;
+  resetMachine(emu.machine);
+}
+
 /**
  * The program is over: stop passing keys, let go of any still held, and drop
  * a key the ROM latched during the run (e.g. the user's BREAK), which would
  * otherwise dismiss the final screen into the Leap editor.
  */
 function endRun(emu) {
-  emu.runActive = false;
-  emu.kbd.releaseAll();
+  releaseKeys(emu);
   emu.machine.bus.write(emu.rom.kbdKeyHit, 0);
 }
 

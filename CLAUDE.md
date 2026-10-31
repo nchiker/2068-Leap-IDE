@@ -256,12 +256,12 @@ host in `src/emulator.js`. There is **no** `machine.run()` / `.stop()` /
 
 | File          | What the IDE uses |
 |---------------|-------------------|
-| `machine.js`  | `createMachine`, `setHomeRom`, `setExRom`, `insertDock` (tests only: a stock TS2068 with a dock cartridge), `resetMachine`, `runFrame`, `setVideoOn`, `enableSound`, `setSoundRate`, `takeAudio`, `cpuHz`, `tStatesPerFrame`. Memory: `machine.bus.read(addr)` / `machine.bus.write(addr, v)`. |
+| `machine.js`  | `createMachine`, `setHomeRom`, `setExRom`, `insertDock` / `ejectDock` (a stock TS2068 with a dock cartridge: the cartridge test and the tests), `resetMachine`, `runFrame`, `setVideoOn`, `enableSound`, `setSoundRate`, `takeAudio`, `cpuHz`, `tStatesPerFrame`. Memory: `machine.bus.read(addr)` / `machine.bus.write(addr, v)`. |
 | `z80.js`      | `runZ80(cpu, budget)` — a budget of 1 runs one instruction. CPU state is `machine.cpu` (`pc`, `sp`, `a`, `f`, `b`, `c`, …, `iff1`, `im`). |
 | `screen.js`   | `initScreen`, `resizeScreen`, `setCrt`, `drawScreen` (WebGL2) |
 | `keyboard.js` | **Not used** by the IDE; `src/pc-keyboard.js` replaces it (see Keyboard). The IDE writes `machine.keyMatrix` itself. |
 | `sound.js`    | `initSound`, `resumeSound`, `pushSound`, … (AudioWorklet, needs the fork's `import.meta.url` fix) |
-| `dock.js`     | `parseDck` only (reads a dock; accepts banks 0 DOCK, 254 EXROM, 255 HOME; not used by the IDE, the tests load the exported DCK with `insertDock` in `machine.js`) |
+| `dock.js`     | `parseDck` only (reads a dock; accepts banks 0 DOCK, 254 EXROM, 255 HOME; used through `insertDock` in `machine.js`, not imported by the IDE) |
 | `tape.js`, `load.js` | Tape loading. The tape-loading fix below (TSRun issue #3) is needed for Leap's own `LOAD` to read the IDE's `.tap` in TSRun. |
 
 `ide.html` loads no TSRun script tags. ROMs are fetched by `src/emulator.js`
@@ -809,19 +809,52 @@ cartridge (.dck) that runs on a stock TS2068"), in order:
    (`cartFormat`) is below 2.
 4. Pool size check.
 5. Compiles on the checker machine. A compile error marks the line and reads
-   "Compile error N on line L: fix it before exporting".
+   "Compile error N on line L: fix it first".
 6. Fetches the cartridge images once (`loadCartridgeImages`) and refuses if
    `romIdentity` of the loaded ROMs differs from `cartIdentity` of the
    cartridge HOME.
 7. An `OUT` to port 244 or 255 (literal) asks for confirmation ("... can switch
-   Leap itself out ... Export anyway?").
+   Leap itself out ... Make the cartridge anyway?").
 8. Prompts for a file name, default `<name>.dck`. A name ending in `.bin`
    downloads the flat 64 KB image for a cartridge board instead.
 9. Status: "Saved X.dck (N bytes of bytecode): it runs on a stock TS2068 from
    the dock slot"; for a program with a package, "Saved X.dck (N bytes of
    bytecode and the SHAPES package): ...".
 
+Steps 1-7 are `buildProgramCartridge` in `ide.js`, shared with "▶ Test DCK".
+
 Not supported: tape / Array Store, returning to an editor.
+
+### Cartridge test — "▶ Test DCK" and Open `.dck`
+The cartridge runs in the IDE's own emulator on the **stock** TS2068 ROMs, as
+on a real TS2068 with the cartridge in the dock, without downloading anything.
+
+- **▶ Test DCK** (`testProgramCartridge` in `ide.js`): the same build and
+  checks as ⬇ DCK (`buildProgramCartridge`), then `startCartridgeTest`.
+- **Open** accepts a `.dck` (any cartridge, e.g. one from
+  `cartridge-build/tools/leap2cart.mjs`) and tests it; the editor's program is
+  not touched, so the "discard unsaved changes?" question now comes after the
+  file is chosen, and only for files that replace the program.
+- **Emulator** (`testCartridge(dck)` in `src/emulator.js`): fetches
+  `tsrun/roms/ts2068-0.rom` / `ts2068-1.rom` once, puts them in the machine,
+  `insertDock`, reset; state `'cartridge'`. The stock ROM starts the cartridge
+  after about 2 s. A dock image TSRun cannot read is refused and the Leap ROMs
+  stay. In this mode the frame loop does not look for Leap's key wait, keys
+  always reach the machine (the cartridge has no editor; a key after the end
+  restarts the program, as on hardware), and it single-steps only for the
+  debugger. `get cartridge` tells the mode.
+- **Leaving:** Stop (F6), Reset or Run eject the dock, put the Leap ROMs back
+  and reset (`leaveCartridge`); Run then waits for Leap's boot (pending stage
+  `'reset'`) and injects as usual.
+- **Display and status:** the caption reads "Stock TS2068 + DCK" and
+  "DCK: name"; the status "Cartridge test: X.dck on a stock TS2068. Stop (F6)
+  or Run goes back to Leap".
+- **Debugger** (`beginCartridge` in `src/debugger.js`): registers, memory, Z80
+  breakpoints and Pause / Continue work (the watch is installed only while
+  there are Z80 breakpoints); Step, Leap breakpoints, variables and call stack
+  are off ("Not shown in a cartridge test").
+- Note: `$7800`-`$7FFF` is RAM Leap leaves alone, and its cold start does not
+  clear it, so a value POKEd there survives going back to Leap.
 
 **Verification.** `tests/rom-checks.mjs` section 7 runs the exported cartridge
 on a stock TS2068 (`tsrun/roms/ts2068-0.rom`, `ts2068-1.rom`, `insertDock`) to
@@ -986,7 +1019,8 @@ it. Everything is built with DOM nodes and `textContent`.
   Ctrl+Shift+Z), Ctrl+X / C / V cut / copy / paste, F12 / Ctrl+click go to
   definition, F2 rename, Shift+Alt+F Tidy, Ctrl+Shift+[ / ] fold / unfold, F1
   help, Escape = BREAK in the TS2068 screen) and short usage tips, among them
-  that ⬇ DCK carries the package and that Z80 breakpoints pause at an address. This is the keyboard cheat-sheet of
+  that ⬇ DCK carries the package, that ▶ Test DCK / Open `.dck` run a cartridge
+  on the stock ROMs, and that Z80 breakpoints pause at an address. This is the keyboard cheat-sheet of
   Phase 8.
 - Nothing is hand-written per keyword: a new release regenerates
   `src/leap-keywords.js` and Help follows.
@@ -1121,7 +1155,7 @@ tested separately.
 | 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
 | 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/leap-check.js`, `src/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
-| 6     | Tape + DCK export                                   | `src/export.js`, `src/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages) |
+| 6     | Tape + DCK export                                   | `src/export.js`, `src/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages, cartridge test on the stock ROMs) |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools/symbols.js`, `udg.js`, `draw.js`, `src/editor.js` (`insertLines`), `ide.js` | **Done** |
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
 | —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/leap-check.js`, `packages/` | **Done**, verified |
@@ -1183,7 +1217,7 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 36 checks in about 30 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 41 checks in about 40 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
   Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
@@ -1191,7 +1225,10 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   Paste buttons through the system clipboard (permission granted over CDP), the
   DCK export (a cartridge downloads; the file-name
   prompt and the download are captured in the page; a package program is
-  exported with its package), auto-indent, Tidy (nested blocks, labels, `IF` …
+  exported with its package), the cartridge test (▶ Test DCK runs the program
+  on the stock ROMs to its POKE marker, Stop goes back to Leap, Open of a
+  `.dck` tests it and keeps the editor's program, Pause / Continue, Run goes
+  back to Leap and runs), auto-indent, Tidy (nested blocks, labels, `IF` …
   `THEN GOTO`; Tidy leaves every example unchanged), block match, fold markers,
   F12, F2 rename and its refusals, line-limit marking, the Examples menu (opens
   one, closes) and running the SHAPES example, and a Z80 breakpoint pause, Step
