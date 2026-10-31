@@ -223,6 +223,8 @@ run both test suites.
 
 ## Still open
 
+Questions for the ROM project, to take back: [`requests/LEAP_C_QUESTIONS.md`](requests/LEAP_C_QUESTIONS.md).
+
 1. **Could Leap-C emit a per-statement line table** (a debug build or a
    flag)? Not needed if watching `STATEMENT` works, but it would make C4
    robust.

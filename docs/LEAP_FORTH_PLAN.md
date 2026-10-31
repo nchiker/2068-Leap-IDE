@@ -265,6 +265,8 @@ sections:
 
 ## Still open
 
+Questions for the ROM project, to take back: [`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md).
+
 1. **Symbols in the Forth ROM** for the IDE's entry points (the return point
    after `call INTERPRET_RUN`), and optionally an error hook that keeps
    `THROW_CODE`, so the IDE needs fewer watches.
