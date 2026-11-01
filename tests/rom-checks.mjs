@@ -344,6 +344,7 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
   const { FORTH_EXAMPLES } = await import(join(ROOT, 'src/lang/forth/examples.js'));
   const { FORTH_WORD_ENTRIES } = await import(join(ROOT, 'src/lang/forth/forth-words.js'));
   const { lineTokens, scanDefinitions } = await import(join(ROOT, 'src/lang/forth/forth-scan.js'));
+  const { checkForth } = await import(join(ROOT, 'src/lang/forth/forth-check.js'));
   const fdir = process.env.FORTH_ROMS ?? join(ROOT, 'tsrun/roms');
   const fhome = new Uint8Array(readFileSync(join(fdir, 'leapforth-0.rom')));
   const fexrom = new Uint8Array(readFileSync(join(fdir, 'leapforth-1.rom')));
@@ -382,6 +383,9 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
   same('definitions and a use, line by line, end in OK', (r => [r.state, r.lastError, r.status.text, depth(), tos()])(
     send(': SQ ( n -- n*n ) DUP * ;\n\n7 SQ')), ['ended', 0, 'OK', 1, 49]);
   same('a second Run sees the first one\'s words (the session is live)', (r => [r.lastError, tos()])(send('DROP 12 SQ')), [0, 144]);
+  same('check: a word of the live session is known, an unknown one is marked',
+    (fl.keyWait(m), fl.lint('DROP 5 SQ .\n5 NOPE')).map(d => [d.line0, d.cols, d.message.slice(0, 20)]),
+    [[1, { from: 2, to: 6 }, 'UNDEFINED WORD: NOPE']]);
   same('an unknown word stops the sending, on its line and column', (r => [r.lastError, r.index, r.status.text, r.status.mark?.cols])(
     send('DROP 1\nFOO 2\n3')), [-13, 1, 'FOO ? (THROW -13: not a word Forth knows here) on line 2', { from: 0, to: 3 }]);
   {
@@ -415,7 +419,7 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     same('BREAK stops an endless loop', [busy, back, F.driver.runState(m, from), F.driver.result(m, from, start.job).lastError],
       [true, true, 'ended', -28]);
   }
-  same('lines over 128 characters are refused', fl.lint('.( ' + 'x'.repeat(130)).length, 1);
+  same('lines over 128 characters are refused', fl.lint('1 . \\ ' + 'x'.repeat(130)).length, 1);
 
   // The examples (the manual's Part 7, tested by 2068-Forth's build): each from a fresh
   // Forth runs to OK. Those that wait for keys are left out here.
@@ -425,6 +429,17 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     const r = send(ex.text, 6000);
     if (r.state !== 'ended' || r.lastError !== 0) bad.push(`${ex.id}: ${r.state} ${r.status?.text ?? ''}`);
   }
+  boot(); frun(fwait, 600); fl.keyWait(m);
+  same('check: after a Reset the session\'s words are gone', fl.lint('5 SQ .').map(d => d.message.slice(0, 18)), ['UNDEFINED WORD: SQ']);
+  same('check: every Examples-menu program is clean', FORTH_EXAMPLES.filter(e => checkForth(e.text).length > 0).map(e => e.id), []);
+  same('check: use before definition, unbalanced IF, compile-only at the prompt, ; without :',
+    checkForth('5 BAR\n: BAR . ;\n: X 1 IF 2 ;\nIF\n;').map(d => `${d.line0}:${d.cols.from} ${d.message.split(' ').slice(0, 3).join(' ')}`),
+    ['0:2 UNDEFINED WORD: BAR', '2:6 IF without THEN', '3:0 IF ? :', '4:0 ; without a']);
+  same('check: unclosed string (error) and ( comment (warning) on their line; MISSING NAME; OUT OF RANGE',
+    checkForth('S" hi\n( note\nVARIABLE\n99999 .').map(d => `${d.line0} ${d.severity} ${d.message.split(' ').slice(0, 2).join(' ')}`),
+    ['0 error The string', '1 warning This (', '2 error MISSING NAME:', '3 error OUT OF']);
+  same('check: a defining word made with CREATE defines the name after it; \' X CATCH NAME',
+    checkForth(': CONST CREATE , DOES> @ ;\n5 CONST FIVE FIVE .\n\' SAVE-TEXT CATCH DEMO .'), []);
   same(`the Examples menu's programs run to OK (${FORTH_EXAMPLES.filter(e => !e.input).length} without key input)`, bad, []);
 
   same('word data: 184 words from the manual, each with a stack effect and group',

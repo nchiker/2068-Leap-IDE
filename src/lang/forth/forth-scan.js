@@ -47,10 +47,18 @@ export function isNumber(token) {
  * words, or unknown). `upper` is the token in upper case; `entry` the ROM
  * word's manual entry.
  *
+ * With a context `ctx` (shared by the lines of one text, from
+ * `scanContext()`), the interpreter's state is followed across lines: `:` …
+ * `;`, `[` … `]`. While compiling, a defining word or `'` does not read a name
+ * (it will when the definition runs), and the definition becomes a defining
+ * word itself (`: CONST CREATE , ;` then `5 CONST FIVE` defines FIVE). Without
+ * `ctx` every such word reads the next token, as for one typed line.
+ *
  * @param {string} line
- * @returns {{from: number, to: number, text: string, upper: string, type: string, entry?: object, definer?: string, unclosed?: boolean}[]}
+ * @param {{compiling: boolean, current: string|null, definers: Set<string>}} [ctx]
+ * @returns {{from: number, to: number, text: string, upper: string, type: string, entry?: object, definer?: string, unclosed?: boolean, compiling?: boolean, missingName?: boolean}[]}
  */
-export function lineTokens(line) {
+export function lineTokens(line, ctx = null) {
   const out = [];
   let i = 0;
   let expect = null;         // the word before wants a name: 'def' | 'ref' | 'char'
@@ -65,6 +73,7 @@ export function lineTokens(line) {
     if (expect) {
       out.push({ from: i, to: j, text, upper,
         type: expect === 'def' ? 'defName' : expect === 'char' ? 'char' : 'nameRef', definer });
+      if (ctx && definer === ':') { ctx.compiling = true; ctx.current = upper; }
       expect = null;
       definer = null;
       i = j;
@@ -82,7 +91,8 @@ export function lineTokens(line) {
       continue;
     }
     if (upper === '."' || upper === 'S"') {
-      out.push({ from: i, to: j, text, upper, type: 'word', entry: FORTH_WORDS.get(upper) });
+      out.push({ from: i, to: j, text, upper, type: 'word', entry: FORTH_WORDS.get(upper),
+        compiling: ctx ? ctx.compiling : undefined });
       // The string starts after the one space that ends the word.
       const start = Math.min(j + 1, n);
       const close = line.indexOf('"', start);
@@ -92,18 +102,37 @@ export function lineTokens(line) {
       continue;
     }
     const entry = FORTH_WORDS.get(upper);
+    const compiling = ctx ? ctx.compiling : undefined;
     if (entry) {
-      out.push({ from: i, to: j, text, upper, type: 'word', entry });
-      if (READS_NAME.has(upper)) {
+      out.push({ from: i, to: j, text, upper, type: 'word', entry, compiling });
+      // While compiling, only the compile-only ones (['], [CHAR]) read now.
+      const readsNow = READS_NAME.has(upper) &&
+        (!ctx || !ctx.compiling || upper === ':' || entry.kind === 'compile-only word');
+      if (readsNow) {
         expect = DEFINES.has(upper) ? 'def' : upper === 'CHAR' || upper === '[CHAR]' ? 'char' : 'ref';
         definer = upper;
+      } else if (ctx && ctx.compiling && DEFINES.has(upper) && ctx.current) {
+        ctx.definers.add(ctx.current);
+      }
+      if (ctx) {
+        if (upper === ';') { ctx.compiling = false; ctx.current = null; }
+        else if (upper === '[') ctx.compiling = false;
+        else if (upper === ']') ctx.compiling = true;
       }
     } else {
-      out.push({ from: i, to: j, text, upper, type: isNumber(text) ? 'number' : 'name' });
+      out.push({ from: i, to: j, text, upper, type: isNumber(text) ? 'number' : 'name', compiling });
+      if (ctx && !ctx.compiling && ctx.definers.has(upper)) { expect = 'def'; definer = upper; }
     }
     i = j;
   }
+  // A word that takes a name found none on this line (MISSING NAME, -16).
+  if (expect && out.length > 0) out[out.length - 1].missingName = true;
   return out;
+}
+
+/** A fresh interpreter state for lineTokens(line, ctx) over one text. */
+export function scanContext() {
+  return { compiling: false, current: null, definers: new Set() };
 }
 
 /**
@@ -111,9 +140,9 @@ export function lineTokens(line) {
  * @returns {{name: string, kind: string, line: number, col: number}[]}  kind: the defining word
  */
 export function scanDefinitions(text) {
-  const out = [];
+  const out = [], ctx = scanContext();
   text.split('\n').forEach((line, i) => {
-    for (const t of lineTokens(line)) {
+    for (const t of lineTokens(line, ctx)) {
       if (t.type === 'defName') out.push({ name: t.upper, kind: t.definer, line: i + 1, col: t.from });
     }
   });

@@ -33,6 +33,7 @@ import { createDrawTool } from './src/tools/draw.js';
 // ── Module state ─────────────────────────────────────────────────
 let profile = profileById(window.leapEditor.language);   // the active language (src/lang/profiles.js)
 let lang = null;           // profile.attach(): the per-ROM half (checker, packages, export)
+let sessionStamp = -1;     // lang.sessionStamp() last seen (Forth: LATEST)
 let emulator = null;       // from createEmulator()
 let lastRun = null;        // {text, editorLine[]} of the program last sent to the ROM
 let debug = null;          // from createDebugger()
@@ -81,10 +82,18 @@ async function bootEmulator() {
     onLineClick:       line => window.leapEditor.scrollToLine(line),
     onInstructionStep: () => setStatus(`Paused at $${hex4(emulator.machine.cpu.pc)} (one Z80 instruction)`, 'run'),
   });
+  // A language with a live session (Forth) looks at the machine at its key waits.
+  emulator.onKeyWait(m => lang?.keyWait?.(m));
   window.leapEditor.onBreakpointsChanged(() => debug.setBreakpoints(window.leapEditor.getBreakpoints()));
   debug.setBreakpoints(window.leapEditor.getBreakpoints());
   setInterval(() => {
     if (emuState === 'running' || emuState === 'waiting' || emuState === 'cartridge') debug.refresh();
+    // A language with a live session (Forth): a word typed at the prompt, or
+    // a Reset, changes what the check knows, so check the editor again.
+    if (lang?.sessionStamp) {
+      const stamp = lang.sessionStamp();
+      if (stamp !== sessionStamp) { sessionStamp = stamp; window.leapEditor.relint(); }
+    }
   }, DEBUG_REFRESH_MS);
 
   udgTool = createUdgTool(document.getElementById('tool-udg'), {
@@ -138,9 +147,10 @@ function toDiagnostics(text, diags) {
   return diags.map(d => {
     if (d.line0 === undefined) return d;
     const range = lineRange(text, Math.max(0, Math.min(d.line0, count - 1)));
-    if (!d.cols) return { ...range, severity: 'error', message: d.message };
+    const severity = d.severity ?? 'error';
+    if (!d.cols) return { ...range, severity, message: d.message };
     const start = range.to - text.split('\n')[Math.max(0, Math.min(d.line0, count - 1))].length;
-    return { from: start + d.cols.from, to: Math.min(range.to, start + d.cols.to), severity: 'error', message: d.message };
+    return { from: start + d.cols.from, to: Math.min(range.to, start + d.cols.to), severity, message: d.message };
   });
 }
 
@@ -836,7 +846,9 @@ document.getElementById('btn-lint').addEventListener('click', () => {
   if (!lang) return;
   const diags = lintSource(getSource());
   window.leapEditor?.setDiagnostics(diags);
-  setStatus(diags.length === 0 ? 'No errors' : diags[0].message, diags.length === 0 ? 'idle' : 'error');
+  const errors = diags.filter(d => d.severity !== 'warning');
+  const first = errors[0] ?? diags[0];
+  setStatus(diags.length === 0 ? 'No errors' : first.message, errors.length === 0 ? 'idle' : 'error');
 });
 
 // Editor buttons: undo / redo / clipboard / find. They must not take the

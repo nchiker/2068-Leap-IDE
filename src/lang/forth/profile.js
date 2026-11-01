@@ -27,6 +27,7 @@ import { KNOWN_ROMS } from './forth-roms.js';
 import { FORTH_WORD_ENTRIES, FORTH_MANUAL_REF, FORTH_GROUPS } from './forth-words.js';
 import { FORTH_EXAMPLES } from './examples.js';
 import { scanDefinitions } from './forth-scan.js';
+import { checkForth, readSessionWords } from './forth-check.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 
 // ── Errors (LAST_ERROR, ANS numbering; LEAP_FORTH_ANSWERS.md Q2.2) ──
@@ -233,11 +234,31 @@ export const forthProfile = {
   ownsTape: () => false,
 
   async attach({ rom }) {
+    // The session's own words, read at the prompt's key wait (there the EXROM
+    // is paged out, so the whole dictionary is visible): keyWait(m) is called
+    // by the emulator at every key wait (ide.js wires it).
+    let sessionWords = new Set();
+    let sessionLatest = -1;
     return {
-      /** Storage problems only (the static check is stage F3). */
+      /** Storage problems, then the static check (forth-check.js) against the session's words. */
       lint(text) {
-        return prepareSource(text).problems;
+        return [...prepareSource(text).problems, ...checkForth(text, sessionWords)];
       },
+
+      /** At a key wait of the live machine: re-read the session's words if LATEST moved. */
+      keyWait(m) {
+        if (!atPrompt(m, rom)) return;
+        const latest = read16(m, rom.latest);
+        if (latest === sessionLatest) return;
+        sessionLatest = latest;
+        sessionWords = readSessionWords(a => m.bus.read(a), rom);
+      },
+
+      /**
+       * Changes when the session's dictionary does (a word typed at the
+       * prompt, a Reset), so the IDE can check the editor again.
+       */
+      sessionStamp: () => sessionLatest,
 
       startRun(text) {
         const prepared = prepareSource(text);

@@ -196,6 +196,8 @@ export async function createEmulator(opts) {
      * remove). Returning true pauses the machine before that instruction.
      */
     setWatch(fn) { emu.watch = fn; },
+    /** fn(machine) at every key wait the frame loop notices (the language's ROMs, not a cartridge). */
+    onKeyWait(fn) { emu.keyWaitHook = fn; },
     /** Pause at the next instruction outside the frame interrupt handler. */
     pause()      { if (!emu.paused) emu.oneShot = m => m.cpu.iff1; },
     /** Continue from a pause. */
@@ -415,6 +417,7 @@ function stepOneInstruction(emu) {
 
 function atKeyWait(emu) {
   const p = emu.pending, m = emu.machine, drv = emu.profile.driver;
+  if (emu.keyWaitHook) emu.keyWaitHook(m);
   const ended = emu.runActive && drv.runState(m, emu.rom) === 'ended';
 
   if (p && p.kind === 'run' && drv.canInject && !drv.canInject(m, emu.rom)) {

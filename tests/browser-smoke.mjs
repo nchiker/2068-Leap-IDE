@@ -401,6 +401,10 @@ try {
     const last = t.split('\\r').filter(Boolean).pop(); return last === '3 sq .' && last; })()`, 5000);
   check('Forth: keys typed in the screen reach the OK prompt (the line is stored and run)', forthTyped === '3 sq .', String(forthTyped));
   await shot('forth');
+  // The static check (F3): SQ is only in the live session (it was Run before), BOGUS nowhere.
+  await evaluate(`leapEditor.setSource(${JSON.stringify('2 SQ .\nBOGUS')}, {fresh: true})`);
+  const forthLint = await waitFor("[...document.querySelectorAll('.cm-lintRange-error')].map(e => e.textContent).join(',') || false", 4000);
+  check('Forth: the editor check marks an undefined word, and knows the session\'s words', forthLint === 'BOGUS', String(forthLint));
   const forthErr = await runProgram(['1 2', 'FOO 3', '4'], /^OK$|THROW|Stopped/);
   const forthDiag = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 3000);
   check('Forth: an unknown word stops the sending and is marked', /^FOO \? .* on line 2$/.test(forthErr) && forthDiag === 'FOO', `${forthErr} | ${forthDiag}`);
