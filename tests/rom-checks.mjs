@@ -337,6 +337,11 @@ if (rom.cartridgeDir) {
     [{ line: 2, port: 244 }, { line: 4, port: 511 }]);
 }
 
+/** Tape routines of each Forth release (symbols/forth_boot.sym), for the tape checks. */
+const FORTH_TAPE_SYMBOLS = {
+  '2.0': { STORAGE_SEND_BLOCK: 0x09CE, STORAGE_RECEIVE_BLOCK: 0x0A5D },
+};
+
 // ── 8. Leap-Forth (src/lang/forth/): the live prompt, Run line by line ──
 console.log('\nLeap-Forth (src/lang/forth/profile.js)');
 {
@@ -444,6 +449,73 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
   same('check: a defining word made with CREATE defines the name after it; \' X CATCH NAME',
     checkForth(': CONST CREATE , DOES> @ ;\n5 CONST FIVE FIVE .\n\' SAVE-TEXT CATCH DEMO .'), []);
   same(`the Examples menu's programs run to OK (${FORTH_EXAMPLES.filter(e => !e.input).length} without key input)`, bad, []);
+
+  // F5: TEXT tapes. The block sender / receiver are replaced by stand-ins
+  // (STORAGE_SEND_BLOCK / STORAGE_RECEIVE_BLOCK of the release's forth_boot.sym):
+  // capture what SAVE-TEXT sends, feed LOAD-TEXT the IDE's tape.
+  const FS = FORTH_TAPE_SYMBOLS[from.version];
+  if (!FS) {
+    console.log(`SKIP  Forth tapes — add FORTH_TAPE_SYMBOLS['${from.version}'] from the release's forth_boot.sym`);
+  } else {
+    const ret = carry => {
+      m.cpu.f = carry ? (m.cpu.f | 1) : (m.cpu.f & ~1);
+      m.cpu.pc = m.bus.read(m.cpu.sp) | (m.bus.read(m.cpu.sp + 1) << 8);
+      m.cpu.sp = (m.cpu.sp + 2) & 0xFFFF;
+    };
+    const tapeRun = (text, onBlock, frames = 3000) => {
+      const start = fl.startRun(text);
+      F.driver.inject(m, from, start.job);
+      for (let f = 0; f < frames; f++) {
+        const end = m.frameStart + tStatesPerFrame;
+        while (m.tstates < end && !m.cpu.halted) {
+          if (m.cpu.pc === FS.STORAGE_SEND_BLOCK || m.cpu.pc === FS.STORAGE_RECEIVE_BLOCK) onBlock(m.cpu.pc === FS.STORAGE_SEND_BLOCK);
+          else runZ80(m.cpu, m.bus, 1, m);
+        }
+        runFrame(m);
+        if (f > 2 && fwait() && F.driver.runState(m, from) === 'ended') break;
+      }
+      return F.driver.result(m, from, start.job);
+    };
+    const prog = ': T5 ( -- n ) 5 ;\n\n  VARIABLE V  7 V !\n: SHOW T5 V @ + . ;   \\ prints 12';
+    boot(); frun(fwait, 600);
+    send(prog);
+    const sent = [];
+    tapeRun('SAVE-TEXT demo', () => {
+      const ixv = (m.cpu.xh << 8) | m.cpu.xl, de = (m.cpu.d << 8) | m.cpu.e;
+      const bytes = [];
+      for (let i = 0; i < de; i++) bytes.push(m.bus.read(ixv + i));
+      sent.push({ flag: m.cpu.a, bytes });
+      ret(true);                                    // carry set: sent whole
+    });
+    const romTap = [];
+    for (const b of sent) {
+      let x = b.flag; for (const v of b.bytes) x ^= v;
+      const n = b.bytes.length + 2;
+      romTap.push(n & 0xFF, n >> 8, b.flag, ...b.bytes, x);
+    }
+    const out = fl.exportTape(prog, 'demo');
+    same('TAP export is byte-identical to the ROM\'s SAVE-TEXT', [sent.length, out.fileName, Buffer.from(out.tap).equals(Buffer.from(romTap))],
+      [2, 'DEMO.tap', true]);
+    same('Open: the TEXT tape reads back as the program\'s lines', [F.ownsTape(out.tap), F.tapeToText(out.tap).name, F.tapeToText(out.tap).text],
+      [true, 'DEMO', ': T5 ( -- n ) 5 ;\n  VARIABLE V  7 V !\n: SHOW T5 V @ + . ;   \\ prints 12\n']);
+    // LOAD-TEXT of the IDE's tape on a fresh Forth defines the words.
+    boot(); frun(fwait, 600);
+    const blocks = [];
+    for (let p = 0; p < out.tap.length;) { const n = out.tap[p] | (out.tap[p + 1] << 8); blocks.push(out.tap.subarray(p + 2, p + 2 + n)); p += 2 + n; }
+    const loaded = tapeRun('LOAD-TEXT DEMO', () => {
+      const b = blocks.shift();
+      if (!b || b[0] !== m.cpu.a) { ret(true); return; }
+      let ixv = (m.cpu.xh << 8) | m.cpu.xl;
+      const de = (m.cpu.d << 8) | m.cpu.e;
+      for (let i = 0; i < de; i++) m.bus.write(ixv++, b[1 + i]);
+      m.cpu.xh = (ixv >> 8) & 0xFF; m.cpu.xl = ixv & 0xFF; m.cpu.d = 0; m.cpu.e = 0;
+      ret(false);                                   // carry clear: loaded
+    });
+    same('LOAD-TEXT reads the IDE\'s tape and defines its words', [loaded.lastError, (r => [r.lastError, tos()])(send('SHOW 0 T5 V @ +'))],
+      [0, [0, 12]]);
+    const basicTap = buildTAP(encodeLineStore(['PRINT 1']), 'demo', 0x8101);
+    same('a Leap V2 tape is not a Forth tape, and the reverse', [F.ownsTape(basicTap), basicProfile.ownsTape(out.tap)], [false, false]);
+  }
 
   same('word data: 184 words from the manual, each with a stack effect and group',
     Object.values(FORTH_WORD_ENTRIES).filter(e => e.stack && e.group).length, 184);

@@ -28,6 +28,7 @@ import { FORTH_WORD_ENTRIES, FORTH_MANUAL_REF, FORTH_GROUPS } from './forth-word
 import { FORTH_EXAMPLES } from './examples.js';
 import { scanDefinitions } from './forth-scan.js';
 import { checkForth, readSessionWords } from './forth-check.js';
+import { buildForthTap, forthTapeToText, isForthTape, textStore, LOAD_TEXT_MAX } from './tape.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 
 // ── Errors (LAST_ERROR, ANS numbering; LEAP_FORTH_ANSWERS.md Q2.2) ──
@@ -204,6 +205,7 @@ const help = {
     'Sending stops at the first line that ends in an error; the line is marked in the editor. A word that waits for a key (KEY, ACCEPT) gets the keys you type in the screen; Stop (F6) or Escape is BREAK.',
     'Ctrl+Enter sends just the line at the cursor, or the lines you have selected, to the prompt.',
     'Reset gives a fresh Forth with an empty dictionary.',
+    '⬇ TAP saves the program as a TEXT tape, as SAVE-TEXT writes it: on the TS2068 type LOAD-TEXT NAME. Open reads a Forth TEXT tape back.',
     'Import (above the screen) opens everything typed or sent at the prompt, the session\'s line store, as a new document, so work done at the prompt is not lost.',
     'The editor checks the program as Forth would read it: a word that is neither a Forth word, nor defined above, nor in the session is marked, and so are unbalanced IF / DO / BEGIN and : ;.',
   ],
@@ -228,14 +230,17 @@ export const forthProfile = {
   help,
   examples: FORTH_EXAMPLES,
   tools: { udg: false, draw: false },
-  hasTape: false,
+  /** ⬇ TAP: a TEXT tape, as SAVE-TEXT writes it (src/lang/forth/tape.js). */
+  hasTape: true,
   hasCartridge: false,
   /** A live session whose typed lines can be imported (attach().importSession). */
   hasSession: true,
   readyText: 'OK prompt: type in the TS2068 screen, or Run (F5) sends the program',
   waitingText: 'Waiting for a key — click the screen to type',
-  tapeToText() { throw new Error('Forth tapes are not read yet'); },
-  ownsTape: () => false,
+  /** A Forth TEXT tape on Open (throws for anything else). */
+  tapeToText: forthTapeToText,
+  /** True if this tape holds a Forth TEXT file (header type 0, parameter 1 $8000). */
+  ownsTape: isForthTape,
 
   async attach({ rom }) {
     // The session's own words, read at the prompt's key wait (there the EXROM
@@ -295,6 +300,31 @@ export const forthProfile = {
           bytes,
           message: `Sending ${prepared.lines.length} line${prepared.lines.length === 1 ? '' : 's'} to Forth…`,
         };
+      },
+
+      /** ⬇ TAP: the question for the tape name. */
+      tapePrompt: 'Tape name (up to 10 characters, no spaces; on the TS2068: LOAD-TEXT name):',
+      tapeNameMax: 10,
+
+      /**
+       * The program as a TEXT tape that LOAD-TEXT reads (byte-identical to
+       * what SAVE-TEXT writes after the same lines were sent). The name is
+       * upper-cased, as the ROM's own name reading does.
+       * @returns {{error: string} | {tap: Uint8Array, fileName: string, message: string}}
+       */
+      exportTape(text, name) {
+        const prepared = prepareSource(text);
+        if (prepared.lines.length === 0) return { error: 'Nothing to save' };
+        if (prepared.problems.length > 0) return { error: prepared.problems[0].message };
+        const tapeName = name.trim().toUpperCase();
+        if (tapeName === '') return { error: 'The name is empty' };
+        if (tapeName.length > 10) return { error: 'The name is longer than 10 characters' };
+        if (/[^\x21-\x7E]/.test(tapeName)) return { error: 'The name must be printable ASCII without spaces (LOAD-TEXT reads one word)' };
+        const size = textStore(prepared.lines).length;
+        if (size > LOAD_TEXT_MAX) return { error: `The program is ${size} bytes; LOAD-TEXT takes ${LOAD_TEXT_MAX}` };
+        const tap = buildForthTap(prepared.lines, tapeName);
+        const fileName = tapeName.replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
+        return { tap, fileName, message: `Saved ${fileName}: on the TS2068, LOAD-TEXT ${tapeName}` };
       },
 
       progInfo(bytes) {

@@ -405,6 +405,17 @@ try {
   await evaluate("window.confirm = () => true, document.getElementById('btn-import-session').click()");
   const imported = await evaluate("[leapEditor.getSource().trimEnd().split('\\n').slice(-2).join('|'), document.getElementById('filename-display').textContent, !document.getElementById('dirty-mark').hidden].join(' / ')");
   check('Forth: Import opens the session\'s lines (Run and typed) as a new unsaved document', imported === 'CLS 7 SQ .|3 sq . / session.fs / true', String(imported));
+  // F5: ⬇ TAP saves a TEXT tape; Open reads it back.
+  await evaluate(`(window.smokeLastFile = null, window.prompt = () => 'demo', leapEditor.setSource(${JSON.stringify(': T7 7 ;\n\nT7 .\n')}, {fresh: true}), document.getElementById('btn-export').click())`);
+  const forthTap = await waitFor('window.smokeLastFile && window.smokeLastFile.byteLength', 5000);
+  const tapStatus = await status();
+  await evaluate(`(leapEditor.setSource('X', {fresh: true}), (() => { const dt = new DataTransfer();
+    dt.items.add(new File([window.smokeLastFile], 'DEMO.tap'));
+    const input = document.getElementById('file-input');
+    input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })())`);
+  const reopened = await waitFor(`leapEditor.getSource() !== 'X' && leapEditor.getSource()`, 5000);
+  check('Forth: ⬇ TAP saves a TEXT tape (LOAD-TEXT DEMO), Open reads it back', forthTap === 21 + 18 &&
+    tapStatus === 'Saved DEMO.tap: on the TS2068, LOAD-TEXT DEMO' && reopened === ': T7 7 ;\nT7 .\n', `${forthTap} | ${tapStatus} | ${JSON.stringify(reopened)}`);
   // The static check (F3): SQ is only in the live session (it was Run before), BOGUS nowhere.
   await evaluate(`leapEditor.setSource(${JSON.stringify('2 SQ .\nBOGUS')}, {fresh: true})`);
   const forthLint = await waitFor("[...document.querySelectorAll('.cm-lintRange-error')].map(e => e.textContent).join(',') || false", 4000);
