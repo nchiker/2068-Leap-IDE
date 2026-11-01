@@ -19,7 +19,7 @@
  * src/lang/editors.js), held in a compartment and swapped by setLanguage().
  */
 
-import { EditorState, StateField, StateEffect, RangeSet, Compartment } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, RangeSet, Compartment, Prec } from '@codemirror/state';
 import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor,
@@ -185,6 +185,10 @@ const langExtensions = l => [
 ];
 
 let onEditorMessage = null;      // ide.js: show a message in the status bar
+let onSend = null;               // ide.js: Ctrl+Enter sends the line or selection (languages with a live prompt)
+
+// Ctrl+Enter (Cmd+Enter): before CodeMirror's own insertBlankLine, when ide.js takes it.
+const sendKey = Prec.highest(keymap.of([{ key: 'Mod-Enter', run: () => (onSend ? onSend() : false) }]));
 const say = (text, mode) => onEditorMessage?.(text, mode);
 
 // ── Undo / redo button state ──────────────────────────────────────
@@ -371,6 +375,7 @@ const extensions = () => [
     execLineState,
     breakpointGutter,
     breakpointListener,
+    sendKey,
     langCompartment.of(langExtensions(lang)),
     search({ top: true }),
     codeFolding(),
@@ -528,6 +533,23 @@ window.leapEditor = {
   /** The active language's id and the text of a new program in it. */
   get language() { return langId; },
   get starter() { return lang.starter; },
+
+  /**
+   * The whole lines the selection covers, or the cursor's line:
+   * {text, line0} (line0: the 0-based editor line of the first).
+   */
+  getSendText() {
+    const { state } = view;
+    const sel = state.selection.main;
+    const first = state.doc.lineAt(sel.from);
+    // A selection that ends at the start of a line does not take that line.
+    const end = !sel.empty && sel.to > first.to && state.doc.lineAt(sel.to).from === sel.to ? sel.to - 1 : sel.to;
+    const last = state.doc.lineAt(end);
+    return { text: state.sliceDoc(first.from, last.to), line0: first.number - 1 };
+  },
+
+  /** Called (no arguments) on Ctrl+Enter; it returns true when it took the key. */
+  onSend(fn) { onSend = fn; },
 
   /** Called with (text, mode) for messages such as a refused rename */
   onMessage(fn) { onEditorMessage = fn; },

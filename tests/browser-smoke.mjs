@@ -404,6 +404,15 @@ try {
   const forthErr = await runProgram(['1 2', 'FOO 3', '4'], /^OK$|THROW|Stopped/);
   const forthDiag = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 3000);
   check('Forth: an unknown word stops the sending and is marked', /^FOO \? .* on line 2$/.test(forthErr) && forthDiag === 'FOO', `${forthErr} | ${forthDiag}`);
+  // Send (Ctrl+Enter): the cursor's line only.
+  await evaluate(`(leapEditor.setSource(${JSON.stringify(': CUBE DUP DUP * * ;\n5 CUBE .\nBAD-WORD')}, {fresh: true}), leapEditor.setCursor(2, 0), leapEditor.focus())`);
+  await sleep(200);
+  await evaluate(`(leapEditor.setCursor(1, 0), leapEditor.focus())`);
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', modifiers: 2, windowsVirtualKeyCode: 13 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', modifiers: 2, windowsVirtualKeyCode: 13 });
+  const sent = await waitFor(`/^OK$|THROW/.test(document.getElementById('status-text').textContent) && [document.getElementById('status-text').textContent, leapEditor.getSource().split('\\n').length].join(' | ')`, 8000);
+  check('Forth: Ctrl+Enter sends the cursor\'s line only (and inserts nothing)', sent === 'OK | 3', String(sent));
+
   await evaluate("document.getElementById('btn-help').click()");
   const forthHelp = await evaluate("document.querySelectorAll('.help-overlay .help-item').length");
   await evaluate("document.querySelector('.help-close').click()");

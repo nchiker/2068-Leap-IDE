@@ -201,6 +201,7 @@ const help = {
   tips: [
     'Forth\'s OK prompt is live: click the TS2068 screen and type, as on the real machine. Run (F5) sends the editor\'s text to that session line by line, as if typed; words you define stay defined until Reset.',
     'Sending stops at the first line that ends in an error; the line is marked in the editor. A word that waits for a key (KEY, ACCEPT) gets the keys you type in the screen; Stop (F6) or Escape is BREAK.',
+    'Ctrl+Enter sends just the line at the cursor, or the lines you have selected, to the prompt.',
     'Reset gives a fresh Forth with an empty dictionary.',
   ],
 };

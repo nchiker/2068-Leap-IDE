@@ -200,6 +200,30 @@ function runProgram() {
   setStatus(start.message, 'run');
 }
 
+/**
+ * Send (Ctrl+Enter), for a language with a live prompt (Forth): the line at
+ * the cursor or the lines of the selection go to the session, as Run sends the
+ * whole program. Errors map back to their editor lines.
+ * @returns {boolean} false: the key is not taken (the editor inserts a line)
+ */
+function sendSelection() {
+  if (!profile.keyboard.always) return false;
+  if (!emulator || !lang) { setStatus('Emulator not ready', 'error'); return true; }
+  const { text, line0 } = window.leapEditor.getSendText();
+  const start = lang.startRun(text);
+  if (start === null) return true;
+  if (start.problems) { setStatus(start.problems[0].message, 'error'); return true; }
+  if (start.error) { setStatus(start.error, 'error'); return true; }
+  window.leapEditor.setDiagnostics([]);
+  lastRun = { text: getSource(), editorLine: start.editorLine.map(l => l + line0), job: start.job };
+  debug.beginRun();
+  emulator.run(start.job);
+  updateProgInfo(start.bytes);
+  setStatus(start.message, 'run');
+  return true;
+}
+window.leapEditor.onSend(sendSelection);
+
 const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
 
 // ── Emulator state → UI ───────────────────────────────────────────
