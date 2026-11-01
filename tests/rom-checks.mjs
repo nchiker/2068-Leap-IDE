@@ -526,6 +526,11 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     [': A 1', 'VARIABLE B 2', 'CONSTANT C 2', ': A 3']);
 }
 
+/** The shell's tape commands and block routines of each Leap-C release (symbols/leapc_exrom.sym). */
+const LEAPC_TAPE_SYMBOLS = {
+  '1.0.0': { SH_SAVE: 0xC8DE, SH_LOAD: 0xC80E, STORAGE_SEND_BLOCK: 0xCA62, STORAGE_RECEIVE_BLOCK: 0xCA74 },
+};
+
 // ── 9. Leap-C (src/lang/c/): Run by the shell path, the checker, results ──
 console.log('\nLeap-C (src/lang/c/profile.js)');
 {
@@ -588,6 +593,81 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       [back, cl.describeResult(P.driver.result(m, crom), [0, 1, 2, 3, 4], null, null).text], [true, 'Stopped (BREAK) in the function on line 1']);
   }
   same('a run started from the last report runs', cRun(main('    return 0;')).text, 'Finished');
+
+  // C5: tapes. SH_SAVE / SH_LOAD (the shell's SAVE "name" / LOAD "name") called at the
+  // report's key wait with the block routines replaced by stand-ins, as for V2 and Forth.
+  const CT = LEAPC_TAPE_SYMBOLS[crom.version];
+  if (!CT) {
+    console.log(`SKIP  Leap-C tapes — add LEAPC_TAPE_SYMBOLS['${crom.version}'] from the release's symbols/*.sym`);
+  } else {
+    const ret = carry => {
+      m.cpu.f = carry ? (m.cpu.f | 1) : (m.cpu.f & ~1);
+      m.cpu.pc = m.bus.read(m.cpu.sp) | (m.bus.read(m.cpu.sp + 1) << 8);
+      m.cpu.sp = (m.cpu.sp + 2) & 0xFFFF;
+    };
+    /** Call a shell command routine with HL -> 'name"' (after the opening quote), as typed. */
+    const command = (routine, name, onBlock) => {
+      const NAME_AT = 0x6000;                         // image region 4: free outside a run
+      [...name + '"'].forEach((c, i) => m.bus.write(NAME_AT + i, c.charCodeAt(0)));
+      m.bus.write(NAME_AT + name.length + 1, 0);
+      m.cpu.sp = crom.stackTop - 2;
+      m.bus.write(m.cpu.sp, crom.shLoop & 0xFF); m.bus.write(m.cpu.sp + 1, crom.shLoop >> 8);
+      m.cpu.h = NAME_AT >> 8; m.cpu.l = NAME_AT & 0xFF;
+      m.cpu.pc = routine;
+      for (let f = 0; f < 600; f++) {
+        const end = m.frameStart + tStatesPerFrame;
+        while (m.tstates < end && !m.cpu.halted) {
+          if (f > 2 && cwait()) return true;
+          if (m.cpu.pc === CT.STORAGE_SEND_BLOCK || m.cpu.pc === CT.STORAGE_RECEIVE_BLOCK) onBlock(m.cpu.pc === CT.STORAGE_SEND_BLOCK);
+          else runZ80(m.cpu, m.bus, 1, m);
+        }
+        runFrame(m);
+      }
+      return false;
+    };
+    const prog = '/* tape */\nint main(void)\n{\n\n    printf("TAPE");\n    return 5;\n}';
+    same('a program for the tape runs', cRun(prog).text, 'Finished');
+    const sent = [];
+    const saved = command(CT.SH_SAVE, 'demo', () => {
+      const ixv = (m.cpu.xh << 8) | m.cpu.xl, de = (m.cpu.d << 8) | m.cpu.e;
+      const bytes = [];
+      for (let i = 0; i < de; i++) bytes.push(m.bus.read(ixv + i));
+      sent.push({ flag: m.cpu.a, bytes });
+      ret(true);                                      // carry set: sent whole
+    });
+    const romTap = [];
+    for (const b of sent) {
+      let x = b.flag; for (const v of b.bytes) x ^= v;
+      const n = b.bytes.length + 2;
+      romTap.push(n & 0xFF, n >> 8, b.flag, ...b.bytes, x);
+    }
+    const out = cl.exportTape(prog, 'demo');
+    same('TAP export is byte-identical to the ROM\'s SAVE "demo"', [saved, sent.length, out.fileName, Buffer.from(out.tap).equals(Buffer.from(romTap))],
+      [true, 2, 'demo.tap', true]);
+    same('Open: the tape reads back as the program (blank lines are not stored)',
+      [P.ownsTape(out.tap), P.tapeToText(out.tap).name, P.tapeToText(out.tap).text], [true, 'demo', prog.replace('\n\n', '\n') + '\n']);
+    same('Leap-C and Leap V2 tapes are told apart',
+      [P.ownsTape(buildTAP(encodeLineStore(['PRINT 1']), 'v2', 0x8101)), basicProfile.ownsTape(out.tap)], [false, false]);
+    // LOAD "demo" of the IDE's tape on a fresh machine, then RUN: the program is back.
+    setHomeRom(m, chome); setExRom(m, cexrom); resetMachine(m); crun(cwait, 600);
+    const blocks = [];
+    for (let p = 0; p < out.tap.length;) { const n = out.tap[p] | (out.tap[p + 1] << 8); blocks.push(out.tap.subarray(p + 2, p + 2 + n)); p += 2 + n; }
+    const loaded = command(CT.SH_LOAD, 'demo', () => {
+      const b = blocks.shift();
+      if (!b || b[0] !== m.cpu.a) { ret(true); return; }
+      let ixv = (m.cpu.xh << 8) | m.cpu.xl;
+      const de = (m.cpu.d << 8) | m.cpu.e;
+      for (let i = 0; i < de; i++) m.bus.write(ixv++, b[1 + i]);
+      m.cpu.xh = (ixv >> 8) & 0xFF; m.cpu.xl = ixv & 0xFF; m.cpu.d = 0; m.cpu.e = 0;
+      ret(false);                                     // carry clear: loaded
+    });
+    const store = encodeLineStore(prepareSource(prog).lines);
+    const inRam = [];
+    for (let i = 0; i < store.length; i++) inRam.push(m.bus.read(crom.progAreaStart + i));
+    const progEnd = m.bus.read(crom.progEnd) | (m.bus.read(crom.progEnd + 1) << 8);
+    same('LOAD "demo" reads the IDE\'s tape: the line store and PROG_END', [loaded, Buffer.from(inRam).equals(Buffer.from(store)), progEnd - crom.progAreaStart],
+      [true, true, store.length]);
+  }
 
   same('manual data: keywords, library functions, the shapes library',
     ['while', 'printf', 'circle'].map(w => LEAPC_KEYWORD_ENTRIES[w]?.kind), ['keyword', 'function', 'library function']);

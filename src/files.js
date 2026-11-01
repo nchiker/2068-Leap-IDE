@@ -82,14 +82,18 @@ export function normalizeText(text) {
 }
 
 /**
- * Read the first Leap V2 program on a .tap (as written by Leap's SAVE or by
- * src/export.js buildTAP) back into source text.
+ * Read the first program on a .tap in the V2 line-store format (as written by
+ * Leap V2's or Leap-C's SAVE, or by src/lang/basic/export.js buildTAP) back
+ * into source text. The header's format word, where a stock tape has its
+ * autostart line, tells the languages apart: Leap V2 $81xx (the default),
+ * Leap-C $8C00.
  *
  * @param {Uint8Array} bytes
+ * @param {{accepts?: (word: number) => boolean, language?: string}} [opts]
  * @returns {{name: string, text: string, warning: string | null}}
- * @throws {Error} with a message for the user when there is no Leap program
+ * @throws {Error} with a message for the user when there is no such program
  */
-export function tapeToText(bytes) {
+export function tapeToText(bytes, { accepts = w => (w >> 8) === 0x81, language = 'Leap V2' } = {}) {
   const blocks = [];
   for (let p = 0; p + 2 <= bytes.length;) {
     const len = bytes[p] | (bytes[p + 1] << 8);
@@ -107,9 +111,9 @@ export function tapeToText(bytes) {
     const h = blocks[i];
     if (h.flag !== 0x00 || h.data.length !== 17 || h.data[0] !== 0) continue;   // program headers only
     const word = h.data[13] | (h.data[14] << 8);
-    // Leap's LOAD accepts its own format word ($81xx) only; anything else is a
-    // stock Sinclair/Timex BASIC tape (an autostart line), which is tokenised.
-    if ((word >> 8) !== 0x81) { sawStock = true; continue; }
+    // LOAD accepts its own format word only; anything else is another
+    // language's or a stock Sinclair/Timex BASIC tape (an autostart line).
+    if (!accepts(word)) { sawStock = true; continue; }
     const name = String.fromCharCode(...h.data.subarray(1, 11)).trimEnd();
     const length = h.data[11] | (h.data[12] << 8);
     const progLength = h.data[15] | (h.data[16] << 8);   // smaller than length on a SAVE ... ALL tape
@@ -127,7 +131,7 @@ export function tapeToText(bytes) {
     return { name, text: lines.join('\n') + '\n', warning };
   }
   throw new Error(sawStock
-    ? 'This tape holds a Sinclair/Timex BASIC program, not a Leap V2 one'
+    ? `This tape holds a Sinclair/Timex BASIC program or another language's, not a ${language} one`
     : 'No program found on this tape');
 }
 

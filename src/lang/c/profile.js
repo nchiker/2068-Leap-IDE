@@ -29,6 +29,12 @@ import { LEAPC_KEYWORD_ENTRIES, LEAPC_MANUAL_REF } from './leapc-keywords.js';
 import { encodeLineStore } from '../basic/profile.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC } from './leapc-scan.js';
+import { buildTAP, checkTapeName } from '../basic/export.js';
+import { tapeToText } from '../../files.js';
+
+/** Leap-C's tape format word (LEAPC_TAPE_VERSION), in the header's autostart field. */
+const LEAPC_TAPE_WORD = 0x8C00;
+const readCTape = bytes => tapeToText(bytes, { accepts: w => w === LEAPC_TAPE_WORD, language: 'Leap-C' });
 
 const MAX_LINE_CHARS = 127;   // the editor's line, as V2's
 const RT_BREAK = 5;
@@ -179,11 +185,16 @@ export const leapcProfile = {
   help,
   examples: [],
   tools: { udg: false, draw: false },
-  hasTape: false,
+  /** ⬇ TAP: the program as Leap-C's SAVE writes it (V2's two blocks, format word $8C00). */
+  hasTape: true,
   hasCartridge: false,
   waitingText: 'Waiting for a key — click the screen to type',
-  tapeToText() { throw new Error('Leap-C tapes are not read yet'); },
-  ownsTape: () => false,
+  /** A Leap-C program tape on Open (throws for anything else). */
+  tapeToText: readCTape,
+  /** True if this tape holds a Leap-C program ($8C00 in its header). */
+  ownsTape(bytes) {
+    try { readCTape(bytes); return true; } catch { return false; }
+  },
 
   async attach({ rom, romImages }) {
     const checker = createChecker(rom, romImages);
@@ -233,6 +244,30 @@ export const leapcProfile = {
           bytes: store.length,
           message: 'Compiling…',
         };
+      },
+
+      /** ⬇ TAP: the question for the tape name. */
+      tapePrompt: 'Tape name (up to 10 characters; LOAD "name" must match it exactly):',
+      tapeNameMax: 10,
+
+      /**
+       * The program as a .tap that Leap-C's LOAD reads (what SAVE "name"
+       * writes: tools/c2tape.py in 2068-Leap-C; checked against the ROM's
+       * SH_SAVE in tests/rom-checks.mjs). On the TS2068: LOAD "name", RUN.
+       * @returns {{error: string} | {tap: Uint8Array, fileName: string, message: string}}
+       */
+      exportTape(text, name) {
+        const prepared = prepareSource(text);
+        if (prepared.lines.length === 0) return { error: 'Nothing to save' };
+        if (prepared.problems.length > 0) return { error: prepared.problems[0].message };
+        const problem = checkTapeName(name) ?? (name.includes('"') ? 'A tape name cannot contain "' : null);
+        if (problem) return { error: problem };
+        const store = encodeLineStore(prepared.lines);
+        const big = tooBig(store);
+        if (big) return { error: big };
+        const tap = buildTAP(store, name, rom.tapeFormatWord ?? LEAPC_TAPE_WORD);
+        const fileName = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
+        return { tap, fileName, message: `Saved ${fileName}: on the TS2068, LOAD "${name}" then RUN` };
       },
 
       progInfo(bytes) {

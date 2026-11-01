@@ -459,6 +459,20 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
   check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
+  // C5: ⬇ TAP saves the program as Leap-C's SAVE does; opening that tape from BASIC switches to Leap-C.
+  const cSrc = 'int main(void)\n{\n    return 7;\n}\n';
+  await evaluate(`(window.smokeLastFile = null, window.prompt = () => 'ctape', leapEditor.setSource(${JSON.stringify(cSrc)}, {fresh: true}), document.getElementById('btn-export').click())`);
+  const cTap = await waitFor('window.smokeLastFile && window.smokeLastFile.byteLength', 5000);
+  const cTapStatus = await status();
+  await evaluate("leapIDE.switchLanguage('basic')");
+  await waitFor("leapIDE.profile.id === 'basic' && leapIDE.lang", 20000);
+  await evaluate(`(() => { const dt = new DataTransfer();
+    dt.items.add(new File([window.smokeLastFile], 'ctape.tap'));
+    const input = document.getElementById('file-input');
+    input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
+  const cOpened = await waitFor(`leapIDE.profile.id === 'c' && leapEditor.getSource() === ${JSON.stringify(cSrc)} && document.getElementById('filename-display').textContent`, 20000);
+  check('Leap-C: ⬇ TAP saves the tape (LOAD "ctape"), and Open from BASIC switches to Leap-C', cTap === 21 + 45 &&
+    cTapStatus === 'Saved ctape.tap: on the TS2068, LOAD "ctape" then RUN' && !!cOpened, `${cTap} | ${cTapStatus} | ${cOpened}`);
   await evaluate("leapIDE.switchLanguage('basic')");
   await waitFor("leapIDE.profile.id === 'basic' && leapIDE.lang", 20000);
 
