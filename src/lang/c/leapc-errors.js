@@ -1,7 +1,7 @@
 /**
  * src/lang/c/leapc-errors.js — GENERATED, do not edit.
  *
- * tools/gen-leapc-errors.py from 2068-Leap-C include/leapc_errors.inc at v1.0.0-beta.2:
+ * tools/gen-leapc-errors.py from 2068-Leap-C include/leapc_errors.inc at v1.0.0:
  * error code -> {message, cause}; the message is what the ROM shows.
  */
 

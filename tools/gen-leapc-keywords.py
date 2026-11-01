@@ -96,8 +96,13 @@ def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     checkout, ref = sys.argv[1], sys.argv[2]
-    commit = subprocess.run(['git', '-C', checkout, 'rev-parse', '--short', ref],
+    commit = subprocess.run(['git', '-C', checkout, 'rev-parse', '--short', ref + '^{commit}'],
                             check=True, capture_output=True, text=True).stdout.strip()
+    # Help links name the release tag (a tag object's hash is not a tree on
+    # GitHub); any other ref is linked by its commit.
+    is_tag = subprocess.run(['git', '-C', checkout, 'rev-parse', '--verify', '--quiet', f'refs/tags/{ref}'],
+                            capture_output=True).returncode == 0
+    link_ref = ref if is_tag else commit
     words = {}
     for part in PARTS:
         text = subprocess.run(['git', '-C', checkout, 'show', f'{ref}:docs/manual/{part}'],
@@ -115,7 +120,7 @@ def main():
     print()
     print('"use strict";')
     print()
-    print(f'export const LEAPC_MANUAL_REF = {json.dumps(commit)};')
+    print(f'export const LEAPC_MANUAL_REF = {json.dumps(link_ref)};')
     print()
     print('export const LEAPC_KEYWORD_ENTRIES = {')
     for name in sorted(words):
