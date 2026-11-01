@@ -1,6 +1,9 @@
 # Plan: Leap-Forth in the Leap IDE
 
-Status: proposal, updated 2026-11-01. No Forth code exists yet. Prerequisite:
+Status: updated 2026-11-01. **F0 and F2 are done, F1 is done except Import
+session and watches, and the Examples part of F6 is done** (commit `b9526ce`;
+Send, Ctrl+Enter, came after it). Open: F3, F4, F5, F7, F8 and the rest of
+F1 and F6. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Forth project has answered the IDE's questions
 ([`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and
@@ -48,7 +51,7 @@ and the release bundle.
 |---|---|---|
 | Release | `v2.0`, 2026-11-01, commit `50170f2`; version text "2068 FORTH V2.0" (`FORTH_VERSION_TEXT`, also on the status bar at power-on). Earlier: `v0.1.0` | GitHub release; A Q6.6 |
 | Release zip | `roms/forth_boot_rom0.bin` (HOME, 16K, SHA-256 `730c86d0…`), `roms/graphics_exrom.bin` (EXROM, 8K, `fd877dd0…`), `roms/forth_cart.dck` (the cartridge with no program), `symbols/forth_boot.sym`, `graphics_exrom.sym` and the `.lst` files, `docs/manual/01…08`, `demos/blackjack.fs`, `gallery.fs`, `SHA256SUMS` | the release |
-| TSRun | The fork's `main`, commit `11731e1`, carries exactly the v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom` (Leap V2 and Leap-C ROMs unchanged). The IDE's submodule is still at `016787f`, whose Forth pair (`760a5ce3…` / `2add175c…`) is an older build: moving it is F0 | TSRun; `git` |
+| TSRun | The fork's `main`, commit `11731e1`, carries exactly the v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom` (Leap V2 and Leap-C ROMs unchanged). The IDE's submodule was at `016787f`, whose Forth pair (`760a5ce3…` / `2add175c…`) was an older build; F0 moved it to `11731e1` (done, `b9526ce`) | TSRun; `git` |
 | Without the EXROM | `EDIT`, `FILL`, `CIRCLE`, `RECT`, `POLYGON`, sprites say `NO EXROM` | README |
 | Console | `EDITOR_LOOP_LIVE` handles one typed line. Entry points the IDE uses: `EDITOR_LOOP_LIVE.enter` (what ENTER does) and `EDITOR_LOOP_LIVE.key_ret` (the return address of the prompt's key wait). Input line: `EDIT_BUF` (128 bytes, `EDIT_MAX_LEN`), `EDIT_LEN`, `EDIT_CURSOR` (the byte after `EDIT_LEN`) | A Q1, Q3 |
 | Line store | CR-ended plain text from `STORE_START` to `STORE_END` (cells; 8,192 bytes at most). `STORE_APPEND` adds a line (empty lines are not stored). Command lines (`SAVE-TEXT`, `LOAD-TEXT`, `EDIT` …) are taken off it, so it holds source only | A Q1 |
@@ -114,6 +117,11 @@ Each stage ends with the tests green and is committed on its own.
 
 ### F0 — Pin the Forth build
 
+**Done (2026-11-01, `b9526ce`).** The submodule is at `11731e1`;
+`tools/forth-rom-entry.py` takes the unpacked release zip (`forth_boot.sym`,
+`SHA256SUMS`) and the entry is in `src/lang/forth/forth-roms.js`. Not done:
+copying `forth_cart.dck` to `cartridge/forth/2.0/` (that is F8).
+
 - **Done by the Forth and TSRun side:** the tag `v2.0` exists (commit
   `50170f2`) and the TSRun fork's `main` at `11731e1` carries exactly the
   v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom`, with the Leap V2
@@ -132,6 +140,15 @@ Each stage ends with the tests green and is committed on its own.
 - Copy the release's `forth_cart.dck` to `cartridge/forth/2.0/` (F8).
 
 ### F1 — The live session: keys, Send, Run, Reset
+
+**Done (`b9526ce`) except Import session and the optional watches**: keys
+always pass (`keyboard.always`), Run sends line by line (`driver.inject` /
+`next`, `canInject`), the failing token is marked from `SRC_PTR`, Stop is
+BREAK held 5 frames (`breakHold`), Reset is TSRun's. **Deviation:** Run stops
+at the first line whose `LAST_ERROR` is not 0 and sends nothing after it.
+**Send** (Ctrl+Enter / Cmd+Enter: the cursor's line or the selection's whole
+lines) was added after the commit (`getSendText` / `onSend` in
+`src/editor.js`, `sendSelection` in `ide.js`). **Not done:** Import session.
 
 - **Keyboard:** in Forth the screen passes keys through whenever it has focus
   (the profile switches off the "only while a program runs" gate of the BASIC
@@ -219,6 +236,11 @@ Each stage ends with the tests green and is committed on its own.
   typed; Reset empties the dictionary.
 
 ### F2 — The Forth editor
+
+**Done (`b9526ce`)**: `src/lang/forth/editor.js` and `forth-scan.js`, the
+generated `forth-words.js` (184 words, the manual's Parts 3 and 4) and the
+Help overlay. **Not done:** the cross-check of the names against the `H_*`
+headers in the `.sym` files (the count, 184, does match).
 
 - **Tokenizer** (`StreamLanguage`): words separated by whitespace (CR, TAB and
   control bytes are whitespace to the ROM). Words that read past their own
@@ -361,6 +383,12 @@ sections:
 - DCK: stage F8.
 
 ### F6 — Examples and corpus test
+
+**Partly done (`b9526ce`):** the Examples menu is generated
+(`tools/gen-forth-examples.py`: the manual's 15 Part 7 programs and
+`demos/blackjack.fs`) and `tests/rom-checks.mjs` section 8 runs the 12
+non-interactive ones to OK. Not done: checking their `\ expect:` output, the
+`\ keys:` ones, and `demos/gallery.fs`.
 
 - Examples menu: from the release's `demos/*.fs` (`blackjack.fs`,
   `gallery.fs`) and the manual's examples.

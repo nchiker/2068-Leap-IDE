@@ -1,7 +1,9 @@
 # Plan: one IDE for Leap V2 BASIC, Leap-C and Leap-Forth
 
-Status: updated 2026-11-01. **Stage 0 is done** (2026-11-01, commit `3ed5d3b`;
-see "Stage 0: what was built" below); no second language exists yet. Both ROM
+Status: updated 2026-11-01. **Stage 0 is done** (commit `3ed5d3b`; see
+"Stage 0: what was built" below). **Leap-Forth (F0 to F2, `b9526ce`) and Leap-C
+(C1 to C3, `d0e437b`) are running** in the IDE; the TSRun pin is `11731e1`.
+What remains is in the two language plans. Both ROM
 projects have answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md),
 [`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)).
@@ -44,7 +46,8 @@ Leap-C can follow or overlap it.
 
 ## What is already in place
 
-- The pinned TSRun submodule (`016787f`) already carries `roms/leapc-0.rom` /
+- The TSRun submodule was pinned at `016787f` (now `11731e1`, see the status
+  line) and already carried `roms/leapc-0.rom` /
   `leapc-1.rom` and `roms/leapforth-0.rom` / `leapforth-1.rom`. The Leap-C pair
   is byte-identical to Leap-C `v1.0.0-beta.2` (`043becf4…` / `97fe9523…`), so
   Leap-C needs no submodule move to start. The pin's Forth pair (`760a5ce3…` /
@@ -52,7 +55,7 @@ Leap-C can follow or overlap it.
   `11731e1`**, the fork's `main`, which carries exactly the Forth v2.0 ROMs
   (`forth_boot_rom0.bin` `730c86d0…`, `graphics_exrom.bin` `fd877dd0…`) as
   `leapforth-0.rom` / `leapforth-1.rom`, with the Leap V2 and Leap-C ROMs
-  unchanged (stage F0 of the Forth plan; not done yet).
+  unchanged (stage F0 of the Forth plan; done in `b9526ce`).
 - All three ROMs use the 16K HOME + 8K EXROM split and Leap V2's kernel I/O
   (copied, not shared), so `IO_READ_KEY.wait_hit` exists in each as the idle
   point, and the "single-step to a safe point, inject, jump" approach of

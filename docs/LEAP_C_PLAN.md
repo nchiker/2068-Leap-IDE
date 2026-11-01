@@ -1,6 +1,7 @@
 # Plan: Leap-C in the Leap IDE
 
-Status: proposal, updated 2026-11-01. No Leap-C code exists yet. Prerequisite:
+Status: updated 2026-11-01. **C1, C2 and C3 are done** (commit `d0e437b`,
+on `v1.0.0-beta.2`); C4 to C9 are open. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Leap-C project has answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)).
@@ -83,6 +84,16 @@ Each stage ends with the tests green and is committed on its own.
 
 ### C1 — ROM entry and Run
 
+**Done (`d0e437b`).** `tools/leapc-rom-entry.py <build dir> <version>`; the
+entry (`src/lang/c/leapc-roms.js`) was made from the tag built in a detached
+worktree of `~/2068-Leap-C` (the release has no `.sym`; the worktree was
+removed afterwards). `SH_WAIT_KEY.key_ret` does not exist in beta.2 (0 bytes
+when added later), so it is derived as `SH_WAIT_KEY.read + 3` after checking
+the CALL. Run is the shell path as described below. **Deviation:** Stop is
+BREAK let go after `driver.breakHold` (5) frames, because Leap-C's report waits
+for all keys to be released (the emulator now honours `breakHold`). **Not
+done:** the exit status in the status bar.
+
 - `tools/leapc-rom-entry.py <checkout> <version>`: build the tag (or commit)
   in a detached worktree, as for V2, check the images against the release
   `SHA256SUMS` (beta.2's: `043becf4…` / `97fe9523…`), and print a
@@ -143,6 +154,14 @@ Each stage ends with the tests green and is committed on its own.
 
 ### C2 — The C editor
 
+**Done (`d0e437b`)**: `src/lang/c/editor.js` and `leapc-scan.js`.
+**Deviation:** the keyword data comes from the manual on Leap-C `main` at
+`83e6e21` (the beta.2 tag has no manual); regenerate it at the 1.0 tag. The
+error text comes from `include/leapc_errors.inc` at the tag. `//` and `/* */`
+comments, no auto-caps, folding, Tidy, go to definition and rename of
+file-scope names are in; the names are not yet cross-checked against
+`LEX_KW_TABLE` / `LIB_NAMES`.
+
 - **Tokenizer:** our own `StreamLanguage` (like V2's), not CodeMirror's
   generic C mode, so the editor knows the Leap-C subset:
   - keywords; types; preprocessor lines (`#define`, `#undef`, `#pragma hires`,
@@ -178,6 +197,11 @@ Each stage ends with the tests green and is committed on its own.
   release tag.
 
 ### C3 — Error checking with the ROM's compiler
+
+**Done (`d0e437b`)**: `src/lang/c/leapc-check.js` calls `SH_COMPILE` (the
+shell's trampoline) rather than `CC_PROGRAM` directly, and the underline starts
+at the error's token (column as `SH_RUN` computes `SH_ERR_COL`: `TOK_PTR` less
+the line start). **Not done:** a library program (needs C6).
 
 - A hidden second machine, as for BASIC: boot once to the key wait, snapshot;
   per check restore, write the store, page the EXROM out, call `CC_PROGRAM`

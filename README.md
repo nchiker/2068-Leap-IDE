@@ -47,11 +47,12 @@ and technical brief, and `docs/overview.md` for the design.
 
    (In an existing clone, run `git submodule update --init`.) `tsrun/` is a git
    submodule of the TSRun fork https://github.com/nchiker/TSRun, pinned at
-   commit `016787f` (TSRun `main` with the 2.1.0-emu.1 Leap ROMs, on top of the
+   commit `11731e1` (TSRun `main` with the 2068-Forth v2.0 ROMs; before it
+   `016787f`, the 2.1.0-emu.1 Leap ROMs, on top of the
    `sound.js` worklet fix `f65de5a`, which loads the worklet with
    `new URL("sound.worklet.js", import.meta.url)` so audio works from a page
    outside TSRun's directory, and the tape-loading fix `4db1f1e`, both
-   pushed; `016787f` changes only the two ROMs and the READMEs). No separate
+   pushed; `016787f` changed only the two ROMs and the READMEs). No separate
    `~/TSRun` clone is needed.
 
 2. The Leap ROMs are not part of this repo. They load from

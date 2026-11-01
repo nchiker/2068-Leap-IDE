@@ -42,9 +42,10 @@ is archived and irrelevant.
 **TSRun** is an open-source TS2068 emulator written in plain JavaScript. The
 IDE uses the fork https://github.com/nchiker/TSRun (upstream
 josef-jelinek/TSRun), included in the project as the git submodule `./tsrun`,
-pinned at commit `016787f` (TSRun `main` with the 2.1.0-emu.1 Leap ROMs, on
+pinned at commit `11731e1` (TSRun `main` with the 2068-Forth v2.0 ROMs; before
+it `016787f`, the 2.1.0-emu.1 Leap ROMs, on
 top of the `sound.js` worklet fix `f65de5a` and the tape-loading fix `4db1f1e`,
-both pushed; `016787f` changes only the two ROMs and the READMEs). The fork's
+both pushed; `016787f` changed only the two ROMs and the READMEs). The fork's
 `roms/` folder carries the Leap V2 ROMs (`leap-0.rom`, 16K HOME, and
 `leap-1.rom`, 8K EXROM; the 2.1.0-emu.1 release images). TSRun provides:
 
@@ -96,7 +97,7 @@ every push, and includes the public `tsrun` submodule. `index.html` forwards to
 ```
 ide.html
 │
-├── tsrun/ (git submodule of the TSRun fork, pinned 016787f; ES modules imported by src/emulator.js)
+├── tsrun/ (git submodule of the TSRun fork, pinned 11731e1; ES modules imported by src/emulator.js)
 │   ├── machine.js    ← machine, bus, ROM paging, frame loop
 │   ├── z80.js        ← CPU
 │   ├── screen.js     ← WebGL2 canvas renderer
@@ -575,7 +576,7 @@ section once the cartridge build exists.
   (local clone `~/2068-Leap`)
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, upstream
   https://github.com/josef-jelinek/TSRun (git submodule `./tsrun`, pinned at
-  `016787f`)
+  `11731e1`)
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
 - **Leap V2 ROMs**: `tsrun/roms/leap-0.rom` / `leap-1.rom` (not stored in this
   repo)
