@@ -8,7 +8,7 @@
 // packages/2.1.0-emu.1/shapes.bin) is installed before the compile, as LOAD "NAME" EXT does, and goes
 // on the cartridge, which installs it the same way at start-up (program image format 2).
 //
-// The compile is the Leap IDE checker's (src/leap-check.js): boot the release ROMs in a hidden TSRun
+// The compile is the Leap IDE checker's (src/lang/basic/leap-check.js): boot the release ROMs in a hidden TSRun
 // machine to the editor's key wait, write the line store, call V2_CLEAR_ARRAYS -> V2_COMPILE_STORED,
 // then read [VM_CODE_BASE, EMIT_PTR) and SYM_COUNTS. Addresses come from the build's .sym files.
 // Inputs (override with env): LEAP=leap/ (v2_home.bin, v2_exrom.bin, build/*.sym, build/cart/*.bin),

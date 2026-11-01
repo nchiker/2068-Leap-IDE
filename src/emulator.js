@@ -1,5 +1,5 @@
 /**
- * src/emulator.js — TSRun TS2068 running Leap V2, driven for the IDE.
+ * src/emulator.js — TSRun TS2068 running a Leap ROM, driven for the IDE.
  *
  * A slim stand-in for TSRun's host.js (which is wired to the emulator page's
  * desk UI): it owns the machine, the WebGL screen, sound, the keyboard
@@ -10,24 +10,26 @@
  *     the editor idles, INPUT and PAUSE 0 wait, and a finished run waits for
  *     "press a key". A busy program is first stopped with BREAK; if that does
  *     not land on the key wait, the machine is reset and booted to it.
- *  2. Write the line store at PROG_AREA_START and set PROG_END.
- *  3. Point SP at a return chain on the ROM's own stack and jump in:
- *       V2_CLEAR_ARRAYS -> V2_RESET_EDIT -> V2_RUN_STORED -> V2_COMMAND_LOOP.loop
- *     The first two are what LOAD does after replacing a program; the third is
- *     what typing RUN calls. No code is written to RAM outside the stack.
+ *  2. Hand the job to the language profile's driver (src/lang/<id>/profile.js,
+ *     driver.inject), which writes the program into RAM and jumps into the ROM
+ *     (Leap V2 BASIC: the line store, then a return chain on the ROM's own
+ *     stack into what typing RUN calls).
  *
- * Addresses come from src/leap-roms.js and are checked against the ROM hash.
+ * The profile also says whether the key wait is a safe point (paging), whether
+ * a run has ended or waits for keys, how to end a wait and how to read the
+ * result. Addresses come from the profile's ROM table, keyed by the ROM hash.
  *
- * Programs are written in the IDE's editor, never in Leap's own: keys reach
- * the TS2068 only while an injected program is running (INPUT, INKEY$,
- * PAUSE 0) and the screen has focus. When a run ends its output stays up,
- * because no keypress can dismiss it into the Leap editor.
+ * Programs are written in the IDE's editor. In Leap V2 BASIC keys reach the
+ * TS2068 only while an injected program is running (INPUT, INKEY$, PAUSE 0)
+ * and the screen has focus, so nothing types into the ROM's own editor, and a
+ * run's output stays up when it ends. A profile can let keys pass all the
+ * time (keyboard.always).
  *
  * Cartridge test (testCartridge): the same machine with the stock TS2068 ROMs
  * and a .dck in the dock, as a real TS2068 with a cartridge. The stock ROM
  * starts the cartridge by itself; keys always reach the machine (the cartridge
  * has no editor, and a key after the end restarts its program). Run, Stop and
- * Reset put the Leap ROMs back.
+ * Reset put the profile's ROMs back.
  */
 
 "use strict";
@@ -43,7 +45,6 @@ import {
   initSound, resumeSound, soundWantsFrame, soundIsRunning,
   setSoundNeedCallback, setSoundStateCallback, pushSound,
 } from '../tsrun/sound.js';
-import { identifyRoms } from './leap-roms.js';
 import { createPcKeyboard } from './pc-keyboard.js';
 
 // TSRun is linked into the project as ./tsrun (see README); fetched files are
@@ -53,21 +54,9 @@ const TSRUN_URL = new URL('../tsrun/', import.meta.url);
 const FRAMES_PER_SECOND = cpuHz / tStatesPerFrame;
 const FRAME_MS          = 1000 / FRAMES_PER_SECOND;
 
-// The ROM's machine stack starts at $FF00 (manual, Appendix E) and the Leap
-// test harness calls V2_RUN_STORED with SP there too. A run that has ended
-// (finished, compile error, runtime error, BREAK) waits for a key with SP back
-// at STACK_TOP; INPUT and PAUSE 0 wait deeper. Checked on 2.0.2-emu.1.
-const STACK_TOP  = 0xFF00;
-const CHAIN_BASE = STACK_TOP - 6;   // three return addresses below STACK_TOP's own
-
 const SEEK_FRAMES  = 2;     // frames to wait for the key wait before pressing BREAK
 const BREAK_FRAMES = 60;    // frames to hold BREAK before resetting instead
 const BOOT_FRAMES  = 300;   // reset to editor takes 66 frames on 2.0.2-emu.1
-
-// TS2068 port bits that page the EXROM into chunk 6 ($C000-$DFFF), where the
-// shell routines above live. Both are set whenever the editor or VM runs.
-const PORT_F4_CHUNK6 = 0x40;
-const PORT_FF_EXROM  = 0x80;
 
 // Matrix rows/bits for BREAK (CAPS SHIFT + SPACE); the matrix is active low.
 const CAPS_SHIFT = { row: 0, bit: 0 };
@@ -75,9 +64,9 @@ const SPACE      = { row: 7, bit: 0 };
 
 /**
  * @typedef {'booting'|'ready'|'running'|'waiting'|'ended'|'stopped'|'paused'|'cartridge'|'error'} EmuState
- * @typedef {{compileError: number, vmError: number, line: number}} RunResult
  *
  * @param {{
+ *   profile: object,                   // the language profile (src/lang/profiles.js)
  *   canvas: HTMLCanvasElement,
  *   focusEl: HTMLElement,              // receives keys while focused
  *   onState: function(EmuState, object=): void,
@@ -90,14 +79,16 @@ export async function createEmulator(opts) {
   const emu = {
     machine:  createMachine(keyMatrix, joystick),
     keyMatrix,
-    kbd:      createPcKeyboard(keyMatrix),
+    kbd:      createPcKeyboard(keyMatrix, opts.profile.keyboard.symbols),
     gfx:      null,
     crt:      false,
     sfx:      null,
-    rom:      null,       // entry from KNOWN_ROMS
+    profile:  opts.profile,
+    rom:      null,       // the profile's ROM entry for the loaded pair
+    romImages: null,      // {home, exrom} of the profile's ROMs
     state:    'booting',
     runActive: false,     // an injected program has not yet ended
-    pending:  null,       // {kind: 'run'|'stop', store?, stage, frames}
+    pending:  null,       // {kind: 'run'|'stop', job?, stage, frames}
     paused:   false,      // debugger: the machine holds where it is
     watch:    null,       // debugger: function(machine) -> true to pause before the next instruction
     oneShot:  null,       // debugger: like watch, removed after it fires (pause())
@@ -120,17 +111,38 @@ export async function createEmulator(opts) {
 
   return {
     /**
-     * Queue a run of an encoded line store (see encodeLineStore). With a
-     * package image, it is installed first, as LOAD "NAME" EXT would.
+     * Queue a run. The job is the profile's (attach().startRun()); its driver
+     * writes it into RAM at the next safe point.
      */
-    run(store, pkg = null) {
+    run(job) {
       unpause(emu);
-      // Out of a cartridge test the Leap ROMs boot first: wait for the key
-      // wait (stage 'reset') instead of pressing BREAK.
+      // Out of a cartridge test the ROMs boot first: wait for the key wait
+      // (stage 'reset') instead of pressing BREAK.
       const stage = emu.cart ? 'reset' : 'seek';
       if (emu.cart) leaveCartridge(emu);
-      emu.pending = { kind: 'run', store, pkg, stage, frames: 0 };
+      emu.pending = { kind: 'run', job, stage, frames: 0 };
     },
+    /**
+     * Switch language: the profile's ROM pair goes in and the machine boots
+     * (a cartridge test ends first). Rejects for an unknown ROM pair, and the
+     * previous language stays.
+     */
+    async setProfile(profile) {
+      const loaded = await fetchProfileRoms(profile);
+      unpause(emu);
+      emu.pending = null;
+      if (emu.cart) { ejectDock(emu.machine); emu.cart = false; }
+      releaseKeys(emu);
+      emu.profile = profile;
+      emu.rom = loaded.rom;
+      emu.romImages = loaded.images;
+      emu.kbd.setSymbols(profile.keyboard.symbols);
+      restoreRoms(emu);
+      hardReset(emu);
+      emu.paused = false;
+      setState(emu, 'booting');
+    },
+    get profile() { return emu.profile; },
     /** Stop the running program: BREAK if busy, back to the editor if waiting. A cartridge test ends. */
     stop() {
       unpause(emu);
@@ -165,7 +177,7 @@ export async function createEmulator(opts) {
       setExRom(m, emu.stockImages.exrom);
       const err = insertDock(m, dck);
       if (err !== null) {
-        restoreLeapRoms(emu);
+        restoreRoms(emu);
         resetMachine(m);
         setState(emu, 'booting');
         throw new Error(`Not a cartridge the TS2068 can take: ${err}`);
@@ -193,31 +205,10 @@ export async function createEmulator(opts) {
     /** TSRun's CRT filter: rounded, slightly blended pixels and scanlines. */
     setCrt(on)   { emu.crt = on; if (emu.gfx) { setCrt(emu.gfx, on); resizeScreen(emu.gfx); } },
     get rom()    { return emu.rom; },
-    /** The ROM images in use (for src/leap-check.js's own machine). */
+    /** The ROM images in use (for the checker's own machine). */
     get romImages() { return emu.romImages; },
     get machine() { return emu.machine; },
   };
-}
-
-/**
- * Leap V2's line store: per line, LE16 (length + 1), the text, then $0D.
- * This is exactly what the ROM's editor stores (V2_TOKENIZE copies verbatim).
- *
- * @param {string[]} lines
- * @returns {Uint8Array}
- */
-export function encodeLineStore(lines) {
-  let size = 0;
-  for (const l of lines) size += l.length + 3;
-  const out = new Uint8Array(size);
-  let p = 0;
-  for (const l of lines) {
-    out[p++] = (l.length + 1) & 0xFF;
-    out[p++] = (l.length + 1) >> 8;
-    for (let i = 0; i < l.length; i++) out[p++] = l.charCodeAt(i);
-    out[p++] = 0x0D;
-  }
-  return out;
 }
 
 // ── Setup ──────────────────────────────────────────────────────────
@@ -233,20 +224,35 @@ async function fetchBytes(name, size) {
   return bytes;
 }
 
-async function loadRoms(emu) {
+/**
+ * SHA-256 of HOME followed by EXROM, as hex: the key of a profile's ROM table.
+ * @returns {Promise<string>}
+ */
+export async function romPairHash(home, exrom) {
+  const both = new Uint8Array(home.length + exrom.length);
+  both.set(home);
+  both.set(exrom, home.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', both));
+  return Array.from(digest, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Fetch a profile's ROM pair and find its entry; an unknown pair is refused. */
+async function fetchProfileRoms(profile) {
   const [home, exrom] = await Promise.all([
-    fetchBytes('roms/leap-0.rom', homeRomSize),
-    fetchBytes('roms/leap-1.rom', exRomSize),
+    fetchBytes(profile.romFiles.home, homeRomSize),
+    fetchBytes(profile.romFiles.exrom, exRomSize),
   ]);
-  const { hash, rom } = await identifyRoms(home, exrom);
-  if (rom === null) {
-    throw new Error(`Unknown Leap ROM pair (SHA-256 ${hash}). ` +
-      'Add it to src/leap-roms.js with tools/leap-rom-entry.py.');
-  }
-  emu.rom = rom;
-  emu.romImages = { home, exrom };
-  setHomeRom(emu.machine, home);
-  setExRom(emu.machine, exrom);
+  const hash = await romPairHash(home, exrom);
+  const rom = profile.knownRoms[hash];
+  if (!rom) throw new Error(`Unknown ${profile.name} ROM pair (SHA-256 ${hash}). ${profile.romHint}`);
+  return { rom, images: { home, exrom } };
+}
+
+async function loadRoms(emu) {
+  const loaded = await fetchProfileRoms(emu.profile);
+  emu.rom = loaded.rom;
+  emu.romImages = loaded.images;
+  restoreRoms(emu);
 }
 
 function initDisplay(emu, canvas) {
@@ -289,9 +295,12 @@ function initAudio(emu) {
 
 function initKeys(emu, focusEl) {
   // Unlike TSRun's page, keys reach the TS2068 only while the screen has focus
-  // and a program is running, so nothing ever types into Leap's own editor. A
-  // cartridge has no editor: there keys always pass.
-  focusEl.addEventListener('keydown', e => { if (emu.runActive || emu.cart) emu.kbd.keyDown(e); });
+  // and (unless the profile lets them pass always) a program is running, so
+  // nothing types into Leap V2's own editor. A cartridge has no editor: there
+  // keys always pass.
+  focusEl.addEventListener('keydown', e => {
+    if (emu.runActive || emu.cart || emu.profile.keyboard.always) emu.kbd.keyDown(e);
+  });
   focusEl.addEventListener('keyup',   e => emu.kbd.keyUp(e));
   focusEl.addEventListener('blur',    () => emu.kbd.releaseAll());
   focusEl.addEventListener('pointerdown', () => focusEl.focus());
@@ -361,7 +370,7 @@ function runWatched(emu) {
   let seen = 'busy';
   while (m.tstates < end) {
     if (seen === 'busy' && !emu.cart && cpu.pc >= rom.keyWait && cpu.pc < rom.keyWaitEnd &&
-        (m.portF4 & PORT_F4_CHUNK6) && (m.portFF & PORT_FF_EXROM)) {
+        emu.profile.driver.safe(m, rom)) {
       seen = 'wait';
       atKeyWait(emu);
       if (!emu.watch && !emu.oneShot) return seen;
@@ -404,31 +413,43 @@ function stepOneInstruction(emu) {
 }
 
 function atKeyWait(emu) {
-  const p = emu.pending;
-  if (p && p.stage === 'break') releaseBreak(emu);
-  const ended = emu.machine.cpu.sp === STACK_TOP;
+  const p = emu.pending, m = emu.machine, drv = emu.profile.driver;
+  const ended = emu.runActive && drv.runState(m, emu.rom) === 'ended';
 
   if (p && p.kind === 'run') {
+    if (p.stage === 'break') releaseBreak(emu);
     emu.pending = null;
-    inject(emu, p.store, p.pkg);
+    drv.inject(m, emu.rom, p.job);
     emu.runActive = true;
     setState(emu, 'running');
     return;
   }
   if (p && p.kind === 'stop') {
-    emu.pending = null;
     if (emu.runActive && !ended) {
-      // Waiting at INPUT / PAUSE 0: return to the editor directly.
-      jumpTo(emu, emu.rom.commandLoop, STACK_TOP + 2);
-      endRun(emu);
-      setState(emu, 'stopped');
+      // Waiting for keys: the profile ends the wait directly (Leap V2 BASIC),
+      // or BREAK is held until the run ends (advancePending resets after
+      // BREAK_FRAMES if it never does).
+      if (drv.stopWaiting(m, emu.rom)) {
+        if (p.stage === 'break') releaseBreak(emu);
+        emu.pending = null;
+        endRun(emu);
+        setState(emu, 'stopped');
+      } else if (p.stage !== 'break') {
+        pressBreak(emu);
+        p.stage = 'break';
+        p.frames = 0;
+      } else {
+        advancePending(emu);
+      }
       return;
     }
+    if (p.stage === 'break') releaseBreak(emu);
+    emu.pending = null;
   }
   if (emu.runActive) {
     if (ended) {
       endRun(emu);
-      setState(emu, 'ended', readResult(emu));
+      setState(emu, 'ended', drv.result(m, emu.rom));
     } else {
       setState(emu, 'waiting');
     }
@@ -479,16 +500,16 @@ function releaseKeys(emu) {
   emu.kbd.releaseAll();
 }
 
-function restoreLeapRoms(emu) {
+function restoreRoms(emu) {
   setHomeRom(emu.machine, emu.romImages.home);
   setExRom(emu.machine, emu.romImages.exrom);
 }
 
-/** End a cartridge test: empty the dock, put the Leap ROMs back and reset. */
+/** End a cartridge test: empty the dock, put the profile's ROMs back and reset. */
 function leaveCartridge(emu) {
   releaseKeys(emu);
   ejectDock(emu.machine);
-  restoreLeapRoms(emu);
+  restoreRoms(emu);
   emu.cart = false;
   emu.pending = null;
   resetMachine(emu.machine);
@@ -502,65 +523,6 @@ function leaveCartridge(emu) {
 function endRun(emu) {
   releaseKeys(emu);
   emu.machine.bus.write(emu.rom.kbdKeyHit, 0);
-}
-
-// ── Injection ──────────────────────────────────────────────────────
-
-function poke16(m, addr, value) {
-  m.bus.write(addr, value & 0xFF);
-  m.bus.write(addr + 1, (value >> 8) & 0xFF);
-}
-
-function inject(emu, store, pkg) {
-  const m = emu.machine, rom = emu.rom;
-  // Writes go through the bus so they land where the CPU would see them.
-  for (let i = 0; i < store.length; i++) m.bus.write(rom.progAreaStart + i, store[i]);
-  poke16(m, rom.progEnd, rom.progAreaStart + store.length);
-  // Return chain: CLEAR_ARRAYS returns into RESET_EDIT, then RESET_DISPLAY,
-  // then RUN_STORED, which returns into the command loop. RESET_DISPLAY puts
-  // back INK 0, PAPER 7, BRIGHT/FLASH/INVERSE/OVER 0, a white border and video
-  // mode 0, as Leap does on every return to its editor: the IDE never goes
-  // back to the editor, so without it one run's colours carried into the next.
-  poke16(m, CHAIN_BASE,     rom.resetEdit);
-  poke16(m, CHAIN_BASE + 2, rom.resetDisplay);
-  poke16(m, CHAIN_BASE + 4, rom.runStored);
-  poke16(m, STACK_TOP,      rom.commandLoop);
-  if (!pkg) {
-    jumpTo(emu, rom.clearArrays, CHAIN_BASE);
-    return;
-  }
-  // A package goes in first, as LOAD "NAME" EXT does it (package ABI 2.0):
-  // clear the registry, image and length in the window, then its install
-  // entry at the window start registers the statements. EXT2_CLEAR_ALL
-  // returns into the install, which returns into CLEAR_ARRAYS.
-  installPackageImage(m, rom, pkg);
-  poke16(m, CHAIN_BASE - 4, rom.packageBase);
-  poke16(m, CHAIN_BASE - 2, rom.clearArrays);
-  jumpTo(emu, rom.ext2ClearAll, CHAIN_BASE - 4);
-}
-
-/** Copy a package image into its window and record its length. */
-function installPackageImage(m, rom, pkg) {
-  for (let i = 0; i < pkg.length; i++) m.bus.write(rom.packageBase + i, pkg[i]);
-  poke16(m, rom.packageLen, pkg.length);
-}
-
-function jumpTo(emu, pc, sp) {
-  const cpu = emu.machine.cpu;
-  cpu.sp = sp;
-  cpu.pc = pc;
-  cpu.halted = false;
-}
-
-function readResult(emu) {
-  const m = emu.machine, rom = emu.rom;
-  return {
-    compileError: m.bus.read(rom.compileErrorCode),
-    vmError:      m.bus.read(rom.vmErrorCode),
-    // After a compile error the ROM moves the edit cursor to the failing line
-    // (an index into the store; the line count for end-of-source errors).
-    line:         m.bus.read(rom.curEditIndex) | (m.bus.read(rom.curEditIndex + 1) << 8),
-  };
 }
 
 function setState(emu, state, detail) {

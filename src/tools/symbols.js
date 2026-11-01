@@ -1,15 +1,14 @@
 /**
- * src/tools/symbols.js — the Symbols tab: the program's procedures,
- * functions, labels and variables with the line each is defined on (or, for
- * a variable, first set). Clicking a name moves the editor there.
+ * src/tools/symbols.js — the Symbols tab: the program's names (Leap V2
+ * BASIC: procedures, functions, labels and variables) with the line each is
+ * defined on (or, for a variable, first set). Clicking a name moves the editor
+ * there.
  *
- * The names come from scanSymbols() in src/leap-lang.js, the same scan the
- * editor's autocomplete and hover help use.
+ * The groups come from the language profile (profile.symbolGroups), the same
+ * scan the editor's autocomplete and hover help use.
  */
 
 "use strict";
-
-import { scanSymbols } from '../leap-lang.js';
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -20,10 +19,14 @@ function el(tag, cls, text) {
 
 /**
  * @param {HTMLElement} container
- * @param {{getSource: () => string, goToLine: (line: number) => void}} opts
+ * @param {{
+ *   getSource: () => string,
+ *   goToLine: (line: number) => void,
+ *   getProfile: () => {symbolGroups: (text: string) => [string, [string, number][]][], symbolsEmpty: string},
+ * }} opts
  * @returns {{refresh: () => void}}
  */
-export function createSymbolsTool(container, { getSource, goToLine }) {
+export function createSymbolsTool(container, { getSource, goToLine, getProfile }) {
   const filter = el('input', 'sym-filter');
   filter.type = 'search';
   filter.placeholder = 'Filter names…';
@@ -31,14 +34,9 @@ export function createSymbolsTool(container, { getSource, goToLine }) {
   container.append(filter, list);
 
   function refresh() {
-    const { procs, fns, labels, vars } = scanSymbols(getSource());
+    const profile = getProfile();
     const q = filter.value.trim().toLowerCase();
-    const groups = [
-      ['Procedures', [...procs].map(([n, v]) => [`${n}(${v.param})`, v.line])],
-      ['Functions', [...fns].map(([n, v]) => [`FN ${n}(${v.param})`, v.line])],
-      ['Labels', [...labels].map(([n, v]) => [`${n}:`, v.line])],
-      ['Variables', [...vars].map(([n, line]) => [n, line])],
-    ];
+    const groups = profile.symbolGroups(getSource());
     list.replaceChildren();
     let shown = 0;
     for (const [title, rows] of groups) {
@@ -54,7 +52,7 @@ export function createSymbolsTool(container, { getSource, goToLine }) {
       }
     }
     if (shown === 0) {
-      list.append(el('p', 'tool-note', q ? 'No names match.' : 'No procedures, functions, labels or variables yet.'));
+      list.append(el('p', 'tool-note', q ? 'No names match.' : profile.symbolsEmpty));
     }
   }
 

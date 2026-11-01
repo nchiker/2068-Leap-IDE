@@ -10,8 +10,10 @@
  * re-verify: ROM table lookup, the run path (RAM injection), compile and
  * run-time errors, the editor's checker, packages, the debugger's line table /
  * variables / call stack, and TAP export against Leap's own SAVE. Exits 1 if
- * any check fails. (src/leap-lang.js needs CodeMirror, so the language mode
- * is checked in the browser: tests/browser-smoke.mjs.)
+ * any check fails. Run uses the BASIC profile's own driver
+ * (src/lang/basic/profile.js), and section 1b drives the profile's attach()
+ * API as ide.js does. (src/lang/basic/leap-lang.js needs CodeMirror, so the
+ * language mode is checked in the browser: tests/browser-smoke.mjs.)
  *
  * Expected values were recorded against 2.0.2-emu.1. A check that fails on a
  * new release is a question, not automatically a bug: the ROM may have changed
@@ -29,17 +31,18 @@ const romDir = process.env.LEAP_ROMS ?? join(ROOT, 'tsrun/roms');
 
 const { createMachine, setHomeRom, setExRom, resetMachine, runFrame, tStatesPerFrame } = await import(join(ROOT, 'tsrun/machine.js'));
 const { runZ80 } = await import(join(ROOT, 'tsrun/z80.js'));
-const { identifyRoms } = await import(join(ROOT, 'src/leap-roms.js'));
-const { encodeLineStore } = await import(join(ROOT, 'src/emulator.js'));
-const { createChecker } = await import(join(ROOT, 'src/leap-check.js'));
-const D = await import(join(ROOT, 'src/leap-debug.js'));
-const { buildTAP } = await import(join(ROOT, 'src/export.js'));
-const C = await import(join(ROOT, 'src/cartridge.js'));
+const { romPairHash } = await import(join(ROOT, 'src/emulator.js'));
+const { basicProfile, encodeLineStore, prepareSource } = await import(join(ROOT, 'src/lang/basic/profile.js'));
+const { PROFILES, profileById, profileForFile, profileForTape } = await import(join(ROOT, 'src/lang/profiles.js'));
+const { createChecker } = await import(join(ROOT, 'src/lang/basic/leap-check.js'));
+const D = await import(join(ROOT, 'src/lang/basic/leap-debug.js'));
+const { buildTAP } = await import(join(ROOT, 'src/lang/basic/export.js'));
+const C = await import(join(ROOT, 'src/lang/basic/cartridge.js'));
 const { insertDock } = await import(join(ROOT, 'tsrun/machine.js'));
 const { tapeToText, encodeShare, decodeShare } = await import(join(ROOT, 'src/files.js'));
 const { bresenham, pathsToCode } = await import(join(ROOT, 'src/tools/draw.js'));
 const { udgPokes, pokesInSource } = await import(join(ROOT, 'src/tools/udg.js'));
-const { EXAMPLES } = await import(join(ROOT, 'src/examples.js'));
+const { EXAMPLES } = await import(join(ROOT, 'src/lang/basic/examples.js'));
 
 // ── tiny harness ──
 let failed = 0;
@@ -53,8 +56,9 @@ const same = (name, got, want) => check(name, json(got) === json(want), `got ${j
 // ── ROMs ──
 const home = new Uint8Array(readFileSync(join(romDir, 'leap-0.rom')));
 const exrom = new Uint8Array(readFileSync(join(romDir, 'leap-1.rom')));
-const { hash, rom } = await identifyRoms(home, exrom);
-check('ROM pair is in src/leap-roms.js', !!rom, rom ? rom.version : `unknown hash ${hash}: add an entry (tools/leap-rom-entry.py)`);
+const hash = await romPairHash(home, exrom);
+const rom = basicProfile.knownRoms[hash] ?? null;
+check('ROM pair is in src/lang/basic/leap-roms.js', !!rom, rom ? rom.version : `unknown hash ${hash}: add an entry (tools/leap-rom-entry.py)`);
 if (!rom) process.exit(1);
 console.log(`      Leap ${rom.version}, ROMs from ${romDir}\n`);
 
@@ -77,21 +81,9 @@ function run(m, until, maxFrames) {
   }
   return false;
 }
-/** The IDE's Run (src/emulator.js inject()): store, PROG_END, return chain, optional package. */
+/** The IDE's Run: the BASIC profile's driver (store, PROG_END, return chain, optional package). */
 function inject(m, lines, image = null) {
-  const store = encodeLineStore(lines);
-  store.forEach((b, i) => m.bus.write(rom.progAreaStart + i, b));
-  w16(m, rom.progEnd, rom.progAreaStart + store.length);
-  const CB = 0xFF00 - 6;
-  w16(m, CB, rom.resetEdit); w16(m, CB + 2, rom.resetDisplay); w16(m, CB + 4, rom.runStored); w16(m, 0xFF00, rom.commandLoop);
-  if (image) {
-    image.forEach((b, i) => m.bus.write(rom.packageBase + i, b));
-    w16(m, rom.packageLen, image.length);
-    w16(m, CB - 4, rom.packageBase); w16(m, CB - 2, rom.clearArrays);
-    m.cpu.sp = CB - 4; m.cpu.pc = rom.ext2ClearAll;
-  } else {
-    m.cpu.sp = CB; m.cpu.pc = rom.clearArrays;
-  }
+  basicProfile.driver.inject(m, rom, { store: encodeLineStore(lines), pkg: image });
 }
 /** Boot, run a program to its end; {reached, ce, ve, sp}. */
 function runProgram(lines, image = null) {
@@ -126,8 +118,35 @@ same('package program runs (SHAPES: CIRCLE + FILL)',
     { first: after1, second: m.bus.read(0x5800) }, { first: 0x07, second: 0x38 });
 }
 
+// ── 1b. The BASIC profile as ide.js uses it (src/lang/basic/profile.js) ──
+console.log('\nLanguage profile (src/lang/profiles.js, src/lang/basic/profile.js)');
+{
+  same('profiles: BASIC is the default and owns .leap / .bas',
+    [PROFILES[0].id, profileById('nope').id, profileForFile('x.LEAP')?.id, profileForFile('x.bas')?.id, profileForFile('x.txt')],
+    ['basic', 'basic', 'basic', 'basic', null]);
+  same('prepareSource drops blank lines and maps the rest', prepareSource('A = 1\n\n  \nPRINT A').editorLine, [0, 3]);
+  const lang = await basicProfile.attach({
+    rom, romImages: { home, exrom },
+    fetchAsset: async path => new Uint8Array(readFileSync(join(ROOT, path))),
+  });
+  same('lint: a clean program has no diagnostics', lang.lint('CLS\nPRINT 1'), []);
+  same('lint: LET is compile error 2 on its editor line',
+    lang.lint('x = 1\n\nLET y = 2').map(d => [d.line0, d.message.slice(0, 15)]), [[2, 'SYNTAX ERROR 2:']]);
+  same('lint: two packages are refused on the second one\'s line',
+    lang.lint('CIRCLE 1, 2, 3\nCPLOT 1, 2').map(d => d.line0), [1]);
+  const start = lang.startRun('CIRCLE 128, 96, 20');
+  same('startRun: a package program carries the SHAPES image',
+    [start.job.pkg?.length > 0, start.editorLine, start.message], [true, [0], 'Starting… (with the shapes package)']);
+  same('describeResult: compile error on the editor line',
+    lang.describeResult({ compileError: 2, vmError: 0, line: 1 }, [0, 2], () => -1).text, 'Compile error 2 on line 3');
+  same('describeResult: BREAK at a line',
+    lang.describeResult({ compileError: 0, vmError: 66, line: 0 }, [0], () => 4).text, 'Stopped (BREAK) at line 4');
+  const tape = lang.exportTape('PRINT 1', 'hello');
+  same('exportTape and profileForTape: the tape is BASIC\'s', [tape.fileName, profileForTape(tape.tap)?.id], ['hello.tap', 'basic']);
+}
+
 // ── 2. Editor checker (the ROM's own compiler on a hidden machine) ──
-console.log('\nChecker (src/leap-check.js)');
+console.log('\nChecker (src/lang/basic/leap-check.js)');
 const checker = createChecker(rom, { home, exrom });
 const cases = [
   // name, lines, expected {code, line}: line = failing store line, or the line count at end of source
@@ -159,7 +178,7 @@ for (const name of ['cbeep', 'graphics', 'mode', 'printer', 'shapes', 'sprite'])
   check(`package image ${name}.bin fits the window`, image.length > 0 && image.length <= 0x400, `${image.length} bytes`);
 }
 
-// ── 3b. Examples menu (src/examples.js): each compiles and runs without an error ──
+// ── 3b. Examples menu (src/lang/basic/examples.js): each compiles and runs without an error ──
 console.log('\nExamples');
 for (const ex of EXAMPLES) {
   const lines = ex.text.split('\n').filter(l => l.trim() !== '');   // as prepareSource: blank lines are not stored
@@ -170,7 +189,7 @@ for (const ex of EXAMPLES) {
   check(`example "${ex.title}" runs${ex.input ? ' to its INPUT' : ''}`, ok, json(r));
 }
 
-// ── 4. Debugger (src/leap-debug.js) ──
+// ── 4. Debugger (src/lang/basic/leap-debug.js) ──
 console.log('\nDebugger');
 {
   const m = bootMachine();
@@ -268,7 +287,7 @@ same('bresenham includes both ends', [...bresenham(0, 0, 3, 1)].length, 4);
 
 // ── 7. Cartridge (DCK) export: the program on a stock TS2068 ──
 if (rom.cartridgeDir) {
-  console.log('\nCartridge (src/cartridge.js)');
+  console.log('\nCartridge (src/lang/basic/cartridge.js)');
   const cartHome = new Uint8Array(readFileSync(join(ROOT, rom.cartridgeDir, 'leap_v2_cart_home.bin')));
   const cartExrom = new Uint8Array(readFileSync(join(ROOT, rom.cartridgeDir, 'leap_v2_cart_exrom.bin')));
   const stock0 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-0.rom')));

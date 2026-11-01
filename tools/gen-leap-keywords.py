@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate src/leap-keywords.js from the Leap V2 manual's keyword chapter.
+"""Generate src/lang/basic/leap-keywords.js from the Leap V2 manual's keyword chapter.
 
-usage: tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/leap-keywords.js
+usage: tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-keywords.js
 
 Reads docs/manual/03_keywords.md at <ref> (e.g. v2.0.2-emu.1), so the editor's
 keyword classes, signatures, help text and examples match that release's
@@ -114,7 +114,7 @@ def main():
                         check=True, capture_output=True, text=True).stdout
     entries = parse(md)
     print("/**")
-    print(" * src/leap-keywords.js — GENERATED, do not edit.")
+    print(" * src/lang/basic/leap-keywords.js — GENERATED, do not edit.")
     print(" *")
     print(" * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at %s." % ref)
     print(" * One entry per manual keyword heading: kind (function / statement /")

@@ -1,58 +1,42 @@
 /**
  * src/help.js — the Help overlay (toolbar "? Help", F1).
  *
- * Keywords: every entry of the manual's keyword chapter (src/leap-keywords.js,
- * generated), grouped and searchable, with a link to its section of the manual
- * at the matching release tag. Keys & tips: the IDE's shortcuts and habits.
+ * Keywords: the active language's manual entries (the profile's help.entries,
+ * generated from its manual), grouped and searchable, with a link to its
+ * section of the manual at the matching release tag. Keys & tips: the IDE's
+ * shortcuts and habits, with the language's own tips first.
  * Everything is built with DOM nodes and textContent.
  */
 
 "use strict";
 
-import { LEAP_KEYWORD_ENTRIES, LEAP_MANUAL_REF } from './leap-keywords.js';
+/** The active language's help (profile.help); set by setHelpProfile. */
+let help = null;
 
-const MANUAL_URL = `https://github.com/nchiker/2068-Leap/blob/${LEAP_MANUAL_REF}/docs/manual/03_keywords.md`;
-
-const GROUPS = [
-  { title: 'Statements', test: e => !e.package && (e.kind === 'statement' || e.kind === 'part of') && !isCommandPart(e) },
-  { title: 'Functions', test: e => e.kind === 'function' },
-  { title: 'Operators', test: e => e.kind === 'operator' },
-  { title: 'Package statements', test: e => !!e.package },
-  { title: 'Commands (typed at the Leap prompt, not in programs)', test: e => e.kind === 'command' || isCommandPart(e) },
-];
-
-// ALL, ARRAY and EXT are parts of SAVE / LOAD, which are commands.
-function isCommandPart(e) {
-  return e.kind === 'part of' && /SAVE|LOAD/.test(e.syntax);
-}
-
-const SHORTCUTS = [
+/** The shortcuts; the profile's help.shortcuts may reword step, pause, open, definition, rename. */
+const shortcuts = s => [
   ['F5', 'Run the program (restarts it if it is running)'],
   ['F6', 'Stop'],
-  ['F8', 'Pause at the next statement / Continue'],
-  ['F10', 'Step: run one statement'],
+  ['F8', s.pause],
+  ['F10', s.step],
   ['Ctrl+S', 'Save the program as a text file'],
-  ['Ctrl+O', 'Open a .leap / .txt program or a Leap .tap'],
+  ['Ctrl+O', s.open],
   ['Ctrl+Space', 'Show completions'],
   ['Ctrl+F', 'Find in the program (Enter / F3 next, Shift+F3 previous)'],
   ['Ctrl+H', 'Find and replace'],
   ['Ctrl+Z', 'Undo'],
   ['Ctrl+Y', 'Redo (also Ctrl+Shift+Z)'],
   ['Ctrl+X / C / V', 'Cut / copy / paste (the line, if nothing is selected)'],
-  ['F12 / Ctrl+click', 'Go to where a PROC, FN, label or variable is defined'],
-  ['F2', 'Rename the PROC, FN, label or variable at the cursor everywhere'],
+  ['F12 / Ctrl+click', s.definition],
+  ['F2', s.rename],
   ['Shift+Alt+F', 'Tidy: indent the program by its blocks'],
   ['Ctrl+Shift+[ / ]', 'Fold / unfold the block at the cursor (or click ▾ in the gutter)'],
   ['F1', 'This help'],
   ['Escape', 'In the TS2068 screen: BREAK. In this help: close'],
 ];
 
+// After the language's own tips (profile.help.tips).
 const TIPS = [
-  'Type programs in the editor; keywords become upper case as you finish them. Errors are underlined about half a second after you stop typing — they come from the Leap ROM\'s own compiler, so they are exactly what Run would report.',
-  'While a program runs, click the TS2068 screen to type into it (INPUT, INKEY$). Keys work as labelled on your keyboard: " is " — no SYMBOL SHIFT needed.',
-  'Click left of a line number to set a breakpoint. When the program stops there, the debugger shows its variables and call stack; Step (F10) runs one statement.',
-  'Package statements (CIRCLE, FILL, GRAB, MODE, …) work directly: the IDE loads the package the program uses. On a real TS2068, type LOAD "NAME" EXT first. ⬇ DCK puts the package on the cartridge with the program.',
-  '▶ Test DCK runs the program as a cartridge on a stock TS2068 in the emulator, exactly as ⬇ DCK would save it: the stock ROM starts it from the dock after about two seconds. Open also takes a .dck file. Keys go to the cartridge; Stop or Run goes back to Leap.',
   'In the debugger, Z80 breakpoints pause before the instruction at an address (hex) while a program runs; "Step instruction" then runs one Z80 instruction at a time.',
   'Your program is kept in this browser as you type. Save downloads it; ⬇ TAP makes a tape a TS2068 or an emulator can LOAD. Share copies a link that opens the program in the IDE: the program is inside the link itself, nothing is uploaded.',
   'Hover over a keyword for its syntax and an example; − / + next to the display change its size.',
@@ -61,10 +45,13 @@ const TIPS = [
 
 let overlay = null;
 
-/** GitHub's heading anchor for a manual entry ("CIRCLE  [package: shapes]" -> "circle--package-shapes"). */
-function manualAnchor(name, e) {
-  const heading = e.package ? `${name}  [package: ${e.package}]` : name;
-  return heading.toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/ /g, '-');
+/** Show this language's help from now on (the overlay is rebuilt when next opened). */
+export function setHelpProfile(profile) {
+  help = profile.help;
+  if (overlay) {
+    overlay.remove();
+    overlay = null;
+  }
 }
 
 function el(tag, cls, text) {
@@ -75,15 +62,15 @@ function el(tag, cls, text) {
 }
 
 function showEntry(detail, name) {
-  const e = LEAP_KEYWORD_ENTRIES[name];
+  const e = help.entries[name];
   detail.replaceChildren();
   detail.append(el('h3', 'help-name', name));
   for (const f of e.forms) detail.append(el('code', 'help-form', f));
-  detail.append(el('div', 'help-kind', e.package ? `statement · ${e.package} package` : e.kind));
+  detail.append(el('div', 'help-kind', help.kindText(e)));
   detail.append(el('p', 'help-desc', e.desc));
   if (e.example) detail.append(el('pre', 'help-example', e.example));
   const link = el('a', 'help-link', 'Full entry in the manual ↗');
-  link.href = `${MANUAL_URL}#${manualAnchor(name, e)}`;
+  link.href = `${help.manualUrl}#${help.anchor(name, e)}`;
   link.target = '_blank';
   link.rel = 'noopener';
   detail.append(link);
@@ -94,7 +81,7 @@ function build() {
   overlay.hidden = true;
   const box = el('div', 'help-box');
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'Leap V2 IDE help');
+  box.setAttribute('aria-label', 'Leap IDE help');
   overlay.append(box);
 
   const head = el('div', 'help-head');
@@ -118,8 +105,8 @@ function build() {
   box.append(kw);
 
   const items = [];
-  for (const g of GROUPS) {
-    const names = Object.keys(LEAP_KEYWORD_ENTRIES).filter(n => g.test(LEAP_KEYWORD_ENTRIES[n])).sort();
+  for (const g of help.groups) {
+    const names = Object.keys(help.entries).filter(n => g.test(help.entries[n])).sort();
     if (names.length === 0) continue;
     const groupEl = el('div', 'help-group');
     groupEl.append(el('div', 'help-group-title', g.title));
@@ -131,7 +118,7 @@ function build() {
         showEntry(detail, n);
       });
       groupEl.append(item);
-      items.push({ name: n, el: item, group: groupEl, text: (n + ' ' + LEAP_KEYWORD_ENTRIES[n].desc).toLowerCase() });
+      items.push({ name: n, el: item, group: groupEl, text: (n + ' ' + help.entries[n].desc).toLowerCase() });
     }
     list.append(groupEl);
   }
@@ -143,13 +130,13 @@ function build() {
     for (const g of list.children) g.hidden = [...g.querySelectorAll('.help-item')].every(b => b.hidden);
     if (best && q) best.el.click();
   });
-  items.find(i => i.name === 'PRINT')?.el.click();
+  (items.find(i => i.name === help.first) ?? items[0])?.el.click();
 
   // Keys & tips tab
   const keys = el('div', 'help-keys');
   keys.hidden = true;
   const table = el('table', 'help-shortcuts');
-  for (const [k, what] of SHORTCUTS) {
+  for (const [k, what] of shortcuts(help.shortcuts)) {
     const tr = el('tr');
     const td = el('td');
     td.append(el('kbd', null, k));
@@ -158,7 +145,7 @@ function build() {
   }
   keys.append(el('h3', null, 'Shortcuts'), table, el('h3', null, 'Tips'));
   const ul = el('ul', 'help-tips');
-  for (const t of TIPS) ul.append(el('li', null, t));
+  for (const t of [...help.tips, ...TIPS]) ul.append(el('li', null, t));
   keys.append(ul);
   box.append(keys);
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Print a src/leap-roms.js entry for a 2068-Leap build.
+"""Print a src/lang/basic/leap-roms.js entry for a 2068-Leap build.
 
 usage: tools/leap-rom-entry.py <2068-Leap checkout> <version label>
 
 Run `make build` in the checkout first (at the release tag). The entry is keyed
 by the SHA-256 of HOME + EXROM, so the IDE refuses ROMs whose addresses it does
-not know. Paste the output into KNOWN_ROMS in src/leap-roms.js, and copy the
+not know. Paste the output into KNOWN_ROMS in src/lang/basic/leap-roms.js, and copy the
 release's packages/v2_package_<name>.bin files to packages/<version>/<name>.bin
 (check them against the release's SHA256SUMS).
 """

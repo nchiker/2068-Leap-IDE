@@ -8,7 +8,33 @@
 
 "use strict";
 
+// One document per language: leap-ide.document.<language id>. Before there
+// were languages the BASIC program was kept under the bare key; loadAutosave
+// moves it to leap-ide.document.basic.
 const AUTOSAVE_KEY = 'leap-ide.document';
+const LANG_KEY = 'leap-ide.lang';
+const keyFor = lang => `${AUTOSAVE_KEY}.${lang}`;
+
+/** The language last used in this browser, or null. */
+export function loadLanguage() {
+  try { return localStorage.getItem(LANG_KEY); } catch { return null; }
+}
+
+/**
+ * The language to start in: ?lang=<id> in the address, else the last one
+ * used, else the first of `known` (BASIC).
+ * @param {string[]} known  the language ids
+ */
+export function initialLanguageId(known) {
+  let wanted = null;
+  try { wanted = new URLSearchParams(location.search).get('lang'); } catch { /* not a page */ }
+  if (!known.includes(wanted)) wanted = loadLanguage();
+  return known.includes(wanted) ? wanted : known[0];
+}
+
+export function storeLanguage(id) {
+  try { localStorage.setItem(LANG_KEY, id); } catch { /* storage blocked */ }
+}
 
 /**
  * The document kept in this browser: what is in the editor, its file name,
@@ -16,10 +42,20 @@ const AUTOSAVE_KEY = 'leap-ide.document';
  * @typedef {{name: string, text: string, savedText: string}} StoredDocument
  */
 
-/** @returns {StoredDocument | null} */
-export function loadAutosave() {
+/**
+ * @param {string} lang  the language's profile id
+ * @returns {StoredDocument | null}
+ */
+export function loadAutosave(lang) {
   try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (lang === 'basic' && localStorage.getItem(keyFor(lang)) === null) {
+      const old = localStorage.getItem(AUTOSAVE_KEY);
+      if (old !== null) {
+        localStorage.setItem(keyFor(lang), old);
+        localStorage.removeItem(AUTOSAVE_KEY);
+      }
+    }
+    const raw = localStorage.getItem(keyFor(lang));
     if (!raw) return null;
     const doc = JSON.parse(raw);
     return typeof doc.text === 'string' && typeof doc.name === 'string' ? doc : null;
@@ -28,10 +64,13 @@ export function loadAutosave() {
   }
 }
 
-/** @param {StoredDocument} doc */
-export function storeAutosave(doc) {
+/**
+ * @param {StoredDocument} doc
+ * @param {string} lang  the language's profile id
+ */
+export function storeAutosave(doc, lang) {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc));
+    localStorage.setItem(keyFor(lang), JSON.stringify(doc));
   } catch {
     // storage blocked or full: the editor still works, it just won't survive a reload
   }
@@ -119,19 +158,22 @@ function fromBase64Url(text) {
  * The URL fragment (without '#') that carries a program.
  * @param {string} text
  * @param {string} [name]  file name, e.g. "game.leap"
+ * @param {string} [lang]  the language's profile id ("basic" is left out of the link)
  */
-export async function encodeShare(text, name = '') {
+export async function encodeShare(text, name = '', lang = 'basic') {
   const packed = await pipeBytes(new TextEncoder().encode(text), new CompressionStream('deflate-raw'));
   const params = new URLSearchParams();
   params.set(SHARE_VERSION, toBase64Url(packed));
   if (name) params.set('name', name);
+  // Absent means BASIC, so links made before there were languages still open.
+  if (lang !== 'basic') params.set('lang', lang);
   return params.toString();
 }
 
 /**
  * The program a URL fragment carries, or null if it carries none.
  * @param {string} hash  location.hash, with or without the '#'
- * @returns {Promise<{text: string, name: string} | null>}
+ * @returns {Promise<{text: string, name: string, lang: string} | null>}
  * @throws if the fragment has a program that cannot be read (cut short, damaged)
  */
 export async function decodeShare(hash) {
@@ -145,5 +187,5 @@ export async function decodeShare(hash) {
   } catch {
     throw new Error('The shared link is damaged or cut short: the program could not be read');
   }
-  return { text: normalizeText(text), name: params.get('name') ?? '' };
+  return { text: normalizeText(text), name: params.get('name') ?? '', lang: params.get('lang') ?? 'basic' };
 }

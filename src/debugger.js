@@ -1,20 +1,22 @@
 /**
- * src/debugger.js — Leap V2 IDE debugger: controller and panel.
+ * src/debugger.js — the Leap IDE debugger: controller and panel.
  *
  * Controller (createDebugger): watches a run through the emulator's watch
  * hook (src/emulator.js setWatch), which is called before every Z80
- * instruction while a program runs:
- *  - during compile it records the line table (src/leap-debug.js);
- *  - at each bytecode instruction it stops on breakpoints, or, in step
- *    mode, at the next statement;
+ * instruction while a program runs. The language profile's debug adapter
+ * (profile.createDebugAdapter, e.g. src/lang/basic/profile.js) knows the
+ * language's statements:
+ *  - it observes every instruction (V2: the compiler builds the line table);
+ *  - at each statement position it stops on breakpoints, or, in step mode,
+ *    at the next statement;
  *  - before any Z80 instruction whose address is a Z80 breakpoint (the
  *    panel's "Z80 breakpoints"; the PC alone, whichever ROM, cartridge or
  *    RAM is paged in there). They act only while a program runs, since the
  *    watch is installed only then.
  * During a cartridge test (beginCartridge) only the Z80 breakpoints and Pause
- * act: the bytecode was compiled before, so there is no line table.
- * Lines are Leap store lines inside the controller; the caller supplies the
- * mapping to and from editor lines (the IDE drops blank lines before storing).
+ * act: the program was compiled before, so there is no line table.
+ * Lines are the ROM's store lines inside the controller; the caller supplies
+ * the mapping to and from editor lines (blank lines are not stored).
  *
  * Panel: registers and flags, variables, breakpoints, Z80 breakpoints (with
  * a one-instruction step while paused), call stack and a memory window, rendered into #debugger-mount. Every value shown passes
@@ -22,10 +24,6 @@
  */
 
 "use strict";
-
-import {
-  createLineTable, vmInstruction, haltVm, readVariables, readCallStack,
-} from './leap-debug.js';
 
 const mount = document.getElementById('debugger-mount');
 
@@ -38,6 +36,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 /**
  * @param {{
  *   emulator: object,                              // from createEmulator()
+ *   adapter: object,                               // profile.createDebugAdapter(rom)
  *   toEditorLine: (storeLine: number) => number,   // -> 1-based editor line, or -1
  *   toStoreLine: (editorLine: number) => number,   // 1-based editor line -> store line, or -1
  *   onBreakpointClick: (editorLine: number) => void,
@@ -47,15 +46,14 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
  */
 export function createDebugger(opts) {
   const { emulator } = opts;
-  const rom = emulator.rom;
   const m = emulator.machine;
-  const table = createLineTable(rom);
+  let lang = opts.adapter;
 
   let editorBreakpoints = [];       // 1-based editor lines
   let breakAddrs = new Set();
   let breakDirty = true;
   let stepping = false;             // stop at the next statement start
-  let vmStarted = false;            // this run's VM tables exist (variables readable)
+  let vmStarted = false;            // this run's program has started (variables readable)
   let active = false;               // a run is in progress
   let cart = false;                 // a cartridge test is in progress
   let z80Breaks = loadZ80Breaks();   // Z80 breakpoint addresses
@@ -65,20 +63,19 @@ export function createDebugger(opts) {
     breakAddrs = new Set();
     for (const line of editorBreakpoints) {
       const store = opts.toStoreLine(line);
-      const code = store < 0 ? -1 : table.nextCodeLine(store);
-      if (code >= 0) for (const a of table.breakAddrs(m, code)) breakAddrs.add(a);
+      if (store >= 0) for (const a of lang.breakPositions(m, store)) breakAddrs.add(a);
     }
     breakDirty = false;
   }
 
   function watch(machine) {
-    table.observe(machine);
+    lang.observe(machine);
     if (z80Breaks.has(machine.cpu.pc)) { z80Hit = machine.cpu.pc; return true; }
-    const ip = vmInstruction(machine, rom);
+    const ip = lang.position(machine);
     if (ip < 0) return false;
     if (!vmStarted) { vmStarted = true; breakDirty = true; }
     if (breakDirty) rebuildBreakpoints();
-    if (stepping && table.isStart(ip)) return true;
+    if (stepping && lang.isStart(ip)) return true;
     return breakAddrs.has(ip);
   }
 
@@ -92,7 +89,7 @@ export function createDebugger(opts) {
   const dbg = {
     /** Before a run is injected: start a new line table and watch it. */
     beginRun() {
-      table.reset();
+      lang.reset();
       vmStarted = false;
       breakDirty = true;
       stepping = false;
@@ -103,7 +100,7 @@ export function createDebugger(opts) {
 
     /** Before a cartridge test: no Leap lines or variables, Z80 breakpoints only. */
     beginCartridge() {
-      table.reset();
+      lang.reset();
       vmStarted = false;
       stepping = false;
       active = false;
@@ -128,15 +125,16 @@ export function createDebugger(opts) {
     /**
      * Called by the IDE when the emulator reports a pause: the 1-based editor
      * line (-1 if unknown) and the Z80 breakpoint it stopped at (or null).
-     * Inside a VM instruction's Z80 code the line is the statement VM_IP is in.
+     * Between statement positions (V2: inside a VM instruction's Z80 code)
+     * the line is the one the language says the program is in.
      */
     pausedHere() {
       stepping = false;
       const z80 = z80Hit;
       z80Hit = null;
       if (cart) return { line: -1, z80 };
-      const ip = vmInstruction(m, rom);
-      if (ip >= 0) return { line: opts.toEditorLine(table.lineOf(ip)), z80 };
+      const ip = lang.position(m);
+      if (ip >= 0) return { line: opts.toEditorLine(lang.lineOf(ip)), z80 };
       return { line: vmStarted ? dbg.stopLine(false) : -1, z80 };
     },
 
@@ -169,8 +167,7 @@ export function createDebugger(opts) {
 
     /** End a paused program the way BREAK does, so its screen stays up. */
     haltPaused() {
-      if (cart || !emulator.paused || vmInstruction(m, rom) < 0) return false;
-      haltVm(m, rom);
+      if (cart || !emulator.paused || !lang.halt(m)) return false;
       stepping = false;
       emulator.resume();
       return true;
@@ -179,16 +176,18 @@ export function createDebugger(opts) {
     get active() { return active; },
     get cartridge() { return cart; },
 
-    /**
-     * 1-based editor line where the last run's VM stopped, or -1: after a
-     * runtime error VM_IP is just past the failing instruction; after BREAK
-     * it is the instruction that would have run next.
-     */
+    /** 1-based editor line where the last run stopped (error or BREAK), or -1. */
     stopLine(isBreak) {
-      if (table.size === 0) return -1;
-      const ip = m.bus.read(rom.vmIp) | (m.bus.read(rom.vmIp + 1) << 8);
-      const line = table.lineOf(isBreak ? ip : ip - 1);
+      const line = lang.stopLine(m, isBreak);
       return line < 0 ? -1 : opts.toEditorLine(line);
+    },
+
+    /** Another language (or ROM): its adapter replaces this one. */
+    setAdapter(adapter) {
+      dbg.endRun();
+      lang = adapter;
+      vmStarted = false;
+      breakDirty = true;
     },
 
     /** Redraw the panel from the machine. */
@@ -202,29 +201,13 @@ export function createDebugger(opts) {
         IX: (c.xh << 8) | c.xl, IY: (c.yh << 8) | c.yl,
         SP: c.sp, PC: c.pc,
       });
-      renderVariables(cart ? 'cart' : vmStarted ? readVariables(m, rom) : null);
-      renderCallStack(cart ? 'cart' : active && vmStarted ? callStack() : null, opts.onLineClick);
+      renderVariables(cart ? 'cart' : vmStarted ? lang.variables(m) : null);
+      renderCallStack(cart ? 'cart' : active && vmStarted ? lang.callStack(m, opts.toEditorLine) : null, opts.onLineClick);
       renderMemory(m);
       document.getElementById('z80-step').disabled = !emulator.paused;
       renderZ80Breaks(z80Breaks, removeZ80, emulator.paused ? c.pc : null);
     },
   };
-
-  /** Innermost first: where the program is, then each active call and loop. */
-  function callStack() {
-    const lineOf = a => opts.toEditorLine(table.lineOf(a));
-    const frames = readCallStack(m, rom, lineOf);
-    const ip = vmInstruction(m, rom);
-    const where = ip >= 0 ? lineOf(ip) : -1;
-    const firstCall = frames.find(f => f.kind === 'call');
-    const out = [{ label: firstCall ? firstCall.name : 'main program', line: where, current: true }];
-    for (const f of frames) {
-      out.push(f.kind === 'call'
-        ? { label: `called from`, line: f.line }
-        : { label: f.name, line: -1 });
-    }
-    return out;
-  }
 
   function setZ80Breaks(set) {
     z80Breaks = set;

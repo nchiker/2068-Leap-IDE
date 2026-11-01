@@ -1,65 +1,65 @@
 /**
- * ide.js — Leap V2 IDE orchestrator
+ * ide.js — the Leap IDE orchestrator
  *
  * Responsibilities:
- *  - Boot the TSRun TS2068 emulator with Leap V2 ROMs (src/emulator.js)
- *  - Turn editor text into Leap's line store and run it by RAM injection
- *  - Stop the running program
+ *  - Boot the TSRun TS2068 emulator with the active language's ROMs (src/emulator.js)
+ *  - Run, stop and check the editor's program through the language profile
+ *    (src/lang/profiles.js; Leap V2 BASIC: src/lang/basic/profile.js)
  *  - Report the ROM's compile/runtime result in the status bar and editor
+ *  - Files, share links, examples, export, the cartridge test, tabs, theme, zoom
  *  - Wire toolbar buttons and keyboard shortcuts
  *
  * Depends on:
- *  - src/emulator.js: createEmulator(), encodeLineStore()
- *  - src/editor.js:   window.leapEditor = { getSource(), setDiagnostics() }
+ *  - src/emulator.js: createEmulator()
+ *  - src/editor.js:   window.leapEditor (getSource(), setDiagnostics(), setLanguage(), …)
  *  - src/debugger.js: createDebugger() — breakpoints, step, pause, panel
- *  - src/leap-check.js: createChecker() — the ROM's compiler as the linter
- *  - src/leap-errors.js: error messages from the manual (generated)
- *  - src/export.js:   buildTAP() — the program as Leap's SAVE writes it
- *  - src/cartridge.js: buildCartridge() — the program as a stock-TS2068 cartridge (.dck),
- *    downloaded (⬇ DCK) or run in the emulator on the stock ROMs (▶ Test DCK, Open .dck)
+ *  - src/lang/profiles.js: the languages; each profile's attach() gives the
+ *    per-ROM half (lint, startRun, describeResult, exportTape, buildCartridge)
  */
 
 "use strict";
 
-import { createEmulator, encodeLineStore } from './src/emulator.js';
+import { createEmulator } from './src/emulator.js';
 import { createDebugger } from './src/debugger.js';
-import { createChecker } from './src/leap-check.js';
-import { LEAP_COMPILE_ERRORS, LEAP_RUNTIME_ERRORS } from './src/leap-errors.js';
-import { buildTAP, checkTapeName } from './src/export.js';
+import { PROFILES, profileById, profileForFile, profileForTape } from './src/lang/profiles.js';
 import {
-  buildProgramImage, buildCartridge, romIdentity, cartIdentity, cartFormat, pagingWrites, SYM_COUNTS_SIZE, CHUNK,
-} from './src/cartridge.js';
-import { loadAutosave, storeAutosave, normalizeText, tapeToText, encodeShare, decodeShare } from './src/files.js';
-import { EXAMPLES } from './src/examples.js';
-import { packagesUsed, LEAP_PACKAGES } from './src/leap-lang.js';
-import { toggleHelp } from './src/help.js';
+  loadAutosave, storeAutosave, storeLanguage, normalizeText, encodeShare, decodeShare,
+} from './src/files.js';
+import { toggleHelp, setHelpProfile } from './src/help.js';
 import { createSymbolsTool } from './src/tools/symbols.js';
 import { createUdgTool } from './src/tools/udg.js';
 import { createDrawTool } from './src/tools/draw.js';
 
-// ── Language limits (manual, Appendix D) ──────────────────────────
-const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
-const VM_ERROR_BREAK = 66;    // VM_ERROR_CODE after the BREAK key
-
 // ── Module state ─────────────────────────────────────────────────
+let profile = profileById(window.leapEditor.language);   // the active language (src/lang/profiles.js)
+let lang = null;           // profile.attach(): the per-ROM half (checker, packages, export)
 let emulator = null;       // from createEmulator()
 let lastRun = null;        // {text, editorLine[]} of the program last sent to the ROM
 let debug = null;          // from createDebugger()
-let checker = null;        // from createChecker()
 let runDiagnostic = null;  // {text, diag}: the last run's error, kept while the text is unchanged
-const packageImages = new Map();   // package name -> image (Uint8Array), fetched at start-up
-let cartImages = null;     // {home, exrom} of the release's cartridge build, fetched on first DCK export
 let cartName = null;       // the .dck in a cartridge test (status bar)
 let emuState = 'booting';
 let readyMessage = null;   // shown instead of "Ready" when the boot ends (a shared link opened meanwhile)
+let udgTool = null;
+let bootDone;
+const booted = new Promise(resolve => { bootDone = resolve; });   // the emulator is up (or failed)
 const DEBUG_REFRESH_MS = 300;   // panel refresh while a program runs
+
+/** A file of the IDE's own (packages/, cartridge/), as bytes. */
+async function fetchAsset(path) {
+  const resp = await fetch(path);
+  if (!resp.ok) throw new Error(`Could not load ${path} (HTTP ${resp.status})`);
+  return new Uint8Array(await resp.arrayBuffer());
+}
 
 // ── Boot the emulator ─────────────────────────────────────────────
 async function bootEmulator() {
   setStatus('Booting…', 'idle');
   updateProgInfo(null);
+  setHelpProfile(profile);
   try {
     emulator = await createEmulator({
+      profile,
       canvas:     document.getElementById('ts-screen'),
       focusEl:    document.getElementById('ts-bezel'),
       onState:    onEmulatorState,
@@ -67,29 +67,27 @@ async function bootEmulator() {
   } catch (err) {
     console.error('[IDE] emulator boot failed', err);
     setStatus(err.message, 'error');
+    bootDone();
     return;
   }
-  const version = 'Leap ' + emulator.rom.version;
-  document.getElementById('emu-rom').textContent = version;
-  document.getElementById('sb-rom').textContent = version;
+  showMachine();
 
   debug = createDebugger({
     emulator,
+    adapter: profile.createDebugAdapter(emulator.rom),
     toEditorLine,
     toStoreLine,
     onBreakpointClick: line => window.leapEditor.scrollToLine(line),
     onLineClick:       line => window.leapEditor.scrollToLine(line),
     onInstructionStep: () => setStatus(`Paused at $${hex4(emulator.machine.cpu.pc)} (one Z80 instruction)`, 'run'),
   });
-  if (window.leapEditor) {
-    window.leapEditor.onBreakpointsChanged(() => debug.setBreakpoints(window.leapEditor.getBreakpoints()));
-    debug.setBreakpoints(window.leapEditor.getBreakpoints());
-  }
+  window.leapEditor.onBreakpointsChanged(() => debug.setBreakpoints(window.leapEditor.getBreakpoints()));
+  debug.setBreakpoints(window.leapEditor.getBreakpoints());
   setInterval(() => {
     if (emuState === 'running' || emuState === 'waiting' || emuState === 'cartridge') debug.refresh();
   }, DEBUG_REFRESH_MS);
 
-  createUdgTool(document.getElementById('tool-udg'), {
+  udgTool = createUdgTool(document.getElementById('tool-udg'), {
     rom: emulator.rom,
     getSource,
     insertCode: text => window.leapEditor.insertLines(text),
@@ -99,58 +97,28 @@ async function bootEmulator() {
     },
     setStatus,
   });
-
-  checker = createChecker(emulator.rom, emulator.romImages);
-  await loadPackages();
-  window.leapEditor?.relint();
+  showLanguageTools();
+  bootDone();
+  await attachLanguage();
 }
 
-// ── Packages ──────────────────────────────────────────────────────
-// A program that uses a package statement (CIRCLE, GRAB, MODE, …) gets that
-// package installed before it is checked or run, as LOAD "NAME" EXT would.
-// The images are the release's own (packages/<version>/<name>.bin), a few
-// hundred bytes each, so all of them are fetched once.
-
-async function loadPackages() {
-  await Promise.all(LEAP_PACKAGES.map(async name => {
-    try {
-      const resp = await fetch(emulator.rom.packageDir + name + '.bin');
-      if (resp.ok) packageImages.set(name, new Uint8Array(await resp.arrayBuffer()));
-    } catch { /* reported when a program needs it */ }
-  }));
-}
-
-/**
- * The package a program needs.
- * @returns {{name: string | null, image: Uint8Array | null, problem: {line: number, message: string} | null}}
- */
-function packageFor(text) {
-  const used = [...packagesUsed(text)];
-  if (used.length === 0) return { name: null, image: null, problem: null };
-  if (used.length > 1) {
-    const [[first, firstLine], [second, secondLine]] = used;
-    return { name: null, image: null, problem: { line: secondLine,
-      message: `Leap loads one package at a time: this program uses ${first} (line ${firstLine}) and ${second}` } };
+/** The per-ROM half of the active profile: checker machine, packages; then check the program. */
+async function attachLanguage() {
+  lang = null;
+  try {
+    lang = await profile.attach({ rom: emulator.rom, romImages: emulator.romImages, fetchAsset });
+  } catch (err) {
+    console.error('[IDE] language attach failed', err);
+    setStatus(err.message, 'error');
+    return;
   }
-  const [[name, line]] = used;
-  const image = packageImages.get(name) ?? null;
-  return image
-    ? { name, image, problem: null }
-    : { name, image: null, problem: { line, message: `The ${name} package could not be loaded` } };
+  window.leapEditor.relint();
 }
 
 // ── Checking (the editor's linter) ────────────────────────────────
-// The ROM's own compiler, run on a hidden machine (src/leap-check.js), so the
-// editor reports exactly what Run would. It stops at the first error.
-
-/** "SYNTAX ERROR 3: an expression could not start where it did (…)" */
-function describeError(code, table) {
-  const e = table[code];
-  if (!e) return `error ${code}`;
-  // Give the code for every error. The 2.1 manual writes some messages with the
-  // placeholder ("RUNTIME ERROR n"); 2.0.2's has none.
-  return `${e.message.replace(/ n$/, '')} ${code}: ${e.cause}`;
-}
+// The language's checker (Leap V2 BASIC: the ROM's own compiler on a hidden
+// machine), so the editor reports exactly what Run would. It stops at the
+// first error.
 
 /** Diagnostic range covering a 0-based editor line, from its first non-blank character. */
 function lineRange(text, editorLine) {
@@ -161,27 +129,21 @@ function lineRange(text, editorLine) {
   return { from: from + indent, to: from + lines[editorLine].length };
 }
 
-/** Diagnostics for the editor: storage problems, then the ROM compiler's error. */
+/** The profile's {line0, message} diagnostics as CodeMirror ranges. */
+function toDiagnostics(text, diags) {
+  return diags.map(d => d.line0 === undefined ? d
+    : { ...lineRange(text, Math.max(0, Math.min(d.line0, text.split('\n').length - 1))), severity: 'error', message: d.message });
+}
+
+/** Diagnostics for the editor: storage problems, then the checker's error. */
 function lintSource(text) {
-  const prepared = prepareSource(text);
-  if (prepared.problems.length > 0 || !checker || prepared.lines.length === 0) return prepared.problems;
-  const store = encodeLineStore(prepared.lines);
-  const room = emulator.rom.sourceEnd - emulator.rom.progAreaStart;
-  if (store.length > room) {
-    return [{ from: 0, to: 0, severity: 'error', message: `Program is ${store.length} bytes; the Leap pool holds ${room}` }];
-  }
+  if (!lang) return [];
+  const diags = toDiagnostics(text, lang.lint(text));
+  if (diags.length > 0) return diags;
   // A run's error (e.g. a runtime error, which compiling cannot find) stays
   // marked until the text changes; otherwise a check scheduled by the edit
   // just before Run would wipe it.
-  const fromRun = runDiagnostic && runDiagnostic.text === text ? [runDiagnostic.diag] : [];
-  const pkg = packageFor(text);
-  if (pkg.problem) return [{ ...lineRange(text, pkg.problem.line - 1), severity: 'error', message: pkg.problem.message }];
-  const result = checker.check(store, pkg.image);
-  if (!result || result.code === 0) return fromRun;
-  // An error at the end of the source (unclosed block, unknown label) has the
-  // line count as its line: put it on the last line.
-  const editorLine = prepared.editorLine[Math.min(result.line, prepared.editorLine.length - 1)];
-  return [{ ...lineRange(text, editorLine), severity: 'error', message: describeError(result.code, LEAP_COMPILE_ERRORS) }];
+  return runDiagnostic && runDiagnostic.text === text ? [runDiagnostic.diag] : [];
 }
 
 // ── Store lines <-> editor lines ──────────────────────────────────
@@ -201,81 +163,32 @@ function toStoreLine(editorLine) {
   return lastRun.editorLine.findIndex(l => l >= editorLine - 1);
 }
 
-// ── Inject source text and run ────────────────────────────────────
+// ── Run ───────────────────────────────────────────────────────────
+// The profile prepares the job; the emulator hands it to the profile's
+// driver at the ROM's next safe point (src/emulator.js).
 function runProgram() {
-  if (!emulator) {
+  if (!emulator || !lang) {
     setStatus('Emulator not ready', 'error');
     return;
   }
   const text = getSource();
-  // Compile errors come back from the run itself (onEmulatorState); the
-  // editor's linter has usually shown them already.
-  const prepared = prepareSource(text);
-  if (window.leapEditor) window.leapEditor.setDiagnostics(prepared.problems);
-  if (prepared.problems.length > 0) {
-    setStatus(`${prepared.problems.length} line(s) the ROM cannot store`, 'error');
+  const start = lang.startRun(text);
+  if (start === null) return;
+  if (start.problems) {
+    window.leapEditor.setDiagnostics(start.problems);
+    setStatus(`${start.problems.length} line(s) the ROM cannot store`, 'error');
     return;
   }
-  if (prepared.lines.length === 0) return;
-  injectProgram(prepared);
-}
-
-/**
- * Split editor text into the lines the ROM will store, remembering which
- * editor line each came from. Blank lines are dropped: the ROM's editor never
- * stores an empty line, so the injected store stays one it could have built.
- *
- * @returns {{lines: string[], editorLine: number[], problems: object[]}}
- */
-function prepareSource(text) {
-  const lines = [], editorLine = [], problems = [];
-  let pos = 0;
-  text.split('\n').forEach((raw, i) => {
-    const from = pos;
-    pos += raw.length + 1;
-    const line = raw.replace(/\t/g, '  ').replace(/\s+$/, '');
-    if (line.trim() === '') return;
-    if (line.length > MAX_LINE_CHARS) {
-      problems.push({ from, to: from + raw.length, severity: 'error',
-        message: `Line is ${line.length} characters; Leap V2 allows ${MAX_LINE_CHARS}` });
-    }
-    const bad = line.search(/[^\x20-\x7E]/);
-    if (bad >= 0) {
-      problems.push({ from: from + bad, to: from + bad + 1, severity: 'error',
-        message: 'Only printable ASCII can be sent to the TS2068' });
-    }
-    lines.push(line);
-    editorLine.push(i);
-  });
-  return { lines, editorLine, problems };
-}
-
-// ── Encode source to TS2068 bytes ─────────────────────────────────
-function encodeSource(text) {
-  return encodeLineStore(prepareSource(text).lines);
-}
-
-// ── Write source bytes into TSRun RAM ────────────────────────────
-// The write itself happens in src/emulator.js at the ROM's next safe point
-// (its key wait), followed by LOAD's cursor reset and the ROM's own RUN.
-function injectProgram(prepared) {
-  const store = encodeLineStore(prepared.lines);
-  const rom = emulator.rom;
-  const room = rom.sourceEnd - rom.progAreaStart;
-  if (store.length > room) {
-    setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
+  window.leapEditor.setDiagnostics([]);
+  if (start.error) {
+    setStatus(start.error, 'error');
     return;
   }
-  const pkg = packageFor(getSource());
-  if (pkg.problem) {
-    setStatus(pkg.problem.message, 'error');
-    return;
-  }
-  lastRun = { text: getSource(), editorLine: prepared.editorLine };
+  lastRun = { text, editorLine: start.editorLine };
   debug.beginRun();
-  emulator.run(store, pkg.image);
-  updateProgInfo(store.length);
-  setStatus(pkg.name ? `Starting… (with the ${pkg.name} package)` : 'Starting…', 'run');
+  emulator.run(start.job);
+  updateProgInfo(start.bytes);
+  setStatus(start.message, 'run');
 }
 
 const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
@@ -283,26 +196,26 @@ const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
 // ── Emulator state → UI ───────────────────────────────────────────
 function onEmulatorState(state, detail) {
   emuState = state;
-  if (state !== 'paused') window.leapEditor?.setExecutionLine(null);
+  if (state !== 'paused') window.leapEditor.setExecutionLine(null);
   setPaused(state === 'paused');
   showMachine();
   switch (state) {
   case 'booting': setRunning(false); setStatus('Booting…', 'idle'); break;
   case 'ready':   setRunning(false); setStatus(readyMessage ?? 'Ready', 'idle'); readyMessage = null; break;
   case 'running': setRunning(true);  setStatus('Running…', 'run'); break;
-  case 'waiting': setRunning(true);  setStatus('Waiting for input — click the screen to type', 'run'); break;
+  case 'waiting': setRunning(true);  setStatus(profile.waitingText, 'run'); break;
   case 'paused': {
     setRunning(true);
     showTab('debugger');
     const { line, z80 } = debug ? debug.pausedHere() : { line: -1, z80: null };
-    window.leapEditor?.setExecutionLine(line > 0 ? line : null);
+    window.leapEditor.setExecutionLine(line > 0 ? line : null);
     const at = line > 0 ? ` at line ${line}` : emulator?.cartridge ? ' (cartridge test)' : '';
     setStatus(z80 !== null ? `Paused at Z80 breakpoint $${hex4(z80)}${at}` : `Paused${at}`, 'run');
     break;
   }
   case 'cartridge':
     setRunning(true);
-    setStatus(`Cartridge test: ${cartName} on a stock TS2068. Stop (F6) or Run goes back to Leap`, 'run');
+    setStatus(`Cartridge test: ${cartName} on a stock TS2068. Stop (F6) or Run goes back to ${profile.romLabel(emulator.rom)}`, 'run');
     break;
   case 'stopped': setRunning(false); setStatus('Stopped', 'idle'); break;
   case 'ended':   setRunning(false); showRunResult(detail); break;
@@ -314,10 +227,10 @@ function onEmulatorState(state, detail) {
   }
 }
 
-/** The display's caption: the Leap ROMs, or the stock TS2068 with the cartridge under test. */
+/** The display's caption: the language's ROMs, or the stock TS2068 with the cartridge under test. */
 function showMachine() {
   if (!emulator) return;
-  const label = emulator.cartridge ? 'Stock TS2068 + DCK' : 'Leap ' + emulator.rom.version;
+  const label = emulator.cartridge ? 'Stock TS2068 + DCK' : profile.romLabel(emulator.rom);
   document.getElementById('emu-rom').textContent = label;
   document.getElementById('sb-rom').textContent = label;
   const prog = document.getElementById('emu-prog');
@@ -329,31 +242,16 @@ function showMachine() {
   }
 }
 
-function showRunResult({ compileError, vmError, line }) {
-  if (compileError !== 0) {
-    const editorLine = lastRun ? lastRun.editorLine[Math.min(line, lastRun.editorLine.length - 1)] : null;
-    const where = editorLine === null || editorLine === undefined ? '' : ` on line ${editorLine + 1}`;
-    setStatus(`Compile error ${compileError}${where}`, 'error');
-    markLine(editorLine, describeError(compileError, LEAP_COMPILE_ERRORS));
-  } else if (vmError !== 0) {
-    // Leap reports no line for these; the debugger's line table knows where
-    // the VM was (src/debugger.js stopLine).
-    const at = debug ? debug.stopLine(vmError === VM_ERROR_BREAK) : -1;
-    const where = at > 0 ? ` at line ${at}` : '';
-    if (vmError === VM_ERROR_BREAK) {
-      setStatus(`Stopped (BREAK)${where}`, 'idle');
-    } else {
-      setStatus(`Runtime error ${vmError}${where}`, 'error');
-      if (at > 0) markLine(at - 1, describeError(vmError, LEAP_RUNTIME_ERRORS));
-    }
-  } else {
-    setStatus('Finished', 'idle');
-  }
+function showRunResult(result) {
+  if (!lang) return;
+  const r = lang.describeResult(result, lastRun?.editorLine ?? null, isBreak => debug ? debug.stopLine(isBreak) : -1);
+  setStatus(r.text, r.mode);
+  if (r.mark) markLine(r.mark.line0, r.mark.message);
 }
 
 /** Put a diagnostic on a 0-based editor line, if the text has not changed since the run. */
 function markLine(editorLine, message) {
-  if (!window.leapEditor || editorLine === null || editorLine === undefined || editorLine < 0) return;
+  if (editorLine === null || editorLine === undefined || editorLine < 0 || !lastRun) return;
   if (getSource() !== lastRun.text) return;
   const diag = { ...lineRange(lastRun.text, editorLine), severity: 'error', message };
   runDiagnostic = { text: lastRun.text, diag };
@@ -368,10 +266,11 @@ function getSource() {
 // The program is kept in this browser as you type (src/files.js), so a reload
 // loses nothing; Save downloads it as a text file and clears the unsaved mark.
 
+// Each language keeps its own document (leap-ide.document.<id>).
+
 const AUTOSAVE_DELAY_MS = 500;
-const UNTITLED = 'untitled.leap';
-const stored = loadAutosave();
-let fileName = stored?.name ?? UNTITLED;
+const stored = loadAutosave(profile.id);
+let fileName = stored?.name ?? profile.untitled;
 let savedText = stored?.savedText ?? getSource();   // the text as last saved to / opened from a file
 let autosaveTimer = 0;
 
@@ -382,7 +281,7 @@ function refreshFileUi() {
 
 function autosaveNow() {
   clearTimeout(autosaveTimer);
-  storeAutosave({ name: fileName, text: getSource(), savedText });
+  storeAutosave({ name: fileName, text: getSource(), savedText }, profile.id);
   refreshFileUi();
 }
 
@@ -399,13 +298,13 @@ function confirmDiscard() {
 }
 
 function withExtension(name) {
-  return /\.[A-Za-z0-9]+$/.test(name) ? name : name + '.leap';
+  return /\.[A-Za-z0-9]+$/.test(name) ? name : name + profile.extensions[0];
 }
 
 function newProgram() {
   if (!confirmDiscard()) return;
   window.leapEditor.setSource('', { fresh: true });
-  fileName = UNTITLED;
+  fileName = profile.untitled;
   savedText = '';
   autosaveNow();
   window.leapEditor.focus();
@@ -418,7 +317,7 @@ function newProgram() {
 async function shareProgram() {
   const text = getSource();
   if (text.trim() === '') { setStatus('Nothing to share', 'error'); return; }
-  const url = location.href.replace(/#.*$/, '') + '#' + await encodeShare(text, fileName);
+  const url = location.href.replace(/#.*$/, '') + '#' + await encodeShare(text, fileName, profile.id);
   try {
     await navigator.clipboard.writeText(url);
     setStatus(`Link copied (${url.length} characters): it opens this program in the IDE`, 'idle');
@@ -439,6 +338,11 @@ async function openSharedLink() {
   if (!shared) return;
   // Take the program out of the address bar, so a reload keeps later edits.
   history.replaceState(null, '', location.pathname + location.search);
+  if (shared.lang !== profile.id) {
+    if (!PROFILES.some(p => p.id === shared.lang)) { setStatus(`The shared program is in a language this IDE does not know (${shared.lang})`, 'error'); return; }
+    await booted;
+    if (!await switchLanguage(shared.lang)) return;
+  }
   if (shared.text === getSource()) return;
   if (!confirmDiscard()) { setStatus('Kept your program; the shared one was not opened', 'idle'); return; }
   window.leapEditor.setSource(shared.text, { fresh: true });
@@ -454,7 +358,7 @@ document.getElementById('btn-share').addEventListener('click', shareProgram);
 window.addEventListener('hashchange', openSharedLink);
 openSharedLink();
 
-// ── Examples menu (src/examples.js) ───────────────────────────────
+// ── Examples menu (the profile's examples) ────────────────────────
 const examplesBtn = document.getElementById('btn-examples');
 const examplesMenu = document.getElementById('examples-menu');
 
@@ -464,7 +368,14 @@ function showExamples(open) {
   if (open) examplesMenu.querySelector('button')?.focus();
 }
 
-for (const ex of EXAMPLES) {
+/** Fill the menu with the active language's examples. */
+function buildExamplesMenu() {
+  examplesMenu.replaceChildren();
+  for (const ex of profile.examples) addExample(ex);
+  examplesBtn.hidden = profile.examples.length === 0;
+}
+
+function addExample(ex) {
   const item = document.createElement('button');
   item.className = 'menu-item';
   item.setAttribute('role', 'menuitem');
@@ -479,6 +390,7 @@ for (const ex of EXAMPLES) {
   item.addEventListener('click', () => { showExamples(false); openExample(ex); });
   examplesMenu.append(item);
 }
+buildExamplesMenu();
 examplesBtn.addEventListener('click', e => { e.stopPropagation(); showExamples(examplesMenu.hidden); });
 document.addEventListener('click', e => { if (!examplesMenu.hidden && !examplesMenu.contains(e.target)) showExamples(false); });
 examplesMenu.addEventListener('keydown', e => {
@@ -502,7 +414,10 @@ function openExample(ex) {
 }
 
 // The question about unsaved changes comes after the file is chosen: a .dck
-// is tested in the emulator and leaves the editor's program alone.
+// is tested in the emulator and leaves the editor's program alone. A file of
+// another language (by its extension, or a tape by its header) switches to
+// that language first; the current program stays in its own language's
+// auto-save.
 function openProgram() {
   document.getElementById('file-input').click();
 }
@@ -515,13 +430,17 @@ async function onFileChosen(e) {
     await startCartridgeTest(new Uint8Array(await file.arrayBuffer()), file.name);
     return;
   }
+  const isTape = /\.tap$/i.test(file.name);
+  const bytes = isTape ? new Uint8Array(await file.arrayBuffer()) : null;
+  const owner = isTape ? profileForTape(bytes) : profileForFile(file.name);
+  if (owner && owner !== profile && !await switchLanguage(owner.id)) return;
   if (!confirmDiscard()) {
     setStatus(`Kept your program; ${file.name} was not opened`, 'idle');
     return;
   }
   try {
-    if (/\.tap$/i.test(file.name)) {
-      const tape = tapeToText(new Uint8Array(await file.arrayBuffer()));
+    if (isTape) {
+      const tape = profile.tapeToText(bytes);
       window.leapEditor.setSource(tape.text, { fresh: true });
       fileName = withExtension(tape.name || 'tape');
       savedText = '';                   // not a text file yet: shown as unsaved
@@ -542,8 +461,8 @@ async function onFileChosen(e) {
 
 /** Download the program as a text file (the browser's download folder). */
 function saveProgram() {
-  if (fileName === UNTITLED) {
-    const name = window.prompt('Save as:', 'program.leap');
+  if (fileName === profile.untitled) {
+    const name = window.prompt('Save as:', 'program' + profile.extensions[0]);
     if (name === null || name.trim() === '') return;
     fileName = withExtension(name.trim());
   }
@@ -620,6 +539,7 @@ let symbolsTimer = 0;
 
 const symbolsTool = createSymbolsTool(document.getElementById('tool-symbols'), {
   getSource,
+  getProfile: () => profile,
   goToLine: line => { window.leapEditor.scrollToLine(line); window.leapEditor.focus(); },
 });
 const drawTool = createDrawTool(document.getElementById('tool-draw'), {
@@ -657,139 +577,52 @@ refreshFileUi();
 
 // ── Export ────────────────────────────────────────────────────────
 
-/**
- * Download the program as a .tap that Leap's LOAD reads (byte-identical to
- * what SAVE "name" writes). Load it with LOAD "" or LOAD "name", then RUN.
- */
+/** ⬇ TAP: the program as a tape the language's own LOAD reads (profile exportTape). */
 function exportTape() {
-  if (!emulator) return;
-  const prepared = prepareSource(getSource());
-  if (prepared.problems.length > 0 || prepared.lines.length === 0) {
-    setStatus(prepared.lines.length === 0 ? 'Nothing to save' : prepared.problems[0].message, 'error');
-    return;
-  }
-  const fallback = document.getElementById('filename-display').textContent.replace(/\.[^.]*$/, '');
-  const name = window.prompt('Tape name (up to 10 characters; LOAD "name" must match it exactly):',
-    fallback.slice(0, 10) || 'program');
+  if (!lang?.exportTape) return;
+  const text = getSource();
+  // Check before asking for a name.
+  const problem = lang.startRun(text);
+  if (problem === null) { setStatus('Nothing to save', 'error'); return; }
+  if (problem.problems) { setStatus(problem.problems[0].message, 'error'); return; }
+  const fallback = fileName.replace(/\.[^.]*$/, '');
+  const name = window.prompt(lang.tapePrompt, fallback.slice(0, lang.tapeNameMax) || 'program');
   if (name === null) return;
-  const problem = checkTapeName(name);
-  if (problem) {
-    setStatus(problem, 'error');
-    return;
-  }
-  const store = encodeLineStore(prepared.lines);
-  const room = emulator.rom.sourceEnd - emulator.rom.progAreaStart;
-  if (store.length > room) {
-    setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
-    return;
-  }
-  const tap = buildTAP(store, name, emulator.rom.tapeFormatWord);
-  const tapName = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
-  download(new Blob([tap], { type: 'application/octet-stream' }), tapName);
-  const pkg = packageFor(getSource()).name;
-  const first = pkg ? `LOAD "${pkg.toUpperCase()}" EXT, then ` : '';
-  setStatus(`Saved ${tapName}: on the TS2068, ${first}LOAD "${name}" then RUN`, 'idle');
-}
-
-/** The release's cartridge build (cartridge/<version>/), fetched once. */
-async function loadCartridgeImages() {
-  if (cartImages) return cartImages;
-  const dir = emulator.rom.cartridgeDir;
-  const get = async (name, size) => {
-    const resp = await fetch(dir + name);
-    if (!resp.ok) throw new Error(`Could not load ${dir}${name} (HTTP ${resp.status})`);
-    const bytes = new Uint8Array(await resp.arrayBuffer());
-    if (bytes.length !== size) throw new Error(`${dir}${name}: expected ${size} bytes, got ${bytes.length}`);
-    return bytes;
-  };
-  const [home, exrom] = await Promise.all([
-    get('leap_v2_cart_home.bin', 2 * CHUNK),
-    get('leap_v2_cart_exrom.bin', CHUNK),
-  ]);
-  cartImages = { home, exrom };
-  return cartImages;
+  const out = lang.exportTape(text, name);
+  if (out.error) { setStatus(out.error, 'error'); return; }
+  download(new Blob([out.tap], { type: 'application/octet-stream' }), out.fileName);
+  setStatus(out.message, 'idle');
 }
 
 /**
- * The program as a cartridge for a stock TS2068: Leap's runtime (cartridge
- * build, no editor) plus the bytecode compiled by the ROM's own compiler on
- * the checker machine. The stock ROM starts it from the dock and it runs at
- * once; a key after the end restarts it. Used by ⬇ DCK and ▶ Test DCK.
+ * The program as a cartridge for a stock TS2068 (profile buildCartridge):
+ * the language's runtime cartridge build plus the compiled program. The stock
+ * ROM starts it from the dock. Used by ⬇ DCK and ▶ Test DCK.
  *
- * @returns {Promise<{dck: Uint8Array, bin: Uint8Array, bytes: number, pkgName: string|null}|null>}
+ * @returns {Promise<{dck: Uint8Array, bin: Uint8Array, summary: string}|null>}
  *   null after a problem (shown in the status bar) or a declined question
  */
 async function buildProgramCartridge() {
-  if (!emulator || !checker) return null;
+  if (!emulator || !lang) return null;
+  if (!lang.buildCartridge) {
+    setStatus(`There is no cartridge build for ${profile.name} yet`, 'error');
+    return null;
+  }
   const text = getSource();
-  const prepared = prepareSource(text);
-  if (prepared.problems.length > 0 || prepared.lines.length === 0) {
-    setStatus(prepared.lines.length === 0 ? 'Nothing to export' : prepared.problems[0].message, 'error');
-    return null;
-  }
-  if (!emulator.rom.cartridgeDir) {
-    setStatus(`There is no cartridge build for Leap ${emulator.rom.version}`, 'error');
-    return null;
-  }
-  // A package goes on the cartridge with the program (image format 2).
-  const pkg = packageFor(text);
-  if (pkg.problem) {
-    setStatus(pkg.problem.message, 'error');
-    return null;
-  }
-  const store = encodeLineStore(prepared.lines);
-  const room = emulator.rom.sourceEnd - emulator.rom.progAreaStart;
-  if (store.length > room) {
-    setStatus(`Program is ${store.length} bytes; the Leap pool holds ${room}`, 'error');
-    return null;
-  }
-  const result = checker.compile(store, SYM_COUNTS_SIZE, pkg.image);
-  if (!result) {
-    setStatus('The compiler did not finish', 'error');
-    return null;
-  }
-  if (result.code !== 0) {
-    window.leapEditor?.setDiagnostics(lintSource(text));
-    const line = prepared.editorLine[Math.min(result.line, prepared.editorLine.length - 1)] + 1;
-    setStatus(`Compile error ${result.code} on line ${line}: fix it first`, 'error');
-    return null;
-  }
-
-  let images;
+  let out;
   try {
-    images = await loadCartridgeImages();
+    out = await lang.buildCartridge(text, { confirm: q => window.confirm(q) });
   } catch (e) {
     setStatus(e.message, 'error');
     return null;
   }
-  // The cartridge accepts only bytecode from the ROMs it was built from.
-  const identity = romIdentity(emulator.romImages.home, emulator.romImages.exrom);
-  if (identity !== cartIdentity(images.home)) {
-    setStatus(`The cartridge build does not match the loaded Leap ${emulator.rom.version} ROMs`, 'error');
+  if (out === null) return null;
+  if (out.error) {
+    if (out.line0 !== undefined) window.leapEditor.setDiagnostics(lintSource(text));
+    setStatus(out.error, 'error');
     return null;
   }
-  const format = cartFormat(images.home);
-  if (pkg.image && format < 2) {
-    setStatus(`This cartridge build cannot carry packages: the program uses ${pkg.name.toUpperCase()}`, 'error');
-    return null;
-  }
-  const writes = pagingWrites(text);
-  if (writes.length > 0) {
-    const w = writes[0];
-    const ok = window.confirm(`Line ${w.line} writes to port ${w.port}, which pages the TS2068's memory: ` +
-      'on a cartridge it can switch Leap itself out and crash the program. Make the cartridge anyway?');
-    if (!ok) return null;
-  }
-  try {
-    const program = buildProgramImage({
-      bytecode: result.bytecode, symCounts: result.symCounts, identity, pkg: pkg.image, format,
-    });
-    const out = buildCartridge({ home: images.home, exrom: images.exrom, program });
-    return { ...out, bytes: result.bytecode.length, pkgName: pkg.image ? pkg.name.toUpperCase() : null };
-  } catch (e) {
-    setStatus(e.message, 'error');
-    return null;
-  }
+  return out;
 }
 
 /**
@@ -799,23 +632,21 @@ async function buildProgramCartridge() {
 async function exportCartridge() {
   const cart = await buildProgramCartridge();
   if (!cart) return;
-  const fallback = document.getElementById('filename-display').textContent.replace(/\.[^.]*$/, '');
+  const fallback = fileName.replace(/\.[^.]*$/, '');
   const name = window.prompt('Cartridge file name (.dck for emulators, .bin for a 64 KB cartridge board):',
     (fallback || 'program') + '.dck');
   if (name === null || name.trim() === '') return;
   const flat = /\.bin$/i.test(name.trim());
   const outName = name.trim().replace(/\.(dck|bin)$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_') + (flat ? '.bin' : '.dck');
   download(new Blob([flat ? cart.bin : cart.dck], { type: 'application/octet-stream' }), outName);
-  const withPkg = cart.pkgName ? ` and the ${cart.pkgName} package` : '';
-  setStatus(`Saved ${outName} (${cart.bytes} bytes of bytecode${withPkg}): ` +
-    'it runs on a stock TS2068 from the dock slot', 'idle');
+  setStatus(`Saved ${outName} (${cart.summary}): it runs on a stock TS2068 from the dock slot`, 'idle');
 }
 
 /** ▶ Test DCK: the program's cartridge on the stock TS2068 in the emulator, no download. */
 async function testProgramCartridge() {
   const cart = await buildProgramCartridge();
   if (!cart) return;
-  const base = document.getElementById('filename-display').textContent.replace(/\.[^.]*$/, '') || 'program';
+  const base = fileName.replace(/\.[^.]*$/, '') || 'program';
   await startCartridgeTest(cart.dck, base + '.dck');
 }
 
@@ -835,6 +666,73 @@ async function startCartridgeTest(dck, name) {
   debug?.beginCartridge();
   debug?.refresh();
   document.getElementById('ts-bezel').focus();
+}
+
+// ── Languages ─────────────────────────────────────────────────────
+// The toolbar's language selector (shown when there is more than one), Open
+// of another language's file and share links switch language. Each language
+// keeps its own document in this browser; switching stores this one and
+// brings back the other's. The emulator loads the language's ROMs and boots.
+
+const langSelect = document.getElementById('lang-select');
+for (const p of PROFILES) langSelect.append(new Option(p.name, p.id));
+langSelect.value = profile.id;
+langSelect.hidden = PROFILES.length < 2;
+// Open takes every language's files, text, tapes and cartridges.
+document.getElementById('file-input').accept =
+  [...new Set([...PROFILES.flatMap(p => p.extensions), '.txt', '.tap', '.dck'])].join(',');
+langSelect.addEventListener('change', async () => {
+  if (!await switchLanguage(langSelect.value)) langSelect.value = profile.id;
+  window.leapEditor.focus();
+});
+
+/** The right-panel tools that generate code only exist for languages that have them. */
+function showLanguageTools() {
+  for (const [tab, on] of [['udg', profile.tools.udg], ['draw', profile.tools.draw]]) {
+    document.querySelector(`.panel-tab[data-tab="${tab}"]`).hidden = !on;
+    if (!on && activeTab === tab) showTab('debugger');
+  }
+  document.getElementById('btn-dck').hidden = document.getElementById('btn-dck-test').hidden = !profile.hasCartridge;
+  document.getElementById('btn-export').hidden = !profile.hasTape;
+}
+
+/**
+ * Make another language the active one. False if it could not (its ROMs are
+ * unknown or missing); the current language then stays.
+ */
+async function switchLanguage(id) {
+  const next = profileById(id);
+  if (next === profile) return true;
+  if (!emulator) { setStatus('Emulator not ready', 'error'); return false; }
+  autosaveNow();                       // this language's document stays in its own slot
+  setStatus(`Switching to ${next.name}…`, 'idle');
+  try {
+    await emulator.setProfile(next);
+  } catch (err) {
+    setStatus(err.message, 'error');
+    return false;
+  }
+  profile = next;
+  lang = null;
+  lastRun = null;
+  runDiagnostic = null;
+  storeLanguage(id);
+  langSelect.value = id;
+  window.leapEditor.setLanguage(id);
+  const doc = loadAutosave(id);
+  window.leapEditor.setSource(doc?.text ?? window.leapEditor.starter, { fresh: true });
+  fileName = doc?.name ?? profile.untitled;
+  savedText = doc?.savedText ?? window.leapEditor.getSource();
+  refreshFileUi();
+  updateProgInfo(null);
+  debug.setAdapter(profile.createDebugAdapter(emulator.rom));
+  debug.refresh();
+  setHelpProfile(profile);
+  buildExamplesMenu();
+  showLanguageTools();
+  if (activeTab === 'symbols') symbolsTool.refresh();
+  await attachLanguage();
+  return true;
 }
 
 // ── Stop ──────────────────────────────────────────────────────────
@@ -882,9 +780,7 @@ function updateProgInfo(bytes) {
     el.textContent = 'PROG: —';
     sb.textContent = '—';
   } else {
-    const start = emulator.rom.progAreaStart;
-    const end = start + bytes;
-    const msg = `PROG: $${start.toString(16).toUpperCase()}–$${end.toString(16).toUpperCase()} · ${bytes}B`;
+    const msg = lang ? lang.progInfo(bytes) : `PROG: ${bytes}B`;
     el.textContent = msg;
     sb.textContent = msg;
   }
@@ -897,7 +793,7 @@ document.getElementById('btn-step').addEventListener('click', stepProgram);
 document.getElementById('btn-pause').addEventListener('click', pauseOrContinue);
 document.getElementById('btn-refresh-debug').addEventListener('click', () => debug?.refresh());
 document.getElementById('btn-lint').addEventListener('click', () => {
-  if (!checker) return;
+  if (!lang) return;
   const diags = lintSource(getSource());
   window.leapEditor?.setDiagnostics(diags);
   setStatus(diags.length === 0 ? 'No errors' : diags[0].message, diags.length === 0 ? 'idle' : 'error');
@@ -1035,4 +931,9 @@ document.addEventListener('keydown', e => {
 bootEmulator();
 
 // ── Exports for other modules ─────────────────────────────────────
-window.leapIDE = { lintSource, encodeSource, setStatus, get emulator() { return emulator; } };
+window.leapIDE = {
+  lintSource, setStatus, switchLanguage,
+  get emulator() { return emulator; },
+  get profile() { return profile; },
+  get lang() { return lang; },
+};

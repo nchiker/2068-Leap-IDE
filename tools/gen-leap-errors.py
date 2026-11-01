@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate src/leap-errors.js from the Leap V2 manual's error code tables.
+"""Generate src/lang/basic/leap-errors.js from the Leap V2 manual's error code tables.
 
-usage: tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/leap-errors.js
+usage: tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-errors.js
 
 Reads Appendix B of docs/manual/07_appendices.md at <ref> (e.g. v2.0.2-emu.1):
 the "Compile errors" and "Run-time errors" tables, rows of
@@ -58,7 +58,7 @@ def main():
     compile_errors, run_errors = table(compile_part), table(run_part)
     assert compile_errors and run_errors, "Appendix B tables not found"
     print("/**")
-    print(" * src/leap-errors.js — GENERATED, do not edit.")
+    print(" * src/lang/basic/leap-errors.js — GENERATED, do not edit.")
     print(" *")
     print(" * tools/gen-leap-errors.py from 2068-Leap docs/manual/07_appendices.md")
     print(" * (Appendix B) at %s: error code -> {message, cause}." % ref)

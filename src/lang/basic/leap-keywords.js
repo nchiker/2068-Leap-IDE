@@ -1,5 +1,5 @@
 /**
- * src/leap-keywords.js — GENERATED, do not edit.
+ * src/lang/basic/leap-keywords.js — GENERATED, do not edit.
  *
  * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.1.0-emu.1.
  * One entry per manual keyword heading: kind (function / statement /

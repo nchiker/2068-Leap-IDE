@@ -16,8 +16,8 @@
 
 "use strict";
 
-import { createMachine, setHomeRom, setExRom, resetMachine, runFrame, tStatesPerFrame } from '../tsrun/machine.js';
-import { runZ80 } from '../tsrun/z80.js';
+import { createMachine, setHomeRom, setExRom, resetMachine, runFrame, tStatesPerFrame } from '../../../tsrun/machine.js';
+import { runZ80 } from '../../../tsrun/z80.js';
 
 const STACK_TOP  = 0xFF00;          // the ROM's machine stack, as in src/emulator.js
 const BOOT_FRAMES = 300;            // to the editor: 66 frames on 2.0.2-emu.1

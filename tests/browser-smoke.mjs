@@ -268,7 +268,7 @@ try {
   const tidyOut = 'PROC p(n):\n  FOR i = 1 TO n\n    IF i > 1 THEN\n      PRINT i\n    ELSE\n      PRINT "one"\n    ENDIF\n  NEXT i\nENDP\ntop:\nIF n THEN GOTO top';
   const tidied = await evaluate(`(leapEditor.setSource(${JSON.stringify(tidyIn)}, {fresh: true}), document.getElementById('btn-tidy').click(), leapEditor.getSource())`);
   check('Tidy indents nested blocks, labels at column 0, IF … THEN GOTO is no block', tidied === tidyOut, JSON.stringify(tidied));
-  const untouched = await evaluate(`(async () => { const { EXAMPLES } = await import('./src/examples.js');
+  const untouched = await evaluate(`(async () => { const { EXAMPLES } = await import('./src/lang/basic/examples.js');
     return EXAMPLES.filter(e => { leapEditor.setSource(e.text, {fresh: true}); leapEditor.tidy(); return leapEditor.getSource() !== e.text; }).map(e => e.id); })()`);
   check('Tidy leaves every example as it is', untouched.length === 0, untouched.join());
   const match = await evaluate(`(leapEditor.setSource(${JSON.stringify(tidyOut)}, {fresh: true}), leapEditor.setCursor(3, 5),
@@ -381,7 +381,7 @@ try {
   await evaluate(`(leapEditor.setSource(${JSON.stringify(shareSrc)}, {fresh: true}), document.getElementById('filename-display').textContent)`);
   const link = await evaluate(`(async () => { document.getElementById('btn-share').click();
     await new Promise(r => setTimeout(r, 500)); return navigator.clipboard.readText(); })()`);
-  await evaluate("localStorage.removeItem('leap-ide.document')");
+  await evaluate("localStorage.removeItem('leap-ide.document.basic')");
   await send('Page.navigate', { url: 'about:blank' });   // a real page load, not a same-page #change
   await sleep(300);
   await send('Page.navigate', { url: link });
@@ -390,6 +390,18 @@ try {
     [document.getElementById('filename-display').textContent, location.hash, document.getElementById('status-text').textContent].join(' | ')`, 10000);
   check('Share copies a link that opens the program (and leaves the address bar)', /#v1=/.test(link) &&
     /^circles\.leap \|  \| Opened a shared program/.test(opened ?? ''), `${link.length} chars: ${opened}`);
+
+  // An auto-save from before languages (the bare key) still opens, and moves to BASIC's key.
+  const oldDoc = { name: 'old.leap', text: 'REM from before languages', savedText: 'REM from before languages' };
+  await evaluate(`(localStorage.removeItem('leap-ide.document.basic'),
+    localStorage.setItem('leap-ide.document', ${JSON.stringify(JSON.stringify(oldDoc))}))`);
+  await send('Page.navigate', { url: link.replace(/#.*$/, '') });
+  await waitFor('window.leapIDE?.emulator?.rom?.version', 20000);
+  const migrated = await evaluate(`[leapEditor.getSource(), document.getElementById('filename-display').textContent,
+    localStorage.getItem('leap-ide.document') === null, !!localStorage.getItem('leap-ide.document.basic'),
+    document.getElementById('lang-select').hidden].join(' | ')`);
+  check('an auto-save from before languages opens and moves to leap-ide.document.basic',
+    migrated === 'REM from before languages | old.leap | true | true | true', migrated);
 
   check('no page errors', pageErrors.length === 0, pageErrors.join(' | '));
 } catch (err) {

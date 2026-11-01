@@ -1,5 +1,5 @@
 /**
- * src/leap-roms.js — the Leap V2 ROM builds the IDE knows how to drive.
+ * src/lang/basic/leap-roms.js — the Leap V2 ROM builds the IDE knows how to drive.
  *
  * RAM injection jumps into ROM routines and pokes system variables, and those
  * addresses move between Leap releases. Each entry is keyed by the SHA-256 of
