@@ -406,6 +406,17 @@ try {
   await evaluate("window.confirm = () => true, document.getElementById('btn-import-session').click()");
   const imported = await evaluate("[leapEditor.getSource().trimEnd().split('\\n').slice(-2).join('|'), document.getElementById('filename-display').textContent, !document.getElementById('dirty-mark').hidden].join(' / ')");
   check('Forth: Import opens the session\'s lines (Run and typed) as a new unsaved document', imported === 'CLS 7 SQ .|3 sq . / session.fs / true', String(imported));
+  // F4: a breakpoint inside a word pauses there, with the data stack and the callers shown.
+  await evaluate(`(leapEditor.setSource(${JSON.stringify(': SQ2 ( n -- n*n )\n  DUP * ;\n: TWICE2 SQ2 SQ2 . ;\n3 TWICE2\n')}, {fresh: true}), leapEditor.toggleBreakpoint(2))`);
+  await evaluate("document.getElementById('btn-run').click()");
+  const fPaused = await waitFor("/^Paused at line/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
+  const fPanel = await evaluate("[document.getElementById('vars-title').textContent, document.querySelector('#var-tbody tr td:last-child').textContent, [...document.querySelectorAll('#callstack .csfn')].map(e => e.textContent).join(' < ')].join(' | ')");
+  await evaluate("document.getElementById('btn-pause').click()");
+  await waitFor("/^Paused at line/.test(document.getElementById('status-text').textContent)", 10000);
+  await evaluate("(leapEditor.toggleBreakpoint(2), document.getElementById('btn-pause').click())");
+  const fDone = await waitFor("/^OK$|THROW/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
+  check('Forth: a breakpoint in a word pauses with the stack and callers; Continue runs on to OK',
+    fPaused === 'Paused at line 2' && fPanel === 'Stacks and words | 3  $0003 | SQ2 < TWICE2 < the line sent' && fDone === 'OK', `${fPaused} | ${fPanel} | ${fDone}`);
   // F5: ⬇ TAP saves a TEXT tape; Open reads it back.
   await evaluate(`(window.smokeLastFile = null, window.prompt = () => 'demo', leapEditor.setSource(${JSON.stringify(': T7 7 ;\n\nT7 .\n')}, {fresh: true}), document.getElementById('btn-export').click())`);
   const forthTap = await waitFor('window.smokeLastFile && window.smokeLastFile.byteLength', 5000);

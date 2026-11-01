@@ -52,6 +52,7 @@ export function createDebugger(opts) {
   let editorBreakpoints = [];       // 1-based editor lines
   let breakAddrs = new Set();
   let breakDirty = true;
+  let tableVersion = -1;           // the adapter's line table when the breakpoints were placed
   let stepping = false;             // stop at the next statement start
   let vmStarted = false;            // this run's program has started (variables readable)
   let active = false;               // a run is in progress
@@ -74,6 +75,9 @@ export function createDebugger(opts) {
     const ip = lang.position(machine);
     if (ip < 0) return false;
     if (!vmStarted) { vmStarted = true; breakDirty = true; }
+    // A table that grows while the program runs (Forth compiles as it reads)
+    // has a version: the breakpoints are placed again when it changes.
+    if (lang.version && lang.version() !== tableVersion) { tableVersion = lang.version(); breakDirty = true; }
     if (breakDirty) rebuildBreakpoints();
     if (stepping && lang.isStart(ip)) return true;
     return breakAddrs.has(ip);
@@ -87,9 +91,9 @@ export function createDebugger(opts) {
   function setCartWatch() { emulator.setWatch(z80Breaks.size > 0 ? cartWatch : null); }
 
   const dbg = {
-    /** Before a run is injected: start a new line table and watch it. */
-    beginRun() {
-      lang.reset();
+    /** Before a run is injected: start a new line table and watch it (job: the profile's). */
+    beginRun(job = null) {
+      lang.reset(job);
       vmStarted = false;
       breakDirty = true;
       stepping = false;
@@ -186,6 +190,7 @@ export function createDebugger(opts) {
     setAdapter(adapter) {
       dbg.endRun();
       lang = adapter;
+      setVariablesTitle(adapter.labels?.variables ?? 'Variables');
       vmStarted = false;
       breakDirty = true;
     },
@@ -201,7 +206,8 @@ export function createDebugger(opts) {
         IX: (c.xh << 8) | c.xl, IY: (c.yh << 8) | c.yl,
         SP: c.sp, PC: c.pc,
       });
-      renderVariables(cart ? 'cart' : vmStarted ? lang.variables(m) : null);
+      // A live session (Forth) has its stacks and words also between runs.
+      renderVariables(cart ? 'cart' : vmStarted || lang.live ? lang.variables(m) : null);
       renderCallStack(cart ? 'cart' : active && vmStarted ? lang.callStack(m, opts.toEditorLine) : null, opts.onLineClick);
       renderMemory(m);
       document.getElementById('z80-step').disabled = !emulator.paused;
@@ -231,6 +237,7 @@ export function createDebugger(opts) {
   z80Input.addEventListener('input', () => z80Input.classList.remove('bad'));
   document.getElementById('z80-step').addEventListener('click', () => dbg.stepInstruction());
   renderZ80Breaks(z80Breaks, removeZ80);
+  setVariablesTitle(lang.labels?.variables ?? 'Variables');
   dbg.refresh();
   return dbg;
 }
@@ -250,7 +257,7 @@ function buildSkeleton() {
   </div>
 
   <div class="dsec" id="dsec-vars">
-    <div class="dsec-hdr">Variables <span class="dsec-arrow">▾</span></div>
+    <div class="dsec-hdr"><span id="vars-title">Variables</span> <span class="dsec-arrow">▾</span></div>
     <table class="var-tbl" id="var-table">
       <thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead>
       <tbody id="var-tbody"></tbody>
@@ -319,6 +326,11 @@ function renderRegisters(r) {
   document.getElementById('flags-row').innerHTML =
     flags.map(([n, bit]) => `<span class="flag${F & (1 << bit) ? ' set' : ''}">${n}</span>`).join('');
   prevRegs = r;
+}
+
+function setVariablesTitle(text) {
+  const el = document.getElementById('vars-title');
+  if (el) el.textContent = text;
 }
 
 const CART_NOTE = 'Not shown in a cartridge test (Z80 breakpoints work)';

@@ -50,6 +50,13 @@ SYMBOLS = {
     'udgTable':       'UDG_TABLE',
     'udgCodeBase':    'UDG_CODE_BASE',
     'udgCount':       'UDG_COUNT',
+    # Debugger (F4): the run-time routines a word's code starts with or calls
+    'doLit':          'DOLIT',
+    'doFLit':         'DOFLIT',
+    'doDoes':         'DODOES',
+    'qBranch':        'QBRANCH',
+    'branch':         'BRANCH',
+    'stkGuard':       'STK_GUARD',
 }
 
 

@@ -517,6 +517,63 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     same('a Leap V2 tape is not a Forth tape, and the reverse', [F.ownsTape(basicTap), basicProfile.ownsTape(out.tap)], [false, false]);
   }
 
+  // F4: the debugger. The adapter driven as src/debugger.js drives it: observe and position
+  // before every instruction, breakpoints placed again when the line table grows.
+  {
+    const A = F.createDebugAdapter(from);
+    /** Send text with breakpoints on job lines; stop(i) at each stop returns 'continue' | 'step' | 'quit'. */
+    const debugRun = (text, breakLines, onStop) => {
+      const start = fl.startRun(text);
+      A.reset(start.job);
+      F.driver.inject(m, from, start.job);
+      let version = -1, at = new Set(), stepping = false, stops = 0, skip = false;
+      for (let f = 0; f < 3000; f++) {
+        const end = m.frameStart + tStatesPerFrame;
+        while (m.tstates < end && !m.cpu.halted) {
+          if (f > 0 && fwait() && F.driver.runState(m, from) === 'ended') {
+            if (!F.driver.next(m, from, start.job)) return { stops, result: F.driver.result(m, from, start.job) };
+          }
+          A.observe(m);
+          const pos = A.position(m);
+          if (!skip && pos >= 0) {
+            if (A.version() !== version) { version = A.version(); at = new Set(breakLines.flatMap(l => A.breakPositions(m, l))); }
+            if ((stepping && A.isStart(pos)) || at.has(pos)) {
+              stops++;
+              const how = onStop({ line: A.lineOf(pos), stack: A.callStack(m, l => l + 1), vars: A.variables(m) });
+              if (how === 'quit') return { stops };
+              stepping = how === 'step';
+              skip = true;                     // leave the stop: run this instruction
+            }
+          } else skip = false;
+          runZ80(m.cpu, m.bus, 1, m);
+          skip = false;
+        }
+        runFrame(m);
+      }
+      return { stops, result: null };
+    };
+    boot(); frun(fwait, 600);
+    const prog = ': SQ ( n -- n*n )\n  DUP * ;\n: TWICE ( n -- )\n  SQ SQ . ;\n\n3 TWICE';
+    const seen = [];
+    const r = debugRun(prog, [1], s => {
+      seen.push([s.line, s.vars[0].value, s.stack.map(f => `${f.label}@${f.line}`).join(' < ')]);
+      return 'continue';
+    });
+    same('F4: a breakpoint in a word stops each time it runs, with the stack and the callers',
+      [r.stops, r.result?.lastError, seen],
+      [2, 0, [[1, '3  $0003', 'SQ@2 < TWICE@4 < the line sent@5'], [1, '9  $0009', 'SQ@2 < TWICE@4 < the line sent@5']]]);
+    const steps = [];
+    boot(); frun(fwait, 600);
+    debugRun(prog, [4], s => { steps.push(`${s.line}:${s.vars.filter(v => v.type === 'data').map(v => v.name === 'stack' ? '-' : v.value.split(' ')[0]).join(',')}`); return steps.length < 6 ? 'step' : 'quit'; });
+    same('F4: a breakpoint on a line run at the prompt stops when it is sent; Step goes word by word',
+      steps, ['4:-', '3:3', '1:3', '1:3,3', '1:9', '3:9']);   // TWICE's body, SQ's DUP, *, ;, back in TWICE
+    boot(); frun(fwait, 600);
+    send('VARIABLE V  7 V !\n-5 CONSTANT K\nFVARIABLE FV  2.5E0 FV F!\n10 ARRAY A\n: W ;\n1 2');
+    same('F4: the stacks and the words with their values',
+      F.createDebugAdapter(from).variables(m).map(v => `${v.name} ${v.type} ${v.value.replace(/code \$\w+/, 'code')}`),
+      ['top data 2  $0002', '2 data 1  $0001', 'V variable 7', 'K constant -5', 'FV fvariable 2.5', 'A data 20 bytes at $' + (A.variables(m).find(v => v.name === 'A')?.value.slice(-4) ?? ''), 'W : code']);
+  }
+
   same('word data: 184 words from the manual, each with a stack effect and group',
     Object.values(FORTH_WORD_ENTRIES).filter(e => e.stack && e.group).length, 184);
   same('tokens: a comment, a string, a definition, a number',

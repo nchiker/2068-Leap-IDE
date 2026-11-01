@@ -46,6 +46,12 @@ export const KNOWN_ROMS = {
     udgTable:         0xF180,   // UDG_TABLE
     udgCodeBase:      0x0090,   // UDG_CODE_BASE
     udgCount:         0x0015,   // UDG_COUNT
+    doLit:            0x0D85,   // DOLIT
+    doFLit:           0x1A4F,   // DOFLIT
+    doDoes:           0x3120,   // DODOES
+    qBranch:          0x0F60,   // QBRANCH
+    branch:           0x0F78,   // BRANCH
+    stkGuard:         0x2C53,   // STK_GUARD
     keyWaitEnd:       0x0539,   // end of the spin loop (exclusive)
   },
 };

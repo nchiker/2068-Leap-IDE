@@ -204,7 +204,7 @@ function runProgram() {
     return;
   }
   lastRun = { text, editorLine: start.editorLine, job: start.job };
-  debug.beginRun();
+  debug.beginRun(start.job);
   emulator.run(start.job);
   updateProgInfo(start.bytes);
   setStatus(start.message, 'run');
@@ -226,7 +226,7 @@ function sendSelection() {
   if (start.error) { setStatus(start.error, 'error'); return true; }
   window.leapEditor.setDiagnostics([]);
   lastRun = { text: getSource(), editorLine: start.editorLine.map(l => l + line0), job: start.job };
-  debug.beginRun();
+  debug.beginRun(start.job);
   emulator.run(start.job);
   updateProgInfo(start.bytes);
   setStatus(start.message, 'run');

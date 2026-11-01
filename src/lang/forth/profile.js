@@ -28,6 +28,7 @@ import { FORTH_WORD_ENTRIES, FORTH_MANUAL_REF, FORTH_GROUPS } from './forth-word
 import { FORTH_EXAMPLES } from './examples.js';
 import { scanDefinitions } from './forth-scan.js';
 import { checkForth, readSessionWords } from './forth-check.js';
+import { createLineTable, readStacksAndWords, readCallStack } from './forth-debug.js';
 import { buildForthTap, forthTapeToText, isForthTape, textStore, LOAD_TEXT_MAX } from './tape.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 
@@ -154,18 +155,29 @@ function tokenBefore(line, col) {
   return start < end ? { from: start, to: end } : null;
 }
 
-/** The debugger: no Forth line table yet (stage F4); registers, memory and Z80 breakpoints work. */
-function createDebugAdapter() {
+/**
+ * The debugger (stage F4, src/lang/forth/forth-debug.js): a line table built
+ * while the program is sent, so breakpoints stop in the program's own words
+ * (and on lines run at the prompt), Step goes from word to word; the
+ * Variables table shows the stacks and the session's words (live: also
+ * between runs), the call stack the return stack's user words.
+ */
+function createDebugAdapter(rom) {
+  const table = createLineTable(rom);
   return {
-    reset() {}, observe() {},
-    position: () => -1,
-    isStart: () => false,
-    lineOf: () => -1,
-    breakPositions: () => [],
+    reset: job => table.reset(job),
+    version: table.version,
+    observe: m => table.observe(m),
+    position: m => table.position(m),
+    isStart: pos => table.isStart(pos),
+    lineOf: pos => table.lineOf(pos),
+    breakPositions: (m, line) => table.breakPositions(m, line),
     stopLine: () => -1,
-    halt: () => false,
-    variables: () => null,
-    callStack: () => null,
+    halt: () => false,                 // Stop while paused: BREAK, as when running
+    live: true,
+    variables: m => readStacksAndWords(m, rom),
+    callStack: (m, toEditorLine) => readCallStack(m, rom, table, toEditorLine),
+    labels: { variables: 'Stacks and words', step: 'word' },
   };
 }
 
@@ -194,7 +206,7 @@ const help = {
   forms: (name, e) => [`${name}  ${e.stack}`],
   groups: FORTH_GROUPS.map(g => ({ title: g, test: e => e.group === g })),
   shortcuts: {
-    step: 'Step (not yet in Forth)',
+    step: 'Step to the next word of the program (or the next line sent)',
     pause: 'Pause / Continue',
     open: 'Open a .fs / .4th / .txt program, a Forth or Leap .tap, or a .dck',
     definition: 'Go to where a word is defined',
@@ -205,6 +217,7 @@ const help = {
     'Sending stops at the first line that ends in an error; the line is marked in the editor. A word that waits for a key (KEY, ACCEPT) gets the keys you type in the screen; Stop (F6) or Escape is BREAK.',
     'Ctrl+Enter sends just the line at the cursor, or the lines you have selected, to the prompt.',
     'Reset gives a fresh Forth with an empty dictionary.',
+    'Click left of a line number to set a breakpoint: Forth stops when that line\'s code runs (in a word the Run defined) or, for a line outside a definition, when it is sent. Step (F10) goes on word by word; the debugger shows both stacks, the program\'s words with their values, and the return stack as the call stack.',
     '⬇ TAP saves the program as a TEXT tape, as SAVE-TEXT writes it: on the TS2068 type LOAD-TEXT NAME. Open reads a Forth TEXT tape back.',
     'Import (above the screen) opens everything typed or sent at the prompt, the session\'s line store, as a new document, so work done at the prompt is not lost.',
     'The editor checks the program as Forth would read it: a word that is neither a Forth word, nor defined above, nor in the session is marked, and so are unbalanced IF / DO / BEGIN and : ;.',
