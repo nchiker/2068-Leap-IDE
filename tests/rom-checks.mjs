@@ -337,5 +337,104 @@ if (rom.cartridgeDir) {
     [{ line: 2, port: 244 }, { line: 4, port: 511 }]);
 }
 
+// ── 8. Leap-Forth (src/lang/forth/): the live prompt, Run line by line ──
+console.log('\nLeap-Forth (src/lang/forth/profile.js)');
+{
+  const { forthProfile: F } = await import(join(ROOT, 'src/lang/forth/profile.js'));
+  const { FORTH_EXAMPLES } = await import(join(ROOT, 'src/lang/forth/examples.js'));
+  const { FORTH_WORD_ENTRIES } = await import(join(ROOT, 'src/lang/forth/forth-words.js'));
+  const { lineTokens, scanDefinitions } = await import(join(ROOT, 'src/lang/forth/forth-scan.js'));
+  const fdir = process.env.FORTH_ROMS ?? join(ROOT, 'tsrun/roms');
+  const fhome = new Uint8Array(readFileSync(join(fdir, 'leapforth-0.rom')));
+  const fexrom = new Uint8Array(readFileSync(join(fdir, 'leapforth-1.rom')));
+  const from = F.knownRoms[await romPairHash(fhome, fexrom)] ?? null;
+  check('Forth ROM pair is in src/lang/forth/forth-roms.js', !!from, from ? from.version : 'unknown: tools/forth-rom-entry.py');
+  const fl = await F.attach({ rom: from });
+  const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+  const boot = () => { setHomeRom(m, fhome); setExRom(m, fexrom); resetMachine(m); };
+  const fwait = () => m.cpu.pc >= from.keyWait && m.cpu.pc < from.keyWaitEnd;
+  const frun = (until, frames) => {
+    for (let f = 0; f < frames; f++) {
+      const end = m.frameStart + tStatesPerFrame;
+      while (m.tstates < end && !m.cpu.halted) { if (until()) return true; runZ80(m.cpu, m.bus, 1, m); }
+      runFrame(m);
+    }
+    return false;
+  };
+  /** Run as the IDE does (emulator.js with the Forth driver): the lines one by one, to the prompt or a wait. */
+  function send(text, frames = 3000) {
+    const start = fl.startRun(text);
+    F.driver.inject(m, from, start.job);
+    for (;;) {
+      frun(() => false, 1);
+      if (!frun(fwait, frames)) return { state: 'busy' };
+      const state = F.driver.runState(m, from);
+      if (state === 'ended' && F.driver.next(m, from, start.job)) continue;
+      return { state, ...F.driver.result(m, from, start.job), status: fl.describeResult(F.driver.result(m, from, start.job), start.editorLine) };
+    }
+  }
+  const ix = () => (m.cpu.xh << 8) | m.cpu.xl;
+  const tos = () => { const v = m.bus.read(ix()) | (m.bus.read(ix() + 1) << 8); return v & 0x8000 ? v - 0x10000 : v; };
+  const depth = () => (from.dstackTop - ix()) / 2;
+
+  boot();
+  check('Forth boots to the OK prompt', frun(fwait, 600) && F.driver.runState(m, from) === 'ended');
+  same('definitions and a use, line by line, end in OK', (r => [r.state, r.lastError, r.status.text, depth(), tos()])(
+    send(': SQ ( n -- n*n ) DUP * ;\n\n7 SQ')), ['ended', 0, 'OK', 1, 49]);
+  same('a second Run sees the first one\'s words (the session is live)', (r => [r.lastError, tos()])(send('DROP 12 SQ')), [0, 144]);
+  same('an unknown word stops the sending, on its line and column', (r => [r.lastError, r.index, r.status.text, r.status.mark?.cols])(
+    send('DROP 1\nFOO 2\n3')), [-13, 1, 'FOO ? (THROW -13: not a word Forth knows here) on line 2', { from: 0, to: 3 }]);
+  {
+    // The prompt stores each line before it runs it: the last one stored is the failing one.
+    const end = m.bus.read(from.storeEnd) | (m.bus.read(from.storeEnd + 1) << 8);
+    let text = '';
+    for (let a = from.storeStart; a < end; a++) text += String.fromCharCode(m.bus.read(a));
+    same('the lines after the error were not sent', text.split('\r').filter(Boolean).pop(), 'FOO 2');
+  }
+  same('a THROW from inside a word: DIVISION BY ZERO (-42) on the line that called it',
+    (r => [r.lastError, r.status.text])(send(': BAD 1.0 0.0 F/ ;\nBAD')), [-42, 'DIVISION BY ZERO (THROW -42) on line 2']);
+  same('KEY waits at a key wait that is not the prompt', (r => [r.state, F.driver.canInject(m, from)])(send('KEY')), ['waiting', false]);
+  {
+    // BREAK (CAPS SHIFT + SPACE) ends the KEY wait with THROW -28, back at the prompt.
+    m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1;
+    frun(() => false, 5);
+    m.keyMatrix.fill(0x1F);
+    m.bus.write(from.kbdKeyHit, 0);
+    const at = frun(() => fwait() && F.driver.runState(m, from) === 'ended', 200);
+    same('BREAK ends KEY: THROW -28, at the prompt', [at, F.driver.result(m, from, null).lastError], [true, -28]);
+  }
+  {
+    send(': SPIN BEGIN 0 UNTIL ;');
+    const start = fl.startRun('SPIN');
+    F.driver.inject(m, from, start.job);
+    const busy = !frun(fwait, 20);
+    m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1;
+    const back = frun(fwait, 100);
+    m.keyMatrix.fill(0x1F);
+    m.bus.write(from.kbdKeyHit, 0);
+    same('BREAK stops an endless loop', [busy, back, F.driver.runState(m, from), F.driver.result(m, from, start.job).lastError],
+      [true, true, 'ended', -28]);
+  }
+  same('lines over 128 characters are refused', fl.lint('.( ' + 'x'.repeat(130)).length, 1);
+
+  // The examples (the manual's Part 7, tested by 2068-Forth's build): each from a fresh
+  // Forth runs to OK. Those that wait for keys are left out here.
+  const bad = [];
+  for (const ex of FORTH_EXAMPLES.filter(e => !e.input)) {
+    boot(); frun(fwait, 600);
+    const r = send(ex.text, 6000);
+    if (r.state !== 'ended' || r.lastError !== 0) bad.push(`${ex.id}: ${r.state} ${r.status?.text ?? ''}`);
+  }
+  same(`the Examples menu's programs run to OK (${FORTH_EXAMPLES.filter(e => !e.input).length} without key input)`, bad, []);
+
+  same('word data: 184 words from the manual, each with a stack effect and group',
+    Object.values(FORTH_WORD_ENTRIES).filter(e => e.stack && e.group).length, 184);
+  same('tokens: a comment, a string, a definition, a number',
+    lineTokens(': HI ." HELLO" 42 . ; \\ greet').map(t => t.type), ['word', 'defName', 'word', 'string', 'number', 'word', 'word', 'comment']);
+  same('definitions: :, VARIABLE, CONSTANT; the newest last',
+    scanDefinitions(': A ;\nVARIABLE B  10 CONSTANT C\n: A 1 ;').map(d => `${d.kind} ${d.name} ${d.line}`),
+    [': A 1', 'VARIABLE B 2', 'CONSTANT C 2', ': A 3']);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

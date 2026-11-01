@@ -201,7 +201,7 @@ function onEmulatorState(state, detail) {
   showMachine();
   switch (state) {
   case 'booting': setRunning(false); setStatus('Booting…', 'idle'); break;
-  case 'ready':   setRunning(false); setStatus(readyMessage ?? 'Ready', 'idle'); readyMessage = null; break;
+  case 'ready':   setRunning(false); setStatus(readyMessage ?? profile.readyText ?? 'Ready', 'idle'); readyMessage = null; break;
   case 'running': setRunning(true);  setStatus('Running…', 'run'); break;
   case 'waiting': setRunning(true);  setStatus(profile.waitingText, 'run'); break;
   case 'paused': {
@@ -246,14 +246,19 @@ function showRunResult(result) {
   if (!lang) return;
   const r = lang.describeResult(result, lastRun?.editorLine ?? null, isBreak => debug ? debug.stopLine(isBreak) : -1);
   setStatus(r.text, r.mode);
-  if (r.mark) markLine(r.mark.line0, r.mark.message);
+  if (r.mark) markLine(r.mark.line0, r.mark.message, r.mark.cols);
 }
 
-/** Put a diagnostic on a 0-based editor line, if the text has not changed since the run. */
-function markLine(editorLine, message) {
+/**
+ * Put a diagnostic on a 0-based editor line (or columns {from, to} of it), if
+ * the text has not changed since the run.
+ */
+function markLine(editorLine, message, cols = null) {
   if (editorLine === null || editorLine === undefined || editorLine < 0 || !lastRun) return;
   if (getSource() !== lastRun.text) return;
-  const diag = { ...lineRange(lastRun.text, editorLine), severity: 'error', message };
+  const range = lineRange(lastRun.text, editorLine);
+  const start = range.to - lastRun.text.split('\n')[editorLine].length;
+  const diag = { ...(cols ? { from: start + cols.from, to: start + cols.to } : range), severity: 'error', message };
   runDiagnostic = { text: lastRun.text, diag };
   window.leapEditor.setDiagnostics([diag]);
 }
@@ -714,6 +719,7 @@ async function switchLanguage(id) {
   }
   profile = next;
   lang = null;
+  showMachine();
   lastRun = null;
   runDiagnostic = null;
   storeLanguage(id);

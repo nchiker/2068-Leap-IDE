@@ -89,6 +89,7 @@ export async function createEmulator(opts) {
     state:    'booting',
     runActive: false,     // an injected program has not yet ended
     pending:  null,       // {kind: 'run'|'stop', job?, stage, frames}
+    job:      null,       // the running job (the driver's; Forth keeps its progress in it)
     paused:   false,      // debugger: the machine holds where it is
     watch:    null,       // debugger: function(machine) -> true to pause before the next instruction
     oneShot:  null,       // debugger: like watch, removed after it fires (pause())
@@ -416,9 +417,17 @@ function atKeyWait(emu) {
   const p = emu.pending, m = emu.machine, drv = emu.profile.driver;
   const ended = emu.runActive && drv.runState(m, emu.rom) === 'ended';
 
+  if (p && p.kind === 'run' && drv.canInject && !drv.canInject(m, emu.rom)) {
+    // Not a key wait the profile can start from (Forth: a word waiting in
+    // KEY): BREAK it first, as for a busy program.
+    if (p.stage === 'seek') { pressBreak(emu); p.stage = 'break'; p.frames = 0; }
+    else advancePending(emu);
+    return;
+  }
   if (p && p.kind === 'run') {
     if (p.stage === 'break') releaseBreak(emu);
     emu.pending = null;
+    emu.job = p.job;
     drv.inject(m, emu.rom, p.job);
     emu.runActive = true;
     setState(emu, 'running');
@@ -447,9 +456,14 @@ function atKeyWait(emu) {
     emu.pending = null;
   }
   if (emu.runActive) {
+    // A driver that sends its job in parts (Forth: one line at a time) goes on.
+    if (ended && !p && drv.next && drv.next(m, emu.rom, emu.job)) {
+      setState(emu, 'running');
+      return;
+    }
     if (ended) {
       endRun(emu);
-      setState(emu, 'ended', drv.result(m, emu.rom));
+      setState(emu, 'ended', drv.result(m, emu.rom, emu.job));
     } else {
       setState(emu, 'waiting');
     }

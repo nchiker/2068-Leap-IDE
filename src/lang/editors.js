@@ -11,7 +11,9 @@
 "use strict";
 
 import { basicEditor } from './basic/editor.js';
+import { forthEditor } from './forth/editor.js';
 
 export const LANGUAGE_EDITORS = {
   basic: basicEditor,
+  forth: forthEditor,
 };

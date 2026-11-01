@@ -65,12 +65,12 @@ function showEntry(detail, name) {
   const e = help.entries[name];
   detail.replaceChildren();
   detail.append(el('h3', 'help-name', name));
-  for (const f of e.forms) detail.append(el('code', 'help-form', f));
+  for (const f of help.forms ? help.forms(name, e) : e.forms) detail.append(el('code', 'help-form', f));
   detail.append(el('div', 'help-kind', help.kindText(e)));
   detail.append(el('p', 'help-desc', e.desc));
   if (e.example) detail.append(el('pre', 'help-example', e.example));
   const link = el('a', 'help-link', 'Full entry in the manual ↗');
-  link.href = `${help.manualUrl}#${help.anchor(name, e)}`;
+  link.href = help.link ? help.link(name, e) : `${help.manualUrl}#${help.anchor(name, e)}`;
   link.target = '_blank';
   link.rel = 'noopener';
   detail.append(link);

@@ -376,6 +376,47 @@ try {
   const helpClosed = await evaluate("document.querySelector('.help-overlay').hidden");
   check('Help opens with every keyword and Escape closes it', helpOpen >= 100 && helpClosed, `${helpOpen} keywords`);
 
+  // Leap-Forth: switch language, Run sends the text to the live prompt, typing at the prompt,
+  // an error marked on its line, Help has the Forth words, and switching back keeps both programs.
+  const basicDoc = await evaluate('leapEditor.getSource()');
+  await evaluate("(document.getElementById('lang-select').value = 'forth', document.getElementById('lang-select').dispatchEvent(new Event('change')))");
+  const forthReady = await waitFor("leapIDE.profile.id === 'forth' && leapIDE.lang && /OK prompt/.test(document.getElementById('status-text').textContent) && document.getElementById('emu-rom').textContent", 20000);
+  check('switching to Leap-Forth boots its ROMs to the OK prompt', forthReady === 'Forth 2.0', String(forthReady));
+  const forthRun = await runProgram([': SQ ( n -- n*n ) DUP * ;', '', 'CLS 7 SQ .'], /^OK$|THROW|Stopped/);
+  check('Forth: Run sends the program and ends in OK', forthRun === 'OK', forthRun);
+  await evaluate("document.getElementById('ts-bezel').focus()");
+  for (const ch of '3 SQ .') {
+    const code = ch === ' ' ? 'Space' : /\d/.test(ch) ? 'Digit' + ch : ch === '.' ? 'Period' : 'Key' + ch;
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ch.toLowerCase(), code, text: ch.toLowerCase() });
+    await sleep(60);
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch.toLowerCase(), code });
+    await sleep(60);
+  }
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r' });
+  await sleep(60);
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter' });
+  const forthTyped = await waitFor(`(() => { const r = leapIDE.emulator.rom, b = leapIDE.emulator.machine.bus;
+    const end = b.read(r.storeEnd) | (b.read(r.storeEnd + 1) << 8); let t = '';
+    for (let a = r.storeStart; a < end; a++) t += String.fromCharCode(b.read(a));
+    const last = t.split('\\r').filter(Boolean).pop(); return last === '3 sq .' && last; })()`, 5000);
+  check('Forth: keys typed in the screen reach the OK prompt (the line is stored and run)', forthTyped === '3 sq .', String(forthTyped));
+  await shot('forth');
+  const forthErr = await runProgram(['1 2', 'FOO 3', '4'], /^OK$|THROW|Stopped/);
+  const forthDiag = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 3000);
+  check('Forth: an unknown word stops the sending and is marked', /^FOO \? .* on line 2$/.test(forthErr) && forthDiag === 'FOO', `${forthErr} | ${forthDiag}`);
+  await evaluate("document.getElementById('btn-help').click()");
+  const forthHelp = await evaluate("document.querySelectorAll('.help-overlay .help-item').length");
+  await evaluate("document.querySelector('.help-close').click()");
+  check('Forth: Help lists the 184 Forth words', forthHelp === 184, String(forthHelp));
+  const forthDoc = await evaluate('leapEditor.getSource()');
+  await evaluate("leapIDE.switchLanguage('basic')");
+  const backToBasic = await waitFor("leapIDE.profile.id === 'basic' && leapIDE.lang && document.getElementById('emu-rom').textContent", 20000);
+  const docs = await evaluate(`[leapEditor.getSource() === ${JSON.stringify(basicDoc)},
+    JSON.parse(localStorage.getItem('leap-ide.document.forth')).text === ${JSON.stringify(forthDoc)}, localStorage.getItem('leap-ide.lang')].join(' ')`);
+  check('switching back to BASIC brings its program back; Forth\'s is kept', /^Leap 2\./.test(backToBasic) && docs === 'true true basic', `${backToBasic} | ${docs}`);
+  const basicAgain = await runProgram(['PRINT "BACK"']);
+  check('BASIC runs again after Forth', basicAgain === 'Finished', basicAgain);
+
   // Share: the link opens the program in a fresh IDE (nothing kept in this browser, so no question)
   const shareSrc = 'REM shared\nPRINT "SHARED"';
   await evaluate(`(leapEditor.setSource(${JSON.stringify(shareSrc)}, {fresh: true}), document.getElementById('filename-display').textContent)`);
@@ -401,7 +442,7 @@ try {
     localStorage.getItem('leap-ide.document') === null, !!localStorage.getItem('leap-ide.document.basic'),
     document.getElementById('lang-select').hidden].join(' | ')`);
   check('an auto-save from before languages opens and moves to leap-ide.document.basic',
-    migrated === 'REM from before languages | old.leap | true | true | true', migrated);
+    migrated === 'REM from before languages | old.leap | true | true | false', migrated);
 
   check('no page errors', pageErrors.length === 0, pageErrors.join(' | '));
 } catch (err) {

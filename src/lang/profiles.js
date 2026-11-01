@@ -16,9 +16,11 @@
  *   driver                               the emulator's half of Run / Stop:
  *     safe(m)                              at the key wait, is this a safe point (paging)?
  *     runState(m, rom)                     'ended' | 'waiting' while a run is active
+ *     canInject(m, rom)                    optional: may a run start at this key wait (else BREAK first)
  *     inject(m, rom, job)                  write RAM and jump; job comes from startRun()
  *     stopWaiting(m, rom)                  end a wait directly (true), or false to press BREAK
- *     result(m, rom)                       the ended run's result, for describeResult()
+ *     next(m, rom, job)                    optional: at the end of a part, start the next (true)
+ *     result(m, rom, job)                  the ended run's result, for describeResult()
  *   createDebugAdapter(rom)              the debugger's view of a run (src/debugger.js)
  *   symbolGroups(text), symbolsEmpty     the Symbols tab
  *   help                                 the Help overlay (src/help.js)
@@ -33,9 +35,10 @@
 "use strict";
 
 import { basicProfile } from './basic/profile.js';
+import { forthProfile } from './forth/profile.js';
 
 /** Every language, in the selector's order. The first is the default. */
-export const PROFILES = [basicProfile];
+export const PROFILES = [basicProfile, forthProfile];
 
 /** The profile with this id, or the default. */
 export function profileById(id) {
