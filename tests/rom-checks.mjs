@@ -537,6 +537,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
   const { leapcProfile: P } = await import(join(ROOT, 'src/lang/c/profile.js'));
   const { LEAPC_KEYWORD_ENTRIES } = await import(join(ROOT, 'src/lang/c/leapc-keywords.js'));
   const { scanC } = await import(join(ROOT, 'src/lang/c/leapc-scan.js'));
+  const { LEAPC_EXAMPLES } = await import(join(ROOT, 'src/lang/c/examples.js'));
   const cdir = process.env.LEAPC_ROMS ?? join(ROOT, 'tsrun/roms');
   const chome = new Uint8Array(readFileSync(join(cdir, 'leapc-0.rom')));
   const cexrom = new Uint8Array(readFileSync(join(cdir, 'leapc-1.rom')));
@@ -610,6 +611,55 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       [cl.startRun('int circle(int a, int b, int c)\n{\n    return a;\n}\nint main(void)\n{\n    return circle(1, 2, 3);\n}').job.lib, cl.lint('int circle(int a, int b, int c)\n{\n    return a;\n}\nint main(void)\n{\n    return circle(1, 2, 3);\n}')],
       [null, []]);
     same('library: ⬇ TAP names LIB "shapes" first', cl.exportTape(shapes, 'circ').message, 'Saved circ.tap: on the TS2068, LIB "shapes", then LOAD "circ" then RUN');
+  }
+
+  // C7: the Examples menu (the manual's Part 7, each a test in Leap-C's build): every program
+  // without keys or a tape runs to Finished with the manual's exit status (HL at RT_RUN.done),
+  // screen rows and pixels. The screen is read back as text with glyphs learnt from the ROM itself.
+  {
+    // The screen as it was when the program ended (RT_RUN.done), before the report on row 23.
+    let shot = null;
+    const scr = a => (shot ? shot[a - 0x4000] : m.bus.read(a));
+    const cellBytes = (row, col) => Array.from({ length: 8 }, (_, k) => {
+      const y = row * 8 + k;
+      return scr(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | col);
+    }).join(',');
+    const glyphs = new Map();
+    const chars = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i));
+    const printed = chars.map(c => c === '\\' || c === '"' ? '\\' + c : c === '%' ? '%%' : c).join('');
+    cRun(main(`    cls();\n    printf("${printed}");\n    return 0;`));
+    chars.forEach((c, i) => { const k = cellBytes(Math.floor(i / 32), i % 32); if (!glyphs.has(k)) glyphs.set(k, c); });   // blank glyphs read as space
+    const screenRow = row => Array.from({ length: 32 }, (_, col) => glyphs.get(cellBytes(row, col)) ?? '?').join('').trimEnd();
+    const pixel = (x, y) => (scr(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (x >> 3)) >> (7 - (x & 7))) & 1;
+    /** Run to the report, keeping HL at RT_RUN.done (the exit status) and the screen there. */
+    const runExit = text => {
+      const start = cl.startRun(text);
+      P.driver.inject(m, crom, start.job);
+      let exit = null;
+      crun(() => false, 2);
+      shot = null;
+      const back = crun(() => {
+        if (m.cpu.pc === crom.rtRunDone) {
+          exit = (m.cpu.h << 8) | m.cpu.l;
+          shot = Uint8Array.from({ length: 6144 }, (_, i) => m.bus.read(0x4000 + i));
+        }
+        return cwait();
+      }, 1500);
+      return { back, exit, text: cl.describeResult(P.driver.result(m, crom), start.editorLine, null, start.job).text };
+    };
+    const bad = [];
+    const runnable = LEAPC_EXAMPLES.filter(e => !e.input && !e.tape);
+    for (const ex of runnable) {
+      const r = runExit(ex.text);
+      const got = { status: r.text, exit: r.exit & 0xFFFF,
+        screen: (ex.screen ?? []).map(([row]) => [row, screenRow(row)]),
+        pixels: (ex.pixels ?? []).map(([x, y]) => [x, y, pixel(x, y)]) };
+      const want = { status: 'Finished', exit: ex.exit & 0xFFFF,
+        screen: (ex.screen ?? []).map(([row, t]) => [row, t.trimEnd()]), pixels: ex.pixels ?? [] };
+      if (JSON.stringify(got) !== JSON.stringify(want)) bad.push(`${ex.id}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
+    }
+    same(`the Examples menu's programs give the manual's exit status, screen and pixels (${runnable.length} without keys or a tape)`, bad, []);
+    same('every example checks clean', LEAPC_EXAMPLES.filter(e => cl.lint(e.text).length > 0).map(e => e.id), []);
   }
 
   // C5: tapes. SH_SAVE / SH_LOAD (the shell's SAVE "name" / LOAD "name") called at the

@@ -29,6 +29,7 @@ import { LEAPC_KEYWORD_ENTRIES, LEAPC_MANUAL_REF } from './leapc-keywords.js';
 import { encodeLineStore } from '../basic/profile.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC, librariesUsed } from './leapc-scan.js';
+import { LEAPC_EXAMPLES } from './examples.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
 import { tapeToText } from '../../files.js';
 
@@ -195,7 +196,7 @@ export const leapcProfile = {
   symbolGroups,
   symbolsEmpty: 'No functions, globals, macros or types yet.',
   help,
-  examples: [],
+  examples: LEAPC_EXAMPLES,
   tools: { udg: false, draw: false },
   /** ⬇ TAP: the program as Leap-C's SAVE writes it (V2's two blocks, format word $8C00). */
   hasTape: true,

@@ -110,8 +110,9 @@ function check(name, ok, detail = '') {
 }
 const status = () => evaluate("document.getElementById('status-text').textContent");
 /** Put a program in the editor, Run it and wait for the run to settle; returns the status text. */
+/** Run lines (or, with null, the editor's program) to a status matching done. */
 async function runProgram(lines, done = /Finished|error|Stopped/) {
-  await evaluate(`leapEditor.setSource(${JSON.stringify(lines.join('\n'))}, {fresh: true})`);
+  if (lines) await evaluate(`leapEditor.setSource(${JSON.stringify(lines.join('\n'))}, {fresh: true})`);
   await evaluate("document.getElementById('btn-run').click()");
   const end = Date.now() + 20000;
   let s = '';
@@ -459,6 +460,11 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
   check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
+  // C7: the Examples menu has the manual's 18 programs; one opens and runs.
+  const cExamples = await evaluate("document.querySelectorAll('#examples-menu [data-example]').length");
+  await evaluate("window.confirm = () => true, document.querySelector('[data-example=fibonacci-numbers]').click()");
+  const cExRun = await runProgram(null, /Finished|error|Stopped/);
+  check('Leap-C: the Examples menu lists 18 programs, and Fibonacci runs', cExamples === 18 && cExRun === 'Finished', `${cExamples} | ${cExRun}`);
   // C6: a program calling circle() runs with LIB "shapes" loaded by the IDE.
   const cLib = await runProgram(['int main(void)', '{', '    cls();', '    circle(128, 96, 20);', '    return 0;', '}'], /Finished|error|Stopped/);
   const cLibPixel = await evaluate('(leapIDE.emulator.machine.bus.read(0x4000 | (96 & 0xC0) << 5 | (96 & 7) << 8 | (96 & 0x38) << 2 | (148 >> 3)) >> (7 - (148 & 7))) & 1');
