@@ -417,6 +417,23 @@ try {
   const basicAgain = await runProgram(['PRINT "BACK"']);
   check('BASIC runs again after Forth', basicAgain === 'Finished', basicAgain);
 
+  // Leap-C: switch, Run compiles and runs (the ROM's report), the checker marks the token, Stop ends getkey().
+  await evaluate("leapIDE.switchLanguage('c')");
+  const cReady = await waitFor("leapIDE.profile.id === 'c' && leapIDE.lang && document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 20000);
+  check('switching to Leap-C boots its ROMs', /^Leap-C 1\.0/.test(cReady ?? ''), String(cReady));
+  const cRun = await runProgram(['int main(void)', '{', '    cls();', '    printf("HELLO FROM C");', '    return 9;', '}']);
+  check('Leap-C: Run compiles and runs to the end', cRun === 'Finished', cRun);
+  await shot('leapc');
+  await evaluate(`leapEditor.setSource(${JSON.stringify('int main(void)\n{\n    int x = 3 +;\n    return x;\n}')}, {fresh: true})`);
+  const cLint = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 5000);
+  check('Leap-C: the ROM compiler\'s error is marked at its token', cLint === ';', String(cLint));
+  await runProgram(['int main(void)', '{', '    return getkey();', '}'], /Waiting/);
+  await evaluate("document.getElementById('btn-stop').click()");
+  const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
+  check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
+  await evaluate("leapIDE.switchLanguage('basic')");
+  await waitFor("leapIDE.profile.id === 'basic' && leapIDE.lang", 20000);
+
   // Share: the link opens the program in a fresh IDE (nothing kept in this browser, so no question)
   const shareSrc = 'REM shared\nPRINT "SHARED"';
   await evaluate(`(leapEditor.setSource(${JSON.stringify(shareSrc)}, {fresh: true}), document.getElementById('filename-display').textContent)`);

@@ -11,9 +11,11 @@
 "use strict";
 
 import { basicEditor } from './basic/editor.js';
+import { leapcEditor } from './c/editor.js';
 import { forthEditor } from './forth/editor.js';
 
 export const LANGUAGE_EDITORS = {
   basic: basicEditor,
+  c: leapcEditor,
   forth: forthEditor,
 };

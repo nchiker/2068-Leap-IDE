@@ -129,10 +129,19 @@ function lineRange(text, editorLine) {
   return { from: from + indent, to: from + lines[editorLine].length };
 }
 
-/** The profile's {line0, message} diagnostics as CodeMirror ranges. */
+/**
+ * The profile's {line0, message, cols?} diagnostics as CodeMirror ranges: the
+ * whole line from its first non-blank character, or columns {from, to} of it.
+ */
 function toDiagnostics(text, diags) {
-  return diags.map(d => d.line0 === undefined ? d
-    : { ...lineRange(text, Math.max(0, Math.min(d.line0, text.split('\n').length - 1))), severity: 'error', message: d.message });
+  const count = text.split('\n').length;
+  return diags.map(d => {
+    if (d.line0 === undefined) return d;
+    const range = lineRange(text, Math.max(0, Math.min(d.line0, count - 1)));
+    if (!d.cols) return { ...range, severity: 'error', message: d.message };
+    const start = range.to - text.split('\n')[Math.max(0, Math.min(d.line0, count - 1))].length;
+    return { from: start + d.cols.from, to: Math.min(range.to, start + d.cols.to), severity: 'error', message: d.message };
+  });
 }
 
 /** Diagnostics for the editor: storage problems, then the checker's error. */
@@ -184,7 +193,7 @@ function runProgram() {
     setStatus(start.error, 'error');
     return;
   }
-  lastRun = { text, editorLine: start.editorLine };
+  lastRun = { text, editorLine: start.editorLine, job: start.job };
   debug.beginRun();
   emulator.run(start.job);
   updateProgInfo(start.bytes);
@@ -244,7 +253,8 @@ function showMachine() {
 
 function showRunResult(result) {
   if (!lang) return;
-  const r = lang.describeResult(result, lastRun?.editorLine ?? null, isBreak => debug ? debug.stopLine(isBreak) : -1);
+  const r = lang.describeResult(result, lastRun?.editorLine ?? null,
+    isBreak => debug ? debug.stopLine(isBreak) : -1, lastRun?.job ?? null);
   setStatus(r.text, r.mode);
   if (r.mark) markLine(r.mark.line0, r.mark.message, r.mark.cols);
 }

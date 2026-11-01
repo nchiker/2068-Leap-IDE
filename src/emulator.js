@@ -480,6 +480,10 @@ function advancePending(emu) {
     pressBreak(emu);
     p.stage = 'break';
     p.frames = 0;
+  } else if (p.stage === 'break' && p.frames === emu.profile.driver.breakHold) {
+    // The ROM latched BREAK in its interrupt (Leap-C, Forth): let go, so a
+    // wait for all keys to be released (Leap-C's report) can end.
+    releaseBreak(emu);
   } else if (p.stage === 'break' && p.frames >= BREAK_FRAMES) {
     releaseBreak(emu);
     hardReset(emu);

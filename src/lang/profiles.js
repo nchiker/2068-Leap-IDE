@@ -19,6 +19,7 @@
  *     canInject(m, rom)                    optional: may a run start at this key wait (else BREAK first)
  *     inject(m, rom, job)                  write RAM and jump; job comes from startRun()
  *     stopWaiting(m, rom)                  end a wait directly (true), or false to press BREAK
+ *     breakHold                            optional: frames to hold BREAK (else until the key wait)
  *     next(m, rom, job)                    optional: at the end of a part, start the next (true)
  *     result(m, rom, job)                  the ended run's result, for describeResult()
  *   createDebugAdapter(rom)              the debugger's view of a run (src/debugger.js)
@@ -35,10 +36,11 @@
 "use strict";
 
 import { basicProfile } from './basic/profile.js';
+import { leapcProfile } from './c/profile.js';
 import { forthProfile } from './forth/profile.js';
 
 /** Every language, in the selector's order. The first is the default. */
-export const PROFILES = [basicProfile, forthProfile];
+export const PROFILES = [basicProfile, leapcProfile, forthProfile];
 
 /** The profile with this id, or the default. */
 export function profileById(id) {

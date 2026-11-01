@@ -436,5 +436,76 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     [': A 1', 'VARIABLE B 2', 'CONSTANT C 2', ': A 3']);
 }
 
+// ── 9. Leap-C (src/lang/c/): Run by the shell path, the checker, results ──
+console.log('\nLeap-C (src/lang/c/profile.js)');
+{
+  const { leapcProfile: P } = await import(join(ROOT, 'src/lang/c/profile.js'));
+  const { LEAPC_KEYWORD_ENTRIES } = await import(join(ROOT, 'src/lang/c/leapc-keywords.js'));
+  const { scanC } = await import(join(ROOT, 'src/lang/c/leapc-scan.js'));
+  const cdir = process.env.LEAPC_ROMS ?? join(ROOT, 'tsrun/roms');
+  const chome = new Uint8Array(readFileSync(join(cdir, 'leapc-0.rom')));
+  const cexrom = new Uint8Array(readFileSync(join(cdir, 'leapc-1.rom')));
+  const crom = P.knownRoms[await romPairHash(chome, cexrom)] ?? null;
+  check('Leap-C ROM pair is in src/lang/c/leapc-roms.js', !!crom, crom ? crom.version : 'unknown: tools/leapc-rom-entry.py');
+  const cl = await P.attach({ rom: crom, romImages: { home: chome, exrom: cexrom } });
+  const main = body => `int main(void)\n{\n${body}\n}`;
+
+  same('checker: a clean program', cl.lint(main('    printf("HI");\n    return 0;')), []);
+  same('checker: a syntax error on its line, at its token',
+    cl.lint('int main(void)\n{\n\n    int x = 3 +;\n    return x;\n}').map(d => [d.line0, d.cols, d.message.slice(0, 21)]),
+    [[3, { from: 15, to: 16 }, 'ERROR 20: SYNTAX ERRO']]);
+  same('checker: an undefined function on its line', cl.lint(main('    foo(1);\n    return 0;')).map(d => [d.line0, d.message.slice(0, 31)]),
+    [[2, 'ERROR 70: UNDEFINED FUNCTION (c']]);
+  same('checker: a line over 127 characters', cl.lint(main('    // ' + 'x'.repeat(130))).length, 1);
+
+  const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+  setHomeRom(m, chome); setExRom(m, cexrom); resetMachine(m);
+  const cwait = () => m.cpu.pc >= crom.keyWait && m.cpu.pc < crom.keyWaitEnd;
+  const crun = (until, frames) => {
+    for (let f = 0; f < frames; f++) {
+      const end = m.frameStart + tStatesPerFrame;
+      while (m.tstates < end && !m.cpu.halted) { if (until()) return true; runZ80(m.cpu, m.bus, 1, m); }
+      runFrame(m);
+    }
+    return false;
+  };
+  /** Run as the IDE does (the C driver at a shell key wait), to the report or a key wait. */
+  function cRun(text) {
+    const start = cl.startRun(text);
+    P.driver.inject(m, crom, start.job);
+    crun(() => false, 2);
+    if (!crun(cwait, 900)) return { state: 'busy' };
+    const r = P.driver.result(m, crom);
+    return { state: P.driver.runState(m, crom), report: (m.bus.read(m.cpu.sp) | (m.bus.read(m.cpu.sp + 1) << 8)) === crom.reportReturn,
+      text: cl.describeResult(r, start.editorLine, null, start.job).text };
+  }
+  check('Leap-C boots to its editor, a shell key wait', crun(cwait, 600) && P.driver.canInject(m, crom));
+  same('hello world runs and ends at the report', cRun(main('    cls();\n    printf("HELLO");\n    return 9;')),
+    { state: 'ended', report: true, text: 'Finished' });
+  same('a compile error is reported on its editor line', cRun('int main(void)\n{\n\n    int x = 3 +;\n}').text, 'Compile error 20 on line 4');
+  same('a run-time error names the failing function\'s line (stack overflow, 1)',
+    cRun('int f(int n)\n{\n    return f(n + 1);\n}\nint main(void)\n{\n    return f(0);\n}').text, 'Runtime error 1 in the function on line 1');
+  const waiting = cRun(main('    int c;\n    c = getkey();\n    return c;'));
+  same('getkey() waits: a key wait the IDE must not start a run from', [waiting.state, P.driver.canInject(m, crom)], ['waiting', false]);
+  {
+    // BREAK for driver.breakHold frames, then let go (the report waits for all keys released).
+    m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1;
+    crun(() => false, P.driver.breakHold);
+    m.keyMatrix.fill(0x1F);
+    m.bus.write(crom.kbdKeyHit, 0);
+    const back = crun(() => cwait() && P.driver.runState(m, crom) === 'ended', 300);
+    same('BREAK ends getkey(): run-time error 5, Stopped (BREAK)',
+      [back, cl.describeResult(P.driver.result(m, crom), [0, 1, 2, 3, 4], null, null).text], [true, 'Stopped (BREAK) in the function on line 1']);
+  }
+  same('a run started from the last report runs', cRun(main('    return 0;')).text, 'Finished');
+
+  same('manual data: keywords, library functions, the shapes library',
+    ['while', 'printf', 'circle'].map(w => LEAPC_KEYWORD_ENTRIES[w]?.kind), ['keyword', 'function', 'library function']);
+  same('file-scope names: functions, globals, macros, types',
+    (s => [s.functions.map(f => f.name), s.globals.map(g => g.name), s.macros.map(d => d.name), s.types.map(t => t.name)])(
+      scanC('#define N 3\nint total, *p;\nstruct pt { int x; };\nint add(int a)\n{\n  /* { */ return a; // }\n}\nint main(void) { return add(N); }')),
+    [['add', 'main'], ['total', 'p'], ['N'], ['pt']]);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

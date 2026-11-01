@@ -27,6 +27,7 @@ import {
 import { createLineTable, vmInstruction, haltVm, readVariables, readCallStack } from './leap-debug.js';
 import { EXAMPLES } from './examples.js';
 import { tapeToText } from '../../files.js';
+import { LEAP_V2_SYMBOLS } from '../keytables.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -45,16 +46,6 @@ const CHAIN_BASE = STACK_TOP - 6;   // three return addresses below STACK_TOP's 
 const PORT_F4_CHUNK6 = 0x40;
 const PORT_FF_EXROM  = 0x80;
 
-// Leap's KEY_ASCII_TABLE_SYMBOL (kernel/io/io.asm, 2.0.2-emu.1; unchanged in
-// 2.1.0-emu.1): the character SYMBOL SHIFT + key produces. Leap has no key for
-// ^ [ ] { } \ | ~ `, so those stay unmapped.
-const SYMBOLS = {
-  ':': 'Z', '?': 'C', '/': 'V', '<': 'R', '>': 'T',
-  '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
-  '_': '0', ')': '9', '(': '8', "'": '7', '&': '6',
-  '"': 'P', ';': 'O', '=': 'L', '+': 'K', '-': 'J',
-  '.': 'M', ',': 'N', '*': 'B',
-};
 
 /**
  * Leap V2's line store: per line, LE16 (length + 1), the text, then $0D.
@@ -324,7 +315,7 @@ export const basicProfile = {
   romLabel: rom => 'Leap ' + rom.version,
   lineLimit: MAX_LINE_CHARS,
   /** Keys reach the TS2068 only while a program runs (owner: typing never reaches Leap's editor). */
-  keyboard: { symbols: SYMBOLS, always: false },
+  keyboard: { symbols: LEAP_V2_SYMBOLS, always: false },
   driver,
   createDebugAdapter,
   symbolGroups,

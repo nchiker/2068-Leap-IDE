@@ -27,6 +27,7 @@ import { KNOWN_ROMS } from './forth-roms.js';
 import { FORTH_WORD_ENTRIES, FORTH_MANUAL_REF, FORTH_GROUPS } from './forth-words.js';
 import { FORTH_EXAMPLES } from './examples.js';
 import { scanDefinitions } from './forth-scan.js';
+import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 
 // ── Errors (LAST_ERROR, ANS numbering; LEAP_FORTH_ANSWERS.md Q2.2) ──
 const THROW_BREAK = -28;
@@ -54,17 +55,6 @@ export function describeThrow(code, word = '') {
   return text ? `${text} (THROW ${code})` : `ERROR ${code} (the program's own THROW)`;
 }
 
-// Forth's KEY_ASCII_TABLE_SYMBOL (2068-Forth v2.0 kernel/io/io.asm): Leap V2's
-// table plus ~ | \ { } on SS+A..G, ] [ on SS+U, Y and ^ on SS+H.
-const SYMBOLS = {
-  ':': 'Z', '?': 'C', '/': 'V', '<': 'R', '>': 'T',
-  '~': 'A', '|': 'S', '\\': 'D', '{': 'F', '}': 'G',
-  '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
-  '_': '0', ')': '9', '(': '8', "'": '7', '&': '6',
-  '"': 'P', ';': 'O', ']': 'U', '[': 'Y',
-  '=': 'L', '+': 'K', '-': 'J', '^': 'H',
-  '.': 'M', ',': 'N', '*': 'B',
-};
 
 const LINE_LIMIT = 128;   // EDIT_MAX_LEN: the prompt's line, and EDIT's
 
@@ -117,6 +107,8 @@ function sendLine(m, rom, line) {
  * to send and the one being run.
  */
 const driver = {
+  /** BREAK is noticed by the interrupt routine: a short press is enough (src/emulator.js). */
+  breakHold: 5,
   safe: () => true,                     // Forth never pages the prompt's code out
   runState: (m, rom) => (atPrompt(m, rom) ? 'ended' : 'waiting'),
   /** Only at the prompt: a word waiting in KEY must be ended (BREAK) first. */
@@ -224,7 +216,7 @@ export const forthProfile = {
   romLabel: rom => 'Forth ' + rom.version,
   lineLimit: LINE_LIMIT,
   /** The prompt is live: keys pass whenever the screen has focus (owner: console first). */
-  keyboard: { symbols: SYMBOLS, always: true },
+  keyboard: { symbols: LEAP_EXTENDED_SYMBOLS, always: true },
   driver,
   createDebugAdapter,
   symbolGroups,
