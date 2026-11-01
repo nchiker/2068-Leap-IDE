@@ -1,8 +1,14 @@
 # Plan: Leap-Forth in the Leap IDE
 
-Status: proposal, 2026-10-31. Nothing here is started. Prerequisite: stage 0 of
-[`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language profile).
-Recommended after the Leap-C plan, but independent of it.
+Status: proposal, updated 2026-11-01. No Forth code exists yet. Prerequisite:
+stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
+profile). The Forth project has answered the IDE's questions
+([`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and
+**2068-Forth v2.0 is released** (2026-11-01, tag `v2.0`, commit `50170f2`),
+with its manual and its cartridge build. **Next after stage 0**: the order is
+stage 0, then Forth and Leap-C, both unblocked, Forth first because its
+release, manual and cartridge are all complete (owner, 2026-11-01; see
+`MULTI_LANGUAGE_PLAN.md`).
 
 **Leap-Forth** (`~/2068-forth`, "2068 FORTH V2.0") is a subroutine-threaded
 Forth for the TS2068 with BASIC-flavoured extras (`STRING`, `ARRAY`, `PLOT`,
@@ -13,43 +19,62 @@ debugger work, and the natural Forth workflow is interactive, so in the IDE
 the Forth prompt stays live and the editor sends text to it (see
 "Interaction model").
 
-Overall difficulty: **medium to high**. The run model and the interaction
-model are new (the IDE has never let the user type at a ROM prompt); the
-debugger panel itself is easy and could be the best of the three.
+Overall difficulty: **medium**. The run model and the interaction model are
+new (the IDE has never let the user type at a ROM prompt), but the Forth
+project's answers gave the IDE a clean entry for sending a line, a cell with
+the last error and a label for the line table, so the risky parts of the
+first draft are settled. The debugger panel itself is easy and could be the
+best of the three.
 
-Authorities, in order: the Forth manual (being updated for V2, owner
-2026-10-31; until then `docs/forth_tutorial.md` Appendix A, the word reference)
-and `docs/V2/*.md` specs for the language; `build/forth_boot.sym` /
+Authorities, in order: the Forth manual in the release (`docs/manual/01…08`;
+the word reference is `03_language.md` and `04_machine.md`) and `docs/V2/*.md`
+specs for the language; the release's `symbols/forth_boot.sym` and
 `graphics_exrom.sym` for addresses; `tools/fharness.py`, `tools/edtest.py`,
-`tools/tapetest.py` for how the ROM is driven. Addresses below are from the
-local build at `205ac04` and move with every build.
+`tools/tapetest.py` and `tools/forthcart.py` for how the ROM is driven.
+**Everything below is named by label or cell, not by address: addresses move
+with every build, names do not** (the Forth project keeps every name this plan
+uses stable; a rename would be a breaking change, announced in its CHANGELOG).
+The IDE's ROM entry takes every address from the `.sym` files
+(`tools/forth-rom-entry.py`, F0).
 
 ---
 
 ## Facts this plan rests on
 
+Sources: the Forth project's answers (`requests/LEAP_FORTH_ANSWERS.md`, "A")
+and the release bundle.
+
 | Item | Value | Source |
 |---|---|---|
-| Releases | Tags `v0.1.0` (2026-09-09) and a moving `latest`; HEAD `205ac04` | `git tag` |
-| ROMs | HOME `forth_boot_rom0.bin` 16K, EXROM `graphics_exrom.bin` 8K (without the EXROM: `EDIT`, `FILL`, `CIRCLE`, `RECT`, `POLYGON`, sprites say `NO EXROM`) | `Makefile`, README |
-| TSRun copy | `roms/leapforth-*.rom` at today's pin (`760a5ce3…` / `2add175c…`) differ from the current build (`d056a159…` / `6360ccf6…`); the owner will have TSRun carry the matching Forth ROMs by the time this project starts | `sha256sum`; owner, 2026-10-31 |
-| Interpret routine | `INTERPRET_RUN` `$0DCC`: HL = source, DE = length; runs to the end of the text; CR / TAB / control bytes are whitespace, so a whole program goes in one call; errors unwind to `THROW_ROOT_SP` and return | `core/interp.asm:380-468` |
-| Line store | CR-ended plain text, `STORE_START` `$D000` to `$F000` (8 KB); `STORE_END` `$83C5` | `include/forth_layout.inc` |
-| Existing injection | Write text at `$D000`, set `STORE_END`, call `INTERPRET_RUN` | `tools/edtest.py:2002-2030`, `tools/tapetest.py:752` |
-| Shell | `EDITOR_LOOP_LIVE` `$36FF`, `.keyloop` `$3709`; the `call INTERPRET_RUN` at `$3724` returns to `$3727` (no symbol) for the "OK" handling | `build/forth_boot.lst:13187` |
-| Idle point | `IO_READ_KEY.wait_hit` `$054F`; `KBD_LASTK` `$80EF`, `KBD_KEYHIT` `$80F0` | `.sym`, `kernel/io/io.asm:307-312` |
+| Release | `v2.0`, 2026-11-01, commit `50170f2`; version text "2068 FORTH V2.0" (`FORTH_VERSION_TEXT`, also on the status bar at power-on). Earlier: `v0.1.0` | GitHub release; A Q6.6 |
+| Release zip | `roms/forth_boot_rom0.bin` (HOME, 16K, SHA-256 `730c86d0…`), `roms/graphics_exrom.bin` (EXROM, 8K, `fd877dd0…`), `roms/forth_cart.dck` (the cartridge with no program), `symbols/forth_boot.sym`, `graphics_exrom.sym` and the `.lst` files, `docs/manual/01…08`, `demos/blackjack.fs`, `gallery.fs`, `SHA256SUMS` | the release |
+| TSRun | The fork's `main`, commit `11731e1`, carries exactly the v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom` (Leap V2 and Leap-C ROMs unchanged). The IDE's submodule is still at `016787f`, whose Forth pair (`760a5ce3…` / `2add175c…`) is an older build: moving it is F0 | TSRun; `git` |
+| Without the EXROM | `EDIT`, `FILL`, `CIRCLE`, `RECT`, `POLYGON`, sprites say `NO EXROM` | README |
+| Console | `EDITOR_LOOP_LIVE` handles one typed line. Entry points the IDE uses: `EDITOR_LOOP_LIVE.enter` (what ENTER does) and `EDITOR_LOOP_LIVE.key_ret` (the return address of the prompt's key wait). Input line: `EDIT_BUF` (128 bytes, `EDIT_MAX_LEN`), `EDIT_LEN`, `EDIT_CURSOR` (the byte after `EDIT_LEN`) | A Q1, Q3 |
+| Line store | CR-ended plain text from `STORE_START` to `STORE_END` (cells; 8,192 bytes at most). `STORE_APPEND` adds a line (empty lines are not stored). Command lines (`SAVE-TEXT`, `LOAD-TEXT`, `EDIT` …) are taken off it, so it holds source only | A Q1 |
+| Interpret routine | `INTERPRET_RUN` (HL = source, DE = length). The IDE does **not** call it: it enters through `EDITOR_LOOP_LIVE.enter` | A Q1 |
+| Idle point | `IO_READ_KEY.wait_hit` (= `IO_READ_KEY`); `KBD_LASTK`, `KBD_KEYHIT` | `.sym` |
+| Prompt test | PC at `IO_READ_KEY` and the word at SP = `EDITOR_LOOP_LIVE.key_ret`. A program waiting in `KEY`, `ACCEPT` / `INPUT` or `EDIT`'s view is at the same PC with another return address | A Q3 |
 | Keys | Same SYMBOL SHIFT change as Leap-C (SS+A..G = `~ \| \ { }`, SS+H = `^`) | `kernel/io/io.asm` vs 2068-Leap |
-| Unknown word | `INTERPRET_UNKNOWN_WORD` `$0203` prints `TOKEN ?`; the token is in `WORD_BUF` `$8129`; **no error code is set** | `core/interp.asm` |
-| THROW | `THROW_CODE` `$819A`; `RUNTIME_ERROR_HOOK` `$0247` prints the message, then **clears `THROW_CODE`**; ANS numbering (-8, -13, -16, -28, …) | `rom/forth_boot.asm:266-267, 311-320` |
-| After any error | `REPORT_INTERP_ERROR` `$0239`: `STATE` 0, `INTERP_ERROR_FLAG` `$8128` = 1, stacks reset | `.sym` |
-| Error position | `SRC_PTR` `$811B` (not reset) points just past the failing token; `SRC_END` `$811D` | `.sym` |
-| Stacks | Data: IX, empty at `$9100`, limit `$8900`. Float: IY, empty at `$8900`, 5-byte Sinclair floats. Return: Z80 SP from `$FF00` (CALL addresses mixed with `DO` and `CATCH` data) | `include/forth_layout.inc:11-58` |
-| Dictionary | RAM `$9100-$CFFF` (`$A000-$BFFF` hidden while the EXROM is in); `LATEST` `$81CC`, `HERE` `$81CE`, `STATE` `$811F`; headers `LINK(2) LENFLAGS(1) NAME code`; user words have header ≥ `$9100` | `core/dict.asm:12-16` |
-| Words | 184 headers (`H_*` in the `.sym`) | `build/forth_boot.sym` |
-| Word list | Today: `forth_tutorial.md:4939-5191`, Appendix A, Markdown tables `Word \| Stack effect \| Notes` by topic, no longer descriptions. The manual is being updated for V2 (owner, 2026-10-31); the IDE's word data will be generated from that | |
-| Tapes | TEXT: header type 0, raw source, param1 `$8000`, param2 = length (`LOAD-TEXT`, `SAVE-TEXT`); LIB: type 3, dictionary + CRC, tied to `ROM_IDENTITY` | `docs/V2/STORAGE_SPEC.md:157-171`, `tools/tape_gen_forth.py` |
-| Case | Names are matched in upper case; input a-z is folded | `core/interp.asm:13, 82` |
-| Not present | `EVALUATE`, `BLOCK` / `LOAD`, `INCLUDE`, `ABORT"`, `DEPTH`, `.S`, `>R` / `R>`, `BASE` / `HEX` | agent survey of `core/` |
+| Last error | `LAST_ERROR` (2-byte cell): the code the last console line ended with, 0 = `OK`, else the ANS code (table in A Q2.2: -1 `ABORT`, -3 / -4 `STACK?`, -5 `RETURN STACK FULL`, -8 `DICTIONARY FULL`, -13 `name ?`, -16 `MISSING NAME`, -28 `BREAK`, -37 `TAPE ERROR`, -42 `DIVISION BY ZERO`, -43 `OUT OF RANGE`, -46 `INVALID ARGUMENT`, -56 `QUIT`, other = the program's own `n THROW`). Set by `REPORT_INTERP_ERROR`, cleared when a line ends in `OK` | A Q2.2 |
+| Error entry points (optional) | `INTERPRET_UNKNOWN_WORD` (`WORD_BUF` = the token, upper case; also reached from a compile-only word at the prompt and from `EDIT name`), `RUNTIME_ERROR_HOOK` (`THROW_CODE` = the code; every uncaught THROW, BREAK and the stack check), `REPORT_INTERP_ERROR` (HL = the code). Both stacks may already be reset there; `INTERP_ERROR_FLAG` set in the last | A Q2.1 |
+| Error position | `SRC_PTR` is just past the failing token **and the one delimiter after it**; for an error raised inside a word called from the line, past that word's token, unless the word read further input (`'`, `CHAR`, `."`, the defining words, `FORGET`, `EDIT`, the tape words: then past what it read). `STACK?` is found before the next token is read. Column in the line = `SRC_PTR - EDIT_BUF`. Inside text that `LOAD-TEXT` or `EDIT` ran, `SRC_PTR` points into the store (tell by range) | A Q2.3 |
+| BREAK | THROW -28, since step "BREAK and timing" (PR #15, 2026-11-01): stops any running word, also one waiting in `KEY`, `ACCEPT` or `INPUT` (the console prints `BREAK`, back to the prompt; caught as -28 under `CATCH`). At the prompt and in `EDIT`'s view BREAK is a key. `SPRITE-*`, `HIRES` / `NORMAL` finish first | A Q2.4 |
+| `NOBRK` | The console sets it right after `call INTERPRET_RUN`; a host that returned past that instruction would leave BREAK live at the prompt. Entering through `.enter` avoids it | A, intro |
+| Compile hook | `INTERPRET_NESTED.token`: one source token has been read; `WORD_BUF` holds it, `SRC_PTR` is past it and its delimiter, `HERE` is where its code goes. `COLON_XT` (cell, set while a definition is open) = `LATEST` + 3 + the name length: the start of a colon definition's code | A Q4 |
+| Stacks | Data: `IX`; float: `IY`, 5-byte Sinclair floats; return: Z80 SP (CALL addresses mixed with `DO` and `CATCH` data). Bounds from `include/forth_layout.inc` / the `.sym` | `forth_layout.inc` |
+| Dictionary | RAM from `$9100` (fixed: **not relocatable**, compiled code holds absolute `CALL`s and links) to the dictionary limit (16,128 bytes at most; the part under `$A000-$BFFF` is hidden while the EXROM is in). `LATEST`, `HERE`, `STATE`. Headers `LINK(2) LENFLAGS(1) NAME code`; user words have header ≥ `$9100` | `core/dict.asm`; A Q7.3 |
+| Words | 184 headers (`H_*` in the `.sym`) = 184 manual entries | `.sym`; A Q5 |
+| Manual | `docs/manual/` parts `01_` to `08_`; `03_language.md` (stack, arithmetic, float, memory, strings, control, dictionary, errors) and `04_machine.md` (I/O, graphics, sound, storage, printer) hold one entry per ROM word, in ASCII order. Entry shape under F2. The build checks the manual against the ROM (`tools/manualcheck.py`) and runs every example (`tools/docexamples.py` -> `tests/doc/manual_*.fs`) | A Q5 as built |
+| Numbers | `[-] digits [. digits] [E\|e [+\|-] digits]` or `[-] . digits [exponent]`, the whole token. A point or an exponent makes a float (on the float stack); otherwise an integer from -32768 to 65535 (a 16-bit pattern: `40000` is -25536). `+5` is not a number. Out of range: `OUT OF RANGE` (-43). Decimal only: no `BASE`, `HEX` or prefixes | A Q6.3 |
+| Line length | 128 characters at the prompt and in `EDIT`'s view; `LIST-DEFS` shows the first 20 of a definition; `SAVE-TEXT` saves the store as it is | A Q6.1 |
+| Words that read past their token | To a delimiter: `\` (end of line), `(` (to `)`), `."` and `S"` (to `"`). The next token, a name: `:` `CREATE` `VARIABLE` `CONSTANT` `ARRAY` `STRING` `FVARIABLE` `FCONSTANT` `'` `[']` `CHAR` `[CHAR]` `FORGET` `EDIT` (optional) `SAVE-TEXT` `LOAD-TEXT` `VERIFY-TEXT` `SAVE-LIB` `LOAD-LIB` `VERIFY-LIB`. There is no `WORD`, `PARSE` or `.(` | A Q6.2 |
+| Graphics | `PLOT ( x y -- )` x 0-255, **y 0-191 from the top**, off-screen draws nothing; `LINE ( x1 y1 x2 y2 -- )` signed 16-bit ends, the on-screen part drawn; `CIRCLE ( xc yc r -- )` | A Q6.4 |
+| UDGs | 21, codes 144-164, 8 bytes each (top row first) at `UDG_TABLE`; `n UDG ( n -- addr )`; `EMIT` of 144-164 draws them. Outside the dictionary: `SAVE-LIB` does not save them | A Q6.4 |
+| Tapes | TEXT: header type 0, parameter 1 `$8000`, parameter 2 the length, data = the line store less the console line holding the command (`SAVE-TEXT`, `VERIFY-TEXT`, `LOAD-TEXT`, all `( "name" -- )`); LIB: type 3, dictionary + CRC, tied to `ROM_IDENTITY` | A Q6.5; `STORAGE_SPEC.md` |
+| Case | Names are matched in upper case; input a-z is folded | `core/interp.asm` |
+| Not present | `EVALUATE`, `BLOCK` / `LOAD`, `INCLUDE`, `ABORT"`, `DEPTH`, `.S`, `>R` / `R>`, `BASE` / `HEX` (survey of `core/`, 2026-10-31; check against the manual's 184 entries when generating the word data) | survey |
+| Cartridge | `make cart` in the Forth repository; layout and program image under F8; `roms/forth_cart.dck` in the release | A Q7 as built |
 
 ## Interaction model: console first (owner decision, 2026-10-31)
 
@@ -63,19 +88,21 @@ scratchpad whose text is sent to that session.
   `OK` prompt, the ROM's own line editor, `EDIT`, `KEY` / `INPUT`. Escape is
   BREAK, as elsewhere.
 - **Run (F5) sends the whole editor text** to the live session, without a
-  reset, exactly as if it had been typed: definitions accumulate, a
-  redefinition shadows the old word (Forth's normal behaviour).
-- **Send (Ctrl+Enter) sends the current line or the selection.**
+  reset, **line by line** (see F1), exactly as if it had been typed:
+  definitions accumulate, a redefinition shadows the old word (Forth's normal
+  behaviour). It stops at the first line that ends in an error.
+- **Send (Ctrl+Enter) sends the current line or the selection**, line by line.
 - **Reset (cold start)** gives a fresh Forth with an empty dictionary; a
   toolbar button, with "discard the session's words?" if any exist.
 - **Import session** copies the ROM's line store (everything typed or sent,
-  `$D000` to `STORE_END`) into the editor, so work done at the prompt or in
-  `EDIT` is not lost. It opens as a new unsaved document (owner, 2026-10-31),
-  with the usual "discard changes?" first.
+  `STORE_START` to `STORE_END`; source only, command lines are not in it) into
+  the editor, so work done at the prompt or in `EDIT` is not lost. It opens as
+  a new unsaved document (owner, 2026-10-31), with the usual "discard
+  changes?" first. A `LOAD-TEXT` replaces the store with the tape's text.
 - What is typed at the prompt is not written back to the editor
   automatically; the editor and the session can differ, and Import session is
   the bridge.
-- Send is refused while Forth is busy (not at the `OK` prompt): "Forth is
+- Send is refused while Forth is busy (not at the prompt): "Forth is
   running: press Stop (BREAK) first".
 
 The rejected options were A (Run = fresh machine + whole text, no prompt) and
@@ -87,17 +114,22 @@ Each stage ends with the tests green and is committed on its own.
 
 ### F0 — Pin the Forth build
 
-- The owner will have TSRun carry ROMs matching the Forth version by the time
-  this project starts. Move the submodule to that TSRun commit, as for a V2
-  release, and confirm the ROMs' SHA-256 against the Forth build they came
-  from.
-- That build should have a tag in `2068-forth` (the ROM table is keyed by
-  hash, and the word data is generated at a git ref; `latest` moves).
-- Ask the Forth project to add symbols the IDE needs that have none today (the
-  return point after `call INTERPRET_RUN`, `$3727`).
-- `tools/forth-rom-entry.py <checkout> <version>` prints the Forth profile's
-  ROM entry from the two `.sym` files of that build and checks the key-wait
-  bytes.
+- **Done by the Forth and TSRun side:** the tag `v2.0` exists (commit
+  `50170f2`) and the TSRun fork's `main` at `11731e1` carries exactly the
+  v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom`, with the Leap V2
+  and Leap-C ROMs unchanged.
+- **To do here:** move the `tsrun/` submodule from `016787f` to `11731e1`
+  (`git -C tsrun fetch && git -C tsrun checkout 11731e1`, commit the bump);
+  confirm the two Forth ROMs against the release's `SHA256SUMS` (`730c86d0…` /
+  `fd877dd0…`) and that the V2 ROM pair is unchanged, so the BASIC entry in
+  `src/leap-roms.js` still matches; run both test suites.
+- **To do here:** write `tools/forth-rom-entry.py <checkout or release>
+  <version>`. It prints the Forth profile's ROM entry from the two `.sym`
+  files of that build (the labels and cells named in "Facts", `ROM_IDENTITY`,
+  the cartridge image offsets `CART_IMG_*` and `CART_MAGIC`) and checks the
+  key-wait bytes. No symbols are missing any more: the labels the IDE asked
+  for are in v2.0.
+- Copy the release's `forth_cart.dck` to `cartridge/forth/2.0/` (F8).
 
 ### F1 — The live session: keys, Send, Run, Reset
 
@@ -105,74 +137,138 @@ Each stage ends with the tests green and is committed on its own.
   (the profile switches off the "only while a program runs" gate of the BASIC
   and C profiles). The Forth SYMBOL SHIFT table (same as Leap-C's), so `\`
   (comments) and `{ } ~ | ^` can be typed.
-- **Prompt detection:** the session is "at the prompt" when the CPU is in
-  `IO_READ_KEY.wait_hit` called from `EDITOR_LOOP_LIVE.keyloop` (return
-  address or stack depth; **check** which is reliable), as opposed to a word
-  waiting in `KEY` / `INPUT` (also in the key wait, but deeper). Only at the
-  prompt can text be sent.
-- `prepare(text)`: CR line ends, printable ASCII only, fits the space left in
-  the 8 KB line store (`$F000 - STORE_END`). **Check** the line length the
-  ROM's `EDIT` / `LIST-DEFS` / `SAVE-TEXT` accept (the prompt's edit buffer
-  is 128) and use that as the profile's `lineLimit`.
-- `inject` (Send and Run): **append** the text to the line store at
-  `STORE_END`, as typing a line does, move `STORE_END`, then call
-  `INTERPRET_RUN` on the appended part with HL / DE and a return into the
-  shell after the call (`$3727`), so the ROM prints `OK` and goes back to its
-  prompt. Appending keeps `EDIT`, `LIST-DEFS`, `SAVE-TEXT` and Import session
-  consistent with what typing would have produced. **Check** how the ROM
-  appends a typed line (separator, `OK` echo) and do the same. If the store
-  is full, say so (Forth's own message if it has one).
-- Remember, per Send, the editor lines it came from (start offset in the
-  store -> editor line), to map error positions back.
+- **Prompt detection:** the session is "at the prompt" when PC = `IO_READ_KEY`
+  and the word at SP = `EDITOR_LOOP_LIVE.key_ret`. If PC is at `IO_READ_KEY`
+  and the word at SP is anything else, a word waits in `KEY`, `ACCEPT`,
+  `INPUT` or `EDIT`'s view: keys typed on the screen go to it, and the line is
+  not done. Only at the prompt can a line be sent.
+- `prepare(text)`: split into lines; each at most 128 characters
+  (`EDIT_MAX_LEN`, the profile's `lineLimit`), printable ASCII, no CR. An
+  empty line is skipped (the ROM does not store it either) and the IDE keeps
+  the map back to editor lines. The store is 8 KB: refuse (or warn) when the
+  session's `STORE_END` plus the text would not fit.
+- **`inject` (Send and Run), one line at a time**, the protocol of the Forth
+  project:
+  1. at the prompt, write the line into `EDIT_BUF`, its length into `EDIT_LEN`
+     and the same value into `EDIT_CURSOR`;
+  2. drop the key wait's return address (SP + 2) and set PC =
+     `EDITOR_LOOP_LIVE.enter`; leave interrupts on (the keyboard and `FRAMES`
+     run from them);
+  3. let it run. The ROM does exactly what ENTER does: `STORE_APPEND`, run,
+     print `OK` or the error's message, drop a `:` definition an error left
+     open, clear the input line, wait for the next key. The line does not show
+     on the input row as typed keys would; its output appears as after a typed
+     ENTER;
+  4. the line is done when the machine is **at the prompt** again. Read
+     `LAST_ERROR`: 0 means `OK`. Stop sending at the first line with a
+     non-zero code, and report it.
+  If a line starts a word that waits for a key, the queue waits: the user
+  types on the screen, and the next line goes when the prompt returns.
+  Appending to the store is done by the ROM itself, so `EDIT`, `LIST-DEFS`,
+  `SAVE-TEXT` and Import session stay consistent with what typing would have
+  produced. Find the prompt with a watch on the PC (single-step) so the next
+  line goes at once instead of at a frame boundary (**check** the speed with a
+  300-line program).
+- **Why one line at a time, not the whole text in one `INTERPRET_RUN` call**
+  (A Q1.2): typed lines and CR-separated text differ. `(` runs on over CRs to
+  the next `)` in one call, but at the prompt it ends with the line; `."` and
+  `S"` with a missing `"` likewise run on into the next lines. An error stops
+  the rest of the text, and only one `OK` is printed for the whole. `\` ends at
+  a CR, and `STATE` and an open `:` definition carry across lines either way.
+  Consequence for the IDE: a `( … )` comment or a string that spans lines does
+  not work when sent line by line, exactly as at the real prompt; the
+  tokenizer (F2) and the static checker (F3) treat both as ending at the end
+  of the line and flag it.
+- **Why not interpret from the line store** (A Q1.3): `LOAD-TEXT` loads its
+  tape into the store from `STORE_START`, so the text being interpreted would
+  be overwritten under `SRC_PTR`; `EDIT`'s view inserts and deletes lines in
+  the store, moving everything after them; and `SAVE-TEXT`, `VERIFY-TEXT`,
+  `LOAD-TEXT` and `EDIT` take the console line holding the command off the
+  store (`STORE_TRIM`: `STORE_END` back to `STORE_LAST_LINE`, the last line
+  appended), which would drop the wrong line if several lines were appended
+  ahead of the run. `EDIT_BUF` is what the prompt itself interprets.
+- **Errors:** `LAST_ERROR` after the line, no watches needed. The column in
+  the line is `SRC_PTR - EDIT_BUF` (read it at the prompt: it is not reset). It
+  is just past the failing token and one delimiter, so the failing token is
+  the one ending at `SRC_PTR - 1`; for a word that read further input it is
+  past what that word read. Since the IDE sends one line at a time, the editor
+  line is the line being sent. If `SRC_PTR` is outside `EDIT_BUF`, the error
+  happened in text that `LOAD-TEXT` or `EDIT` ran: "in the store", no editor
+  line. Watches on `INTERPRET_UNKNOWN_WORD` (token in `WORD_BUF`) and
+  `RUNTIME_ERROR_HOOK` (`THROW_CODE`) are **no longer necessary**; they stay
+  an optional extra (for example to read the token name before the message is
+  printed). The status text comes from a small table of the ANS codes above,
+  cross-checked with the manual's error entries.
+- Status bar: `OK`, `UNDEFINED WORD foo on line L` (-13), `DIVISION BY ZERO
+  (THROW -42) on line L`, `Stopped (BREAK)` (-28), `Forth is running`,
+  `Waiting for a key`.
+- **Stop:** BREAK (CAPS SHIFT+SPACE) while busy. Since PR #15 it stops any
+  running word, including one waiting in `KEY`, `ACCEPT` or `INPUT`, so (unlike
+  V2) no jump back to the command loop is needed. At the prompt there is
+  nothing to stop (BREAK is a key there). `SPRITE-*` and `HIRES` / `NORMAL`
+  finish before they stop.
 - Reset: TSRun reset and boot to the prompt.
-- Import session: read `$D000` to `STORE_END` back as text.
-- **Errors:** install watches (the debugger's `setWatch` mechanism) on
-  `INTERPRET_UNKNOWN_WORD` (`$0203`: read the token from `WORD_BUF`) and
-  `RUNTIME_ERROR_HOOK` (`$0247`: read `THROW_CODE` before it is cleared).
-  These watches stay installed for the whole session, so errors from lines
-  typed at the prompt are reported too. The position is `SRC_PTR` within the
-  line store: inside text sent from the editor it maps to an editor line and
-  column (the token that failed, or the top-level word that called the
-  failing one); otherwise it is "typed at the prompt".
-- Status bar: `OK`, `UNDEFINED WORD foo on line L`, `DIVISION BY ZERO
-  (THROW -10) on line L`, `Stopped (BREAK)`, `Forth is running`, `Waiting for
-  a key`. **Check** which THROW code BREAK gives (-28 in ANS).
-- Stop: BREAK while busy; at the prompt there is nothing to stop.
+- Import session: read `STORE_START` to `STORE_END` back as text.
 - Node checks: send definitions then a call printing a result; send twice
-  (words accumulate); an undefined word with its editor line; a THROW
-  (division by zero) with its line; BREAK in an endless `BEGIN AGAIN`;
-  Send refused while busy; a line typed at the prompt through the keyboard
-  matrix; Import session returns what was sent and typed; Reset empties the
-  dictionary.
+  (words accumulate); an undefined word with its editor line and column; a
+  THROW (division by zero) with its line; a run stopping at the first error;
+  BREAK in an endless `BEGIN AGAIN` (-28); BREAK in a `KEY` wait; Send refused
+  while busy; a word waiting in `KEY` is not mistaken for the prompt; a line
+  typed at the prompt through the keyboard matrix; a `(` comment spanning
+  lines behaves as at the prompt; Import session returns what was sent and
+  typed; Reset empties the dictionary.
 
 ### F2 — The Forth editor
 
-- **Tokenizer** (`StreamLanguage`): words separated by whitespace; `\` to end
-  of line and `( … )` comments; strings after `."` and the other string words
-  (**check** the list: `."`, `S"`?, `STRING`); numbers (integers, floats —
-  **check** the float syntax in `docs/numeric_model.md`); `:` followed by the
-  new word's name; defining words (`VARIABLE`, `CONSTANT`, `CREATE`, `ARRAY`,
-  `STRING`, …) followed by a name. ROM words highlighted by group (stack,
-  arithmetic, control, I/O, graphics); EXROM words marked as such; the
-  program's own words in another colour.
+- **Tokenizer** (`StreamLanguage`): words separated by whitespace (CR, TAB and
+  control bytes are whitespace to the ROM). Words that read past their own
+  token, from the list under "Facts": `\` to end of line; `( … )` and `."` /
+  `S"` strings to their closing delimiter, **but only within the line** (sent
+  line by line, an unclosed one does not continue: mark it); the name after
+  `:`, the defining words (`CREATE` `VARIABLE` `CONSTANT` `ARRAY` `STRING`
+  `FVARIABLE` `FCONSTANT`), after `'` `[']` `CHAR` `[CHAR]` `FORGET` and the
+  tape words. Numbers by the grammar under "Facts" (integers -32768 to 65535,
+  floats with a point or exponent, no `+5`, no hex). ROM words highlighted by
+  group (stack, arithmetic, float, memory, strings, control, dictionary, I/O,
+  graphics, sound, storage, printer, from the manual); EXROM words marked as
+  such; the program's own words in another colour.
 - Case-insensitive matching (the ROM folds a-z). **No auto-caps** (owner,
   2026-10-31: whatever is easier). Leaving it off is: the BASIC auto-caps
   would need Forth-specific rules (words like `."` and `+!`, the string after
   `."`, `( … )` comments), and the ROM accepts lower case anyway. Completion
   inserts ROM words in upper case, as the manual writes them.
-- **Word data, generated:** `tools/gen-forth-words.py <checkout> <ref>` from
-  the Forth manual updated for V2 (word, stack effect, kind, description,
-  example, group; write the generator against the manual's final format,
-  which is not settled yet). Cross-check against the `H_*` headers in the
-  `.sym` (184 today) and report words missing from either side. Hover help
-  shows the stack effect prominently; Help links to the manual section at the
-  release tag. Only if the V2 manual is not ready: fall back to the tutorial's
-  Appendix A tables (stack effect and notes only).
+- **Word data, generated** by `tools/gen-forth-words.py <checkout> <ref>`
+  (output `src/lang/forth/forth-words.js`, never hand-edited) from
+  `docs/manual/03_language.md` and `04_machine.md` at the release tag, in the
+  as-built format. An entry is:
+
+  ````
+  ## NAME                    the ROM's spelling (## \, ## ."  , ## ['])
+  `( stack -- effect )` -- **kind**, group
+  the first paragraph of description
+  ```forth     (the first example, lines with `\ expect: TEXT`)
+  **Notes.** / **Errors.** (a table) / **See also**, then ---
+  ````
+
+  Kinds: `word`, `immediate word`, `compile-only word`, `defining word`,
+  `EXROM word`. The stack effect itself contains ` -- `, so split the line on
+  ` -- **`; float-stack effects follow `F:` (`( n -- ) ( F: -- f )`). Each
+  part's Summary table lists the words by group
+  (`| **group** | `A` `B` … |`). Keep `desc` (first paragraph, at most 420
+  characters), `example` (without the `\ expect:` lines for display; with
+  them for tests, F6) and the manual section for the Help link. Expect 184
+  entries and **fail** if the count or the names differ from the `H_*` headers
+  in `forth_boot.sym` / `graphics_exrom.sym` (the Forth build already checks
+  the manual against the ROM; this checks the IDE's copy). Hover help shows
+  the stack effect prominently; Help links to the manual section at the
+  release tag.
 - Structure tools: fold `:` … `;`; indent `IF` / `ELSE` / `THEN`, `DO` /
   `LOOP` / `+LOOP`, `BEGIN` / `UNTIL` / `WHILE` / `REPEAT` / `AGAIN`; block
   match on those. Symbols: colon definitions, variables, constants, arrays,
   strings. Go to definition and rename for the program's own words (a Forth
   name can contain almost any character, so rename's checks differ).
+- **Line limit 128** (the profile's `lineLimit`; ruler and too-long marking as
+  in BASIC).
 - Completion: ROM words with their stack effect as detail, the program's
   words, snippets for `: name ;`, `IF THEN`, `DO LOOP`, `BEGIN UNTIL`.
 
@@ -188,22 +284,28 @@ wording:
   header ≥ `$9100`, read after each Send and whenever the prompt is reached;
   order matters in Forth: this catches use-before-definition);
 - unbalanced control structures inside a definition; control words outside
-  one; `;` without `:`; a `:` without `;` at the end;
-- unclosed `(` comments and strings; a defining word without a name;
+  one (the ROM says `name ?` for a compile-only word at the prompt); `;`
+  without `:`; a `:` without `;` at the end;
+- a `(` comment or a `."` / `S"` string not closed **on its line** (it would
+  run on in one call but does not when sent line by line); a defining word or
+  `:` without a name on the same line (`MISSING NAME`, -16);
+- a number out of range (`OUT OF RANGE`, -43), by the grammar under "Facts";
+  a line over 128 characters;
 - EXROM-only words are fine (the IDE always has the EXROM).
 
-Later, optional: a hidden-machine check that interprets the text with a cycle
-budget and reports the first error, for definitions-only programs.
+Later, optional: a hidden-machine check that sends the text line by line
+(F1's protocol, which gives the first error from `LAST_ERROR` for free) with
+a cycle budget, for definitions-only programs. F8 builds that machine anyway.
 
 ### F4 — Debugger
 
 The generic panel (registers, memory, Z80 breakpoints) works as is. The Forth
 sections:
 
-- **Data stack** (IX up to `$9100`), **float stack** (IY up to `$8900`,
-  `decodeFloat` from `leap-debug.js` reused), **return stack** (SP up to
-  `$FF00`), each value annotated: return addresses named by the word whose
-  code contains them (headers sorted by address).
+- **Data stack** (`IX` up to the stack's base), **float stack** (`IY`,
+  `decodeFloat` from `leap-debug.js` reused), **return stack** (SP up to its
+  base), each value annotated: return addresses named by the word whose code
+  contains them (headers sorted by address). Bounds from the ROM entry.
 - **Dictionary:** the program's words (header ≥ `$9100`) with their
   addresses, `HERE`, `LATEST`, `STATE`, and the values of variables and
   constants.
@@ -211,62 +313,216 @@ sections:
   reaches that word's code (found by walking the dictionary after each Send;
   the newest definition of a name wins). It fires however the word is
   called, including from the prompt.
-- **Line-level breakpoints and Step** inside definitions: a line table built
-  by watching the compiler, the V2 trick again: while `STATE` = 1, record
-  (`SRC_PTR` line, `HERE`) as each word is compiled. **Check** the hook point
-  in `core/interp.asm`. Step = run to the next compiled word's CALL; Step into
-  enters a user word. Words defined at the prompt have no editor lines; they
-  get word-level breakpoints only.
+- **Line-level breakpoints and Step** inside definitions, from a line table
+  built by watching the interpreter: at `INTERPRET_NESTED.token`, while
+  `STATE` is 1, record (the line being sent, `HERE`); the token's code is
+  `HERE` up to the next record's `HERE`, and "the last record at or below the
+  address" names the right token. Rules from the Forth project (A Q4):
+  - `:` reads the name itself (not through `.token`) and runs with `STATE`
+    0. The definition's code starts at `COLON_XT`; add the record
+    (the line of the `:`, `COLON_XT`) when the first token of the body
+    arrives (a `:` and its name are on one line, which the IDE knows from the
+    line it is sending);
+  - immediate words compile at `HERE` too (`IF`: `CALL QBRANCH` and a 2-byte
+    target); `THEN`, `ELSE`, `REPEAT`, `UNTIL`, `LOOP`, `+LOOP` also patch
+    bytes compiled by earlier tokens but put code nowhere else;
+  - a recursive call compiles `CALL STK_GUARD` before it, under the same
+    token; `;` compiles a plain `RET`; `EXIT` compiles `POP`s for the open
+    `DO` loops, then `RET`; `[ … ]` runs with `STATE` 0 (no records);
+    `LITERAL` after `]` compiles under its own token; `DOES>` patches a
+    `CREATE`d word's jump at run time;
+  - **inline data, never an instruction:** the 2 bytes after `CALL DOLIT`
+    (integer literals, `[']`, `LITERAL`) and after `CALL QBRANCH` /
+    `CALL BRANCH`; the 5 after `CALL DOFLIT`; the length and characters after
+    the call that `."` and `S"` compile. A line breakpoint goes on the first
+    byte of a record, which is always an instruction; **Step over** a call
+    must not stop at the call's address + 3 (the callee returns past inline
+    data): run to the next record's address;
+  - `LOAD-TEXT`'s and `EDIT`'s nested runs pass `.token` too, with `SRC_PTR`
+    in the store: ignore records whose `SRC_PTR` is outside `EDIT_BUF`.
+  Step = run to the next record's address (and step into a user word
+  entered by a `CALL`). Words defined by lines typed at the prompt have no
+  editor lines; they get word-level breakpoints only.
 - **Call stack** from the return stack, using the same naming.
 
 ### F5 — Tape export and Open
 
-- `exportTape`: a TEXT tape (type 0, param1 `$8000`, param2 = length), as
-  `tools/tape_gen_forth.py` writes; verify against the ROM's `SAVE-TEXT` in
-  Node and that `LOAD-TEXT` reads it back. Status: `Saved X.tap: on the
-  TS2068, LOAD-TEXT X`.
-- Open `.tap`: recognise a Forth TEXT tape and read the text back; switch to
-  Forth.
+- `exportTape`: a TEXT tape (header type 0, parameter 1 `$8000`, parameter 2 =
+  length; data = the source with CR line ends and no console line), as
+  `tools/tape_gen_forth.py` writes. Verify against the ROM's `SAVE-TEXT` in
+  Node and that `LOAD-TEXT` reads it back (confirmed by the Forth project). A
+  program must not rely on lines that do not work line by line (F1). Status:
+  `Saved X.tap: on the TS2068, LOAD-TEXT X`.
+- Open `.tap`: recognise a Forth TEXT tape (type 0, parameter 1 `$8000`) and
+  read the text back; switch to Forth.
 - Later, optional: a LIB tape (compiled dictionary, `SAVE-LIB` format, tied to
-  `ROM_IDENTITY`) captured from the live session.
-- No DCK (no cartridge build).
+  `ROM_IDENTITY`) captured from the live session. The cartridge (F8) reuses
+  its format.
+- DCK: stage F8.
 
 ### F6 — Examples and corpus test
 
-- Examples menu: from `demos/*.fs` and the tutorial.
-- Corpus test in `tests/rom-checks.mjs`: `tests/**/*.fs` with `\ expect:`
-  comments sent through the IDE's Send path in Node, each from a fresh
-  session (the Forth project's `tools/forthtest.py` types them line by line;
-  the IDE sends the whole file in one call, so **check** that each test means
-  the same either way).
+- Examples menu: from the release's `demos/*.fs` (`blackjack.fs`,
+  `gallery.fs`) and the manual's examples.
+- Corpus test in `tests/rom-checks.mjs`: the manual's ` ```forth ` blocks,
+  which carry `\ expect: TEXT` lines (the format of the Forth project's
+  `tests/*.fs`; its `tools/docexamples.py` makes `tests/doc/manual_*.fs` from
+  them, each run on a just-booted ROM). The IDE runs each from a fresh session
+  through its Send path, line by line, which is how `tools/forthtest.py` types
+  them, so each test means the same. `\ keys:`, `\ break:` and `\ draws`
+  lines are directives the IDE can ignore or implement.
 
 ### F7 — Tools (optional)
 
-- Draw tab: generate Forth (`x y PLOT`, `LINE`, …); **check** the word names,
-  argument order and y direction.
-- UDG tab: **check** whether the Forth ROM has user-defined characters; hide
-  the tab if not.
+- **Draw tab:** generate Forth: `x y PLOT`, `x1 y1 x2 y2 LINE`,
+  `xc yc r CIRCLE`; y from the top, 0-191; x 0-255. Every point can be
+  written as decimal integers.
+- **UDG tab:** the Forth ROM has 21 user-defined characters, codes 144-164,
+  8 bytes each (top row first), `n UDG ( n -- addr )` giving a slot's address
+  and `EMIT` of 144-164 drawing them. The tool's "Insert" would generate
+  `n UDG` plus stores of the 8 bytes (**check** the memory words in the manual:
+  `C!` or `!`), "Load from program" would read them back, and "Send to TS2068"
+  works on the live machine through `UDG_TABLE`. The UDGs are outside the
+  dictionary, so `SAVE-LIB` does not save them; the cartridge image carries
+  them (F8).
+
+### F8 — Cartridge (DCK) for a stock TS2068
+
+Owner decision (2026-10-31): Forth gets a runtime cartridge build, as Leap V2
+has, so ⬇ DCK and ▶ Test DCK work for Forth programs. **Built and released in
+v2.0** (2068-Forth step Cartridge, `make cart`; hosted in the Forth repository,
+the release ROMs do not change). The IDE side is what remains.
+
+**As built (A Q7 as built).**
+
+- **`make cart`** writes `build/cart/`: `forth_boot_rom0.bin` (HOME,
+  `-DCARTRIDGE`), `graphics_exrom.bin` (the release EXROM, byte for byte),
+  `forth_boot.sym` and `forth_cart.dck` (Forth with no program; also in the
+  release as `roms/forth_cart.dck`). Every release label keeps its address,
+  and the cartridge carries the release's `ROM_IDENTITY`
+  (`tools/cart_check.py`), so a dictionary compiled on the release ROMs, or a
+  LIB tape, is valid on the cartridge.
+- **DCK layout:** bank 0 (DOCK). Chunks 0-1 hold HOME, with the LROS header
+  `00 01 <CART_ENTRY lo hi> DC` at `$0000` (the entry stub starts with `di`).
+  Chunk 2, and chunk 3 when the image is over 8 KB, hold the program image
+  (DOCK `$4000-$7FFF`), padded with `$FF`. Chunk 5 holds the EXROM (it is
+  assembled for `$A000`). Port `$F4` is `$03`, `$23` while an EXROM word
+  runs, `$0F` while the image is copied; bit 7 of `$FF` is never set.
+- **Cold start:** the normal `COLD_START`, then the image is checked
+  (signature, identity, length; **not** the CRC, since the 2026-11-01 "Cart
+  start" change, as Leap V2's production cartridge does not), copied to
+  `$9100`, the UDGs to `UDG_TABLE`, `HERE` = `$9100` + n, `LATEST` from the
+  image. A refused image (another identity, a length over 16,128, a start word
+  of length 0) prints `BAD PROGRAM` and leaves Forth with an empty dictionary;
+  no magic gives plain Forth. Hand-off at frame 103 with interrupts on. The
+  load takes about 1.0M T-states for a small program and 1.34M for the largest.
+- **Program image** at DOCK `$4000`, all little-endian (offsets in the build's
+  symbols `CART_IMG_*`, `CART_MAGIC`):
+
+  | Offset | Content |
+  |---|---|
+  | `+0` | `"F1"` (`$46 $31`) |
+  | `+2` | `ROM_IDENTITY` (the same value as `SAVE-LIB`'s header parameter 1) |
+  | `+4` | n = `HERE` - `$9100`, at most 16,128 |
+  | `+6` | `LATEST` (`SAVE-LIB`'s parameter 2) |
+  | `+8` | the start word's length (1-31), then its name, space-padded to 31 bytes |
+  | `+40` | the UDG table, 168 bytes |
+  | `+208` | the dictionary, n bytes |
+  | `+208+n` | CRC-16/CCITT-FALSE of bytes `+0` to `+207+n`, low byte first |
+
+- **After the start word: the `OK` prompt** (owner's choice). The start word
+  runs from `EDITOR_LOOP_LIVE.enter` with its name in `EDIT_BUF` (the IDE's
+  own run protocol), so its output, an error or `BREAK` look like a typed
+  line's, the name is in the line store, and the program's words stay defined.
+  Reset restarts the cartridge. Keys always reach the machine in a cartridge
+  test (the existing `'cartridge'` mode), which is what Forth's live prompt
+  needs.
+- **Reference packer:** `tools/forthcart.py` in the Forth repository
+  (`read_lib`, `program_image`, `dck`, `flat_bin`). It takes a `SAVE-LIB`
+  `.tap` or `.tzx`, checks the identity, CRC and size, and that the start word
+  is one of the program's words, and stores the name as the dictionary spells
+  it.
+
+**IDE side:**
+
+- `cartridge/forth/2.0/` with the release's `forth_cart.dck` (and the
+  cartridge `forth_boot_rom0.bin` / `graphics_exrom.bin` if the flat `.bin`
+  is built from them), a README with the SHA-256s, and the identity check
+  (`ROM_IDENTITY` of the IDE's loaded ROMs = the cartridge's; export refuses
+  a mismatch, as for BASIC).
+- A JavaScript port of the packer in `src/lang/forth/cartridge.js` (pure, no
+  DOM; Node can import it): the image above, then the release
+  `forth_cart.dck` with its chunk 2 (and 3, when the image is over 8 KB)
+  replaced by the image padded with `$FF`, and the DCK header's chunk
+  descriptors for those chunks set to ROM. Test it byte for byte against
+  `tools/forthcart.py`'s output for the same program.
+- The Forth profile's `buildCartridge`: a **hidden machine** booted from the
+  checker snapshot (the same machine F3's optional check uses) receives the
+  editor's text **line by line with F1's protocol**, with a cycle budget
+  (top-level code runs). Then the IDE reads `HERE`, `LATEST`, the dictionary
+  from `$9100` to `HERE`, the 168 UDG bytes and the identity, and packs the
+  image. ⬇ DCK and ▶ Test DCK then work as for BASIC; the cartridge test picks
+  Forth's keyboard table from the image signature (`"F1"` at DOCK `$4000`, with
+  the LROS header at `$0000`).
+- Checks before export: an error while interpreting (with its editor line and
+  `LAST_ERROR`), the start word exists in the dictionary and is 1-31 long, the
+  identity, the size (n at most 16,128), writes to the paging ports (`OUT` is
+  not a Forth word the IDE can see; **check** the manual's port words), and
+  that the hidden machine ended at the prompt.
+- Tests: `tests/rom-checks.mjs` runs an exported Forth cartridge on a stock
+  TS2068 (a start word that sets a marker, the prompt reached, UDGs present, a
+  refused image printing `BAD PROGRAM`); a few in ZEsarUX / Fuse with the
+  stock ROM.
+
+**Owner decisions still needed (the other two are made):**
+
+- **Which word starts the program:** a fixed name (`MAIN`), the last word
+  defined, or chosen at export (a prompt listing the program's words,
+  recommended).
+- **What goes on the cartridge:** the editor's text, interpreted on a fresh
+  hidden machine (recommended: reproducible, matches the file), or the live
+  session's dictionary (whatever was typed at the prompt too).
+
+Already decided: after the start word, the `OK` prompt (owner, per the Forth
+project's "as built"); the build is hosted in the Forth repository as
+`make cart`.
 
 ## Tests
 
-- `tests/rom-checks.mjs`: a Forth section for each of F1 to F6.
+- `tests/rom-checks.mjs`: a Forth section for each of F1 to F6, and F8's
+  cartridge checks.
 - `tests/browser-smoke.mjs`: switch to Forth, Run a definition and a call,
   Send one line, an undefined-word error on its line, type a word at the
   prompt and see its output, Import session, Reset, tape export, switch back.
 
-## Owner decisions (2026-10-31)
+## Owner decisions
 
-- **Interaction model:** console first (option C), as described above.
-- **Forth build:** the one TSRun will carry by the time this starts; give it
-  a tag in `2068-forth` (F0).
-- **Word data:** from the Forth manual updated for V2.
-- **Auto-caps:** whatever is easier, so none.
-- **Import session:** opens a new document.
+- **Interaction model (2026-10-31):** console first (option C), as described
+  above.
+- **Forth build (2026-10-31):** the one TSRun carries; it is v2.0 (tag `v2.0`,
+  TSRun `11731e1`), F0.
+- **Word data (2026-10-31):** from the Forth manual updated for V2; the manual
+  is in the v2.0 release.
+- **Auto-caps (2026-10-31):** whatever is easier, so none.
+- **Cartridge (2026-10-31):** Forth gets a runtime cartridge build (F8); it is
+  built. After the start word, the `OK` prompt.
+- **Import session (2026-10-31):** opens a new document.
+- **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked;
+  Forth first because its release, manual and cartridge are complete).
 
 ## Still open
 
-Questions for the ROM project, to take back: [`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md).
+Nothing is open with the Forth project: all seven questions are answered
+([`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md),
+[`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)). The
+hooks the IDE uses (`EDITOR_LOOP_LIVE.enter`, `.key_ret`, `LAST_ERROR`,
+`INTERPRET_NESTED.token`) were on the Forth branch `v2/step-ide-hooks` when
+answered; **check** that they are in the `v2.0` tag when writing
+`tools/forth-rom-entry.py` (the script fails if a label is missing).
 
-1. **Symbols in the Forth ROM** for the IDE's entry points (the return point
-   after `call INTERPRET_RUN`), and optionally an error hook that keeps
-   `THROW_CODE`, so the IDE needs fewer watches.
+Owner choices for F8, two:
+
+1. **Which word starts the program** (fixed `MAIN` / last word / chosen at
+   export, recommended).
+2. **What goes on the cartridge** (editor text on a fresh hidden machine,
+   recommended / the live session's dictionary).

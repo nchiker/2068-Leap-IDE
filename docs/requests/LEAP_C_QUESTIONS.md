@@ -1,5 +1,7 @@
 # Questions from the Leap IDE for 2068-Leap-C
 
+Answered 2026-11-01: see [LEAP_C_ANSWERS.md](LEAP_C_ANSWERS.md).
+
 From: the Leap IDE (github.com/nchiker/2068-Leap-IDE), 2026-10-31.
 For: the 2068-Leap-C project, to answer before the IDE's Leap-C work starts.
 
@@ -160,12 +162,57 @@ run-time error 5, and if not, what is a safe way back to the shell?
    The IDE can rebuild them with `make repro`, but shipping them makes the
    IDE's ROM entry checkable against the release itself.
 
+## Q5. A runtime cartridge build (owner decision, 2026-10-31)
+
+The owner wants Leap-C programs to run as a cartridge on a **stock** TS2068
+(stock HOME and EXROM installed, nothing replaced), as the IDE already does
+for Leap V2. V2's cartridge build is described in the Leap IDE repository:
+`docs/LEAP_CARTRIDGE_BUILD.md` (design), `cartridge-build/` (a patch on
+Leap's tag: `V2_CARTRIDGE` flag, `make cart`) and
+`cartridge-build/Docs/CARTRIDGE_STATUS.md` (as built). In short: Leap's HOME
+in DOCK chunks 0-1, its EXROM in DOCK chunk 6, an LROS header at DOCK `$0000`
+so the stock ROM starts it, the banking routines changed so they never page
+the cartridge out (`BANK_PAGE_EXROM_OUT` writes `$03` to port `$F4`, not 0),
+and the compiled program in DOCK chunk 3, copied to RAM at start-up.
+
+For Leap-C the program part is simpler: no VM, the compiled code runs as it
+is. But compiled code calls the HOME (bank rule 1, `spec.md:157`), so the
+cartridge must carry Leap-C's HOME.
+
+**Please answer:**
+
+1. **Would you host it** as a `make cart` target with a build flag in
+   2068-Leap-C (recommended by the IDE: you know the free bytes and the
+   paging), or should the IDE keep a patch on your release tag, as it does for
+   V2?
+2. **Is the EXROM needed at run time?** The float core is in the EXROM;
+   what else do compiled programs reach there (hi-res, sprites, tape
+   functions, the report)? If any, the cartridge carries the EXROM in DOCK
+   chunk 6 too, and the program's own chunk-6 code region (`$C000-$DFFF` RAM)
+   must be paged against the DOCK EXROM instead of the stock one.
+3. **Banking:** Leap-C uses V2's `BANK_PAGE_EXROM_IN/OUT`; do the V2 changes
+   (`$F4` = `$43` / `$03`, `$FF` bit 7 left at 0) carry over, and what else
+   writes ports `$F4` / `$FF` (the hi-res mode, the library)?
+4. **Program image:** the IDE proposes a header (signature, format, ROM
+   identity, entry address) and blocks `[address, length, bytes]` for the code
+   regions and a loaded library, which the cartridge copies to RAM and then
+   calls `RT_RUN` on. Where in the DOCK should it sit so the copy never maps a
+   chunk over its own destination (the destinations cover chunks 3, 6 and 7;
+   DOCK chunks 4-5 mapped only during the copy?), and how large can a program
+   get?
+5. **After the program:** what should the cartridge show (exit status,
+   run-time error and line) without the shell, and then restart on a key as
+   V2's does?
+6. **Identity:** which value identifies the HOME build the code was compiled
+   against (V2 uses a CRC-16 over HOME + EXROM)?
+
 ## Summary of what we ask for
 
 | Item | Cost | Needed? |
 |---|---|---|
-| Answers to Q1-Q4 | none | yes |
+| Answers to Q1-Q5 | none | yes |
 | Keep these labels stable across releases: `STATEMENT`, `SH_RUN`, `SH_LOOP` / the return point, `RT_RUN.done`, `IO_READ_KEY.wait_hit` | none | yes |
 | A label for the shell's "after a command" return point | 0 B | helpful |
 | `.sym` files in the release | none | helpful |
 | A compile-time line hook or table (Q1.4) | 0 B (label) or a few bytes | only if Q1.2 shows gaps |
+| A runtime cartridge build (Q5) | a build flag; bytes only in the cartridge images, not the release ROMs | yes (owner decision) |

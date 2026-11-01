@@ -1,6 +1,12 @@
 # Plan: one IDE for Leap V2 BASIC, Leap-C and Leap-Forth
 
-Status: proposal, 2026-10-31. Nothing here is started.
+Status: proposal, updated 2026-11-01. No second language exists yet (the
+working tree may hold uncommitted stage 0 work). Both ROM
+projects have answered the IDE's questions
+([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md),
+[`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)).
+2068-Forth v2.0 is released (2026-11-01, with its manual and cartridge build);
+Leap-C is at `v1.0.0-beta.2` and proceeds on it.
 
 The IDE drives one ROM family today, Leap V2 BASIC. The owner also has two
 sibling ROMs for the TS2068, built on Leap V2's kernel:
@@ -15,8 +21,24 @@ stop assuming BASIC before a second language can be added. It is written as
 **stage 0** of both plans. Do it once, then the two language plans are
 independent of each other.
 
-Recommended order: stage 0 (this document), then Leap-C (close to V2, most
-patterns carry over), then Forth (a different run model).
+Order (owner, 2026-11-01): **stage 0 (this document), then Forth and
+Leap-C**, both unblocked, **Forth first**.
+
+Why Forth first, and why this changes the earlier recommendation (Leap-C
+first, as it is closer to V2 and most patterns carry over): on 2026-10-31
+Leap-C was to wait for its 1.0 release and Forth had no stable build. Since
+then 2068-Forth v2.0 has been released (tag `v2.0`, commit `50170f2`) with its
+manual (184 word entries in the shape the IDE asked for), the IDE hooks the
+Forth project added (`LAST_ERROR`, `EDITOR_LOOP_LIVE.enter` / `.key_ret`,
+`INTERPRET_NESTED.token`) and its cartridge build (`make cart`,
+`forth_cart.dck`), and the TSRun fork already carries those ROMs (`11731e1`).
+Leap-C is still at `v1.0.0-beta.2`; the owner has since lifted the rule that
+Leap-C work starts after 1.0 ("Leap-C can move forward also", 2026-11-01), so
+it proceeds on beta.2 and moves to 1.0 later by regenerating the ROM entry and
+data. Only its cartridge (C9) waits, for Leap-C's own `make cart`, which is in
+progress. Forth is the one language whose release, manual and cartridge are all
+complete, so it goes first; the two plans do not depend on each other, and
+Leap-C can follow or overlap it.
 
 ---
 
@@ -24,10 +46,13 @@ patterns carry over), then Forth (a different run model).
 
 - The pinned TSRun submodule (`016787f`) already carries `roms/leapc-0.rom` /
   `leapc-1.rom` and `roms/leapforth-0.rom` / `leapforth-1.rom`. The Leap-C pair
-  is byte-identical to Leap-C `v1.0.0-beta.2` (`043becf4…` / `97fe9523…`). The
-  Forth pair (`760a5ce3…` / `2add175c…`) does not match the current Forth
-  build (`d056a159…` / `6360ccf6…`); the owner will have TSRun carry the
-  matching Forth ROMs by the time the Forth work starts (see the Forth plan).
+  is byte-identical to Leap-C `v1.0.0-beta.2` (`043becf4…` / `97fe9523…`), so
+  Leap-C needs no submodule move to start. The pin's Forth pair (`760a5ce3…` /
+  `2add175c…`) is an older build. **For Forth the TSRun pin must move to
+  `11731e1`**, the fork's `main`, which carries exactly the Forth v2.0 ROMs
+  (`forth_boot_rom0.bin` `730c86d0…`, `graphics_exrom.bin` `fd877dd0…`) as
+  `leapforth-0.rom` / `leapforth-1.rom`, with the Leap V2 and Leap-C ROMs
+  unchanged (stage F0 of the Forth plan; not done yet).
 - All three ROMs use the 16K HOME + 8K EXROM split and Leap V2's kernel I/O
   (copied, not shared), so `IO_READ_KEY.wait_hit` exists in each as the idle
   point, and the "single-step to a safe point, inject, jump" approach of
@@ -36,6 +61,11 @@ patterns carry over), then Forth (a different run model).
   and zoom, sound, the run/pause/step machinery and its `setWatch` hook, the
   debugger's registers, memory inspector and Z80 breakpoints, files and
   auto-save, share links, themes, the Help overlay's frame.
+- **The cartridge test** (added 2026-10-31; CLAUDE.md "Cartridge test"): the
+  emulator's `testCartridge(dck)` runs any `.dck` on the stock TS2068 ROMs, and
+  Open accepts a `.dck`. The test itself knows nothing about the language; only
+  *building* a cartridge from the editor's program (⬇ DCK, ▶ Test DCK) is
+  BASIC-specific today (see "The cartridge test across languages" below).
 
 ## What assumes BASIC today
 
@@ -43,7 +73,7 @@ patterns carry over), then Forth (a different run model).
 |---|---|
 | `src/editor.js:42-45` | Imports `leap-lang.js` directly: language mode, `LEAP_WORDS`, `NOT_IN_V2`, `keywordEntry`, `scanSymbols`, `keywordTokens`, `nameTokens`, `blockStructure`, `blockIndent`. Completion (`leapComplete`), hover help, auto-caps, folding, indent, block match, go to definition, rename all sit on these. |
 | `ide.js` | `prepareSource` / `encodeSource` (V2 line store), `injectProgram`, `showRunResult` (compile / VM error codes), `describeError` + `LEAP_*_ERRORS`, `packageFor` / `loadPackages`, `exportTape` / `exportCartridge`, `UNTITLED = 'untitled.leap'`, the Examples menu. |
-| `src/emulator.js` | `inject()` writes the V2 line store and pushes the V2 return chain; `stop()` knows V2's command loop; `loadRoms` fetches `tsrun/roms/leap-*.rom`. |
+| `src/emulator.js` | `inject()` writes the V2 line store and pushes the V2 return chain; `stop()` knows V2's command loop; `loadRoms` fetches `tsrun/roms/leap-*.rom`; `leaveCartridge` puts back "the Leap ROMs" (`emu.romImages`), which must become the active profile's ROMs. |
 | `src/leap-roms.js` | One flat table of V2 entries. |
 | `src/leap-check.js` | V2 compile chain and error cells. |
 | `src/leap-debug.js`, `src/debugger.js` | V2 VM line table, variables, call stack; the panel's Variables / Call stack sections. |
@@ -75,18 +105,18 @@ the matching UI):
 | `romName`, `knownRoms` | `tsrun/roms/<romName>-0.rom` / `-1.rom`; the SHA-256-keyed table (today's `KNOWN_ROMS` becomes BASIC's) |
 | `editorExtensions()` | CodeMirror extensions: language, highlight, completion, hover help, folding, indent, block match, auto-caps (BASIC only) |
 | `symbols(text)` | For the Symbols tab, go to definition and rename |
-| `lineLimit` | 127 for BASIC and C; Forth per its plan |
+| `lineLimit` | 127 for BASIC and C; 128 for Forth (`EDIT_MAX_LEN`) |
 | `helpEntries`, `manualRef` | For the Help overlay |
 | `prepare(text)` | Text -> `{bytes, lineMap, problems}` (what to write into RAM, editor line mapping, storage errors) |
 | `inject(machine, rom, prepared, extra)` | Write RAM and set up the jump; called by the emulator at the safe point |
-| `stopPlan` | What Stop does when the program waits (V2: jump to the command loop) |
+| `stopPlan` | What Stop does when the program waits (V2: jump to the command loop; Leap-C and Forth: BREAK alone ends every wait) |
 | `readResult(machine, rom)` | `{kind: finished/compile/runtime/break, code, line, column?}` |
 | `describeError(result)` | Status-bar and diagnostic text |
 | `createChecker(rom, images)` | Editor error check (`check(text) -> {code, line, column?}`) |
 | `debug` | Line table hooks, variables / stack readers, extra panel sections |
 | `keyboard` | The SYMBOL SHIFT table for `src/pc-keyboard.js` |
 | `exportTape(text, name)` | *optional* |
-| `exportCartridge(...)` | *optional* (BASIC only for now) |
+| `buildCartridge(text)` | *optional*: the program as a `.dck` (BASIC's `buildProgramCartridge` in `ide.js` today). ⬇ DCK and ▶ Test DCK appear only for a profile that has it |
 | `extensionsUsed(text)` | *optional* packages (BASIC) / libraries (C) |
 | `examples` | Examples menu entries |
 | `tools` | *optional* UDG / Draw code generators |
@@ -110,7 +140,40 @@ the matching UI):
   another language switches language (after the usual "discard changes?").
 - **Share links** gain `&lang=<id>` (absent = `basic`, so existing links keep
   working).
+- Switching language during a cartridge test ends the test first (as Stop
+  does), then loads the new profile's ROMs.
 - Remembered: the last language (`leap-ide.lang`).
+
+### The cartridge test across languages
+
+- **Stays in the core**, not in a profile: `testCartridge` / `leaveCartridge`,
+  the stock ROMs, Open `.dck`, the `'cartridge'` state, the debugger's
+  cartridge mode (Z80 breakpoints, Pause, registers, memory).
+- **Open `.dck` works in every language** and does not switch language: a
+  cartridge carries its own runtime and does not need the IDE's ROMs.
+- **Leaving a test restores the active profile's ROMs** (today it restores
+  the Leap V2 pair it booted with).
+- **Keyboard in a test:** a cartridge runs its own runtime's key decoding,
+  and Leap-C and Forth changed the SYMBOL SHIFT table. The test therefore
+  picks the table from the cartridge itself: each cartridge build's program
+  image starts with its own signature, read from the DOCK when the `.dck` is
+  inserted: V2's `"LEAPPROG"` in chunk 3; **Forth's `"F1"` at DOCK `$4000`
+  (chunk 2)**, with the LROS header `00 01 <entry> DC` at `$0000`; Leap-C's is
+  to be defined by its build (`make cart`, in progress; its program image is
+  planned for DOCK chunks 4-5). An unknown cartridge gets V2's table.
+  This works the same for Open `.dck`, whatever the active language.
+- **Building a cartridge** is a profile's `buildCartridge`. **All three
+  languages get one** (owner, 2026-10-31): BASIC has it today; Leap-C and Forth
+  need a runtime cartridge build of their ROM first (stage C9 of the Leap-C
+  plan, F8 of the Forth plan). Forth's is built and released (v2.0:
+  `forth_cart.dck`, `make cart` in the Forth repository), so the IDE only packs
+  the program into it; Leap-C's `make cart` is in progress. Until a
+  language's build exists, its ⬇ DCK and ▶ Test DCK say so, as BASIC does for
+  a release without one.
+- **The cartridge builds' images** live per language and release, like
+  today's `cartridge/2.1.0-emu.1/`: `cartridge/<lang>/<version>/` (BASIC's
+  directory moves under `basic/`), each with the identity check of
+  `src/cartridge.js` (`romIdentity` of the IDE's ROMs = the cartridge's).
 
 ### Work items
 
@@ -125,7 +188,9 @@ the matching UI):
    tools through the profile.
 5. `src/emulator.js`: keep the safe-point search, BREAK and reset; delegate the
    RAM writes and stack chain to `profile.inject` and the waiting-stop to
-   `profile.stopPlan`. Add `setRoms(home, exrom, entry)`.
+   `profile.stopPlan`. Add `setRoms(home, exrom, entry)`; `leaveCartridge`
+   restores whatever `setRoms` last installed. The cartridge test stays as it
+   is.
 6. `src/pc-keyboard.js`: take the SYMBOL SHIFT table from the profile.
 7. `src/debugger.js`: split into the generic panel (registers, memory, Z80
    breakpoints, breakpoint list) and profile sections (variables, call stack,
@@ -144,7 +209,7 @@ the matching UI):
 ### Done when
 
 - With only the BASIC profile, behaviour is unchanged: all 66 Node checks and
-  36 browser checks pass, the module fingerprints are current, and the existing
+  41 browser checks pass (the cartridge test's five included), the module fingerprints are current, and the existing
   auto-save and share links still open.
 - Stop there and commit before starting either language plan.
 
@@ -156,7 +221,13 @@ the matching UI):
   that keys reach the TS2068 only while a program runs; Forth's prompt is live
   all the time (console first; see the Forth plan). The keyboard gate is
   therefore a profile setting.
-- **Releases:** Leap-C 1.0 (out of beta before this starts); the Forth build
-  that TSRun will carry.
+- **Releases:** *superseded 2026-11-01*: Forth is the v2.0 release that the
+  TSRun fork (`11731e1`) carries; Leap-C proceeds on `v1.0.0-beta.2` and moves
+  to 1.0 later (its work no longer waits for 1.0).
+- **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked),
+  Forth first; the reasons are under "Order" at the top. Only Leap-C's
+  cartridge (C9) waits, for its `make cart` build.
+- **Cartridges:** Leap-C and Forth get a runtime cartridge build, as Leap V2
+  has, so every language can make a `.dck` for a stock TS2068.
 - **Default language** for a first visit: BASIC (what the live site does
   today). After that, the last language used (`leap-ide.lang`).

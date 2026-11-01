@@ -1,5 +1,7 @@
 # Questions from the Leap IDE for 2068-Forth
 
+Answered 2026-11-01: see [LEAP_FORTH_ANSWERS.md](LEAP_FORTH_ANSWERS.md).
+
 From: the Leap IDE (github.com/nchiker/2068-Leap-IDE), 2026-10-31.
 For: the 2068-Forth project, to answer before the IDE's Forth work starts.
 
@@ -168,16 +170,56 @@ heading with a fixed shape (Leap V2: `docs/manual/03_keywords.md`; Leap-C:
 6. **Release bundle:** keep `symbols/` (both `.sym` files) and `SHA256SUMS`
    in the zip, and a version string the IDE can show ("2068 FORTH V2.0").
 
+## Q7. A runtime cartridge build (owner decision, 2026-10-31)
+
+The owner wants Forth programs to run as a cartridge on a **stock** TS2068
+(stock HOME and EXROM installed, nothing replaced), as the IDE already does
+for Leap V2. V2's cartridge build is described in the Leap IDE repository:
+`docs/LEAP_CARTRIDGE_BUILD.md` (design), `cartridge-build/` (a patch on
+Leap's tag: `V2_CARTRIDGE` flag, `make cart`) and
+`cartridge-build/Docs/CARTRIDGE_STATUS.md` (as built). In short: Leap's HOME
+in DOCK chunks 0-1, its EXROM in DOCK chunk 6, an LROS header at DOCK `$0000`
+so the stock ROM starts it, the banking routines changed so they never page
+the cartridge out (`BANK_PAGE_EXROM_OUT` writes `$03` to port `$F4`, not 0),
+and the program in the DOCK, copied to RAM at start-up.
+
+For Forth the program would be a **dictionary image** (`$9100`..`HERE`,
+`LATEST`, `HERE` and the word to start), close to what `SAVE-LIB` writes;
+the cartridge carries the Forth HOME and EXROM, since compiled words call the
+ROM's primitives.
+
+**Please answer:**
+
+1. **Would you host it** as a `make cart` target with a build flag in
+   2068-forth (recommended by the IDE), or should the IDE keep a patch on
+   your release tag, as it does for V2?
+2. **Banking:** `kernel/bank` is derived from Leap's; do V2's changes
+   (`$F4` = `$43` / `$03`, `$FF` bit 7 left at 0) carry over, and what else
+   writes ports `$F4` / `$FF` (graphics modes, `EDIT`, the EXROM words)?
+3. **Program image:** can `SAVE-LIB`'s format (dictionary + CRC, tied to
+   `ROM_IDENTITY`) be the image, with the start word's address added? Where in
+   the DOCK should it sit so the copy to `$9100-$CFFF` never maps a chunk over
+   its own destination, and is the dictionary relocatable or always at
+   `$9100`?
+4. **Cold start:** what must the cartridge's start-up do besides the normal
+   cold start and the copy (`LATEST`, `HERE`, the float stack, `STATE`, the
+   line store left empty)?
+5. **After the start word:** the owner is to choose between dropping to the
+   `OK` prompt with the program's words loaded and restarting from cold on a
+   key; does either cost much in the ROM (the prompt is in HOME, `EDIT` in the
+   EXROM)?
+
 ## Summary of what we ask for
 
-| Item | Cost | Needed? |
-|---|---|---|
-| Answers to Q1-Q6 | none | yes |
-| A label after `call INTERPRET_RUN` in `EDITOR_LOOP_LIVE` | 0 B | yes |
-| Keep stable: `INTERPRET_RUN`, `STORE_APPEND`, `EDITOR_LOOP_LIVE(.keyloop)`, `INTERPRET_UNKNOWN_WORD`, `RUNTIME_ERROR_HOOK`, `REPORT_INTERP_ERROR`, `IO_READ_KEY.wait_hit`, the cells `SRC_PTR`, `SRC_END`, `STORE_END`, `LATEST`, `HERE`, `STATE`, `THROW_CODE`, `WORD_BUF`, `INTERP_ERROR_FLAG` | none | yes |
-| A label where each source word is compiled (Q4) | 0 B | yes, for line breakpoints |
-| The V2 manual's entry shape (Q5) | none | yes |
-| A tag on the build TSRun carries | none | yes |
-| `LAST_ERROR` cell (Q2.2) | a few bytes | helpful |
-| `AT_PROMPT` flag (Q3) | a few bytes | only if no reliable test exists |
-| `HOST_INTERPRET` entry (Q1.4) | tens of bytes | only if Q1 shows the outside approach is fragile |
+| Item                                                                                                                                                                                                                                                                                             | Cost                                                                   | Needed?                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| Answers to Q1-Q7                                                                                                                                                                                                                                                                                 | none                                                                   | yes                                              |
+| A label after `call INTERPRET_RUN` in `EDITOR_LOOP_LIVE`                                                                                                                                                                                                                                         | 0 B                                                                    | yes                                              |
+| Keep stable: `INTERPRET_RUN`, `STORE_APPEND`, `EDITOR_LOOP_LIVE(.keyloop)`, `INTERPRET_UNKNOWN_WORD`, `RUNTIME_ERROR_HOOK`, `REPORT_INTERP_ERROR`, `IO_READ_KEY.wait_hit`, the cells `SRC_PTR`, `SRC_END`, `STORE_END`, `LATEST`, `HERE`, `STATE`, `THROW_CODE`, `WORD_BUF`, `INTERP_ERROR_FLAG` | none                                                                   | yes                                              |
+| A label where each source word is compiled (Q4)                                                                                                                                                                                                                                                  | 0 B                                                                    | yes, for line breakpoints                        |
+| The V2 manual's entry shape (Q5)                                                                                                                                                                                                                                                                 | none                                                                   | yes                                              |
+| A tag on the build TSRun carries                                                                                                                                                                                                                                                                 | none                                                                   | yes                                              |
+| `LAST_ERROR` cell (Q2.2)                                                                                                                                                                                                                                                                         | a few bytes                                                            | helpful                                          |
+| `AT_PROMPT` flag (Q3)                                                                                                                                                                                                                                                                            | a few bytes                                                            | only if no reliable test exists                  |
+| `HOST_INTERPRET` entry (Q1.4)                                                                                                                                                                                                                                                                    | tens of bytes                                                          | only if Q1 shows the outside approach is fragile |
+| A runtime cartridge build (Q7)                                                                                                                                                                                                                                                                   | a build flag; bytes only in the cartridge images, not the release ROMs | yes (owner decision)                             |

@@ -1,6 +1,6 @@
 # Handoff — Leap V2 Web IDE
 
-Last updated 2026-10-31, at the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
+Last updated 2026-11-01, at the ROM projects' answers (Forth v2.0 released, Leap-C unblocked; see "Where it stands"). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -76,6 +76,24 @@ panel has a "Z80 Breakpoints" section and a "Step instruction" button (see
 "Debugger" in `CLAUDE.md`).
 
 **On hold:** nothing.
+
+**Multi-language plans (2026-11-01).** The two ROM projects answered the IDE's
+questions (`docs/requests/LEAP_FORTH_ANSWERS.md`,
+`docs/requests/LEAP_C_ANSWERS.md`) and the plans were updated from them.
+2068-Forth v2.0 is released (tag `v2.0`, commit `50170f2`) with its manual, the
+IDE hooks it added (`LAST_ERROR`, `EDITOR_LOOP_LIVE.enter` / `.key_ret`,
+`INTERPRET_NESTED.token`) and its cartridge build (`forth_cart.dck`, program
+image "F1" at DOCK `$4000`); the TSRun fork's `main` (`11731e1`) carries its
+ROMs, but this repository's submodule is still at `016787f` (moving it is
+Forth stage F0, not done). Leap-C is at `v1.0.0-beta.2`; the owner lifted the
+rule that its work waits for 1.0, so it proceeds on beta.2 (every address comes
+from the `.sym` files; 1.0 later means regenerating the ROM entry and data),
+and only its cartridge (C9) waits for Leap-C's own `make cart`, which is in
+progress. The order is **stage 0 (the language profile) -> Forth -> Leap-C**
+(both unblocked; Forth first because its release, manual and cartridge are
+complete). Plans: `docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_FORTH_PLAN.md`,
+`LEAP_C_PLAN.md`. This entry changed documentation only; two owner choices remain
+for Forth's cartridge (which word starts the program, what goes on it; see F8).
 
 ## Owner decisions (keep them)
 
