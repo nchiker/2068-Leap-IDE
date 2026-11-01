@@ -1,6 +1,7 @@
-# Leap V2 Web IDE — CLAUDE.md
+# Leap IDE — CLAUDE.md
 
-This is the authoritative technical brief for the Leap V2 Web IDE.
+This is the authoritative technical brief for the Leap IDE (formerly the Leap V2
+Web IDE; the repository and the Pages URL keep the name `2068-Leap-IDE`).
 Read this file completely before writing any code. Then read
 **`docs/HANDOFF.md`** (where the work stands, the owner's decisions, known
 traps) and `docs/overview.md` for the design rationale. The mock-up is at `docs/mockup.html` (a visual
@@ -17,8 +18,13 @@ building on it.
 
 ## What We Are Building
 
-A **browser-based IDE** for writing and running programs in **Leap V2 BASIC**
-on the **Timex Sinclair 2068**. The IDE runs entirely in the browser — no
+A **browser-based IDE** for writing and running programs on the **Timex
+Sinclair 2068** in the owner's ROM languages. Today that is **Leap V2 BASIC**
+(the only language profile so far, and what most of this file describes); the
+core is built for more: **Leap-C** and **Leap-Forth** are planned
+([`docs/MULTI_LANGUAGE_PLAN.md`](docs/MULTI_LANGUAGE_PLAN.md); stage 0, the
+language profile, is done). See "Languages (language profiles)" below. The IDE
+runs entirely in the browser — no
 build step, no npm; it only needs a static file server (ES modules cannot load
 from `file://`). Plain HTML + JS + the TSRun emulator.
 
@@ -46,27 +52,34 @@ Leap-IDE/
 ├── .nojekyll         ← Makes GitHub Pages serve files as-is
 ├── ide.html          ← Shell (three-panel layout, CM6 import map)
 ├── ide.css           ← Shell layout and theme
-├── ide.js            ← Orchestrator: boot emulator, prepare source, run/stop, status
+├── ide.js            ← Orchestrator: boot emulator, run/stop through the active language profile, status, files, language switching
 ├── src/
-│   ├── emulator.js   ← Slim TSRun host + RAM-injection run/stop (Phase 1, done)
-│   ├── leap-roms.js  ← Known ROM builds: SHA-256 -> addresses (Phase 1, done)
-│   ├── pc-keyboard.js ← PC key -> TS2068 matrix translation (Phase 4, done)
-│   ├── editor.js     ← CodeMirror 6 setup, gutter, autocomplete, help tooltip, find/replace, folding, indent, Tidy, go to definition, rename (Phase 2, done)
-│   ├── files.js      ← Browser auto-save, text normalising, .tap -> source, share-link encode / decode (no DOM; Node can import it)
-│   ├── help.js       ← Help overlay: searchable keywords + Keys & tips (F1, "? Help")
-│   ├── examples.js   ← The Examples menu's 12 programs (no DOM; Node can import it)
-│   ├── leap-lang.js  ← Language mode, token classes, scanSymbols, lineTokens / nameTokens / blockStructure / blockIndent (Phase 2, done)
-│   ├── leap-keywords.js ← GENERATED keyword data from the manual; never hand-edit
-│   ├── leap-check.js ← Editor error check: the ROM's own compiler on a hidden machine (Phase 5, done)
-│   ├── leap-errors.js ← GENERATED compile/run-time error text from the manual; never hand-edit
-│   ├── debugger.js   ← Debugger controller (breakpoints, step, Z80 breakpoints) + panel (Phase 3, done)
-│   ├── leap-debug.js ← Line table, VM position, variables, call stack from machine RAM (Phase 3, done)
-│   ├── tools/        ← Right-panel tools (Phase 7, done)
-│   │   ├── symbols.js ← Symbols tab: procedures, functions, labels, variables; click jumps to the line
-│   │   ├── udg.js     ← UDG tab: draw the 21 user-defined characters, insert / load POKEs
-│   │   └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE
-│   ├── export.js     ← TAP builder (Phase 6, done, verified)
-│   └── cartridge.js  ← DCK / flat .bin cartridge builder, program image format 2 with a package (Phase 6, done, verified; no DOM, Node can import it)
+│   ├── emulator.js   ← Slim TSRun host + safe-point search, run/stop through the profile's driver, setProfile (Phase 1, done)
+│   ├── pc-keyboard.js ← PC key -> TS2068 matrix translation; SYMBOL SHIFT table from the profile (Phase 4, done)
+│   ├── editor.js     ← Language-neutral CodeMirror 6 editor: gutter, find/replace, buttons, theme, language compartment (setLanguage) (Phase 2, done)
+│   ├── files.js      ← Browser auto-save (per language), text normalising, .tap -> source, share-link encode / decode (no DOM; Node can import it)
+│   ├── help.js       ← Help overlay from the profile: searchable keywords + Keys & tips (F1, "? Help")
+│   ├── debugger.js   ← Debugger controller (breakpoints, step, Z80 breakpoints) + panel, over the profile's debug adapter (Phase 3, done)
+│   ├── lang/         ← Language profiles (stage 0 of docs/MULTI_LANGUAGE_PLAN.md)
+│   │   ├── profiles.js ← PROFILES, profileById / profileForFile / profileForTape; the profile shape is in its header (no DOM)
+│   │   ├── editors.js  ← LANGUAGE_EDITORS: id -> the CodeMirror half of each profile
+│   │   └── basic/      ← Leap V2 BASIC
+│   │       ├── profile.js    ← The BASIC profile: driver (inject / stop / result), prepareSource, describeError, encodeLineStore, debug adapter, help, symbols, attach() (no DOM or CodeMirror; Node can import it)
+│   │       ├── editor.js     ← CodeMirror half: completion, hover help, auto-caps, folding, indent, Tidy, block match, go to definition, rename
+│   │       ├── leap-words.js ← Pure word tables: LEAP_WORDS, NOT_IN_V2, keywordEntry, scanSymbols, LEAP_PACKAGES, packagesUsed (no CodeMirror)
+│   │       ├── leap-lang.js  ← Language mode, token classes, lineTokens / nameTokens / blockStructure / blockIndent (imports CodeMirror; re-exports leap-words.js) (Phase 2, done)
+│   │       ├── leap-roms.js  ← Known ROM builds: SHA-256 -> addresses (Phase 1, done)
+│   │       ├── leap-keywords.js ← GENERATED keyword data from the manual; never hand-edit
+│   │       ├── leap-errors.js ← GENERATED compile/run-time error text from the manual; never hand-edit
+│   │       ├── leap-check.js ← Editor error check: the ROM's own compiler on a hidden machine (Phase 5, done)
+│   │       ├── leap-debug.js ← Line table, VM position, variables, call stack from machine RAM (Phase 3, done)
+│   │       ├── examples.js   ← The Examples menu's 12 programs (no DOM; Node can import it)
+│   │       ├── export.js     ← TAP builder (Phase 6, done, verified)
+│   │       └── cartridge.js  ← DCK / flat .bin cartridge builder, program image format 2 with a package (Phase 6, done, verified; no DOM, Node can import it)
+│   └── tools/        ← Right-panel tools (Phase 7, done)
+│       ├── symbols.js ← Symbols tab: the profile's symbol groups; click jumps to the line
+│       ├── udg.js     ← UDG tab: draw the 21 user-defined characters, insert / load POKEs (BASIC)
+│       └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE (BASIC)
 ├── cartridge-build/  ← Source of the cartridge images: leap.patch + setup.sh, CLI tools, tests, status (see its README)
 ├── cartridge/
 │   └── 2.1.0-emu.1/  ← Leap's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README
@@ -74,9 +87,9 @@ Leap-IDE/
 │   ├── 2.0.2-emu.1/  ← Package images of that release (<name>.bin; same six as 2.1.0-emu.1)
 │   └── 2.1.0-emu.1/  ← The current release's package images: cbeep graphics mode printer shapes sprite (<name>.bin)
 ├── tools/
-│   ├── leap-rom-entry.py  ← Prints a leap-roms.js entry for a 2068-Leap build
-│   ├── gen-leap-keywords.py ← Generates src/leap-keywords.js from the Leap manual
-│   └── gen-leap-errors.py   ← Generates src/leap-errors.js from manual Appendix B
+│   ├── leap-rom-entry.py  ← Prints a src/lang/basic/leap-roms.js entry for a 2068-Leap build
+│   ├── gen-leap-keywords.py ← Generates src/lang/basic/leap-keywords.js from the Leap manual
+│   └── gen-leap-errors.py   ← Generates src/lang/basic/leap-errors.js from manual Appendix B
 ├── tests/
 │   ├── rom-checks.mjs    ← Node: run path, checker, packages, debugger, TAP vs Leap's SAVE, cartridge on a stock TS2068 (real ROMs)
 │   └── browser-smoke.mjs ← Headless Chrome: the whole IDE end to end
@@ -91,7 +104,7 @@ Leap-IDE/
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
 HOME) and `tsrun/roms/leap-1.rom` (8K EXROM). These are the 2.1.0-emu.1 release
 images (SHA-256 `8c3d6c81…` and `e46e2065…` respectively; the pair's key in
-`src/leap-roms.js` is `5a42872e…`). A `make build` of the tag is byte-identical
+`src/lang/basic/leap-roms.js` is `5a42872e…`). A `make build` of the tag is byte-identical
 to the release zip's ROMs. The 2.0.2-emu.1 pair (`1fe5798f…`, `e6b507a4…`) is
 also in the table.
 
@@ -113,7 +126,7 @@ works. The live TSRun site, which also hosts Leap's browser demo, loads Leap
 tapes, including package tapes.
 
 **Pinning matters:** the TSRun version must match the ROM table in
-`src/leap-roms.js`, so a TSRun update cannot break the IDE until the submodule
+`src/lang/basic/leap-roms.js`, so a TSRun update cannot break the IDE until the submodule
 is deliberately moved: `git -C tsrun fetch && git -C tsrun checkout <commit>`,
 add the ROM entry (`tools/leap-rom-entry.py`), regenerate keywords if the manual
 changed, then commit the submodule bump.
@@ -127,6 +140,93 @@ push, and includes the public submodule.
 (or `git submodule update --init` in an existing clone). For local development
 serve with `python3 -m http.server 8080` from the project root and open
 http://localhost:8080/ide.html.
+
+---
+
+## Languages (language profiles)
+
+Stage 0 of [`docs/MULTI_LANGUAGE_PLAN.md`](docs/MULTI_LANGUAGE_PLAN.md) (done
+2026-11-01, commit `3ed5d3b`): the IDE core no longer assumes Leap V2 BASIC.
+Everything language-specific is a **profile** in `src/lang/<id>/`; the core
+(`ide.js`, `src/emulator.js`, `src/debugger.js`, `src/editor.js`,
+`src/pc-keyboard.js`, `src/help.js`, `src/files.js`, `src/tools/symbols.js`)
+asks the active profile. Only `basic` exists; Leap-C and Forth are next. The
+behaviour with BASIC did not change. The rest of this file describes BASIC's
+profile unless it says otherwise.
+
+**Shape** (the authoritative description is the header of
+`src/lang/profiles.js`; `src/lang/basic/profile.js` is a complete one):
+
+- `id`, `name`, `extensions[]`, `untitled`: `'basic'`, `'Leap V2 BASIC'`,
+  `['.leap', '.bas']`, `'untitled.leap'`.
+- `romFiles {home, exrom}` (paths under `tsrun/`), `knownRoms` (SHA-256 of
+  HOME + EXROM -> ROM entry), `romHint` (the refusal text), `romLabel(rom)`.
+- `lineLimit` (127); `keyboard {symbols, always}`: the SYMBOL SHIFT table for
+  `src/pc-keyboard.js`, and whether keys reach the machine all the time (a
+  live prompt) or only while a program runs.
+- `driver`, the emulator's half of Run / Stop: `safe(m)` (paging at the key
+  wait), `runState(m, rom)` (`'ended'` / `'waiting'`), `inject(m, rom, job)`,
+  `stopWaiting(m, rom)` (true = ended directly, false = press BREAK) and
+  `result(m, rom)`.
+- `createDebugAdapter(rom)`: the debugger's view of a run (see "Debugger").
+- `symbolGroups(text)` and `symbolsEmpty` (Symbols tab), `help` (the Help
+  overlay's entries, groups, manual link, shortcuts and tips), `examples`,
+  `tools {udg, draw}` (which code generators apply), `waitingText`,
+  `hasTape` / `hasCartridge`, `tapeToText(bytes)` / `ownsTape(bytes)`.
+- `attach({rom, romImages, fetchAsset})`: **the per-ROM half**, bound once the
+  ROM pair is loaded. For BASIC it builds the checker machine, fetches the
+  package images and returns `lint(text)`, `startRun(text)` (the `job`, the
+  store-line to editor-line map, the byte count and the start message, or an
+  error / problems), `describeResult(result, editorLine, stopLine)`,
+  `progInfo(bytes)`, `exportTape(text, name)` and `buildCartridge(text, ui)`
+  (optional; `hasTape` / `hasCartridge` hide the ⬇ TAP, ⬇ DCK and ▶ Test DCK
+  buttons when absent). `ide.js` keeps it in `lang` and calls it again after
+  each language switch (`attachLanguage`).
+
+**Pure half and editor half.** A profile is two modules so Node can test it:
+`src/lang/basic/profile.js` has no DOM and no CodeMirror (so
+`tests/rom-checks.mjs` imports it, and Run in Node now goes through its real
+`driver.inject`), while `src/lang/basic/editor.js` (the CodeMirror extensions:
+language mode, completion, hover, folding, indent, Tidy, go to definition,
+rename; also `starter` text and `lineLimit`) is registered in
+`src/lang/editors.js` (`LANGUAGE_EDITORS`, id -> editor profile). The word
+tables are split the same way: `leap-words.js` (pure) and `leap-lang.js`
+(imports CodeMirror).
+
+**Wiring.**
+- `src/emulator.js`: `run(job)` queues a run; at the safe point it calls
+  `profile.driver`. `setProfile(profile)` loads that language's ROM pair into
+  the existing machine (looked up in `profile.knownRoms`, an unknown pair is
+  refused and the previous language stays), resets, and sets the keyboard
+  table (`kbd.setSymbols`). Leaving a cartridge test restores the active
+  profile's ROMs, not a fixed pair. `profile` getter.
+- `src/editor.js`: the language is held in a `Compartment`; `setLanguage(id)`
+  swaps it (the ruler follows `lineLimit`).
+- `src/debugger.js`: `setAdapter(profile.createDebugAdapter(rom))`.
+- `ide.js`: `switchLanguage(id)` autosaves the current document, calls
+  `emulator.setProfile`, switches the editor, loads that language's document,
+  rebuilds the debugger adapter, Help, the Examples menu and the tool tabs /
+  export buttons (`showLanguageTools`), then re-attaches. The selector
+  `#lang-select` in the toolbar is hidden while there is only one profile.
+  **Open** picks the language by file extension (`profileForFile`) or, for a
+  `.tap`, by the tape (`profileForTape`) and switches (after the usual
+  "discard changes?"); a `.dck` does not switch language.
+- Per-language auto-save: `leap-ide.document.<id>`. `loadAutosave('basic')`
+  moves the old bare `leap-ide.document` key to `leap-ide.document.basic` the
+  first time. `leap-ide.lang` remembers the last language;
+  `initialLanguageId(known)` picks `?lang=<id>`, else that, else the first
+  profile. Switching swaps documents; text is not translated, and breakpoints
+  and undo do not cross languages.
+- Share links carry `&lang=<id>` (`encodeShare(text, name, lang)`); absent
+  means `basic`, so older links still open. `decodeShare` returns
+  `{text, name, lang}`.
+- `window.leapIDE` exposes `lintSource`, `setStatus`, `switchLanguage`,
+  `emulator`, `profile` and `lang`.
+
+To add a language: a new `src/lang/<id>/` with `profile.js` and `editor.js`,
+one line each in `src/lang/profiles.js` and `src/lang/editors.js`, its ROM
+entries and generated data under it, and tests (see the plan's stages for
+Forth and Leap-C).
 
 ---
 
@@ -164,7 +264,7 @@ reference and manual. Keywords, names and statements are case-insensitive.
 
 A human-readable summary, checked against the language reference sections 5, 6,
 7, 11 and manual Appendix H. The authoritative data is the generated
-`src/leap-keywords.js` (see "Keyword data" below); this table must agree with
+`src/lang/basic/leap-keywords.js` (see "Keyword data" below); this table must agree with
 it.
 
 | Class                       | Words |
@@ -193,7 +293,7 @@ has no key for them (see Keyboard).
 ### Compile and run-time errors
 
 The ROM reports numeric codes; the IDE reads them from RAM (see "How Run
-Works"). Full tables: manual Appendix B, which `src/leap-errors.js` is generated
+Works"). Full tables: manual Appendix B, which `src/lang/basic/leap-errors.js` is generated
 from (see "Editor Error Checking"). Codes the editor and status bar meet
 most often:
 
@@ -223,7 +323,7 @@ The data layout below is the same in both releases (checked in 2.1: the main
 pool, `V2_SOURCE_END`, the VM and compiler tables, the UDG table and the package
 window did not move). Routine addresses did move (for example `V2_COMPILE_STORED`
 is `$D54F` in 2.0.2 and `$D45A` in 2.1, `IO_READ_KEY.wait_hit` is `$0443` in
-2.1); the per-release values live in `src/leap-roms.js`. Full table: manual
+2.1); the per-release values live in `src/lang/basic/leap-roms.js`. Full table: manual
 Appendix E.
 
 | Range / symbol            | Address            | Notes |
@@ -265,16 +365,20 @@ host in `src/emulator.js`. There is **no** `machine.run()` / `.stop()` /
 | `tape.js`, `load.js` | Tape loading. The tape-loading fix below (TSRun issue #3) is needed for Leap's own `LOAD` to read the IDE's `.tap` in TSRun. |
 
 `ide.html` loads no TSRun script tags. ROMs are fetched by `src/emulator.js`
-from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
-`src/leap-roms.js`; **an unknown ROM pair is refused**.
+from `tsrun/roms/` (the paths are the active profile's `romFiles`), hashed
+(HOME + EXROM, SHA-256) and looked up in the profile's `knownRoms` (BASIC:
+`src/lang/basic/leap-roms.js`); **an unknown ROM pair is refused**.
 
 ---
 
 ## How Run Works (RAM Injection) — implemented and verified
 
-1. **Source to line store.** `prepareSource` (ide.js) splits the editor text,
-   drops blank lines (the ROM editor never stores an empty line) and keeps a
-   map back to editor line numbers; `encodeLineStore` (emulator.js) encodes it.
+1. **Source to line store.** `prepareSource` (`src/lang/basic/profile.js`)
+   splits the editor text, drops blank lines (the ROM editor never stores an
+   empty line) and keeps a map back to editor line numbers; `encodeLineStore`
+   (same file; it used to be in emulator.js) encodes it. `startRun(text)` of the
+   attached profile (see "Languages") wraps both and returns the job the
+   emulator runs.
    The ROM's line store, at `PROG_AREA_START`, is, per line: LE16 (text length
    + 1), the text verbatim (no tokenising, no line numbers), then `$0D`. It is
    **not** one ASCII blob with `\r` terminators. Refuse non-printable-ASCII,
@@ -288,7 +392,8 @@ from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
    up to 60 frames. If that does not reach the key wait, reset and boot (about
    66 frames to the editor). After BREAK, clear the ROM's key latch
    `KBD_KEYHIT`, else the latched BREAK dismisses the BREAK message.
-4. **Inject and jump.** Write the store and `PROG_END`; push a return chain on
+4. **Inject and jump** (`driver.inject` in `src/lang/basic/profile.js`; the
+   emulator calls it at the safe point). Write the store and `PROG_END`; push a return chain on
    the ROM stack (`SP=$FEFA`: `V2_RESET_EDIT`, `V2_RESET_DISPLAY`,
    `V2_RUN_STORED`, then `V2_COMMAND_LOOP.loop` at `$FF00`) and jump to
    `V2_CLEAR_ARRAYS`. If the
@@ -309,9 +414,11 @@ from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
    failing line index, which the IDE maps back to the editor line and marks.
    The status bar shows Finished / Compile error N on line L / Runtime error N
    at line L / Stopped (BREAK) at line N, and the marked line carries the
-   manual's message (`describeError` in ide.js, text from `src/leap-errors.js`).
+   manual's message (`describeError` in `src/lang/basic/profile.js`, text from
+   `src/lang/basic/leap-errors.js`; the result is read by `driver.result` and
+   turned into status text by the attached `describeResult`).
    Leap reports no line for a run-time error; the IDE finds it through the
-   debugger's line table (`stopLine` in `src/debugger.js`): `VM_IP` is left
+   debugger's line table (`stopLine` of the debug adapter, `src/lang/basic/profile.js`): `VM_IP` is left
    just past the failing instruction, so `VM_IP - 1` is looked up; after BREAK
    `VM_IP` is the next instruction, so it is looked up as is. While a program waits at `INPUT`/`PAUSE 0` it reads
    "Waiting for input — click the screen to type".
@@ -320,14 +427,18 @@ from `tsrun/roms/`, hashed (HOME + EXROM, SHA-256) and looked up in
    wait as before.
 
 **Stop:** BREAK if busy; if the program is waiting at `INPUT`/`PAUSE 0`, jump
-straight back to the ROM's command loop (`V2_COMMAND_LOOP.loop`). Observed
+straight back to the ROM's command loop (`V2_COMMAND_LOOP.loop`;
+`driver.stopWaiting` in the profile, which returns false for a language whose
+waits BREAK alone ends). Observed
 (Node, both releases): BREAK alone does not end an `INPUT` wait in 2.0.2, nor in
 2.1.0-emu.1, whose VM latches error 66 and, per its source, stops only after
 ENTER. The jump is therefore still needed and behaves the same on both.
 
-`window.leapIDE` exposes `lintSource`, `encodeSource`, `setStatus` and
-`emulator` (the object from `createEmulator`: `run`/`stop`/
-`reset`, `rom`, `machine`), which is useful for tests and the debugger.
+`window.leapIDE` exposes `lintSource`, `setStatus`, `switchLanguage`,
+`emulator` (the object from `createEmulator`: `run`/`stop`/`reset`/`setProfile`,
+`rom`, `machine`), `profile` (the active language profile) and `lang` (its
+`attach()` result, null until attached), which is useful for tests and the
+debugger. (`encodeSource` is gone: the profile's `startRun` does that.)
 
 Verified in headless Chromium: hello world, compile error with line, BREAK
 stop, `INPUT` stop, re-run while busy.
@@ -340,7 +451,7 @@ stop, `INPUT` stop, re-run while busy.
    in `<dir>`. Compare the ROMs with the release zip's.
 2. `tools/leap-rom-entry.py <checkout> <version>` prints a `KNOWN_ROMS` entry
    (the script also checks that the key-wait spin loop still has the expected
-   bytes). Its `SYMBOLS` table includes the debugger's compiler, VM and run-time
+   bytes). Its `SYMBOLS` table (in the script) includes the debugger's compiler, VM and run-time
    table symbols, so each entry must be regenerated this way, not copied from
    another release. A symbol a release lacks is looked up under its
    `FALLBACK` name (2.0.2 has no `VM_RUN.next`, so `vmNext` takes
@@ -348,7 +459,7 @@ stop, `INPUT` stop, re-run while busy.
    It also emits the package fields `ext2ClearAll`, `packageBase`, `packageLen`
    and `packageDir` (see "Packages"), plus `symCounts` and, if the release has a
    cartridge build, a `cartridgeDir` line (step 5).
-3. Paste the entry into `src/leap-roms.js` and put the new
+3. Paste the entry into `src/lang/basic/leap-roms.js` and put the new
    `leap-0.rom`/`leap-1.rom` in `tsrun/roms/` by moving the submodule to a TSRun
    commit that carries them. Copy the release's package binaries
    (`v2_package_<name>.bin`) unchanged to `packages/<version>/<name>.bin` and
@@ -389,7 +500,10 @@ Keys are mapped as a PC keyboard is labelled. `src/pc-keyboard.js` takes the
 character the PC key produces (`e.key`) and translates it to the TS2068 combo
 that makes Leap's decoder (2068-Leap `kernel/io/io.asm`: `IO_DECODE_KEY`,
 `KEY_ASCII_TABLE`, `KEY_ASCII_TABLE_UPPER`, `KEY_ASCII_TABLE_SYMBOL`, as of
-2.0.2) produce the same character. Examples: a PC `"` sends SYMBOL SHIFT+P,
+2.0.2) produce the same character. The SYMBOL SHIFT table is the language
+profile's (`keyboard.symbols`; `createPcKeyboard(keyMatrix, symbols)` and
+`setSymbols()` on a language switch), since Leap-C and Forth type more
+characters (`[ ] { }` and others). Examples: a PC `"` sends SYMBOL SHIFT+P,
 Shift+8 `(` sends SYMBOL SHIFT+8 without CAPS SHIFT, and `A` sends CAPS
 SHIFT+A (Leap gives lowercase for plain letters).
 
@@ -408,7 +522,8 @@ always type `(` and would make 8, 9, 4, R, T, Z and P untypable everywhere.
 
 `kernel/io` (the key tables) is identical in v2.0.2-emu.1 and v2.1.0-emu.1, so
 `src/pc-keyboard.js` needed no change for 2.1. If a later release changes the
-key tables, `SYMBOLS` in `src/pc-keyboard.js` must follow. The characters
+key tables, the profile's `keyboard.symbols` (`SYMBOLS` in
+`src/lang/basic/profile.js`) must follow. The characters
 `` ^ [ ] { } \ | ~ `` now print in 2.1 but have no Leap key, so they stay
 unmapped.
 
@@ -468,10 +583,10 @@ the Phase 5 diagnostics; `@codemirror/search` is the find / replace panel.
 
 ### Keyword data (generated)
 
-`src/leap-keywords.js` is **generated; never hand-edit it**:
+`src/lang/basic/leap-keywords.js` is **generated; never hand-edit it**:
 
 ```
-tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/leap-keywords.js
+tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-keywords.js
 ```
 
 It reads `docs/manual/03_keywords.md` at that ref (currently `v2.1.0-emu.1`) and
@@ -484,9 +599,13 @@ release, rerun it at its tag.
 
 ### Language mode and editor (Phase 2 — done)
 
-**`src/leap-lang.js`** implements the language mode with `@codemirror/language`
-`StreamLanguage` (simpler than a Lezer grammar here). It exports `leapLanguage`,
-`leapHighlight`, `LEAP_WORDS` (Map word -> `{cls, entry}`), `NOT_IN_V2`,
+The language mode is split so Node can import the pure half.
+**`src/lang/basic/leap-words.js`** (no CodeMirror) holds `LEAP_WORDS`,
+`NOT_IN_V2`, `keywordEntry`, `scanSymbols`, `LEAP_PACKAGES` and `packagesUsed`;
+**`src/lang/basic/leap-lang.js`** (imports CodeMirror, so Node cannot load it)
+re-exports them and implements the language mode with `@codemirror/language`
+`StreamLanguage` (simpler than a Lezer grammar here). Between them they export
+`leapLanguage`, `leapHighlight`, `LEAP_WORDS` (Map word -> `{cls, entry}`), `NOT_IN_V2`,
 `keywordEntry(word)` (`DEF` -> `DEF FN`, `EXIT` -> `EXIT FOR`),
 `keywordTokens(lineText)` (`[{from, to, text}]` keyword tokens on one line,
 same lexer; used by auto-caps; built on `lineTokens`),
@@ -523,8 +642,14 @@ Invalid covers the commands (`RUN` `LIST` `NEW` `SAVE` `LOAD` `VERIFY` `ALL`
 not reserve them, so `data = 5` is a valid assignment. The toggle-comment token
 is `REM `.
 
-**`src/editor.js`** creates the `EditorView`, the breakpoint gutter,
-autocomplete and hover help, and exposes `window.leapEditor` (`getSource()`,
+**`src/editor.js`** is the language-neutral editor: it creates the `EditorView`,
+the breakpoint gutter, find / replace, the buttons and the theme, and holds the
+active language's CodeMirror extensions in a `Compartment`, swapped by
+`setLanguage(id)` (the line-limit ruler follows the profile's `lineLimit`).
+**`src/lang/basic/editor.js`** is BASIC's half (listed in `src/lang/editors.js`):
+autocomplete, hover help, auto-caps, folding, indent, Tidy, block match, go to
+definition and rename, all described below. `src/editor.js` exposes
+`window.leapEditor` (`language`, `starter`, `setLanguage(id)`, `getSource()`,
 `setSource(text, {fresh})`, `setDiagnostics()`, `onChange(fn)`, `focus()`,
 `undo()`, `redo()`, `onHistoryChanged(fn)`, `copy()`, `cut()`, `paste()`,
 `find({replace})`, `tidy()`, `goToDefinition()`, `rename()`, `onMessage(fn)`,
@@ -578,8 +703,8 @@ lost (New / Open while the editor had focus).
   anywhere except a text field (input / textarea), unless the editor already
   handled the key. The editor title ellipsises before the buttons shrink.
 
-**Structure tools** (built on `blockStructure` / `blockIndent` / `nameTokens` in
-`leap-lang.js`):
+**Structure tools** (in `src/lang/basic/editor.js`, built on `blockStructure` /
+`blockIndent` / `nameTokens` in `src/lang/basic/leap-lang.js`):
 
 - **Folding:** a `foldService` over the blocks, with a fold gutter (▾ / ▸);
   Ctrl+Shift+[ folds and Ctrl+Shift+] unfolds the block at the cursor.
@@ -604,7 +729,7 @@ Verified in headless Chromium.
 
 ---
 
-## Debugger (Phase 3 — done, `src/leap-debug.js` + `src/debugger.js`)
+## Debugger (Phase 3 — done, `src/lang/basic/leap-debug.js` + `src/debugger.js`)
 
 Verified in headless Chromium and Node against the real 2.0.2 ROM; all Node
 checks also pass on 2.1.0-emu.1 (after the dispatch change below). The program
@@ -619,7 +744,7 @@ are skipped, and only the stored program counts (`V2_RUN_IS_STORED` = 1).
 Code is emitted in source order, so the line of an address is the last
 statement start at or below it. Every VM instruction starts at the opcode
 fetch, `VM_RUN.next` (ROM-table field `vmNext`), with `VM_IP` (`$B600`) at the
-opcode; `vmInstruction` in `src/leap-debug.js` hooks it. A nonzero `VM_HALTED`
+opcode; `vmInstruction` in `src/lang/basic/leap-debug.js` hooks it. A nonzero `VM_HALTED`
 means the VM is stopping. In 2.1 handlers end with `jp (iy)` to `.next`; only
 taken jumps, calls (`PROC`, `FN`) and waits go through `VM_RUN.loop`, which is
 now just the BREAK poll (`VM_HALTED` check) before `.next`. In 2.0.2 every
@@ -636,6 +761,15 @@ every Z80 instruction while set (returning true pauses before it); `pause()`,
 `paused` getter. `run()` and `stop()` leave a pause. With a watch installed the
 frame loop single-steps (`runZ80` budget 1), so it is slower than a free run.
 The `'paused'` state is reported through `onEmulatorState`.
+
+**Debug adapter.** `src/debugger.js` knows no language: it works through the
+profile's `createDebugAdapter(rom)` (`debug.setAdapter()` on a language switch).
+The adapter has `reset`, `observe(m)` (called before each instruction while
+watched), `position(m)`, `isStart`, `lineOf`, `breakPositions`, `stopLine`,
+`halt`, `variables`, `callStack` and `labels`. BASIC's, in
+`src/lang/basic/profile.js`, wraps the line table, `vmInstruction`, `haltVm`,
+`readVariables` and `readCallStack` of `src/lang/basic/leap-debug.js`. Registers,
+memory, Z80 breakpoints and the breakpoint list are generic.
 
 **Controller** (`createDebugger` in `src/debugger.js`): `beginRun()` resets the
 line table and installs the watch, `endRun()` removes it. Breakpoints are
@@ -701,7 +835,7 @@ and `setExecutionLine(line|null)`. The toolbar has Run, Stop, Pause/Continue
 
 ## Export Formats (Phase 6 — TAP and DCK done and verified)
 
-`src/export.js` (tape) and `src/cartridge.js` (cartridge) hold pure builders
+`src/lang/basic/export.js` (tape) and `src/lang/basic/cartridge.js` (cartridge) hold pure builders
 returning `Uint8Array`s. Neither touches the DOM, so Node can import them.
 
 ### Tape (done, verified) — `buildTAP`, toolbar "⬇ TAP"
@@ -714,7 +848,7 @@ Exactly what Leap's own `SAVE "name"` writes (`V2_SAVE` -> `STORAGE_SAVE` ->
   LE16; **Leap's tape format word** `V2_FORMAT_WORD` (`$8101` in 2.0.2 and 2.1) in the
   stock "autostart" field; program length LE16 (= the length for a plain
   program). `LOAD` refuses a tape without the format word. It is a ROM-table
-  field, `tapeFormatWord` in `src/leap-roms.js`, generated by
+  field, `tapeFormatWord` in `src/lang/basic/leap-roms.js`, generated by
   `tools/leap-rom-entry.py`.
 - **Data block:** flag `$FF`, then the line store exactly as in RAM
   (`encodeLineStore`).
@@ -729,11 +863,11 @@ Verified byte for byte against Leap's real `SAVE` (capturing
 `STORAGE_SEND_BLOCK` `$C3F1` there), and loaded back by Leap's real `LOAD` with the
 program intact; the browser download is identical. In TSRun this needs the
 tape-loading fix (TSRun section above, in the submodule pin). The button (`exportTape` in
-`ide.js`) prompts for the tape name (default: the file name, cut to 10
+`ide.js`; the tape itself comes from the attached profile's `exportTape`) prompts for the tape name (default: the file name, cut to 10
 characters) and reports `Saved X.tap: on the TS2068, LOAD "X" then RUN`
 (for a program that uses a package: `LOAD "NAME" EXT, then LOAD "X" then RUN`).
 
-### DCK (Timex dock cartridge) — done, verified; `src/cartridge.js`, toolbar "⬇ DCK"
+### DCK (Timex dock cartridge) — done, verified; `src/lang/basic/cartridge.js`, toolbar "⬇ DCK"
 The owner approved this on 2026-10-28. Leap 2.0.2 and 2.1.0-emu.1 never look at
 the dock, and their cold start clears RAM, so a cartridge that runs on a
 **stock TS2068** needs Leap's *cartridge build* (`make cart`, `-DV2_CARTRIDGE`):
@@ -750,7 +884,7 @@ SHA-256 `307b0616…`) and `leap_v2_cart_exrom.bin` (8192 bytes, SHA-256
 cartridge build, so the IDE's 2.1.0-emu.1 checker produces exactly the
 bytecode the cartridge runs.
 
-**`src/cartridge.js`** (pure, no DOM or CodeMirror):
+**`src/lang/basic/cartridge.js`** (pure, no DOM or CodeMirror):
 `romIdentity(home, exrom)` (CRC-16/CCITT, polynomial `$1021`, initial value
 `$FFFF`, over HOME and then EXROM), `cartIdentity(cartHome)`,
 `cartFormat(cartHome)` (the program image format the cartridge HOME accepts,
@@ -791,17 +925,20 @@ bytes, EXROM 63. `leap.patch` is two commits on the tag; refresh it with
 clone from GitHub plus `setup.sh` reproduces both images byte for byte.
 `cartridge-build/tools/leap2cart.mjs` takes `--package PKG.bin`.
 
-**Checker.** `compile(store, symCountsSize, pkg)` in `src/leap-check.js` runs
+**Checker.** `compile(store, symCountsSize, pkg)` in `src/lang/basic/leap-check.js` runs
 `check(store, pkg)` (the package is installed first, as in "Packages") and, on code 0, also returns `bytecode`
 (RAM from `VM_CODE_BASE` to `EMIT_PTR`) and `symCounts` (from `SYM_COUNTS`).
-`src/leap-roms.js`: the 2.1.0-emu.1 entry has `symCounts: 0xB800` and
+`src/lang/basic/leap-roms.js`: the 2.1.0-emu.1 entry has `symCounts: 0xB800` and
 `cartridgeDir: 'cartridge/2.1.0-emu.1/'`; the 2.0.2 entry has neither, so
 export says "There is no cartridge build for Leap 2.0.2-emu.1".
 `tools/leap-rom-entry.py` emits `symCounts` and a `cartridgeDir` line (with a
 comment to leave it out when a release has no cartridge build).
 
 **The button** (`exportCartridge` in `ide.js`, title "Save the program as a
-cartridge (.dck) that runs on a stock TS2068"), in order:
+cartridge (.dck) that runs on a stock TS2068"; steps 1-7 are the profile's
+`attach().buildCartridge(text, {confirm})` in `src/lang/basic/profile.js`,
+which returns `{dck, bin, summary}`, `{error, line0?}` or `null` when the user
+declines), in order:
 1. Storage problems or an empty program: error.
 2. No `cartridgeDir` for the loaded ROM: error.
 3. Package statements: `packageFor` (one package at a time, the same message
@@ -821,7 +958,9 @@ cartridge (.dck) that runs on a stock TS2068"), in order:
    the dock slot"; for a program with a package, "Saved X.dck (N bytes of
    bytecode and the SHAPES package): ...".
 
-Steps 1-7 are `buildProgramCartridge` in `ide.js`, shared with "▶ Test DCK".
+`buildProgramCartridge` in `ide.js` calls `buildCartridge` (and says "There is
+no cartridge build for <language> yet" for a profile without one); it is shared
+with "▶ Test DCK".
 
 Not supported: tape / Array Store, returning to an editor.
 
@@ -881,12 +1020,13 @@ is a 9-byte header (bank id + 8 chunk descriptors: 0 absent, 1 RAM, 2 ROM,
 wiring is the "Files" section of `ide.js`.
 
 - **Auto-save.** The program, its file name and the text as last saved or
-  opened (`savedText`) are stored in the browser's `localStorage`, key
-  `leap-ide.document` (`loadAutosave` / `storeAutosave`, which swallow storage
-  errors), 500 ms after each change (`leapEditor.onChange`) and restored at
+  opened (`savedText`) are stored in the browser's `localStorage`, one key per
+  language, `leap-ide.document.<id>` (`loadAutosave(lang)` / `storeAutosave(doc,
+  lang)`, which swallow storage errors; see "Languages" for the migration of the
+  old `leap-ide.document` key to `.basic`), 500 ms after each change (`leapEditor.onChange`) and restored at
   start-up, so a reload loses nothing.
 - **Toolbar**, next to the file name: **New** (asks before discarding unsaved
-  changes), **Open** (`.leap` `.txt` `.bas` `.tap`; Ctrl+O), **Save** (downloads
+  changes), **Open** (`.leap` `.txt` `.bas` `.tap` `.dck`; Ctrl+O), **Save** (downloads
   a text file to the browser's download folder; asks for a name the first time;
   Ctrl+S). Clicking the name renames. A `•` shows while the text differs from
   `savedText`. New and Open start a fresh document:
@@ -903,8 +1043,8 @@ wiring is the "Files" section of `ide.js`.
 - **Share links** (`encodeShare` / `decodeShare` in `src/files.js`; "Share links"
   section of `ide.js`, `shareProgram`, `openSharedLink`). The link carries the
   program in the URL fragment: `v1=<UTF-8 text, deflate-raw via
-  CompressionStream, base64url>&name=<file name>` (`encodeShare(text, name)`
-  returns it without the `#`). `decodeShare(hash)` returns `{text, name}`, or
+  CompressionStream, base64url>&name=<file name>[&lang=<id>]` (`encodeShare(text,
+  name, lang)` returns it without the `#`; `&lang=` is left out for `basic`). `decodeShare(hash)` returns `{text, name, lang}` (`lang` defaults to `basic`), or
   `null` when the fragment has no `v1`, and throws "The shared link is damaged
   or cut short…" when it cannot be read. The fragment is never sent to a
   server, so nothing is uploaded and GitHub Pages needs no setup.
@@ -918,12 +1058,13 @@ wiring is the "Files" section of `ide.js`.
     the text equals the editor's. Otherwise, with unsaved changes it asks
     `confirmDiscard()` (declined: `Kept your program; the shared one was not
     opened`), then opens the program as a new unsaved document named after the
-    link's `name` (`withExtension`, default `shared.leap`), auto-saves, and says
+    link's `name` (`withExtension`, default `shared.leap`; the link's `lang` switches
+    language first, `switchLanguage`), auto-saves, and says
     `Opened a shared program (X): press Run (F5)`. During boot that message is
     kept and shown instead of `Ready` (`readyMessage`).
   - Size: all 12 examples together (2674 characters) give a 1740-character
     fragment. The Help tip mentions Share.
-- **Examples menu** (`src/examples.js`, toolbar "Examples ▾" after Open).
+- **Examples menu** (`src/lang/basic/examples.js`, toolbar "Examples ▾" after Open).
   `EXAMPLES` is a list of `{id, title, about, package?, input?, text}`, 12
   programs, mostly the manual's own examples: `hello`, `ball`, `lines`, `guess`
   (`INPUT`), `primes`, `binary`, `caesar`, `scale` (`BEEP`), `udg`, `circles`
@@ -937,7 +1078,7 @@ wiring is the "Files" section of `ide.js`.
 
 ---
 
-## Packages (done, `ide.js`, `src/emulator.js`, `src/leap-check.js`)
+## Packages (done, `src/lang/basic/profile.js`, `src/lang/basic/leap-check.js`)
 
 Package statements (`CIRCLE`, `FILL`, `GRAB`, `MODE`, `LPRINT`, `CBEEP`, …) are
 not in the ROM: on a TS2068 a program loads a package with `LOAD "NAME" EXT`
@@ -948,19 +1089,19 @@ first. The IDE does that for the user, so such programs compile and run.
   copied unchanged from the release zip and checked against its `SHA256SUMS`.
   The six are byte-identical to 2.0.2's (`packages/2.0.2-emu.1/`, checked with
   `cmp`; the release notes say the shipped packages are unchanged).
-  `loadPackages` (ide.js) fetches them once at start-up, from the ROM entry's
-  `packageDir`.
-- **Which package.** `packagesUsed(text)` (`src/leap-lang.js`; with
+  `attach()` (`src/lang/basic/profile.js`) fetches them once per language / ROM
+  load, from the ROM entry's `packageDir`.
+- **Which package.** `packagesUsed(text)` (`src/lang/basic/leap-words.js`; with
   `LEAP_PACKAGES`) finds package statements at the start of a statement (line
   start or after `:`), so `circle = 5` is not one; strings and `REM` text are
   ignored. Leap loads **one package at a time**, so a program that uses two is
-  an error on the line of the second (`packageFor` in ide.js). It finds package
+  an error on the line of the second (`packageFor` in the attached profile). It finds package
   *statements* only. Leap 2.1 introduces package ABI 2.1 (package functions,
   floats, an error service); ABI 2.0 packages load unchanged and none of the
   shipped packages uses package functions. A future package that exports
   functions would need `packagesUsed` extended.
-- **Install, as `LOAD "NAME" EXT` does (package ABI 2.0).** `inject()` in
-  `src/emulator.js` and `check()` in `src/leap-check.js` do the same thing:
+- **Install, as `LOAD "NAME" EXT` does (package ABI 2.0).** `driver.inject` in
+  `src/lang/basic/profile.js` and `check()` in `src/lang/basic/leap-check.js` do the same thing:
   `EXT2_CLEAR_ALL`, then the image at `$F400` (`EXTENSION_MODULE_BASE`) with its
   length in `V2_PACKAGE_LEN`, then the image's install entry at `$F400`, chained
   before `V2_CLEAR_ARRAYS` on the ROM stack (`EXT2_CLEAR_ALL` returns into the
@@ -990,7 +1131,7 @@ two of the three clicks often looked like nothing happened.)
 - **Every colour is a CSS variable** in `ide.css`: the dark palette on `:root`,
   the light one on `:root[data-theme="light"]`. This includes the editor: the
   CodeMirror theme (`leapThemeSpec` in `src/editor.js`) and the syntax colours
-  (`leapHighlight` in `src/leap-lang.js`, `--syn-*` variables) use `var(...)`,
+  (`leapHighlight` in `src/lang/basic/leap-lang.js`, `--syn-*` variables) use `var(...)`,
   so switching theme only changes `<html data-theme>`. Do not add hex colours
   to the JS or CSS rules; add a variable to both palettes.
 - `leapEditor.setDark(bool)` swaps CodeMirror's dark/light flag (through a
@@ -1002,12 +1143,12 @@ two of the three clicks often looked like nothing happened.)
 - Unchanged in both themes: the TS2068 bezel and screen, and the TS2068
   paper/ink in the UDG and Draw tools (they show what the machine shows).
 
-## Help (done, `src/help.js`)
+## Help (done, `src/help.js`; the entries come from the profile's `help`)
 
 "? Help" in the toolbar or F1 opens an overlay; Escape or a click outside closes
 it. Everything is built with DOM nodes and `textContent`.
 
-- **Keywords tab:** all 100 manual entries from `src/leap-keywords.js`, grouped
+- **Keywords tab:** all 100 manual entries from `src/lang/basic/leap-keywords.js`, grouped
   as Statements, Functions, Operators, Package statements and Commands, with a
   search box that filters by name and description. Selecting one shows its
   forms, kind, description and example, and a link to its section of the manual
@@ -1023,11 +1164,11 @@ it. Everything is built with DOM nodes and `textContent`.
   on the stock ROMs, and that Z80 breakpoints pause at an address. This is the keyboard cheat-sheet of
   Phase 8.
 - Nothing is hand-written per keyword: a new release regenerates
-  `src/leap-keywords.js` and Help follows.
+  `src/lang/basic/leap-keywords.js` and Help follows.
 
 ---
 
-## Editor Error Checking (Phase 5 — done, `src/leap-check.js`)
+## Editor Error Checking (Phase 5 — done, `src/lang/basic/leap-check.js`)
 
 **Design decision: the linter is the ROM's own compiler, not a
 re-implementation.** The editor's errors are therefore always the errors Run
@@ -1035,7 +1176,7 @@ reports, for whichever Leap release is loaded; nothing in the checker changes
 for 2.1 beyond its ROM entry. As in the ROM, it stops at the first error, so
 the editor shows one error at a time.
 
-**`src/leap-check.js`** — `createChecker(rom, images)`. A second TSRun machine,
+**`src/lang/basic/leap-check.js`** — `createChecker(rom, images)`. A second TSRun machine,
 never displayed, boots the same ROM images once to the editor key wait
 (`IO_READ_KEY.wait_hit`) and snapshots RAM, CPU and ports (about 74 ms in
 Node). `check(store, pkg)` restores the snapshot, writes the line store and
@@ -1050,19 +1191,19 @@ and nothing is drawn. Typical check about 1 ms; a 302-line program about
 120 ms. It runs on the main thread; a Web Worker is the option if that ever
 matters.
 
-`V2_COMPILE_STORED` is the ROM symbol `compileStored` in `src/leap-roms.js`
+`V2_COMPILE_STORED` is the ROM symbol `compileStored` in `src/lang/basic/leap-roms.js`
 (`$D54F` in 2.0.2, `$D45A` in 2.1), emitted by `tools/leap-rom-entry.py`. The emulator exposes
 `romImages` for the checker.
 
-**Error text** — `src/leap-errors.js` is generated by
-`tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/leap-errors.js`
+**Error text** — `src/lang/basic/leap-errors.js` is generated by
+`tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-errors.js`
 from Appendix B of the manual. It exports `LEAP_COMPILE_ERRORS` and
 `LEAP_RUNTIME_ERRORS`, each code -> `{message, cause}`; codes such as
 "13, 14, 15" and "12 to 14" are expanded, and a code listed more than once
 keeps the first message and joins the causes. Never edit it by hand; rerun it
 for the next release (last run at `v2.1.0-emu.1`; `LEAP_MANUAL_REF` in
-`src/leap-keywords.js` follows, so Help links go to the 2.1 manual). `describeError`
-(ide.js) turns an entry into
+`src/lang/basic/leap-keywords.js` follows, so Help links go to the 2.1 manual). `describeError`
+(`src/lang/basic/profile.js`) turns an entry into
 "SYNTAX ERROR 3: an expression could not start where it did (…)". The 2.1 manual
 writes run-time messages as `RUNTIME ERROR n`; `describeError` drops a trailing
 " n" placeholder before adding the code. The 2.1 ROM itself shows the code with
@@ -1073,8 +1214,8 @@ both SYNTAX ERROR n and RUNTIME ERROR n.
   `window.leapIDE.lintSource` 500 ms after typing stops. Until the hidden
   machine has booted there is nothing to report; `ide.js` then calls
   `leapEditor.relint()`.
-- `lintSource(text)` (ide.js) first reports the storage problems from
-  `prepareSource` (non-ASCII, lines over 127 characters, a program larger than
+- `lintSource(text)` (ide.js) calls the attached profile's `lint(text)`, which
+  first reports the storage problems from `prepareSource` (non-ASCII, lines over 127 characters, a program larger than
   the pool), then compiles. A diagnostic underlines the failing editor line from
   its first non-blank character (`lineRange`); blank lines are mapped
   correctly, and end-of-source errors go on the last line.
@@ -1150,16 +1291,17 @@ tested separately.
 
 | Phase | Deliverable                                         | Key files               | Status |
 |-------|-----------------------------------------------------|-------------------------|--------|
-| 1     | Shell + TSRun embedded + program runs               | `ide.html`, `ide.js`, `src/emulator.js`, `src/leap-roms.js` | **Done**, verified |
-| 2     | CodeMirror 6 editor + Leap V2 syntax                | `src/editor.js`, `src/leap-lang.js`, `src/leap-keywords.js` (generated) | **Done**, verified |
-| 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/leap-debug.js` | **Done**, verified |
+| 1     | Shell + TSRun embedded + program runs               | `ide.html`, `ide.js`, `src/emulator.js`, `src/lang/basic/leap-roms.js` | **Done**, verified |
+| 2     | CodeMirror 6 editor + Leap V2 syntax                | `src/editor.js`, `src/lang/basic/leap-lang.js`, `src/lang/basic/leap-keywords.js` (generated) | **Done**, verified |
+| 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/lang/basic/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
-| 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/leap-check.js`, `src/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
-| 6     | Tape + DCK export                                   | `src/export.js`, `src/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages, cartridge test on the stock ROMs) |
+| 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/lang/basic/leap-check.js`, `src/lang/basic/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
+| 6     | Tape + DCK export                                   | `src/lang/basic/export.js`, `src/lang/basic/cartridge.js`, `cartridge/2.1.0-emu.1/`, `src/lang/basic/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages, cartridge test on the stock ROMs) |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools/symbols.js`, `udg.js`, `draw.js`, `src/editor.js` (`insertLines`), `ide.js` | **Done** |
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
-| —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/leap-check.js`, `packages/` | **Done**, verified |
-| —     | Editor structure tools (folding, indent, Tidy, go to definition, rename), Examples menu, Z80 breakpoints | `src/editor.js`, `src/leap-lang.js`, `src/examples.js`, `src/debugger.js`, `ide.js` | **Done**, verified |
+| —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/lang/basic/leap-check.js`, `packages/` | **Done**, verified |
+| 0 (multi-language) | Language profiles: BASIC moves to `src/lang/basic/`, the core asks the active profile (Leap-C and Forth are next) | `src/lang/profiles.js`, `src/lang/editors.js`, `src/lang/basic/profile.js`, `src/lang/basic/editor.js`, `src/lang/basic/leap-words.js`, `src/emulator.js`, `src/debugger.js`, `src/editor.js`, `ide.js` | **Done** (2026-11-01, `3ed5d3b`) |
+| —     | Editor structure tools (folding, indent, Tidy, go to definition, rename), Examples menu, Z80 breakpoints | `src/lang/basic/editor.js`, `src/lang/basic/leap-lang.js`, `src/lang/basic/examples.js`, `src/debugger.js`, `ide.js` | **Done**, verified |
 
 ---
 
@@ -1197,9 +1339,13 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## Tests
 
-- `node tests/rom-checks.mjs` — 66 checks in about 1 s against the real ROMs in
+- `node tests/rom-checks.mjs` — 75 checks in about 1 s against the real ROMs in
   Node (TSRun's machine, no browser): ROM table lookup, Run by injection
-  (finished, compile error, run-time error, package), the checker's error codes
+  (through the profile's real `driver.inject`; finished, compile error,
+  run-time error, package), section 1b "Language profile" (9 checks: profile
+  lookup by id / file extension, `prepareSource`, and the attached profile's
+  `lint`, `startRun`, `describeResult`, TAP and cartridge as `ide.js` uses
+  them), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
   helpers, every Examples-menu program (section 3b: each finishes with no
@@ -1212,12 +1358,12 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   cartridge to the end (POKE marker 42, VM error 0, `$F4` = `$43`), a wrong
   identity being refused, `pagingWrites`, "the cartridge build takes packages
   (image format 2)" and "a SHAPES program (CIRCLE + FILL) runs from the
-  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 66 pass on 2.1.0-emu.1
+  cartridge" (stock TS2068, about 5145 pixels set, POKE marker, VM error 0). `LEAP_ROMS=<dir>` tests other ROM files. All 75 pass on 2.1.0-emu.1
   (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 41 checks in about 40 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 42 checks in about 40 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
   Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
@@ -1234,12 +1380,15 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   one, closes) and running the SHAPES example, and a Z80 breakpoint pause, Step
   instruction and continue to Finished, and Share (copies a link; loading it in
   a fresh page opens the program, its file name, an empty hash and the status),
-  with no page errors. It saves screenshots. CodeMirror's search
+  an auto-save from before languages (the bare `leap-ide.document` key) opening
+  and moving to `leap-ide.document.basic`, with no page errors. It saves screenshots. CodeMirror's search
   panel takes the query on keyup / change, so CDP `Input.insertText` alone does
   not set it; the test also sends a keyUp.
-- Run both before every commit that changes behaviour. `src/leap-lang.js`
-  imports CodeMirror, so Node cannot load it; it is covered by the browser
-  test.
+- Run both before every commit that changes behaviour. `src/lang/basic/leap-lang.js`
+  and `src/lang/basic/editor.js` import CodeMirror, so Node cannot load them;
+  they are covered by the browser test. Their pure parts are in
+  `src/lang/basic/leap-words.js` and `src/lang/basic/profile.js`, which Node
+  tests import.
 
 ## Coding Conventions
 
@@ -1247,7 +1396,7 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 - `"use strict"` in every file.
 - Functions over classes where state is minimal.
 - Constants for every magic address; per-release addresses belong in
-  `src/leap-roms.js`, not scattered through the code.
+  `src/lang/basic/leap-roms.js`, not scattered through the code.
 - No external CSS frameworks — one `ide.css` for the shell layout.
 - Comments on anything non-obvious, especially TSRun API calls.
 
@@ -1255,7 +1404,11 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## What Claude Code Should Do Next
 
-All phases are done. Phases 1 to 5, 7 and 8 work, Phase 6's tape export (Leap's
+All phases are done, and so is **stage 0 of the multi-language plan** (the
+language profile, 2026-11-01; see "Languages"). Next, in the owner's order:
+**Leap-Forth** (stage F0: move the TSRun submodule to `11731e1`, which carries
+the Forth v2.0 ROMs, then the Forth profile; `docs/LEAP_FORTH_PLAN.md`), then
+**Leap-C** (`docs/LEAP_C_PLAN.md`). Phases 1 to 5, 7 and 8 work, Phase 6's tape export (Leap's
 own `LOAD` reads the IDE's `.tap`) and DCK export (a cartridge that runs on a
 stock TS2068, approved by the owner on 2026-10-28) are done and verified, and
 saving/opening programs, packages and the Help overlay are done. The Leap

@@ -1,6 +1,6 @@
-# Handoff — Leap V2 Web IDE
+# Handoff — Leap IDE (formerly the Leap V2 Web IDE)
 
-Last updated 2026-11-01, at the ROM projects' answers (Forth v2.0 released, Leap-C unblocked; see "Where it stands"). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
+Last updated 2026-11-01, after stage 0 of the multi-language plan (language profiles, commit `3ed5d3b`; see "Where it stands"). Before that, 2026-11-01, the ROM projects' answers (Forth v2.0 released, Leap-C unblocked). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -18,23 +18,24 @@ is implemented.
 | Phase 3 | Debugger: breakpoints, Step/Pause, variables, call stack, registers, memory |
 | Phase 4 | PC keyboard mapping (`"` is `"`), keys reach the TS2068 only while a program runs |
 | Phase 5 | Error checking by the ROM's own compiler on a hidden machine |
-| Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. A program's package goes on the cartridge too (image format 2). "▶ Test DCK" and Open `.dck` run a cartridge on the stock ROMs in the IDE's emulator (2026-10-31) |
+| Phase 6 | TAP export, byte-identical to Leap's `SAVE`; DCK export (`src/lang/basic/cartridge.js`, toolbar "⬇ DCK"): a cartridge that runs on a stock TS2068, also a flat 64 KB `.bin` for a cartridge board. A program's package goes on the cartridge too (image format 2). "▶ Test DCK" and Open `.dck` run a cartridge on the stock ROMs in the IDE's emulator (2026-10-31) |
 | Phase 7 | Symbols / UDG / Draw tabs (Draw zooms 1×–3×) |
 | Phase 8 | Help overlay (F1), keys & tips, light/dark themes |
-| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests (66 ROM checks pass on 2.1; the 36 browser checks pass on 2.1) |
-| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/examples.js`), Z80 breakpoints and Step instruction in the debugger, share links (Share button; program in the URL fragment, nothing uploaded) |
+| 2.1 | Leap 2.1.0-emu.1 ROM entry, regenerated keyword and error data, packages, tests |
+| Stage 0 (2026-11-01, `3ed5d3b`) | Language profiles: the core (`ide.js`, `src/emulator.js`, `src/debugger.js`, `src/editor.js`, `src/pc-keyboard.js`, `src/help.js`) asks the active profile; BASIC moved to `src/lang/basic/` (`profile.js` pure, `editor.js` CodeMirror half, `leap-words.js` pure word tables). Per-language auto-save, `lang=` in share links, `?lang=`, language selector (hidden while there is one language), the IDE is now called Leap IDE. BASIC behaviour unchanged: 75 ROM checks and 42 browser checks pass |
+| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/lang/basic/examples.js`), Z80 breakpoints and Step instruction in the debugger, share links (Share button; program in the URL fragment, nothing uploaded) |
 
 **Done for 2.1.0-emu.1** (tag `v2.1.0-emu.1`, commit `c005159`, published
-2026-10-28): the ROM entry (key `5a42872e…`), `src/leap-keywords.js` and
-`src/leap-errors.js` regenerated at the tag, packages copied (byte-identical to
+2026-10-28): the ROM entry (key `5a42872e…`), `src/lang/basic/leap-keywords.js` and
+`src/lang/basic/leap-errors.js` regenerated at the tag, packages copied (byte-identical to
 2.0.2's), `SAVE_SYMBOLS` added, TSRun moved to `016787f`. The key tables did
 not change (`src/pc-keyboard.js` untouched). The Stop workaround (a jump to the
 command loop) is still needed: BREAK alone does not end an `INPUT` wait in 2.1
 either (checked in Node; its VM latches error 66 and stops after ENTER).
 
-**DCK export (done 2026-10-28).** `src/cartridge.js` builds the DCK from the
+**DCK export (done 2026-10-28).** `src/lang/basic/cartridge.js` builds the DCK from the
 program's bytecode, which the checker machine compiles (`compile` in
-`src/leap-check.js`), and from the cartridge images in
+`src/lang/basic/leap-check.js`), and from the cartridge images in
 `cartridge/2.1.0-emu.1/`. Those two images are Leap 2.1.0-emu.1's *cartridge
 build* (`make cart`), built by `cartridge-build/setup.sh`. See "DCK" in
 `CLAUDE.md` for the layout and the button's checks. Checked: the tests run the
@@ -58,7 +59,7 @@ refuses a package if the cartridge build's format is below 2. Checked: the 33
 package installed (32 pass, 1 expected difference, 0 fail), and a SHAPES
 program (`CIRCLE` + `FILL`) on a stock TS2068 in `tests/rom-checks.mjs`.
 
-**Editor tools (done 2026-10-28).** `src/leap-lang.js` gained `lineTokens`,
+**Editor tools (done 2026-10-28).** `src/lang/basic/leap-lang.js` gained `lineTokens`,
 `nameTokens`, `blockStructure` and `blockIndent`; `src/editor.js` builds on
 them: folding, auto-indent and dedent, Tidy, matching block keywords, go to
 definition, rename and the line-limit ruler (see "Language mode and editor" in
@@ -70,12 +71,19 @@ keystroke past the new text's end threw "Invalid change range" and was lost
 with the theme reconfigure right after `setState`.
 
 **Examples menu and Z80 breakpoints (done 2026-10-28).** "Examples ▾" opens one
-of 12 programs from `src/examples.js` as a new unsaved document;
+of 12 programs from `src/lang/basic/examples.js` as a new unsaved document;
 `tests/rom-checks.mjs` section 3b runs each on the real ROMs. The debugger
 panel has a "Z80 Breakpoints" section and a "Step instruction" button (see
 "Debugger" in `CLAUDE.md`).
 
 **On hold:** nothing.
+
+**Stage 0 done (2026-11-01).** The language profile is implemented and committed
+(`3ed5d3b`); see CLAUDE.md "Languages (language profiles)" and the "Stage 0:
+what was built" section of `docs/MULTI_LANGUAGE_PLAN.md` (where it differs from
+the plan). Next, in the owner's order: Forth (stage F0 first: move the TSRun
+submodule to `11731e1`, which carries the Forth v2.0 ROMs; then the Forth
+profile, `docs/LEAP_FORTH_PLAN.md`), then Leap-C.
 
 **Multi-language plans (2026-11-01).** The two ROM projects answered the IDE's
 questions (`docs/requests/LEAP_FORTH_ANSWERS.md`,
@@ -89,7 +97,7 @@ Forth stage F0, not done). Leap-C is at `v1.0.0-beta.2`; the owner lifted the
 rule that its work waits for 1.0, so it proceeds on beta.2 (every address comes
 from the `.sym` files; 1.0 later means regenerating the ROM entry and data),
 and only its cartridge (C9) waits for Leap-C's own `make cart`, which is in
-progress. The order is **stage 0 (the language profile) -> Forth -> Leap-C**
+progress. The order is **stage 0 (the language profile, now done) -> Forth -> Leap-C**
 (both unblocked; Forth first because its release, manual and cartridge are
 complete). Plans: `docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_FORTH_PLAN.md`,
 `LEAP_C_PLAN.md`. This entry changed documentation only; two owner choices remain
@@ -122,8 +130,8 @@ for Forth's cartridge (which word starts the program, what goes on it; see F8).
 cd ~/Projects/Leap-IDE
 git pull && git submodule update --init
 python3 -m http.server 8080          # then http://localhost:8080/ide.html
-node tests/rom-checks.mjs             # 66 checks, ~1 s, real ROMs in Node
-node tests/browser-smoke.mjs          # 36 checks, ~30 s, headless Chrome
+node tests/rom-checks.mjs             # 75 checks, ~1 s, real ROMs in Node
+node tests/browser-smoke.mjs          # 42 checks, ~40 s, headless Chrome
 ```
 
 Both suites must print `All checks passed`. The browser test serves the repo
@@ -167,12 +175,23 @@ this machine has Node 24.
   after a header that reports an abort, so the stand-in returns with carry set.
   A future release may need a similar adjustment.
 - **Error text.** The 2.1 manual writes run-time messages as `RUNTIME ERROR n`;
-  `describeError` in `ide.js` drops a trailing " n" before adding the code.
-- **`src/leap-lang.js` imports CodeMirror**, so Node cannot import it, nor
-  anything that imports it. Pure helpers that Node tests need must stay in
-  modules without CodeMirror imports (`files.js`, `export.js`,
-  `cartridge.js`, `tools/draw.js`, `tools/udg.js`, `leap-debug.js`,
-  `leap-check.js`).
+  `describeError` in `src/lang/basic/profile.js` drops a trailing " n" before adding the code.
+- **`src/lang/basic/leap-lang.js` imports CodeMirror** (so does
+  `src/lang/basic/editor.js`), so Node cannot import them, nor anything that
+  imports them. The pure parts are in `src/lang/basic/leap-words.js` (word
+  tables, `scanSymbols`, `packagesUsed`) and `src/lang/basic/profile.js` (the
+  profile: driver, `prepareSource`, `describeError`, `attach()`). Pure helpers
+  that Node tests need must stay in modules without CodeMirror imports
+  (`src/files.js`, `src/lang/profiles.js`, `src/lang/basic/profile.js`,
+  `leap-words.js`, `export.js`, `cartridge.js`, `leap-debug.js`,
+  `leap-check.js`, `src/tools/draw.js`, `src/tools/udg.js`).
+- **Generated files moved.** `leap-keywords.js` and `leap-errors.js` are now
+  under `src/lang/basic/` (`tools/gen-leap-keywords.py` and
+  `tools/gen-leap-errors.py` write there); never hand-edit them. ROM entries go
+  in `src/lang/basic/leap-roms.js`.
+- **Auto-save keys moved.** The program is stored as `leap-ide.document.<id>`
+  (BASIC: `.basic`); the old bare `leap-ide.document` key is migrated on first
+  load.
 - **Colours:** never hard-code hex colours in JS or CSS rules. Add a variable
   to both palettes in `ide.css` (see "Themes" in `CLAUDE.md`).
 - The auto-mode safety check blocked writing into `.git/hooks` until the owner

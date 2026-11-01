@@ -78,7 +78,7 @@ works. The live TSRun site, which also hosts Leap's browser demo, now loads Leap
 tapes, including package tapes.
 
 The submodule is pinned because the TSRun version must match the ROM table in
-`src/leap-roms.js`: a TSRun update (e.g. new Leap ROMs) cannot break the IDE
+`src/lang/basic/leap-roms.js`: a TSRun update (e.g. new Leap ROMs) cannot break the IDE
 until the pin is deliberately moved (`git -C tsrun fetch && git -C tsrun
 checkout <commit>`, add the ROM entry, regenerate keywords if the manual
 changed, commit the submodule bump).
@@ -105,18 +105,18 @@ ide.html
 │
 ├── src/emulator.js   ← slim TSRun host + RAM-injection run/stop
 ├── src/pc-keyboard.js ← PC key -> TS2068 matrix translation
-├── src/leap-roms.js  ← known ROM builds (SHA-256 -> addresses)
+├── src/lang/basic/leap-roms.js  ← known ROM builds (SHA-256 -> addresses)
 ├── src/editor.js     ← CodeMirror 6 editor setup
 ├── src/files.js      ← browser auto-save, text files, Leap .tap -> source
 ├── src/help.js       ← Help overlay (keywords, keys and tips)
-├── src/leap-lang.js  ← Leap V2 StreamLanguage mode, token classes, scanSymbols
-├── src/leap-keywords.js ← generated from the Leap manual (tools/gen-leap-keywords.py)
-├── src/leap-check.js ← editor error check: the ROM's compiler on a hidden machine
-├── src/leap-errors.js ← generated error text from the manual (tools/gen-leap-errors.py)
+├── src/lang/basic/leap-lang.js  ← Leap V2 StreamLanguage mode, token classes, scanSymbols
+├── src/lang/basic/leap-keywords.js ← generated from the Leap manual (tools/gen-leap-keywords.py)
+├── src/lang/basic/leap-check.js ← editor error check: the ROM's compiler on a hidden machine
+├── src/lang/basic/leap-errors.js ← generated error text from the manual (tools/gen-leap-errors.py)
 ├── src/debugger.js   ← debugger controller (breakpoints, step) + panel UI
-├── src/leap-debug.js ← line table, variables, call stack read from machine RAM
+├── src/lang/basic/leap-debug.js ← line table, variables, call stack read from machine RAM
 ├── src/tools/        ← right-panel tools (Phase 7): symbols.js, udg.js, draw.js
-├── src/export.js     ← TAP builder (DCK waits for the Leap cartridge build; see docs/LEAP_CARTRIDGE_BUILD.md)
+├── src/lang/basic/export.js     ← TAP builder (DCK waits for the Leap cartridge build; see docs/LEAP_CARTRIDGE_BUILD.md)
 ├── packages/<version>/ ← the release's package images (<name>.bin), installed on Run
 └── ide.js            ← orchestrator (prepare source → run → status/debug, files, packages)
 ```
@@ -191,7 +191,7 @@ behaves the same on both.
 
 The IDE refuses ROMs it does not recognise: injection jumps to ROM routine
 addresses that change between releases, so each ROM pair is identified by
-SHA-256 and looked up in `src/leap-roms.js`. Supporting a new release means
+SHA-256 and looked up in `src/lang/basic/leap-roms.js`. Supporting a new release means
 adding one entry (see `README.md`).
 
 The editor checks the program with the same compiler before Run (see "Syntax
@@ -204,7 +204,7 @@ with `LOAD "NAME" EXT` first (Leap holds one package at a time). The IDE does
 that for the user. The release's six package images (`cbeep graphics mode
 printer shapes sprite`) are in `packages/2.1.0-emu.1/<name>.bin`, copied
 unchanged from the release zip and checked against its `SHA256SUMS`; they are
-byte-identical to 2.0.2's and are fetched once at start-up. `packagesUsed(text)` (`src/leap-lang.js`) finds the
+byte-identical to 2.0.2's and are fetched once at start-up. `packagesUsed(text)` (`src/lang/basic/leap-lang.js`) finds the
 package statements at the start of a statement (not `circle = 5`); a program
 that uses two packages is an error on the line of the second. It finds package
 *statements* only: Leap 2.1 adds package ABI 2.1 (package functions, floats, an
@@ -276,7 +276,7 @@ would turn `PRINT "Hello"` into `"HELLO"`. Typing into a running program
 The keyword data is generated, not written by hand:
 `tools/gen-leap-keywords.py` reads the Leap manual's keyword chapter
 (`docs/manual/03_keywords.md`) at a release tag and writes
-`src/leap-keywords.js` (100 entries: kind, package, syntax forms, description,
+`src/lang/basic/leap-keywords.js` (100 entries: kind, package, syntax forms, description,
 example). Help therefore follows the release's own documentation, and a new
 Leap release means rerunning the generator, not editing a table.
 
@@ -327,13 +327,13 @@ on demand and shows the first message, or "No errors", in the status bar.
 
 A check is about 1 ms for typical programs and about 120 ms for a 302-line
 one; it runs on the main thread (a Web Worker is the option if that matters).
-The message text comes from `src/leap-errors.js`, generated from the manual by
+The message text comes from `src/lang/basic/leap-errors.js`, generated from the manual by
 `tools/gen-leap-errors.py` and regenerated for each release. Not implemented:
 checks of the IDE's own (nested `PROC`), several errors at once, and warnings
 such as unused labels.
 
 ### Keyword Syntax Highlighting
-Token classes via CM6 StreamLanguage (`src/leap-lang.js`), classified from the
+Token classes via CM6 StreamLanguage (`src/lang/basic/leap-lang.js`), classified from the
 generated keyword data. Identifiers are a letter then letters/digits, with an
 optional trailing `$` and no underscore; words match whole (`tomato` is not
 `TO`).
@@ -504,7 +504,7 @@ breakpoints exist only as the `setWatch` API, with no UI yet. Technical detail
 
 ## Export — Phase 6
 
-**Tape: done and verified** (toolbar "⬇ TAP", `buildTAP` in `src/export.js`).
+**Tape: done and verified** (toolbar "⬇ TAP", `buildTAP` in `src/lang/basic/export.js`).
 The file is exactly what Leap's own `SAVE "name"` writes:
 
 - a header block (flag `$00` + 17 bytes: type 0; the name, 10 bytes
@@ -516,7 +516,7 @@ The file is exactly what Leap's own `SAVE "name"` writes:
 - XOR checksums, and in the `.tap` file each block prefixed with its LE16
   length. Stock ROM pulse timings, which is what `.tap` assumes.
 
-The format word is a ROM-table field (`tapeFormatWord` in `src/leap-roms.js`,
+The format word is a ROM-table field (`tapeFormatWord` in `src/lang/basic/leap-roms.js`,
 generated by `tools/leap-rom-entry.py`). V2 has no autorun: on the TS2068, type
 `LOAD ""` (or `LOAD "name"`) and then `RUN`. Verified byte for byte against
 Leap's real `SAVE` (a `STORAGE_SEND_BLOCK` capture in Node) and loaded back by

@@ -1,9 +1,12 @@
-# Leap V2 Web IDE
+# Leap IDE
 
-A browser-based IDE for writing and running programs in **Leap V2 BASIC** on
-the **Timex Sinclair 2068**. It has a CodeMirror 6 editor, a TS2068 emulator
-(the TSRun emulator running the real Leap V2 ROMs) and a debugger. No
-build step and no npm; it only needs a static file server.
+A browser-based IDE for writing and running programs on the **Timex Sinclair
+2068** in the Leap ROM languages. Today that is **Leap V2 BASIC**; the IDE is
+built around language profiles (`src/lang/`), and Leap-C and Leap-Forth are
+planned (`docs/MULTI_LANGUAGE_PLAN.md`; the language selector appears once a
+second language exists). It has a CodeMirror 6 editor, a TS2068 emulator (the
+TSRun emulator running the real Leap ROMs) and a debugger. No build step and no
+npm; it only needs a static file server.
 
 Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
 `main` on every push). Source: https://github.com/nchiker/2068-Leap-IDE.
@@ -12,7 +15,8 @@ Leap V2 is documented at https://github.com/nchiker/2068-Leap (the manual and
 `docs/V2_LANGUAGE_REFERENCE.md`). Current release: 2.1.0-emu.1 (the ROM table
 also knows 2.0.2-emu.1).
 
-Status: Phases 1 to 5 are done (the emulator boots, Run injects the editor text
+Status: the language-profile groundwork (stage 0) is done: BASIC lives in
+`src/lang/basic/` and the core asks the active profile. Phases 1 to 5 are done (the emulator boots, Run injects the editor text
 into the ROM and runs it, compile and run-time errors come back with the line;
 PC keys are translated for `INPUT`, `INKEY$` and `PAUSE 0`; the editor has
 Leap V2 highlighting, autocomplete, hover help and automatic upper-casing of
@@ -26,12 +30,11 @@ Run; "? Help" (F1) opens a searchable keyword reference. Phase 7 is done: the ri
 UDG (draw Leap's 21 user-defined characters and insert the `POKE` lines into the
 program, or load them back) and Draw (a `PLOT` / `LINE` scratchpad) tabs beside
 the debugger. The ☀ / ☾ button switches between light and dark themes (until
-you choose, the IDE follows the system setting). Phase 6 is half done:
-"⬇ TAP" saves exactly what Leap's own `SAVE` writes (verified: Leap's real
-`LOAD` reads it back); the DCK cartridge needs a runtime-only Leap build first,
-specified in `docs/LEAP_CARTRIDGE_BUILD.md`. The Leap 2.1.0-emu.1 ROM entry is
-done. Still to do, waiting for that cartridge build (2.1.0-emu.1 does not
-contain it): the DCK export. See `CLAUDE.md` for the phase list
+you choose, the IDE follows the system setting). Phase 6 is done: "⬇ TAP" saves exactly what Leap's own
+`SAVE` writes (verified: Leap's real `LOAD` reads it back), and "⬇ DCK" builds a
+cartridge that runs on a stock TS2068 (from the runtime-only Leap build in
+`cartridge-build/`; "▶ Test DCK" runs it on the stock ROMs in the emulator).
+The Leap 2.1.0-emu.1 ROM entry is done. See `CLAUDE.md` for the phase list
 and technical brief, and `docs/overview.md` for the design.
 
 ## Setup
@@ -57,7 +60,7 @@ and technical brief, and `docs/overview.md` for the design.
    The IDE hashes the pair and refuses ROMs it does not know.
 
 The pin matters: the TSRun version must match the ROM table in
-`src/leap-roms.js`, so changes upstream in TSRun (such as new Leap ROMs) cannot
+`src/lang/basic/leap-roms.js`, so changes upstream in TSRun (such as new Leap ROMs) cannot
 break the IDE until the submodule is deliberately moved (see "Adding a new Leap
 ROM release"). GitHub Pages includes the public submodule when it publishes.
 
@@ -117,7 +120,7 @@ Leap's own editor, so a finished run's output stays on screen.
 
 ROM addresses change between Leap releases, and the IDE injects programs by
 jumping into ROM routines, so each ROM build has its own entry in
-`src/leap-roms.js`.
+`src/lang/basic/leap-roms.js`.
 
 1. Build the release tag in a separate detached worktree, so local edits in
    `~/2068-Leap` are not disturbed:
@@ -129,7 +132,7 @@ jumping into ROM routines, so each ROM build has its own entry in
    symbols, so a new entry must be generated, not copied from an older one
    (a symbol the release lacks falls back to a named older one: `vmNext` takes
    `VM_RUN.loop` in 2.0.2).
-3. Paste the entry into `src/leap-roms.js`. It includes the package fields
+3. Paste the entry into `src/lang/basic/leap-roms.js`. It includes the package fields
    `ext2ClearAll`, `packageBase`, `packageLen` and `packageDir`.
    Copy the release's package binaries (`v2_package_<name>.bin`) to
    `packages/<version>/<name>.bin`, unchanged, and check them against the
@@ -151,10 +154,10 @@ and error text, which are generated from the release's manual. Regenerate them
 at the release tag:
 
 ```
-tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/leap-keywords.js
-tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/leap-errors.js
+tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-keywords.js
+tools/gen-leap-errors.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-errors.js
 ```
 
-Never edit `src/leap-keywords.js` or `src/leap-errors.js` by hand. The editor's
-error check (`src/leap-check.js`) needs no change: it runs the new ROM's own
+Never edit `src/lang/basic/leap-keywords.js` or `src/lang/basic/leap-errors.js` by hand. The editor's
+error check (`src/lang/basic/leap-check.js`) needs no change: it runs the new ROM's own
 compiler, using the `compileStored` symbol in the ROM entry.

@@ -1,7 +1,7 @@
 # Plan: one IDE for Leap V2 BASIC, Leap-C and Leap-Forth
 
-Status: proposal, updated 2026-11-01. No second language exists yet (the
-working tree may hold uncommitted stage 0 work). Both ROM
+Status: updated 2026-11-01. **Stage 0 is done** (2026-11-01, commit `3ed5d3b`;
+see "Stage 0: what was built" below); no second language exists yet. Both ROM
 projects have answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md),
 [`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)).
@@ -21,7 +21,7 @@ stop assuming BASIC before a second language can be added. It is written as
 **stage 0** of both plans. Do it once, then the two language plans are
 independent of each other.
 
-Order (owner, 2026-11-01): **stage 0 (this document), then Forth and
+Order (owner, 2026-11-01): **stage 0 (this document, done), then Forth and
 Leap-C**, both unblocked, **Forth first**.
 
 Why Forth first, and why this changes the earlier recommendation (Leap-C
@@ -67,7 +67,9 @@ Leap-C can follow or overlap it.
   *building* a cartridge from the editor's program (⬇ DCK, ▶ Test DCK) is
   BASIC-specific today (see "The cartridge test across languages" below).
 
-## What assumes BASIC today
+## What assumed BASIC (before stage 0)
+
+This table is the state before commit `3ed5d3b`; the paths are the old ones.
 
 | Where | What |
 |---|---|
@@ -82,7 +84,61 @@ Leap-C can follow or overlap it.
 | `src/tools/udg.js`, `draw.js` | Generate BASIC (`POKE`, `PLOT`, `LINE`). |
 | `src/files.js` | `tapeToText` accepts only V2 tapes (`$81xx`). |
 
-## Stage 0 design: a language profile
+## Stage 0: what was built (done 2026-11-01, commit `3ed5d3b`)
+
+The design below was implemented with BASIC as the only profile; with it,
+behaviour is unchanged (rom-checks 75 = 66 + 9 profile checks, browser-smoke
+42 = 41 + the auto-save migration check). CLAUDE.md "Languages (language
+profiles)" is the reference for what exists; the profile shape is documented in
+the header of `src/lang/profiles.js`. Where the implementation differs from the
+design that follows:
+
+- **Layout.** `src/lang/profiles.js` (not `profile.js`) holds `PROFILES`,
+  `profileById`, `profileForFile`, `profileForTape` and the shape comment. A
+  language is split in two modules: `src/lang/<id>/profile.js` (no DOM or
+  CodeMirror; Node imports it) and `src/lang/<id>/editor.js` (the CodeMirror
+  half), registered in `src/lang/editors.js` (`LANGUAGE_EDITORS`). There is no
+  `editorExtensions()` on the profile. BASIC's word tables were also split out
+  of `leap-lang.js` into the CodeMirror-free `leap-words.js`.
+- **Field names differ** from the table below: `romFiles {home, exrom}` +
+  `knownRoms` + `romHint` + `romLabel` (not `romName`); `driver {safe,
+  runState, inject, stopWaiting, result}` (replacing `inject`, `stopPlan` and
+  `readResult`; `stopWaiting` returns true if it ended the wait itself, false
+  to press BREAK); `createDebugAdapter(rom)` (not `debug`); `keyboard {symbols,
+  always}`; `symbolGroups(text)` / `symbolsEmpty` (not `symbols`); `help` (not
+  `helpEntries` / `manualRef`); `tools {udg, draw}`, `hasTape`, `hasCartridge`,
+  `waitingText`, `ownsTape(bytes)`.
+- **`attach()` returns the per-ROM half.** `prepare`, `createChecker`,
+  `describeError`, `exportTape`, `buildCartridge` and `extensionsUsed` are not
+  profile fields: `profile.attach({rom, romImages, fetchAsset})` binds the
+  profile to the loaded ROM pair and returns `lint(text)`, `startRun(text)`,
+  `describeResult(...)`, `progInfo(bytes)`, `exportTape(text, name)`,
+  `buildCartridge(text, ui)` (optional) and, for BASIC, `checker` and
+  `packageFor`. `ide.js` keeps it as `lang` and re-attaches after a switch.
+- **Work item 7 (debugger)** was done as a **debug adapter** (`setAdapter`;
+  `reset`, `observe`, `position`, `isStart`, `lineOf`, `breakPositions`,
+  `stopLine`, `halt`, `variables`, `callStack`, `labels`), not as separate
+  profile sections of the panel. The panel's registers, memory, Z80
+  breakpoints and breakpoint list stay generic; a Forth adapter will have to
+  supply its stacks / dictionary through the same shape (extending it if
+  needed).
+- **Emulator.** `setProfile(profile)` loads the profile's ROMs into the existing
+  machine and resets (not `setRoms(home, exrom, entry)`); `leaveCartridge`
+  restores the active profile's ROMs.
+- **Done as planned:** the `?lang=` URL parameter, `leap-ide.lang`,
+  per-language auto-save with migration, `&lang=` in share links, the
+  selector (`#lang-select`, hidden while only one profile exists), Open
+  switching language by extension or tape, the profile's SYMBOL SHIFT table
+  in `src/pc-keyboard.js`, the rename to **Leap IDE** (work item 11).
+  `window.leapIDE` now exposes `lintSource`, `setStatus`, `switchLanguage`,
+  `emulator`, `profile` and `lang` (`encodeSource` is gone).
+- **Not done in stage 0** (belongs to the language stages): the cartridge
+  test's keyboard table picked from the cartridge's own signature, per-language
+  `cartridge/<lang>/<version>/` directories (BASIC's still live in
+  `cartridge/2.1.0-emu.1/`), and the language-switch browser test with a
+  second language.
+
+## Stage 0 design: a language profile (as planned; implemented as above)
 
 Each language is one profile object; the IDE core asks the active profile for
 everything language-specific. Proposed layout:
@@ -208,10 +264,11 @@ the matching UI):
 
 ### Done when
 
-- With only the BASIC profile, behaviour is unchanged: all 66 Node checks and
-  41 browser checks pass (the cartridge test's five included), the module fingerprints are current, and the existing
-  auto-save and share links still open.
-- Stop there and commit before starting either language plan.
+- With only the BASIC profile, behaviour is unchanged: all the old Node checks
+  and browser checks pass (now 75 and 42, with the cartridge test's five), the
+  module fingerprints are current, and the existing auto-save and share links
+  still open. **Done 2026-11-01.**
+- Stop there and commit before starting either language plan. (Done: committed as `3ed5d3b`.)
 
 ## Owner decisions (2026-10-31)
 
