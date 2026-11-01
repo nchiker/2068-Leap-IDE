@@ -401,6 +401,10 @@ try {
     const last = t.split('\\r').filter(Boolean).pop(); return last === '3 sq .' && last; })()`, 5000);
   check('Forth: keys typed in the screen reach the OK prompt (the line is stored and run)', forthTyped === '3 sq .', String(forthTyped));
   await shot('forth');
+  // Import session: the line store (what was Run and typed) opens as a new document.
+  await evaluate("window.confirm = () => true, document.getElementById('btn-import-session').click()");
+  const imported = await evaluate("[leapEditor.getSource().trimEnd().split('\\n').slice(-2).join('|'), document.getElementById('filename-display').textContent, !document.getElementById('dirty-mark').hidden].join(' / ')");
+  check('Forth: Import opens the session\'s lines (Run and typed) as a new unsaved document', imported === 'CLS 7 SQ .|3 sq . / session.fs / true', String(imported));
   // The static check (F3): SQ is only in the live session (it was Run before), BOGUS nowhere.
   await evaluate(`leapEditor.setSource(${JSON.stringify('2 SQ .\nBOGUS')}, {fresh: true})`);
   const forthLint = await waitFor("[...document.querySelectorAll('.cm-lintRange-error')].map(e => e.textContent).join(',') || false", 4000);

@@ -29,8 +29,13 @@
  *   tools {udg, draw}                    which code-generating tools apply
  *   waitingText                          status while the program waits for keys
  *   tapeToText(bytes), ownsTape(bytes)   Open of a .tap
+ *   hasTape, hasCartridge, hasSession    which buttons apply (⬇ TAP; ⬇ DCK / ▶ Test DCK; Import)
  *   attach({rom, romImages, fetchAsset}) the per-ROM half: lint(), startRun(), describeResult(),
- *                                        progInfo(), exportTape(), buildCartridge() (optional)
+ *                                        progInfo(), exportTape(), buildCartridge() (optional);
+ *                                        for a live session (Forth) also keyWait(m) (called by
+ *                                        the emulator at every key wait), sessionStamp() (changes
+ *                                        when the session does: the editor is checked again) and
+ *                                        importSession(m) (the session's typed lines as text)
  */
 
 "use strict";

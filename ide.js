@@ -743,6 +743,7 @@ function showLanguageTools() {
   }
   document.getElementById('btn-dck').hidden = document.getElementById('btn-dck-test').hidden = !profile.hasCartridge;
   document.getElementById('btn-export').hidden = !profile.hasTape;
+  document.getElementById('btn-import-session').hidden = !profile.hasSession;
 }
 
 /**
@@ -873,6 +874,26 @@ for (const [id, op, keys] of [['btn-cut', 'cut', 'Ctrl+X'], ['btn-copy', 'copy',
 document.getElementById('btn-find').addEventListener('click', () => window.leapEditor?.find());
 document.getElementById('btn-tidy').addEventListener('click', () => window.leapEditor?.tidy());
 window.leapEditor?.onMessage(setStatus);
+
+/**
+ * Import session (Forth): the lines typed or sent at the live prompt, from
+ * the ROM's own line store, open as a new unsaved document.
+ */
+function importSession() {
+  if (!emulator || !lang?.importSession) return;
+  if (emulator.cartridge) { setStatus('A cartridge test is running: Stop (F6) goes back to the session first', 'error'); return; }
+  const out = lang.importSession(emulator.machine);
+  if (out.error) { setStatus(out.error, 'error'); return; }
+  if (!confirmDiscard()) return;
+  window.leapEditor.setSource(out.text, { fresh: true });
+  fileName = withExtension('session');
+  savedText = '';
+  autosaveNow();
+  refreshFileUi();
+  window.leapEditor.focus();
+  setStatus(`Imported the session: ${out.lines} line${out.lines === 1 ? '' : 's'} as a new document (not saved yet)`, 'idle');
+}
+document.getElementById('btn-import-session').addEventListener('click', importSession);
 
 document.getElementById('btn-reset-emu').addEventListener('click', () => {
   if (emulator) emulator.reset();

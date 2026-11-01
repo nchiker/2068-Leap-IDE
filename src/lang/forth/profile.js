@@ -204,6 +204,8 @@ const help = {
     'Sending stops at the first line that ends in an error; the line is marked in the editor. A word that waits for a key (KEY, ACCEPT) gets the keys you type in the screen; Stop (F6) or Escape is BREAK.',
     'Ctrl+Enter sends just the line at the cursor, or the lines you have selected, to the prompt.',
     'Reset gives a fresh Forth with an empty dictionary.',
+    'Import (above the screen) opens everything typed or sent at the prompt, the session\'s line store, as a new document, so work done at the prompt is not lost.',
+    'The editor checks the program as Forth would read it: a word that is neither a Forth word, nor defined above, nor in the session is marked, and so are unbalanced IF / DO / BEGIN and : ;.',
   ],
 };
 
@@ -228,6 +230,8 @@ export const forthProfile = {
   tools: { udg: false, draw: false },
   hasTape: false,
   hasCartridge: false,
+  /** A live session whose typed lines can be imported (attach().importSession). */
+  hasSession: true,
   readyText: 'OK prompt: type in the TS2068 screen, or Run (F5) sends the program',
   waitingText: 'Waiting for a key — click the screen to type',
   tapeToText() { throw new Error('Forth tapes are not read yet'); },
@@ -259,6 +263,26 @@ export const forthProfile = {
        * prompt, a Reset), so the IDE can check the editor again.
        */
       sessionStamp: () => sessionLatest,
+
+      /**
+       * Import session: the ROM's line store (STORE_START to STORE_END: every
+       * line typed or sent at the prompt, source only; command lines such as
+       * SAVE-TEXT are taken off it) as text. The store is RAM the EXROM never
+       * covers, so it can be read at any time.
+       * @returns {{text: string, lines: number} | {error: string}}
+       */
+      importSession(m) {
+        const end = read16(m, rom.storeEnd);
+        if (end < rom.storeStart || end > rom.storeLimit) return { error: 'The session\'s line store is damaged (STORE_END is outside it)' };
+        let text = '';
+        for (let a = rom.storeStart; a < end; a++) {
+          const b = m.bus.read(a);
+          text += b === 0x0D ? '\n' : String.fromCharCode(b);
+        }
+        if (text.length > 0 && !text.endsWith('\n')) text += '\n';
+        const lines = text.split('\n').length - 1;
+        return lines === 0 ? { error: 'The session is empty: nothing has been typed or sent since the last Reset' } : { text, lines };
+      },
 
       startRun(text) {
         const prepared = prepareSource(text);

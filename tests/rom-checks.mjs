@@ -395,6 +395,8 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     for (let a = from.storeStart; a < end; a++) text += String.fromCharCode(m.bus.read(a));
     same('the lines after the error were not sent', text.split('\r').filter(Boolean).pop(), 'FOO 2');
   }
+  same('Import session: the line store as text, what was sent in order',
+    (r => r.text.split('\n').slice(0, 3))(fl.importSession(m)), [': SQ ( n -- n*n ) DUP * ;', '7 SQ', 'DROP 12 SQ']);
   same('a THROW from inside a word: DIVISION BY ZERO (-42) on the line that called it',
     (r => [r.lastError, r.status.text])(send(': BAD 1.0 0.0 F/ ;\nBAD')), [-42, 'DIVISION BY ZERO (THROW -42) on line 2']);
   same('KEY waits at a key wait that is not the prompt', (r => [r.state, F.driver.canInject(m, from)])(send('KEY')), ['waiting', false]);
@@ -430,6 +432,7 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     if (r.state !== 'ended' || r.lastError !== 0) bad.push(`${ex.id}: ${r.state} ${r.status?.text ?? ''}`);
   }
   boot(); frun(fwait, 600); fl.keyWait(m);
+  same('Import session after a Reset: nothing to import', /empty/.test(fl.importSession(m).error), true);
   same('check: after a Reset the session\'s words are gone', fl.lint('5 SQ .').map(d => d.message.slice(0, 18)), ['UNDEFINED WORD: SQ']);
   same('check: every Examples-menu program is clean', FORTH_EXAMPLES.filter(e => checkForth(e.text).length > 0).map(e => e.id), []);
   same('check: use before definition, unbalanced IF, compile-only at the prompt, ; without :',
