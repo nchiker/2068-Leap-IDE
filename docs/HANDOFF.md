@@ -90,9 +90,9 @@ the plan).
 **Forth and Leap-C running (2026-11-01).** Forth F0 to F2 (`b9526ce`; the TSRun
 submodule is now at `11731e1`) and Leap-C C1 to C3 (`d0e437b`) are done; see
 CLAUDE.md "Leap-Forth" and "Leap-C". Next, Forth first (the owner's order): F3
-the static check, Import session, F5 tape, F4 debugger; F8 (cartridge) needs the
-owner's two choices (which word starts the program; editor text or the live
-session's dictionary). Then Leap-C: C5 tape, C6 libraries, C7 examples, C4
+the static check, Import session, F5 tape, F4 debugger; F8 (cartridge: the start word chosen
+at export; the editor's text built on a fresh hidden machine; owner,
+2026-11-01). Then Leap-C: C5 tape, C6 libraries, C7 examples, C4
 debugger, the move to 1.0 when it is released, and C9 when Leap-C has its
 `make cart` build.
 
@@ -110,8 +110,8 @@ and only its cartridge (C9) waits for Leap-C's own `make cart`, which is in
 progress. The order is **stage 0 (the language profile, now done) -> Forth -> Leap-C**
 (both unblocked; Forth first because its release, manual and cartridge are
 complete). Plans: `docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_FORTH_PLAN.md`,
-`LEAP_C_PLAN.md`. This entry changed documentation only; two owner choices remain
-for Forth's cartridge (which word starts the program, what goes on it; see F8).
+`LEAP_C_PLAN.md`. Forth's cartridge choices were made on 2026-11-01 (see F8 and the
+owner decisions below).
 
 ## Owner decisions (keep them)
 
@@ -133,6 +133,10 @@ for Forth's cartridge (which word starts the program, what goes on it; see F8).
   edits, Haiku for running tests (owner's request).
 - Publishing: the repo is public at https://github.com/nchiker/2068-Leap-IDE;
   pushes to `main` deploy to https://nchiker.github.io/2068-Leap-IDE/.
+- Forth cartridge (2026-11-01): the start word is chosen at export from the
+  program's words; the cartridge carries the editor's text, interpreted on a
+  fresh hidden machine, not the live session's dictionary.
+- Pushing to `main` (2026-11-01): approved for the multi-language work.
 
 ## How to resume
 

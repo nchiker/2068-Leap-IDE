@@ -537,20 +537,17 @@ project's "as built"); the build is hosted in the Forth repository as
 - **Import session (2026-10-31):** opens a new document.
 - **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked;
   Forth first because its release, manual and cartridge are complete).
+- **Cartridge start word (2026-11-01):** chosen at export, from a list of the
+  program's words (F8).
+- **What goes on the cartridge (2026-11-01):** the editor's text, interpreted
+  on a fresh hidden machine (reproducible, matches the file), not the live
+  session's dictionary (F8).
 
 ## Still open
 
 Nothing is open with the Forth project: all seven questions are answered
 ([`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md),
-[`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)). The
-hooks the IDE uses (`EDITOR_LOOP_LIVE.enter`, `.key_ret`, `LAST_ERROR`,
-`INTERPRET_NESTED.token`) were on the Forth branch `v2/step-ide-hooks` when
-answered; **check** that they are in the `v2.0` tag when writing
-`tools/forth-rom-entry.py` (the script fails if a label is missing).
-
-Owner choices for F8, two:
-
-1. **Which word starts the program** (fixed `MAIN` / last word / chosen at
-   export, recommended).
-2. **What goes on the cartridge** (editor text on a fresh hidden machine,
-   recommended / the live session's dictionary).
+[`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and the
+hooks the IDE uses are in the `v2.0` tag (`tools/forth-rom-entry.py` found
+them all). No owner choices are open: the two F8 choices were made on
+2026-11-01 (see "Owner decisions").

@@ -1587,9 +1587,9 @@ order; details in `docs/LEAP_FORTH_PLAN.md` and `docs/LEAP_C_PLAN.md`):
 - **Forth:** F3 the static check (a word neither a ROM word nor defined
   earlier, unclosed `:` or `IF`, and so on; `lint` reports only storage
   problems now); Import session (Send is done); F5 tape export and
-  Open; F4 the debugger (a Forth line table); F8 the cartridge, which needs the
-  owner's two choices first (which word starts the program; editor text or the
-  live session's dictionary).
+  Open; F4 the debugger (a Forth line table); F8 the cartridge (owner, 2026-11-01: the
+  start word chosen at export from the program's words; the editor's text
+  interpreted on a fresh hidden machine).
 - **Leap-C:** C5 tape export and Open; C6 libraries (`LIB "shapes"`); C7
   examples; C4 the debugger (line table; also the exit status in the status
   bar); move to the 1.0 release when it is out (regenerate the ROM entry and
