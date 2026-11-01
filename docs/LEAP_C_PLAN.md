@@ -1,18 +1,21 @@
 # Plan: Leap-C in the Leap IDE
 
-Status: updated 2026-11-01. **C1, C2 and C3 are done** (commit `d0e437b`,
-on `v1.0.0-beta.2`); C4 to C9 are open. Prerequisite (done, `3ed5d3b`):
+Status: updated 2026-11-01. **C1, C2, C3, C5, C6 and C7 are done** (C1 to C3
+`d0e437b`, on `v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6
+`4f30b82`; C7 `1050d7b`); C4, C8 and C9 are open. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Leap-C project has answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)).
 
-**Owner decision, 2026-11-01: Leap-C work proceeds now**, on the current build
-(`v1.0.0-beta.2`, which TSRun already carries); it does not wait for the 1.0
-release. (The earlier rule, "Leap-C work starts after 1.0", is lifted.) Every
-address comes from the `.sym` files, so moving to 1.0 later means
-regenerating the ROM entry and the keyword and error data at the 1.0 tag.
-Only **C9 (the cartridge) waits**, for Leap-C's own `make cart` build, which
-the Leap-C project is building now. Order: stage 0, then Forth and Leap-C,
+**Owner decision, 2026-11-01: Leap-C work proceeds now**, on the build then
+current (`v1.0.0-beta.2`, which TSRun already carried); it did not wait for the
+1.0 release. (The earlier rule, "Leap-C work starts after 1.0", is lifted.)
+Every address comes from the `.sym` files, so moving to 1.0 meant regenerating
+the ROM entry and the keyword and error data at the 1.0 tag, which was done
+when **Leap-C 1.0.0 was released the same day** (`ac0d00f`; TSRun pin
+`9f9bbc5`). Only **C9 (the cartridge) waits**, for Leap-C's own `make cart`
+build, which the Leap-C project is building now (in progress, uncommitted in
+`~/2068-Leap-C` `src/cart/`). Order: stage 0, then Forth and Leap-C,
 both unblocked; Forth first because its release, manual and cartridge are
 all complete (see `MULTI_LANGUAGE_PLAN.md`).
 
@@ -37,11 +40,10 @@ plan uses stable; a rename would be a breaking change, announced in its
 CHANGELOG). The few addresses quoted are from `v1.0.0-beta.2` and are
 examples only; the IDE's ROM entry takes every address from the `.sym`
 files. Two labels the answers rely on, `STMT_DO.cond` and
-`SH_WAIT_KEY.key_ret`, cost 0 bytes and are **not in the beta.2 tag's `.sym`
-files**: build the `.sym` files from the Leap-C commit that carries them (the
-ROM images stay byte-identical to beta.2's, so TSRun's pair still matches;
-**check** the hashes), or take them from 1.0, whose emulator pack ships
-`symbols/leapc_home.sym` and `leapc_exrom.sym`.
+`SH_WAIT_KEY.key_ret`, cost 0 bytes and were **not in the beta.2 tag's `.sym`
+files** (history: the beta.2 entry derives `key_ret`); the 1.0.0 emulator pack
+ships `symbols/leapc_home.sym` and `leapc_exrom.sym` with them, and the 1.0.0
+ROM entry takes them from there.
 
 ---
 
@@ -52,7 +54,7 @@ and the repository.
 
 | Item | Value | Source |
 |---|---|---|
-| Release (surveyed) | `v1.0.0-beta.2` (`b918527`); HOME `043becf4…`, EXROM `97fe9523…` = TSRun's `roms/leapc-*.rom` at the current pin. 1.0 is not out yet (owner: proceed anyway, 2026-11-01) | `build/SHA256SUMS` |
+| Release | `v1.0.0` (commit `83e6e21`), released 2026-11-01; HOME `d2b18eaa…`, EXROM `02790ebe…` = TSRun's `roms/leapc-*.rom` at the pin `9f9bbc5`; the table key is `c0f7f76f…`. The emulator pack `leapc-1.0.0-emulators.zip` has `roms/`, `symbols/`, `libs/` and `SHA256SUMS`. Surveyed first on `v1.0.0-beta.2` (`b918527`; HOME `043becf4…`, EXROM `97fe9523…`, the pair TSRun carried until `11731e1`; that entry is still in the table, `LEAPC_ROMS=` tests it) | `SHA256SUMS`; `git` |
 | Source line store | `[LE16 len+1][text][$0D]` per line, ASCII 32-126, max 127 chars (V2's format). An empty line is never stored (`SH_REENTER`); a line of spaces is. Lines are counted from 1 over **stored** lines, so `CC_ERRLINE` and every `TOK_LINE` do too: the IDE drops empty lines and keeps a map, as for V2 | `spec.md`, `tools/c2src.py`; A Q4.1 |
 | Source region | `PROG_AREA_START` up to the code region limit; cells `PROG_END`, `ARRAYS_END`, `VARS_START`, `CUR_EDIT_INDEX` (the append line) | `.sym`, `tools/lcharness.py` |
 | Compiler | `CC_PROGRAM` must run with the EXROM paged out; `SH_COMPILE` is the trampoline (page out, compile, page in; carry = error) | `.sym` |
@@ -76,7 +78,7 @@ and the repository.
 | UDGs | Codes 144-164 at `UDG_TABLE`, 8 bytes each, as in V2; a program writes them through a pointer (manual Part 7, example 13) | A Q4.5 |
 | Waiting library calls | `getkey()` and `gets()` wait in `IO_READ_KEY.wait_hit`; `inkey()` never waits; `pause(n)` in `AY_WAIT_FRAMES`; `beep`, `sound` in the EXROM's `AY_BEEP_PLAY`; `tape_save` / `tape_load` in the block I/O. There is no `getchar` | A Q3 |
 | Manual | `03_keywords.md` (58 `##` entries), `04_library.md` (52), `06_libraries.md` (7), `07_examples.md` (18), `08_appendices.md` (A reports, B compile errors, C run-time errors, H index) | `docs/manual/` |
-| `.sym` files | In the 1.0 emulator pack (`symbols/leapc_home.sym`, `leapc_exrom.sym`, in its `SHA256SUMS`). Before 1.0: `make repro` rebuilds the images byte for byte, and the local `build/` has the `.sym` files | A Q4.7; Makefile |
+| `.sym` files | In the 1.0 emulator pack (`symbols/leapc_home.sym`, `leapc_exrom.sym`, in its `SHA256SUMS`); the 1.0.0 ROM entry is built from them. Before 1.0 (beta.2): `make repro` rebuilt the images byte for byte, and a local `build/` had the `.sym` files | A Q4.7; Makefile |
 
 ## Stages
 
@@ -89,7 +91,10 @@ entry (`src/lang/c/leapc-roms.js`) was made from the tag built in a detached
 worktree of `~/2068-Leap-C` (the release has no `.sym`; the worktree was
 removed afterwards). `SH_WAIT_KEY.key_ret` does not exist in beta.2 (0 bytes
 when added later), so it is derived as `SH_WAIT_KEY.read + 3` after checking
-the CALL. Run is the shell path as described below. **Deviation:** Stop is
+the CALL; the **1.0.0 entry** (`ac0d00f`) was made from the release's emulator
+pack, whose `.sym` files have the label (flatten `roms/`, `symbols/` and their
+`SHA256SUMS` lines into one directory for the script), and the beta.2 entry
+stays in the table. Run is the shell path as described below. **Deviation:** Stop is
 BREAK let go after `driver.breakHold` (5) frames, because Leap-C's report waits
 for all keys to be released (the emulator now honours `breakHold`). **Not
 done:** the exit status in the status bar.
@@ -101,9 +106,9 @@ done:** the exit status in the status bar.
   and cell the C profile uses, nothing copied by hand). Like V2's script, it
   checks the bytes of the key-wait loop and fails if a label the plan uses is
   missing (`STMT_DO.cond`, `SH_WAIT_KEY.key_ret`).
-- TSRun already carries the beta.2 pair at the current pin (`leapc-*.rom`,
-  byte-identical); no submodule move is needed to start. When 1.0 is out,
-  move the pin to a commit with the 1.0 ROMs and regenerate the entry.
+- TSRun carried the beta.2 pair (`leapc-*.rom`, byte-identical), so no
+  submodule move was needed to start. For 1.0.0 the pin moved to `9f9bbc5`
+  (done, `ac0d00f`; only the Leap-C ROMs and the READMEs changed).
 - `prepare(text)`: V2's `encodeLineStore` and its checks unchanged (same
   format, same 127 limit), against the Leap-C pool (`PROG_AREA_START` up to
   the code region). Empty lines are dropped and a map kept, as for V2; a line
@@ -155,8 +160,10 @@ done:** the exit status in the status bar.
 ### C2 — The C editor
 
 **Done (`d0e437b`)**: `src/lang/c/editor.js` and `leapc-scan.js`.
-**Deviation:** the keyword data comes from the manual on Leap-C `main` at
-`83e6e21` (the beta.2 tag has no manual); regenerate it at the 1.0 tag. The
+**Deviation (history):** the keyword data came from the manual on Leap-C `main`
+at `83e6e21` (the beta.2 tag has no manual); it was regenerated at `v1.0.0`
+with `ac0d00f` (same content, which is the commit the tag points to; the
+script now sets `LEAPC_MANUAL_REF` to the tag name for a tag). The
 error text comes from `include/leapc_errors.inc` at the tag. `//` and `/* */`
 comments, no auto-caps, folding, Tidy, go to definition and rename of
 file-scope names are in; the names are not yet cross-checked against
@@ -201,7 +208,8 @@ file-scope names are in; the names are not yet cross-checked against
 **Done (`d0e437b`)**: `src/lang/c/leapc-check.js` calls `SH_COMPILE` (the
 shell's trampoline) rather than `CC_PROGRAM` directly, and the underline starts
 at the error's token (column as `SH_RUN` computes `SH_ERR_COL`: `TOK_PTR` less
-the line start). **Not done:** a library program (needs C6).
+the line start). A library program is checked with its library installed
+first (C6, `4f30b82`).
 
 - A hidden second machine, as for BASIC: boot once to the key wait, snapshot;
   per check restore, write the store, page the EXROM out, call `CC_PROGRAM`
@@ -270,6 +278,20 @@ Leap-specific parts need new readers.
 
 ### C5 — Tape export and Open
 
+**Done (`94700cf`).** The C profile has `hasTape`, `exportTape`, `tapeToText`
+and `ownsTape`. It reuses `buildTAP` and `encodeLineStore` (format word `$8C00`,
+the ROM entry's `tapeFormatWord`) instead of porting `tools/c2tape.py`;
+`tapeToText(bytes, {accepts, language})` in `src/files.js` takes the accepted
+format word, so Leap V2 (`$81xx`) and Leap-C tapes refuse each other's. Status:
+`Saved X.tap: on the TS2068, LOAD "X" then RUN`, with `LIB "shapes", then `
+first for a program that uses the library (C6). Verified in Node against the
+1.0.0 ROM: `SH_SAVE` (the shell's `SAVE "demo"`, the block sender replaced by a
+stand-in; `LEAPC_TAPE_SYMBOLS` in the tests) sends exactly the IDE's tape, and
+`SH_LOAD` of the IDE's tape restores the line store and `PROG_END`. Outside the
+tests, all 44 program tapes of the 1.0.0 release open and re-export byte for
+byte. The check prints SKIP for a ROM without a `LEAPC_TAPE_SYMBOLS` entry
+(beta.2).
+
 - `exportTape`: port `tools/c2tape.py` (header type 0, `$8C00`, line store as
   data). Verify byte for byte against the ROM's own `SAVE` in Node (as the V2
   TAP check does), and that `LOAD` reads it back.
@@ -279,6 +301,19 @@ Leap-specific parts need new readers.
 - DCK: stage C9.
 
 ### C6 — Libraries
+
+**Done (`4f30b82`).** `libs/c/1.0.0/shapes.bin` (438 bytes, SHA-256
+`c4c145cd…`, README) is the data block of the release's `libs/shapes.tap`,
+unchanged. `librariesUsed(text, functions)` in `leapc-scan.js` (named
+`extensionsUsed` below in the plan) finds calls of a library function that the
+program does not define itself (the names and libraries come from the
+generated keyword data); the profile fetches `libs/c/<version>/<name>.bin` at
+attach and, for every check and Run, installs the library (image at `LX_BASE`
+`$F400`, `LIB_LOADED` set) or unloads it (`LIB_LOADED` 0). One library at a
+time: a second is an error on its line. A release without images says the
+library is not available. Tests: `circle()` draws, `isqrt`, the next run
+unloads it, a program's own `circle()` loads nothing, the tape message; skipped
+for a release without `libs/c/<version>/`.
 
 - Copy the library images (`shapes.bin`, …) to `libs/c/<version>/`, checked
   against `build/libs/SHA256SUMS` (beta.2) or the release's `SHA256SUMS`
@@ -293,6 +328,18 @@ Leap-specific parts need new readers.
   or unloads it explicitly for every run and check.
 
 ### C7 — Examples and corpus test
+
+**Done (`1050d7b`).** `tools/gen-leapc-examples.py ~/2068-Leap-C v1.0.0 >
+src/lang/c/examples.js` makes the Examples menu from `07_examples.md`: all 18
+programs, each with its directives (`// expect: exit N`, `// screen:`,
+`// pixel:`, `// keys:`, `// library:`) taken out of the text as data (`exit`,
+`screen`, `pixels`, `keys`, `library`, `tape`). `tests/rom-checks.mjs` runs the
+15 programs without keys or a tape through the IDE's run path and compares the
+exit status (HL at `RT_RUN.done`), the screen text (glyphs learnt by printing
+ASCII 32 to 126) and the pixels, both as at `RT_RUN.done` (before the report on
+row 23): all 15 match, and all 18 check clean. **Not yet:** the programs with
+`keys` and the tape one are not driven in the tests; the corpus is the
+manual's 18, not a larger set.
 
 - Examples menu: a selection from `07_examples.md` (18 programs).
 - Corpus test in `tests/rom-checks.mjs`: every manual example with
@@ -384,24 +431,33 @@ roadmap step after 1.0); the other stages do not wait.
 
 ## Tests
 
-- `tests/rom-checks.mjs`: a Leap-C section for each of C1 to C7.
+- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C3, C5 to C7); C4's and C9's are to come.
 - `tests/browser-smoke.mjs`: switch to C, run hello world, a compile error
-  with the column underline, completion of a library function, tape export,
-  switch back.
+  with the column underline, completion of a library function, tape export
+  (done: ⬇ TAP, then Open from BASIC switches to Leap-C), a shapes program
+  running with its library (done), the Examples menu (done: 18 programs,
+  Fibonacci runs), switch back.
 
 ## Adding a Leap-C release
 
-As for V2: build the tag in a detached worktree, compare with the release
-zip, run `tools/leapc-rom-entry.py`, regenerate the keyword and error data at
-the tag, copy the library images, move TSRun to a commit with the new ROMs,
-run both test suites. This is also the step from beta.2 to 1.0: nothing in the
-IDE should change beyond the generated data (the names are stable).
+As for V2, but from the release's emulator pack (it has the ROMs, the `.sym`
+files, the library tapes and `SHA256SUMS`): flatten `roms/`, `symbols/` and the
+`SHA256SUMS` lines into one directory and run `tools/leapc-rom-entry.py <dir>
+<version>`; regenerate the keyword, error and example data at the tag
+(`gen-leapc-keywords.py`, `gen-leapc-errors.py`, `gen-leapc-examples.py`); copy
+the library images to `libs/c/<version>/` (the data block of each `libs/*.tap`,
+checked against `SHA256SUMS`); move TSRun to a commit with the new ROMs; add the
+release's `LEAPC_TAPE_SYMBOLS` to `tests/rom-checks.mjs`; run both test suites
+(`LEAPC_ROMS=<dir>` for another ROM pair). The step from beta.2 to 1.0.0
+(`ac0d00f`) changed nothing in the IDE beyond the generated data and the entry
+(the names are stable).
 
 ## Owner decisions
 
-- **Release (2026-11-01):** Leap-C proceeds now on `v1.0.0-beta.2`, without
-  waiting for 1.0 (this replaces 2026-10-31's "after 1.0"). Moving to 1.0
-  later is regenerating the ROM entry and data.
+- **Release (2026-11-01):** Leap-C proceeded on `v1.0.0-beta.2`, without
+  waiting for 1.0 (this replaced 2026-10-31's "after 1.0"); 1.0.0 was released
+  the same day and the IDE moved to it (`ac0d00f`: the ROM entry and the
+  generated data, as planned).
 - **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked);
   Forth first because its release, manual and cartridge are complete.
 - **Cartridge (2026-10-31):** Leap-C gets a runtime cartridge build (C9),
@@ -415,10 +471,15 @@ Nothing is open with the Leap-C project except its cartridge build:
 [`requests/LEAP_C_QUESTIONS.md`](requests/LEAP_C_QUESTIONS.md) is answered
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)); the line-table
 points make a compile-time hook unnecessary (the earlier Q1.4 request is
-withdrawn).
+withdrawn). Leap-C 1.0.0 is out and adopted, and its `.sym` files (with
+`STMT_DO.cond` and `SH_WAIT_KEY.key_ret`) are in the emulator pack, so the
+earlier question about the commit that carries them is closed.
 
-1. **The commit that carries `STMT_DO.cond` and `SH_WAIT_KEY.key_ret`** (not
-   in the beta.2 tag): ask which commit or when 1.0 is tagged, to build the
-   `.sym` files from (C1).
-2. **The cartridge build** (C9): its program image signature and format, the
-   identity value and the DOCK layout, once `make cart` exists.
+1. **The cartridge build** (C9): its program image signature and format, the
+   identity value and the DOCK layout, once `make cart` exists (in progress in
+   the Leap-C project, uncommitted in `~/2068-Leap-C` `src/cart/`; the owner has
+   still to approve their M12 plan).
+
+For the IDE: C4 (the debugger, with the exit status in the status bar), C8
+(tools, optional), C9, and driving the key-reading and tape examples in the
+tests.

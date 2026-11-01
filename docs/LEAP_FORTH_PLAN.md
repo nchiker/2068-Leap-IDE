@@ -1,9 +1,9 @@
 # Plan: Leap-Forth in the Leap IDE
 
-Status: updated 2026-11-01. **F0 and F2 are done, F1 is done except Import
-session and watches, and the Examples part of F6 is done** (commit `b9526ce`;
-Send, Ctrl+Enter, came after it). Open: F3, F4, F5, F7, F8 and the rest of
-F1 and F6. Prerequisite (done, `3ed5d3b`):
+Status: updated 2026-11-01. **F0, F1, F2, F3 and F5 are done** (F0 to F2
+`b9526ce`, Send, Ctrl+Enter, after it; F3 `a3869d4`; Import session `89a6d48`,
+the last part of F1; F5 `6103f66`), and so is the Examples part of F6. Open:
+F4, F7, F8, the optional watches of F1 and the rest of F6. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Forth project has answered the IDE's questions
 ([`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and
@@ -51,7 +51,7 @@ and the release bundle.
 |---|---|---|
 | Release | `v2.0`, 2026-11-01, commit `50170f2`; version text "2068 FORTH V2.0" (`FORTH_VERSION_TEXT`, also on the status bar at power-on). Earlier: `v0.1.0` | GitHub release; A Q6.6 |
 | Release zip | `roms/forth_boot_rom0.bin` (HOME, 16K, SHA-256 `730c86d0…`), `roms/graphics_exrom.bin` (EXROM, 8K, `fd877dd0…`), `roms/forth_cart.dck` (the cartridge with no program), `symbols/forth_boot.sym`, `graphics_exrom.sym` and the `.lst` files, `docs/manual/01…08`, `demos/blackjack.fs`, `gallery.fs`, `SHA256SUMS` | the release |
-| TSRun | The fork's `main`, commit `11731e1`, carries exactly the v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom` (Leap V2 and Leap-C ROMs unchanged). The IDE's submodule was at `016787f`, whose Forth pair (`760a5ce3…` / `2add175c…`) was an older build; F0 moved it to `11731e1` (done, `b9526ce`) | TSRun; `git` |
+| TSRun | The fork's `main`, commit `11731e1`, carries exactly the v2.0 ROMs as `roms/leapforth-0.rom` / `leapforth-1.rom` (Leap V2 and Leap-C ROMs unchanged). The IDE's submodule was at `016787f`, whose Forth pair (`760a5ce3…` / `2add175c…`) was an older build; F0 moved it to `11731e1` (done, `b9526ce`). It has since moved on to `9f9bbc5` (Leap-C 1.0.0 ROMs; the Forth pair is unchanged) | TSRun; `git` |
 | Without the EXROM | `EDIT`, `FILL`, `CIRCLE`, `RECT`, `POLYGON`, sprites say `NO EXROM` | README |
 | Console | `EDITOR_LOOP_LIVE` handles one typed line. Entry points the IDE uses: `EDITOR_LOOP_LIVE.enter` (what ENTER does) and `EDITOR_LOOP_LIVE.key_ret` (the return address of the prompt's key wait). Input line: `EDIT_BUF` (128 bytes, `EDIT_MAX_LEN`), `EDIT_LEN`, `EDIT_CURSOR` (the byte after `EDIT_LEN`) | A Q1, Q3 |
 | Line store | CR-ended plain text from `STORE_START` to `STORE_END` (cells; 8,192 bytes at most). `STORE_APPEND` adds a line (empty lines are not stored). Command lines (`SAVE-TEXT`, `LOAD-TEXT`, `EDIT` …) are taken off it, so it holds source only | A Q1 |
@@ -141,14 +141,20 @@ copying `forth_cart.dck` to `cartridge/forth/2.0/` (that is F8).
 
 ### F1 — The live session: keys, Send, Run, Reset
 
-**Done (`b9526ce`) except Import session and the optional watches**: keys
+**Done (`b9526ce`; Import session `89a6d48`), except the optional watches**: keys
 always pass (`keyboard.always`), Run sends line by line (`driver.inject` /
 `next`, `canInject`), the failing token is marked from `SRC_PTR`, Stop is
 BREAK held 5 frames (`breakHold`), Reset is TSRun's. **Deviation:** Run stops
 at the first line whose `LAST_ERROR` is not 0 and sends nothing after it.
 **Send** (Ctrl+Enter / Cmd+Enter: the cursor's line or the selection's whole
 lines) was added after the commit (`getSendText` / `onSend` in
-`src/editor.js`, `sendSelection` in `ide.js`). **Not done:** Import session.
+`src/editor.js`, `sendSelection` in `ide.js`). **Import session** is done too
+(`89a6d48`): the "Import" button in the emulator panel header
+(`#btn-import-session`, shown for a profile with `hasSession`) calls
+`attach().importSession(m)`, which reads `STORE_START` to `STORE_END` as text
+(CR becomes a newline) and `ide.js` opens it as a new unsaved `session.fs`
+after the usual "discard changes?"; an empty session or a `STORE_END` outside
+the store gives a message.
 
 - **Keyboard:** in Forth the screen passes keys through whenever it has focus
   (the profile switches off the "only while a program runs" gate of the BASIC
@@ -225,7 +231,7 @@ lines) was added after the commit (`getSendText` / `onSend` in
   nothing to stop (BREAK is a key there). `SPRITE-*` and `HIRES` / `NORMAL`
   finish before they stop.
 - Reset: TSRun reset and boot to the prompt.
-- Import session: read `STORE_START` to `STORE_END` back as text.
+- Import session: read `STORE_START` to `STORE_END` back as text (done).
 - Node checks: send definitions then a call printing a result; send twice
   (words accumulate); an undefined word with its editor line and column; a
   THROW (division by zero) with its line; a run stopping at the first error;
@@ -295,6 +301,26 @@ headers in the `.sym` files (the count, 184, does match).
   words, snippets for `: name ;`, `IF THEN`, `DO LOOP`, `BEGIN UNTIL`.
 
 ### F3 — Error checking (static)
+
+**Done (`a3869d4`)**: `src/lang/forth/forth-check.js` (`checkForth`,
+`readSessionWords`, `numberInRange`; pure, Node imports it) over
+`forth-scan.js`, whose `lineTokens(line, ctx)` now follows the interpreter's
+state across lines (`scanContext()`: inside `: … ;` or `[ … ]` a defining word
+reads no name; a word whose definition uses `CREATE` and the like defines the
+name after it). Everything in the list below is checked, with the ROM's
+wording (the unknown word reads `UNDEFINED WORD: X …`). **Deviations and
+details:** the check is **advisory**: Run does not refuse a program it flags.
+A `(` comment not closed on its line is a **warning** (diagnostics may carry a
+`severity`; the rest of the line is the comment, but it does not continue),
+a `."` or `S"` string not closed on its line is an error. The session's words
+are read from the dictionary (`LATEST` down to `FORTH_DICT_RAM`, headers
+`LINK(2) LENFLAGS(1) NAME`, the name's length in bits 0 to 4) at the prompt's
+key wait: `emulator.onKeyWait(fn)` (called by the frame loop at every key wait
+of the language's own ROMs), wired in `ide.js` to `attach().keyWait(m)`, which
+reads again only when `LATEST` changed; `sessionStamp()` (`LATEST`) is polled
+with the debugger refresh interval and the editor is checked again when it
+changes (a word typed at the prompt, a Reset). The "optional hidden-machine
+check" below was not built.
 
 The hidden-machine trick does not transfer cleanly: checking a Forth program
 means running it (top-level code executes, may loop forever or draw). So the
@@ -369,6 +395,18 @@ sections:
 
 ### F5 — Tape export and Open
 
+**Done (`6103f66`)**: `src/lang/forth/tape.js` (`buildForthTap`,
+`forthTapeToText`, `isForthTape`, `textStore`, `LOAD_TEXT_MAX`,
+`FORTH_TEXT_WORD` `$8000`), the profile's `hasTape`, `exportTape` and
+`ownsTape` (Open switches to Forth; Leap V2 `$81xx` and Forth `$8000` tapes
+are told apart, as are Leap-C's `$8C00`). Verified in Node: the tape is
+byte-identical to the ROM's own `SAVE-TEXT` after the same lines were sent
+(the block sender a stand-in; `FORTH_TAPE_SYMBOLS` in the tests holds
+`STORAGE_SEND_BLOCK` `$09CE` and `STORAGE_RECEIVE_BLOCK` `$0A5D` for 2.0), and
+the ROM's `LOAD-TEXT` reads it back and defines the words. The tape name is
+upper-cased and has no spaces; at most 8 KB (`LOAD-TEXT`'s room). The LIB tape
+below is still not done.
+
 - `exportTape`: a TEXT tape (header type 0, parameter 1 `$8000`, parameter 2 =
   length; data = the source with CR line ends and no console line), as
   `tools/tape_gen_forth.py` writes. Verify against the ROM's `SAVE-TEXT` in
@@ -376,7 +414,7 @@ sections:
   program must not rely on lines that do not work line by line (F1). Status:
   `Saved X.tap: on the TS2068, LOAD-TEXT X`.
 - Open `.tap`: recognise a Forth TEXT tape (type 0, parameter 1 `$8000`) and
-  read the text back; switch to Forth.
+  read the text back; switch to Forth (done).
 - Later, optional: a LIB tape (compiled dictionary, `SAVE-LIB` format, tied to
   `ROM_IDENTITY`) captured from the live session. The cartridge (F8) reuses
   its format.
@@ -518,10 +556,14 @@ project's "as built"); the build is hosted in the Forth repository as
 ## Tests
 
 - `tests/rom-checks.mjs`: a Forth section for each of F1 to F6, and F8's
-  cartridge checks.
+  cartridge checks. Section 8 has F1, F3 (session words, a Reset, every
+  example clean, the error and warning cases), Import session and F5 (the tape
+  against `SAVE-TEXT`, `LOAD-TEXT` reading it back); F4 and F8 are to come.
 - `tests/browser-smoke.mjs`: switch to Forth, Run a definition and a call,
-  Send one line, an undefined-word error on its line, type a word at the
-  prompt and see its output, Import session, Reset, tape export, switch back.
+  Send one line, an undefined-word error on its line (done for the check: an
+  undefined word marked, a session word known), type a word at the
+  prompt and see its output, Import session (done), Reset, tape export and
+  Open (done), switch back.
 
 ## Owner decisions
 
@@ -534,7 +576,7 @@ project's "as built"); the build is hosted in the Forth repository as
 - **Auto-caps (2026-10-31):** whatever is easier, so none.
 - **Cartridge (2026-10-31):** Forth gets a runtime cartridge build (F8); it is
   built. After the start word, the `OK` prompt.
-- **Import session (2026-10-31):** opens a new document.
+- **Import session (2026-10-31):** opens a new document (done, `89a6d48`).
 - **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked;
   Forth first because its release, manual and cartridge are complete).
 - **Cartridge start word (2026-11-01):** chosen at export, from a list of the
@@ -545,7 +587,9 @@ project's "as built"); the build is hosted in the Forth repository as
 
 ## Still open
 
-Nothing is open with the Forth project: all seven questions are answered
+For the IDE: F4 (the debugger), F8 (the cartridge), F7 (tools, optional), the
+optional watches of F1, and from F6 the `\ expect:` output and `\ keys:`
+lines of the examples and `demos/gallery.fs`. Nothing is open with the Forth project: all seven questions are answered
 ([`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md),
 [`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and the
 hooks the IDE uses are in the `v2.0` tag (`tools/forth-rom-entry.py` found
