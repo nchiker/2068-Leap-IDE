@@ -459,6 +459,10 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
   check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
+  // C6: a program calling circle() runs with LIB "shapes" loaded by the IDE.
+  const cLib = await runProgram(['int main(void)', '{', '    cls();', '    circle(128, 96, 20);', '    return 0;', '}'], /Finished|error|Stopped/);
+  const cLibPixel = await evaluate('(leapIDE.emulator.machine.bus.read(0x4000 | (96 & 0xC0) << 5 | (96 & 7) << 8 | (96 & 0x38) << 2 | (148 >> 3)) >> (7 - (148 & 7))) & 1');
+  check('Leap-C: a shapes program (circle) runs with the library loaded', cLib === 'Finished' && cLibPixel === 1, `${cLib} | ${cLibPixel}`);
   // C5: ⬇ TAP saves the program as Leap-C's SAVE does; opening that tape from BASIC switches to Leap-C.
   const cSrc = 'int main(void)\n{\n    return 7;\n}\n';
   await evaluate(`(window.smokeLastFile = null, window.prompt = () => 'ctape', leapEditor.setSource(${JSON.stringify(cSrc)}, {fresh: true}), document.getElementById('btn-export').click())`);

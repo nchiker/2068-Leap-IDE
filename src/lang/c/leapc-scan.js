@@ -115,3 +115,23 @@ export function blockStructure(lines) {
   });
   return { blocks, depth, dedent };
 }
+
+/**
+ * The libraries a program calls (LIB "name"): calls of a library function
+ * (`circle(`, … from the manual's Part 6) that the program does not define
+ * itself, in order of first use.
+ * @param {string} text
+ * @param {Map<string, string>} functions  library function -> library name
+ * @returns {{library: string, fn: string, line: number}[]}  one per library, 1-based line of its first call
+ */
+export function librariesUsed(text, functions) {
+  const own = new Set(scanC(text).functions.map(f => f.name));
+  const seen = new Map();
+  blankOut(text).split('\n').forEach((line, i) => {
+    for (const m of line.matchAll(/\b([A-Za-z_]\w*)\s*\(/g)) {
+      const library = functions.get(m[1]);
+      if (library && !own.has(m[1]) && !seen.has(library)) seen.set(library, { library, fn: m[1], line: i + 1 });
+    }
+  });
+  return [...seen.values()];
+}

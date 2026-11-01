@@ -22,7 +22,7 @@
 
 "use strict";
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
@@ -542,7 +542,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
   const cexrom = new Uint8Array(readFileSync(join(cdir, 'leapc-1.rom')));
   const crom = P.knownRoms[await romPairHash(chome, cexrom)] ?? null;
   check('Leap-C ROM pair is in src/lang/c/leapc-roms.js', !!crom, crom ? crom.version : 'unknown: tools/leapc-rom-entry.py');
-  const cl = await P.attach({ rom: crom, romImages: { home: chome, exrom: cexrom } });
+  const cl = await P.attach({ rom: crom, romImages: { home: chome, exrom: cexrom }, fetchAsset: async p => new Uint8Array(readFileSync(join(ROOT, p))) });
   const main = body => `int main(void)\n{\n${body}\n}`;
 
   same('checker: a clean program', cl.lint(main('    printf("HI");\n    return 0;')), []);
@@ -593,6 +593,24 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       [back, cl.describeResult(P.driver.result(m, crom), [0, 1, 2, 3, 4], null, null).text], [true, 'Stopped (BREAK) in the function on line 1']);
   }
   same('a run started from the last report runs', cRun(main('    return 0;')).text, 'Finished');
+
+  // C6: libraries. A program that calls circle() / isqrt() gets LIB "shapes" installed for its check and run.
+  if (!existsSync(join(ROOT, 'libs/c', crom.version, 'shapes.bin'))) {
+    console.log(`SKIP  Leap-C libraries — no libs/c/${crom.version}/ (copy the release's library images there)`);
+  } else {
+    const pixel = (x, y) => (m.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (x >> 3)) >> (7 - (x & 7))) & 1;
+    const shapes = main('    cls();\n    circle(128, 96, 20);\n    return isqrt(150);');
+    same('library: a shapes program checks clean (the library is loaded for the check)', cl.lint(shapes), []);
+    same('library: without it the compiler does not know circle()', cl.lint(main('    cls();\n    circleX(1, 2, 3);\n    return 0;')).length, 1);
+    same('library: a shapes program runs: circle() draws',
+      [cRun(shapes).text, pixel(148, 96), pixel(108, 96), pixel(128, 76), pixel(128, 96), m.bus.read(crom.libLoaded)],
+      ['Finished', 1, 1, 1, 0, crom.libBase >> 8]);
+    same('library: the next run without it unloads it (LIB_LOADED 0)', [cRun(main('    return 0;')).text, m.bus.read(crom.libLoaded)], ['Finished', 0]);
+    same('library: a program defining its own circle() does not load it',
+      [cl.startRun('int circle(int a, int b, int c)\n{\n    return a;\n}\nint main(void)\n{\n    return circle(1, 2, 3);\n}').job.lib, cl.lint('int circle(int a, int b, int c)\n{\n    return a;\n}\nint main(void)\n{\n    return circle(1, 2, 3);\n}')],
+      [null, []]);
+    same('library: ⬇ TAP names LIB "shapes" first', cl.exportTape(shapes, 'circ').message, 'Saved circ.tap: on the TS2068, LIB "shapes", then LOAD "circ" then RUN');
+  }
 
   // C5: tapes. SH_SAVE / SH_LOAD (the shell's SAVE "name" / LOAD "name") called at the
   // report's key wait with the block routines replaced by stand-ins, as for V2 and Forth.

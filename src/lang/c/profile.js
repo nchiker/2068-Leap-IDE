@@ -28,12 +28,18 @@ import { LEAPC_COMPILE_ERRORS, LEAPC_RUNTIME_ERRORS } from './leapc-errors.js';
 import { LEAPC_KEYWORD_ENTRIES, LEAPC_MANUAL_REF } from './leapc-keywords.js';
 import { encodeLineStore } from '../basic/profile.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
-import { scanC } from './leapc-scan.js';
+import { scanC, librariesUsed } from './leapc-scan.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
 import { tapeToText } from '../../files.js';
 
 /** Leap-C's tape format word (LEAPC_TAPE_VERSION), in the header's autostart field. */
 const LEAPC_TAPE_WORD = 0x8C00;
+/** Library function -> its library (LIB "name"), from the manual's Part 6. */
+const LIBRARY_FUNCTIONS = new Map(Object.entries(LEAPC_KEYWORD_ENTRIES)
+  .filter(([, e]) => e.library).map(([name, e]) => [name, e.library]));
+/** The libraries, by name. */
+export const LEAPC_LIBRARIES = [...new Set(LIBRARY_FUNCTIONS.values())];
+
 const readCTape = bytes => tapeToText(bytes, { accepts: w => w === LEAPC_TAPE_WORD, language: 'Leap-C' });
 
 const MAX_LINE_CHARS = 127;   // the editor's line, as V2's
@@ -90,8 +96,12 @@ const driver = {
   runState: (m, rom) => (m.bus.read(rom.running) !== 0 ? 'waiting' : 'ended'),
   /** Only the shell's key waits (the editor's, the report's) are a place to start a run. */
   canInject: (m, rom) => m.bus.read(rom.running) === 0,
-  inject(m, rom, { store, lineCount }) {
+  inject(m, rom, { store, lineCount, lib = null }) {
     for (let i = 0; i < store.length; i++) m.bus.write(rom.progAreaStart + i, store[i]);
+    // A library stays loaded between runs (by design), so every run installs
+    // the one the program uses, as LIB "name" does, or unloads it, as LIB does.
+    if (lib) for (let i = 0; i < lib.length; i++) m.bus.write(rom.libBase + i, lib[i]);
+    m.bus.write(rom.libLoaded, lib ? rom.libBase >> 8 : 0);
     poke16(m, rom.progEnd, rom.progAreaStart + store.length);
     poke16(m, rom.arraysEnd, rom.progAreaStart + store.length);
     poke16(m, rom.curEditIndex, lineCount);
@@ -164,6 +174,8 @@ const help = {
   tips: [
     'Leap-C compiles the program on every Run, as typing RUN does; the report (EXIT n, an error and its line) appears at the bottom of the TS2068 screen. Errors are underlined about half a second after you stop typing: they come from the Leap-C ROM\'s own compiler.',
     'While a program runs, click the TS2068 screen to type into it (getkey, gets). Keys work as labelled on your keyboard, including [ ] { } | ~ ^ \\.',
+    'A program that calls a library function (circle, box, isqrt: the shapes library) gets the library loaded for its check and Run, as LIB "shapes" does on the TS2068. One library at a time.',
+    '⬇ TAP saves the program as Leap-C\'s SAVE does: on the TS2068, LOAD "name" then RUN. Open reads a Leap-C tape back.',
   ],
 };
 
@@ -196,8 +208,38 @@ export const leapcProfile = {
     try { readCTape(bytes); return true; } catch { return false; }
   },
 
-  async attach({ rom, romImages }) {
+  /**
+   * @param {{rom: object, romImages: object, fetchAsset?: (path: string) => Promise<Uint8Array>}} opts
+   *   fetchAsset loads the library images (libs/c/<version>/<name>.bin)
+   */
+  async attach({ rom, romImages, fetchAsset = null }) {
     const checker = createChecker(rom, romImages);
+    const libImages = new Map();         // library name -> image
+    if (fetchAsset) {
+      await Promise.all(LEAPC_LIBRARIES.map(async name => {
+        try {
+          libImages.set(name, await fetchAsset(`libs/c/${rom.version}/${name}.bin`));
+        } catch { /* reported when a program needs it */ }
+      }));
+    }
+
+    /**
+     * The library a program needs (one at a time, as LIB "name" replaces the
+     * one before). problem.line is 1-based in the editor text.
+     * @returns {{name: string|null, image: Uint8Array|null, problem: {line: number, message: string}|null}}
+     */
+    function libraryFor(text) {
+      const used = librariesUsed(text, LIBRARY_FUNCTIONS);
+      if (used.length === 0) return { name: null, image: null, problem: null };
+      if (used.length > 1) {
+        return { name: null, image: null, problem: { line: used[1].line,
+          message: `Leap-C loads one library at a time: this program uses ${used[0].library} (${used[0].fn}, line ${used[0].line}) and ${used[1].library} (${used[1].fn})` } };
+      }
+      const [{ library, line }] = used;
+      const image = libImages.get(library) ?? null;
+      return image ? { name: library, image, problem: null }
+        : { name: library, image: null, problem: { line, message: `The ${library} library is not available for Leap-C ${rom.version} (libs/c/${rom.version}/${library}.bin)` } };
+    }
     const room = rom.progAreaMax - rom.progAreaStart;
     const tooBig = store => store.length > room ? `Program is ${store.length} bytes; the Leap-C source area holds ${room}` : null;
     const editorLineOf = (editorLine, line1) => editorLine[Math.max(0, Math.min(line1 - 1, editorLine.length - 1))];
@@ -225,7 +267,9 @@ export const leapcProfile = {
         const store = encodeLineStore(prepared.lines);
         const big = tooBig(store);
         if (big) return [{ from: 0, to: 0, severity: 'error', message: big }];
-        const r = checker.check(store, prepared.lines.length);
+        const lib = libraryFor(text);
+        if (lib.problem) return [{ line0: lib.problem.line - 1, message: lib.problem.message }];
+        const r = checker.check(store, prepared.lines.length, lib.image);
         if (!r || r.code === 0) return [];
         const mark = errorMark(prepared.editorLine, prepared.lines, r.line, r.col, r.code);
         return [{ line0: mark.line0, cols: mark.cols, message: mark.message }];
@@ -238,11 +282,13 @@ export const leapcProfile = {
         const store = encodeLineStore(prepared.lines);
         const big = tooBig(store);
         if (big) return { error: big };
+        const lib = libraryFor(text);
+        if (lib.problem) return { error: `Line ${lib.problem.line}: ${lib.problem.message}` };
         return {
-          job: { store, lineCount: prepared.lines.length, lines: prepared.lines },
+          job: { store, lineCount: prepared.lines.length, lines: prepared.lines, lib: lib.image },
           editorLine: prepared.editorLine,
           bytes: store.length,
-          message: 'Compiling…',
+          message: lib.name ? `Compiling (with LIB "${lib.name}")…` : 'Compiling…',
         };
       },
 
@@ -267,7 +313,9 @@ export const leapcProfile = {
         if (big) return { error: big };
         const tap = buildTAP(store, name, rom.tapeFormatWord ?? LEAPC_TAPE_WORD);
         const fileName = name.trim().replace(/[^A-Za-z0-9_-]+/g, '_') + '.tap';
-        return { tap, fileName, message: `Saved ${fileName}: on the TS2068, LOAD "${name}" then RUN` };
+        const lib = libraryFor(text).name;
+        const first = lib ? `LIB "${lib}", then ` : '';
+        return { tap, fileName, message: `Saved ${fileName}: on the TS2068, ${first}LOAD "${name}" then RUN` };
       },
 
       progInfo(bytes) {
