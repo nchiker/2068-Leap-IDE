@@ -1,7 +1,7 @@
 /**
  * src/lang/basic/leap-keywords.js — GENERATED, do not edit.
  *
- * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.1.0-emu.1.
+ * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.1.1-emu.1.
  * One entry per manual keyword heading: kind (function / statement /
  * operator / command / part of), package (null for core), syntax, the
  * individual forms, the description's first paragraph and the first example.
@@ -9,7 +9,7 @@
 
 "use strict";
 
-export const LEAP_MANUAL_REF = "v2.1.0-emu.1";
+export const LEAP_MANUAL_REF = "v2.1.1-emu.1";
 
 export const LEAP_KEYWORD_ENTRIES = {
   "ABS": {
@@ -913,8 +913,8 @@ export const LEAP_KEYWORD_ENTRIES = {
     "forms": [
       "STICK(n)"
     ],
-    "desc": "Reads joystick n (1 or 2) through the sound chip's input port. Any other n is a run-time error. STICK(1) gives a number from 0 to 15, one bit per direction switch (a bit is 1 while its switch is closed; 0 means nothing is pressed). STICK(2) gives 0 or 1 -- a hardware limitation of the machine's second joystick connection, not of BASIC.",
-    "example": "j = STICK(1)\nPRINT j >= 0 AND j <= 15\nk = STICK(2)\nPRINT k >= 0 AND k <= 1"
+    "desc": "Reads joystick n (1 or 2) through the sound chip's input port. Any other n is a run-time error 15. The result is a number from 0 to 31. Bits 0 to 3 are the four direction switches (a bit is 1 while its switch is closed), and 16 is added while the fire button is pressed; 0 means nothing is pressed. If all four direction bits read as closed at once, the directions read 0 (no real joystick can do that).",
+    "example": "j = STICK(1)\nPRINT j >= 0 AND j <= 31\nk = STICK(2)\nPRINT k >= 0 AND k <= 31"
   },
   "STOP": {
     "kind": "statement",

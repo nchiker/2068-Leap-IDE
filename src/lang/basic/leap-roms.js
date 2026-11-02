@@ -108,6 +108,54 @@ export const KNOWN_ROMS = {
     packageDir:       'packages/2.1.0-emu.1/',
     cartridgeDir:     'cartridge/2.1.0-emu.1/',
   },
+  // 2.1.1-emu.1 (built from 4891681; byte-identical to the release zip)
+  '5715340055dd67a2ef0054e015e96588dffa4dc4982da35e44245eae856f1656': {
+    version: '2.1.1-emu.1',
+    progAreaStart:    0x825A,   // PROG_AREA_START
+    progEnd:          0x8002,   // PROG_END
+    sourceEnd:        0xA655,   // V2_SOURCE_END
+    keyWait:          0x0437,   // IO_READ_KEY.wait_hit
+    clearArrays:      0xD5DF,   // V2_CLEAR_ARRAYS
+    resetEdit:        0xD237,   // V2_RESET_EDIT
+    resetDisplay:     0xD194,   // V2_RESET_DISPLAY
+    runStored:        0xD3AA,   // V2_RUN_STORED
+    compileStored:    0xD45A,   // V2_COMPILE_STORED
+    tapeFormatWord:   0x8101,   // V2_FORMAT_WORD
+    ext2ClearAll:     0x0ECC,   // EXT2_CLEAR_ALL
+    packageBase:      0xF400,   // EXTENSION_MODULE_BASE
+    packageLen:       0xBE82,   // V2_PACKAGE_LEN
+    udgTable:         0xF180,   // UDG_TABLE
+    udgCodeBase:      0x0090,   // UDG_CODE_BASE
+    udgCount:         0x0015,   // UDG_COUNT
+    commandLoop:      0xD12B,   // V2_COMMAND_LOOP.loop
+    compileErrorCode: 0xBA0A,   // COMPILE_ERROR_CODE
+    vmErrorCode:      0xB683,   // VM_ERROR_CODE
+    curEditIndex:     0x80F2,   // CUR_EDIT_INDEX
+    kbdKeyHit:        0x816C,   // KBD_KEYHIT
+    compileStmt:      0x3822,   // COMPILE_STATEMENT_LIST.loop
+    lexLine:          0xB95C,   // LEX_LINE
+    emitPtr:          0xBA02,   // EMIT_PTR
+    tokType:          0xBA04,   // TOK_TYPE
+    runIsStored:      0xBE84,   // V2_RUN_IS_STORED
+    vmLoop:           0x1135,   // VM_RUN.loop
+    vmNext:           0x113A,   // VM_RUN.next
+    vmIp:             0xB600,   // VM_IP
+    vmHalted:         0xB684,   // VM_HALTED
+    vmCodeBase:       0xA655,   // VM_CODE_BASE
+    symCounts:        0xB800,   // SYM_COUNTS
+    symBase:          0xB805,   // SYM_BASE_V
+    symEnd:           0xB807,   // SYM_END_V
+    rtSymtab:         0xB80D,   // RT_SYMTAB_PTR
+    rtFloattab:       0xB80F,   // RT_FLOATTAB_PTR
+    rtStrtab:         0xB811,   // RT_STRTAB_PTR
+    rtArrPtr:         0xB813,   // RT_ARRPTR_PTR
+    rtStrArrPtr:      0xB815,   // RT_STRARRPTR_PTR
+    vmCsp:            0xB819,   // VM_CSP
+    varsStart:        0x822F,   // VARS_START
+    keyWaitEnd:       0x043D,   // end of the spin loop (exclusive)
+    packageDir:       'packages/2.1.1-emu.1/',
+    cartridgeDir:     'cartridge/2.1.1-emu.1/',
+  },
 };
 
 /**

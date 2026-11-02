@@ -1,4 +1,4 @@
-From c4001ca73618824055f35df76a95440bb61bee69 Mon Sep 17 00:00:00 2001
+From 3dbdca0ac0ee2733efefe6dc966e332ffabbbbe1 Mon Sep 17 00:00:00 2001
 From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 07:57:20 -0400
 Subject: [PATCH 1/2] Cartridge build (V2_CARTRIDGE): Leap 2.1 runtime as an
@@ -382,7 +382,7 @@ index 3ca63f6..81b1bf8 100644
      SAVEBIN "v2_home.bin", $0000, V2_HOME_IMAGE_END
 +    ENDIF
 diff --git a/rom/v2_lowrom_fill.asm b/rom/v2_lowrom_fill.asm
-index 46bdb02..6627505 100644
+index 2c914f4..b5d88ae 100644
 --- a/rom/v2_lowrom_fill.asm
 +++ b/rom/v2_lowrom_fill.asm
 @@ -5,11 +5,13 @@
@@ -549,7 +549,7 @@ index 8bc2150..915668f 100644
 2.43.0
 
 
-From fa2c4a2f1c844cbb9ad2fe0e096313b28b60779c Mon Sep 17 00:00:00 2001
+From 891b340f3e8e37b14d6bb0157c5af3008591b624 Mon Sep 17 00:00:00 2001
 From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 10:18:27 -0400
 Subject: [PATCH 2/2] Cartridge build: packages (program image format 2)

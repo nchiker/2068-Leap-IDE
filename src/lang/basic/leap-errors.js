@@ -2,7 +2,7 @@
  * src/lang/basic/leap-errors.js — GENERATED, do not edit.
  *
  * tools/gen-leap-errors.py from 2068-Leap docs/manual/07_appendices.md
- * (Appendix B) at v2.1.0-emu.1: error code -> {message, cause}.
+ * (Appendix B) at v2.1.1-emu.1: error code -> {message, cause}.
  */
 
 "use strict";

@@ -283,6 +283,7 @@ same('a .tap opens back as the same source', tapeToText(tap).text, tapeLines.joi
 const SAVE_SYMBOLS = {
   '2.0.2-emu.1': { V2_SAVE: 0xD7E5, STORAGE_SEND_BLOCK: 0xC310, NAME_PTR: 0xBE7C, NAME_LEN: 0xBE7E, REQ: 0xBE81 },
   '2.1.0-emu.1': { V2_SAVE: 0xD702, STORAGE_SEND_BLOCK: 0xC3F1, NAME_PTR: 0xBE7C, NAME_LEN: 0xBE7E, REQ: 0xBE81 },
+  '2.1.1-emu.1': { V2_SAVE: 0xD702, STORAGE_SEND_BLOCK: 0xC3F1, NAME_PTR: 0xBE7C, NAME_LEN: 0xBE7E, REQ: 0xBE81 },
 };
 const S = SAVE_SYMBOLS[rom.version];
 if (!S) {
