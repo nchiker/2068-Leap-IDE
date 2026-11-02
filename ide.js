@@ -660,7 +660,7 @@ async function buildProgramCartridge() {
   const text = getSource();
   let out;
   try {
-    out = await lang.buildCartridge(text, { confirm: q => window.confirm(q) });
+    out = await lang.buildCartridge(text, { confirm: q => window.confirm(q), prompt: (q, def) => window.prompt(q, def) });
   } catch (e) {
     setStatus(e.message, 'error');
     return null;
@@ -706,8 +706,10 @@ async function testProgramCartridge() {
 async function startCartridgeTest(dck, name) {
   if (!emulator) return;
   cartName = name;
+  // A cartridge of another language (a Forth one opened from BASIC) gets that language's keys.
+  const owner = PROFILES.find(p => p.ownsCartridge?.(dck));
   try {
-    await emulator.testCartridge(dck);
+    await emulator.testCartridge(dck, owner ? owner.keyboard.symbols : null);
   } catch (e) {
     setStatus(e.message, 'error');
     return;

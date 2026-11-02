@@ -29,6 +29,10 @@ import { FORTH_EXAMPLES } from './examples.js';
 import { scanDefinitions } from './forth-scan.js';
 import { checkForth, readSessionWords } from './forth-check.js';
 import { createLineTable, readStacksAndWords, readCallStack } from './forth-debug.js';
+import { createMachine, setHomeRom, setExRom, resetMachine, runFrame, tStatesPerFrame } from '../../../tsrun/machine.js';
+import { runZ80 } from '../../../tsrun/z80.js';
+import { readWords } from './forth-debug.js';
+import { cartImages, homeIdentity, programImage, buildForthCartridge, isForthCartridge, UDG_BYTES } from './cartridge.js';
 import { buildForthTap, forthTapeToText, isForthTape, textStore, LOAD_TEXT_MAX } from './tape.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 
@@ -103,6 +107,64 @@ function sendLine(m, rom, line) {
   m.cpu.sp = (m.cpu.sp + 2) & 0xFFFF;       // drop the key wait's return address
   m.cpu.pc = rom.enterLine;
   m.cpu.halted = false;
+}
+
+/** The first job line that writes to port 244 / 255 (`c 244 OUT`, a literal port), or -1. */
+function pagingWrites(lines) {
+  return lines.findIndex(line => {
+    const toks = line.split(/\s+/).filter(Boolean);
+    return toks.some((t, i) => t.toUpperCase() === 'OUT' && i > 0 && /^\d+$/.test(toks[i - 1]) &&
+      [0xF4, 0xFF].includes(Number(toks[i - 1]) & 0xFF));
+  });
+}
+
+const HIDDEN_BOOT_FRAMES = 600;
+const HIDDEN_FRAMES = 3000;            // about a minute of TS2068 time for the whole text
+
+/**
+ * Interpret lines on a fresh machine with the Forth ROMs, as Run sends them
+ * to the live prompt (the cartridge's dictionary: the editor's text, not the
+ * session's). Top-level lines run, so the time is bounded.
+ * @returns {{error: string, index: number} | {dictionary: Uint8Array, latest: number, udg: Uint8Array, words: object[]}}
+ */
+export function interpretFresh(rom, romImages, lines) {
+  const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+  setHomeRom(m, romImages.home);
+  setExRom(m, romImages.exrom);
+  resetMachine(m);
+  const atWait = () => m.cpu.pc >= rom.keyWait && m.cpu.pc < rom.keyWaitEnd;
+  let frames = 0;
+  const runToWait = limit => {
+    for (; frames < limit; frames++) {
+      const end = m.frameStart + tStatesPerFrame;
+      while (m.tstates < end && !m.cpu.halted) {
+        if (atWait()) return true;
+        runZ80(m.cpu, m.bus, 1, m);
+      }
+      runFrame(m);
+    }
+    return false;
+  };
+  if (!runToWait(HIDDEN_BOOT_FRAMES) || !atPrompt(m, rom)) return { error: 'Forth did not start on the hidden machine', index: -1 };
+  frames = 0;
+  for (let i = 0; i < lines.length; i++) {
+    sendLine(m, rom, lines[i]);
+    runZ80(m.cpu, m.bus, 1, m);                // leave the key wait
+    if (!runToWait(HIDDEN_FRAMES)) return { error: 'The program was still running after a minute (top-level code runs while it is built)', index: i };
+    if (!atPrompt(m, rom)) return { error: 'This line waits for a key while the cartridge is built (KEY, ACCEPT, INPUT at the top level)', index: i };
+    const code = signed16(read16(m, rom.lastError));
+    if (code !== 0) {
+      let word = '';
+      const len = m.bus.read(rom.wordBuf);
+      for (let k = 1; k <= len && k < 32; k++) word += String.fromCharCode(m.bus.read(rom.wordBuf + k));
+      return { error: describeThrow(code, word), index: i };
+    }
+  }
+  const here = read16(m, rom.here);
+  // From RAM itself: the part under $A000-$BFFF is hidden whenever the EXROM is in.
+  const dictionary = m.ram.slice(rom.dictBase, Math.max(rom.dictBase, here));
+  const udg = Uint8Array.from({ length: UDG_BYTES }, (_, k) => m.bus.read(rom.udgTable + k));
+  return { dictionary, latest: read16(m, rom.latest), udg, words: readWords(m, rom) };
 }
 
 /**
@@ -218,6 +280,7 @@ const help = {
     'Ctrl+Enter sends just the line at the cursor, or the lines you have selected, to the prompt.',
     'Reset gives a fresh Forth with an empty dictionary.',
     'Click left of a line number to set a breakpoint: Forth stops when that line\'s code runs (in a word the Run defined) or, for a line outside a definition, when it is sent. Step (F10) goes on word by word; the debugger shows both stacks, the program\'s words with their values, and the return stack as the call stack.',
+    '⬇ DCK makes a cartridge for a stock TS2068: the program is built on a fresh Forth (not the session), you choose the word it starts with, and after it the OK prompt stays live. ▶ Test DCK runs it here on the stock ROMs; Stop goes back to Forth (a fresh one).',
     '⬇ TAP saves the program as a TEXT tape, as SAVE-TEXT writes it: on the TS2068 type LOAD-TEXT NAME. Open reads a Forth TEXT tape back.',
     'Import (above the screen) opens everything typed or sent at the prompt, the session\'s line store, as a new document, so work done at the prompt is not lost.',
     'The editor checks the program as Forth would read it: a word that is neither a Forth word, nor defined above, nor in the session is marked, and so are unbalanced IF / DO / BEGIN and : ;.',
@@ -245,7 +308,10 @@ export const forthProfile = {
   tools: { udg: false, draw: false },
   /** ⬇ TAP: a TEXT tape, as SAVE-TEXT writes it (src/lang/forth/tape.js). */
   hasTape: true,
-  hasCartridge: false,
+  /** ⬇ DCK / ▶ Test DCK: the program on Forth's cartridge build (src/lang/forth/cartridge.js). */
+  hasCartridge: true,
+  /** A Forth program cartridge ("F1" at DOCK $4000): its test takes Forth's keyboard table. */
+  ownsCartridge: isForthCartridge,
   /** A live session whose typed lines can be imported (attach().importSession). */
   hasSession: true,
   readyText: 'OK prompt: type in the TS2068 screen, or Run (F5) sends the program',
@@ -255,12 +321,13 @@ export const forthProfile = {
   /** True if this tape holds a Forth TEXT file (header type 0, parameter 1 $8000). */
   ownsTape: isForthTape,
 
-  async attach({ rom }) {
+  async attach({ rom, romImages = null, fetchAsset = null }) {
     // The session's own words, read at the prompt's key wait (there the EXROM
     // is paged out, so the whole dictionary is visible): keyWait(m) is called
     // by the emulator at every key wait (ide.js wires it).
     let sessionWords = new Set();
     let sessionLatest = -1;
+    let cart = null;                     // {home, exrom} of the cartridge build, on first use
     return {
       /** Storage problems, then the static check (forth-check.js) against the session's words. */
       lint(text) {
@@ -313,6 +380,57 @@ export const forthProfile = {
           bytes,
           message: `Sending ${prepared.lines.length} line${prepared.lines.length === 1 ? '' : 's'} to Forth…`,
         };
+      },
+
+      /**
+       * ⬇ DCK / ▶ Test DCK (stage F8; owner, 2026-11-01): the editor's text
+       * is interpreted on a fresh hidden machine, line by line as Run sends it
+       * (not the live session's dictionary), then the dictionary from $9100 to
+       * HERE, LATEST, the UDGs and the start word, chosen from the program's
+       * words, go into the program image on the release's cartridge build.
+       * @param {{confirm: (q: string) => boolean, prompt?: (q: string, def: string) => string|null}} ui
+       * @returns {Promise<{error: string, line0?: number}|null|{dck: Uint8Array, bin: Uint8Array, summary: string}>}
+       */
+      async buildCartridge(text, ui) {
+        const prepared = prepareSource(text);
+        if (prepared.problems.length > 0) return { error: prepared.problems[0].message };
+        if (prepared.lines.length === 0) return { error: 'Nothing to put on a cartridge' };
+        if (!romImages || !fetchAsset) return { error: 'The cartridge needs the Forth ROM images' };
+        if (!cart) {
+          try {
+            cart = cartImages(await fetchAsset(`cartridge/forth/${rom.version}/forth_cart.dck`));
+          } catch (e) {
+            return { error: `There is no cartridge build for Forth ${rom.version} (cartridge/forth/${rom.version}/forth_cart.dck): ${e.message}` };
+          }
+        }
+        const identity = homeIdentity(romImages.home, rom.romIdentity);
+        const cartIdentity = homeIdentity(cart.home, rom.romIdentity);
+        if (identity !== cartIdentity) {
+          return { error: `The cartridge build is for other ROMs (identity $${cartIdentity.toString(16).toUpperCase()}, these ROMs $${identity.toString(16).toUpperCase()})` };
+        }
+        const paging = pagingWrites(prepared.lines);
+        if (paging >= 0 && !ui.confirm(`Line ${prepared.editorLine[paging] + 1} writes to port 244 or 255 with OUT, which can switch the cartridge's ROMs out. Make the cartridge anyway?`)) return null;
+        const built = interpretFresh(rom, romImages, prepared.lines);
+        if (built.error) {
+          const line0 = built.index >= 0 ? prepared.editorLine[built.index] : undefined;
+          return { error: line0 === undefined ? built.error : `${built.error} on line ${line0 + 1}: fix it first`, line0 };
+        }
+        const colon = built.words.filter(w => w.kind === ':').map(w => w.name);
+        if (colon.length === 0) return { error: 'The program defines no : words to start the cartridge with' };
+        const def = colon[0];                  // the newest
+        const start = ui.prompt
+          ? ui.prompt(`Start word: the cartridge runs it at power-on (the program's words: ${[...colon].reverse().join(' ')})`, def)
+          : def;
+        if (start === null) return null;
+        let image;
+        try {
+          image = programImage({ dictionary: built.dictionary, latest: built.latest, identity, cartIdentity,
+            start: start.trim(), udg: built.udg, base: rom.dictBase });
+        } catch (e) {
+          return { error: e.message };
+        }
+        const { dck, bin } = buildForthCartridge({ home: cart.home, exrom: cart.exrom, image });
+        return { dck, bin, summary: `${built.dictionary.length} bytes of dictionary, start word ${start.trim().toUpperCase()}` };
       },
 
       /** ⬇ TAP: the question for the tape name. */

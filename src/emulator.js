@@ -161,8 +161,10 @@ export async function createEmulator(opts) {
      * Cartridge test: the stock TS2068 ROMs with this .dck in the dock, then a
      * reset, as switching on a TS2068 with the cartridge in. Rejects with
      * TSRun's message if the dock image cannot be read (the Leap ROMs stay).
+     * symbols: the SYMBOL SHIFT table the cartridge's own keyboard decoder
+     * expects (a Forth cartridge's), else the active profile's.
      */
-    async testCartridge(dck) {
+    async testCartridge(dck, symbols = null) {
       if (!emu.stockImages) {
         const [home, exrom] = await Promise.all([
           fetchBytes('roms/ts2068-0.rom', homeRomSize),
@@ -184,6 +186,7 @@ export async function createEmulator(opts) {
         throw new Error(`Not a cartridge the TS2068 can take: ${err}`);
       }
       emu.cart = true;
+      emu.kbd.setSymbols(symbols ?? emu.profile.keyboard.symbols);
       resetMachine(m);
       setState(emu, 'cartridge');
     },
@@ -529,6 +532,7 @@ function restoreRoms(emu) {
 /** End a cartridge test: empty the dock, put the profile's ROMs back and reset. */
 function leaveCartridge(emu) {
   releaseKeys(emu);
+  emu.kbd.setSymbols(emu.profile.keyboard.symbols);
   ejectDock(emu.machine);
   restoreRoms(emu);
   emu.cart = false;

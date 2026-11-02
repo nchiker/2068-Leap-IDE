@@ -432,6 +432,13 @@ try {
   await evaluate(`leapEditor.setSource(${JSON.stringify('2 SQ .\nBOGUS')}, {fresh: true})`);
   const forthLint = await waitFor("[...document.querySelectorAll('.cm-lintRange-error')].map(e => e.textContent).join(',') || false", 4000);
   check('Forth: the editor check marks an undefined word, and knows the session\'s words', forthLint === 'BOGUS', String(forthLint));
+  // F8: ▶ Test DCK builds the cartridge (start word asked) and runs it on the stock ROMs; Stop goes back.
+  await evaluate(`(window.prompt = () => 'MAIN', leapEditor.setSource(${JSON.stringify(': MAIN ( -- ) 77 0 UDG C! ;\n')}, {fresh: true}), document.getElementById('btn-dck-test').click())`);
+  const fCart = await waitFor(`leapIDE.emulator.cartridge && leapIDE.emulator.machine.bus.read(leapIDE.emulator.rom.udgTable) === 77 && document.getElementById('emu-rom').textContent`, 20000);
+  await evaluate("document.getElementById('btn-stop').click()");
+  const fBack = await waitFor("!leapIDE.emulator.cartridge && /OK prompt/.test(document.getElementById('status-text').textContent) && document.getElementById('emu-rom').textContent", 20000);
+  check('Forth: ▶ Test DCK runs the program\'s cartridge (start word MAIN) on a stock TS2068; Stop goes back to Forth',
+    fCart === 'Stock TS2068 + DCK' && fBack === 'Forth 2.0', `${fCart} | ${fBack}`);
   const forthErr = await runProgram(['1 2', 'FOO 3', '4'], /^OK$|THROW|Stopped/);
   const forthDiag = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 3000);
   check('Forth: an unknown word stops the sending and is marked', /^FOO \? .* on line 2$/.test(forthErr) && forthDiag === 'FOO', `${forthErr} | ${forthDiag}`);

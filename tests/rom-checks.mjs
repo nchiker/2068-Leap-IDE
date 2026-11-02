@@ -337,6 +337,9 @@ if (rom.cartridgeDir) {
     [{ line: 2, port: 244 }, { line: 4, port: 511 }]);
 }
 
+/** A signed 16-bit cell. */
+const signed = (m, a) => { const v = m.bus.read(a) | (m.bus.read(a + 1) << 8); return v & 0x8000 ? v - 0x10000 : v; };
+
 /** Tape routines of each Forth release (symbols/forth_boot.sym), for the tape checks. */
 const FORTH_TAPE_SYMBOLS = {
   '2.0': { STORAGE_SEND_BLOCK: 0x09CE, STORAGE_RECEIVE_BLOCK: 0x0A5D },
@@ -355,7 +358,7 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
   const fexrom = new Uint8Array(readFileSync(join(fdir, 'leapforth-1.rom')));
   const from = F.knownRoms[await romPairHash(fhome, fexrom)] ?? null;
   check('Forth ROM pair is in src/lang/forth/forth-roms.js', !!from, from ? from.version : 'unknown: tools/forth-rom-entry.py');
-  const fl = await F.attach({ rom: from });
+  const fl = await F.attach({ rom: from, romImages: { home: fhome, exrom: fexrom }, fetchAsset: async p => new Uint8Array(readFileSync(join(ROOT, p))) });
   const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
   const boot = () => { setHomeRom(m, fhome); setExRom(m, fexrom); resetMachine(m); };
   const fwait = () => m.cpu.pc >= from.keyWait && m.cpu.pc < from.keyWaitEnd;
@@ -572,6 +575,51 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
     same('F4: the stacks and the words with their values',
       F.createDebugAdapter(from).variables(m).map(v => `${v.name} ${v.type} ${v.value.replace(/code \$\w+/, 'code')}`),
       ['top data 2  $0002', '2 data 1  $0001', 'V variable 7', 'K constant -5', 'FV fvariable 2.5', 'A data 20 bytes at $' + (A.variables(m).find(v => v.name === 'A')?.value.slice(-4) ?? ''), 'W : code']);
+  }
+
+  // F8: the cartridge. The editor's text built on a fresh hidden machine, the start word chosen,
+  // then the DCK run on a stock TS2068 (stock ROMs, the cartridge in the dock).
+  {
+    const { readWords } = await import(join(ROOT, 'src/lang/forth/forth-debug.js'));
+    const { programImage, crc16, isForthCartridge } = await import(join(ROOT, 'src/lang/forth/cartridge.js'));
+    const cartProg = 'VARIABLE HIT\n: GREET ( -- ) CLS ." CART" ;\n: MAIN ( -- ) 42 HIT ! GREET ;\n255 0 UDG C!  129 0 UDG 7 + C!';
+    const asked = [];
+    const out = await fl.buildCartridge(cartProg, { confirm: () => true, prompt: (q, def) => { asked.push([q, def]); return 'main'; } });
+    same('F8: the start word is asked for, from the program\'s : words (the newest the default)', [asked[0]?.[1], /GREET MAIN/.test(asked[0]?.[0] ?? ''), out.summary],
+      ['MAIN', true, `${out.dck ? (out.dck[9 + 2 * 0x2000 + 4] | (out.dck[9 + 2 * 0x2000 + 5] << 8)) : 0} bytes of dictionary, start word MAIN`]);
+    same('F8: the DCK: bank 0, chunks 0-2 and 5 as ROM, "F1" at DOCK $4000; the flat image 64 KB',
+      [[...out.dck.subarray(0, 9)], out.dck.length, isForthCartridge(out.dck), out.bin.length, out.bin[0x4000], out.bin[0x4001], out.bin[0x6000]],
+      [[0, 2, 2, 2, 0, 0, 2, 0, 0], 9 + 4 * 0x2000, true, 0x10000, 0x46, 0x31, 0xFF]);
+    {
+      const img = out.bin.subarray(0x4000);
+      const n = img[4] | (img[5] << 8);
+      same('F8: the image\'s CRC-16/CCITT-FALSE ("123456789" gives $29B1)', [crc16(new TextEncoder().encode('123456789')), crc16(img.subarray(0, 208 + n)) === (img[208 + n] | (img[209 + n] << 8))], [0x29B1, true]);
+    }
+    const stock0 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-0.rom')));
+    const stock1 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-1.rom')));
+    const sm = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+    setHomeRom(sm, stock0); setExRom(sm, stock1);
+    const dockErr = insertDock(sm, out.dck);
+    resetMachine(sm);
+    let promptAt = false;
+    for (let f = 0; f < 400 && !promptAt; f++) {
+      const end = sm.frameStart + tStatesPerFrame;
+      while (sm.tstates < end && !sm.cpu.halted) {
+        if (f > 110 && sm.cpu.pc >= from.keyWait && sm.cpu.pc < from.keyWaitEnd && (sm.bus.read(sm.cpu.sp) | (sm.bus.read(sm.cpu.sp + 1) << 8)) === from.promptReturn) { promptAt = true; break; }
+        runZ80(sm.cpu, sm.bus, 1, sm);
+      }
+      if (!promptAt) runFrame(sm);
+    }
+    const hit = readWords(sm, from).find(w => w.name === 'HIT');
+    same('F8: on a stock TS2068 the cartridge loads, runs MAIN (HIT = 42) and leaves the OK prompt; the UDGs are there',
+      [dockErr, promptAt, hit?.value, sm.bus.read(from.udgTable), sm.bus.read(from.udgTable + 7), signed(sm, from.lastError)], [null, true, '42', 255, 129, 0]);
+    same('F8: an error while building names its line', await fl.buildCartridge(': A ;\nNOPE', { confirm: () => true, prompt: () => 'A' }),
+      { error: 'NOPE ? (THROW -13: not a word Forth knows here) on line 2: fix it first', line0: 1 });
+    same('F8: a start word that is not the program\'s is refused', (await fl.buildCartridge(': A ;', { confirm: () => true, prompt: () => 'DUP' })).error, 'DUP is not one of the program\'s words');
+    same('F8: a cartridge needs a : word; another identity is refused',
+      [(await fl.buildCartridge('1 2 +', { confirm: () => true })).error,
+        (() => { try { programImage({ dictionary: new Uint8Array(8), latest: 0x9100, identity: 1, cartIdentity: 2, start: 'X' }); return 'built'; } catch (e) { return e.message.slice(0, 33); } })()],
+      ['The program defines no : words to start the cartridge with', 'The program was made on other ROM']);
   }
 
   same('word data: 184 words from the manual, each with a stack effect and group',
