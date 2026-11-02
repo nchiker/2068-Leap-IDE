@@ -53,6 +53,16 @@ SYMBOLS = {
     'shLoop':         ('SH_LOOP', 'exrom'),
     'shRun':          ('SH_RUN', 'exrom'),
     'reportReturn':   ('SH_WAIT_KEY.key_ret', 'exrom'),
+    # The report's text ("EXIT n", …): the exit status after a run
+    'reportBuf':      ('SH_REPORT_BUF', 'home'),
+    # Debugger (C4): the compiler's line points, the function table, the globals
+    'dclAutoinit':    ('DCL_AUTOINIT', 'home'),
+    'stmtDoCond':     ('STMT_DO.cond', 'home'),
+    'cgUnitFound':    ('CG_UNIT.found', 'home'),
+    'runFnlines':     ('RUN_FNLINES', 'home'),
+    'symGlo':         ('SYM_GLO', 'home'),
+    'rtRun':          ('RT_RUN', 'home'),
+    'rtErrPc':        ('RT_ERRPC', 'home'),
 }
 
 

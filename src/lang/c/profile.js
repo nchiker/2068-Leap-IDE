@@ -30,6 +30,7 @@ import { encodeLineStore } from '../basic/profile.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC, librariesUsed } from './leapc-scan.js';
 import { LEAPC_EXAMPLES } from './examples.js';
+import { createLineTable, readGlobals, readCallStack } from './leapc-debug.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
 import { tapeToText } from '../../files.js';
 
@@ -85,6 +86,19 @@ export function describeError(code, runtime = false) {
 const read16 = (m, a) => m.bus.read(a) | (m.bus.read(a + 1) << 8);
 const poke16 = (m, a, v) => { m.bus.write(a, v & 0xFF); m.bus.write(a + 1, (v >> 8) & 0xFF); };
 
+/** The exit status from the report's text ("EXIT n" in SH_REPORT_BUF), or null. */
+function reportExit(m, rom) {
+  if (!rom.reportBuf) return null;
+  let text = '';
+  for (let a = rom.reportBuf; a < rom.reportBuf + 16; a++) {
+    const b = m.bus.read(a);
+    if (!b) break;
+    text += String.fromCharCode(b);
+  }
+  const e = /^EXIT (-?\d+)/.exec(text);
+  return e ? Number(e[1]) : null;
+}
+
 const driver = {
   /**
    * BREAK is latched by the interrupt routine (RT_BREAKREQ); after it the
@@ -124,19 +138,49 @@ const driver = {
       compileCol: cc ? read16(m, rom.shErrCol) : -1,
       runtimeError: cc ? 0 : m.bus.read(rom.rtErrNum),
       runtimeLine: cc ? 0 : read16(m, rom.rtErrLine),     // where the failing function's definition starts
+      exit: cc ? null : reportExit(m, rom),
     };
   },
 };
 
-/** The debugger: no Leap-C line table yet (stage C4); registers, memory and Z80 breakpoints work. */
-function createDebugAdapter() {
+/**
+ * The debugger (stage C4, src/lang/c/leapc-debug.js): a line table built by
+ * watching the compiler, so breakpoints stop at a line's statements and Step
+ * goes statement by statement (into called functions); the globals with
+ * their values; the call stack from the IX frame chain. Store lines are
+ * 0-based here, 1-based in the ROM (TOK_LINE).
+ */
+function createDebugAdapter(rom) {
+  if (!rom.statement || !rom.rtRun || !rom.symGlo) return null;     // a ROM entry from before C4
+  const t = createLineTable(rom);
   return {
-    reset() {}, observe() {},
-    position: () => -1, isStart: () => false, lineOf: () => -1,
-    breakPositions: () => [], stopLine: () => -1, halt: () => false,
-    variables: () => null, callStack: () => null,
+    reset: () => t.reset(),
+    observe: m => t.observe(m),
+    position: m => t.position(m),
+    isStart: pos => t.isStart(pos),
+    lineOf: pos => { const l = t.lineOf(pos); return l > 0 ? l - 1 : -1; },
+    breakPositions: (m, line0) => t.breakPositions(line0 + 1),
+    /** A run-time error's statement: RT_ERRPC (the program's address it came from). */
+    stopLine(m) {
+      if (!rom.rtErrPc) return -1;
+      const pc = m.bus.read(rom.rtErrPc) | (m.bus.read(rom.rtErrPc + 1) << 8);
+      const l = t.lineOf(pc - 1);
+      return pc && l > 0 ? l - 1 : -1;
+    },
+    halt: () => false,                 // Stop while paused: BREAK, as when running
+    variables: m => readGlobals(m, t),
+    callStack: (m, toEditorLine) => readCallStack(m, t, toEditorLine),
+    labels: { variables: 'Globals', step: 'statement' },
   };
 }
+
+/** Before C4 (or an entry without its fields): registers, memory and Z80 breakpoints only. */
+const NO_DEBUG = {
+  reset() {}, observe() {},
+  position: () => -1, isStart: () => false, lineOf: () => -1,
+  breakPositions: () => [], stopLine: () => -1, halt: () => false,
+  variables: () => null, callStack: () => null,
+};
 
 function symbolGroups(text) {
   const s = scanC(text);
@@ -166,7 +210,7 @@ const help = {
     { title: 'Commands (typed in the Leap-C editor, not in programs)', test: e => e.kind === 'command' },
   ],
   shortcuts: {
-    step: 'Step (not yet in Leap-C)',
+    step: 'Step to the next statement (into called functions)',
     pause: 'Pause / Continue',
     open: 'Open a .c / .txt program, a Leap-C .tap, or a .dck',
     definition: 'Go to where a function, global or macro is defined',
@@ -175,6 +219,7 @@ const help = {
   tips: [
     'Leap-C compiles the program on every Run, as typing RUN does; the report (EXIT n, an error and its line) appears at the bottom of the TS2068 screen. Errors are underlined about half a second after you stop typing: they come from the Leap-C ROM\'s own compiler.',
     'While a program runs, click the TS2068 screen to type into it (getkey, gets). Keys work as labelled on your keyboard, including [ ] { } | ~ ^ \\.',
+    'Click left of a line number to set a breakpoint: the program pauses at that line\'s statements, and the debugger shows the globals with their values and the call stack; Step (F10) goes statement by statement. The status bar gives the exit status (Finished: exit n), and a run-time error\'s own line.',
     'A program that calls a library function (circle, box, isqrt: the shapes library) gets the library loaded for its check and Run, as LIB "shapes" does on the TS2068. One library at a time.',
     '⬇ TAP saves the program as Leap-C\'s SAVE does: on the TS2068, LOAD "name" then RUN. Open reads a Leap-C tape back.',
   ],
@@ -192,7 +237,7 @@ export const leapcProfile = {
   lineLimit: MAX_LINE_CHARS,
   keyboard: { symbols: LEAP_EXTENDED_SYMBOLS, always: false },
   driver,
-  createDebugAdapter,
+  createDebugAdapter: rom => createDebugAdapter(rom) ?? NO_DEBUG,
   symbolGroups,
   symbolsEmpty: 'No functions, globals, macros or types yet.',
   help,
@@ -337,14 +382,18 @@ export const leapcProfile = {
           return { text: `Compile error ${r.compileError}${where}`, mode: 'error', mark };
         }
         if (r.runtimeError !== 0) {
-          const line0 = editorLine && r.runtimeLine > 0 ? editorLineOf(editorLine, r.runtimeLine) : undefined;
-          const where = line0 === undefined ? '' : ` in the function on line ${line0 + 1}`;
+          // The statement, from the debugger's line table (RT_ERRPC), else the
+          // function's definition line (RT_ERRLINE).
+          const exact = stopLine ? stopLine(r.runtimeError === RT_BREAK) : -1;
+          const line0 = exact > 0 ? exact - 1
+            : editorLine && r.runtimeLine > 0 ? editorLineOf(editorLine, r.runtimeLine) : undefined;
+          const where = line0 === undefined ? '' : exact > 0 ? ` on line ${line0 + 1}` : ` in the function on line ${line0 + 1}`;
           if (r.runtimeError === RT_BREAK) return { text: `Stopped (BREAK)${where}`, mode: 'idle', mark: null };
           const message = describeError(r.runtimeError, true);
           return { text: `Runtime error ${r.runtimeError}${where}`, mode: 'error',
             mark: line0 === undefined ? null : { line0, message } };
         }
-        return { text: 'Finished', mode: 'idle', mark: null };
+        return { text: r.exit === null || r.exit === undefined ? 'Finished' : `Finished: exit ${r.exit}`, mode: 'idle', mark: null };
       },
     };
   },

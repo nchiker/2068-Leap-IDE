@@ -54,19 +54,12 @@ const breakpointState = StateField.define({
     set = set.map(tr.changes);
     for (const e of tr.effects) {
       if (e.is(toggleBreakpoint)) {
-        if (set.iter(e.value).done === false) {
-          // Already has breakpoint at this pos — scan to confirm
-          let found = false;
-          const iter = set.iter();
-          while (iter.value !== null) { if (iter.from === e.value) { found = true; break; } iter.next(); }
-          if (found) {
-            set = set.update({ filter: (from) => from !== e.value });
-          } else {
-            set = set.update({ add: [breakpointMark.range(e.value)] });
-          }
-        } else {
-          set = set.update({ add: [breakpointMark.range(e.value)] });
-        }
+        // On the line already: remove it; else add one. (RangeCursor has no
+        // `done`, so an earlier check through it always added a duplicate.)
+        let found = false;
+        set.between(e.value, e.value, from => { if (from === e.value) { found = true; return false; } });
+        set = found ? set.update({ filter: from => from !== e.value })
+          : set.update({ add: [breakpointMark.range(e.value)] });
       }
     }
     return set;

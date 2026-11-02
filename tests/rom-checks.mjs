@@ -602,6 +602,8 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
   check('Leap-C ROM pair is in src/lang/c/leapc-roms.js', !!crom, crom ? crom.version : 'unknown: tools/leapc-rom-entry.py');
   const cl = await P.attach({ rom: crom, romImages: { home: chome, exrom: cexrom }, fetchAsset: async p => new Uint8Array(readFileSync(join(ROOT, p))) });
   const main = body => `int main(void)\n{\n${body}\n}`;
+  /** The status of a finished run: with the exit status where the ROM entry has SH_REPORT_BUF. */
+  const fin = n => (crom.reportBuf ? `Finished: exit ${n}` : 'Finished');
 
   same('checker: a clean program', cl.lint(main('    printf("HI");\n    return 0;')), []);
   same('checker: a syntax error on its line, at its token',
@@ -634,7 +636,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
   }
   check('Leap-C boots to its editor, a shell key wait', crun(cwait, 600) && P.driver.canInject(m, crom));
   same('hello world runs and ends at the report', cRun(main('    cls();\n    printf("HELLO");\n    return 9;')),
-    { state: 'ended', report: true, text: 'Finished' });
+    { state: 'ended', report: true, text: fin(9) });
   same('a compile error is reported on its editor line', cRun('int main(void)\n{\n\n    int x = 3 +;\n}').text, 'Compile error 20 on line 4');
   same('a run-time error names the failing function\'s line (stack overflow, 1)',
     cRun('int f(int n)\n{\n    return f(n + 1);\n}\nint main(void)\n{\n    return f(0);\n}').text, 'Runtime error 1 in the function on line 1');
@@ -650,7 +652,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     same('BREAK ends getkey(): run-time error 5, Stopped (BREAK)',
       [back, cl.describeResult(P.driver.result(m, crom), [0, 1, 2, 3, 4], null, null).text], [true, 'Stopped (BREAK) in the function on line 1']);
   }
-  same('a run started from the last report runs', cRun(main('    return 0;')).text, 'Finished');
+  same('a run started from the last report runs', cRun(main('    return 0;')).text, fin(0));
 
   // C6: libraries. A program that calls circle() / isqrt() gets LIB "shapes" installed for its check and run.
   if (!existsSync(join(ROOT, 'libs/c', crom.version, 'shapes.bin'))) {
@@ -662,12 +664,83 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     same('library: without it the compiler does not know circle()', cl.lint(main('    cls();\n    circleX(1, 2, 3);\n    return 0;')).length, 1);
     same('library: a shapes program runs: circle() draws',
       [cRun(shapes).text, pixel(148, 96), pixel(108, 96), pixel(128, 76), pixel(128, 96), m.bus.read(crom.libLoaded)],
-      ['Finished', 1, 1, 1, 0, crom.libBase >> 8]);
-    same('library: the next run without it unloads it (LIB_LOADED 0)', [cRun(main('    return 0;')).text, m.bus.read(crom.libLoaded)], ['Finished', 0]);
+      [fin(12), 1, 1, 1, 0, crom.libBase >> 8]);
+    same('library: the next run without it unloads it (LIB_LOADED 0)', [cRun(main('    return 0;')).text, m.bus.read(crom.libLoaded)], [fin(0), 0]);
     same('library: a program defining its own circle() does not load it',
       [cl.startRun('int circle(int a, int b, int c)\n{\n    return a;\n}\nint main(void)\n{\n    return circle(1, 2, 3);\n}').job.lib, cl.lint('int circle(int a, int b, int c)\n{\n    return a;\n}\nint main(void)\n{\n    return circle(1, 2, 3);\n}')],
       [null, []]);
     same('library: ⬇ TAP names LIB "shapes" first', cl.exportTape(shapes, 'circ').message, 'Saved circ.tap: on the TS2068, LIB "shapes", then LOAD "circ" then RUN');
+  }
+
+  // C4: the debugger, driven as src/debugger.js drives it.
+  if (!crom.rtRun) {
+    console.log(`SKIP  Leap-C debugger — the ${crom.version} entry has no C4 fields (tools/leapc-rom-entry.py)`);
+  } else {
+    const A = P.createDebugAdapter(crom);
+    const debugRun = (text, breakLines0, onStop) => {
+      const start = cl.startRun(text);
+      A.reset(start.job);
+      P.driver.inject(m, crom, start.job);
+      let at = null, stepping = false, stops = 0;
+      for (let f = 0; f < 1500; f++) {
+        const end = m.frameStart + tStatesPerFrame;
+        while (m.tstates < end && !m.cpu.halted) {
+          if (f > 2 && cwait()) return { stops, start };
+          A.observe(m);
+          const pos = A.position(m);
+          if (pos >= 0) {
+            at ??= new Set(breakLines0.flatMap(l => A.breakPositions(m, l)));
+            if ((stepping && A.isStart(pos)) || at.has(pos)) {
+              stops++;
+              const how = onStop({ line0: A.lineOf(pos), stack: A.callStack(m, l => start.editorLine[l] + 1), vars: A.variables(m) });
+              if (how === 'quit') return { stops, start };
+              stepping = how === 'step';
+            }
+          }
+          runZ80(m.cpu, m.bus, 1, m);
+        }
+        runFrame(m);
+      }
+      return { stops, start };
+    };
+    const prog = ['int total;', 'int sq(int n)', '{', '    return n * n;', '}', 'int main(void)', '{', '    int i;',
+      '    for (i = 1; i <= 3; i++)', '        total = total + sq(i);', '    return total;', '}'].join('\n');
+    const seen = [];
+    const r = debugRun(prog, [3], s => { seen.push([s.line0 + 1, s.vars.map(v => `${v.name} ${v.type} ${v.value}`).join(), s.stack.map(f => `${f.label}@${f.line}`).join(' < ')]); return 'continue'; });
+    same('C4: a breakpoint in a function stops at each call, with the globals and the call stack',
+      [r.stops, seen, cl.describeResult(P.driver.result(m, crom), r.start.editorLine, null, r.start.job).text],
+      [3, [[4, 'total int 0', 'sq()@4 < main()@10'], [4, 'total int 1', 'sq()@4 < main()@10'], [4, 'total int 5', 'sq()@4 < main()@10']], fin(14)]);
+    const steps = [];
+    debugRun(prog, [8], s => { steps.push(s.line0 + 1); return steps.length < 8 ? 'step' : 'quit'; });
+    {
+      // The run was left at a pause: BREAK ends it, back to the report.
+      m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1;
+      crun(() => false, P.driver.breakHold);
+      m.keyMatrix.fill(0x1F);
+      m.bus.write(crom.kbdKeyHit, 0);
+      crun(() => cwait() && P.driver.runState(m, crom) === 'ended', 300);
+    }
+    same('C4: Step goes statement by statement, into the called function', steps, [9, 10, 2, 4, 10, 2, 4, 10]);   // the for's test and step are not statement starts
+    const g = ['struct pt { int x; int y; };', 'char name[8] = "LEAP";', 'float half = 0.5;', 'unsigned big = 50000;',
+      'int arr[3] = { 7, -8, 9 };', 'struct pt p;', 'int *ptr;', 'int main(void)', '{', '    ptr = &arr[1];', '    return *ptr;', '}'].join('\n');
+    const gv = [];
+    debugRun(g, [10], s => { gv.push(...s.vars.map(v => `${v.name}: ${v.type} = ${v.value.replace(/\$[0-9A-F]{4}/, '$addr')}`)); return 'continue'; });
+    same('C4: globals of each type with their values', gv,
+      ['name: char[8] = "LEAP"', 'half: float = 0.5', 'big: unsigned = 50000', 'arr: int[3] = {7, -8, 9}', 'p: struct (4 bytes) = at $addr', 'ptr: int * = $addr']);
+    const deep = 'int main(void)\n{\n    float f = 1.0;\n    float z = 0.0;\n    f = f / z;\n    return 0;\n}';
+    const dr = debugRun(deep, [], () => 'continue');
+    same('C4: a run-time error names its statement\'s line (RT_ERRPC in the line table)',
+      cl.describeResult(P.driver.result(m, crom), dr.start.editorLine, () => { const l = A.stopLine(m); return l < 0 ? -1 : dr.start.editorLine[l] + 1; }, dr.start.job).text,
+      'Runtime error 6 on line 5');
+    const kr = debugRun('int main(void)\n{\n    int c = 0;\n    c = getkey();\n    return c;\n}', [], () => 'continue');
+    m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1;
+    crun(() => false, P.driver.breakHold);
+    m.keyMatrix.fill(0x1F);
+    m.bus.write(crom.kbdKeyHit, 0);
+    crun(() => cwait() && P.driver.runState(m, crom) === 'ended', 300);
+    same('C4: BREAK in getkey() names the line it stopped on',
+      cl.describeResult(P.driver.result(m, crom), kr.start.editorLine, () => { const l = A.stopLine(m); return l < 0 ? -1 : kr.start.editorLine[l] + 1; }, kr.start.job).text,
+      'Stopped (BREAK) on line 4');
   }
 
   // C7: the Examples menu (the manual's Part 7, each a test in Leap-C's build): every program
@@ -705,18 +778,19 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       return { back, exit, text: cl.describeResult(P.driver.result(m, crom), start.editorLine, null, start.job).text };
     };
     const bad = [];
-    const runnable = LEAPC_EXAMPLES.filter(e => !e.input && !e.tape);
+    const hasLibs = existsSync(join(ROOT, 'libs/c', crom.version));
+    const runnable = LEAPC_EXAMPLES.filter(e => !e.input && !e.tape && (hasLibs || !e.library));
     for (const ex of runnable) {
       const r = runExit(ex.text);
       const got = { status: r.text, exit: r.exit & 0xFFFF,
         screen: (ex.screen ?? []).map(([row]) => [row, screenRow(row)]),
         pixels: (ex.pixels ?? []).map(([x, y]) => [x, y, pixel(x, y)]) };
-      const want = { status: 'Finished', exit: ex.exit & 0xFFFF,
+      const want = { status: fin(ex.exit), exit: ex.exit & 0xFFFF,
         screen: (ex.screen ?? []).map(([row, t]) => [row, t.trimEnd()]), pixels: ex.pixels ?? [] };
       if (JSON.stringify(got) !== JSON.stringify(want)) bad.push(`${ex.id}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
     }
     same(`the Examples menu's programs give the manual's exit status, screen and pixels (${runnable.length} without keys or a tape)`, bad, []);
-    same('every example checks clean', LEAPC_EXAMPLES.filter(e => cl.lint(e.text).length > 0).map(e => e.id), []);
+    same('every example checks clean', LEAPC_EXAMPLES.filter(e => (hasLibs || !e.library) && cl.lint(e.text).length > 0).map(e => e.id), []);
   }
 
   // C5: tapes. SH_SAVE / SH_LOAD (the shell's SAVE "name" / LOAD "name") called at the
@@ -751,7 +825,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       return false;
     };
     const prog = '/* tape */\nint main(void)\n{\n\n    printf("TAPE");\n    return 5;\n}';
-    same('a program for the tape runs', cRun(prog).text, 'Finished');
+    same('a program for the tape runs', cRun(prog).text, fin(5));
     const sent = [];
     const saved = command(CT.SH_SAVE, 'demo', () => {
       const ixv = (m.cpu.xh << 8) | m.cpu.xl, de = (m.cpu.d << 8) | m.cpu.e;

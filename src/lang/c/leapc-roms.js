@@ -49,8 +49,18 @@ export const KNOWN_ROMS = {
     shLoop:           0xC02F,   // SH_LOOP
     shRun:            0xC10F,   // SH_RUN
     reportReturn:     0xC1AC,   // SH_WAIT_KEY.key_ret
+    reportBuf:        0x5F21,   // SH_REPORT_BUF
+    dclAutoinit:      0x30BF,   // DCL_AUTOINIT
+    stmtDoCond:       0x3187,   // STMT_DO.cond
+    cgUnitFound:      0x2929,   // CG_UNIT.found
+    runFnlines:       0x5EAB,   // RUN_FNLINES
+    symGlo:           0x5E38,   // SYM_GLO
+    rtRun:            0x363B,   // RT_RUN
+    rtErrPc:          0x5EB8,   // RT_ERRPC
     keyWaitEnd:       0x02C6,   // end of the spin loop (exclusive)
   },
+
+
   // Leap-C 1.0.0-beta.2 (SHA-256 HOME 043becf4…, EXROM 97fe9523…)
   '9cc679793a1f855f7ddcc2d99113e2730bd45c37e7204ea91df0d8f8e4b5af04': {
     version: '1.0.0-beta.2',

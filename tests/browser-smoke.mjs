@@ -462,7 +462,7 @@ try {
   const cReady = await waitFor("leapIDE.profile.id === 'c' && leapIDE.lang && document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 20000);
   check('switching to Leap-C boots its ROMs', /^Leap-C 1\.0/.test(cReady ?? ''), String(cReady));
   const cRun = await runProgram(['int main(void)', '{', '    cls();', '    printf("HELLO FROM C");', '    return 9;', '}']);
-  check('Leap-C: Run compiles and runs to the end', cRun === 'Finished', cRun);
+  check('Leap-C: Run compiles and runs to the end, with the exit status', cRun === 'Finished: exit 9', cRun);
   await shot('leapc');
   await evaluate(`leapEditor.setSource(${JSON.stringify('int main(void)\n{\n    int x = 3 +;\n    return x;\n}')}, {fresh: true})`);
   const cLint = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 5000);
@@ -471,15 +471,26 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
   check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
+  // C4: a breakpoint in a function pauses there, with the globals and the call stack.
+  await evaluate(`(leapEditor.setSource(${JSON.stringify(['int total;', 'int sq(int n)', '{', '    return n * n;', '}', 'int main(void)', '{', '    total = sq(3) + sq(4);', '    return total;', '}'].join('\n'))}, {fresh: true}), leapEditor.toggleBreakpoint(4))`);
+  await evaluate("document.getElementById('btn-run').click()");
+  const cPaused = await waitFor("/^Paused at line/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 15000);
+  const cPanel = await evaluate("[document.getElementById('vars-title').textContent, [...document.querySelectorAll('#var-tbody td')].map(e => e.textContent).join(' '), [...document.querySelectorAll('#callstack .csframe')].map(e => e.textContent.replace(/\\s+/g, ' ').trim()).join(' < ')].join(' | ')");
+  const bpOff = await evaluate("JSON.stringify([leapEditor.getBreakpoints(), (leapEditor.toggleBreakpoint(4), leapEditor.getBreakpoints())])");
+  await evaluate("document.getElementById('btn-pause').click()");
+  const cDone = await waitFor("/^Finished|error/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 15000);
+  const cDoneWhy = await status();
+  check('Leap-C: a breakpoint in a function pauses with the globals and call stack; toggling it clears it; Continue finishes with the exit status',
+    cPaused === 'Paused at line 4' && cPanel === 'Globals | total int 0 | sq() line 4 < main() line 8' && cDone === 'Finished: exit 25' && bpOff === '[[4],[]]', `${cPaused} | ${cPanel} | ${cDone} | ${cDoneWhy} | ${bpOff}`);
   // C7: the Examples menu has the manual's 18 programs; one opens and runs.
   const cExamples = await evaluate("document.querySelectorAll('#examples-menu [data-example]').length");
   await evaluate("window.confirm = () => true, document.querySelector('[data-example=fibonacci-numbers]').click()");
   const cExRun = await runProgram(null, /Finished|error|Stopped/);
-  check('Leap-C: the Examples menu lists 18 programs, and Fibonacci runs', cExamples === 18 && cExRun === 'Finished', `${cExamples} | ${cExRun}`);
+  check('Leap-C: the Examples menu lists 18 programs, and Fibonacci runs', cExamples === 18 && cExRun === 'Finished: exit 55', `${cExamples} | ${cExRun}`);
   // C6: a program calling circle() runs with LIB "shapes" loaded by the IDE.
   const cLib = await runProgram(['int main(void)', '{', '    cls();', '    circle(128, 96, 20);', '    return 0;', '}'], /Finished|error|Stopped/);
   const cLibPixel = await evaluate('(leapIDE.emulator.machine.bus.read(0x4000 | (96 & 0xC0) << 5 | (96 & 7) << 8 | (96 & 0x38) << 2 | (148 >> 3)) >> (7 - (148 & 7))) & 1');
-  check('Leap-C: a shapes program (circle) runs with the library loaded', cLib === 'Finished' && cLibPixel === 1, `${cLib} | ${cLibPixel}`);
+  check('Leap-C: a shapes program (circle) runs with the library loaded', cLib === 'Finished: exit 0' && cLibPixel === 1, `${cLib} | ${cLibPixel}`);
   // C5: ⬇ TAP saves the program as Leap-C's SAVE does; opening that tape from BASIC switches to Leap-C.
   const cSrc = 'int main(void)\n{\n    return 7;\n}\n';
   await evaluate(`(window.smokeLastFile = null, window.prompt = () => 'ctape', leapEditor.setSource(${JSON.stringify(cSrc)}, {fresh: true}), document.getElementById('btn-export').click())`);
