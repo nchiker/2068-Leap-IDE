@@ -321,7 +321,8 @@ BASIC PEEKs Leap's `FRAMES` (`$8175`, 33141), Leap-C calls `frames()`, Forth
 fetches `FRAMES` (`$80F4`, 33012). C and Forth have the table as literals; BASIC
 computes it with `INT(SIN(k * 5) * 64 + 64.5) - 64` (Leap's `SIN` takes degrees
 and `INT` cuts toward zero). Measured in TSRun: Forth 522 frames, Leap-C 1644,
-Leap BASIC 1901. Leap-C is the slower of the compiled two because its `draw()`
+Leap BASIC 1901 (`docs/requests/LEAP_C_DRAW_SPEED.md` tells Leap-C).
+Leap-C is the slower of the compiled two because its `draw()`
 is slow: 864 lines of 90 pixels took 2005 frames in Leap-C against 422 for
 Forth's `LINE` (its arithmetic is fast). `tests/rom-checks.mjs` section 10 runs
 the three through their profiles' Run path and checks that each ends with no
@@ -2080,7 +2081,8 @@ and the keyed Examples in `5cfffb8`); the speed test is in all three; see
 `docs/LEAP_FORTH_PLAN.md` and `docs/LEAP_C_PLAN.md`), all optional:
 
 - **Forth:** F7 (UDG and Draw tools) is optional; the optional LIB tape and
-  watches; reporting the `2 STICK` difference to the 2068-Forth project; the
+  watches; the `2 STICK` difference is reported
+  (`docs/requests/LEAP_FORTH_STICK.md`), awaiting an answer; the
   Forth cartridge has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and real
   hardware not tried).
 - **Leap-C:** locals in the debugger; driving the tape example

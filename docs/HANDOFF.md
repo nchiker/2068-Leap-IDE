@@ -310,8 +310,16 @@ this machine has Node 24.
   latch, as an AY-3-8912 does; ZEsarUX returns the joystick lines. It is the
   one known difference of the 313 manual blocks (a `KNOWN` list in
   `tests/rom-checks.mjs` with its own check). On a real TS2068 `2 STICK`
-  probably reads 1 too. Worth reporting to the 2068-Forth project; not
-  reported yet.
+  probably reads 1 too. Reported to the 2068-Forth project in
+  `docs/requests/LEAP_FORTH_STICK.md` (with a fix in `STICK_READ`); Leap V2
+  BASIC's `STICK` has the same code (`0 1` in TSRun), not sent to the Leap
+  project. When a Forth release fixes it, take the block out of `KNOWN`.
+- **Notes sent to the ROM projects (2026-11-01), awaiting answers:**
+  `docs/requests/LEAP_C_EXAMPLE_11.md` (the hi-res example),
+  `docs/requests/LEAP_C_DRAW_SPEED.md` (`draw()` is the old `GFX_LINE`, about
+  six times slower than Forth 2.0's `LINE`, same pixels; Leap V2's `LINE` too)
+  and `docs/requests/LEAP_FORTH_STICK.md`. As before, each project's session
+  reads them from this repository and answers in a file beside them.
 - **Forth's screen checks need per-release symbols.** `FORTH_SCREEN_SYMBOLS` in
   `tests/rom-checks.mjs` (`PRINT_ROW` `$81CF`, `GFX_PUTCHAR` `$0705` for 2.0)
   comes from `~/2068-forth/build/forth_boot.sym`, whose HOME ROM is
