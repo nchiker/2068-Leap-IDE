@@ -144,7 +144,7 @@ Leap-IDE/
 │   ├── overview.md   ← Design doc
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needed; now built)
 │   └── mockup.html   ← Visual mock-up
-└── tsrun/            ← git submodule: TSRun fork, pinned at c52f272 (a local commit, not pushed yet)
+└── tsrun/            ← git submodule: TSRun fork, pinned at c52f272
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
@@ -1997,7 +1997,7 @@ tested separately.
 | 0 (multi-language) | Language profiles: BASIC moves to `src/lang/basic/`, the core asks the active profile (Leap-C and Forth followed) | `src/lang/profiles.js`, `src/lang/editors.js`, `src/lang/basic/profile.js`, `src/lang/basic/editor.js`, `src/lang/basic/leap-words.js`, `src/emulator.js`, `src/debugger.js`, `src/editor.js`, `ide.js` | **Done** (2026-11-01, `3ed5d3b`) |
 | F0-F6, F8, Import (multi-language) | Leap-Forth: the live OK prompt, Run line by line, editor, Help, Examples (F0-F2); the static check (F3); Import session; the debugger (F4: line table built while sending, stacks and words); TEXT tape export and Open (F5); the cartridge (F8: ⬇ DCK / ▶ Test DCK on a stock TS2068); the manual's examples checked against their `\ expect:` output, `\ keys:` and `\ break:` (F6, 313 blocks plus the Examples menu); TSRun pin `11731e1` | `src/lang/forth/` (`forth-check.js`, `forth-debug.js`, `tape.js`, `cartridge.js`), `cartridge/forth/2.0/`, `src/lang/keytables.js`, `src/emulator.js` (`canInject`, `next`, `onKeyWait`, `testCartridge` symbols), `src/debugger.js` (`beginRun(job)`, `version`, `labels`), `src/lang/profiles.js`, `tools/forth-rom-entry.py`, `tools/gen-forth-*.py` (`gen-forth-doc-tests.py`), `tests/forth-manual-examples.json`, `ide.js` | **Done** (2026-11-01: F0-F2 `b9526ce`, Send after it, F3 `a3869d4`, Import `89a6d48`, F5 `6103f66`, F4 `054198d`, F8 `f7a5d1d`, F6 `50fb417`); F7 tools not yet |
 | C1-C7, C9 (multi-language) | Leap-C: Run by the shell path, the ROM compiler as checker, a C editor (C1-C3); 1.0.0 ROM entry (then TSRun pin `9f9bbc5`; 1.2.0 `4c02f48`, pin `34b0794`); tape export and Open (C5); libraries `LIB "shapes"` (C6); the cartridge (C9: ⬇ DCK / ▶ Test DCK on Leap-C 1.1.0's build, `4798b64`); the Examples menu with the manual's 18 programs (C7; the two that read keys driven in the tests since `5cfffb8`); the debugger and the exit status (C4) | `src/lang/c/` (`leapc-debug.js`), `libs/c/1.0.0/`, `libs/c/1.2.0/`, `cartridge/c/1.2.0/`, `src/files.js` (`tapeToText`), `src/emulator.js` (`breakHold`), `src/editor.js` (breakpoint toggle fix), `tools/leapc-rom-entry.py`, `tools/gen-leapc-*.py`, `ide.js` | **Done** (2026-11-01: C1-C3 `d0e437b`, 1.0.0 `ac0d00f`, C5 `94700cf`, C6 `4f30b82`, C7 `1050d7b`, C4 `0b419d3`, C9 `4798b64`, C7 keys `5cfffb8`; 2026-11-02: Leap-C 1.2.0 `4c02f48`); locals in the debugger and C8 tools not yet |
-| —     | New releases (2026-11-02): Leap V2 2.1.1-emu.1 (`4aa678c`: ROM entry, keyword data, packages, cartridge build `cartridge/2.1.1-emu.1/`), 2068-Forth v2.0.1 and Leap-C 1.2.0 (`4c02f48`, TSRun pin `34b0794`), TSRun pin `c52f272` with the 2.1.1 ROMs (`5c251a5`, local); the ROM projects' answers committed in `c2fb7af` | `src/lang/basic/leap-roms.js`, `forth-roms.js`, `leapc-roms.js`, the generated data, `cartridge/`, `packages/`, `libs/c/`, `tests/rom-checks.mjs`, `tests/browser-smoke.mjs`, `tsrun/` | **Done** (not pushed: TSRun `c52f272` first) |
+| —     | New releases (2026-11-02): Leap V2 2.1.1-emu.1 (`4aa678c`: ROM entry, keyword data, packages, cartridge build `cartridge/2.1.1-emu.1/`), 2068-Forth v2.0.1 and Leap-C 1.2.0 (`4c02f48`, TSRun pin `34b0794`), TSRun pin `c52f272` with the 2.1.1 ROMs (`5c251a5`); the ROM projects' answers committed in `c2fb7af` | `src/lang/basic/leap-roms.js`, `forth-roms.js`, `leapc-roms.js`, the generated data, `cartridge/`, `packages/`, `libs/c/`, `tests/rom-checks.mjs`, `tests/browser-smoke.mjs`, `tsrun/` | **Done** (not pushed: TSRun `c52f272` first) |
 | —     | Speed test "Spinning squares" in all three languages (an Examples-menu entry each; the same picture, the frame counter's count printed) | `src/lang/spin-demo.js`, the three `profile.js`, `tests/rom-checks.mjs` section 10 | **Done** (2026-11-01, `1c74c46`) |
 | —     | Editor structure tools (folding, indent, Tidy, go to definition, rename), Examples menu, Z80 breakpoints | `src/lang/basic/editor.js`, `src/lang/basic/leap-lang.js`, `src/lang/basic/examples.js`, `src/debugger.js`, `ide.js` | **Done**, verified |
 
@@ -2008,7 +2008,7 @@ tested separately.
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
   clone `~/2068-Leap`. V1 is archived; ignore it.
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, git submodule
-  `./tsrun` pinned at `c52f272` (local, not pushed).
+  `./tsrun` pinned at `c52f272`.
 - **This project on GitHub**: https://github.com/nchiker/2068-Leap-IDE, live at
   https://nchiker.github.io/2068-Leap-IDE/.
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
@@ -2168,9 +2168,7 @@ and the keyed Examples in `5cfffb8`), then the 2026-11-02 releases (Leap V2
 notes sent to the ROM projects are answered (Leap-C by 1.2.0 and
 `docs/requests/LEAP_C_1_2.md` / `LEAP_C_EXAMPLE_11_ANSWERS.md`, Forth by the
 v2.0.1 release, Leap V2 by 2.1.1 and `docs/requests/LEAP_V2_ANSWERS.md`).
-**Open: the push.** The commits `58948f0..5c251a5` on `main` are local, and
-TSRun `c52f272` (the submodule commit) has to be pushed to nchiker/TSRun first;
-the owner's approval is pending. Remaining (details in
+All of it is pushed (TSRun `c52f272` first). Remaining (details in
 `docs/LEAP_FORTH_PLAN.md` and `docs/LEAP_C_PLAN.md`), all optional:
 
 - **Forth:** F7 (UDG and Draw tools) is optional; the optional LIB tape and
