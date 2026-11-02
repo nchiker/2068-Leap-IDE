@@ -1217,5 +1217,51 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     [['add', 'main'], ['total', 'p'], ['N'], ['pt']]);
 }
 
+// ── 10. The speed test (src/lang/spin-demo.js): one task in the three languages ──
+// Each version runs through its profile's real Run path (startRun, driver.inject /
+// next / result) on its own ROMs and must draw exactly the same picture: the
+// bitmap below row 0 (where each prints its time) and above row 23 (Leap-C's
+// report), and the attributes there. The frame counters the BASIC and Forth
+// versions read (they have no word for it) must be the ones that count.
+console.log('\nSpeed test in three languages (src/lang/spin-demo.js)');
+{
+  const { SPIN_DEMO } = await import(join(ROOT, 'src/lang/spin-demo.js'));
+  const FRAMES = { basic: 0x8175, forth: 0x80F4 };          // FRAMES in Leap 2.x's and Forth 2.0's .sym
+  const shots = {}, notes = [];
+  for (const id of ['basic', 'c', 'forth']) {
+    const P = profileById(id);
+    const dir = { basic: process.env.LEAP_ROMS, c: process.env.LEAPC_ROMS, forth: process.env.FORTH_ROMS }[id] ?? join(ROOT, 'tsrun/roms');
+    const h = new Uint8Array(readFileSync(join(dir, P.romFiles.home.split('/').pop())));
+    const x = new Uint8Array(readFileSync(join(dir, P.romFiles.exrom.split('/').pop())));
+    const r = P.knownRoms[await romPairHash(h, x)];
+    const L = await P.attach({ rom: r, romImages: { home: h, exrom: x }, fetchAsset: async p => new Uint8Array(readFileSync(join(ROOT, p))) });
+    const ex = P.examples.find(e => e.id === 'spin');
+    const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+    setHomeRom(m, h); setExRom(m, x); resetMachine(m);
+    const atWait = () => m.cpu.pc >= r.keyWait && m.cpu.pc < r.keyWaitEnd && P.driver.safe(m, r);
+    run(m, atWait, 600);
+    const lint = L.lint(ex.text);
+    const start = L.startRun(ex.text);
+    const counter = FRAMES[id] && (() => m.bus.read(FRAMES[id]) | (m.bus.read(FRAMES[id] + 1) << 8));
+    const c0 = counter?.();
+    P.driver.inject(m, r, start.job);
+    let ended = false;
+    for (;;) {
+      run(m, () => false, 1);
+      if (!run(m, atWait, 6000)) break;
+      if (P.driver.runState(m, r) === 'ended' && P.driver.next?.(m, r, start.job)) continue;
+      ended = P.driver.runState(m, r) === 'ended';
+      break;
+    }
+    const status = ended ? L.describeResult(P.driver.result(m, r, start.job), start.editorLine, null, start.job).text : 'did not end';
+    if (lint.length || !/^(Finished|OK)/.test(status)) notes.push(`${id}: ${lint.length ? lint[0].message : status}`);
+    if (counter && !(counter() - c0 > 100 && ex.text.includes(String(FRAMES[id])))) notes.push(`${id}: the frame counter it reads (${FRAMES[id]}) did not count, or the program does not read it`);
+    shots[id] = [...Array.from({ length: (184 - 8) * 32 }, (_, i) => { const y = 8 + (i >> 5); return m.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (i & 31)); }),
+      ...Array.from({ length: 22 * 32 }, (_, i) => m.bus.read(0x5820 + i))].join();
+  }
+  same('each version runs to its end with no error, timed by a counter that counts', notes, []);
+  same('BASIC, C and Forth draw exactly the same picture in the same colours', [shots.basic === shots.c, shots.c === shots.forth, shots.c.split(',').slice(0, 5632).filter(v => v !== '0').length > 300], [true, true, true]);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

@@ -30,6 +30,7 @@ import { encodeLineStore } from '../basic/profile.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC, librariesUsed } from './leapc-scan.js';
 import { LEAPC_EXAMPLES } from './examples.js';
+import { SPIN_DEMO } from '../spin-demo.js';
 import { createLineTable, readGlobals, readCallStack } from './leapc-debug.js';
 import { romIdentity, programImage, buildCartridge as packCartridge, isLeapcCartridge } from './cartridge.js';
 import { blankOut } from './leapc-scan.js';
@@ -244,7 +245,7 @@ export const leapcProfile = {
   symbolGroups,
   symbolsEmpty: 'No functions, globals, macros or types yet.',
   help,
-  examples: LEAPC_EXAMPLES,
+  examples: [...LEAPC_EXAMPLES, SPIN_DEMO.c],   // + the speed test shared by the three languages
   tools: { udg: false, draw: false },
   /** ⬇ TAP: the program as Leap-C's SAVE writes it (V2's two blocks, format word $8C00). */
   hasTape: true,

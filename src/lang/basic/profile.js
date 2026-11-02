@@ -26,6 +26,7 @@ import {
 } from './cartridge.js';
 import { createLineTable, vmInstruction, haltVm, readVariables, readCallStack } from './leap-debug.js';
 import { EXAMPLES } from './examples.js';
+import { SPIN_DEMO } from '../spin-demo.js';
 import { tapeToText } from '../../files.js';
 import { LEAP_V2_SYMBOLS } from '../keytables.js';
 
@@ -321,7 +322,7 @@ export const basicProfile = {
   symbolGroups,
   symbolsEmpty: 'No procedures, functions, labels or variables yet.',
   help,
-  examples: EXAMPLES,
+  examples: [...EXAMPLES, SPIN_DEMO.basic],   // + the speed test shared by the three languages
   /** Right-panel tools that generate this language's code (src/tools/udg.js, draw.js). */
   tools: { udg: true, draw: true },
   /** ⬇ TAP and ⬇ DCK / ▶ Test DCK apply (attach() has exportTape / buildCartridge). */

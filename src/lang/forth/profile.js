@@ -26,6 +26,7 @@
 import { KNOWN_ROMS } from './forth-roms.js';
 import { FORTH_WORD_ENTRIES, FORTH_MANUAL_REF, FORTH_GROUPS } from './forth-words.js';
 import { FORTH_EXAMPLES } from './examples.js';
+import { SPIN_DEMO } from '../spin-demo.js';
 import { scanDefinitions } from './forth-scan.js';
 import { checkForth, readSessionWords } from './forth-check.js';
 import { createLineTable, readStacksAndWords, readCallStack } from './forth-debug.js';
@@ -304,7 +305,7 @@ export const forthProfile = {
   symbolGroups,
   symbolsEmpty: 'No words, variables or constants defined yet.',
   help,
-  examples: FORTH_EXAMPLES,
+  examples: [...FORTH_EXAMPLES, SPIN_DEMO.forth],   // + the speed test shared by the three languages
   tools: { udg: false, draw: false },
   /** ⬇ TAP: a TEXT tape, as SAVE-TEXT writes it (src/lang/forth/tape.js). */
   hasTape: true,

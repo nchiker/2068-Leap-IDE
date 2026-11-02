@@ -270,7 +270,8 @@ try {
   const tidied = await evaluate(`(leapEditor.setSource(${JSON.stringify(tidyIn)}, {fresh: true}), document.getElementById('btn-tidy').click(), leapEditor.getSource())`);
   check('Tidy indents nested blocks, labels at column 0, IF … THEN GOTO is no block', tidied === tidyOut, JSON.stringify(tidied));
   const untouched = await evaluate(`(async () => { const { EXAMPLES } = await import('./src/lang/basic/examples.js');
-    return EXAMPLES.filter(e => { leapEditor.setSource(e.text, {fresh: true}); leapEditor.tidy(); return leapEditor.getSource() !== e.text; }).map(e => e.id); })()`);
+    const { SPIN_DEMO } = await import('./src/lang/spin-demo.js');
+    return [...EXAMPLES, SPIN_DEMO.basic].filter(e => { leapEditor.setSource(e.text, {fresh: true}); leapEditor.tidy(); return leapEditor.getSource() !== e.text; }).map(e => e.id); })()`);
   check('Tidy leaves every example as it is', untouched.length === 0, untouched.join());
   const match = await evaluate(`(leapEditor.setSource(${JSON.stringify(tidyOut)}, {fresh: true}), leapEditor.setCursor(3, 5),
     [...document.querySelectorAll('.cm-block-match')].map(e => e.textContent).join())`);
@@ -500,11 +501,11 @@ try {
   const cBack = await waitFor("!leapIDE.emulator.cartridge && document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 20000);
   check('Leap-C: ▶ Test DCK runs the program\'s cartridge on a stock TS2068; Stop goes back to Leap-C',
     cCart === 'Stock TS2068 + DCK' && /^Leap-C 1\.0/.test(cBack ?? ''), `${cCart} | ${cBack}`);
-  // C7: the Examples menu has the manual's 18 programs; one opens and runs.
+  // C7: the Examples menu has the manual's 18 programs and the speed test; one opens and runs.
   const cExamples = await evaluate("document.querySelectorAll('#examples-menu [data-example]').length");
   await evaluate("window.confirm = () => true, document.querySelector('[data-example=fibonacci-numbers]').click()");
   const cExRun = await runProgram(null, /Finished|error|Stopped/);
-  check('Leap-C: the Examples menu lists 18 programs, and Fibonacci runs', cExamples === 18 && cExRun === 'Finished: exit 55', `${cExamples} | ${cExRun}`);
+  check('Leap-C: the Examples menu lists 19 programs (the manual\'s 18 and the speed test), and Fibonacci runs', cExamples === 19 && cExRun === 'Finished: exit 55', `${cExamples} | ${cExRun}`);
   // C6: a program calling circle() runs with LIB "shapes" loaded by the IDE.
   const cLib = await runProgram(['int main(void)', '{', '    cls();', '    circle(128, 96, 20);', '    return 0;', '}'], /Finished|error|Stopped/);
   const cLibPixel = await evaluate('(leapIDE.emulator.machine.bus.read(0x4000 | (96 & 0xC0) << 5 | (96 & 7) << 8 | (96 & 0x38) << 2 | (148 >> 3)) >> (7 - (148 & 7))) & 1');
