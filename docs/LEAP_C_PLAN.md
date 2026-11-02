@@ -1,8 +1,8 @@
 # Plan: Leap-C in the Leap IDE
 
-Status: updated 2026-11-01. **C1, C2, C3, C5, C6 and C7 are done** (C1 to C3
-`d0e437b`, on `v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6
-`4f30b82`; C7 `1050d7b`); C4, C8 and C9 are open. Prerequisite (done, `3ed5d3b`):
+Status: updated 2026-11-01. **C1 to C7 are done** (C1 to C3 `d0e437b`, on
+`v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6 `4f30b82`; C7
+`1050d7b`; C4 `0b419d3`); C8 (optional) and C9 are open. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Leap-C project has answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)).
@@ -14,8 +14,10 @@ Every address comes from the `.sym` files, so moving to 1.0 meant regenerating
 the ROM entry and the keyword and error data at the 1.0 tag, which was done
 when **Leap-C 1.0.0 was released the same day** (`ac0d00f`; TSRun pin
 `9f9bbc5`). Only **C9 (the cartridge) waits**, for Leap-C's own `make cart`
-build, which the Leap-C project is building now (in progress, uncommitted in
-`~/2068-Leap-C` `src/cart/`). Order: stage 0, then Forth and Leap-C,
+build, which the Leap-C project is building (it was in progress, uncommitted in
+`~/2068-Leap-C` `src/cart/`; a request file from that side,
+[`requests/LEAP_C_CARTRIDGE.md`](requests/LEAP_C_CARTRIDGE.md), has appeared,
+uncommitted and **not reviewed yet**). Order: stage 0, then Forth and Leap-C,
 both unblocked; Forth first because its release, manual and cartridge are
 all complete (see `MULTI_LANGUAGE_PLAN.md`).
 
@@ -26,8 +28,8 @@ the IDE's run-by-injection, ROM-compiler checker and line-table approach carry
 over almost unchanged; what is new is a C editor, the error cells, and a
 debugger for native code instead of V2's bytecode VM.
 
-Overall difficulty: **medium**. The riskiest part is the debugger (stage C4),
-and the answers have settled most of its questions.
+Overall difficulty: **medium**. The riskiest part was the debugger (stage C4),
+now done.
 
 Authorities, in order: the Leap-C manual (`docs/manual/01…08_*.md`) and
 `spec.md` for the language; `build/leapc_home.sym` / `leapc_exrom.sym` for
@@ -223,6 +225,48 @@ first (C6, `4f30b82`).
   library program.
 
 ### C4 — Debugger (native code)
+
+**Done (`0b419d3`)**: `src/lang/c/leapc-debug.js` (`createLineTable`,
+`readGlobals`, `readCallStack`, `inRam`; pure, Node imports it), the profile's
+`createDebugAdapter(rom)` (a no-op adapter, `NO_DEBUG`, for a ROM entry
+without the C4 fields), and `tools/leapc-rom-entry.py` emitting `reportBuf`,
+`dclAutoinit`, `stmtDoCond`, `cgUnitFound`, `runFnlines`, `symGlo`, `rtRun` and
+`rtErrPc` (the 1.0.0 entry was regenerated; beta.2 lacks them: no debugger,
+plain `Finished`, the C4 tests print SKIP). The line table follows the plan
+below (the four compiler points plus the `RUN_FNLINES` records, the later
+record winning at one address). **Deviations and details:**
+
+- **Memory is read from `m.ram`**, not through the paging, because
+  `$C000-$DFFF` is the EXROM whenever the shell or an EXROM routine runs; a
+  position counts only when its 8K chunk is RAM (`inRam`, port `$F4`).
+- **Globals and function names** are copied at `RT_RUN`, where the compile
+  workspace is still intact (the plan's "end of the hidden check or the real
+  compile" resolved to the real compile). The Variables section is titled
+  "Globals"; types shown: `char`, `signed char`, `int`, `unsigned`, `float`,
+  pointers, arrays (a `char` array as a string, others the first 8 elements)
+  and structs (their address only).
+- **Step** goes statement by statement, into called functions (a `for` loop's
+  test and step are not statement starts); no step over / step out. Stop while
+  paused is BREAK.
+- **Call stack** from the `IX` frame chain, the full chain (not only the
+  current function); at a function's prologue (before its `ENTER`) the return
+  is still at SP.
+- **Status bar:** `Finished: exit n` (the report's text "EXIT n", read from
+  `SH_REPORT_BUF`: the plan's "HL at `RT_RUN.done`" was not needed). A run-time
+  error or BREAK names the failing **statement's** line, through `RT_ERRPC`
+  (every `RT_ERROR` sets it) and the line table ("Runtime error 6 on line 5");
+  without a line table it is the function's definition line as before ("in the
+  function on line N").
+- **Not done:** locals (the second version below), step over / out.
+- Also fixed in this commit, for all languages: a breakpoint toggle never
+  removed the breakpoint (`src/editor.js`).
+- Tests: `tests/rom-checks.mjs` section 9 (stops with the globals and the call
+  stack, Step, the globals of each type, the lines of a run-time error and of
+  BREAK; all pass with `LEAPC_ROMS` on beta.2, where they print SKIP) and the
+  browser test (a breakpoint in a function pauses with the globals and call
+  stack, a second toggle clears it, Continue gives `Finished: exit n`).
+
+The plan as written:
 
 The generic panel (registers, memory, Z80 breakpoints) works as is. The
 Leap-specific parts need new readers.
@@ -431,12 +475,13 @@ roadmap step after 1.0); the other stages do not wait.
 
 ## Tests
 
-- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C3, C5 to C7); C4's and C9's are to come.
+- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C7); C9's are to come (137 checks in all at `0b419d3`).
 - `tests/browser-smoke.mjs`: switch to C, run hello world, a compile error
   with the column underline, completion of a library function, tape export
   (done: ⬇ TAP, then Open from BASIC switches to Leap-C), a shapes program
   running with its library (done), the Examples menu (done: 18 programs,
-  Fibonacci runs), switch back.
+  Fibonacci runs), a breakpoint in a function with the globals and call stack
+  (done, C4), `Finished: exit n` (done), switch back.
 
 ## Adding a Leap-C release
 
@@ -467,6 +512,8 @@ release's `LEAPC_TAPE_SYMBOLS` to `tests/rom-checks.mjs`; run both test suites
 
 ## Still open
 
+Only **C9** is open for the IDE, apart from the optional C8 (tools), locals
+in the debugger and driving the key-reading and tape examples in the tests.
 Nothing is open with the Leap-C project except its cartridge build:
 [`requests/LEAP_C_QUESTIONS.md`](requests/LEAP_C_QUESTIONS.md) is answered
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)); the line-table
@@ -480,6 +527,8 @@ earlier question about the commit that carries them is closed.
    the Leap-C project, uncommitted in `~/2068-Leap-C` `src/cart/`; the owner has
    still to approve their M12 plan).
 
-For the IDE: C4 (the debugger, with the exit status in the status bar), C8
-(tools, optional), C9, and driving the key-reading and tape examples in the
-tests.
+For the IDE: C9 once the cartridge format is settled (read
+[`requests/LEAP_C_CARTRIDGE.md`](requests/LEAP_C_CARTRIDGE.md) first: it came
+from the Leap-C project, uncommitted, and has not been reviewed); locals in the
+debugger; C8 (tools, optional); and driving the key-reading and tape examples in
+the tests.

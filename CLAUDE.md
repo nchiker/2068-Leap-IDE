@@ -78,19 +78,22 @@ Leap-IDE/
 │   │       ├── export.js     ← TAP builder (Phase 6, done, verified)
 │   │       └── cartridge.js  ← DCK / flat .bin cartridge builder, program image format 2 with a package (Phase 6, done, verified; no DOM, Node can import it)
 │   │   ├── c/          ← Leap-C (v1.0.0; see "Leap-C")
-│   │   │   ├── profile.js       ← The C profile: driver (shell path), prepareSource, describeError, tape export / Open, libraries, attach() (no DOM or CodeMirror)
+│   │   │   ├── profile.js       ← The C profile: driver (shell path), prepareSource, describeError, debug adapter, tape export / Open, libraries, attach() (no DOM or CodeMirror)
 │   │   │   ├── editor.js        ← CodeMirror half: C-subset highlighting, completion, hover, folding, indent, Tidy, match, go to definition, rename
 │   │   │   ├── leapc-scan.js    ← Pure scanner: functions, globals, macros, types, librariesUsed (no CodeMirror)
 │   │   │   ├── leapc-check.js   ← Editor error check: SH_COMPILE on a hidden machine, with the error's token column
+│   │   │   ├── leapc-debug.js   ← Debugger (C4): line table from the compiler, globals, IX frame-chain call stack (no DOM; Node can import it)
 │   │   │   ├── leapc-roms.js    ← Known Leap-C ROM builds (1.0.0, 1.0.0-beta.2): SHA-256 -> addresses
 │   │   │   ├── leapc-keywords.js ← GENERATED keyword / library data from the manual; never hand-edit
 │   │   │   ├── leapc-errors.js  ← GENERATED compile / run-time error text from include/leapc_errors.inc; never hand-edit
 │   │   │   └── examples.js      ← GENERATED Examples menu (the manual's 18 Part 7 programs, test directives as data); never hand-edit
 │   │   └── forth/      ← Leap-Forth (2068-Forth v2.0; see "Leap-Forth")
-│   │       ├── profile.js       ← The Forth profile: driver (line by line through EDIT_BUF), prepareSource, describeThrow, attach() (no DOM or CodeMirror)
+│   │       ├── profile.js       ← The Forth profile: driver (line by line through EDIT_BUF), prepareSource, describeThrow, debug adapter, interpretFresh + buildCartridge, attach() (no DOM or CodeMirror)
 │   │       ├── editor.js        ← CodeMirror half: highlighting by the interpreter's reading, completion with stack effects, hover, folding, indent, Tidy, block match, go to definition, rename
 │   │       ├── forth-scan.js    ← Pure scanner: lineTokens(line, ctx), scanContext, scanDefinitions, blockStructure, isNumber (no CodeMirror)
 │   │       ├── forth-check.js   ← Static error check (F3): checkForth, readSessionWords, numberInRange (no DOM or CodeMirror)
+│   │       ├── forth-debug.js   ← Debugger (F4): line table built while sending, stacks and words, call stack from the return stack (no DOM; Node can import it)
+│   │       ├── cartridge.js     ← DCK / flat .bin builder for a stock TS2068 (F8): program image "F1", port of forthcart.py (no DOM; Node can import it)
 │   │       ├── tape.js          ← TEXT tapes (F5): buildForthTap, forthTapeToText, isForthTape (no DOM; Node can import it)
 │   │       ├── forth-roms.js    ← Known Forth ROM builds: SHA-256 -> addresses
 │   │       ├── forth-words.js   ← GENERATED word data (184 words) from the manual; never hand-edit
@@ -101,7 +104,8 @@ Leap-IDE/
 │       └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE (BASIC)
 ├── cartridge-build/  ← Source of the cartridge images: leap.patch + setup.sh, CLI tools, tests, status (see its README)
 ├── cartridge/
-│   └── 2.1.0-emu.1/  ← Leap's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README
+│   ├── 2.1.0-emu.1/  ← Leap's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README
+│   └── forth/2.0/    ← 2068-Forth v2.0's cartridge build: forth_cart.dck (Forth with no program, the release's, unchanged; identity $FDBE), README
 ├── packages/
 │   ├── 2.0.2-emu.1/  ← Package images of that release (<name>.bin; same six as 2.1.0-emu.1)
 │   └── 2.1.0-emu.1/  ← The current release's package images: cbeep graphics mode printer shapes sprite (<name>.bin)
@@ -210,17 +214,27 @@ rest of this file describes BASIC's profile unless it says otherwise.
   it until the key wait; for ROMs that latch BREAK in their interrupt and then
   wait for all keys to be released).
 - `createDebugAdapter(rom)`: the debugger's view of a run (see "Debugger").
+  Optional adapter members added with Forth and Leap-C: `reset(job)` (gets the
+  run's job), `version()` (a number that changes when the line table grows;
+  the controller then places the breakpoints again), `live` (the variables
+  table is also shown between runs) and `labels {variables, step}` (the
+  Variables section's title and what a Step goes by). A profile may return a
+  no-op adapter (registers, memory and Z80 breakpoints only), as Leap-C does
+  for a ROM entry without the C4 fields.
 - `symbolGroups(text)` and `symbolsEmpty` (Symbols tab), `help` (the Help
   overlay's entries, groups, manual link, shortcuts and tips), `examples`,
   `tools {udg, draw}` (which code generators apply), `waitingText`,
   `readyText` (the status when the ROM has booted; default `Ready`),
   `hasTape` / `hasCartridge` / `hasSession`, `tapeToText(bytes)` /
-  `ownsTape(bytes)`.
+  `ownsTape(bytes)` and `ownsCartridge(dck)` (true for a cartridge image of
+  this language, so a cartridge test takes its keyboard table: Forth's checks
+  for `"F1"` at DOCK `$4000`).
   `help` may also carry `link(name, entry)` (the entry's manual URL),
   `forms(name, entry)` (the lines under its name) and `kindText(entry)`.
   Buttons and tabs a language lacks are hidden (`hidden`, with
-  `.btn[hidden]` and the like in `ide.css`): DCK, UDG and Draw for Forth
-  and Leap-C (both have a tape: ⬇ TAP); Import (`#btn-import-session`, in the
+  `.btn[hidden]` and the like in `ide.css`): UDG and Draw for Forth and
+  Leap-C, DCK for Leap-C (both have a tape: ⬇ TAP; Forth has ⬇ DCK and
+  ▶ Test DCK since F8); Import (`#btn-import-session`, in the
   emulator panel header) shows only for a profile with `hasSession` (Forth).
 - `attach({rom, romImages, fetchAsset})`: **the per-ROM half**, bound once the
   ROM pair is loaded. For BASIC it builds the checker machine, fetches the
@@ -228,7 +242,8 @@ rest of this file describes BASIC's profile unless it says otherwise.
   store-line to editor-line map, the byte count and the start message, or an
   error / problems), `describeResult(result, editorLine, stopLine)`,
   `progInfo(bytes)`, `exportTape(text, name)` and `buildCartridge(text, ui)`
-  (optional; `hasTape` / `hasCartridge` hide the ⬇ TAP, ⬇ DCK and ▶ Test DCK
+  (`ui` is `{confirm(q), prompt(q, default)}`; `prompt` is how Forth asks for
+  the start word; optional; `hasTape` / `hasCartridge` hide the ⬇ TAP, ⬇ DCK and ▶ Test DCK
   buttons when absent). A language with a live session (Forth) also has
   `keyWait(m)` (the emulator calls it at every key wait of the language's own
   ROMs: `emulator.onKeyWait(fn)`, wired in `ide.js`), `sessionStamp()` (changes
@@ -257,7 +272,10 @@ tables are split the same way: `leap-words.js` (pure) and `leap-lang.js`
   the existing machine (looked up in `profile.knownRoms`, an unknown pair is
   refused and the previous language stays), resets, and sets the keyboard
   table (`kbd.setSymbols`). Leaving a cartridge test restores the active
-  profile's ROMs, not a fixed pair. `profile` getter.
+  profile's ROMs, not a fixed pair. `testCartridge(dck, symbols)` takes the
+  keyboard table of the cartridge's own language (`ide.js` finds it with the
+  profiles' `ownsCartridge`), else the active profile's; leaving puts the
+  profile's back. `profile` getter.
 - `src/editor.js`: the language is held in a `Compartment`; `setLanguage(id)`
   swaps it (the ruler follows `lineLimit`).
 - `src/debugger.js`: `setAdapter(profile.createDebugAdapter(rom))`.
@@ -287,10 +305,10 @@ one line each in `src/lang/profiles.js` and `src/lang/editors.js`, its ROM
 entries and generated data under it, and tests (`tests/rom-checks.mjs`
 sections 8 and 9 are the models).
 
-### Leap-Forth (`src/lang/forth/`, stages F0 to F3 and F5, plus Import session)
+### Leap-Forth (`src/lang/forth/`, stages F0 to F5 and F8, plus Import session)
 
 Commits: F0 to F2 `b9526ce` (Send after it), F3 `a3869d4`, Import session
-`89a6d48`, F5 `6103f66`.
+`89a6d48`, F5 `6103f66`, F4 `054198d`, F8 `f7a5d1d`.
 
 2068-Forth **v2.0** (tag `v2.0`, commit `50170f2`; ROMs HOME `730c86d0…`,
 EXROM `fd877dd0…`, the pair's key in `forth-roms.js` is `04c3e54d…`), which
@@ -393,13 +411,81 @@ Plan: [`docs/LEAP_FORTH_PLAN.md`](docs/LEAP_FORTH_PLAN.md).
 - **ROM entry.** `tools/forth-rom-entry.py <unpacked release zip> 2.0`: it
   checks `SHA256SUMS` and the key-wait bytes and takes every address from
   `symbols/forth_boot.sym`. The entry was built from the unpacked v2.0 zip.
-- **Not yet.** No Forth line table or debugger (F4: the panel shows registers,
-  memory and Z80 breakpoints); no cartridge (F8; owner, 2026-11-01: the start
-  word is chosen at export from the program's words, and the cartridge carries
-  the editor's text interpreted on a fresh hidden machine, not the live
-  session's dictionary); of F6, the examples' `\ expect:` output and `\ keys:`
-  lines and `demos/gallery.fs` are not checked; F7 (UDG and Draw tools) is
-  optional and not started.
+- **Debugger (F4, `forth-debug.js`, `054198d`).** Forth compiles as it reads,
+  so the line table is built **while the program is sent**, by watching the
+  interpreter (`createLineTable(rom)`): each line enters at
+  `EDITOR_LOOP_LIVE.enter` (the n-th entry of a run is job line n); at
+  `INTERPRET_NESTED.token` with `STATE` 1 a record `{addr: HERE, line, word}` is
+  added (a `STATE` 0 token only remembers the line, for the `:`); a definition's
+  code starts at `COLON_XT`, which gets a record on the line of the `:` when
+  its first body token arrives; text that `LOAD-TEXT` or `EDIT` runs
+  (`SRC_PTR` outside `EDIT_BUF`) is ignored. Records are instruction starts
+  only, never inline data (after `CALL DOLIT` / `DOFLIT` / `QBRANCH` /
+  `BRANCH`, `."` and `S"`), so stopping at one is always safe. The table
+  grows during the run, so it has a `version()` and the controller places
+  the breakpoints again when it changes.
+  - *Positions* (the controller's "statement" addresses): a record's address
+    while the code runs, or `TOP` (`0x10000`) + n when job line n is sent. A
+    breakpoint on a line outside a definition (`promptLines`) therefore stops
+    when the line is sent; one in a word stops where each stretch of that
+    line's code starts (not at every token). Step goes token by token, into
+    the program's words, and also stops at each line sent.
+  - *Variables*, titled **"Stacks and words"** (`labels.variables`): the data
+    stack (IX, top first, up to 16 cells, signed and hex), the float stack
+    (IY), then the session's words with their values (`readWords` walks
+    LATEST down to `FORTH_DICT_RAM`; the kind comes from the word's code:
+    `CALL DOLIT` gives a `VARIABLE` / `FVARIABLE` / `CONSTANT` / data area,
+    `CALL DOFLIT` an `FCONSTANT`, `CALL DODOES` a `CREATE`d word, anything else
+    a `:` word). The adapter is `live`: the table also shows between runs.
+  - *Call stack* (`readCallStack`): the word the PC is in, the user words whose
+    `CALL`s are on the return stack (an entry counts only when a `CALL`
+    precedes it and it lies in a user word, since `DO` loops and `CATCH` frames
+    share the stack), then "the line sent". Stop while paused is BREAK
+    (`halt` false).
+  - *Limits.* The records are reset by every Run **and every Send**
+    (`debug.beginRun(job)`), so breakpoints and Step apply only to the words
+    the latest Run / Send defined; a word defined earlier, or typed at the
+    prompt, has no lines (it still shows in the words table and the call
+    stack). `tools/forth-rom-entry.py` emits the new fields `doLit`, `doFLit`,
+    `doDoes`, `qBranch`, `branch` and `stkGuard`; the 2.0 entry was
+    regenerated from the release zip.
+- **Cartridge (F8, `cartridge.js`, `f7a5d1d`).** ⬇ DCK and ▶ Test DCK for a
+  stock TS2068. `cartridge.js` is a port of 2068-Forth's `tools/forthcart.py`:
+  `programImage` (`"F1"`, `ROM_IDENTITY`, n = `HERE` - `$9100` at most 16,128,
+  `LATEST`, the start word's length and name, the 168 UDG bytes, the
+  dictionary, CRC-16/CCITT-FALSE), `buildForthCartridge` (the DCK: bank 0, the
+  cartridge HOME in chunks 0-1, the image from chunk 2, the EXROM in chunk 5;
+  and the flat 64 KB `.bin`), `cartImages`, `homeIdentity`, `crc16` and
+  `isForthCartridge`. `cartridge/forth/2.0/forth_cart.dck` is the release's,
+  unchanged (24585 bytes, SHA-256 `4f07fd88…`; identity `$FDBE`; README there).
+  - *Owner's choices (2026-11-01), as built.* The editor's text is interpreted
+    on a **fresh hidden machine** (`interpretFresh` in `profile.js`: a new
+    machine with the loaded ROMs, line by line as Run sends it, at most about a
+    minute of TS2068 time in all, 600 frames to boot and 3000 for the text); a
+    line that errors (marked on its editor line), waits for a key (`KEY`,
+    `ACCEPT`, `INPUT` at the top level) or runs too long is refused. Then
+    `HERE` / `LATEST`, the dictionary (read from `m.ram`, since the EXROM hides
+    part of it), the UDGs and the words are packed. **The start word is chosen
+    at export** with `ui.prompt`, listing the program's `:` words, the newest
+    as the default; it is checked against the dictionary.
+  - *Checks before export.* The identity of the loaded ROMs against the
+    cartridge's (`homeIdentity`), an `OUT` to port 244 or 255 with a literal
+    port asks first, a program with no `:` word, a dictionary over 16,128
+    bytes. The status gives the dictionary size and the start word.
+  - *Test DCK / Open `.dck`.* `profile.ownsCartridge` recognises the image
+    (`"F1"` at DOCK `$4000`), and `ide.js` passes that profile's keyboard table
+    to `emulator.testCartridge(dck, symbols)`, so `[ ] { }` and the like can be
+    typed in a Forth cartridge opened while BASIC is active; leaving the test
+    puts the active profile's table back.
+  - *Verified.* In Node, on a stock TS2068 the cartridge loads, runs the start
+    word (a variable set to 42), keeps the UDGs and leaves the OK prompt; the
+    IDE's DCK and BIN for the Blackjack demo are byte-identical to
+    `forthcart.py`'s for the same dictionary (checked outside the tests). Not
+    tried: real hardware, ZEsarUX / Fuse.
+- **Not yet.** Of F6, the examples' `\ expect:` output and `\ keys:` lines and
+  `demos/gallery.fs` are not checked; F7 (UDG and Draw tools) is optional and
+  not started; the optional LIB tape (`SAVE-LIB` format) and the optional
+  watches of F1 are not built.
 - **Adding a Forth release.** Unpack its zip; move the TSRun pin to a commit
   carrying its ROMs (the pair in `tsrun/roms/` must match `forth-roms.js`);
   run `tools/forth-rom-entry.py <unpacked zip> <version>` and paste the entry;
@@ -407,7 +493,7 @@ Plan: [`docs/LEAP_FORTH_PLAN.md`](docs/LEAP_FORTH_PLAN.md).
   `FORTH_ROMS=<dir> node tests/rom-checks.mjs` (like `LEAP_ROMS`) and the
   browser test.
 
-### Leap-C (`src/lang/c/`, stages C1 to C3 and C5 to C7)
+### Leap-C (`src/lang/c/`, stages C1 to C7)
 
 Leap-C **v1.0.0** (released 2026-11-01, tag `v1.0.0`, commit `83e6e21`;
 TSRun's `roms/leapc-0.rom` / `leapc-1.rom` at the pin `9f9bbc5`, HOME
@@ -416,7 +502,8 @@ TSRun's `roms/leapc-0.rom` / `leapc-1.rom` at the pin `9f9bbc5`, HOME
 `97fe9523…`) stays in the table, so `LEAPC_ROMS=<dir of the beta.2 ROMs>` still
 tests it (the library and tape checks print SKIP there: no library images and
 no `LEAPC_TAPE_SYMBOLS` entry for it). Commits: C1 to C3 `d0e437b` (on
-beta.2), 1.0.0 `ac0d00f`, C5 `94700cf`, C6 `4f30b82`, C7 `1050d7b`.
+beta.2), 1.0.0 `ac0d00f`, C5 `94700cf`, C6 `4f30b82`, C7 `1050d7b`, C4
+`0b419d3`.
 Plan: [`docs/LEAP_C_PLAN.md`](docs/LEAP_C_PLAN.md).
 
 - **Run is the shell path** the Leap-C project recommends. At a shell key wait
@@ -430,11 +517,15 @@ Plan: [`docs/LEAP_C_PLAN.md`](docs/LEAP_C_PLAN.md).
   report waits for every key to be released, and BREAK ends every wait with
   run-time error 5, so no jump is needed.
 - **Errors.** `driver.result` reads `CC_ERRNUM` / `CC_ERRLINE` / `SH_ERR_COL`,
-  or `RT_ERRNUM` / `RT_ERRLINE` (the line where the failing function starts;
-  status "in the function on line N"). The compile error's token is marked
-  by columns. Status: Finished / Compile error N on line L / Runtime error N /
-  Stopped (BREAK). Not yet: the exit status in the status bar (it is only in
-  HL at `RT_RUN.done`; the report on the screen shows it).
+  or `RT_ERRNUM` / `RT_ERRLINE` (the line where the failing function starts)
+  and the exit status. The compile error's token is marked by columns. Status
+  (since C4, `0b419d3`): `Finished: exit n` (`reportExit` reads the report's
+  text "EXIT n" from `SH_REPORT_BUF`; a ROM entry without `reportBuf` says
+  plain `Finished`), `Compile error N on line L`, `Runtime error N on line L` and
+  `Stopped (BREAK) on line L`, where L is the failing **statement**: the
+  adapter's `stopLine` looks `RT_ERRPC` (set by every `RT_ERROR`) up in the
+  line table; without a line table (beta.2) it is the function's definition
+  line as before, "in the function on line N".
 - **Checker** (`leapc-check.js`): `SH_COMPILE` on a hidden machine (boot to
   the shell key wait, snapshot, restore, write the store, call). The column is
   computed as `SH_RUN` does for `SH_ERR_COL`: `TOK_PTR` less the line's text
@@ -499,11 +590,45 @@ Plan: [`docs/LEAP_C_PLAN.md`](docs/LEAP_C_PLAN.md).
   the same as when it came from `main` at `83e6e21`, which is the commit
   `v1.0.0` points to; for a tag the script sets `LEAPC_MANUAL_REF` to the tag
   name, not the tag object's hash). `examples.js` as above.
-- **Not yet.** Debugger line table (C4) and the exit status in the status bar
-  (it is only in HL at `RT_RUN.done`); cartridge (C9: waits for Leap-C's own
-  `make cart` build, in progress and uncommitted in `~/2068-Leap-C`
-  `src/cart/`; their plan `docs/milestones/M12-cart.md` awaits the owner's
-  approval); C8 (UDG and Draw tools) is optional and not started.
+- **Debugger (C4, `leapc-debug.js`, `0b419d3`).** Leap-C compiles to native
+  Z80 code, so the line table (`createLineTable(rom)`) is built by watching the
+  compiler, at `STATEMENT`, `DCL_AUTOINIT` and `STMT_DO.cond` (record
+  `TOK_LINE`, `CG_PC`), at `CG_UNIT.found` (the code moves on to the next
+  image region at any instruction: record the last line, `DE`), and, when the
+  program starts (`RT_RUN`), from the `RUN_FNLINES` records (each function's
+  prologue and definition line). At one address the later record wins; the
+  line of an address is the last record at or below it. All these points are
+  in HOME.
+  - *At `RT_RUN`* the compile workspace is still intact (the heap overwrites it
+    once the program runs), so the globals (the `SYM_GLO` chain: name, type
+    decoded from its handle or type node, static address) and the functions'
+    names are copied then.
+  - *Memory is read from `m.ram`* (TSRun's flat RAM array), not through the
+    paging: `$C000-$DFFF` is the EXROM whenever the shell or an EXROM routine
+    runs, with the program's static data (RUN_FNLINES, globals) under it. A
+    position counts only when its 8K chunk is paged to RAM (`inRam`, port `$F4`).
+  - *Breakpoints* stop at a line's statements; *Step* goes statement by
+    statement, into called functions (a `for` loop's test and step are not
+    statement starts); `labels` are "Globals" and "statement". *Variables*
+    ("Globals") shows `int`, `unsigned`, `char`, `float`, pointers, arrays
+    (strings as text, the first 8 elements of others) and structs (address
+    only). *Call stack*: the `IX` frame chain (the caller's `IX` at `IX`, its
+    return address at `IX+2`; at a function's prologue the return is still at
+    SP). Stop while paused is BREAK.
+  - *ROM entry.* `tools/leapc-rom-entry.py` emits `reportBuf`, `dclAutoinit`,
+    `stmtDoCond`, `cgUnitFound`, `runFnlines`, `symGlo`, `rtRun` and `rtErrPc`;
+    the 1.0.0 entry was regenerated. The beta.2 entry lacks them: the profile
+    then returns a no-op adapter (registers, memory and Z80 breakpoints), the
+    status says plain `Finished`, and the C4 tests print SKIP.
+- **Not yet.** Locals in the debugger (a second version: `IX` + the symbol's
+  value for `SF_AUTO` entries, with each block's code range from
+  `SCOPE_OPEN` / `SCOPE_CLOSE`); driving the Examples-menu programs that need
+  keys (`keys:`) and the tape one in the tests; cartridge (C9: Leap-C's own
+  `make cart` build was in progress and uncommitted in `~/2068-Leap-C`
+  `src/cart/`; a request file from that side, `docs/requests/LEAP_C_CARTRIDGE.md`,
+  has appeared and is not reviewed yet; the plan `docs/milestones/M12-cart.md`
+  awaited the owner's approval); C8 (UDG and Draw tools) is optional and not
+  started.
 - **Moving to a later release.** Take the release's emulator pack, run
   `tools/leapc-rom-entry.py`, move the TSRun pin if the ROMs changed,
   regenerate the three data files at the tag, copy the library images to
@@ -1049,13 +1174,14 @@ The `'paused'` state is reported through `onEmulatorState`.
 profile's `createDebugAdapter(rom)` (`debug.setAdapter()` on a language switch).
 The adapter has `reset`, `observe(m)` (called before each instruction while
 watched), `position(m)`, `isStart`, `lineOf`, `breakPositions`, `stopLine`,
-`halt`, `variables`, `callStack` and `labels`. BASIC's, in
+`halt`, `variables`, `callStack` and `labels`, and optionally `version()` and
+`live` (see "Languages"); `reset(job)` gets the run's job. BASIC's, in
 `src/lang/basic/profile.js`, wraps the line table, `vmInstruction`, `haltVm`,
 `readVariables` and `readCallStack` of `src/lang/basic/leap-debug.js`. Registers,
 memory, Z80 breakpoints and the breakpoint list are generic.
 
-**Controller** (`createDebugger` in `src/debugger.js`): `beginRun()` resets the
-line table and installs the watch, `endRun()` removes it. Breakpoints are
+**Controller** (`createDebugger` in `src/debugger.js`): `beginRun(job)` resets
+the line table (passing the profile's job to the adapter) and installs the watch, `endRun()` removes it. Breakpoints are
 editor lines (the gutter), mapped to store lines through the last run
 (`toStoreLine` / `toEditorLine` in `ide.js`; blank lines are not stored). A
 breakpoint on a line without code (label, `REM`, blank) stops at the next line
@@ -1065,6 +1191,25 @@ its code starts with a jump over the body and calls enter 3 bytes later, at
 `ENDP` gets a stop). Pause stops at the next statement. Breakpoints can be
 added while running. Stop while paused ends the program as BREAK does
 (`VM_ERROR_CODE` 66, `VM_HALTED` 1), so its screen stays up.
+
+**Forth and Leap-C adapters** (the descriptions above are BASIC's; see
+"Leap-Forth" and "Leap-C" for the details). Both use the same controller; they
+differ from BASIC's in how the line table comes about and what the panel
+shows:
+
+| | BASIC | Forth (`forth-debug.js`) | Leap-C (`leapc-debug.js`) |
+|---|---|---|---|
+| Line table | built by the compiler, once per run, before the VM starts | built **while the program is sent** (Forth compiles as it reads); grows during the run, `version()` makes the controller place breakpoints again | built by the compiler's hooks, plus `RUN_FNLINES` at `RT_RUN` |
+| Position | VM instruction (`VM_IP`, `vmNext`) | a record's address, or `TOP` (`0x10000`) + n for line n being sent | a statement's code address (native Z80) |
+| Step | next statement | next token (word), and each line sent | next statement, into called functions |
+| Variables section | "Variables" | "Stacks and words": data and float stack, the session's words with values; `live`, also between runs | "Globals" (copied at `RT_RUN`); read from `m.ram` |
+| Call stack | VM frames | user words on the return stack, then the line sent | the `IX` frame chain |
+| Run-time error line | `stopLine` via `VM_IP` | none (Run stops at the error line, which the driver names) | `stopLine` via `RT_ERRPC` |
+| Stop while paused | sets VM error 66 | BREAK | BREAK |
+
+Forth's breakpoints apply only to the words the **latest Run or Send** defined
+(its records are reset by each); Leap-C's debugger shows globals only (no
+locals yet).
 
 **Panel** (`#debugger-mount`; every value HTML-escaped, since strings can hold
 any character):
@@ -1105,6 +1250,10 @@ breakpoint gutter (a coral arrow when it is on a breakpoint line).
 `window.leapEditor` gained `toggleBreakpoint(line)`, `onBreakpointsChanged(fn)`
 and `setExecutionLine(line|null)`. The toolbar has Run, Stop, Pause/Continue
 (F8) and Step (F10); the status bar reads "Paused at line N".
+A toggle on a line that has a breakpoint removes it (gutter click or
+`toggleBreakpoint`). Until `0b419d3` it never did: the state field tested a
+`RangeCursor`'s nonexistent `.done`, so every toggle added a duplicate; it now
+looks the position up with `set.between`.
 
 **Known limits.**
 
@@ -1219,7 +1368,7 @@ comment to leave it out when a release has no cartridge build).
 
 **The button** (`exportCartridge` in `ide.js`, title "Save the program as a
 cartridge (.dck) that runs on a stock TS2068"; steps 1-7 are the profile's
-`attach().buildCartridge(text, {confirm})` in `src/lang/basic/profile.js`,
+`attach().buildCartridge(text, {confirm, prompt})` in `src/lang/basic/profile.js` (BASIC ignores `prompt`; Forth's start-word question uses it, see "Leap-Forth"),
 which returns `{dck, bin, summary}`, `{error, line0?}` or `null` when the user
 declines), in order:
 1. Storage problems or an empty program: error.
@@ -1257,7 +1406,7 @@ on a real TS2068 with the cartridge in the dock, without downloading anything.
   `cartridge-build/tools/leap2cart.mjs`) and tests it; the editor's program is
   not touched, so the "discard unsaved changes?" question now comes after the
   file is chosen, and only for files that replace the program.
-- **Emulator** (`testCartridge(dck)` in `src/emulator.js`): fetches
+- **Emulator** (`testCartridge(dck, symbols)` in `src/emulator.js`; `symbols` is the keyboard table of the cartridge's own language, from the profile's `ownsCartridge`: a Forth cartridge opened from BASIC types as Forth does): fetches
   `tsrun/roms/ts2068-0.rom` / `ts2068-1.rom` once, puts them in the machine,
   `insertDock`, reset; state `'cartridge'`. The stock ROM starts the cartridge
   after about 2 s. A dock image TSRun cannot read is refused and the Leap ROMs
@@ -1584,8 +1733,8 @@ tested separately.
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
 | —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/lang/basic/leap-check.js`, `packages/` | **Done**, verified |
 | 0 (multi-language) | Language profiles: BASIC moves to `src/lang/basic/`, the core asks the active profile (Leap-C and Forth followed) | `src/lang/profiles.js`, `src/lang/editors.js`, `src/lang/basic/profile.js`, `src/lang/basic/editor.js`, `src/lang/basic/leap-words.js`, `src/emulator.js`, `src/debugger.js`, `src/editor.js`, `ide.js` | **Done** (2026-11-01, `3ed5d3b`) |
-| F0-F3, F5, Import (multi-language) | Leap-Forth: the live OK prompt, Run line by line, editor, Help, Examples (F0-F2); the static check (F3); Import session; TEXT tape export and Open (F5); TSRun pin `11731e1` | `src/lang/forth/` (`forth-check.js`, `tape.js`), `src/lang/keytables.js`, `src/emulator.js` (`canInject`, `next`, `onKeyWait`), `src/lang/profiles.js`, `tools/forth-rom-entry.py`, `tools/gen-forth-*.py`, `ide.js` | **Done** (2026-11-01: F0-F2 `b9526ce`, Send after it, F3 `a3869d4`, Import `89a6d48`, F5 `6103f66`); F4 debugger, F6 rest (`\ expect:` / `\ keys:` checks, `gallery.fs`), F7 tools, F8 cartridge not yet |
-| C1-C3, C5-C7 (multi-language) | Leap-C: Run by the shell path, the ROM compiler as checker, a C editor (C1-C3); 1.0.0 ROM entry, TSRun pin `9f9bbc5`; tape export and Open (C5); libraries `LIB "shapes"` (C6); the Examples menu with the manual's 18 programs (C7) | `src/lang/c/`, `libs/c/1.0.0/`, `src/files.js` (`tapeToText`), `src/emulator.js` (`breakHold`), `tools/leapc-rom-entry.py`, `tools/gen-leapc-*.py`, `ide.js` | **Done** (2026-11-01: C1-C3 `d0e437b`, 1.0.0 `ac0d00f`, C5 `94700cf`, C6 `4f30b82`, C7 `1050d7b`); C4 debugger (and the exit status in the status bar), C8 tools, C9 cartridge not yet |
+| F0-F5, F8, Import (multi-language) | Leap-Forth: the live OK prompt, Run line by line, editor, Help, Examples (F0-F2); the static check (F3); Import session; the debugger (F4: line table built while sending, stacks and words); TEXT tape export and Open (F5); the cartridge (F8: ⬇ DCK / ▶ Test DCK on a stock TS2068); TSRun pin `11731e1` | `src/lang/forth/` (`forth-check.js`, `forth-debug.js`, `tape.js`, `cartridge.js`), `cartridge/forth/2.0/`, `src/lang/keytables.js`, `src/emulator.js` (`canInject`, `next`, `onKeyWait`, `testCartridge` symbols), `src/debugger.js` (`beginRun(job)`, `version`, `labels`), `src/lang/profiles.js`, `tools/forth-rom-entry.py`, `tools/gen-forth-*.py`, `ide.js` | **Done** (2026-11-01: F0-F2 `b9526ce`, Send after it, F3 `a3869d4`, Import `89a6d48`, F5 `6103f66`, F4 `054198d`, F8 `f7a5d1d`); F6 rest (`\ expect:` / `\ keys:` checks, `gallery.fs`) and F7 tools not yet |
+| C1-C7 (multi-language) | Leap-C: Run by the shell path, the ROM compiler as checker, a C editor (C1-C3); 1.0.0 ROM entry, TSRun pin `9f9bbc5`; tape export and Open (C5); libraries `LIB "shapes"` (C6); the Examples menu with the manual's 18 programs (C7); the debugger and the exit status (C4) | `src/lang/c/` (`leapc-debug.js`), `libs/c/1.0.0/`, `src/files.js` (`tapeToText`), `src/emulator.js` (`breakHold`), `src/editor.js` (breakpoint toggle fix), `tools/leapc-rom-entry.py`, `tools/gen-leapc-*.py`, `ide.js` | **Done** (2026-11-01: C1-C3 `d0e437b`, 1.0.0 `ac0d00f`, C5 `94700cf`, C6 `4f30b82`, C7 `1050d7b`, C4 `0b419d3`); locals in the debugger, C8 tools and C9 cartridge not yet |
 | —     | Editor structure tools (folding, indent, Tidy, go to definition, rename), Examples menu, Z80 breakpoints | `src/lang/basic/editor.js`, `src/lang/basic/leap-lang.js`, `src/lang/basic/examples.js`, `src/debugger.js`, `ide.js` | **Done**, verified |
 
 ---
@@ -1624,7 +1773,7 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 
 ## Tests
 
-- `node tests/rom-checks.mjs` — 129 checks in about 5 s against the real ROMs in
+- `node tests/rom-checks.mjs` — 144 checks in about 5 s against the real ROMs in
   Node (TSRun's machine, no browser): ROM table lookup, Run by injection
   (through the profile's real `driver.inject`; finished, compile error,
   run-time error, package), section 1b "Language profile" (9 checks: profile
@@ -1654,7 +1803,11 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   NAME`, `OUT OF RANGE`, a word made with `CREATE`); Import session (the line
   store as text, empty after a Reset); F5: the tape byte-identical to the ROM's
   `SAVE-TEXT`, Open reading it back, the ROM's `LOAD-TEXT` defining its words,
-  Leap V2 and Forth tapes told apart. Section 9 (Leap-C): the checker's lines
+  Leap V2 and Forth tapes told apart; F4: the debugger adapter driven as
+  `src/debugger.js` drives it (a breakpoint inside a word with its callers,
+  Step word by word, the stacks and the session's words); F8: the editor's
+  text built on a fresh hidden machine, the start word chosen, the DCK run on
+  a stock TS2068, a wrong identity refused. Section 9 (Leap-C): the checker's lines
   and columns, Run, compile and run-time errors, `getkey` and BREAK, a run
   started from the report; C6: a shapes program checks clean with the library
   loaded and not without it, `circle()` draws, the next run without the library
@@ -1663,16 +1816,19 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   keys or a tape give the manual's exit status, screen text and pixels, and all
   18 check clean; C5: the tape byte-identical to the ROM's `SH_SAVE`, Open
   reading it back, `SH_LOAD` restoring the line store and `PROG_END`, Leap-C and
-  Leap V2 tapes told apart. The library and tape checks print SKIP for a ROM
-  with no library images (`libs/c/<version>/`) or no `LEAPC_TAPE_SYMBOLS` entry
-  (beta.2).
+  Leap V2 tapes told apart; C4: stops with the globals and the call stack,
+  Step statement by statement into a called function, the globals of each type,
+  and the lines of a run-time error and of BREAK. The library and tape checks
+  print SKIP for a ROM with no library images (`libs/c/<version>/`) or no
+  `LEAPC_TAPE_SYMBOLS` entry (beta.2), and the C4 checks print SKIP for an
+  entry without the C4 fields (beta.2).
   `LEAP_ROMS=<dir>` tests other BASIC ROM files; `FORTH_ROMS=<dir>` and
-  `LEAPC_ROMS=<dir>` do the same for Forth and Leap-C. All 129 pass on 2.1.0-emu.1
+  `LEAPC_ROMS=<dir>` do the same for Forth and Leap-C. All 144 pass on 2.1.0-emu.1
   (the default ROMs now) and with `LEAP_ROMS` pointing at the 2.0.2 ROMs. The
   expected values were recorded on 2.0.2-emu.1 and held for 2.1 unchanged; only
   the debugger's `vmNext` hook and the TAP check's carry-set stand-in needed
   changes.
-- `node tests/browser-smoke.mjs [outdir]` — 60 checks in about 40 s, in headless
+- `node tests/browser-smoke.mjs [outdir]` — 63 checks in about 40 s, in headless
   Chrome: it serves the repo itself, boots the IDE and checks fingerprinted
   modules, Run results in the status bar, the error check, auto-caps, tabs,
   Draw zoom, theme and Help, find and replace (Ctrl+H, replace all), Undo (the
@@ -1692,7 +1848,7 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
   an auto-save from before languages (the bare `leap-ide.document` key) opening
   and moving to `leap-ide.document.basic`, switching to Forth and to Leap-C
   (run, an error marked on its token, typing at the Forth prompt, Ctrl+Enter
-  sending the cursor's line only, Stop of a `getkey` wait, switching back keeps each language's document; Forth: an undefined word marked and a session word known, Import, the TEXT tape; Leap-C: ⬇ TAP, a shapes program with its library, the Examples menu), with no page errors. It saves screenshots. CodeMirror's search
+  sending the cursor's line only, Stop of a `getkey` wait, switching back keeps each language's document; Forth: an undefined word marked and a session word known, Import, the TEXT tape, a breakpoint in a word pausing with the data stack and the callers shown (then Continue to OK), ▶ Test DCK running the program's cartridge with start word MAIN on a stock TS2068 and Stop going back to Forth; Leap-C: Run giving `Finished: exit 9`, ⬇ TAP, a shapes program with its library, the Examples menu, a breakpoint in a function pausing with the globals and call stack, a second toggle clearing it, Continue giving the exit status), with no page errors. It saves screenshots. CodeMirror's search
   panel takes the query on keyup / change, so CDP `Input.insertText` alone does
   not set it; the test also sends a keyUp.
 - Run both before every commit that changes behaviour. `src/lang/basic/leap-lang.js`
@@ -1716,22 +1872,22 @@ automatically as long as a relative `import` reaches it from `src/editor.js` or
 ## What Claude Code Should Do Next
 
 All phases are done, and so are **stage 0 of the multi-language plan** (the
-language profile, `3ed5d3b`), **Leap-Forth** F0 to F3 and F5 with Send and
-Import session (`b9526ce`, `a3869d4`, `89a6d48`, `6103f66`) and **Leap-C** C1
-to C3, the move to 1.0.0, and C5 to C7 (`d0e437b`, `ac0d00f`, `94700cf`,
-`4f30b82`, `1050d7b`); see "Languages". Remaining, Forth first (owner's
-order; details in `docs/LEAP_FORTH_PLAN.md` and `docs/LEAP_C_PLAN.md`):
+language profile, `3ed5d3b`), **Leap-Forth** F0 to F5 and F8 with Send and
+Import session (`b9526ce`, `a3869d4`, `89a6d48`, `6103f66`, `054198d`,
+`f7a5d1d`) and **Leap-C** C1 to C7, with the move to 1.0.0 (`d0e437b`,
+`ac0d00f`, `94700cf`, `4f30b82`, `1050d7b`, `0b419d3`); see "Languages".
+Remaining (details in `docs/LEAP_FORTH_PLAN.md` and `docs/LEAP_C_PLAN.md`):
 
-- **Forth:** F4 the debugger (a Forth line table); F8 the cartridge (owner,
-  2026-11-01: the start word chosen at export from the program's words; the
-  editor's text interpreted on a fresh hidden machine); of F6, the examples'
-  `\ expect:` output and `\ keys:` lines and `demos/gallery.fs`; F7 (UDG and
-  Draw tools) is optional.
-- **Leap-C:** C4 the debugger (line table; also the exit status in the status
-  bar); driving the Examples-menu programs that need keys (`keys:`) and the
-  tape one in the tests; C9 the cartridge once Leap-C has its `make cart`
-  build (in progress and uncommitted in `~/2068-Leap-C` `src/cart/`; the
-  owner has still to approve their M12 plan); C8 tools are optional.
+- **Forth:** of F6, the examples' `\ expect:` output and `\ keys:` lines and
+  `demos/gallery.fs`; F7 (UDG and Draw tools) is optional; the Forth cartridge
+  has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and real hardware not
+  tried).
+- **Leap-C:** C9 the cartridge: review `docs/requests/LEAP_C_CARTRIDGE.md`
+  (from the Leap-C project, uncommitted and not reviewed yet) and build it as
+  Forth's F8 was built (a program image, a DCK from the cartridge HOME and the
+  release EXROM, the compiled code read from the machine); locals in the
+  debugger; driving the Examples-menu programs that need keys (`keys:`) and
+  the tape one in the tests; C8 tools are optional.
 
 Phases 1 to 5, 7 and 8 work, Phase 6's tape export (Leap's
 own `LOAD` reads the IDE's `.tap`) and DCK export (a cartridge that runs on a

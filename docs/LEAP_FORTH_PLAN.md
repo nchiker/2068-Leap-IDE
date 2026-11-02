@@ -1,9 +1,10 @@
 # Plan: Leap-Forth in the Leap IDE
 
-Status: updated 2026-11-01. **F0, F1, F2, F3 and F5 are done** (F0 to F2
-`b9526ce`, Send, Ctrl+Enter, after it; F3 `a3869d4`; Import session `89a6d48`,
-the last part of F1; F5 `6103f66`), and so is the Examples part of F6. Open:
-F4, F7, F8, the optional watches of F1 and the rest of F6. Prerequisite (done, `3ed5d3b`):
+Status: updated 2026-11-01. **F0, F1, F2, F3, F4, F5 and F8 are done** (F0 to
+F2 `b9526ce`, Send, Ctrl+Enter, after it; F3 `a3869d4`; Import session
+`89a6d48`, the last part of F1; F5 `6103f66`; F4 `054198d`; F8 `f7a5d1d`), and so
+is the Examples part of F6. Open: F7, the optional watches of F1 and the rest
+of F6. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Forth project has answered the IDE's questions
 ([`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and
@@ -347,6 +348,54 @@ a cycle budget, for definitions-only programs. F8 builds that machine anyway.
 
 ### F4 — Debugger
 
+**Done (`054198d`)**: `src/lang/forth/forth-debug.js` (`createLineTable`,
+`readWords`, `readStacksAndWords`, `readCallStack`, `promptLines`; pure, Node
+imports it), the profile's `createDebugAdapter(rom)`, and the generic changes
+in `src/debugger.js` and `ide.js` (`beginRun(job)` passes the job to the
+adapter's `reset`; `adapter.version()` makes the controller place the
+breakpoints again when the table grows; `adapter.labels.variables` sets the
+Variables section's title, here "Stacks and words"; `adapter.live` shows the
+table between runs). The line table is built as the plan below says (the
+records at `INTERPRET_NESTED.token` with `STATE` 1, `COLON_XT` on the line of
+the `:`, `SRC_PTR` outside `EDIT_BUF` ignored; records are instruction starts
+only, so a breakpoint or a Step never lands in inline data). `tools/forth-rom-entry.py`
+now emits `doLit`, `doFLit`, `doDoes`, `qBranch`, `branch` and `stkGuard`
+(the 2.0 entry was regenerated from the release zip). **Deviations and
+details:**
+
+- **Positions.** A record's address, or `TOP` (`0x10000`) + n when job line n
+  is sent, so a breakpoint on a line **outside a definition** stops when the
+  line is sent (`promptLines`); one in a word stops where each stretch of that
+  line's code starts, not at every token of it. The plan's "word-level
+  breakpoints" (stop when the PC reaches a word's code, however it is
+  called) were **not built** as a separate kind: a breakpoint on a `:` line
+  stops at the code of that line's records, which a call from the prompt also
+  reaches.
+- **Step** is token by token, into the program's words, and stops at each line
+  sent; there is no step over / step out (the records make every stop safe).
+  Stop while paused is BREAK (`halt` false).
+- **Variables** ("Stacks and words"): the data stack (up to 16 cells, signed
+  and hex), the float stack, then the session's words newest first with their
+  values; the kind comes from the word's code (`CALL DOLIT` is a `VARIABLE`,
+  `FVARIABLE`, data area or `CONSTANT`, `CALL DOFLIT` an `FCONSTANT`,
+  `CALL DODOES` a `CREATE`d word). `HERE`, `LATEST` and `STATE` are not shown,
+  and the return stack is not a section of its own: it is the call stack.
+- **Call stack**: the word the PC is in, then the user words whose `CALL`s are
+  on the return stack (an entry counts only when a `CALL` precedes it and it
+  lies in a user word; `DO` loops and `CATCH` frames share the stack), then
+  "the line sent".
+- **Limit:** the records are reset by every Run **and Send**, so only the words
+  the latest Run or Send defined have editor lines; a word defined earlier or
+  typed at the prompt shows in the words table and the call stack but cannot
+  carry a breakpoint (the plan's "word-level breakpoints only" for those was
+  not built).
+- Tests: `tests/rom-checks.mjs` section 8 drives the adapter as `src/debugger.js`
+  does (a breakpoint in a word with the callers, Step word by word, the stacks
+  and words); the browser test pauses at a breakpoint in a word and continues
+  to OK.
+
+The plan as written:
+
 The generic panel (registers, memory, Z80 breakpoints) works as is. The Forth
 sections:
 
@@ -454,10 +503,50 @@ non-interactive ones to OK. Not done: checking their `\ expect:` output, the
 
 ### F8 — Cartridge (DCK) for a stock TS2068
 
+**Done (`f7a5d1d`)**: `src/lang/forth/cartridge.js` (`programImage`,
+`buildForthCartridge`, `cartImages`, `homeIdentity`, `crc16`, `findWord`,
+`isForthCartridge`; pure), `cartridge/forth/2.0/` (the release's
+`forth_cart.dck`, 24585 bytes, SHA-256 `4f07fd88…`, with a README; identity
+`$FDBE`), the profile's `buildCartridge` and `interpretFresh`,
+`hasCartridge: true` and `ownsCartridge`. **Deviations and details:**
+
+- **No checker snapshot.** `interpretFresh` creates a fresh machine with the
+  loaded ROMs each time (600 frames to boot, then 3000 frames in all for the
+  text, about a minute of TS2068 time), sends the lines with F1's protocol and
+  stops at the first line whose `LAST_ERROR` is not 0 (the error is named with
+  its editor line), at a line that leaves the prompt (a `KEY`, `ACCEPT` or
+  `INPUT` wait at the top level) and when the time is up. The dictionary is
+  read from `m.ram` (the EXROM hides part of it).
+- **The start word** is asked for with `ui.prompt` (`ide.js` passes
+  `window.prompt`), listing the program's `:` words, the newest as the default;
+  it is checked against the dictionary (1 to 31 characters), and stored as
+  the dictionary spells it.
+- **Checks before export:** the identity, the size (16,128 bytes at most),
+  a program with no `:` word, an error while interpreting. `OUT` to port 244
+  or 255 is found in the source text (`pagingWrites`: a literal port number
+  before `OUT`, low byte 244 or 255) and asks to confirm; a port computed
+  at run time is not seen.
+- **Test DCK / Open `.dck`:** `ownsCartridge` recognises `"F1"` at DOCK
+  `$4000`; `ide.js` hands that profile's keyboard table to
+  `emulator.testCartridge(dck, symbols)`, and leaving the test puts the active
+  profile's back (so a Forth cartridge opened from BASIC types as Forth does).
+- **Verified:** in `tests/rom-checks.mjs` section 8 (the start word asked for,
+  the DCK layout and flat image, the CRC, a stock TS2068 loading the
+  cartridge, running `MAIN` (a variable set to 42), keeping the UDGs and
+  leaving the OK prompt, an error naming its line, a start word that is not
+  the program's refused, a program with no `:` word and another identity
+  refused); in the browser test (▶ Test DCK with start word `MAIN`; Stop goes
+  back to Forth); and outside the tests, the IDE's DCK and BIN for the
+  Blackjack demo are byte-identical to `forthcart.py`'s for the same
+  dictionary. **Not done:** a refused image printing `BAD PROGRAM` on the stock
+  TS2068, ZEsarUX / Fuse runs, real hardware.
+
+The plan as written:
+
 Owner decision (2026-10-31): Forth gets a runtime cartridge build, as Leap V2
 has, so ⬇ DCK and ▶ Test DCK work for Forth programs. **Built and released in
 v2.0** (2068-Forth step Cartridge, `make cart`; hosted in the Forth repository,
-the release ROMs do not change). The IDE side is what remains.
+the release ROMs do not change). The IDE side was what remained.
 
 **As built (A Q7 as built).**
 
@@ -540,7 +629,7 @@ the release ROMs do not change). The IDE side is what remains.
   refused image printing `BAD PROGRAM`); a few in ZEsarUX / Fuse with the
   stock ROM.
 
-**Owner decisions still needed (the other two are made):**
+**Owner decisions (made 2026-11-01, both as recommended; see "Owner decisions"):**
 
 - **Which word starts the program:** a fixed name (`MAIN`), the last word
   defined, or chosen at export (a prompt listing the program's words,
@@ -557,13 +646,16 @@ project's "as built"); the build is hosted in the Forth repository as
 
 - `tests/rom-checks.mjs`: a Forth section for each of F1 to F6, and F8's
   cartridge checks. Section 8 has F1, F3 (session words, a Reset, every
-  example clean, the error and warning cases), Import session and F5 (the tape
-  against `SAVE-TEXT`, `LOAD-TEXT` reading it back); F4 and F8 are to come.
+  example clean, the error and warning cases), Import session, F5 (the tape
+  against `SAVE-TEXT`, `LOAD-TEXT` reading it back), F4 (the debugger adapter
+  driven as `src/debugger.js` drives it) and F8 (the cartridge on a stock
+  TS2068). 144 checks in all with Leap-C's and BASIC's at `f7a5d1d`.
 - `tests/browser-smoke.mjs`: switch to Forth, Run a definition and a call,
   Send one line, an undefined-word error on its line (done for the check: an
   undefined word marked, a session word known), type a word at the
   prompt and see its output, Import session (done), Reset, tape export and
-  Open (done), switch back.
+  Open (done), a breakpoint in a word (done, F4), ▶ Test DCK (done, F8),
+  switch back.
 
 ## Owner decisions
 
@@ -580,16 +672,17 @@ project's "as built"); the build is hosted in the Forth repository as
 - **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked;
   Forth first because its release, manual and cartridge are complete).
 - **Cartridge start word (2026-11-01):** chosen at export, from a list of the
-  program's words (F8).
+  program's words (F8, built in `f7a5d1d`).
 - **What goes on the cartridge (2026-11-01):** the editor's text, interpreted
   on a fresh hidden machine (reproducible, matches the file), not the live
-  session's dictionary (F8).
+  session's dictionary (F8, built in `f7a5d1d`).
 
 ## Still open
 
-For the IDE: F4 (the debugger), F8 (the cartridge), F7 (tools, optional), the
-optional watches of F1, and from F6 the `\ expect:` output and `\ keys:`
-lines of the examples and `demos/gallery.fs`. Nothing is open with the Forth project: all seven questions are answered
+For the IDE: F7 (tools, optional), the optional watches of F1, and from F6 the
+`\ expect:` output and `\ keys:` lines of the examples and `demos/gallery.fs`;
+the Forth cartridge has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and
+real hardware not tried). Nothing is open with the Forth project: all seven questions are answered
 ([`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md),
 [`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and the
 hooks the IDE uses are in the `v2.0` tag (`tools/forth-rom-entry.py` found
