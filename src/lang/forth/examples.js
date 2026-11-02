@@ -2,7 +2,7 @@
  * src/lang/forth/examples.js — GENERATED, do not edit.
  *
  * tools/gen-forth-examples.py from 2068-Forth docs/manual/07_examples.md,
- * demos/blackjack.fs and demos/gallery.fs at v2.0: 17 programs for the
+ * demos/blackjack.fs and demos/gallery.fs at v2.0.1: 17 programs for the
  * Examples menu, {id, title, about, text, expect, input?, keys?}: expect [line, what
  * it prints (screen rows joined by |)], keys [line, what a test types while that
  * line waits]; lines are 0-based in the text.

@@ -1,7 +1,7 @@
 {
  "generated": "tools/gen-forth-doc-tests.py: GENERATED, do not edit",
- "ref": "v2.0",
- "commit": "50170f2b5491da96753aacd2d4c070dd0a97dbeb",
+ "ref": "v2.0.1",
+ "commit": "0dabe748ef40d22c6ce9aa19527fedf43d5a3fd3",
  "examples": [
   {
    "name": "manual_02_beginners_guide_01",
@@ -1578,151 +1578,151 @@
   {
    "name": "manual_04_machine_29",
    "doc": "docs/manual/04_machine.md",
-   "line": 737,
+   "line": 738,
    "text": ": AY@ 245 OUT 246 IN ;\n15 NOISE  6 AY@ .        \\ expect: 15\n33 NOISE  6 AY@ .        \\ expect: 1\n"
   },
   {
    "name": "manual_04_machine_30",
    "doc": "docs/manual/04_machine.md",
-   "line": 757,
+   "line": 758,
    "text": "HIRES NORMAL\n3 INK 100 100 PLOT\n22924 C@ 7 AND .        \\ expect: 3\n"
   },
   {
    "name": "manual_04_machine_31",
    "doc": "docs/manual/04_machine.md",
-   "line": 779,
+   "line": 780,
    "text": "8 245 OUT 12 246 OUT     \\ sound chip register 8 (channel A volume) gets 12\n8 245 OUT 246 IN .       \\ expect: 12\n8 245 OUT 0 246 OUT     \\ and back to 0: silent\n"
   },
   {
    "name": "manual_04_machine_32",
    "doc": "docs/manual/04_machine.md",
-   "line": 800,
+   "line": 801,
    "text": "2 252 PALETTE            \\ entry 2: green 7, red 7, blue 0 (yellow)\n1 ULAPLUS\n0 ULAPLUS\n"
   },
   {
    "name": "manual_04_machine_33",
    "doc": "docs/manual/04_machine.md",
-   "line": 822,
+   "line": 823,
    "text": "5 PAPER 0 INK CLS 22528 C@ .             \\ expect: 40\n7 PAPER CLS 22528 C@ .                   \\ expect: 56\n"
   },
   {
    "name": "manual_04_machine_34",
    "doc": "docs/manual/04_machine.md",
-   "line": 841,
+   "line": 842,
    "text": "CLS 0 5 AT-XY 0 0 PLOT                   \\ draws\n16384 C@ .                               \\ expect: 128\n255 191 PLOT  22527 C@ .                 \\ expect: 1\n300 0 PLOT  16389 C@ .                   \\ expect: 0\n"
   },
   {
    "name": "manual_04_machine_35",
    "doc": "docs/manual/04_machine.md",
-   "line": 872,
+   "line": 873,
    "text": "CLS 0 18 AT-XY                           \\ draws\n: TRI 100 40 140 40 100 80 3 ;\nTRI POLYGON                              \\ draws\n16559 C@ .                               \\ expect: 255\n10 10 20 20 2 POLYGON  . . . .           \\ expect: 20 20 10 10\n"
   },
   {
    "name": "manual_04_machine_36",
    "doc": "docs/manual/04_machine.md",
-   "line": 905,
+   "line": 906,
    "text": "CLS 0 18 AT-XY                           \\ draws\n: TRI 100 40 140 40 100 80 3 ;\nTRI POLYGON-FILL                         \\ draws\n17101 C@ . 17105 C@ .                    \\ expect: 255 0\n"
   },
   {
    "name": "manual_04_machine_37",
    "doc": "docs/manual/04_machine.md",
-   "line": 937,
+   "line": 938,
    "text": "CLS 0 10 AT-XY 8 0 15 1 RECT             \\ draws\n16385 C@ . 16641 C@ .            \\ expect: 255 255\n16897 C@ .                       \\ expect: 0\n-8 0 3 0 RECT                            \\ draws\n16384 C@ .                               \\ expect: 240\n300 0 310 7 RECT                         \\ draws\n16389 C@ .                               \\ expect: 0\n"
   },
   {
    "name": "manual_04_machine_38",
    "doc": "docs/manual/04_machine.md",
-   "line": 978,
+   "line": 979,
    "text": ": DOUBLER DUP + ;\nSAVE-LIB DEMO\n' SAVE-LIB CATCH DEMO .  \\ expect: 0\n\\ break: after 300000\n' SAVE-LIB CATCH DEMO .  \\ expect: -28\n"
   },
   {
    "name": "manual_04_machine_39",
    "doc": "docs/manual/04_machine.md",
-   "line": 1018,
+   "line": 1019,
    "text": ": SQUARE DUP * ;\nSAVE-TEXT DEMO\n' SAVE-TEXT CATCH DEMO . \\ expect: 0\n\\ break: after 300000\n' SAVE-TEXT CATCH DEMO . \\ expect: -28\n"
   },
   {
    "name": "manual_04_machine_40",
    "doc": "docs/manual/04_machine.md",
-   "line": 1048,
+   "line": 1049,
    "text": ": AY@ 245 OUT 246 IN ;\n1 7 SOUND  1 AY@ .       \\ expect: 7\n2 300 SOUND  2 AY@ .     \\ expect: 44\n17 5 SOUND  256 33 SOUND \\ ignored\n2 251 SOUND  3 0 SOUND           \\ channel B, 439 Hz\n7 253 SOUND  9 15 SOUND\n9 0 SOUND                \\ silent\n"
   },
   {
    "name": "manual_04_machine_41",
    "doc": "docs/manual/04_machine.md",
-   "line": 1084,
+   "line": 1085,
    "text": "65 EMIT SPACE 66 EMIT    \\ expect: A B\n"
   },
   {
    "name": "manual_04_machine_42",
    "doc": "docs/manual/04_machine.md",
-   "line": 1098,
+   "line": 1099,
    "text": "65 EMIT 3 SPACES 66 EMIT \\ expect: A   B\n0 SPACES                 \\ prints nothing\n"
   },
   {
    "name": "manual_04_machine_43",
    "doc": "docs/manual/04_machine.md",
-   "line": 1124,
+   "line": 1125,
    "text": ": BOX 143 EMIT 143 EMIT ;\nCLS 5 5 AT-XY BOX                        \\ draws\n5 6 AT-XY BOX                             \\ draws\n0 5 5 SPRITE-DEFINE\nCLS 0 18 AT-XY                           \\ draws\n0 10 10 SPRITE-SHOW                      \\ draws\n18506 C@ .                              \\ expect: 255\n0 SPRITE-HIDE                            \\ draws\n18506 C@ .                              \\ expect: 0\n"
   },
   {
    "name": "manual_04_machine_44",
    "doc": "docs/manual/04_machine.md",
-   "line": 1156,
+   "line": 1157,
    "text": "CLS 5 5 AT-XY 143 EMIT                                           \\ draws\n0 5 5 SPRITE-DEFINE\nCLS 0 18 AT-XY                           \\ draws\n0 10 10 SPRITE-SHOW                      \\ draws\n18506 C@ .                              \\ expect: 255\n0 SPRITE-HIDE                            \\ draws\n18506 C@ .                              \\ expect: 0\n0 SPRITE-HIDE                                                    \\ nothing: it is hidden\n"
   },
   {
    "name": "manual_04_machine_45",
    "doc": "docs/manual/04_machine.md",
-   "line": 1184,
+   "line": 1185,
    "text": ": BOX 143 EMIT 143 EMIT ;\nCLS 5 5 AT-XY BOX                        \\ draws\n5 6 AT-XY BOX                             \\ draws\n0 5 5 SPRITE-DEFINE\nCLS 0 18 AT-XY                           \\ draws\n0 10 10 SPRITE-SHOW                      \\ draws\n18506 C@ .                              \\ expect: 255\n0 20 20 SPRITE-SHOW                                              \\ nothing: slot 0 is shown\n0 SPRITE-HIDE                            \\ draws\n18506 C@ .                              \\ expect: 0\n"
   },
   {
    "name": "manual_04_machine_46",
    "doc": "docs/manual/04_machine.md",
-   "line": 1214,
-   "text": "1 STICK .                \\ expect: 0\n2 STICK .                \\ expect: 0\n"
+   "line": 1215,
+   "text": "1 STICK .                \\ expect: 0\n2 STICK .                \\ expect: 0\n: AY@ 245 OUT 246 IN ;\n248 MIXER  1 STICK DROP  7 AY@ .   \\ expect: 184\n"
   },
   {
    "name": "manual_04_machine_47",
    "doc": "docs/manual/04_machine.md",
-   "line": 1235,
+   "line": 1243,
    "text": ": AY@ 245 OUT 246 IN ;\n0 4095 TONE  0 AY@ . 1 AY@ .             \\ expect: 255 15\n254 MIXER  0 251 TONE             \\ pitch 439 Hz\n0 15 VOLUME                              \\ A plays\n0 0 VOLUME                               \\ silent\n"
   },
   {
    "name": "manual_04_machine_48",
    "doc": "docs/manual/04_machine.md",
-   "line": 1257,
+   "line": 1265,
    "text": "S\" HELLO\" TYPE           \\ expect: HELLO\nS\" HELLO\" DROP 3 TYPE    \\ expect: HEL\n"
   },
   {
    "name": "manual_04_machine_49",
    "doc": "docs/manual/04_machine.md",
-   "line": 1277,
+   "line": 1285,
    "text": "255 0 UDG C!  129 0 UDG 1 + C!\n255 0 UDG 2 + C!\nCLS 0 0 AT-XY 144 EMIT                   \\ draws\n16384 C@ . 16640 C@ .            \\ expect: 255 129\n16896 C@ .                       \\ expect: 255\n1 UDG 0 UDG - .                          \\ expect: 8\n"
   },
   {
    "name": "manual_04_machine_50",
    "doc": "docs/manual/04_machine.md",
-   "line": 1301,
+   "line": 1309,
    "text": "2 252 PALETTE\n1 ULAPLUS                \\ on\n0 ULAPLUS                \\ off: the ordinary eight colours\n"
   },
   {
    "name": "manual_04_machine_51",
    "doc": "docs/manual/04_machine.md",
-   "line": 1330,
+   "line": 1338,
    "text": ": DOUBLER DUP + ;\n\\ break: after 300000\n' VERIFY-LIB CATCH DEMO .  \\ expect: -28\n"
   },
   {
    "name": "manual_04_machine_52",
    "doc": "docs/manual/04_machine.md",
-   "line": 1366,
+   "line": 1374,
    "text": "\\ break: after 300000\n' VERIFY-TEXT CATCH DEMO . \\ expect: -28\n"
   },
   {
    "name": "manual_04_machine_53",
    "doc": "docs/manual/04_machine.md",
-   "line": 1393,
+   "line": 1401,
    "text": ": AY@ 245 OUT 246 IN ;\n2 15 VOLUME  10 AY@ .    \\ expect: 15\n2 20 VOLUME  10 AY@ .    \\ expect: 4\n2 0 VOLUME\n"
   },
   {

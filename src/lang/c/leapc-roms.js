@@ -102,4 +102,52 @@ export const KNOWN_ROMS = {
     reportReturn:     0xC1EB,   // SH_WAIT_KEY.read + 3 (no SH_WAIT_KEY.key_ret label in this build)
     keyWaitEnd:       0x02C6,   // end of the spin loop (exclusive)
   },
+  // Leap-C 1.2.0 (SHA-256 HOME 510023ba…, EXROM 14ee2434…)
+  '5f0cc97f5a5f16480cb3851e3d03a8eb71c3b5e7fc715d2305bd358d10f1a248': {
+    version: '1.2.0',
+    keyWait:          0x02B4,   // IO_READ_KEY.wait_hit
+    kbdKeyHit:        0x5C6C,   // KBD_KEYHIT
+    gfxSetBorder:     0x03E9,   // GFX_SET_BORDER
+    progAreaStart:    0x7800,   // PROG_AREA_START
+    progAreaMax:      0xC000,   // PROG_AREA_MAX
+    progEnd:          0x5B02,   // PROG_END
+    arraysEnd:        0x5D2D,   // ARRAYS_END
+    curEditIndex:     0x5BF2,   // CUR_EDIT_INDEX
+    running:          0x5EB6,   // RUNNING
+    ccErrNum:         0x5EB1,   // CC_ERRNUM
+    ccErrLine:        0x5EB2,   // CC_ERRLINE
+    shErrCol:         0x5F42,   // SH_ERR_COL
+    rtErrNum:         0x5EB7,   // RT_ERRNUM
+    rtErrLine:        0x5EBA,   // RT_ERRLINE
+    rtRunDone:        0x35E7,   // RT_RUN.done
+    libLoaded:        0x5F54,   // LIB_LOADED
+    tokLine:          0x5D61,   // TOK_LINE
+    tokPtr:           0x5D5F,   // TOK_PTR
+    cgPc:             0x5E84,   // CG_PC
+    statement:        0x2F97,   // STATEMENT
+    shCompile:        0x2E4A,   // SH_COMPILE
+    udgTable:         0xF180,   // UDG_TABLE
+    udgCodeBase:      0x0090,   // UDG_CODE_BASE
+    udgCount:         0x0015,   // UDG_COUNT
+    stackTop:         0xFF00,   // LEAPC_STACK_TOP
+    tapeFormatWord:   0x8C00,   // LEAPC_TAPE_VERSION
+    libBase:          0xF400,   // LX_BASE
+    shLoop:           0xC02F,   // SH_LOOP
+    shRun:            0xC10F,   // SH_RUN
+    reportReturn:     0xC1AC,   // SH_WAIT_KEY.key_ret
+    reportBuf:        0x5F21,   // SH_REPORT_BUF
+    dclAutoinit:      0x302A,   // DCL_AUTOINIT
+    stmtDoCond:       0x30F2,   // STMT_DO.cond
+    cgUnitFound:      0x2894,   // CG_UNIT.found
+    runFnlines:       0x5EAB,   // RUN_FNLINES
+    symGlo:           0x5E38,   // SYM_GLO
+    rtRun:            0x35A6,   // RT_RUN
+    rtErrPc:          0x5EB8,   // RT_ERRPC
+    runMain:          0x5E9C,   // RUN_MAIN
+    runVoid:          0x5E9E,   // RUN_VOID
+    imgLim:           0x5E72,   // IMG_LIM
+    keyWaitEnd:       0x02BA,   // end of the spin loop (exclusive)
+    romIdentity:      0xF6E9,   // CRC-16/CCITT-FALSE of HOME then EXROM (the cartridge's identity)
+    cartridgeDir:     'cartridge/c/1.2.0/',
+  },
 };

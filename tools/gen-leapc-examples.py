@@ -11,6 +11,7 @@ and kept as data:
   // expect: exit N        -> exit
   // screen: ROW TEXT      -> screen [[row, text], ...]
   // pixel: X Y V          -> pixels [[x, y, v], ...]
+  // attr: ROW COL V       -> attrs [[row, col, v], ...] (the normal attribute byte)
   // keys: "50" ENTER ...  -> keys (as written) and input: true
   // library: NAME         -> library
 A program that needs a tape (the manual says so of its last one) gets
@@ -23,7 +24,7 @@ import re
 import subprocess
 import sys
 
-DIRECTIVE = re.compile(r'^\s*//\s*(expect|screen|pixel|keys|library):\s?(.*)$')
+DIRECTIVE = re.compile(r'^\s*//\s*(expect|screen|pixel|attr|keys|library):\s?(.*)$')
 
 
 def show(checkout, ref, path):
@@ -50,7 +51,7 @@ def examples(text):
         lines = []
         ex = {'id': re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-'), 'title': title,
               'about': first_sentence(par)}
-        screen, pixels = [], []
+        screen, pixels, attrs = [], [], []
         for line in code.group(1).rstrip('\n').split('\n'):
             d = DIRECTIVE.match(line)
             if not d:
@@ -67,6 +68,8 @@ def examples(text):
                 screen.append([int(row), rest])
             elif kind == 'pixel':
                 pixels.append([int(v) for v in value.split()])
+            elif kind == 'attr':
+                attrs.append([int(v) for v in value.split()])
             elif kind == 'keys':
                 ex['keys'] = value
                 ex['input'] = True
@@ -79,6 +82,8 @@ def examples(text):
             ex['screen'] = screen
         if pixels:
             ex['pixels'] = pixels
+        if attrs:
+            ex['attrs'] = attrs
         if re.search(r'\btape_(save|load)\s*\(', ex['text']):
             ex['tape'] = True
         out.append(ex)
@@ -122,8 +127,8 @@ def main():
     print(' *')
     print(f' * tools/gen-leapc-examples.py from 2068-Leap-C docs/manual/07_examples.md at {ref}:')
     print(f' * {len(found)} programs for the Examples menu, {{id, title, about, text, exit?, screen?,')
-    print(' * pixels?, keys?, input?, library?, tape?}: the manual\'s test directives (exit status,')
-    print(' * screen rows, pixels, keys typed, library) taken out of the text.')
+    print(' * pixels?, attrs?, keys?, input?, library?, tape?}: the manual\'s test directives (exit status,')
+    print(' * screen rows, pixels, attributes, keys typed, library) taken out of the text.')
     for name in used:
         print(f' * Replaced by the IDE until the manual has it: tools/leapc-example-overrides/{name}.')
     print(' */')

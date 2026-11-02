@@ -2,12 +2,12 @@
  * src/lang/c/leapc-keywords.js — GENERATED, do not edit.
  *
  * tools/gen-leapc-keywords.py from 2068-Leap-C docs/manual/ (03_keywords.md, 04_library.md, 06_libraries.md)
- * at v1.0.0 (83e6e21): 104 entries -> {kind, library, forms, desc, example, part}.
+ * at v1.2.0 (e5cc932): 104 entries -> {kind, library, forms, desc, example, part}.
  */
 
 "use strict";
 
-export const LEAPC_MANUAL_REF = "v1.0.0";
+export const LEAPC_MANUAL_REF = "v1.2.0";
 
 export const LEAPC_KEYWORD_ENTRIES = {
   "#define": {"kind": "directive", "library": null, "forms": ["#define NAME replacement, #define NAME"], "desc": "Makes NAME a macro: wherever it is used later in the program, the compiler puts the replacement text in its place. The replacement is the rest of the line; it may be empty. The commonest use is naming a constant.", "example": "#define W 4\n#define H (W - 1)\n#define AREA (W * H)\nint main(void)\n{\n    return AREA;\n}", "part": "03_keywords.md"},

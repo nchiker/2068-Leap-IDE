@@ -387,10 +387,12 @@ const signed = (m, a) => { const v = m.bus.read(a) | (m.bus.read(a + 1) << 8); r
 /** Tape routines of each Forth release (symbols/forth_boot.sym), for the tape checks. */
 const FORTH_TAPE_SYMBOLS = {
   '2.0': { STORAGE_SEND_BLOCK: 0x09CE, STORAGE_RECEIVE_BLOCK: 0x0A5D },
+  '2.0.1': { STORAGE_SEND_BLOCK: 0x09D9, STORAGE_RECEIVE_BLOCK: 0x0A68 },
 };
 /** What F6's output checks read (symbols/forth_boot.sym): the print row and the glyph routine. */
 const FORTH_SCREEN_SYMBOLS = {
   '2.0': { PRINT_ROW: 0x81CF, GFX_PUTCHAR: 0x0705 },
+  '2.0.1': { PRINT_ROW: 0x81CF, GFX_PUTCHAR: 0x0710 },
 };
 
 // ── 8. Leap-Forth (src/lang/forth/): the live prompt, Run line by line ──
@@ -640,16 +642,17 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
 
     const corpus = JSON.parse(readFileSync(join(ROOT, 'tests/forth-manual-examples.json'), 'utf8'));
     const t0 = Date.now();
-    // Known differences between TSRun and ZEsarUX (2068-Forth's test emulator), not IDE faults:
-    // STICK reads the AY's port A without making it an input, and Forth leaves the mixer
-    // (register 7) at $F8, port A an output. TSRun then returns the output latch, as an
-    // AY-3-8912 does (0, so device 2 reads 1); ZEsarUX returns the joystick lines (none: 0).
-    const KNOWN = { 'docs/manual/04_machine.md:1214:2 "2 STICK ." printed "1", expected "0"': 'TSRun: AY port A is an output' };
+    // Known differences between TSRun and ZEsarUX (2068-Forth's test emulator), not IDE faults.
+    // 2.0 only: STICK read the AY's port A without making it an input, with the mixer (register 7)
+    // at $F8, port A an output, so TSRun returned the output latch (device 2 read 1) where ZEsarUX
+    // returned the joystick lines (0). 2.0.1 makes port A an input first (docs/requests/LEAP_FORTH_STICK.md).
+    const knownDiff = d => from.version === '2.0' && /"2 STICK \." printed "1", expected "0"$/.test(d);
     const docAll = corpus.examples.map(e => runCase(`${e.doc}:${e.line}`, parseCase(e.text))).filter(Boolean);
-    const docBad = docAll.filter(d => !KNOWN[d]);
+    const docBad = docAll.filter(d => !knownDiff(d));
+    const known = docAll.filter(knownDiff);
     if (process.env.VERBOSE) console.log(`      (${corpus.examples.length} manual examples in ${Date.now() - t0} ms)`);
-    same(`F6: the manual's ${corpus.examples.length} examples print what their \\ expect: lines say (${corpus.ref}, as tools/forthtest.py runs tests/doc; ${Object.keys(KNOWN).length} known emulator difference)`, docBad, []);
-    same('F6: the known emulator difference is still there (2 STICK . reads 1 in TSRun)', docAll.filter(d => KNOWN[d]), Object.keys(KNOWN));
+    same(`F6: the manual's ${corpus.examples.length} examples print what their \\ expect: lines say (${corpus.ref}, as tools/forthtest.py runs tests/doc; ${known.length} known emulator difference)`, docBad, []);
+    if (from.version === '2.0') same('F6: the known emulator difference is still there (2 STICK . reads 1 in TSRun on 2.0)', known.length, 1);
 
     // The Examples menu's own data (src/lang/forth/examples.js): the Part 7 programs with their
     // expect and keys ([line, ...], 0-based), run the same way. The demos have no expectations.
@@ -856,6 +859,7 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
 /** The shell's tape commands and block routines of each Leap-C release (symbols/leapc_exrom.sym). */
 const LEAPC_TAPE_SYMBOLS = {
   '1.0.0': { SH_SAVE: 0xC8DE, SH_LOAD: 0xC80E, STORAGE_SEND_BLOCK: 0xCA62, STORAGE_RECEIVE_BLOCK: 0xCA74 },
+  '1.2.0': { SH_SAVE: 0xC8DE, SH_LOAD: 0xC80E, STORAGE_SEND_BLOCK: 0xCA62, STORAGE_RECEIVE_BLOCK: 0xCA74 },
 };
 
 // ── 9. Leap-C (src/lang/c/): Run by the shell path, the checker, results ──
@@ -1044,7 +1048,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       const done = () => {
         if (m.cpu.pc === crom.rtRunDone) {
           exit = (m.cpu.h << 8) | m.cpu.l;
-          shot = Uint8Array.from({ length: 6144 }, (_, i) => m.bus.read(0x4000 + i));
+          shot = Uint8Array.from({ length: 6912 }, (_, i) => m.bus.read(0x4000 + i));   // bitmap and attributes
         }
       };
       crun(() => false, 2);
@@ -1078,12 +1082,13 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       if (r.keyNote) { (ex.keys ? badKeyed : bad).push(`${ex.id}: ${r.keyNote}`); continue; }
       const got = { status: r.text, exit: r.exit & 0xFFFF,
         screen: (ex.screen ?? []).map(([row]) => [row, screenRow(row)]),
-        pixels: (ex.pixels ?? []).map(([x, y]) => [x, y, pixel(x, y)]) };
+        pixels: (ex.pixels ?? []).map(([x, y]) => [x, y, pixel(x, y)]),
+        attrs: (ex.attrs ?? []).map(([row, col]) => [row, col, shot ? shot[6144 + row * 32 + col] : null]) };
       const want = { status: fin(ex.exit), exit: ex.exit & 0xFFFF,
-        screen: (ex.screen ?? []).map(([row, t]) => [row, t.trimEnd()]), pixels: ex.pixels ?? [] };
+        screen: (ex.screen ?? []).map(([row, t]) => [row, t.trimEnd()]), pixels: ex.pixels ?? [], attrs: ex.attrs ?? [] };
       if (JSON.stringify(got) !== JSON.stringify(want)) (ex.keys ? badKeyed : bad).push(`${ex.id}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
     }
-    same(`the Examples menu's programs give the manual's exit status, screen and pixels (${runnable.length} without keys or a tape)`, bad, []);
+    same(`the Examples menu's programs give the manual's exit status, screen, pixels and attributes (${runnable.length} without keys or a tape)`, bad, []);
     same(`the Examples menu's programs that read keys, typed on the keyboard matrix, give the manual's results (${keyed.length}: ${keyed.map(e => e.id).join(', ')})`, badKeyed, []);
     same('every example checks clean', LEAPC_EXAMPLES.filter(e => (hasLibs || !e.library) && cl.lint(e.text).length > 0).map(e => e.id), []);
   }
@@ -1193,7 +1198,9 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     };
     const hello = main('    cls();\n    printf("CART");\n    draw(16, 60, 239, 150);\n    return 7;');
     const out = await cl.buildCartridge(hello, { confirm: () => true });
-    same('C9: the identity of the 1.0.0 ROMs is $E90E (the cartridge build\'s)', romIdentity(chome, cexrom), 0xE90E);
+    const cartId = parseInt(JSON.parse(readFileSync(join(ROOT, crom.cartridgeDir, 'cartridge.json'), 'utf8')).identity, 16);
+    same(`C9: the identity of the ${crom.version} ROMs is the cartridge build's ($${cartId.toString(16).toUpperCase()}, ${crom.cartridgeDir}cartridge.json)`,
+      [romIdentity(chome, cexrom), crom.romIdentity], [cartId, cartId]);
     same('C9: the DCK: chunks 0, 1, 4, 5, 6 as ROM, "LCPG" at DOCK $8000; the flat image 64 KB',
       [[...out.dck.subarray(0, 9)], out.dck.length, isLeapcCartridge(out.dck), out.bin.length, String.fromCharCode(...out.bin.subarray(0x8000, 0x8004)), /bytes of program$/.test(out.summary)],
       [[0, 2, 2, 0, 0, 2, 2, 2, 0], 9 + 5 * 0x2000, true, 0x10000, 'LCPG', true]);

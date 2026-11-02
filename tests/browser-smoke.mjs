@@ -383,7 +383,7 @@ try {
   const basicDoc = await evaluate('leapEditor.getSource()');
   await evaluate("(document.getElementById('lang-select').value = 'forth', document.getElementById('lang-select').dispatchEvent(new Event('change')))");
   const forthReady = await waitFor("leapIDE.profile.id === 'forth' && leapIDE.lang && /OK prompt/.test(document.getElementById('status-text').textContent) && document.getElementById('emu-rom').textContent", 20000);
-  check('switching to Leap-Forth boots its ROMs to the OK prompt', forthReady === 'Forth 2.0', String(forthReady));
+  check('switching to Leap-Forth boots its ROMs to the OK prompt', /^Forth \d/.test(forthReady ?? ''), String(forthReady));
   const forthRun = await runProgram([': SQ ( n -- n*n ) DUP * ;', '', 'CLS 7 SQ .'], /^OK$|THROW|Stopped/);
   check('Forth: Run sends the program and ends in OK', forthRun === 'OK', forthRun);
   await evaluate("document.getElementById('ts-bezel').focus()");
@@ -443,7 +443,7 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const fBack = await waitFor("!leapIDE.emulator.cartridge && /OK prompt/.test(document.getElementById('status-text').textContent) && document.getElementById('emu-rom').textContent", 20000);
   check('Forth: ▶ Test DCK runs the program\'s cartridge (start word MAIN) on a stock TS2068; Stop goes back to Forth',
-    fCart === 'Stock TS2068 + DCK' && fBack === 'Forth 2.0', `${fCart} | ${fBack}`);
+    fCart === 'Stock TS2068 + DCK' && /^Forth \d/.test(fBack ?? ''), `${fCart} | ${fBack}`);
   const forthErr = await runProgram(['1 2', 'FOO 3', '4'], /^OK$|THROW|Stopped/);
   const forthDiag = await waitFor("document.querySelector('.cm-lintRange-error') && document.querySelector('.cm-lintRange-error').textContent", 3000);
   check('Forth: an unknown word stops the sending and is marked', /^FOO \? .* on line 2$/.test(forthErr) && forthDiag === 'FOO', `${forthErr} | ${forthDiag}`);
@@ -472,7 +472,7 @@ try {
   // Leap-C: switch, Run compiles and runs (the ROM's report), the checker marks the token, Stop ends getkey().
   await evaluate("leapIDE.switchLanguage('c')");
   const cReady = await waitFor("leapIDE.profile.id === 'c' && leapIDE.lang && document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 20000);
-  check('switching to Leap-C boots its ROMs', /^Leap-C 1\.0/.test(cReady ?? ''), String(cReady));
+  check('switching to Leap-C boots its ROMs', /^Leap-C \d/.test(cReady ?? ''), String(cReady));
   const cRun = await runProgram(['int main(void)', '{', '    cls();', '    printf("HELLO FROM C");', '    return 9;', '}']);
   check('Leap-C: Run compiles and runs to the end, with the exit status', cRun === 'Finished: exit 9', cRun);
   await shot('leapc');
@@ -500,7 +500,7 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cBack = await waitFor("!leapIDE.emulator.cartridge && document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 20000);
   check('Leap-C: ▶ Test DCK runs the program\'s cartridge on a stock TS2068; Stop goes back to Leap-C',
-    cCart === 'Stock TS2068 + DCK' && /^Leap-C 1\.0/.test(cBack ?? ''), `${cCart} | ${cBack}`);
+    cCart === 'Stock TS2068 + DCK' && /^Leap-C \d/.test(cBack ?? ''), `${cCart} | ${cBack}`);
   // C7: the Examples menu has the manual's 18 programs and the speed test; one opens and runs.
   const cExamples = await evaluate("document.querySelectorAll('#examples-menu [data-example]').length");
   await evaluate("window.confirm = () => true, document.querySelector('[data-example=fibonacci-numbers]').click()");
