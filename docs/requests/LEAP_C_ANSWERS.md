@@ -268,9 +268,10 @@ all; an image above 16 KB would also need DOCK chunk 2 (`$4000-$5FFF`). The cart
 
 ### Q5.5 After the program
 
-The cartridge has no shell, so the build adds a small report in the cartridge's EXROM: "EXIT n", or
-"RUNTIME ERROR n: MESSAGE" / "LINE m" (or "BREAK"), on rows 22-23 with the shell's own messages, then a key
-restarts the program (as V2's cartridge does).
+The cartridge has no shell, so the build adds a small report (planned in the cartridge's HOME, using the
+EXROM shell's own routines and messages): the 1.0 one-row report on row 23, `EXIT n`, `RUNTIME ERROR n MESSAGE`
+or `BREAK` (no `LINE m`), then a key restarts the program from a cold start (as V2's cartridge does). The plan
+awaiting the owner's approval: `docs/milestones/M12-cart.md` in the Leap-C repository.
 
 ### Q5.6 Identity
 
