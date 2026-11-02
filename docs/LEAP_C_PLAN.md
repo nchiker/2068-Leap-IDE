@@ -1,6 +1,19 @@
 # Plan: Leap-C in the Leap IDE
 
-Status: updated 2026-11-01. **C1 to C7 and C9 are done** (C1 to C3 `d0e437b`, on
+Status: updated 2026-11-02 (**the IDE moved to Leap-C 1.2.0**: tag `v1.2.0`,
+commit `e5cc932`, released 2026-11-02; the display code of Forth 2.0 ported, so
+`draw()` is about 4 times faster and print, scroll and the interrupt are faster,
+with pixels and glyphs identical to 1.1.0's. The ROMs changed (HOME `510023ba…`,
+EXROM `14ee2434…`), so the entry, `libs/c/1.2.0/` (the same `shapes.bin`), the
+generated data and a cartridge build `cartridge/c/1.2.0/` (identity `$F6E9`, was
+`$E90E`) were added in `4c02f48`; TSRun `main` `34b0794` carries the ROMs, the
+IDE pin is now `c52f272`. The 1.0.0 entry stays. Two of the IDE's notes were
+answered: example 11 resolved (the 1.2.0 manual carries the IDE's replacement
+plus `// attr: 5 5 56`, so the override file is deleted and the generator reads
+`attr` directives) and the `draw()` speed (the port above); answer files
+`requests/LEAP_C_1_2.md` and `requests/LEAP_C_EXAMPLE_11_ANSWERS.md`. The text
+below describes 1.0.0 / 1.1.0 where it names versions.) Earlier status, updated
+2026-11-01. **C1 to C7 and C9 are done** (C1 to C3 `d0e437b`, on
 `v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6 `4f30b82`; C7
 `1050d7b`, with the programs that read keys driven in the tests by `5cfffb8`;
 C4 `0b419d3`; C9 `4798b64`); only C8 (optional) is open. Prerequisite (done, `3ed5d3b`):
@@ -400,7 +413,12 @@ interrupt leaves it), then it is released for 3 frames. The helpers are
 the tape example (`a-score-on-tape`) is not driven; the corpus is the manual's
 18, not a larger set.
 
-**Example 11 replaced (2026-11-01).** A user reported that "Colour lines in
+**Example 11 replaced (2026-11-01), resolved 2026-11-02.** The 1.2.0 manual
+carries the IDE's replacement (plus `// attr: 5 5 56`), so the override file
+`tools/leapc-example-overrides/11-colour-lines-in-high-resolution.md` is deleted
+(the generator's `apply_overrides` stays for future use) and the C7 check also
+compares the normal attribute bytes from `attr` directives. As written on
+2026-11-01: a user reported that "Colour lines in
 high resolution" ends on a black screen, which is what the manual says it does.
 The IDE now generates its menu with a replacement section
 (`tools/leapc-example-overrides/11-colour-lines-in-high-resolution.md`: a band
@@ -411,9 +429,12 @@ in `docs/requests/LEAP_C_EXAMPLE_11.md`.
 **Speed test.** The Leap-C Examples menu also carries "Spinning squares (speed
 test)" (`src/lang/spin-demo.js`, appended by the profile after the generated
 list, which is untouched): 1644 frames in TSRun against Forth's 522 and
-BASIC's 1901. Leap-C is the slower of the compiled two because its `draw()` is
-slow (864 lines of 90 pixels took 2005 frames, 422 for Forth's `LINE`); the
-arithmetic is fast. The picture is identical in all three languages
+BASIC's 1901 (Forth 2.0, Leap-C 1.0.0, Leap 2.1.0). Leap-C was the slower of
+the compiled two because its `draw()` was slow (864 lines of 90 pixels took 2005
+frames, 422 for Forth's `LINE`); the arithmetic is fast. Answered by 1.2.0
+(`draw()` about 4 times faster; not measured in TSRun yet); Leap V2's `LINE`
+got the same port in 2.1.1-emu.1, which brought the whole BASIC run from 2081 to
+850 frames. The picture is identical in all three languages
 (`tests/rom-checks.mjs` section 10).
 
 - Examples menu: a selection from `07_examples.md` (18 programs).
@@ -584,6 +605,8 @@ argument emits `romIdentity` and `cartridgeDir`). Byte-identical ROMs (1.0.0 and
   generated data, as planned).
 - **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked);
   Forth first because its release, manual and cartridge are complete.
+- **Release (2026-11-02):** the IDE follows Leap-C's releases: 1.2.0 adopted
+  (`4c02f48`), with its own cartridge build.
 - **Cartridge (2026-10-31):** Leap-C gets a runtime cartridge build (C9),
   hosted in the Leap-C repository as `make cart`; it came with Leap-C 1.1.0
   and C9 was built on it (`4798b64`).
@@ -592,7 +615,8 @@ argument emits `romIdentity` and `cartridgeDir`). Byte-identical ROMs (1.0.0 and
 
 ## Still open
 
-Nothing is open with the Leap-C project:
+Nothing is open with the Leap-C project (the notes on example 11 and
+`draw()` were answered by 1.2.0, 2026-11-02):
 [`requests/LEAP_C_QUESTIONS.md`](requests/LEAP_C_QUESTIONS.md) is answered
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md); its Q5, the
 cartridge, is implemented by Leap-C 1.1.0 and by C9); the line-table points

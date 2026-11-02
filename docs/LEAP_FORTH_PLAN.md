@@ -1,6 +1,18 @@
 # Plan: Leap-Forth in the Leap IDE
 
-Status: updated 2026-11-01. **F0, F1, F2, F3, F4, F5, F6 and F8 are done** (F0
+Status: updated 2026-11-02 (**the IDE moved to 2068-Forth v2.0.1**: tag `v2.0.1`,
+merge `0dabe74`, released 2026-11-02; the `STICK` fix, HOME changed to
+`f0cd0785…`, EXROM unchanged, `ROM_IDENTITY` `$F001`; TSRun `main` `02e5325`
+carries it, the IDE pin is now `c52f272`. The ROM entry, `forth-words.js`,
+`examples.js` and `tests/forth-manual-examples.json` were regenerated at the tag
+(the same 313 manual blocks, lines shifted) and `cartridge/forth/2.0.1/` was
+added, in `4c02f48`; the v2.0 entry and `cartridge/forth/2.0/` stay. All 313
+blocks now pass: the `2 STICK .` difference noted under F6 is fixed, so the
+`KNOWN` list is gone and the difference is expected, with its own check, only
+when the 2.0 ROMs are tested. The release answers
+`requests/LEAP_FORTH_STICK.md`; no answer file arrived. The text below still
+describes v2.0 where it names versions and addresses.) Earlier status, updated
+2026-11-01. **F0, F1, F2, F3, F4, F5, F6 and F8 are done** (F0
 to F2 `b9526ce`, Send, Ctrl+Enter, after it; F3 `a3869d4`; Import session
 `89a6d48`, the last part of F1; F5 `6103f66`; F4 `054198d`; F8 `f7a5d1d`; F6
 `50fb417`). Open: F7 and the optional watches of F1 (and the optional LIB
@@ -503,12 +515,13 @@ where it differs from the plan below:**
   directives: 313 at v2.0 (commit `50170f2`), identical to 2068-Forth's
   `tests/doc/manual_*.fs` (checked). The IDE reads the JSON, so it needs no copy
   of the Forth project's files.
-- **One known difference, kept in a `KNOWN` list with its own check:**
+- **One known difference on v2.0 (fixed in v2.0.1, 2026-11-02; the `KNOWN`
+  list is gone, the check runs only with the 2.0 ROMs):**
   `2 STICK .` reads 1 in TSRun and 0 in the manual. `STICK_READ` reads AY port A
   without making it an input and Forth leaves the mixer (register 7) at `$F8`
   (port A an output); TSRun returns the output latch, as an AY-3-8912 does,
   while ZEsarUX returns the joystick lines. On a real TS2068 it probably reads 1
-  too; worth reporting to the 2068-Forth project (not yet reported). All other
+  too; reported (`requests/LEAP_FORTH_STICK.md`) and fixed in v2.0.1. All other
   blocks pass.
 - **Examples.** `gen-forth-examples.py` now writes `keys` as `[line, text]` (the
   0-based line of the text the keys are typed for) and adds `demos/gallery.fs`
@@ -728,8 +741,8 @@ project's "as built"); the build is hosted in the Forth repository as
 
 For the IDE: F7 (tools, optional), the optional watches of F1 and the optional
 LIB tape; the Forth cartridge has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and
-real hardware not tried). Nothing is open with the Forth project, except a possible note that `2 STICK`
-reads 1 in TSRun where the manual says 0 (see F6): all seven questions are answered
+real hardware not tried). Nothing is open with the Forth project (the `2 STICK` note was answered by
+the v2.0.1 release, 2026-11-02; see the status at the top): all seven questions are answered
 ([`requests/LEAP_FORTH_QUESTIONS.md`](requests/LEAP_FORTH_QUESTIONS.md),
 [`requests/LEAP_FORTH_ANSWERS.md`](requests/LEAP_FORTH_ANSWERS.md)), and the
 hooks the IDE uses are in the `v2.0` tag (`tools/forth-rom-entry.py` found
