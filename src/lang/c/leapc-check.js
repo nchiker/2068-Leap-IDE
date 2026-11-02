@@ -18,6 +18,7 @@
 
 import { createMachine, setHomeRom, setExRom, resetMachine, runFrame, tStatesPerFrame } from '../../../tsrun/machine.js';
 import { runZ80 } from '../../../tsrun/z80.js';
+import { regionBlocks } from './cartridge.js';
 
 const BOOT_FRAMES = 300;
 const MAX_T = 60_000_000;           // give up on a compile after ~17 s of Z80 time (about 13 ms a line)
@@ -102,6 +103,24 @@ export function createChecker(rom, images) {
         }
       }
       return null;
+    },
+
+    /**
+     * Compile as check() does and, if it compiles, read the program back for
+     * the cartridge (c2cart.py compile_image): RUN_MAIN, RUN_VOID, IMG_LIM,
+     * LIB_LOADED and the regions' blocks, from RAM itself ($C000-$DFFF is the
+     * EXROM again once SH_COMPILE returns).
+     * @returns {{code: number, line: number, col: number} | {code: 0, runMain: number, runVoid: number,
+     *   imgLim: Uint8Array, libLoaded: number, blocks: [number, Uint8Array][]} | null}
+     */
+    compileImage(store, lineCount, lib = null) {
+      const r = this.check(store, lineCount, lib);
+      if (!r || r.code !== 0) return r;
+      const ram16 = a => m.ram[a] | (m.ram[a + 1] << 8);
+      const imgLim = m.ram.slice(rom.imgLim, rom.imgLim + 16);
+      const libLoaded = m.ram[rom.libLoaded];
+      return { code: 0, runMain: ram16(rom.runMain), runVoid: m.ram[rom.runVoid], imgLim, libLoaded,
+        blocks: regionBlocks((a, n) => m.ram.slice(a, a + n), imgLim, libLoaded) };
     },
   };
 }

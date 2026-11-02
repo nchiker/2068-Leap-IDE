@@ -31,6 +31,8 @@ import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC, librariesUsed } from './leapc-scan.js';
 import { LEAPC_EXAMPLES } from './examples.js';
 import { createLineTable, readGlobals, readCallStack } from './leapc-debug.js';
+import { romIdentity, programImage, buildCartridge as packCartridge, isLeapcCartridge } from './cartridge.js';
+import { blankOut } from './leapc-scan.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
 import { tapeToText } from '../../files.js';
 
@@ -220,6 +222,7 @@ const help = {
     'Leap-C compiles the program on every Run, as typing RUN does; the report (EXIT n, an error and its line) appears at the bottom of the TS2068 screen. Errors are underlined about half a second after you stop typing: they come from the Leap-C ROM\'s own compiler.',
     'While a program runs, click the TS2068 screen to type into it (getkey, gets). Keys work as labelled on your keyboard, including [ ] { } | ~ ^ \\.',
     'Click left of a line number to set a breakpoint: the program pauses at that line\'s statements, and the debugger shows the globals with their values and the call stack; Step (F10) goes statement by statement. The status bar gives the exit status (Finished: exit n), and a run-time error\'s own line.',
+    '⬇ DCK makes a cartridge for a stock TS2068 from the compiled program (and its library), on Leap-C\'s own cartridge build: it runs at power-on, and a key after the report runs it again. ▶ Test DCK runs it here on the stock ROMs; Stop goes back to Leap-C.',
     'A program that calls a library function (circle, box, isqrt: the shapes library) gets the library loaded for its check and Run, as LIB "shapes" does on the TS2068. One library at a time.',
     '⬇ TAP saves the program as Leap-C\'s SAVE does: on the TS2068, LOAD "name" then RUN. Open reads a Leap-C tape back.',
   ],
@@ -245,7 +248,10 @@ export const leapcProfile = {
   tools: { udg: false, draw: false },
   /** ⬇ TAP: the program as Leap-C's SAVE writes it (V2's two blocks, format word $8C00). */
   hasTape: true,
-  hasCartridge: false,
+  /** ⬇ DCK / ▶ Test DCK: the compiled program on Leap-C's cartridge build (src/lang/c/cartridge.js). */
+  hasCartridge: true,
+  /** A Leap-C program cartridge ("LCPG" at DOCK $8000). */
+  ownsCartridge: isLeapcCartridge,
   waitingText: 'Waiting for a key — click the screen to type',
   /** A Leap-C program tape on Open (throws for anything else). */
   tapeToText: readCTape,
@@ -260,6 +266,7 @@ export const leapcProfile = {
    */
   async attach({ rom, romImages, fetchAsset = null }) {
     const checker = createChecker(rom, romImages);
+    let cart = null;                     // {home, exrom, identity} of the cartridge build, on first use
     const libImages = new Map();         // library name -> image
     if (fetchAsset) {
       await Promise.all(LEAPC_LIBRARIES.map(async name => {
@@ -336,6 +343,61 @@ export const leapcProfile = {
           bytes: store.length,
           message: lib.name ? `Compiling (with LIB "${lib.name}")…` : 'Compiling…',
         };
+      },
+
+      /**
+       * ⬇ DCK / ▶ Test DCK (stage C9): the program compiled by the ROM's own
+       * compiler on the checker machine (with its library, as for Run), read
+       * back region by region and packed on Leap-C's runtime cartridge build
+       * (the ROM entry's cartridgeDir). The stock ROM starts it from the dock;
+       * a key after the report restarts it from cold.
+       * @param {{confirm: (q: string) => boolean}} ui
+       * @returns {Promise<{error: string, line0?: number}|null|{dck: Uint8Array, bin: Uint8Array, summary: string}>}
+       */
+      async buildCartridge(text, ui) {
+        const prepared = prepareSource(text);
+        if (prepared.problems.length > 0) return { error: prepared.problems[0].message };
+        if (prepared.lines.length === 0) return { error: 'Nothing to put on a cartridge' };
+        if (!rom.cartridgeDir || !rom.runMain) return { error: `There is no cartridge build for Leap-C ${rom.version}` };
+        if (!fetchAsset) return { error: 'The cartridge build cannot be fetched here' };
+        const store = encodeLineStore(prepared.lines);
+        const big = tooBig(store);
+        if (big) return { error: big };
+        const lib = libraryFor(text);
+        if (lib.problem) return { error: `Line ${lib.problem.line}: ${lib.problem.message}`, line0: lib.problem.line - 1 };
+        if (!cart) {
+          try {
+            const [home, exrom, info] = await Promise.all([
+              fetchAsset(rom.cartridgeDir + 'leapc_cart_home.bin'),
+              fetchAsset(rom.cartridgeDir + 'leapc_exrom.bin'),
+              fetchAsset(rom.cartridgeDir + 'cartridge.json'),
+            ]);
+            cart = { home, exrom, identity: parseInt(JSON.parse(new TextDecoder().decode(info)).identity, 16) };
+          } catch (e) {
+            return { error: `The cartridge build in ${rom.cartridgeDir} could not be loaded: ${e.message}` };
+          }
+        }
+        const identity = romIdentity(romImages.home, romImages.exrom);
+        if (identity !== cart.identity || cart.exrom.length !== romImages.exrom.length || cart.exrom.some((b, i) => b !== romImages.exrom[i])) {
+          return { error: `The cartridge build accepts identity $${cart.identity.toString(16).toUpperCase()}; these ROMs are $${identity.toString(16).toUpperCase()}` };
+        }
+        const port = blankOut(text).split('\n').findIndex(l => /\boutp\s*\(\s*(0x[fF]4|244|0x[fF][fF]|255)\s*,/.test(l));
+        if (port >= 0 && !ui.confirm(`Line ${port + 1} writes to port 244 or 255 (outp), which can switch the cartridge's ROMs out. Make the cartridge anyway?`)) return null;
+        const r = checker.compileImage(store, prepared.lines.length, lib.image);
+        if (!r) return { error: 'The compiler did not finish' };
+        if (r.code !== 0) {
+          const mark = errorMark(prepared.editorLine, prepared.lines, r.line, r.col, r.code);
+          return { error: `Compile error ${r.code} on line ${mark.line0 + 1}: fix it first`, line0: mark.line0 };
+        }
+        let image;
+        try {
+          image = programImage({ ...r, identity });
+        } catch (e) {
+          return { error: e.message };
+        }
+        const { dck, bin } = packCartridge({ home: cart.home, exrom: cart.exrom, image });
+        const code = r.blocks.reduce((n, [, d]) => n + d.length, 0);
+        return { dck, bin, summary: `${code} bytes of program${lib.name ? ` and the ${lib.name} library` : ''}` };
       },
 
       /** ⬇ TAP: the question for the tape name. */

@@ -57,8 +57,14 @@ export const KNOWN_ROMS = {
     symGlo:           0x5E38,   // SYM_GLO
     rtRun:            0x363B,   // RT_RUN
     rtErrPc:          0x5EB8,   // RT_ERRPC
+    runMain:          0x5E9C,   // RUN_MAIN
+    runVoid:          0x5E9E,   // RUN_VOID
+    imgLim:           0x5E72,   // IMG_LIM
     keyWaitEnd:       0x02C6,   // end of the spin loop (exclusive)
+    romIdentity:      0xE90E,   // CRC-16/CCITT-FALSE of HOME then EXROM (the cartridge's identity)
+    cartridgeDir:     'cartridge/c/1.1.0/',
   },
+
 
 
   // Leap-C 1.0.0-beta.2 (SHA-256 HOME 043becf4…, EXROM 97fe9523…)

@@ -916,6 +916,53 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
       [true, true, store.length]);
   }
 
+  // C9: the cartridge. The program compiled on the checker machine, packed on Leap-C's cartridge
+  // build (cartridge/c/<release>/), run on a stock TS2068 (stock ROMs, the cartridge in the dock).
+  if (!crom.cartridgeDir) {
+    console.log(`SKIP  Leap-C cartridge — the ${crom.version} entry has no cartridgeDir`);
+  } else {
+    const { isLeapcCartridge, romIdentity } = await import(join(ROOT, 'src/lang/c/cartridge.js'));
+    const stock0 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-0.rom')));
+    const stock1 = new Uint8Array(readFileSync(join(ROOT, 'tsrun/roms/ts2068-1.rom')));
+    const pixelOf = (mm, x, y) => (mm.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (x >> 3)) >> (7 - (x & 7))) & 1;
+    /** Run a .dck on a stock TS2068 until the report's key wait; the report's text then. */
+    const runCart = dck => {
+      const sm = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+      setHomeRom(sm, stock0); setExRom(sm, stock1);
+      const err = insertDock(sm, dck);
+      resetMachine(sm);
+      let at = false;
+      for (let f = 0; f < 1500 && !at; f++) {
+        const end = sm.frameStart + tStatesPerFrame;
+        while (sm.tstates < end && !sm.cpu.halted) {
+          if (f > 110 && sm.cpu.pc >= crom.keyWait && sm.cpu.pc < crom.keyWaitEnd) { at = true; break; }
+          runZ80(sm.cpu, sm.bus, 1, sm);
+        }
+        if (!at) runFrame(sm);
+      }
+      let report = '';
+      for (let a = crom.reportBuf; a < crom.reportBuf + 24; a++) { const b = sm.bus.read(a); if (!b) break; report += String.fromCharCode(b); }
+      return { err, at, report, sm };
+    };
+    const hello = main('    cls();\n    printf("CART");\n    draw(16, 60, 239, 150);\n    return 7;');
+    const out = await cl.buildCartridge(hello, { confirm: () => true });
+    same('C9: the identity of the 1.0.0 ROMs is $E90E (the cartridge build\'s)', romIdentity(chome, cexrom), 0xE90E);
+    same('C9: the DCK: chunks 0, 1, 4, 5, 6 as ROM, "LCPG" at DOCK $8000; the flat image 64 KB',
+      [[...out.dck.subarray(0, 9)], out.dck.length, isLeapcCartridge(out.dck), out.bin.length, String.fromCharCode(...out.bin.subarray(0x8000, 0x8004)), /bytes of program$/.test(out.summary)],
+      [[0, 2, 2, 0, 0, 2, 2, 2, 0], 9 + 5 * 0x2000, true, 0x10000, 'LCPG', true]);
+    const ran = runCart(out.dck);
+    same('C9: on a stock TS2068 the cartridge runs the program to its report (EXIT 7), the line drawn',
+      [ran.err, ran.at, ran.report, pixelOf(ran.sm, 16, 60), pixelOf(ran.sm, 239, 150)], [null, true, 'EXIT 7', 1, 1]);
+    const shapes = main('    cls();\n    circle(128, 96, 20);\n    return isqrt(150);');
+    const sOut = await cl.buildCartridge(shapes, { confirm: () => true });
+    const sRan = runCart(sOut.dck);
+    same('C9: a shapes program carries the library (region 3) and draws from the cartridge',
+      [/and the shapes library$/.test(sOut.summary), sRan.report, pixelOf(sRan.sm, 148, 96), pixelOf(sRan.sm, 128, 96)], [true, 'EXIT 12', 1, 0]);
+    same('C9: a compile error is refused with its line', await cl.buildCartridge(main('    int x = 3 +;\n    return x;'), { confirm: () => true }),
+      { error: 'Compile error 20 on line 3: fix it first', line0: 2 });
+    same('C9: outp to port 244 asks first (declined: nothing built)', await cl.buildCartridge(main('    outp(244, 0);\n    return 0;'), { confirm: () => false }), null);
+  }
+
   same('manual data: keywords, library functions, the shapes library',
     ['while', 'printf', 'circle'].map(w => LEAPC_KEYWORD_ENTRIES[w]?.kind), ['keyword', 'function', 'library function']);
   same('file-scope names: functions, globals, macros, types',

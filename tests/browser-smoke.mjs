@@ -489,6 +489,13 @@ try {
   const cDoneWhy = await status();
   check('Leap-C: a breakpoint in a function pauses with the globals and call stack; toggling it clears it; Continue finishes with the exit status',
     cPaused === 'Paused at line 4' && cPanel === 'Globals | total int 0 | sq() line 4 < main() line 8' && cDone === 'Finished: exit 25' && bpOff === '[[4],[]]', `${cPaused} | ${cPanel} | ${cDone} | ${cDoneWhy} | ${bpOff}`);
+  // C9: ▶ Test DCK runs the compiled program from Leap-C's cartridge on the stock ROMs; Stop goes back.
+  await evaluate(`(leapEditor.setSource(${JSON.stringify(['int main(void)', '{', '    cls();', '    draw(16, 60, 239, 150);', '    return 7;', '}'].join('\n'))}, {fresh: true}), document.getElementById('btn-dck-test').click())`);
+  const cCart = await waitFor(`leapIDE.emulator.cartridge && ((leapIDE.emulator.machine.bus.read(0x4000 | (60 & 0xC0) << 5 | (60 & 7) << 8 | (60 & 0x38) << 2 | (16 >> 3)) >> (7 - (16 & 7))) & 1) === 1 && document.getElementById('emu-rom').textContent`, 20000);
+  await evaluate("document.getElementById('btn-stop').click()");
+  const cBack = await waitFor("!leapIDE.emulator.cartridge && document.getElementById('status-text').textContent === 'Ready' && document.getElementById('emu-rom').textContent", 20000);
+  check('Leap-C: ▶ Test DCK runs the program\'s cartridge on a stock TS2068; Stop goes back to Leap-C',
+    cCart === 'Stock TS2068 + DCK' && /^Leap-C 1\.0/.test(cBack ?? ''), `${cCart} | ${cBack}`);
   // C7: the Examples menu has the manual's 18 programs; one opens and runs.
   const cExamples = await evaluate("document.querySelectorAll('#examples-menu [data-example]').length");
   await evaluate("window.confirm = () => true, document.querySelector('[data-example=fibonacci-numbers]').click()");

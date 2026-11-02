@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print a src/lang/c/leapc-roms.js entry for a 2068-Leap-C build.
 
-usage: tools/leapc-rom-entry.py <build dir> <version>
+usage: tools/leapc-rom-entry.py <build dir> <version> [<cartridge dir>]
 
 <build dir> holds leapc_home.bin, leapc_exrom.bin, leapc_home.sym,
 leapc_exrom.sym and SHA256SUMS: build/ of the release tag built in a
@@ -14,6 +14,11 @@ copied by hand. Checks: the images against SHA256SUMS, the key-wait spin loop
 build from before the label existed (v1.0.0-beta.2), SH_WAIT_KEY.key_ret is
 derived as SH_WAIT_KEY.read + 3 after checking the CALL there
 (docs/requests/LEAP_C_ANSWERS.md Q2.3: the label costs 0 bytes).
+
+<cartridge dir> (optional, e.g. cartridge/c/1.1.0/): where the runtime
+cartridge build for these ROMs is kept (leapc_cart_home.bin, leapc_exrom.bin,
+cartridge.json); it is printed as cartridgeDir, with the identity (the
+CRC-16/CCITT-FALSE of HOME then EXROM) the cartridge must accept.
 """
 
 import hashlib
@@ -63,6 +68,10 @@ SYMBOLS = {
     'symGlo':         ('SYM_GLO', 'home'),
     'rtRun':          ('RT_RUN', 'home'),
     'rtErrPc':        ('RT_ERRPC', 'home'),
+    # Cartridge (C9): the compiled image's cells (src/cart/cart.asm)
+    'runMain':        ('RUN_MAIN', 'home'),
+    'runVoid':        ('RUN_VOID', 'home'),
+    'imgLim':         ('IMG_LIM', 'home'),
 }
 
 
@@ -76,7 +85,7 @@ def load_sym(path):
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         sys.exit(__doc__)
     base, version = sys.argv[1], sys.argv[2]
     home = open(os.path.join(base, 'leapc_home.bin'), 'rb').read()
@@ -121,6 +130,14 @@ def main():
     for field, value in entry.items():
         label = notes.get(field) or (SYMBOLS[field][0] if field in SYMBOLS else 'end of the spin loop (exclusive)')
         print(f"    {(field + ':').ljust(17)} 0x{value:04X},   // {label}")
+    if len(sys.argv) == 4:
+        crc = 0xFFFF
+        for b in home + exrom:
+            crc ^= b << 8
+            for _ in range(8):
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+        print(f"    romIdentity:      0x{crc:04X},   // CRC-16/CCITT-FALSE of HOME then EXROM (the cartridge's identity)")
+        print(f"    cartridgeDir:     '{sys.argv[3]}',")
     print('  },')
 
 
