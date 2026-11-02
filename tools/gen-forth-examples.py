@@ -6,12 +6,14 @@ usage: tools/gen-forth-examples.py <2068-forth checkout> <git ref> > src/lang/fo
 The examples are the manual's Part 7 programs (docs/manual/07_examples.md,
 the numbered "## N. Title" sections: the first ```forth block of each, and
 the first sentence of the paragraph under the heading as the menu text),
-plus demos/blackjack.fs with a last line that starts the game. Each Part 7
+plus demos/blackjack.fs and demos/gallery.fs, each with a last line that
+starts the game. Each Part 7
 program is a test in 2068-Forth's build: `\\ expect:` comments say what a
 line prints and are kept (Forth ignores them) unless they make the line
 longer than the prompt's 128 characters; all of them are also in `expect`.
 `\\ keys:` lines give the keys a line waits for and are left out of the
-text, but kept as `keys`.
+text, but kept as `keys`: [line, keys], the line (0-based, in the text) being
+the one they are typed for, the next one after the directive.
 """
 
 import json
@@ -48,7 +50,7 @@ def manual_examples(text):
         for line in code.group(1).rstrip('\n').split('\n'):
             k = KEYS.match(line)
             if k:
-                keys.append(k.group(1).encode().decode('unicode_escape'))
+                keys.append([len(lines), k.group(1).encode().decode('unicode_escape')])
             else:
                 line = line.rstrip()
                 e = EXPECT.search(line)
@@ -80,13 +82,22 @@ def main():
         'input': True,
         'text': blackjack + '\nBLACKJACK\n',
     })
+    # The Shooting Gallery ends with MAIN, which starts it.
+    gallery = show(checkout, ref, 'demos/gallery.fs').rstrip('\n')
+    examples.append({
+        'id': 'gallery', 'title': 'Shooting Gallery',
+        'about': 'A real-time arcade game (the old demo ROM\'s source). Q/A, W/S, E/D move the targets, O/P the blaster, SPACE fires.',
+        'input': True,
+        'text': gallery + '\n',
+    })
     print('/**')
     print(' * src/lang/forth/examples.js — GENERATED, do not edit.')
     print(' *')
-    print(f' * tools/gen-forth-examples.py from 2068-Forth docs/manual/07_examples.md and')
-    print(f' * demos/blackjack.fs at {ref}: {len(examples)} programs for the Examples menu,')
-    print(' * {id, title, about, text, expect, input?, keys?}: expect [line, what it prints')
-    print(' * (screen rows joined by |)], keys what a test presses, in order.')
+    print(f' * tools/gen-forth-examples.py from 2068-Forth docs/manual/07_examples.md,')
+    print(f' * demos/blackjack.fs and demos/gallery.fs at {ref}: {len(examples)} programs for the')
+    print(' * Examples menu, {id, title, about, text, expect, input?, keys?}: expect [line, what')
+    print(' * it prints (screen rows joined by |)], keys [line, what a test types while that')
+    print(' * line waits]; lines are 0-based in the text.')
     print(' */')
     print()
     print('"use strict";')

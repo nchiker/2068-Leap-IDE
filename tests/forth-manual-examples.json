@@ -1,0 +1,1885 @@
+{
+ "generated": "tools/gen-forth-doc-tests.py: GENERATED, do not edit",
+ "ref": "v2.0",
+ "commit": "50170f2b5491da96753aacd2d4c070dd0a97dbeb",
+ "examples": [
+  {
+   "name": "manual_02_beginners_guide_01",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 33,
+   "text": "5 3 + .                  \\ expect: 8\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_02",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 95,
+   "text": "42 .                     \\ expect: 42\n1 2 3 . . .              \\ expect: 3 2 1\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_03",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 108,
+   "text": "5 3 + .                  \\ expect: 8\n10 11 + 12 + .           \\ expect: 33\n10 3 - .                 \\ expect: 7\n3 10 - .                 \\ expect: -7\n6 7 * .                  \\ expect: 42\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_04",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 147,
+   "text": "5 DUP * .                \\ expect: 25\n1 2 SWAP . .             \\ expect: 1 2\n1 2 DROP .               \\ expect: 1\n1 2 OVER . . .           \\ expect: 1 2 1\n1 2 3 ROT . . .          \\ expect: 1 3 2\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_05",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 169,
+   "text": "DROP                     \\ expect: STACK?\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_06",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 181,
+   "text": ": DOUBLE  DUP + ;\n4 DOUBLE .               \\ expect: 8\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_07",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 190,
+   "text": ": DOUBLE  DUP + ;\n: QUADRUPLE  DOUBLE DOUBLE ;\n3 QUADRUPLE .            \\ expect: 12\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_08",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 201,
+   "text": ": SHOW\n  DUP .\n  DUP * . ;\n5 SHOW                   \\ expect: 5 25\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_09",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 213,
+   "text": "\\ the square of a number\n: SQUARE ( n -- n*n )  DUP * ;\n4 SQUARE .               \\ expect: 16\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_10",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 224,
+   "text": ": ONE  1 ;\n: TWO  ONE ONE + ;\n: ONE  100 ;\nONE .                    \\ expect: 100\nTWO .                    \\ expect: 2\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_11",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 236,
+   "text": ": A  1 ;\n: B  2 ;\n: C  3 ;\nFORGET B\nC                        \\ expect: C ?\nA .                      \\ expect: 1\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_12",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 248,
+   "text": "FORGET DUP               \\ expect: FORGET: BUILT-IN, REFUSED\nFORGET NOSUCH            \\ expect: FORGET: NOT FOUND\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_13",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 258,
+   "text": "VLIST                    \\ expect-end: SWAP DUP DROP\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_14",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 264,
+   "text": "FREE 16000 >  .          \\ expect: -1\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_15",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 275,
+   "text": "IF                       \\ expect: IF ?\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_16",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 289,
+   "text": "5 BRODER                 \\ expect: BRODER ?\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_17",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 298,
+   "text": ":DOUBLE DUP + ;          \\ expect: :DOUBLE ?\n: DOUBLE DUP+ ;          \\ expect: DUP+ ?\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_18",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 306,
+   "text": ": Q  NOSUCH ;            \\ expect: NOSUCH ?\nQ                        \\ expect: Q ?\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_19",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 320,
+   "text": ": SQURE  DUP * ;\n5 SQURE .                \\ expect: 25\nLIST-DEFS                \\ expect: 0: : SQURE  DUP * ;\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_20",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 331,
+   "text": ": SQURE  DUP * ;\n\\ keys: \\x04\\x04\\x04\\x04\\x04A\\x10\nEDIT SQURE\n5 SQUARE .               \\ expect: 25\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_21",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 374,
+   "text": "32767 1 + .              \\ expect: -32768\n-32768 1 - .             \\ expect: 32767\n256 256 * .              \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_22",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 383,
+   "text": "40000 .                  \\ expect: -25536\n65536 .                  \\ expect: OUT OF RANGE\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_23",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 395,
+   "text": "17 5 / .                 \\ expect: 3\n17 5 MOD .               \\ expect: 2\n-17 5 / .                \\ expect: -3\n-17 5 MOD .              \\ expect: -2\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_24",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 404,
+   "text": "5 0 / .                  \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_25",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 419,
+   "text": "-5 ABS .                 \\ expect: 5\n5 NEGATE .               \\ expect: -5\n3 7 MAX .                \\ expect: 7\n3 7 MIN .                \\ expect: 3\n15 SQRT .                \\ expect: 3\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_26",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 433,
+   "text": "10 RND  10 < .           \\ expect: -1\n12345 RANDOMIZE\n100 RND .                \\ expect: 51\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_27",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 447,
+   "text": "3.5 2.5 F+ F.            \\ expect: 6.0000\n1.0 4.0 F/ F.            \\ expect: 0.2500\n2.0 3.0 F+ 4.0 F* F.     \\ expect: 20.0000\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_28",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 458,
+   "text": ".5 F.                    \\ expect: 0.5000\n3. F.                    \\ expect: 3.0000\n1E3 F.                   \\ expect: 1000.0000\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_29",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 468,
+   "text": "5 3.5 2.5 F+ F. .        \\ expect: 6.0000 5\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_30",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 477,
+   "text": ": HALVE  2.0 F/ ;\n5.0 HALVE F.             \\ expect: 2.5000\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_31",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 489,
+   "text": "PI F.                    \\ expect: 3.1416\n2 PLACES\nPI F.                    \\ expect: 3.14\n0 PLACES\nPI F.                    \\ expect: 3\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_32",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 503,
+   "text": "12345.678 FS.            \\ expect: 1.2346E4\n1E-6 FS.                 \\ expect: 1.0000E-6\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_33",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 512,
+   "text": "7 2 / S>F F.             \\ expect: 3.0000\n7 S>F 2 S>F F/ F.        \\ expect: 3.5000\n3.7 F>S .                \\ expect: 3\n-3.7 F>S .               \\ expect: -3\n3.7 FROUND F>S .         \\ expect: 4\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_34",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 528,
+   "text": "1.0 0.0 F/               \\ expect: DIVISION BY ZERO\n1E38 10.0 F*             \\ expect: OUT OF RANGE\n-1.0 FSQRT               \\ expect: INVALID ARGUMENT\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_35",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 541,
+   "text": "2.0 FSQRT F.             \\ expect: 1.4142\n45.0 RAD SIN F.          \\ expect: 0.7071\nPI 4.0 F/ TAN F.         \\ expect: 1.0000\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_36",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 552,
+   "text": "FVARIABLE TOTAL\n0.0 TOTAL F!\n: ADD  TOTAL F@ F+ TOTAL F! ;\n1.5 ADD  2.25 ADD\nTOTAL F@ F.              \\ expect: 3.7500\nPI 2.0 F* FCONSTANT TAU\nTAU F.                   \\ expect: 6.2832\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_37",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 575,
+   "text": "VARIABLE SCORE\nSCORE @ .                \\ expect: 0\n42 SCORE !\nSCORE @ .                \\ expect: 42\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_38",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 589,
+   "text": "100 CONSTANT MAXHEALTH\nMAXHEALTH .              \\ expect: 100\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_39",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 601,
+   "text": "VARIABLE V\n258 V !\nV C@ .                   \\ expect: 2\nV 1 + C@ .               \\ expect: 1\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_40",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 615,
+   "text": "5 ARRAY SCORES\n99 3 CELLS SCORES + !\n3 CELLS SCORES + @ .     \\ expect: 99\n0 CELLS SCORES + @ .     \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_41",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 631,
+   "text": "HERE  1234 ,  HERE SWAP - .   \\ expect: 2\nHERE  20 ALLOT  HERE SWAP - . \\ expect: 20\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_42",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 653,
+   "text": "5 3 > .                  \\ expect: -1\n5 3 < .                  \\ expect: 0\n5 5 = .                  \\ expect: -1\n7 0= .                   \\ expect: 0\n0 0= .                   \\ expect: -1\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_43",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 666,
+   "text": ": <=  > 0= ;\n3 5 <= .                 \\ expect: -1\n5 5 <= .                 \\ expect: -1\n6 5 <= .                 \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_44",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 675,
+   "text": "1 2 <  2 3 < AND .       \\ expect: -1\n1 2 >  2 3 < OR .        \\ expect: -1\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_45",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 683,
+   "text": "6 3 AND .                \\ expect: 2\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_46",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 695,
+   "text": ": SIGN  IF 111 ELSE 222 THEN ;\n5 SIGN .                 \\ expect: 111\n0 SIGN .                 \\ expect: 222\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_47",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 703,
+   "text": ": BONUS  IF 100 + THEN ;\n50 -1 BONUS .            \\ expect: 150\n50  0 BONUS .            \\ expect: 50\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_48",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 711,
+   "text": ": BIGGER  > IF 1 ELSE 2 THEN ;\n5 3 BIGGER .             \\ expect: 1\n3 5 BIGGER .             \\ expect: 2\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_49",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 719,
+   "text": ": DESCRIBE\n  IF .\" POSITIVE\"\n  ELSE .\" ZERO\" THEN ;\n5 DESCRIBE               \\ expect: POSITIVE\n0 DESCRIBE               \\ expect: ZERO\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_50",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 729,
+   "text": ": ?SHOW\n  DUP IF . ELSE DROP THEN ;\n7 ?SHOW                  \\ expect: 7\n0 ?SHOW\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_51",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 746,
+   "text": ": FIVE  5 0 DO I . LOOP ;\nFIVE                     \\ expect: 0 1 2 3 4\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_52",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 754,
+   "text": ": STARS  0 DO 42 EMIT LOOP ;\n5 STARS                  \\ expect: *****\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_53",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 763,
+   "text": ": STARS\n  ?DUP IF\n    0 DO 42 EMIT LOOP\n  THEN ;\n0 STARS\n3 STARS                  \\ expect: ***\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_54",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 774,
+   "text": ": UPTO3\n  10 0 DO\n    I .  I 3 = IF LEAVE THEN\n  LOOP ;\nUPTO3                    \\ expect: 0 1 2 3\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_55",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 787,
+   "text": ": EVENS  10 0 DO I . 2 +LOOP ;\nEVENS                    \\ expect: 0 2 4 6 8\n: DOWN  0 5 DO I . -1 +LOOP ;\nDOWN                     \\ expect: 5 4 3 2 1 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_56",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 800,
+   "text": ": TABLE\n  4 1 DO\n    4 1 DO J I * . LOOP\n    CR\n  LOOP ;\nTABLE                    \\ expect: 1 2 3|2 4 6|3 6 9\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_57",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 816,
+   "text": ": COUNTDOWN\n  BEGIN 1 - DUP 0= UNTIL ;\n5 COUNTDOWN .            \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_58",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 830,
+   "text": ": COUNTDOWN\n  BEGIN DUP 0 > WHILE\n    1 -\n  REPEAT ;\n5 COUNTDOWN .            \\ expect: 0\n0 COUNTDOWN .            \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_59",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 843,
+   "text": ": FIRST3\n  0 5 0 DO\n    I 3 = IF EXIT THEN\n    1+\n  LOOP 999 ;\nFIRST3 .                 \\ expect: 3\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_60",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 861,
+   "text": ": GREET\n  .\" HELLO\" CR .\" WORLD\" ;\nGREET                    \\ expect: HELLO|WORLD\n: GAP  .\" A\" 3 SPACES .\" B\" ;\nGAP                      \\ expect: A   B\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_61",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 875,
+   "text": "65 EMIT 66 EMIT          \\ expect: AB\n: ALPHABET\n  91 65 DO I EMIT LOOP ;\nALPHABET                 \\ expect: ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_62",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 890,
+   "text": "S\" HELLO WORLD\" TYPE     \\ expect: HELLO WORLD\nS\" HELLO\" . DROP         \\ expect: 5\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_63",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 902,
+   "text": ": TWO  S\" ABC\" S\" XYZ\" ;\nTWO TYPE TYPE            \\ expect: XYZABC\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_64",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 913,
+   "text": "20 STRING NAME\nS\" ADA\" NAME PLACE\nNAME COUNT TYPE          \\ expect: ADA\nNAME LEN .               \\ expect: 3\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_65",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 935,
+   "text": "65 CHR TYPE              \\ expect: A\n42 STR TYPE              \\ expect: 42\nS\" 1234\" VAL .           \\ expect: 1234\nS\" ABC\" CODE .           \\ expect: 65\nS\" HELLO WORLD\" 5 LEFT TYPE   \\ expect: HELLO\nS\" HELLO WORLD\" 5 RIGHT TYPE  \\ expect: WORLD\nS\" hello\" UPPER TYPE     \\ expect: HELLO\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_66",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 949,
+   "text": ": FIND\n  S\" HELLO WORLD\"\n  S\" LO\" SEARCH ;\nFIND . TYPE              \\ expect: -1 LO WORLD\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_67",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 964,
+   "text": ": HELLO\n  CLS 10 5 AT-XY .\" HELLO\" ;\nHELLO                    \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_68",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 990,
+   "text": ": RAINBOW\n  8 0 DO\n    I PAPER 3 SPACES\n  LOOP ;\nCLS                      \\ draws\nRAINBOW                  \\ draws\n7 PAPER 0 INK            \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_69",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1003,
+   "text": ": BORDERS\n  8 0 DO I BORDER LOOP ;\nBORDERS\n7 BORDER\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_70",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1033,
+   "text": "CLS                      \\ draws\n5 BORDER                 \\ draws\n2 INK  6 PAPER           \\ draws\n128 96 40 CIRCLE         \\ draws\n128 96 FILL              \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_71",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1050,
+   "text": ": ROOF\n  50 100  100 50  150 100  3\n  POLYGON-FILL ;\n: WALLS  50 100 150 170 RECT ;\n: HOUSE\n  CLS 2 INK ROOF 0 INK WALLS ;\nHOUSE                    \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_72",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1066,
+   "text": ": DOTS\n  200 20 DO\n    I 96 8 CIRCLE\n  40 +LOOP ;\nDOTS                     \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_73",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1082,
+   "text": ": ROW ( byte row -- )\n  0 UDG + C! ;\n24 0 ROW  60 1 ROW       \\ draws\n126 2 ROW  255 3 ROW     \\ draws\n24 4 ROW  24 5 ROW       \\ draws\n24 6 ROW  24 7 ROW       \\ draws\n144 EMIT                 \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_74",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1101,
+   "text": "0 0.5 BEEP               \\ plays middle C for half a second\n12 0.5 BEEP              \\ an octave above\n-12 0.5 BEEP             \\ an octave below\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_75",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1113,
+   "text": ": NOTE  ( n -- )  0.25 BEEP ;\n: TUNE\n  0 NOTE 4 NOTE 7 NOTE 12 NOTE\n  7 NOTE 4 NOTE 0 NOTE ;\nTUNE                     \\ plays seven notes, up and back\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_76",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1123,
+   "text": ": SCALE\n  13 0 DO I 0.2 BEEP LOOP ;\nSCALE                    \\ plays a scale\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_77",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1142,
+   "text": "\\ keys: A\nKEY .                    \\ expect: 65\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_78",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1150,
+   "text": "KEY? .                   \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_79",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1156,
+   "text": ": PRESSED?\n  KEY? DUP IF KEY DROP THEN ;\nPRESSED? .               \\ expect: 0\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_80",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1164,
+   "text": ": WAIT-FOR-Q\n  BEGIN KEY 81 = UNTIL ;\n\\ keys: abQ\nWAIT-FOR-Q\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_81",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1181,
+   "text": "10 STRING NAME\n: ASK\n  .\" NAME? \"\n  NAME 1 + 10 ACCEPT NAME C!\n  CR .\" HELLO, \"\n  NAME COUNT TYPE ;\n\\ keys: Ada\\r\nASK                      \\ expect: NAME? Ada|HELLO, Ada\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_82",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1195,
+   "text": ": NEXT-YEAR\n  .\" AGE? \" INPUT CR 1+ . ;\n\\ keys: 42\\r\nNEXT-YEAR                \\ expect: AGE? 42|43\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_83",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1206,
+   "text": "VARIABLE POS\n: DRAW\n  0 5 AT-XY 32 SPACES\n  POS @ 5 AT-XY 42 EMIT ;\n: MOVE  ( key -- )\n  DUP 111 =\n  IF POS @ 1- POS ! THEN\n  112 =\n  IF POS @ 1+ POS ! THEN ;\n: GAME\n  10 POS !\n  BEGIN\n    DRAW KEY DUP MOVE\n  113 = UNTIL ;\n\\ keys: oopq\nGAME                     \\ draws\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_84",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1233,
+   "text": ": SPIN  BEGIN 0 UNTIL ;\n\\ break: after 100000\nSPIN                     \\ expect: BREAK\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_85",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1244,
+   "text": ": TICKS\n  BEGIN\n    1 BORDER 2 BORDER\n  BREAK? UNTIL .\" DONE\" ;\n\\ break: after 100000\nTICKS                    \\ expect: DONE\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_86",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1324,
+   "text": ": FOREVER  FOREVER ;\nFOREVER                  \\ expect: RETURN STACK FULL\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_87",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1343,
+   "text": ": RISKY  42 THROW ;\n' RISKY CATCH .          \\ expect: 42\n: SAFE  5 3 + ;\n' SAFE CATCH . .         \\ expect: 0 8\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_88",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1355,
+   "text": ": STRICT-SQRT\n  DUP 0 < IF -1 THROW THEN\n  SQRT ;\n: TRY\n  ['] STRICT-SQRT CATCH\n  IF .\" NEGATIVE\" DROP\n  ELSE . THEN ;\n16 TRY                   \\ expect: 4\n-9 TRY                   \\ expect: NEGATIVE\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_89",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1370,
+   "text": ": DIV0  1.0 0.0 F/ ;\n' DIV0 CATCH .           \\ expect: -42\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_90",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1378,
+   "text": "5 THROW                  \\ expect: ERROR 5\n-43 THROW                \\ expect: OUT OF RANGE\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_91",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1385,
+   "text": ": SPIN\n  BEGIN\n    1 BORDER 2 BORDER\n  0 UNTIL ;\n: RUN\n  ['] SPIN CATCH  7 BORDER\n  -28 = IF .\" STOPPED\" THEN ;\n\\ break: after 100000\nRUN                      \\ expect: STOPPED\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_92",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1403,
+   "text": ": CHECK\n  DUP 0 < IF\n    .\" NEGATIVE\" ABORT\n  THEN ;\n5 CHECK .                \\ expect: 5\n-5 CHECK                 \\ expect: NEGATIVE\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_93",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1419,
+   "text": ": DOUBLE  DUP + ;\n4 ' DOUBLE EXECUTE .     \\ expect: 8\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_94",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1427,
+   "text": ": DOUBLE  DUP + ;\n: RUN-DOUBLE\n  ['] DOUBLE EXECUTE ;\n5 RUN-DOUBLE .           \\ expect: 10\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_95",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1436,
+   "text": "' NOSUCH                 \\ expect: UNDEFINED WORD\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_96",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1442,
+   "text": "CHAR A .                 \\ expect: 65\n: STAR  [CHAR] * EMIT ;\nSTAR                     \\ expect: *\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_97",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1459,
+   "text": ": HOUR  [ 60 60 * ] LITERAL ;\nHOUR .                   \\ expect: 3600\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_98",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1467,
+   "text": ": FOO  42 ; IMMEDIATE\n: BAR  FOO ;\nBAR\n.                        \\ expect: 42\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_99",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1480,
+   "text": "CREATE POINT  0 , 0 ,\n5 POINT !\n7 POINT 2 + !\nPOINT @ .                \\ expect: 5\nPOINT 2 + @ .            \\ expect: 7\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_100",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1490,
+   "text": ": TABLE-OF-3\n  CREATE 10 , 20 , 30 , ;\nTABLE-OF-3 NUMS\nNUMS 2 + @ .             \\ expect: 20\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_101",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1501,
+   "text": ": CONST  CREATE , DOES> @ ;\n5 CONST FIVE\n7 CONST SEVEN\nFIVE .                   \\ expect: 5\nSEVEN .                  \\ expect: 7\n"
+  },
+  {
+   "name": "manual_02_beginners_guide_102",
+   "doc": "docs/manual/02_beginners_guide.md",
+   "line": 1512,
+   "text": ": ARR3\n  CREATE 10 , 20 , 30 ,\n  DOES> SWAP CELLS + @ ;\nARR3 NUMS\n0 NUMS .                 \\ expect: 10\n2 NUMS .                 \\ expect: 30\n"
+  },
+  {
+   "name": "manual_03_language_01",
+   "doc": "docs/manual/03_language.md",
+   "line": 82,
+   "text": "VARIABLE V\n1234 V !\nV @ .                      \\ expect: 1234\n258 V !  V C@ . V 1+ C@ .  \\ expect: 2 1\n"
+  },
+  {
+   "name": "manual_03_language_02",
+   "doc": "docs/manual/03_language.md",
+   "line": 104,
+   "text": ": SQ DUP * ;\n5 ' SQ EXECUTE .         \\ expect: 25\n' NOSUCH                 \\ expect: UNDEFINED WORD\n"
+  },
+  {
+   "name": "manual_03_language_03",
+   "doc": "docs/manual/03_language.md",
+   "line": 132,
+   "text": "1 ( the first ) 2 + .    \\ expect: 3\n: SHOW 5 ( a note ) . ;\nSHOW                     \\ expect: 5\n"
+  },
+  {
+   "name": "manual_03_language_04",
+   "doc": "docs/manual/03_language.md",
+   "line": 155,
+   "text": "6 7 * .                  \\ expect: 42\n-3 4 * .                 \\ expect: -12\n200 200 * .              \\ expect: -25536\n"
+  },
+  {
+   "name": "manual_03_language_05",
+   "doc": "docs/manual/03_language.md",
+   "line": 182,
+   "text": "3 4 + .                  \\ expect: 7\n32767 1 + .              \\ expect: -32768\n"
+  },
+  {
+   "name": "manual_03_language_06",
+   "doc": "docs/manual/03_language.md",
+   "line": 207,
+   "text": ": UP 10 0 DO I . 3 +LOOP ;\n: DOWN 0 10 DO I . -4 +LOOP ;\n: ZERO 0 10 DO I . -5 +LOOP ;\nUP                       \\ expect: 0 3 6 9\nDOWN                     \\ expect: 10 6 2\nZERO                     \\ expect: 10 5 0\n"
+  },
+  {
+   "name": "manual_03_language_07",
+   "doc": "docs/manual/03_language.md",
+   "line": 238,
+   "text": "CREATE TBL 10 , 20 , 30 ,\nTBL @ .                  \\ expect: 10\nTBL 2 CELLS + @ .        \\ expect: 30\n"
+  },
+  {
+   "name": "manual_03_language_08",
+   "doc": "docs/manual/03_language.md",
+   "line": 260,
+   "text": "10 3 - .  3 10 - .       \\ expect: 7 -7\n-32768 1 - .             \\ expect: 32767\n"
+  },
+  {
+   "name": "manual_03_language_09",
+   "doc": "docs/manual/03_language.md",
+   "line": 282,
+   "text": "17 5 / .                 \\ expect: 3\n-17 5 / .  17 -5 / .     \\ expect: -3 -3\n17 0 / .                 \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_10",
+   "doc": "docs/manual/03_language.md",
+   "line": 311,
+   "text": "0 0= . 5 0= . -1 0= .    \\ expect: -1 0 0\n5 5 - 0= .               \\ expect: -1\n3 0= 0= .                \\ expect: -1\n"
+  },
+  {
+   "name": "manual_03_language_11",
+   "doc": "docs/manual/03_language.md",
+   "line": 331,
+   "text": "5 1+ .                   \\ expect: 6\n32767 1+ .               \\ expect: -32768\n"
+  },
+  {
+   "name": "manual_03_language_12",
+   "doc": "docs/manual/03_language.md",
+   "line": 346,
+   "text": "5 1- .                   \\ expect: 4\n-32768 1- .              \\ expect: 32767\n"
+  },
+  {
+   "name": "manual_03_language_13",
+   "doc": "docs/manual/03_language.md",
+   "line": 361,
+   "text": "1 2 3 4 2DROP . .        \\ expect: 2 1\n"
+  },
+  {
+   "name": "manual_03_language_14",
+   "doc": "docs/manual/03_language.md",
+   "line": 381,
+   "text": "3 4 2DUP + . . .         \\ expect: 7 4 3\n"
+  },
+  {
+   "name": "manual_03_language_15",
+   "doc": "docs/manual/03_language.md",
+   "line": 395,
+   "text": ": SQUARE DUP * ;\n5 SQUARE .               \\ expect: 25\n: SUM DUP 0= IF EXIT THEN\nDUP 1- SUM + ;\n5 SUM .                  \\ expect: 15\n: BAD 1 NOSUCH ;         \\ expect: NOSUCH ?\nBAD                      \\ expect: BAD ?\n"
+  },
+  {
+   "name": "manual_03_language_16",
+   "doc": "docs/manual/03_language.md",
+   "line": 432,
+   "text": ": TWICE DUP + ;\n4 TWICE .                \\ expect: 8\n"
+  },
+  {
+   "name": "manual_03_language_17",
+   "doc": "docs/manual/03_language.md",
+   "line": 451,
+   "text": "3 4 < . 4 3 < . 3 3 < .  \\ expect: -1 0 0\n"
+  },
+  {
+   "name": "manual_03_language_18",
+   "doc": "docs/manual/03_language.md",
+   "line": 475,
+   "text": "3 3 = . 3 4 = .          \\ expect: -1 0\n65535 -1 = .             \\ expect: -1\n"
+  },
+  {
+   "name": "manual_03_language_19",
+   "doc": "docs/manual/03_language.md",
+   "line": 500,
+   "text": "4 3 > . 3 4 > . 3 3 > .  \\ expect: -1 0 0\n"
+  },
+  {
+   "name": "manual_03_language_20",
+   "doc": "docs/manual/03_language.md",
+   "line": 525,
+   "text": "5 ?DUP . .               \\ expect: 5 5\n0 ?DUP .                 \\ expect: 0\n: ?PRINT ?DUP IF . THEN ;\n7 ?PRINT                 \\ expect: 7\n0 ?PRINT\n"
+  },
+  {
+   "name": "manual_03_language_21",
+   "doc": "docs/manual/03_language.md",
+   "line": 543,
+   "text": "VARIABLE V\n99 V !\nV @ .                    \\ expect: 99\n65535 V !  V @ .         \\ expect: -1\n"
+  },
+  {
+   "name": "manual_03_language_22",
+   "doc": "docs/manual/03_language.md",
+   "line": 564,
+   "text": "1.5 42 ABORT 99 .\nFDEPTH .                 \\ expect: 0\nDROP                     \\ expect: STACK?\n"
+  },
+  {
+   "name": "manual_03_language_23",
+   "doc": "docs/manual/03_language.md",
+   "line": 587,
+   "text": "-5 ABS . 5 ABS .         \\ expect: 5 5\n-32768 ABS .             \\ expect: -32768\n"
+  },
+  {
+   "name": "manual_03_language_24",
+   "doc": "docs/manual/03_language.md",
+   "line": 602,
+   "text": "CREATE BUF 10 ALLOT\nHERE BUF - .             \\ expect: 10\n-4 ALLOT\nHERE BUF - .             \\ expect: 6\n"
+  },
+  {
+   "name": "manual_03_language_25",
+   "doc": "docs/manual/03_language.md",
+   "line": 631,
+   "text": "10 12 AND .              \\ expect: 8\n-1 255 AND .             \\ expect: 255\n3 4 < 4 5 < AND .        \\ expect: -1\n"
+  },
+  {
+   "name": "manual_03_language_26",
+   "doc": "docs/manual/03_language.md",
+   "line": 653,
+   "text": "5 ARRAY NUMS\n99 3 CELLS NUMS + !\n3 CELLS NUMS + @ .       \\ expect: 99\n0 CELLS NUMS + @ .       \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_27",
+   "doc": "docs/manual/03_language.md",
+   "line": 683,
+   "text": ": COUNTDOWN 3 BEGIN DUP .\n1- DUP 0= UNTIL DROP ;\nCOUNTDOWN                \\ expect: 3 2 1\n"
+  },
+  {
+   "name": "manual_03_language_28",
+   "doc": "docs/manual/03_language.md",
+   "line": 706,
+   "text": "VARIABLE V\n-1 V !\n0 V C!\nV @ .                    \\ expect: -256\n300 V C!  V C@ .         \\ expect: 44\n"
+  },
+  {
+   "name": "manual_03_language_29",
+   "doc": "docs/manual/03_language.md",
+   "line": 729,
+   "text": "CREATE B 3 C, 4 C, 5 C,\nB C@ .                   \\ expect: 3\nB 2 + C@ .               \\ expect: 5\n"
+  },
+  {
+   "name": "manual_03_language_30",
+   "doc": "docs/manual/03_language.md",
+   "line": 751,
+   "text": "VARIABLE V\n200 V C!\nV C@ .                   \\ expect: 200\n"
+  },
+  {
+   "name": "manual_03_language_31",
+   "doc": "docs/manual/03_language.md",
+   "line": 771,
+   "text": ": SAFE 5 3 + ;\n: RISKY 42 THROW ;\n' SAFE CATCH . .         \\ expect: 0 8\n' RISKY CATCH .          \\ expect: 42\n1 2 ' RISKY CATCH . . .  \\ expect: 42 2 1\n"
+  },
+  {
+   "name": "manual_03_language_32",
+   "doc": "docs/manual/03_language.md",
+   "line": 803,
+   "text": "3 CELLS .                \\ expect: 6\n40000 CELLS .            \\ expect: 14464\n"
+  },
+  {
+   "name": "manual_03_language_33",
+   "doc": "docs/manual/03_language.md",
+   "line": 822,
+   "text": "CHAR A .                 \\ expect: 65\nCHAR a .                 \\ expect: 97\nCHAR hello .             \\ expect: 104\n"
+  },
+  {
+   "name": "manual_03_language_34",
+   "doc": "docs/manual/03_language.md",
+   "line": 848,
+   "text": "65 CHR TYPE              \\ expect: A\n321 CHR TYPE             \\ expect: A\n"
+  },
+  {
+   "name": "manual_03_language_35",
+   "doc": "docs/manual/03_language.md",
+   "line": 868,
+   "text": "S\" A\" CODE .             \\ expect: 65\nS\" ABC\" CODE .           \\ expect: 65\n"
+  },
+  {
+   "name": "manual_03_language_36",
+   "doc": "docs/manual/03_language.md",
+   "line": 887,
+   "text": "100 CONSTANT LIMIT\nLIMIT .                  \\ expect: 100\nLIMIT 1+ .               \\ expect: 101\n"
+  },
+  {
+   "name": "manual_03_language_37",
+   "doc": "docs/manual/03_language.md",
+   "line": 910,
+   "text": "0.0 COS F.               \\ expect: 1.0000\n2.0 COS F.               \\ expect: -0.4161\n60.0 RAD COS F.          \\ expect: 0.5000\n"
+  },
+  {
+   "name": "manual_03_language_38",
+   "doc": "docs/manual/03_language.md",
+   "line": 937,
+   "text": "10 STRING NAME\nS\" ADA\" NAME PLACE\nNAME COUNT TYPE          \\ expect: ADA\nNAME COUNT . DROP        \\ expect: 3\n"
+  },
+  {
+   "name": "manual_03_language_39",
+   "doc": "docs/manual/03_language.md",
+   "line": 954,
+   "text": "CREATE PRIMES 2 , 3 , 5 , 7 ,\nPRIMES 2 CELLS + @ .     \\ expect: 5\nCREATE FLAGS 8 ALLOT\nHERE FLAGS - .           \\ expect: 8\n"
+  },
+  {
+   "name": "manual_03_language_40",
+   "doc": "docs/manual/03_language.md",
+   "line": 982,
+   "text": "PI DEG F.                \\ expect: 180.0000\nPI 2.0 F/ DEG F.         \\ expect: 90.0000\n"
+  },
+  {
+   "name": "manual_03_language_41",
+   "doc": "docs/manual/03_language.md",
+   "line": 997,
+   "text": ": FIVE 5 0 DO I . LOOP ;\nFIVE                     \\ expect: 0 1 2 3 4\n: ONCE 3 3 DO I . LEAVE LOOP ;\nONCE                     \\ expect: 3\n"
+  },
+  {
+   "name": "manual_03_language_42",
+   "doc": "docs/manual/03_language.md",
+   "line": 1028,
+   "text": ": CONST CREATE , DOES> @ ;\n5 CONST FIVE\nFIVE .                   \\ expect: 5\n: TABLE CREATE 10 , 20 , 30 ,\nDOES> SWAP CELLS + @ ;\nTABLE NUMS\n1 NUMS .                 \\ expect: 20\n"
+  },
+  {
+   "name": "manual_03_language_43",
+   "doc": "docs/manual/03_language.md",
+   "line": 1054,
+   "text": "1 2 3 DROP . .           \\ expect: 2 1\n"
+  },
+  {
+   "name": "manual_03_language_44",
+   "doc": "docs/manual/03_language.md",
+   "line": 1074,
+   "text": "7 DUP . .                \\ expect: 7 7\n5 DUP * .                \\ expect: 25\n"
+  },
+  {
+   "name": "manual_03_language_45",
+   "doc": "docs/manual/03_language.md",
+   "line": 1095,
+   "text": ": SQ DUP + ;\n\\ keys: \\x04\\x04\\x04\\x04\\x04\\x04\\x04\\x04\\x04\\x04\\x08*\\x10\nEDIT SQ\n5 SQ .                   \\ expect: 25\n"
+  },
+  {
+   "name": "manual_03_language_46",
+   "doc": "docs/manual/03_language.md",
+   "line": 1142,
+   "text": ": SIGN? 0 < IF 1 ELSE 2\nTHEN . ;\n-5 SIGN?                 \\ expect: 1\n5 SIGN?                  \\ expect: 2\n"
+  },
+  {
+   "name": "manual_03_language_47",
+   "doc": "docs/manual/03_language.md",
+   "line": 1166,
+   "text": ": SQ DUP * ;\n5 ' SQ EXECUTE .         \\ expect: 25\n3 4 ' + EXECUTE .        \\ expect: 7\n"
+  },
+  {
+   "name": "manual_03_language_48",
+   "doc": "docs/manual/03_language.md",
+   "line": 1187,
+   "text": ": FIRST5 10 0 DO I 5 = IF\nI EXIT THEN LOOP -1 ;\nFIRST5 .                 \\ expect: 5\n: SUM DUP 0= IF EXIT THEN\nDUP 1- SUM + ;\n5 SUM .                  \\ expect: 15\n"
+  },
+  {
+   "name": "manual_03_language_49",
+   "doc": "docs/manual/03_language.md",
+   "line": 1217,
+   "text": "FVARIABLE X\n1.5 X F!\n2.25 X F!\nX F@ F.                  \\ expect: 2.2500\n"
+  },
+  {
+   "name": "manual_03_language_50",
+   "doc": "docs/manual/03_language.md",
+   "line": 1244,
+   "text": "2.0 3.0 F* F.            \\ expect: 6.0000\n1.5 FDUP F* F.           \\ expect: 2.2500\n1E38 10.0 F*             \\ expect: OUT OF RANGE\n"
+  },
+  {
+   "name": "manual_03_language_51",
+   "doc": "docs/manual/03_language.md",
+   "line": 1273,
+   "text": "3.5 2.5 F+ F.            \\ expect: 6.0000\n0.1 0.2 F+ F.            \\ expect: 0.3000\n"
+  },
+  {
+   "name": "manual_03_language_52",
+   "doc": "docs/manual/03_language.md",
+   "line": 1307,
+   "text": "6.0 2.5 F- F.            \\ expect: 3.5000\n2.5 6.0 F- F.            \\ expect: -3.5000\n"
+  },
+  {
+   "name": "manual_03_language_53",
+   "doc": "docs/manual/03_language.md",
+   "line": 1330,
+   "text": "2.5 F.                   \\ expect: 2.5000\n-0.25 F.                 \\ expect: -0.2500\n1.0 3.0 F/ F.            \\ expect: 0.3333\n-0.00001 F.              \\ expect: 0.0000\n"
+  },
+  {
+   "name": "manual_03_language_54",
+   "doc": "docs/manual/03_language.md",
+   "line": 1363,
+   "text": "1.0 4.0 F/ F.            \\ expect: 0.2500\n1.0 3.0 F/ F.            \\ expect: 0.3333\n1.0 0.0 F/               \\ expect: DIVISION BY ZERO\n"
+  },
+  {
+   "name": "manual_03_language_55",
+   "doc": "docs/manual/03_language.md",
+   "line": 1394,
+   "text": "-3.0 F0< .               \\ expect: -1\n3.0 F0< . 0.0 F0< .      \\ expect: 0 0\n"
+  },
+  {
+   "name": "manual_03_language_56",
+   "doc": "docs/manual/03_language.md",
+   "line": 1415,
+   "text": "0.0 F0= .                \\ expect: -1\n1.0 F0= .                \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_57",
+   "doc": "docs/manual/03_language.md",
+   "line": 1437,
+   "text": "1.5 2.5 F< .             \\ expect: -1\n2.5 1.5 F< .             \\ expect: 0\n2.5 2.5 F< .             \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_58",
+   "doc": "docs/manual/03_language.md",
+   "line": 1460,
+   "text": "2.5 2.5 F= .             \\ expect: -1\n2.5 1.5 F= .             \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_59",
+   "doc": "docs/manual/03_language.md",
+   "line": 1487,
+   "text": "2.5 1.5 F> .             \\ expect: -1\n1.5 2.5 F> .             \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_60",
+   "doc": "docs/manual/03_language.md",
+   "line": 1509,
+   "text": "3.7 F>S .                \\ expect: 3\n-3.7 F>S .               \\ expect: -3\n40000.0 F>S .            \\ expect: -25536\n70000.0 F>S              \\ expect: OUT OF RANGE\n"
+  },
+  {
+   "name": "manual_03_language_61",
+   "doc": "docs/manual/03_language.md",
+   "line": 1537,
+   "text": "FVARIABLE X\n2.5 X F!\nX F@ X F@ F* F.          \\ expect: 6.2500\n"
+  },
+  {
+   "name": "manual_03_language_62",
+   "doc": "docs/manual/03_language.md",
+   "line": 1557,
+   "text": "-1.5 FABS F.             \\ expect: 1.5000\n1.5 FABS F.              \\ expect: 1.5000\n"
+  },
+  {
+   "name": "manual_03_language_63",
+   "doc": "docs/manual/03_language.md",
+   "line": 1573,
+   "text": "PI 2.0 F* FCONSTANT TAU\nTAU F.                   \\ expect: 6.2832\n2.5 FCONSTANT RATE\n: COST S>F RATE F* ;\n4 COST F.                \\ expect: 10.0000\n"
+  },
+  {
+   "name": "manual_03_language_64",
+   "doc": "docs/manual/03_language.md",
+   "line": 1597,
+   "text": "FDEPTH .                 \\ expect: 0\n1.5 2.5 FDEPTH .         \\ expect: 2\nFDROP FDROP FDEPTH .     \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_65",
+   "doc": "docs/manual/03_language.md",
+   "line": 1613,
+   "text": "1.5 2.5 FDROP F.         \\ expect: 1.5000\n"
+  },
+  {
+   "name": "manual_03_language_66",
+   "doc": "docs/manual/03_language.md",
+   "line": 1633,
+   "text": "1.5 FDUP F* F.           \\ expect: 2.2500\n"
+  },
+  {
+   "name": "manual_03_language_67",
+   "doc": "docs/manual/03_language.md",
+   "line": 1653,
+   "text": "3.7 FLOOR F.             \\ expect: 3.0000\n-3.7 FLOOR F.            \\ expect: -4.0000\n-0.5 FLOOR F.            \\ expect: -1.0000\n"
+  },
+  {
+   "name": "manual_03_language_68",
+   "doc": "docs/manual/03_language.md",
+   "line": 1673,
+   "text": "1.5 2.5 FMAX F.          \\ expect: 2.5000\n-1.5 -2.5 FMAX F.        \\ expect: -1.5000\n"
+  },
+  {
+   "name": "manual_03_language_69",
+   "doc": "docs/manual/03_language.md",
+   "line": 1694,
+   "text": "1.5 2.5 FMIN F.          \\ expect: 1.5000\n-1.5 -2.5 FMIN F.        \\ expect: -2.5000\n"
+  },
+  {
+   "name": "manual_03_language_70",
+   "doc": "docs/manual/03_language.md",
+   "line": 1715,
+   "text": "1.5 FNEGATE F.           \\ expect: -1.5000\n0.0 FNEGATE F.           \\ expect: 0.0000\n"
+  },
+  {
+   "name": "manual_03_language_71",
+   "doc": "docs/manual/03_language.md",
+   "line": 1730,
+   "text": ": A 1 ;  : B 2 ;  : C 3 ;\nFORGET B\nA .                      \\ expect: 1\nB                        \\ expect: B ?\nC                        \\ expect: C ?\nFORGET DUP               \\ expect: FORGET: BUILT-IN, REFUSED\nFORGET NOSUCH            \\ expect: FORGET: NOT FOUND\n"
+  },
+  {
+   "name": "manual_03_language_72",
+   "doc": "docs/manual/03_language.md",
+   "line": 1765,
+   "text": "1.5 2.5 FOVER F. F. F.   \\ expect: 1.5000 2.5000 1.5000\n"
+  },
+  {
+   "name": "manual_03_language_73",
+   "doc": "docs/manual/03_language.md",
+   "line": 1779,
+   "text": "FREE 100 ALLOT FREE - .  \\ expect: 100\n"
+  },
+  {
+   "name": "manual_03_language_74",
+   "doc": "docs/manual/03_language.md",
+   "line": 1799,
+   "text": "3.7 FROUND F.                \\ expect: 4.0000\n2.5 FROUND F. -2.5 FROUND F. \\ expect: 3.0000 -3.0000\n2.4 FROUND F.                \\ expect: 2.0000\n"
+  },
+  {
+   "name": "manual_03_language_75",
+   "doc": "docs/manual/03_language.md",
+   "line": 1820,
+   "text": "12345.678 FS.            \\ expect: 1.2346E4\n-12345.678 FS.           \\ expect: -1.2346E4\n1E-6 FS.                 \\ expect: 1.0000E-6\n0.0 FS.                  \\ expect: 0.0000E0\n2 PLACES 12345.678 FS.   \\ expect: 1.23E4\n"
+  },
+  {
+   "name": "manual_03_language_76",
+   "doc": "docs/manual/03_language.md",
+   "line": 1851,
+   "text": "9.0 FSQRT F.             \\ expect: 3.0000\n2.0 FSQRT F.             \\ expect: 1.4142\n-1.0 FSQRT               \\ expect: INVALID ARGUMENT\n"
+  },
+  {
+   "name": "manual_03_language_77",
+   "doc": "docs/manual/03_language.md",
+   "line": 1877,
+   "text": "1.5 2.5 FSWAP F. F.      \\ expect: 1.5000 2.5000\n"
+  },
+  {
+   "name": "manual_03_language_78",
+   "doc": "docs/manual/03_language.md",
+   "line": 1892,
+   "text": "FVARIABLE TOTAL\nTOTAL F@ F.              \\ expect: 0.0000\n1.5 TOTAL F!\nTOTAL F@ 2.25 F+ TOTAL F!\nTOTAL F@ F.              \\ expect: 3.7500\n"
+  },
+  {
+   "name": "manual_03_language_79",
+   "doc": "docs/manual/03_language.md",
+   "line": 1920,
+   "text": "HERE 2 ALLOT HERE SWAP - .  \\ expect: 2\nCREATE PT 7 ,\nHERE PT - .                 \\ expect: 2\n"
+  },
+  {
+   "name": "manual_03_language_80",
+   "doc": "docs/manual/03_language.md",
+   "line": 1940,
+   "text": ": THREE 3 0 DO I . LOOP ;\nTHREE                    \\ expect: 0 1 2\n: FROM2 4 2 DO I . LOOP ;\nFROM2                    \\ expect: 2 3\n"
+  },
+  {
+   "name": "manual_03_language_81",
+   "doc": "docs/manual/03_language.md",
+   "line": 1962,
+   "text": ": TEST IF 1 ELSE 2 THEN . ;\n5 TEST                   \\ expect: 1\n0 TEST                   \\ expect: 2\n: AFTER IF 11 . THEN 12 . ;\n0 AFTER                  \\ expect: 12\n-1 AFTER                 \\ expect: 11 12\n"
+  },
+  {
+   "name": "manual_03_language_82",
+   "doc": "docs/manual/03_language.md",
+   "line": 1994,
+   "text": ": HI .\" hi \" ; IMMEDIATE\n: T HI .\" there\" ;       \\ expect: hi\nT                        \\ expect: there\n"
+  },
+  {
+   "name": "manual_03_language_83",
+   "doc": "docs/manual/03_language.md",
+   "line": 2016,
+   "text": "0 INVERT .               \\ expect: -1\n5 INVERT .               \\ expect: -6\n"
+  },
+  {
+   "name": "manual_03_language_84",
+   "doc": "docs/manual/03_language.md",
+   "line": 2036,
+   "text": ": GRID 2 0 DO 2 0 DO\nJ . I . LOOP LOOP ;\nGRID                     \\ expect: 0 0 0 1 1 0 1 1\n"
+  },
+  {
+   "name": "manual_03_language_85",
+   "doc": "docs/manual/03_language.md",
+   "line": 2056,
+   "text": ": UPTO3 10 0 DO I 3 =\nIF LEAVE THEN I . LOOP 99 . ;\nUPTO3                    \\ expect: 0 1 2 99\n"
+  },
+  {
+   "name": "manual_03_language_86",
+   "doc": "docs/manual/03_language.md",
+   "line": 2083,
+   "text": ": HAY S\" HELLO WORLD\" ;\nHAY 5 LEFT TYPE          \\ expect: HELLO\nHAY 99 LEFT TYPE         \\ expect: HELLO WORLD\nHAY 0 LEFT . DROP        \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_87",
+   "doc": "docs/manual/03_language.md",
+   "line": 2104,
+   "text": "10 STRING NAME\nNAME LEN .               \\ expect: 0\nS\" ADA\" NAME PLACE\nNAME LEN .               \\ expect: 3\n"
+  },
+  {
+   "name": "manual_03_language_88",
+   "doc": "docs/manual/03_language.md",
+   "line": 2125,
+   "text": ": AA DUP + ;\n: BB DUP - ;\n: LONG-ONE 1 2 3 4 5 + + + + ;\nLIST-DEFS                \\ expect: 0: : AA DUP + ;|1: : BB DUP - ;|2: : LONG-ONE 1 2 3 4 5\n"
+  },
+  {
+   "name": "manual_03_language_89",
+   "doc": "docs/manual/03_language.md",
+   "line": 2147,
+   "text": ": SEVEN [ 3 4 + ] LITERAL ;\nSEVEN .                  \\ expect: 7\n5 LITERAL                \\ expect: LITERAL ?\n"
+  },
+  {
+   "name": "manual_03_language_90",
+   "doc": "docs/manual/03_language.md",
+   "line": 2169,
+   "text": ": ROW 4 1 DO I . LOOP ;\nROW                      \\ expect: 1 2 3\n"
+  },
+  {
+   "name": "manual_03_language_91",
+   "doc": "docs/manual/03_language.md",
+   "line": 2194,
+   "text": ": GREETING S\" Hello, World\" ;\nGREETING LOWER TYPE      \\ expect: hello, world\n"
+  },
+  {
+   "name": "manual_03_language_92",
+   "doc": "docs/manual/03_language.md",
+   "line": 2214,
+   "text": "5 3 MAX .                \\ expect: 5\n-5 -1 MAX .              \\ expect: -1\n32767 -32768 MAX .       \\ expect: 32767\n"
+  },
+  {
+   "name": "manual_03_language_93",
+   "doc": "docs/manual/03_language.md",
+   "line": 2236,
+   "text": "5 3 MIN .                \\ expect: 3\n-5 -1 MIN .              \\ expect: -5\n32767 -32768 MIN .       \\ expect: -32768\n"
+  },
+  {
+   "name": "manual_03_language_94",
+   "doc": "docs/manual/03_language.md",
+   "line": 2259,
+   "text": "17 5 MOD .               \\ expect: 2\n-17 5 MOD . 17 -5 MOD .  \\ expect: -2 2\n17 0 MOD .               \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_95",
+   "doc": "docs/manual/03_language.md",
+   "line": 2287,
+   "text": "5 NEGATE . -5 NEGATE .   \\ expect: -5 5\n-32768 NEGATE .          \\ expect: -32768\n"
+  },
+  {
+   "name": "manual_03_language_96",
+   "doc": "docs/manual/03_language.md",
+   "line": 2306,
+   "text": "15 240 OR .              \\ expect: 255\n0 -1 OR .                \\ expect: -1\n"
+  },
+  {
+   "name": "manual_03_language_97",
+   "doc": "docs/manual/03_language.md",
+   "line": 2327,
+   "text": "1 2 OVER . . .           \\ expect: 1 2 1\n"
+  },
+  {
+   "name": "manual_03_language_98",
+   "doc": "docs/manual/03_language.md",
+   "line": 2342,
+   "text": "PI F.                    \\ expect: 3.1416\nPI 2.0 F* F.             \\ expect: 6.2832\n"
+  },
+  {
+   "name": "manual_03_language_99",
+   "doc": "docs/manual/03_language.md",
+   "line": 2362,
+   "text": "10 20 30 2 PICK . . . .  \\ expect: 10 30 20 10\n7 8 1 PICK . . .         \\ expect: 7 8 7\n"
+  },
+  {
+   "name": "manual_03_language_100",
+   "doc": "docs/manual/03_language.md",
+   "line": 2382,
+   "text": "10 STRING NAME\nS\" HELLO\" NAME PLACE\nNAME COUNT TYPE          \\ expect: HELLO\nS\" HI\" NAME PLACE\nNAME COUNT TYPE          \\ expect: HI\n"
+  },
+  {
+   "name": "manual_03_language_101",
+   "doc": "docs/manual/03_language.md",
+   "line": 2405,
+   "text": "PI F.                    \\ expect: 3.1416\n2 PLACES PI F.           \\ expect: 3.14\n0 PLACES PI F.           \\ expect: 3\n9 PLACES PI F.           \\ expect: 3.141592653\n10 PLACES                \\ expect: OUT OF RANGE\n"
+  },
+  {
+   "name": "manual_03_language_102",
+   "doc": "docs/manual/03_language.md",
+   "line": 2435,
+   "text": "5 QUIT 6 .\n.                        \\ expect: 5\n"
+  },
+  {
+   "name": "manual_03_language_103",
+   "doc": "docs/manual/03_language.md",
+   "line": 2455,
+   "text": "90.0 RAD F.              \\ expect: 1.5708\n45.0 RAD SIN F.          \\ expect: 0.7071\n"
+  },
+  {
+   "name": "manual_03_language_104",
+   "doc": "docs/manual/03_language.md",
+   "line": 2472,
+   "text": "7 RANDOMIZE 6 RND .      \\ expect: 3\n7 RANDOMIZE 6 RND .      \\ expect: 3\n6 RND .                  \\ expect: 5\n"
+  },
+  {
+   "name": "manual_03_language_105",
+   "doc": "docs/manual/03_language.md",
+   "line": 2503,
+   "text": ": SMALLER 0 BEGIN DUP 3 <\nWHILE DUP . 1+ REPEAT DROP ;\nSMALLER                  \\ expect: 0 1 2\n"
+  },
+  {
+   "name": "manual_03_language_106",
+   "doc": "docs/manual/03_language.md",
+   "line": 2525,
+   "text": ": HAY S\" HELLO WORLD\" ;\nHAY 5 RIGHT TYPE         \\ expect: WORLD\nHAY 99 RIGHT TYPE        \\ expect: HELLO WORLD\nHAY 0 RIGHT . DROP       \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_107",
+   "doc": "docs/manual/03_language.md",
+   "line": 2547,
+   "text": "42 RANDOMIZE 10 RND .    \\ expect: 2\n10 RND .                 \\ expect: 8\n0 RND . -5 RND .         \\ expect: 0 0\n"
+  },
+  {
+   "name": "manual_03_language_108",
+   "doc": "docs/manual/03_language.md",
+   "line": 2574,
+   "text": "1 2 3 ROT . . .          \\ expect: 1 3 2\n"
+  },
+  {
+   "name": "manual_03_language_109",
+   "doc": "docs/manual/03_language.md",
+   "line": 2588,
+   "text": ": HI S\" Hello\" TYPE ;\nHI                       \\ expect: Hello\nS\" abc\" . DROP           \\ expect: 3\n"
+  },
+  {
+   "name": "manual_03_language_110",
+   "doc": "docs/manual/03_language.md",
+   "line": 2611,
+   "text": "42 S>F F.                \\ expect: 42.0000\n-7 S>F F.                \\ expect: -7.0000\n7 S>F 2 S>F F/ F.        \\ expect: 3.5000\n"
+  },
+  {
+   "name": "manual_03_language_111",
+   "doc": "docs/manual/03_language.md",
+   "line": 2638,
+   "text": ": HAY S\" HELLO WORLD\" ;\n: W S\" WORLD\" ;\n: LO S\" LO\" ;\n: NO S\" XYZ\" ;\nHAY W SEARCH . TYPE      \\ expect: -1 WORLD\nHAY LO SEARCH . TYPE     \\ expect: -1 LO WORLD\nHAY NO SEARCH . TYPE     \\ expect: 0 HELLO WORLD\n"
+  },
+  {
+   "name": "manual_03_language_112",
+   "doc": "docs/manual/03_language.md",
+   "line": 2664,
+   "text": "-8 SGN . 0 SGN . 40 SGN . \\ expect: -1 0 1\n"
+  },
+  {
+   "name": "manual_03_language_113",
+   "doc": "docs/manual/03_language.md",
+   "line": 2684,
+   "text": "0.0 SIN F.               \\ expect: 0.0000\n1.0 SIN F.               \\ expect: 0.8415\n30.0 RAD SIN F.          \\ expect: 0.5000\nPI SIN FS.               \\ expect: 1.2154E-10\n"
+  },
+  {
+   "name": "manual_03_language_114",
+   "doc": "docs/manual/03_language.md",
+   "line": 2713,
+   "text": "16 SQRT . 15 SQRT .      \\ expect: 4 3\n32767 SQRT .             \\ expect: 181\n-4 SQRT .                \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_115",
+   "doc": "docs/manual/03_language.md",
+   "line": 2733,
+   "text": "-42 STR TYPE             \\ expect: -42\n1234 STR . DROP          \\ expect: 4\n0 STR TYPE               \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_116",
+   "doc": "docs/manual/03_language.md",
+   "line": 2753,
+   "text": "10 STRING NAME\nNAME LEN .               \\ expect: 0\nS\" ADA\" NAME PLACE\nNAME COUNT TYPE          \\ expect: ADA\n"
+  },
+  {
+   "name": "manual_03_language_117",
+   "doc": "docs/manual/03_language.md",
+   "line": 2782,
+   "text": "1 2 SWAP . .             \\ expect: 1 2\n10 3 SWAP - .            \\ expect: -7\n"
+  },
+  {
+   "name": "manual_03_language_118",
+   "doc": "docs/manual/03_language.md",
+   "line": 2803,
+   "text": "1.0 TAN F.               \\ expect: 1.5574\nPI 4.0 F/ TAN F.         \\ expect: 1.0000\nPI 2.0 F/ TAN            \\ expect: DIVISION BY ZERO\n"
+  },
+  {
+   "name": "manual_03_language_119",
+   "doc": "docs/manual/03_language.md",
+   "line": 2833,
+   "text": ": AFTER IF 11 . THEN 12 . ;\n0 AFTER                  \\ expect: 12\n7 AFTER                  \\ expect: 11 12\n"
+  },
+  {
+   "name": "manual_03_language_120",
+   "doc": "docs/manual/03_language.md",
+   "line": 2856,
+   "text": ": FAIL 42 THROW 1 . ;\n' FAIL CATCH .           \\ expect: 42\n0 THROW  5 .             \\ expect: 5\n-28 THROW                \\ expect: BREAK\n7 THROW                  \\ expect: ERROR 7\n"
+  },
+  {
+   "name": "manual_03_language_121",
+   "doc": "docs/manual/03_language.md",
+   "line": 2886,
+   "text": ": TO3 0 BEGIN 1+ DUP .\nDUP 3 = UNTIL DROP ;\nTO3                      \\ expect: 1 2 3\n"
+  },
+  {
+   "name": "manual_03_language_122",
+   "doc": "docs/manual/03_language.md",
+   "line": 2908,
+   "text": ": GREETING S\" Hello, World\" ;\nGREETING UPPER TYPE      \\ expect: HELLO, WORLD\nGREETING TYPE            \\ expect: HELLO, WORLD\n"
+  },
+  {
+   "name": "manual_03_language_123",
+   "doc": "docs/manual/03_language.md",
+   "line": 2930,
+   "text": "S\" 1234\" VAL .           \\ expect: 1234\nS\" -17\" VAL .            \\ expect: -17\nS\" 12abc\" VAL .          \\ expect: 0\n"
+  },
+  {
+   "name": "manual_03_language_124",
+   "doc": "docs/manual/03_language.md",
+   "line": 2951,
+   "text": "VARIABLE COUNT-ME\nCOUNT-ME @ .             \\ expect: 0\n5 COUNT-ME !\nCOUNT-ME @ 1+ COUNT-ME !\nCOUNT-ME @ .             \\ expect: 6\n"
+  },
+  {
+   "name": "manual_03_language_125",
+   "doc": "docs/manual/03_language.md",
+   "line": 2976,
+   "text": ": Q 1 ;\nVLIST                    \\ expect-end: DUP DROP\n"
+  },
+  {
+   "name": "manual_03_language_126",
+   "doc": "docs/manual/03_language.md",
+   "line": 2996,
+   "text": ": UPTO 0 BEGIN DUP 3 <\nWHILE DUP . 1+ REPEAT DROP ;\nUPTO                     \\ expect: 0 1 2\n: NONE 5 BEGIN DUP 3 <\nWHILE 1+ REPEAT . ;\nNONE                     \\ expect: 5\n"
+  },
+  {
+   "name": "manual_03_language_127",
+   "doc": "docs/manual/03_language.md",
+   "line": 3022,
+   "text": "10 12 XOR .              \\ expect: 6\n10 12 XOR 12 XOR .       \\ expect: 10\n"
+  },
+  {
+   "name": "manual_03_language_128",
+   "doc": "docs/manual/03_language.md",
+   "line": 3043,
+   "text": ": SIX [ 2 3 * ] LITERAL ;\nSIX .                    \\ expect: 6\n"
+  },
+  {
+   "name": "manual_03_language_129",
+   "doc": "docs/manual/03_language.md",
+   "line": 3062,
+   "text": ": SQ DUP * ;\n: RUN ['] SQ EXECUTE ;\n5 RUN .                  \\ expect: 25\n"
+  },
+  {
+   "name": "manual_03_language_130",
+   "doc": "docs/manual/03_language.md",
+   "line": 3085,
+   "text": ": STAR [CHAR] * ;\nSTAR .                   \\ expect: 42\n: LETTER [CHAR] hello ;\nLETTER .                 \\ expect: 104\n"
+  },
+  {
+   "name": "manual_03_language_131",
+   "doc": "docs/manual/03_language.md",
+   "line": 3109,
+   "text": "1 2 + .  \\ not read: 3 4 + .  \\ expect: 3\n: SHOW 5 \\ five\n. ;\nSHOW                          \\ expect: 5\n"
+  },
+  {
+   "name": "manual_03_language_132",
+   "doc": "docs/manual/03_language.md",
+   "line": 3131,
+   "text": ": SIX [ 2 3 * ] LITERAL ;\n: SEVEN [ SIX 1+ ] LITERAL ;\nSEVEN .                  \\ expect: 7\n"
+  },
+  {
+   "name": "manual_04_machine_01",
+   "doc": "docs/manual/04_machine.md",
+   "line": 40,
+   "text": "42 .                     \\ expect: 42\n-7 .  0 .  32767 .       \\ expect: -7 0 32767\n65535 .                  \\ expect: -1\n"
+  },
+  {
+   "name": "manual_04_machine_02",
+   "doc": "docs/manual/04_machine.md",
+   "line": 67,
+   "text": ": HELLO .\" HELLO, WORLD\" CR ;\nHELLO                    \\ expect: HELLO, WORLD\n: AB .\" A\" .\" B\" ;\nAB                       \\ expect: AB\n"
+  },
+  {
+   "name": "manual_04_machine_03",
+   "doc": "docs/manual/04_machine.md",
+   "line": 86,
+   "text": ".\" HI\"                   \\ expect: .\" ?\n"
+  },
+  {
+   "name": "manual_04_machine_04",
+   "doc": "docs/manual/04_machine.md",
+   "line": 100,
+   "text": "CREATE BUF 20 ALLOT\n\\ keys: HELLO\\r\nBUF 20 ACCEPT SPACE .    \\ expect: HELLO 5\nBUF 5 TYPE               \\ expect: HELLO\n\\ keys: ABCDEFG\\r\nBUF 3 ACCEPT SPACE .     \\ expect: ABC 3\n\\ keys: ABC\\b\\r\nBUF 20 ACCEPT CR .       \\ expect: AB|2\n"
+  },
+  {
+   "name": "manual_04_machine_05",
+   "doc": "docs/manual/04_machine.md",
+   "line": 137,
+   "text": "CLS 10 0 AT-XY 65 EMIT   \\ expect:           A\n0 2 AT-XY 66 EMIT        \\ expect: |B\n"
+  },
+  {
+   "name": "manual_04_machine_06",
+   "doc": "docs/manual/04_machine.md",
+   "line": 157,
+   "text": "0 0.25 BEEP  4 0.25 BEEP         \\ C, E\n7 0.25 BEEP                              \\ G\n: AY@ 245 OUT 246 IN ;\n0 0.02 BEEP  0 AY@ . 1 AY@ .             \\ expect: 165 1\n12 0.02 BEEP  0 AY@ . 1 AY@ .            \\ expect: 211 0\n70 0.02 BEEP                             \\ nothing: out of range\n"
+  },
+  {
+   "name": "manual_04_machine_07",
+   "doc": "docs/manual/04_machine.md",
+   "line": 194,
+   "text": "2 BORDER                 \\ red border\n0 BORDER                 \\ black\n"
+  },
+  {
+   "name": "manual_04_machine_08",
+   "doc": "docs/manual/04_machine.md",
+   "line": 214,
+   "text": "BREAK? .                 \\ expect: 0\n: WAIT BEGIN BREAK? UNTIL ;\n\\ break: after 30000\nWAIT 5 .                 \\ expect: 5\n"
+  },
+  {
+   "name": "manual_04_machine_09",
+   "doc": "docs/manual/04_machine.md",
+   "line": 236,
+   "text": "1 BRIGHT CLS 22528 C@ .  \\ expect: 120\n0 BRIGHT CLS 22528 C@ .  \\ expect: 56\n"
+  },
+  {
+   "name": "manual_04_machine_10",
+   "doc": "docs/manual/04_machine.md",
+   "line": 255,
+   "text": "CLS 0 18 AT-XY                           \\ draws\n100 100 30 CIRCLE                       \\ draws\n19600 C@ .                               \\ expect: 32\n"
+  },
+  {
+   "name": "manual_04_machine_11",
+   "doc": "docs/manual/04_machine.md",
+   "line": 286,
+   "text": "2 INK 3 PAPER CLS 22528 C@ .   \\ expect: 26\n"
+  },
+  {
+   "name": "manual_04_machine_12",
+   "doc": "docs/manual/04_machine.md",
+   "line": 305,
+   "text": "65 EMIT CR 66 EMIT       \\ expect: A|B\n"
+  },
+  {
+   "name": "manual_04_machine_13",
+   "doc": "docs/manual/04_machine.md",
+   "line": 319,
+   "text": "72 EMIT 73 EMIT          \\ expect: HI\nCLS 0 0 AT-XY 143 EMIT   \\ draws\n16384 C@ . 16640 C@ .    \\ expect: 255 255\n"
+  },
+  {
+   "name": "manual_04_machine_14",
+   "doc": "docs/manual/04_machine.md",
+   "line": 347,
+   "text": ": AY@ 245 OUT 246 IN ;\n1000 14 ENVELOPE\n11 AY@ . 12 AY@ . 13 AY@ .       \\ expect: 232 3 14\n8 16 SOUND  254 MIXER               \\ channel A follows it\n0 400 TONE\n8 0 SOUND                          \\ silent again\n"
+  },
+  {
+   "name": "manual_04_machine_15",
+   "doc": "docs/manual/04_machine.md",
+   "line": 376,
+   "text": "CLS 0 18 AT-XY 50 50 20 CIRCLE           \\ draws\n2 INK 50 50 FILL                         \\ draws\n17094 C@ . 16384 C@ .                    \\ expect: 255 0\n22726 C@ .                               \\ expect: 58\n"
+  },
+  {
+   "name": "manual_04_machine_16",
+   "doc": "docs/manual/04_machine.md",
+   "line": 407,
+   "text": "1 FLASH CLS 22528 C@ .   \\ expect: 184\n0 FLASH CLS 22528 C@ .   \\ expect: 56\n"
+  },
+  {
+   "name": "manual_04_machine_17",
+   "doc": "docs/manual/04_machine.md",
+   "line": 426,
+   "text": "HIRES\n1 INK 10 100 PLOT\n6 INK 10 101 PLOT\n27777 C@ 7 AND .             \\ expect: 1\n28033 C@ 7 AND .             \\ expect: 6\nNORMAL\n"
+  },
+  {
+   "name": "manual_04_machine_18",
+   "doc": "docs/manual/04_machine.md",
+   "line": 454,
+   "text": "8 245 OUT 12 246 OUT     \\ the sound chip: register 8 gets 12\n8 245 OUT 246 IN .       \\ expect: 12\n32766 IN 31 AND .        \\ expect: 31\n"
+  },
+  {
+   "name": "manual_04_machine_19",
+   "doc": "docs/manual/04_machine.md",
+   "line": 476,
+   "text": "2 INK CLS 22528 C@ .     \\ expect: 58\n9 INK CLS 22528 C@ .     \\ expect: 57\n0 INK\n"
+  },
+  {
+   "name": "manual_04_machine_20",
+   "doc": "docs/manual/04_machine.md",
+   "line": 496,
+   "text": "\\ keys: 123\\r\nINPUT 2 * .              \\ expect: 123246\n\\ keys: ABC\\r\nINPUT .                  \\ expect: ABC0\n\\ keys: 40000\\r\nINPUT .                  \\ expect: 40000-25536\n"
+  },
+  {
+   "name": "manual_04_machine_21",
+   "doc": "docs/manual/04_machine.md",
+   "line": 521,
+   "text": ": ASK .\" KEY: \" KEY . ;\n\\ keys: A\nASK                      \\ expect: KEY: 65\n\\ keys: \\r\nKEY .                    \\ expect: 13\n"
+  },
+  {
+   "name": "manual_04_machine_22",
+   "doc": "docs/manual/04_machine.md",
+   "line": 546,
+   "text": "KEY? .                   \\ expect: 0\n: G KEY? IF KEY ELSE 0 THEN ;\nG .                      \\ expect: 0\n"
+  },
+  {
+   "name": "manual_04_machine_23",
+   "doc": "docs/manual/04_machine.md",
+   "line": 562,
+   "text": "CLS 0 5 AT-XY 0 0 31 0 LINE              \\ draws\n16384 C@ . 16387 C@ .            \\ expect: 255 255\n16388 C@ .                       \\ expect: 0\n-10 1 300 1 LINE                         \\ draws\n16640 C@ . 16671 C@ .                    \\ expect: 255 255\n"
+  },
+  {
+   "name": "manual_04_machine_24",
+   "doc": "docs/manual/04_machine.md",
+   "line": 593,
+   "text": ": SQUARE DUP * ;\n: CUBE DUP SQUARE * ;\nLLIST\n"
+  },
+  {
+   "name": "manual_04_machine_25",
+   "doc": "docs/manual/04_machine.md",
+   "line": 622,
+   "text": ": DOUBLER DUP + ;\n\\ break: after 300000\n' LOAD-LIB CATCH DEMO .  \\ expect: -28\n4 DOUBLER .              \\ expect: 8\n"
+  },
+  {
+   "name": "manual_04_machine_26",
+   "doc": "docs/manual/04_machine.md",
+   "line": 663,
+   "text": "\\ break: after 300000\n' LOAD-TEXT CATCH DEMO . \\ expect: -28\n"
+  },
+  {
+   "name": "manual_04_machine_27",
+   "doc": "docs/manual/04_machine.md",
+   "line": 694,
+   "text": "S\" HELLO, PRINTER\" LPRINT\nCREATE LINE 5 ALLOT\n72 LINE C!  73 LINE 1+ C!\nLINE 2 LPRINT\n"
+  },
+  {
+   "name": "manual_04_machine_28",
+   "doc": "docs/manual/04_machine.md",
+   "line": 716,
+   "text": ": AY@ 245 OUT 246 IN ;\n253 MIXER  7 AY@ .       \\ expect: 253\n-1 MIXER   7 AY@ .       \\ expect: 255\n"
+  },
+  {
+   "name": "manual_04_machine_29",
+   "doc": "docs/manual/04_machine.md",
+   "line": 737,
+   "text": ": AY@ 245 OUT 246 IN ;\n15 NOISE  6 AY@ .        \\ expect: 15\n33 NOISE  6 AY@ .        \\ expect: 1\n"
+  },
+  {
+   "name": "manual_04_machine_30",
+   "doc": "docs/manual/04_machine.md",
+   "line": 757,
+   "text": "HIRES NORMAL\n3 INK 100 100 PLOT\n22924 C@ 7 AND .        \\ expect: 3\n"
+  },
+  {
+   "name": "manual_04_machine_31",
+   "doc": "docs/manual/04_machine.md",
+   "line": 779,
+   "text": "8 245 OUT 12 246 OUT     \\ sound chip register 8 (channel A volume) gets 12\n8 245 OUT 246 IN .       \\ expect: 12\n8 245 OUT 0 246 OUT     \\ and back to 0: silent\n"
+  },
+  {
+   "name": "manual_04_machine_32",
+   "doc": "docs/manual/04_machine.md",
+   "line": 800,
+   "text": "2 252 PALETTE            \\ entry 2: green 7, red 7, blue 0 (yellow)\n1 ULAPLUS\n0 ULAPLUS\n"
+  },
+  {
+   "name": "manual_04_machine_33",
+   "doc": "docs/manual/04_machine.md",
+   "line": 822,
+   "text": "5 PAPER 0 INK CLS 22528 C@ .             \\ expect: 40\n7 PAPER CLS 22528 C@ .                   \\ expect: 56\n"
+  },
+  {
+   "name": "manual_04_machine_34",
+   "doc": "docs/manual/04_machine.md",
+   "line": 841,
+   "text": "CLS 0 5 AT-XY 0 0 PLOT                   \\ draws\n16384 C@ .                               \\ expect: 128\n255 191 PLOT  22527 C@ .                 \\ expect: 1\n300 0 PLOT  16389 C@ .                   \\ expect: 0\n"
+  },
+  {
+   "name": "manual_04_machine_35",
+   "doc": "docs/manual/04_machine.md",
+   "line": 872,
+   "text": "CLS 0 18 AT-XY                           \\ draws\n: TRI 100 40 140 40 100 80 3 ;\nTRI POLYGON                              \\ draws\n16559 C@ .                               \\ expect: 255\n10 10 20 20 2 POLYGON  . . . .           \\ expect: 20 20 10 10\n"
+  },
+  {
+   "name": "manual_04_machine_36",
+   "doc": "docs/manual/04_machine.md",
+   "line": 905,
+   "text": "CLS 0 18 AT-XY                           \\ draws\n: TRI 100 40 140 40 100 80 3 ;\nTRI POLYGON-FILL                         \\ draws\n17101 C@ . 17105 C@ .                    \\ expect: 255 0\n"
+  },
+  {
+   "name": "manual_04_machine_37",
+   "doc": "docs/manual/04_machine.md",
+   "line": 937,
+   "text": "CLS 0 10 AT-XY 8 0 15 1 RECT             \\ draws\n16385 C@ . 16641 C@ .            \\ expect: 255 255\n16897 C@ .                       \\ expect: 0\n-8 0 3 0 RECT                            \\ draws\n16384 C@ .                               \\ expect: 240\n300 0 310 7 RECT                         \\ draws\n16389 C@ .                               \\ expect: 0\n"
+  },
+  {
+   "name": "manual_04_machine_38",
+   "doc": "docs/manual/04_machine.md",
+   "line": 978,
+   "text": ": DOUBLER DUP + ;\nSAVE-LIB DEMO\n' SAVE-LIB CATCH DEMO .  \\ expect: 0\n\\ break: after 300000\n' SAVE-LIB CATCH DEMO .  \\ expect: -28\n"
+  },
+  {
+   "name": "manual_04_machine_39",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1018,
+   "text": ": SQUARE DUP * ;\nSAVE-TEXT DEMO\n' SAVE-TEXT CATCH DEMO . \\ expect: 0\n\\ break: after 300000\n' SAVE-TEXT CATCH DEMO . \\ expect: -28\n"
+  },
+  {
+   "name": "manual_04_machine_40",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1048,
+   "text": ": AY@ 245 OUT 246 IN ;\n1 7 SOUND  1 AY@ .       \\ expect: 7\n2 300 SOUND  2 AY@ .     \\ expect: 44\n17 5 SOUND  256 33 SOUND \\ ignored\n2 251 SOUND  3 0 SOUND           \\ channel B, 439 Hz\n7 253 SOUND  9 15 SOUND\n9 0 SOUND                \\ silent\n"
+  },
+  {
+   "name": "manual_04_machine_41",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1084,
+   "text": "65 EMIT SPACE 66 EMIT    \\ expect: A B\n"
+  },
+  {
+   "name": "manual_04_machine_42",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1098,
+   "text": "65 EMIT 3 SPACES 66 EMIT \\ expect: A   B\n0 SPACES                 \\ prints nothing\n"
+  },
+  {
+   "name": "manual_04_machine_43",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1124,
+   "text": ": BOX 143 EMIT 143 EMIT ;\nCLS 5 5 AT-XY BOX                        \\ draws\n5 6 AT-XY BOX                             \\ draws\n0 5 5 SPRITE-DEFINE\nCLS 0 18 AT-XY                           \\ draws\n0 10 10 SPRITE-SHOW                      \\ draws\n18506 C@ .                              \\ expect: 255\n0 SPRITE-HIDE                            \\ draws\n18506 C@ .                              \\ expect: 0\n"
+  },
+  {
+   "name": "manual_04_machine_44",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1156,
+   "text": "CLS 5 5 AT-XY 143 EMIT                                           \\ draws\n0 5 5 SPRITE-DEFINE\nCLS 0 18 AT-XY                           \\ draws\n0 10 10 SPRITE-SHOW                      \\ draws\n18506 C@ .                              \\ expect: 255\n0 SPRITE-HIDE                            \\ draws\n18506 C@ .                              \\ expect: 0\n0 SPRITE-HIDE                                                    \\ nothing: it is hidden\n"
+  },
+  {
+   "name": "manual_04_machine_45",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1184,
+   "text": ": BOX 143 EMIT 143 EMIT ;\nCLS 5 5 AT-XY BOX                        \\ draws\n5 6 AT-XY BOX                             \\ draws\n0 5 5 SPRITE-DEFINE\nCLS 0 18 AT-XY                           \\ draws\n0 10 10 SPRITE-SHOW                      \\ draws\n18506 C@ .                              \\ expect: 255\n0 20 20 SPRITE-SHOW                                              \\ nothing: slot 0 is shown\n0 SPRITE-HIDE                            \\ draws\n18506 C@ .                              \\ expect: 0\n"
+  },
+  {
+   "name": "manual_04_machine_46",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1214,
+   "text": "1 STICK .                \\ expect: 0\n2 STICK .                \\ expect: 0\n"
+  },
+  {
+   "name": "manual_04_machine_47",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1235,
+   "text": ": AY@ 245 OUT 246 IN ;\n0 4095 TONE  0 AY@ . 1 AY@ .             \\ expect: 255 15\n254 MIXER  0 251 TONE             \\ pitch 439 Hz\n0 15 VOLUME                              \\ A plays\n0 0 VOLUME                               \\ silent\n"
+  },
+  {
+   "name": "manual_04_machine_48",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1257,
+   "text": "S\" HELLO\" TYPE           \\ expect: HELLO\nS\" HELLO\" DROP 3 TYPE    \\ expect: HEL\n"
+  },
+  {
+   "name": "manual_04_machine_49",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1277,
+   "text": "255 0 UDG C!  129 0 UDG 1 + C!\n255 0 UDG 2 + C!\nCLS 0 0 AT-XY 144 EMIT                   \\ draws\n16384 C@ . 16640 C@ .            \\ expect: 255 129\n16896 C@ .                       \\ expect: 255\n1 UDG 0 UDG - .                          \\ expect: 8\n"
+  },
+  {
+   "name": "manual_04_machine_50",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1301,
+   "text": "2 252 PALETTE\n1 ULAPLUS                \\ on\n0 ULAPLUS                \\ off: the ordinary eight colours\n"
+  },
+  {
+   "name": "manual_04_machine_51",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1330,
+   "text": ": DOUBLER DUP + ;\n\\ break: after 300000\n' VERIFY-LIB CATCH DEMO .  \\ expect: -28\n"
+  },
+  {
+   "name": "manual_04_machine_52",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1366,
+   "text": "\\ break: after 300000\n' VERIFY-TEXT CATCH DEMO . \\ expect: -28\n"
+  },
+  {
+   "name": "manual_04_machine_53",
+   "doc": "docs/manual/04_machine.md",
+   "line": 1393,
+   "text": ": AY@ 245 OUT 246 IN ;\n2 15 VOLUME  10 AY@ .    \\ expect: 15\n2 20 VOLUME  10 AY@ .    \\ expect: 4\n2 0 VOLUME\n"
+  },
+  {
+   "name": "manual_05_concepts_01",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 31,
+   "text": "CHAR A . CHAR a .        \\ expect: 65 97\n65 EMIT 66 EMIT          \\ expect: AB\n"
+  },
+  {
+   "name": "manual_05_concepts_02",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 54,
+   "text": ": SECS [ 60 60 * ] LITERAL ;\nSECS .                   \\ expect: 3600\n"
+  },
+  {
+   "name": "manual_05_concepts_03",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 73,
+   "text": ": TABLE CREATE , , DOES> @ ;\n3 7 TABLE T\nT .                      \\ expect: 7\n"
+  },
+  {
+   "name": "manual_05_concepts_04",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 117,
+   "text": ": HALF 2 / ;\n10 ' HALF CATCH . .      \\ expect: 0 5\n: CHECK 0= IF -99 THROW THEN ;\n0 ' CHECK CATCH .        \\ expect: -99\n"
+  },
+  {
+   "name": "manual_05_concepts_05",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 132,
+   "text": "3 4 < . 4 3 < .          \\ expect: -1 0\n5 0= . 0 0= .            \\ expect: 0 -1\n"
+  },
+  {
+   "name": "manual_05_concepts_06",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 147,
+   "text": "1.5 2.25 F+ F.           \\ expect: 3.7500\n7 S>F 2.0 F/ F.          \\ expect: 3.5000\n"
+  },
+  {
+   "name": "manual_05_concepts_07",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 199,
+   "text": "32767 1 + .              \\ expect: -32768\n-7 2 / . -7 2 MOD .      \\ expect: -3 -1\n"
+  },
+  {
+   "name": "manual_05_concepts_08",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 223,
+   "text": "0 0.25 BEEP  12 0.25 BEEP\n"
+  },
+  {
+   "name": "manual_05_concepts_09",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 252,
+   "text": "S\" HELLO\" TYPE           \\ expect: HELLO\nS\" HELLO\" . DROP         \\ expect: 5\n"
+  },
+  {
+   "name": "manual_05_concepts_10",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 283,
+   "text": ": GREET .\" HI\" ;\n' GREET EXECUTE          \\ expect: HI\n"
+  },
+  {
+   "name": "manual_05_concepts_11",
+   "doc": "docs/manual/05_concepts.md",
+   "line": 331,
+   "text": "1 2 3 . . .              \\ expect: 3 2 1\n"
+  },
+  {
+   "name": "manual_07_examples_01",
+   "doc": "docs/manual/07_examples.md",
+   "line": 16,
+   "text": ": CELL ( n -- )\n  DUP 10 < IF SPACE THEN . ;\n: ROW ( n -- )\n  6 1 DO DUP I * CELL LOOP\n  DROP CR ;\n: TABLE 6 1 DO I ROW LOOP ;\nTABLE  \\ expect:  1  2  3  4  5| 2  4  6  8 10| 3  6  9 12 15| 4  8 12 16 20| 5 10 15 20 25\n"
+  },
+  {
+   "name": "manual_07_examples_02",
+   "doc": "docs/manual/07_examples.md",
+   "line": 37,
+   "text": "100 ARRAY MARK\n: MARKED ( n -- addr )\n  CELLS MARK + ;\n: CROSS 10 2 DO 100 I DUP + DO\n  1 I MARKED ! J +LOOP LOOP ;\n: .PRIMES 100 2 DO\n  I MARKED @ 0= IF I . THEN\n  LOOP ;\nCROSS\n.PRIMES  \\ expect: 2 3 5 7 11 13 17 19 23 29 31 37|41 43 47 53 59 61 67 71 73 79 83| 89 97\n"
+  },
+  {
+   "name": "manual_07_examples_03",
+   "doc": "docs/manual/07_examples.md",
+   "line": 61,
+   "text": ": FIBS ( n -- ) 0 1 ROT 0 DO\n  OVER . SWAP OVER +\n  LOOP 2DROP ;\n12 FIBS  \\ expect: 0 1 1 2 3 5 8 13 21 34 55 89\n"
+  },
+  {
+   "name": "manual_07_examples_04",
+   "doc": "docs/manual/07_examples.md",
+   "line": 79,
+   "text": "8 ARRAY NUMS\n: NUM ( i -- addr )\n  CELLS NUMS + ;\n: LOAD8 8 0 DO I NUM ! LOOP ;\n: .NUMS 8 0 DO I NUM @ . LOOP ;\n48 12 62 5 32 23 7 34 LOAD8\n.NUMS  \\ expect: 34 7 23 32 5 62 12 48\n: ORDER ( i -- )\n  DUP NUM @ OVER 1+ NUM @\n  2DUP > IF 2 PICK NUM !\n  SWAP 1+ NUM !\n  ELSE 2DROP DROP THEN ;\n: PASS 7 0 DO I ORDER LOOP ;\n: SORT 8 0 DO PASS LOOP ;\nSORT .NUMS  \\ expect: 5 7 12 23 32 34 48 62\n"
+  },
+  {
+   "name": "manual_07_examples_05",
+   "doc": "docs/manual/07_examples.md",
+   "line": 108,
+   "text": "20 STRING MSG\nS\" HELLO WORLD\" MSG PLACE\nVARIABLE K\n: LETTER? ( c -- flag )\n  DUP 64 > SWAP 91 < AND ;\n: SHIFT ( c -- c' )\n  DUP LETTER? IF 65 - K @ +\n  26 MOD 65 + THEN ;\n: ENCODE ( n -- ) K !\n  MSG COUNT 0 DO MSG 1+ I +\n  DUP C@ SHIFT SWAP C! LOOP ;\n3 ENCODE MSG COUNT TYPE   \\ expect: KHOOR ZRUOG\n23 ENCODE MSG COUNT TYPE  \\ expect: HELLO WORLD\n"
+  },
+  {
+   "name": "manual_07_examples_06",
+   "doc": "docs/manual/07_examples.md",
+   "line": 135,
+   "text": "VARIABLE N\n: HINT ( guess -- )\n  N @ < IF .\" TOO LOW\"\n  ELSE .\" TOO HIGH\" THEN ;\n: CHECK ( guess -- flag )\n  DUP N @ = IF DROP\n  .\" RIGHT\" -1\n  ELSE HINT 0 THEN ;\n: GAME 100 RND N ! BEGIN\n  .\" ? \" INPUT CR CHECK CR\n  UNTIL ;\n7 RANDOMIZE\n\\ keys: 50\\r75\\r52\\r\nGAME  \\ expect: ? 50|TOO LOW|? 75|TOO HIGH|? 52|RIGHT\n"
+  },
+  {
+   "name": "manual_07_examples_07",
+   "doc": "docs/manual/07_examples.md",
+   "line": 163,
+   "text": ": GREET .\" HELLO\" ;\n: SQUARES 5 1 DO I I * . LOOP ;\n: BYE .\" GOODBYE\" ;\nCREATE ACTIONS\n  ' GREET , ' SQUARES , ' BYE ,\n: MENU .\" 1 HELLO\" CR\n  .\" 2 SQUARES\" CR\n  .\" 3 BYE\" CR ;\n: CHOOSE KEY 49 -\n  DUP 0 < OVER 2 > OR IF DROP\n  .\" NO SUCH CHOICE\" ELSE\n  CELLS ACTIONS + @\n  EXECUTE THEN ;\nMENU  \\ expect: 1 HELLO|2 SQUARES|3 BYE\n\\ keys: 2\nCHOOSE  \\ expect: 1 4 9 16\n\\ keys: 9\nCHOOSE  \\ expect: NO SUCH CHOICE\n"
+  },
+  {
+   "name": "manual_07_examples_08",
+   "doc": "docs/manual/07_examples.md",
+   "line": 195,
+   "text": "1 PLACES\n: C>F ( n -- ) ( F: -- f )\n  S>F 9.0 F* 5.0 F/ 32.0 F+ ;\n: ROW ( c -- ) DUP . .\" C = \"\n  C>F F. .\" F\" CR ;\n: TABLE 50 -10 DO I ROW\n  10 +LOOP ;\nTABLE  \\ expect: -10 C = 14.0 F|0 C = 32.0 F|10 C = 50.0 F|20 C = 68.0 F|30 C = 86.0 F|40 C = 104.0 F\n"
+  },
+  {
+   "name": "manual_07_examples_09",
+   "doc": "docs/manual/07_examples.md",
+   "line": 217,
+   "text": "2 PLACES\n: ROOT ( n -- )\n  DUP . S>F FSQRT F. CR ;\n: ROOTS 11 1 DO I ROOT LOOP ;\nROOTS  \\ expect: 1 1.00|2 1.41|3 1.73|4 2.00|5 2.24|6 2.45|7 2.65|8 2.83|9 3.00|10 3.16\n"
+  },
+  {
+   "name": "manual_07_examples_10",
+   "doc": "docs/manual/07_examples.md",
+   "line": 236,
+   "text": ": BIT ( n mask -- )\n  AND IF 49 ELSE 48 THEN EMIT ;\n: .BIN ( n -- )\n  DUP 8 BIT DUP 4 BIT\n  DUP 2 BIT 1 BIT ;\n: BINARY CLS 16 0 DO\n  I . .\" = \" I .BIN CR LOOP ;\nBINARY  \\ expect: 0 = 0000|1 = 0001|2 = 0010|3 = 0011|4 = 0100|5 = 0101|6 = 0110|7 = 0111|8 = 1000|9 = 1001|10 = 1010|11 = 1011|12 = 1100|13 = 1101|14 = 1110|15 = 1111\n"
+  },
+  {
+   "name": "manual_07_examples_11",
+   "doc": "docs/manual/07_examples.md",
+   "line": 258,
+   "text": "VARIABLE X  VARIABLE Y\nVARIABLE X2  VARIABLE Y2\n: TO ( x y -- ) Y2 ! X2 !\n  X @ Y @ X2 @ Y2 @ LINE\n  X2 @ X ! Y2 @ Y ! ;\n: PT ( i -- x y )\n  S>F FDUP 0.6 F* FSWAP 0.2 F*\n  FOVER FOVER COS F* F>S 128 +\n  SIN F* F>S 96 + ;\n: SPIRAL CLS 128 X ! 96 Y !\n  150 1 DO I PT TO LOOP ;\nSPIRAL  \\ draws\n"
+  },
+  {
+   "name": "manual_07_examples_12",
+   "doc": "docs/manual/07_examples.md",
+   "line": 284,
+   "text": ": RING ( r colour -- )\n  INK 128 96 ROT CIRCLE ;\n: BAND ( r colour -- )\n  INK 128 + 96 FILL ;\n: BULLSEYE CLS\n  80 2 RING 60 4 RING\n  40 1 RING 20 6 RING\n  70 2 BAND 50 4 BAND\n  30 1 BAND 10 6 BAND\n  0 INK ;\nBULLSEYE  \\ draws\n"
+  },
+  {
+   "name": "manual_07_examples_13",
+   "doc": "docs/manual/07_examples.md",
+   "line": 309,
+   "text": ": COUNTDOWN CLS 5 0 DO\n  5 I - 15 10 AT-XY .\n  0 0.1 BEEP LOOP\n  15 10 AT-XY .\" GO!\"\n  12 0.5 BEEP ;\nCOUNTDOWN  \\ expect:                GO!\n"
+  },
+  {
+   "name": "manual_07_examples_14",
+   "doc": "docs/manual/07_examples.md",
+   "line": 329,
+   "text": ": UDEF ( b0 .. b7 slot -- )\n  UDG 7 + 8 0 DO DUP ROT\n  SWAP C! 1- LOOP DROP ;\n60 66 165 129\n165 153 66 60 0 UDEF\n60 66 165 129\n153 165 66 60 1 UDEF\n1 UDG 4 + C@ .  \\ expect: 153\n: FACES CLS 6 0 DO\n  144 EMIT 145 EMIT LOOP ;\nFACES  \\ draws\n"
+  },
+  {
+   "name": "manual_07_examples_15",
+   "doc": "docs/manual/07_examples.md",
+   "line": 354,
+   "text": "VARIABLE COL\n: DISC 2 INK 48 48 7 CIRCLE\n  48 48 FILL ;\n: MAKE CLS DISC\n  0 5 5 SPRITE-DEFINE\n  CLS 0 INK ;\n: MOVE ( dc -- ) 0 SPRITE-HIDE\n  COL @ + 0 MAX 30 MIN COL !\n  0 10 COL @ SPRITE-SHOW ;\n: STEER KEY DUP 1 =\n  IF DROP -1 ELSE 4 =\n  IF 1 ELSE 0 THEN THEN MOVE ;\n: PLAY MAKE 15 COL !\n  0 10 15 SPRITE-SHOW\n  8 0 DO STEER LOOP ;\n\\ keys: \\x04\\x04\\x04\\x04\\x04\\x01\\x01\\x01\nPLAY  \\ draws\nCOL @ .  \\ expect: 17\n"
+  }
+ ]
+}

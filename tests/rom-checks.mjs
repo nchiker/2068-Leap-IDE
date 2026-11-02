@@ -55,7 +55,8 @@ const { createPcKeyboard } = await import(join(ROOT, 'src/pc-keyboard.js'));
 // tools' latch writes do; leaving the key wait's spin loop is no sign of it, since
 // every frame interrupt leaves it too.
 /** A key code -> the KeyboardEvent a PC would send for it. */
-const NAMED_CODES = { 13: 'Enter', 8: 'Backspace', 1: 'ArrowLeft', 2: 'ArrowDown', 3: 'ArrowUp', 4: 'ArrowRight' };
+// (Forth's include/keys.inc: 1-4 the cursor keys, 8 DELETE, 13 ENTER, $10 BREAK = Escape on a PC.)
+const NAMED_CODES = { 13: 'Enter', 8: 'Backspace', 1: 'ArrowLeft', 2: 'ArrowDown', 3: 'ArrowUp', 4: 'ArrowRight', 16: 'Escape' };
 function keyEvent(code) {
   const key = NAMED_CODES[code] ?? String.fromCharCode(code);
   return { key, code: `K${code}`, repeat: false, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {} };
@@ -386,6 +387,10 @@ const signed = (m, a) => { const v = m.bus.read(a) | (m.bus.read(a + 1) << 8); r
 const FORTH_TAPE_SYMBOLS = {
   '2.0': { STORAGE_SEND_BLOCK: 0x09CE, STORAGE_RECEIVE_BLOCK: 0x0A5D },
 };
+/** What F6's output checks read (symbols/forth_boot.sym): the print row and the glyph routine. */
+const FORTH_SCREEN_SYMBOLS = {
+  '2.0': { PRINT_ROW: 0x81CF, GFX_PUTCHAR: 0x0705 },
+};
 
 // ── 8. Leap-Forth (src/lang/forth/): the live prompt, Run line by line ──
 console.log('\nLeap-Forth (src/lang/forth/profile.js)');
@@ -494,6 +499,180 @@ console.log('\nLeap-Forth (src/lang/forth/profile.js)');
   same('check: a defining word made with CREATE defines the name after it; \' X CATCH NAME',
     checkForth(': CONST CREATE , DOES> @ ;\n5 CONST FIVE FIVE .\n\' SAVE-TEXT CATCH DEMO .'), []);
   same(`the Examples menu's programs run to OK (${FORTH_EXAMPLES.filter(e => !e.input).length} without key input)`, bad, []);
+
+  // F6: what each line prints, as 2068-Forth's tools/forthtest.py reads it. Each case starts
+  // from a just-booted Forth (a snapshot) and its lines go one at a time through the IDE's
+  // Send path (fharness's host_line is that path); `\ keys:` keys are typed on the matrix
+  // whenever the line waits for one, `\ break: after N` holds BREAK after N instructions.
+  // The output is the screen rows from the print row before the line to the one after it
+  // (scrolling and CLS allowed for), trailing blanks dropped, joined with |, the final OK
+  // dropped; it must equal the line's `\ expect:` text (nothing for a line without one),
+  // end with `\ expect-end:`, or is not read (`\ draws`).
+  const SS = FORTH_SCREEN_SYMBOLS[from.version];
+  if (!SS) {
+    console.log(`SKIP  Forth output checks — add FORTH_SCREEN_SYMBOLS['${from.version}'] from the release's forth_boot.sym`);
+  } else {
+    boot(); frun(fwait, 600);
+    const snap = { ram: m.ram.slice(), cpu: { ...m.cpu }, portF4: m.portF4, portFF: m.portFF };
+    const fresh = () => {
+      m.ram.set(snap.ram); Object.assign(m.cpu, snap.cpu); m.portF4 = snap.portF4; m.portFF = snap.portFF;
+      m.keyMatrix.fill(0x1F);
+    };
+    const cell = (row, col) => Array.from({ length: 8 }, (_, k) => {
+      const y = row * 8 + k;
+      return m.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | col);
+    });
+    // The glyphs, drawn by the ROM's own GFX_PUTCHAR (A = code, B = row, C = col), as fharness does:
+    // codes 32 to 143 (128 to 143 the block graphics, read as U+2580 on).
+    const glyphs = new Map();
+    {
+      const STOP = 0xFF02;
+      m.bus.write(STOP, 0x18); m.bus.write(STOP + 1, 0xFE);          // jr $
+      for (let code = 32; code < 144; code++) {
+        const i = code - 32;
+        Object.assign(m.cpu, { a: code, b: Math.floor(i / 32), c: i % 32, sp: 0xFF00, pc: SS.GFX_PUTCHAR, iff1: 0, iff2: 0, halted: false });
+        m.bus.write(0xFF00, STOP & 0xFF); m.bus.write(0xFF01, STOP >> 8);
+        for (let n = 0; n < 200000 && m.cpu.pc !== STOP; n++) runZ80(m.cpu, m.bus, 1, m);
+        const k = cell(Math.floor(i / 32), i % 32).join();
+        if (!glyphs.has(k)) glyphs.set(k, code < 128 ? String.fromCharCode(code) : String.fromCharCode(0x2580 + code - 128));
+      }
+      glyphs.set('0,0,0,0,0,0,0,0', ' ');
+      fresh();
+    }
+    /** A screen row as text (fharness screen_rows): unknown cells ░, a UDG U+E000 + i, inverse • + char. */
+    const screenRow = row => {
+      let s = '';
+      for (let col = 0; col < 32; col++) {
+        const c = cell(row, col);
+        let ch = glyphs.get(c.join());
+        if (ch === undefined) {
+          for (let u = 20; u >= 0; u--) {
+            const b = Array.from({ length: 8 }, (_, j) => m.bus.read(from.udgTable + u * 8 + j));
+            if (b.some(Boolean) && b.join() === c.join()) ch = String.fromCharCode(0xE000 + u);
+          }
+        }
+        if (ch === undefined) { const inv = glyphs.get(c.map(b => 255 - b).join()); ch = inv === undefined ? '░' : '•' + inv; }
+        s += ch;
+      }
+      return s.trimEnd();
+    };
+    const rows = () => Array.from({ length: 24 }, (_, r) => screenRow(r));
+    const kb = createPcKeyboard(m.keyMatrix, F.keyboard.symbols);
+    const unescape = t => t.replace(/\\(x[0-9a-fA-F]{2}|.)/g, (_, e) =>
+      e[0] === 'x' ? String.fromCharCode(parseInt(e.slice(1), 16)) : ({ r: '\r', n: '\n', b: '\b', t: '\t', '\\': '\\' }[e] ?? '\\' + e));
+    const DRAWS = { draws: true };
+    /** forthtest.py's parse(): the typed lines with their expectation, keys and break. */
+    const parseCase = text => {
+      const out = [];
+      let keys = '', brk = null;
+      text.split('\n').forEach((raw, i) => {
+        const s = raw.trim();
+        if (!s) return;
+        if (s.startsWith('\\')) {
+          if (s.startsWith('\\ keys: ')) keys = unescape(s.slice(8));
+          else if (s.startsWith('\\ break: ')) { const w = s.split(/\s+/).slice(2); brk = w[0] === 'after' ? Number(w[1]) : `at ${w[1]}`; }
+          return;
+        }
+        let exp = null;
+        const cut = (tag) => { const at = raw.indexOf(tag); const e = raw.slice(at + tag.length); raw = raw.slice(0, at); return e.startsWith(' ') ? e.slice(1).trimEnd() : e.trimEnd(); };
+        if (raw.includes('\\ expect-end:')) exp = { end: cut('\\ expect-end:') };
+        else if (raw.includes('\\ expect:')) exp = cut('\\ expect:');
+        else if (raw.trimEnd().endsWith('\\ draws')) { raw = raw.trimEnd().slice(0, -'\\ draws'.length); exp = DRAWS; }
+        out.push({ line: i + 1, text: raw.trimEnd(), exp, keys, brk });
+        keys = ''; brk = null;
+      });
+      return out;
+    };
+    const pressBreak = down => { if (down) { m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1; } else m.keyMatrix.fill(0x1F); };
+    /** forthtest.py's typed(): send one line, feed its keys, read what it printed. */
+    const typed = ({ text, keys, brk }) => {
+      if (typeof brk === 'string') throw new Error(`break: ${brk} is not supported here`);
+      const before = rows();
+      const r0 = m.bus.read(SS.PRINT_ROW);
+      const start = fl.startRun(text);
+      if (!start.job) throw new Error(`not sent: ${start.error ?? JSON.stringify(start.problems)}`);
+      F.driver.inject(m, from, start.job);
+      if (brk !== null) {
+        let n = 0;
+        if (!frun(() => ++n > brk || (n > 1 && fwait() && F.driver.runState(m, from) === 'ended'), 20000)) throw new Error('break: the run never got there');
+        pressBreak(true);
+        const back = frun(() => fwait() && F.driver.runState(m, from) === 'ended', 2000);
+        pressBreak(false);
+        m.bus.write(from.kbdKeyHit, 0);
+        if (!back) throw new Error('BREAK held: the console never waited for a key again');
+      } else {
+        frun(() => false, 1);
+        if (!frun(fwait, 20000)) throw new Error('the line did not end');
+      }
+      const queue = [...keys].map(c => c.charCodeAt(0));
+      while (queue.length && F.driver.runState(m, from) === 'waiting') {
+        if (!typeKey(kb, queue.shift(), frun, m.bus, from.kbdKeyHit)) throw new Error('a key was not taken');
+        if (!frun(fwait, 20000)) throw new Error('the line did not end');
+      }
+      if (F.driver.runState(m, from) === 'waiting') throw new Error(`the line waits for a key (${queue.length ? '?' : 'no keys left'})`);
+      if (queue.length) throw new Error(`${queue.length} key(s) not read`);
+      const after = rows();
+      const r1 = m.bus.read(SS.PRINT_ROW);
+      const cleared = r1 < r0 || (before.slice(0, r0).some(Boolean) && !after.slice(0, r0).some(Boolean));
+      let k = 0;
+      while (k < r0 && !cleared && after.slice(0, r0 - k).join('\n') !== before.slice(k, r0).join('\n')) k++;
+      const got = after.slice(cleared ? 0 : r0 - k, r1 + 1);
+      while (got.length && !got[got.length - 1]) got.pop();
+      while (cleared && got.length && !got[0]) got.shift();
+      let out = got.join('|');
+      if (out.endsWith('OK')) out = out.slice(0, -2).replace(/[ |]+$/, '');
+      return out;
+    };
+    /** forthtest.py's run_case(): from a fresh Forth; null, or where and how it first differs. */
+    const runCase = (name, lines) => {
+      fresh();
+      for (const l of lines) {
+        let got;
+        try { got = typed(l); } catch (e) { return `${name}:${l.line} ${JSON.stringify(l.text)}: ${e.message}`; }
+        const want = l.exp ?? '';
+        if (want === DRAWS) continue;
+        if (typeof want === 'object' ? !got.endsWith(want.end) : got !== want)
+          return `${name}:${l.line} ${JSON.stringify(l.text)} printed ${JSON.stringify(got)}, expected ${typeof want === 'object' ? `it to end with ${JSON.stringify(want.end)}` : JSON.stringify(want)}`;
+      }
+      return null;
+    };
+
+    const corpus = JSON.parse(readFileSync(join(ROOT, 'tests/forth-manual-examples.json'), 'utf8'));
+    const t0 = Date.now();
+    // Known differences between TSRun and ZEsarUX (2068-Forth's test emulator), not IDE faults:
+    // STICK reads the AY's port A without making it an input, and Forth leaves the mixer
+    // (register 7) at $F8, port A an output. TSRun then returns the output latch, as an
+    // AY-3-8912 does (0, so device 2 reads 1); ZEsarUX returns the joystick lines (none: 0).
+    const KNOWN = { 'docs/manual/04_machine.md:1214:2 "2 STICK ." printed "1", expected "0"': 'TSRun: AY port A is an output' };
+    const docAll = corpus.examples.map(e => runCase(`${e.doc}:${e.line}`, parseCase(e.text))).filter(Boolean);
+    const docBad = docAll.filter(d => !KNOWN[d]);
+    if (process.env.VERBOSE) console.log(`      (${corpus.examples.length} manual examples in ${Date.now() - t0} ms)`);
+    same(`F6: the manual's ${corpus.examples.length} examples print what their \\ expect: lines say (${corpus.ref}, as tools/forthtest.py runs tests/doc; ${Object.keys(KNOWN).length} known emulator difference)`, docBad, []);
+    same('F6: the known emulator difference is still there (2 STICK . reads 1 in TSRun)', docAll.filter(d => KNOWN[d]), Object.keys(KNOWN));
+
+    // The Examples menu's own data (src/lang/forth/examples.js): the Part 7 programs with their
+    // expect and keys ([line, ...], 0-based), run the same way. The demos have no expectations.
+    const exCase = ex => parseCase(ex.text).map(l => {
+      const e = (ex.expect ?? []).find(([i]) => i === l.line - 1);
+      const k = (ex.keys ?? []).find(([i]) => i === l.line - 1);
+      return { ...l, exp: e ? e[1] : l.exp, keys: k ? k[1] : '' };
+    });
+    const part7 = FORTH_EXAMPLES.filter(e => e.expect);
+    same(`F6: the Examples menu's ${part7.length} manual programs print what they should, those that read keys typed on the matrix (${part7.filter(e => e.keys).length})`,
+      part7.map(ex => runCase(ex.id, exCase(ex))).filter(Boolean), []);
+    {
+      // demos/gallery.fs: "not rebuilt for the finished ROM" says its header; it loads on this
+      // one (every line OK and silent), and MAIN shows the title screen and waits for a key.
+      const g = FORTH_EXAMPLES.find(e => e.id === 'gallery');
+      const lines = parseCase(g.text);
+      const load = runCase('gallery', lines.slice(0, -1));
+      const start = fl.startRun(lines.at(-1).text);
+      F.driver.inject(m, from, start.job);
+      frun(() => false, 100);
+      same('F6: the Shooting Gallery demo loads, and MAIN shows its title screen', [load, lines.at(-1).text, screenRow(3).trim()], [null, 'MAIN', 'SHOOTING GALLERY']);
+      pressBreak(true); frun(() => fwait() && F.driver.runState(m, from) === 'ended', 200); pressBreak(false); m.bus.write(from.kbdKeyHit, 0);
+    }
+  }
 
   // F5: TEXT tapes. The block sender / receiver are replaced by stand-ins
   // (STORAGE_SEND_BLOCK / STORAGE_RECEIVE_BLOCK of the release's forth_boot.sym):
