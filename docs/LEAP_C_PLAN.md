@@ -2,7 +2,8 @@
 
 Status: updated 2026-11-01. **C1 to C7 and C9 are done** (C1 to C3 `d0e437b`, on
 `v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6 `4f30b82`; C7
-`1050d7b`; C4 `0b419d3`; C9 `4798b64`); only C8 (optional) is open. Prerequisite (done, `3ed5d3b`):
+`1050d7b`, with the programs that read keys driven in the tests by `5cfffb8`;
+C4 `0b419d3`; C9 `4798b64`); only C8 (optional) is open. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Leap-C project has answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)).
@@ -382,9 +383,38 @@ programs, each with its directives (`// expect: exit N`, `// screen:`,
 15 programs without keys or a tape through the IDE's run path and compares the
 exit status (HL at `RT_RUN.done`), the screen text (glyphs learnt by printing
 ASCII 32 to 126) and the pixels, both as at `RT_RUN.done` (before the report on
-row 23): all 15 match, and all 18 check clean. **Not yet:** the programs with
-`keys` and the tape one are not driven in the tests; the corpus is the
-manual's 18, not a larger set.
+row 23): all 15 match, and all 18 check clean.
+
+**Keys, done (`5cfffb8`, 2026-11-01).** The same block now also runs the two
+programs that read keys, `guess-the-number` (keys `"50" ENTER "25" ENTER "37"
+ENTER`) and `a-menu` (`"12x23"`), and compares exit status, screen rows and
+pixels with the manual: all match. The keys are typed on the keyboard matrix
+through the IDE's own `src/pc-keyboard.js` (`createPcKeyboard`, the profile's
+SYMBOL SHIFT table), one key each time the program waits in `getkey()` /
+`gets()`, which is what Leap-C's `tools/exectest.py` (v1.1.0) does through the
+ISR latch (`KBD_LASTK` / `KBD_KEYHIT`; `// keys:` is "text", ENTER, DELETE, NONE
+or a number). A key counts as taken when the ROM latches it (`KBD_KEYHIT`
+nonzero; leaving the key-wait spin loop is no sign, since every frame
+interrupt leaves it), then it is released for 3 frames. The helpers are
+`keyEvent`, `parseCKeys` and `typeKey` at the top of the test file. **Not yet:**
+the tape example (`a-score-on-tape`) is not driven; the corpus is the manual's
+18, not a larger set.
+
+**Example 11 replaced (2026-11-01).** A user reported that "Colour lines in
+high resolution" ends on a black screen, which is what the manual says it does.
+The IDE now generates its menu with a replacement section
+(`tools/leapc-example-overrides/11-colour-lines-in-high-resolution.md`: a band
+of 56 rows in the seven inks, a key wait in mode 1, still visible after
+`mode(0)`), driven by the C7 keyed check, and proposes it to the Leap-C project
+in `docs/requests/LEAP_C_EXAMPLE_11.md`.
+
+**Speed test.** The Leap-C Examples menu also carries "Spinning squares (speed
+test)" (`src/lang/spin-demo.js`, appended by the profile after the generated
+list, which is untouched): 1644 frames in TSRun against Forth's 522 and
+BASIC's 1901. Leap-C is the slower of the compiled two because its `draw()` is
+slow (864 lines of 90 pixels took 2005 frames, 422 for Forth's `LINE`); the
+arithmetic is fast. The picture is identical in all three languages
+(`tests/rom-checks.mjs` section 10).
 
 - Examples menu: a selection from `07_examples.md` (18 programs).
 - Corpus test in `tests/rom-checks.mjs`: every manual example with
@@ -517,12 +547,12 @@ before the build; it is kept for the reasons behind the design.
 
 ## Tests
 
-- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C7 and C9); 150 checks in all at `4798b64` (128 with `LEAPC_ROMS` on beta.2, which skips libraries, the debugger, tapes and the cartridge).
+- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C7 and C9); 150 checks in all at `4798b64` (128 with `LEAPC_ROMS` on beta.2, which skips libraries, the debugger, tapes and the cartridge); 157 now, with the keyed Examples (`5cfffb8`), Forth's F6 and the speed test.
 - `tests/browser-smoke.mjs`: switch to C, run hello world, a compile error
   with the column underline, completion of a library function, tape export
   (done: ⬇ TAP, then Open from BASIC switches to Leap-C), a shapes program
-  running with its library (done), the Examples menu (done: 18 programs,
-  Fibonacci runs), a breakpoint in a function with the globals and call stack
+  running with its library (done), the Examples menu (done: 19 entries, the
+  manual's 18 and the speed test; Fibonacci runs), a breakpoint in a function with the globals and call stack
   (done, C4), `Finished: exit n` (done), ▶ Test DCK on a stock TS2068 and
   Stop (done, C9; 64 checks in all), switch back.
 

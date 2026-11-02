@@ -1,6 +1,6 @@
 # Handoff — Leap IDE (formerly the Leap V2 Web IDE)
 
-Last updated 2026-11-01, after Leap-C C9 (cartridge, `4798b64`) was added. Before that, 2026-11-01, Forth F4 (debugger, `054198d`), Leap-C C4 (debugger, exit status, `0b419d3`) and Forth F8 (cartridge, `f7a5d1d`). Before that, 2026-11-01, Forth F3 (static check), Import session and F5 (tape), and Leap-C 1.0.0 with C5 (tape), C6 (libraries) and C7 (Examples) (`a3869d4` to `1050d7b`). Before that, 2026-11-01, Leap-Forth (F0 to F2, `b9526ce`, plus Send) and Leap-C (C1 to C3, `d0e437b`) on top of stage 0 (language profiles, `3ed5d3b`). Before that, 2026-11-01 stage 0. Before that, 2026-11-01, the ROM projects' answers (Forth v2.0 released, Leap-C unblocked). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
+Last updated 2026-11-01, after the speed test (all three languages, `1c74c46`), Forth F6 (`50fb417`), the keyed Leap-C Examples in the tests (`5cfffb8`) and the browser test's key-timing fix (`66a16e9`). Before that, 2026-11-01, Leap-C C9 (cartridge, `4798b64`) was added. Before that, 2026-11-01, Forth F4 (debugger, `054198d`), Leap-C C4 (debugger, exit status, `0b419d3`) and Forth F8 (cartridge, `f7a5d1d`). Before that, 2026-11-01, Forth F3 (static check), Import session and F5 (tape), and Leap-C 1.0.0 with C5 (tape), C6 (libraries) and C7 (Examples) (`a3869d4` to `1050d7b`). Before that, 2026-11-01, Leap-Forth (F0 to F2, `b9526ce`, plus Send) and Leap-C (C1 to C3, `d0e437b`) on top of stage 0 (language profiles, `3ed5d3b`). Before that, 2026-11-01 stage 0. Before that, 2026-11-01, the ROM projects' answers (Forth v2.0 released, Leap-C unblocked). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -33,7 +33,11 @@ is implemented.
 | Forth F8, cartridge (2026-11-01, `f7a5d1d`) | ⬇ DCK and ▶ Test DCK for Forth (`src/lang/forth/cartridge.js`, a port of 2068-Forth's `tools/forthcart.py`; `cartridge/forth/2.0/forth_cart.dck`, the release's, identity `$FDBE`). The owner's choices of 2026-11-01 as built: the editor's text is interpreted on a fresh hidden machine (`interpretFresh`, about a minute of TS2068 time at most) and the start word is chosen at export (`ui.prompt`, the newest `:` word the default). Checks: the identity, `OUT` to port 244 / 255 (confirm), no `:` word. `profile.ownsCartridge` picks the keyboard table for a cartridge test (`emulator.testCartridge(dck, symbols)`). Verified on a stock TS2068 in Node; the DCK and BIN for the Blackjack demo are byte-identical to `forthcart.py`'s (checked outside the tests). 144 ROM checks, 63 browser checks |
 | Leap-C C9, cartridge (2026-11-01, `4798b64`) | ⬇ DCK and ▶ Test DCK for Leap-C on Leap-C 1.1.0's runtime cartridge build (tag `v1.1.0`, commit `f8db836`, released 2026-11-02 UTC; the IDE still compiles with the 1.0.0 ROM entry, since the 1.1.0 ROMs are byte-identical, identity `$E90E`). `cartridge/c/1.1.0/`: `leapc_cart_home.bin`, `leapc_exrom.bin` (the release EXROM), `cartridge.json`, README. `src/lang/c/cartridge.js` (pure) ports the release's `cartpack.py` (program image format 1, `"LCPG"`, CRC high byte first; DCK: chunks 0-1 HOME, 4-5 the image at DOCK `$8000`, then chunk 2 past 16 KB, 6 EXROM; flat 64 KB `.bin`) and `c2cart.py`'s `region_blocks`. The checker's `compileImage()` compiles as the check does (with the program's library) and reads `RUN_MAIN`, `RUN_VOID`, `IMG_LIM`, `LIB_LOADED` and the regions' code and static data from `m.ram` (region 1 is under the EXROM). ROM-entry fields `runMain`, `runVoid`, `imgLim`, `romIdentity`, `cartridgeDir`; `tools/leapc-rom-entry.py <dir> <version> [<cartridge dir>]` (the third argument adds the last two). `profile.ownsCartridge` recognises `"LCPG"` at DOCK `$8000` (keyboard table for a cartridge test). Checks before export: the identity and EXROM against the loaded ROMs, `outp` to port 244 / 255 (confirm), compile errors with their line, one library at a time. Differences from RUN a user should know: no line number in the cartridge's report, UDGs blank at every start, a key after the report restarts from cold, `malloc` addresses differ. Verified: the IDE's cartridge for the release demo (`examples/cart_hello.c`) is byte-identical to the zip's `demo/hello.dck` and `hello.bin` (checked outside the tests); on a stock TS2068 in TSRun (Leap-C had not run its cartridge there) the cartridges run to their report, with and without the shapes library. 150 ROM checks (128 with `LEAPC_ROMS` on beta.2, which skips libraries, the debugger, tapes and the cartridge), 64 browser checks. Not tried: real hardware |
 | Leap-C (2026-11-01, `d0e437b`, `94700cf`, `4f30b82`, `1050d7b`) | Stages C1 to C3 of `docs/LEAP_C_PLAN.md` (Run by the shell path, the ROM's `SH_COMPILE` as the checker with the error's token column, a C editor, Help from the manual) and C5 (⬇ TAP and Open, format word `$8C00`, byte-identical to the ROM's `SH_SAVE`), C6 (`LIB "shapes"`: `libs/c/1.0.0/shapes.bin` installed for every check and Run, or unloaded), C7 (Examples menu: the manual's 18 programs; 15 compared with the manual's exit status, screen and pixels in the tests). C4 and C9 followed (rows above) |
-| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/lang/basic/examples.js`), Z80 breakpoints and Step instruction in the debugger, share links (Share button; program in the URL fragment, nothing uploaded) |
+| Leap-C C7, keys (2026-11-01, `5cfffb8`) | `tests/rom-checks.mjs` section 9 now also runs the two Examples-menu programs that read keys, `guess-the-number` (`"50" ENTER "25" ENTER "37" ENTER`) and `a-menu` (`"12x23"`), and compares exit status, screen rows and pixels with the manual, like the 15 others: all match. The keys go on the keyboard matrix through the IDE's own `src/pc-keyboard.js` (`createPcKeyboard`, the profile's SYMBOL SHIFT table), one key each time the program waits in `getkey()` / `gets()`, as Leap-C's `tools/exectest.py` (v1.1.0) does through the ISR latch (see Traps). Helpers at the top of the test file: `keyEvent`, `parseCKeys`, `typeKey`. Still not driven: the tape example (`a-score-on-tape`). 151 ROM checks |
+| Browser test, key timing (2026-11-01, `66a16e9`) | `tests/browser-smoke.mjs` holds each key typed at the Forth prompt 150 ms and releases it for 100 ms (`KEY_HOLD_MS`, `KEY_GAP_MS`; it was 60 ms, and a headless page runs the emulator's frames unevenly). That was the flake in Traps; three runs in a row were green after the change |
+| Forth F6 (2026-11-01, `50fb417`) | The manual's examples are checked against their expected output. `tests/rom-checks.mjs` section 8 reads what each line prints as 2068-Forth's `tools/forthtest.py` (v2.0) does and compares it with `\ expect:` / `\ expect-end:` (`\ draws` is not read), types `\ keys:` on the matrix and holds BREAK for `\ break: after N` (`break: at SYMBOL` is not supported; the manual uses only `after N`). Lines go in one at a time through the IDE's Send path (`startRun` + `driver.inject`), which is `fharness`'s `host_line`. New `tools/gen-forth-doc-tests.py <2068-forth checkout> <ref> > tests/forth-manual-examples.json` (generated, never hand-edit): a port of `tools/docexamples.py`, every ```forth block of the manual, 313 at v2.0, identical to 2068-Forth's `tests/doc/manual_*.fs` (checked). All pass except one known emulator difference (`2 STICK .`, see Traps), which has its own check. `tools/gen-forth-examples.py` now writes `keys` as `[line, text]` and adds `demos/gallery.fs` (the Shooting Gallery; its header says it is the old demo ROM's source, not rebuilt for the finished ROM) as the Examples entry `gallery`, so the Forth menu has 17 programs; the 15 Part 7 programs pass with their own `expect` and `keys` data (3 read keys), the gallery loads (every line OK and silent) and `MAIN` shows the title screen. New table `FORTH_SCREEN_SYMBOLS` in the tests (`PRINT_ROW`, `GFX_PUTCHAR`; a new Forth release needs an entry). For Forth only F7 (UDG and Draw tools, optional), the optional LIB tape and the optional watches of F1 remain. 155 ROM checks |
+| Speed test (2026-11-01, `1c74c46`) | "Spinning squares (speed test)", id `spin`, in the Examples menu of all three languages (`src/lang/spin-demo.js`, `SPIN_DEMO {basic, c, forth}`, appended by each profile, so the generated C and Forth lists are untouched). The same task and the same picture in each: 18 frames of 12 nested squares, 48 lines a frame, corners from an integer sine table; each times itself with its ROM's frame counter and prints the frames. Measured in TSRun: Forth 522 frames, Leap-C 1644, Leap BASIC 1901. Leap-C is the slowest of the compiled two because its `draw()` is slow (864 lines of 90 pixels: 2005 frames in Leap-C, 422 for Forth's `LINE`; its arithmetic is fast), which could be told to the Leap-C project. New section 10 of `tests/rom-checks.mjs`: each ends with no error and its counter counts, and the bitmap (rows 8 to 183) and attributes are identical across the three. The browser test's Leap-C Examples count is now 19 and its Tidy check includes the BASIC speed test. 157 ROM checks, 64 browser checks |
+| Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs and the speed test, `src/lang/basic/examples.js`), Z80 breakpoints and Step instruction in the debugger, share links (Share button; program in the URL fragment, nothing uploaded) |
 
 **Done for 2.1.0-emu.1** (tag `v2.1.0-emu.1`, commit `c005159`, published
 2026-10-28): the ROM entry (key `5a42872e…`), `src/lang/basic/leap-keywords.js` and
@@ -98,11 +102,11 @@ the plan).
 (`f7a5d1d`), and Leap-C C1 to C3 (`d0e437b`), the move to 1.0.0 (`ac0d00f`; the
 TSRun submodule is now at `9f9bbc5`), C5 (`94700cf`), C6 (`4f30b82`), C7
 (`1050d7b`), C4 (`0b419d3`) and C9 (`4798b64`) are done; see CLAUDE.md
-"Leap-Forth", "Leap-C" and "Debugger". Forth now lacks only the rest of F6 (the examples' `\ expect:`
-output and `\ keys:` lines and `demos/gallery.fs`) and the optional F7 tools.
-Nothing is open with the Leap-C project, and Leap-C lacks only optional
-things: locals in the debugger, driving the key-reading and tape examples in
-the tests, running the C examples from cartridges against the manual, and the
+"Leap-Forth", "Leap-C" and "Debugger". F6 (`50fb417`) is done too, so Forth lacks only the optional F7 tools, the
+optional LIB tape and the optional watches. Nothing is open with the Leap-C
+project, and Leap-C lacks only optional things: locals in the debugger,
+driving the tape example in the tests (the key-reading ones are driven since
+`5cfffb8`), running the C examples from cartridges against the manual, and the
 C8 tools. Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build
 (released 2026-11-02 UTC, tag `v1.1.0`, commit `f8db836`; the Leap-C project's
 description is `docs/requests/LEAP_C_CARTRIDGE.md`, read only: other people's
@@ -157,7 +161,7 @@ owner decisions below).
 cd ~/Projects/Leap-IDE
 git pull && git submodule update --init
 python3 -m http.server 8080          # then http://localhost:8080/ide.html
-node tests/rom-checks.mjs             # 150 checks, ~5 s, real ROMs in Node
+node tests/rom-checks.mjs             # 157 checks, ~30 s, real ROMs in Node
 node tests/browser-smoke.mjs          # 64 checks, headless Chrome
 ```
 
@@ -280,9 +284,48 @@ this machine has Node 24.
   `RangeCursor`'s nonexistent `.done`, so every toggle added a duplicate. It
   affected all languages (BASIC too); the field now looks the position up with
   `set.between`. If breakpoints "cannot be cleared" again, look there first.
-- **The browser test once lost the first key typed at the Forth prompt.** A
-  timing flake in the test's 60 ms key press; three reruns passed. If the
-  Forth typing check fails alone, rerun before suspecting the IDE.
+- **The browser test once lost the first key typed at the Forth prompt (fixed
+  in `66a16e9`).** A timing flake in the test's 60 ms key press: a headless
+  page runs the emulator's frames unevenly. The test now holds each key 150 ms
+  and releases it for 100 ms (`KEY_HOLD_MS`, `KEY_GAP_MS`); three runs in a row
+  were green. If the Forth typing check fails alone again, rerun before
+  suspecting the IDE, and lengthen those two constants if it persists.
+- **Typing keys in the Node tests: wait for the latch, not for the key wait.**
+  The tests type on the keyboard matrix through the IDE's `src/pc-keyboard.js`
+  (`createPcKeyboard`, the profile's SYMBOL SHIFT table). For Leap-C a key
+  counts as taken when the ROM latches it (`KBD_KEYHIT` nonzero, set from the
+  ISR with `KBD_LASTK`), then it is released for 3 frames; leaving the key-wait
+  spin loop is no sign, since every frame interrupt leaves it. This is
+  `tools/exectest.py`'s way (Leap-C v1.1.0; `// keys:` is "text", ENTER, DELETE,
+  NONE or a number). Forth's `\ keys:` are Python escapes (`\r` ENTER, `\b`
+  DELETE, `\xNN`; `\x01` to `\x04` the cursor keys, `\x10` BREAK, which is
+  Escape on a PC) typed while the line waits.
+- **Forth's `FRAMES` is `$80F4`, 33012 decimal; Leap's is `$8175`, 33141.**
+  The speed test reads them (`FRAMES` in Forth, `PEEK` of 33141 in BASIC,
+  `frames()` in Leap-C). Do not mix the two addresses up; each is the ROM
+  table's counter of that ROM. A new release may move them.
+- **`2 STICK .` reads 1 in TSRun, 0 in the manual (Forth).** Forth's
+  `STICK_READ` reads AY port A without making it an input, and Forth leaves the
+  mixer (register 7) at `$F8` (port A an output). TSRun returns the output
+  latch, as an AY-3-8912 does; ZEsarUX returns the joystick lines. It is the
+  one known difference of the 313 manual blocks (a `KNOWN` list in
+  `tests/rom-checks.mjs` with its own check). On a real TS2068 `2 STICK`
+  probably reads 1 too. Worth reporting to the 2068-Forth project; not
+  reported yet.
+- **Forth's screen checks need per-release symbols.** `FORTH_SCREEN_SYMBOLS` in
+  `tests/rom-checks.mjs` (`PRINT_ROW` `$81CF`, `GFX_PUTCHAR` `$0705` for 2.0)
+  comes from `~/2068-forth/build/forth_boot.sym`, whose HOME ROM is
+  byte-identical to v2.0's (SHA-256 `730c86d0…`). A new Forth release needs its
+  entry, or the F6 checks cannot read the screen. `tests/forth-manual-examples.json`
+  is generated (`tools/gen-forth-doc-tests.py`), never hand-edited.
+- **Leap-C's "Colour lines in high resolution" is the IDE's own version for now.**
+  The manual's ends on a black screen (a user report; that is what the manual
+  says it does). `tools/gen-leapc-examples.py` replaces manual section 11 with
+  `tools/leapc-example-overrides/11-colour-lines-in-high-resolution.md` (waits
+  for a key in mode 1, band visible after `mode(0)`), proposed to the Leap-C
+  project in `docs/requests/LEAP_C_EXAMPLE_11.md`. When a Leap-C release's
+  manual has it, delete the override and regenerate `src/lang/c/examples.js`;
+  an override for a section the manual no longer has stops the generator.
 - **Forth's cartridge is built on a hidden machine, not the live session.**
   `interpretFresh` sends the editor's text line by line to a fresh Forth (boot
   600 frames, then 3000 frames in all for the text); top-level code runs, so a
