@@ -386,15 +386,19 @@ try {
   const forthRun = await runProgram([': SQ ( n -- n*n ) DUP * ;', '', 'CLS 7 SQ .'], /^OK$|THROW|Stopped/);
   check('Forth: Run sends the program and ends in OK', forthRun === 'OK', forthRun);
   await evaluate("document.getElementById('ts-bezel').focus()");
+  // Each key is held 150 ms and released for 100 ms: the ROM scans the keyboard once a frame
+  // (20 ms), but a headless page runs the emulator's frames unevenly, and with 60 ms the
+  // first key was once lost.
+  const KEY_HOLD_MS = 150, KEY_GAP_MS = 100;
   for (const ch of '3 SQ .') {
     const code = ch === ' ' ? 'Space' : /\d/.test(ch) ? 'Digit' + ch : ch === '.' ? 'Period' : 'Key' + ch;
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ch.toLowerCase(), code, text: ch.toLowerCase() });
-    await sleep(60);
+    await sleep(KEY_HOLD_MS);
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch.toLowerCase(), code });
-    await sleep(60);
+    await sleep(KEY_GAP_MS);
   }
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r' });
-  await sleep(60);
+  await sleep(KEY_HOLD_MS);
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter' });
   const forthTyped = await waitFor(`(() => { const r = leapIDE.emulator.rom, b = leapIDE.emulator.machine.bus;
     const end = b.read(r.storeEnd) | (b.read(r.storeEnd + 1) << 8); let t = '';
