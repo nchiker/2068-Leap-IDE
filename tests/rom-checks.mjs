@@ -1263,6 +1263,7 @@ console.log('\nSpeed test in three languages (src/lang/spin-demo.js)');
     }
     const status = ended ? L.describeResult(P.driver.result(m, r, start.job), start.editorLine, null, start.job).text : 'did not end';
     if (lint.length || !/^(Finished|OK)/.test(status)) notes.push(`${id}: ${lint.length ? lint[0].message : status}`);
+    if (counter && process.env.VERBOSE) console.log(`      (${id}: ${counter() - c0} frames from the start of the run to its end)`);
     if (counter && !(counter() - c0 > 100 && ex.text.includes(String(FRAMES[id])))) notes.push(`${id}: the frame counter it reads (${FRAMES[id]}) did not count, or the program does not read it`);
     shots[id] = [...Array.from({ length: (184 - 8) * 32 }, (_, i) => { const y = 8 + (i >> 5); return m.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (i & 31)); }),
       ...Array.from({ length: 22 * 32 }, (_, i) => m.bus.read(0x5820 + i))].join();
