@@ -18,6 +18,7 @@ tape: true.
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -84,11 +85,36 @@ def examples(text):
     return out
 
 
+# Sections the IDE replaces until the Leap-C manual carries them: tools/leapc-example-overrides/
+# <N>-<id>.md holds a whole "## N. Title" section, sent to the Leap-C project as a proposed
+# change (docs/requests/). Delete the file once the manual at the ref has it.
+OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'leapc-example-overrides')
+
+
+def apply_overrides(text):
+    """The manual's Part 7 with each override's section in place of the one with its number."""
+    used = []
+    for name in sorted(os.listdir(OVERRIDES)) if os.path.isdir(OVERRIDES) else []:
+        if not name.endswith('.md'):
+            continue
+        section = open(os.path.join(OVERRIDES, name), encoding='utf-8').read().rstrip('\n') + '\n\n'
+        num = re.match(r'## (\d+)\. ', section)
+        if not num:
+            sys.exit(f'{name}: does not start with "## N. Title"')
+        pat = re.compile(r'^## %s\. .*?(?=^## |\Z)' % num.group(1), re.S | re.M)
+        if not pat.search(text):
+            sys.exit(f'{name}: the manual has no section {num.group(1)}')
+        text = pat.sub(lambda _: section, text, count=1)
+        used.append(name)
+    return text, used
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     checkout, ref = sys.argv[1], sys.argv[2]
-    found = examples(show(checkout, ref, 'docs/manual/07_examples.md'))
+    manual, used = apply_overrides(show(checkout, ref, 'docs/manual/07_examples.md'))
+    found = examples(manual)
     if not found:
         sys.exit('no examples found')
     print('/**')
@@ -98,6 +124,8 @@ def main():
     print(f' * {len(found)} programs for the Examples menu, {{id, title, about, text, exit?, screen?,')
     print(' * pixels?, keys?, input?, library?, tape?}: the manual\'s test directives (exit status,')
     print(' * screen rows, pixels, keys typed, library) taken out of the text.')
+    for name in used:
+        print(f' * Replaced by the IDE until the manual has it: tools/leapc-example-overrides/{name}.')
     print(' */')
     print()
     print('"use strict";')
