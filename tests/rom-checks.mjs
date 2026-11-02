@@ -43,6 +43,48 @@ const { tapeToText, encodeShare, decodeShare } = await import(join(ROOT, 'src/fi
 const { bresenham, pathsToCode } = await import(join(ROOT, 'src/tools/draw.js'));
 const { udgPokes, pokesInSource } = await import(join(ROOT, 'src/tools/udg.js'));
 const { EXAMPLES } = await import(join(ROOT, 'src/lang/basic/examples.js'));
+const { createPcKeyboard } = await import(join(ROOT, 'src/pc-keyboard.js'));
+
+// ── typing into a waiting program, as the ROM projects' test tools feed keys ──
+// Leap-C's tools/exectest.py and 2068-Forth's tools/forthtest.py give a program one key
+// each time it waits for one (through the ISR's latch). Here each key is typed on the
+// matrix instead, through the IDE's own PC-keyboard translation (src/pc-keyboard.js):
+// held until the ROM takes it (the program leaves the key wait), then released for a
+// few frames, so the next key is a new press. The keys therefore mean the same.
+// A key counts as taken when the ROM's interrupt latches it (KBD_KEYHIT), as the
+// tools' latch writes do; leaving the key wait's spin loop is no sign of it, since
+// every frame interrupt leaves it too.
+/** A key code -> the KeyboardEvent a PC would send for it. */
+const NAMED_CODES = { 13: 'Enter', 8: 'Backspace', 1: 'ArrowLeft', 2: 'ArrowDown', 3: 'ArrowUp', 4: 'ArrowRight' };
+function keyEvent(code) {
+  const key = NAMED_CODES[code] ?? String.fromCharCode(code);
+  return { key, code: `K${code}`, repeat: false, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {} };
+}
+/** Leap-C's `// keys:` text (exectest.py parse_keys): "text", ENTER, DELETE, NONE, or a number. */
+function parseCKeys(text) {
+  const out = [];
+  for (const tok of text.match(/"[^"]*"|\S+/g) ?? []) {
+    if (tok.startsWith('"')) out.push(...[...tok.slice(1, -1)].map(c => c.charCodeAt(0)));
+    else if (tok === 'ENTER') out.push(13);
+    else if (tok === 'DELETE') out.push(8);
+    else if (tok === 'NONE') out.push(null);          // an inkey() that finds no key: nothing typed
+    else out.push(Number(tok));
+  }
+  return out;
+}
+/**
+ * Type one key: press it until the ROM latches it (KBD_KEYHIT, at most 10 frames), release
+ * it and run 3 frames. run(until, frames) is the section's frame runner, m.bus the machine's.
+ * Returns false when the ROM did not take the key.
+ */
+function typeKey(kb, code, run, bus, kbdKeyHit) {
+  const e = keyEvent(code);
+  kb.keyDown(e);
+  const took = run(() => bus.read(kbdKeyHit) !== 0, 10);
+  kb.keyUp(e);
+  run(() => false, 3);
+  return took;
+}
 
 // ── tiny harness ──
 let failed = 0;
@@ -809,35 +851,60 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     chars.forEach((c, i) => { const k = cellBytes(Math.floor(i / 32), i % 32); if (!glyphs.has(k)) glyphs.set(k, c); });   // blank glyphs read as space
     const screenRow = row => Array.from({ length: 32 }, (_, col) => glyphs.get(cellBytes(row, col)) ?? '?').join('').trimEnd();
     const pixel = (x, y) => (scr(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (x >> 3)) >> (7 - (x & 7))) & 1;
-    /** Run to the report, keeping HL at RT_RUN.done (the exit status) and the screen there. */
-    const runExit = text => {
+    /**
+     * Run to the report, keeping HL at RT_RUN.done (the exit status) and the screen there.
+     * keys (the manual's `// keys:` text): typed one at a time whenever the program waits
+     * for a key (getkey(), gets()), as Leap-C's exectest.py feeds them.
+     */
+    const kb = createPcKeyboard(m.keyMatrix, P.keyboard.symbols);
+    const runExit = (text, keys = null) => {
       const start = cl.startRun(text);
       P.driver.inject(m, crom, start.job);
       let exit = null;
-      crun(() => false, 2);
-      shot = null;
-      const back = crun(() => {
+      const done = () => {
         if (m.cpu.pc === crom.rtRunDone) {
           exit = (m.cpu.h << 8) | m.cpu.l;
           shot = Uint8Array.from({ length: 6144 }, (_, i) => m.bus.read(0x4000 + i));
         }
-        return cwait();
-      }, 1500);
-      return { back, exit, text: cl.describeResult(P.driver.result(m, crom), start.editorLine, null, start.job).text };
+      };
+      crun(() => false, 2);
+      shot = null;
+      let back = crun(() => (done(), cwait()), 1500);
+      const queue = (keys ? parseCKeys(keys) : []).filter(k => k !== null);
+      let keyNote = null;
+      while (back && P.driver.runState(m, crom) === 'waiting') {
+        if (!queue.length) { keyNote = 'waiting for a key with none left'; break; }
+        if (!typeKey(kb, queue.shift(), (u, n) => crun(() => (done(), u()), n), m.bus, crom.kbdKeyHit)) { keyNote = 'a key was not taken'; break; }
+        back = crun(() => (done(), cwait()), 1500);
+      }
+      if (!keyNote && queue.length) keyNote = `${queue.length} key(s) not read`;
+      if (P.driver.runState(m, crom) !== 'ended') {
+        // Left waiting or busy: BREAK, so the next run starts from the report.
+        m.keyMatrix[0] &= ~1; m.keyMatrix[7] &= ~1;
+        crun(() => false, P.driver.breakHold);
+        m.keyMatrix.fill(0x1F);
+        m.bus.write(crom.kbdKeyHit, 0);
+        crun(() => cwait() && P.driver.runState(m, crom) === 'ended', 300);
+      }
+      return { back, exit, keyNote, text: cl.describeResult(P.driver.result(m, crom), start.editorLine, null, start.job).text };
     };
     const bad = [];
     const hasLibs = existsSync(join(ROOT, 'libs/c', crom.version));
     const runnable = LEAPC_EXAMPLES.filter(e => !e.input && !e.tape && (hasLibs || !e.library));
-    for (const ex of runnable) {
-      const r = runExit(ex.text);
+    const keyed = LEAPC_EXAMPLES.filter(e => e.input && e.keys && !e.tape && (hasLibs || !e.library));
+    const badKeyed = [];
+    for (const ex of [...runnable, ...keyed]) {
+      const r = runExit(ex.text, ex.keys ?? null);
+      if (r.keyNote) { (ex.keys ? badKeyed : bad).push(`${ex.id}: ${r.keyNote}`); continue; }
       const got = { status: r.text, exit: r.exit & 0xFFFF,
         screen: (ex.screen ?? []).map(([row]) => [row, screenRow(row)]),
         pixels: (ex.pixels ?? []).map(([x, y]) => [x, y, pixel(x, y)]) };
       const want = { status: fin(ex.exit), exit: ex.exit & 0xFFFF,
         screen: (ex.screen ?? []).map(([row, t]) => [row, t.trimEnd()]), pixels: ex.pixels ?? [] };
-      if (JSON.stringify(got) !== JSON.stringify(want)) bad.push(`${ex.id}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
+      if (JSON.stringify(got) !== JSON.stringify(want)) (ex.keys ? badKeyed : bad).push(`${ex.id}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
     }
     same(`the Examples menu's programs give the manual's exit status, screen and pixels (${runnable.length} without keys or a tape)`, bad, []);
+    same(`the Examples menu's programs that read keys, typed on the keyboard matrix, give the manual's results (${keyed.length}: ${keyed.map(e => e.id).join(', ')})`, badKeyed, []);
     same('every example checks clean', LEAPC_EXAMPLES.filter(e => (hasLibs || !e.library) && cl.lint(e.text).length > 0).map(e => e.id), []);
   }
 
