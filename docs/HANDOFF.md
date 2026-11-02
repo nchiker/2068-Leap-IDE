@@ -1,6 +1,6 @@
 # Handoff — Leap IDE (formerly the Leap V2 Web IDE)
 
-Last updated 2026-11-01, after Forth F4 (debugger, `054198d`), Leap-C C4 (debugger, exit status, `0b419d3`) and Forth F8 (cartridge, `f7a5d1d`) were added. Before that, 2026-11-01, Forth F3 (static check), Import session and F5 (tape), and Leap-C 1.0.0 with C5 (tape), C6 (libraries) and C7 (Examples) (`a3869d4` to `1050d7b`). Before that, 2026-11-01, Leap-Forth (F0 to F2, `b9526ce`, plus Send) and Leap-C (C1 to C3, `d0e437b`) on top of stage 0 (language profiles, `3ed5d3b`). Before that, 2026-11-01 stage 0. Before that, 2026-11-01, the ROM projects' answers (Forth v2.0 released, Leap-C unblocked). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
+Last updated 2026-11-01, after Leap-C C9 (cartridge, `4798b64`) was added. Before that, 2026-11-01, Forth F4 (debugger, `054198d`), Leap-C C4 (debugger, exit status, `0b419d3`) and Forth F8 (cartridge, `f7a5d1d`). Before that, 2026-11-01, Forth F3 (static check), Import session and F5 (tape), and Leap-C 1.0.0 with C5 (tape), C6 (libraries) and C7 (Examples) (`a3869d4` to `1050d7b`). Before that, 2026-11-01, Leap-Forth (F0 to F2, `b9526ce`, plus Send) and Leap-C (C1 to C3, `d0e437b`) on top of stage 0 (language profiles, `3ed5d3b`). Before that, 2026-11-01 stage 0. Before that, 2026-11-01, the ROM projects' answers (Forth v2.0 released, Leap-C unblocked). Before that, 2026-10-31, the cartridge test (▶ Test DCK and Open `.dck`: the cartridge on the stock TS2068 ROMs in the IDE's emulator) and the multi-language plans (`docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_C_PLAN.md`, `LEAP_FORTH_PLAN.md`; questions for the ROM projects in `docs/requests/`). Before that: share links (program in the URL fragment), packages on cartridges (DCK program image format 2), editor structure tools (folding, auto-indent, Tidy, go to definition, rename, line limit), the Examples menu and Z80 breakpoints.
 Read `CLAUDE.md` first: it is the technical brief, and this file does not repeat it.
 This file covers where the work stands, what the owner has decided, and how
 to pick it up.
@@ -8,7 +8,7 @@ to pick it up.
 ## Where it stands
 
 All phases are done, and the IDE runs three languages: Leap V2 BASIC (Leap
-2.1.0-emu.1), Leap-Forth (2068-Forth v2.0) and Leap-C (v1.0.0), chosen
+2.1.0-emu.1), Leap-Forth (2068-Forth v2.0) and Leap-C (v1.0.0 ROMs; cartridge from 1.1.0), chosen
 in the toolbar's language selector. Nothing is on hold.
 The DCK export, the last open item, was approved by the owner on 2026-10-28 and
 is implemented.
@@ -31,7 +31,8 @@ is implemented.
 | Forth F4, debugger (2026-11-01, `054198d`) | `src/lang/forth/forth-debug.js`: the line table is built **while the program is sent** (each line enters at `EDITOR_LOOP_LIVE.enter`; at `INTERPRET_NESTED.token` with `STATE` 1 a record of `HERE` and the line; `COLON_XT` on the `:` line), so breakpoints stop in the program's words and, for a line outside a definition, when the line is sent; Step goes word by word; "Stacks and words" (data and float stack, the session's words with their values; shown between runs too); call stack from the return stack. Generic changes: `debug.beginRun(job)` passes the job to the adapter's `reset`, `adapter.version()` makes the controller place breakpoints again, `adapter.labels.variables` titles the section (`#vars-title`). Limit: only the words the latest Run or Send defined have lines (see Traps). 132 ROM checks, 61 browser checks at the commit |
 | Leap-C C4, debugger (2026-11-01, `0b419d3`) | `src/lang/c/leapc-debug.js`: line table from the compiler (`STATEMENT`, `DCL_AUTOINIT`, `STMT_DO.cond`, `CG_UNIT.found`, `RUN_FNLINES`), the globals and function names copied at `RT_RUN`, memory read from `m.ram`, "Globals", the `IX` frame-chain call stack, Step statement by statement. The status bar gives `Finished: exit n` (from the report's text, `SH_REPORT_BUF`), and a run-time error or BREAK names its statement's line (`RT_ERRPC` + the line table: "Runtime error 6 on line 5"). The 1.0.0 entry was regenerated (`tools/leapc-rom-entry.py` emits `reportBuf`, `dclAutoinit`, `stmtDoCond`, `cgUnitFound`, `runFnlines`, `symGlo`, `rtRun`, `rtErrPc`); the beta.2 entry lacks them (no debugger, plain `Finished`, the C4 tests SKIP). Also fixed for all languages: a breakpoint toggle never removed the breakpoint (see Traps). 137 ROM checks, 62 browser checks at the commit. Not yet: locals |
 | Forth F8, cartridge (2026-11-01, `f7a5d1d`) | ⬇ DCK and ▶ Test DCK for Forth (`src/lang/forth/cartridge.js`, a port of 2068-Forth's `tools/forthcart.py`; `cartridge/forth/2.0/forth_cart.dck`, the release's, identity `$FDBE`). The owner's choices of 2026-11-01 as built: the editor's text is interpreted on a fresh hidden machine (`interpretFresh`, about a minute of TS2068 time at most) and the start word is chosen at export (`ui.prompt`, the newest `:` word the default). Checks: the identity, `OUT` to port 244 / 255 (confirm), no `:` word. `profile.ownsCartridge` picks the keyboard table for a cartridge test (`emulator.testCartridge(dck, symbols)`). Verified on a stock TS2068 in Node; the DCK and BIN for the Blackjack demo are byte-identical to `forthcart.py`'s (checked outside the tests). 144 ROM checks, 63 browser checks |
-| Leap-C (2026-11-01, `d0e437b`, `94700cf`, `4f30b82`, `1050d7b`) | Stages C1 to C3 of `docs/LEAP_C_PLAN.md` (Run by the shell path, the ROM's `SH_COMPILE` as the checker with the error's token column, a C editor, Help from the manual) and C5 (⬇ TAP and Open, format word `$8C00`, byte-identical to the ROM's `SH_SAVE`), C6 (`LIB "shapes"`: `libs/c/1.0.0/shapes.bin` installed for every check and Run, or unloaded), C7 (Examples menu: the manual's 18 programs; 15 compared with the manual's exit status, screen and pixels in the tests). C4 followed (row above). Not yet: C9 cartridge |
+| Leap-C C9, cartridge (2026-11-01, `4798b64`) | ⬇ DCK and ▶ Test DCK for Leap-C on Leap-C 1.1.0's runtime cartridge build (tag `v1.1.0`, commit `f8db836`, released 2026-11-02 UTC; the IDE still compiles with the 1.0.0 ROM entry, since the 1.1.0 ROMs are byte-identical, identity `$E90E`). `cartridge/c/1.1.0/`: `leapc_cart_home.bin`, `leapc_exrom.bin` (the release EXROM), `cartridge.json`, README. `src/lang/c/cartridge.js` (pure) ports the release's `cartpack.py` (program image format 1, `"LCPG"`, CRC high byte first; DCK: chunks 0-1 HOME, 4-5 the image at DOCK `$8000`, then chunk 2 past 16 KB, 6 EXROM; flat 64 KB `.bin`) and `c2cart.py`'s `region_blocks`. The checker's `compileImage()` compiles as the check does (with the program's library) and reads `RUN_MAIN`, `RUN_VOID`, `IMG_LIM`, `LIB_LOADED` and the regions' code and static data from `m.ram` (region 1 is under the EXROM). ROM-entry fields `runMain`, `runVoid`, `imgLim`, `romIdentity`, `cartridgeDir`; `tools/leapc-rom-entry.py <dir> <version> [<cartridge dir>]` (the third argument adds the last two). `profile.ownsCartridge` recognises `"LCPG"` at DOCK `$8000` (keyboard table for a cartridge test). Checks before export: the identity and EXROM against the loaded ROMs, `outp` to port 244 / 255 (confirm), compile errors with their line, one library at a time. Differences from RUN a user should know: no line number in the cartridge's report, UDGs blank at every start, a key after the report restarts from cold, `malloc` addresses differ. Verified: the IDE's cartridge for the release demo (`examples/cart_hello.c`) is byte-identical to the zip's `demo/hello.dck` and `hello.bin` (checked outside the tests); on a stock TS2068 in TSRun (Leap-C had not run its cartridge there) the cartridges run to their report, with and without the shapes library. 150 ROM checks (128 with `LEAPC_ROMS` on beta.2, which skips libraries, the debugger, tapes and the cartridge), 64 browser checks. Not tried: real hardware |
+| Leap-C (2026-11-01, `d0e437b`, `94700cf`, `4f30b82`, `1050d7b`) | Stages C1 to C3 of `docs/LEAP_C_PLAN.md` (Run by the shell path, the ROM's `SH_COMPILE` as the checker with the error's token column, a C editor, Help from the manual) and C5 (⬇ TAP and Open, format word `$8C00`, byte-identical to the ROM's `SH_SAVE`), C6 (`LIB "shapes"`: `libs/c/1.0.0/shapes.bin` installed for every check and Run, or unloaded), C7 (Examples menu: the manual's 18 programs; 15 compared with the manual's exit status, screen and pixels in the tests). C4 and C9 followed (rows above) |
 | Extras | New/Open/Save + browser auto-save, `.tap` import, packages (`CIRCLE`, …) loaded automatically, whole-pixel display zoom, module fingerprints, editor find / replace (Ctrl+F / Ctrl+H), Undo / Redo / Cut / Copy / Paste / Find buttons, editor folding, auto-indent / dedent, Tidy (Shift+Alt+F), block-keyword match, go to definition (F12, Ctrl+click), rename (F2), line-limit ruler at column 127, Examples menu (12 programs, `src/lang/basic/examples.js`), Z80 breakpoints and Step instruction in the debugger, share links (Share button; program in the URL fragment, nothing uploaded) |
 
 **Done for 2.1.0-emu.1** (tag `v2.1.0-emu.1`, commit `c005159`, published
@@ -96,16 +97,17 @@ the plan).
 (`a3869d4`), Import session (`89a6d48`), F5 (`6103f66`), F4 (`054198d`) and F8
 (`f7a5d1d`), and Leap-C C1 to C3 (`d0e437b`), the move to 1.0.0 (`ac0d00f`; the
 TSRun submodule is now at `9f9bbc5`), C5 (`94700cf`), C6 (`4f30b82`), C7
-(`1050d7b`) and C4 (`0b419d3`) are done; see CLAUDE.md "Leap-Forth", "Leap-C" and
-"Debugger". Forth now lacks only the rest of F6 (the examples' `\ expect:`
+(`1050d7b`), C4 (`0b419d3`) and C9 (`4798b64`) are done; see CLAUDE.md
+"Leap-Forth", "Leap-C" and "Debugger". Forth now lacks only the rest of F6 (the examples' `\ expect:`
 output and `\ keys:` lines and `demos/gallery.fs`) and the optional F7 tools.
-Leap-C lacks locals in the debugger, driving the key-reading and tape examples
-in the tests, and C9 (the cartridge): Leap-C's own `make cart` build was in
-progress, uncommitted in `~/2068-Leap-C` `src/cart/`, and a request file from
-that side, `docs/requests/LEAP_C_CARTRIDGE.md`, has appeared (uncommitted,
-**not reviewed yet**; it describes a cartridge image format and says Leap-C
-1.1.0 carries a cartridge build). Read it before starting C9. The owner has
-still to approve their M12 plan, as far as this file knows.
+Nothing is open with the Leap-C project, and Leap-C lacks only optional
+things: locals in the debugger, driving the key-reading and tape examples in
+the tests, running the C examples from cartridges against the manual, and the
+C8 tools. Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build
+(released 2026-11-02 UTC, tag `v1.1.0`, commit `f8db836`; the Leap-C project's
+description is `docs/requests/LEAP_C_CARTRIDGE.md`, read only: other people's
+file); the IDE still compiles with the 1.0.0 ROM entry because the ROMs are
+byte-identical (identity `$E90E`).
 
 **Multi-language plans (2026-11-01).** The two ROM projects answered the IDE's
 questions (`docs/requests/LEAP_FORTH_ANSWERS.md`,
@@ -117,8 +119,8 @@ image "F1" at DOCK `$4000`); the TSRun fork's `main` (`11731e1`) carries its
 ROMs; this repository's submodule was moved to it in `b9526ce` (Forth stage F0). Leap-C was at `v1.0.0-beta.2` then; the owner lifted the
 rule that its work waits for 1.0, so it proceeded on beta.2, and 1.0.0 was
 released the same day and adopted (`ac0d00f`; the ROM entry and data were
-regenerated, nothing else changed). Only its cartridge (C9) waits, for
-Leap-C's own `make cart`, which is in progress. The order is **stage 0 (the language profile, now done) -> Forth -> Leap-C**
+regenerated, nothing else changed). Its cartridge (C9) followed in `4798b64`,
+on Leap-C 1.1.0's cartridge build. The order is **stage 0 (the language profile, now done) -> Forth -> Leap-C**
 (both unblocked; Forth first because its release, manual and cartridge are
 complete). Plans: `docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_FORTH_PLAN.md`,
 `LEAP_C_PLAN.md`. Forth's cartridge choices were made on 2026-11-01 (see F8 and the
@@ -155,8 +157,8 @@ owner decisions below).
 cd ~/Projects/Leap-IDE
 git pull && git submodule update --init
 python3 -m http.server 8080          # then http://localhost:8080/ide.html
-node tests/rom-checks.mjs             # 144 checks, ~5 s, real ROMs in Node
-node tests/browser-smoke.mjs          # 63 checks, headless Chrome
+node tests/rom-checks.mjs             # 150 checks, ~5 s, real ROMs in Node
+node tests/browser-smoke.mjs          # 64 checks, headless Chrome
 ```
 
 Both suites must print `All checks passed`. The browser test serves the repo
@@ -290,6 +292,15 @@ this machine has Node 24.
   Forth release, like BASIC's: `cartridge/forth/<version>/forth_cart.dck`
   (the release's `roms/forth_cart.dck`), and export refuses when the loaded
   ROMs' `ROM_IDENTITY` differs from the cartridge's.
+- **Leap-C's cartridge is read from the checker machine's RAM.**
+  `compileImage()` (`leapc-check.js`) reads the code and static data from
+  `m.ram`, not through the bus: `$C000-$DFFF` is the EXROM again after
+  `SH_COMPILE` returns and region 1's code is under it. The cartridge images
+  are per Leap-C release in `cartridge/c/<release>/` (1.1.0's files serve the
+  1.0.0 ROMs, which are byte-identical); export refuses when the loaded ROMs'
+  identity or EXROM differs from the cartridge's. The cartridge's report has no
+  line number and a key after it restarts the program from cold. A new Leap-C
+  release: see CLAUDE.md "Adding a Leap-C release".
 - **Forth's Run stops at the first error line** and sends nothing more; a
   `( … )` or string that spans lines does not continue (lines are sent as
   typed). Ctrl+Enter is a Forth thing (`keyboard.always`); BASIC and Leap-C
@@ -310,4 +321,4 @@ this machine has Node 24.
 | Leap | `~/2068-Leap`, `nchiker/2068-Leap` | release tag `v2.1.0-emu.1` (commit `c005159`); the clone may be on any branch, possibly with local edits: build releases in a worktree |
 | Cartridge build | `cartridge-build/` in this repo | Source of `cartridge/<version>/`: `leap.patch` (two commits) on the `v2.1.0-emu.1` tag, applied by `setup.sh` into `leap/` (ignored). Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs`. `~/Projects/Leap-Cartridge` was the original working copy |
 | 2068-Forth | `~/2068-forth`, `nchiker/2068-Leap-Forth` | release `v2.0` (commit `50170f2`); word data and examples generated from it; ROM entry built from the unpacked release zip |
-| 2068-Leap-C | `~/2068-Leap-C`, `nchiker/2068-Leap-C` | release `v1.0.0` (commit `83e6e21`, 2026-11-01); ROM entry from the release's emulator pack; keyword, error and example data and `libs/c/1.0.0/` from the tag. beta.2 entry kept. Its cartridge build (`make cart`) was in progress, uncommitted in `src/cart/` of the clone; `docs/requests/LEAP_C_CARTRIDGE.md` (uncommitted, not reviewed) comes from that side |
+| 2068-Leap-C | `~/2068-Leap-C`, `nchiker/2068-Leap-C` | release `v1.0.0` (commit `83e6e21`, 2026-11-01); ROM entry from the release's emulator pack; keyword, error and example data and `libs/c/1.0.0/` from the tag. beta.2 entry kept. Release `v1.1.0` (commit `f8db836`, 2026-11-02 UTC) added the runtime cartridge (`leapc-1.1.0-cartridge.zip`, `make cart`); its ROMs are byte-identical to 1.0.0's, so the IDE kept the 1.0.0 entry and took the cartridge files into `cartridge/c/1.1.0/` (`docs/requests/LEAP_C_CARTRIDGE.md` is the Leap-C project's description) |

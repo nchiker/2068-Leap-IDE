@@ -1,8 +1,8 @@
 # Plan: Leap-C in the Leap IDE
 
-Status: updated 2026-11-01. **C1 to C7 are done** (C1 to C3 `d0e437b`, on
+Status: updated 2026-11-01. **C1 to C7 and C9 are done** (C1 to C3 `d0e437b`, on
 `v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6 `4f30b82`; C7
-`1050d7b`; C4 `0b419d3`); C8 (optional) and C9 are open. Prerequisite (done, `3ed5d3b`):
+`1050d7b`; C4 `0b419d3`; C9 `4798b64`); only C8 (optional) is open. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Leap-C project has answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)).
@@ -13,11 +13,12 @@ current (`v1.0.0-beta.2`, which TSRun already carried); it did not wait for the
 Every address comes from the `.sym` files, so moving to 1.0 meant regenerating
 the ROM entry and the keyword and error data at the 1.0 tag, which was done
 when **Leap-C 1.0.0 was released the same day** (`ac0d00f`; TSRun pin
-`9f9bbc5`). Only **C9 (the cartridge) waits**, for Leap-C's own `make cart`
-build, which the Leap-C project is building (it was in progress, uncommitted in
-`~/2068-Leap-C` `src/cart/`; a request file from that side,
-[`requests/LEAP_C_CARTRIDGE.md`](requests/LEAP_C_CARTRIDGE.md), has appeared,
-uncommitted and **not reviewed yet**). Order: stage 0, then Forth and Leap-C,
+`9f9bbc5`). **C9 (the cartridge) followed** on Leap-C 1.1.0 (tag `v1.1.0`,
+commit `f8db836`, released 2026-11-02 UTC), which added the runtime cartridge
+(`leapc-1.1.0-cartridge.zip`; the Leap-C project's description is
+[`requests/LEAP_C_CARTRIDGE.md`](requests/LEAP_C_CARTRIDGE.md)). The 1.1.0
+ROMs are byte-identical to 1.0.0's, so the IDE still compiles with the 1.0.0
+ROM entry (identity `$E90E`). Order: stage 0, then Forth and Leap-C,
 both unblocked; Forth first because its release, manual and cartridge are
 all complete (see `MULTI_LANGUAGE_PLAN.md`).
 
@@ -342,7 +343,7 @@ byte. The check prints SKIP for a ROM without a `LEAPC_TAPE_SYMBOLS` entry
 - Open `.tap`: recognise `$8C00` and read the program back; switch to C.
 - Status: `Saved X.tap: on the TS2068, LOAD "X" then RUN` (and `LIB "shapes"`
   first when the program uses it).
-- DCK: stage C9.
+- DCK: stage C9 (done, `4798b64`).
 
 ### C6 — Libraries
 
@@ -404,12 +405,53 @@ manual's 18, not a larger set.
 
 ### C9 — Cartridge (DCK) for a stock TS2068
 
-Owner decision (2026-10-31): Leap-C gets a runtime cartridge build, as Leap V2
-has (V2's: `cartridge-build/`, `docs/LEAP_CARTRIDGE_BUILD.md`,
-`cartridge-build/Docs/CARTRIDGE_STATUS.md`), so ⬇ DCK and ▶ Test DCK work for
-C programs. **This stage waits for the Leap-C project's `make cart` build**
-(the Leap-C project is building it now; its answers had called it a
-roadmap step after 1.0); the other stages do not wait.
+**Done (`4798b64`).** Owner decision (2026-10-31): Leap-C gets a runtime
+cartridge build, as Leap V2 has (V2's: `cartridge-build/`,
+`docs/LEAP_CARTRIDGE_BUILD.md`, `cartridge-build/Docs/CARTRIDGE_STATUS.md`), so
+⬇ DCK and ▶ Test DCK work for C programs. The Leap-C project built it (`make
+cart`) and released it with **1.1.0** (tag `v1.1.0`, commit `f8db836`, asset
+`leapc-1.1.0-cartridge.zip`); the IDE implements it as described below and in
+CLAUDE.md "Leap-C", "Cartridge (C9)".
+
+**What was built.**
+
+- `cartridge/c/1.1.0/`: `leapc_cart_home.bin` (16384 bytes), `leapc_exrom.bin`
+  (8192 bytes, the release EXROM, unchanged), `cartridge.json` (the identity
+  `E90E`) and a README with the SHA-256s. 1.0.0 and 1.1.0 have byte-identical
+  ROMs, so the 1.0.0 ROM entry carries `romIdentity: 0xE90E` and
+  `cartridgeDir: 'cartridge/c/1.1.0/'`, and also the cells `runMain`,
+  `runVoid` and `imgLim` (`tools/leapc-rom-entry.py <dir> <version>
+  [<cartridge dir>]`; the third argument adds `romIdentity` and
+  `cartridgeDir`).
+- `src/lang/c/cartridge.js` (pure): a port of the release's
+  `tools/cartpack.py` (program image format 1: `"LCPG"`, identity, `RUN_MAIN`,
+  `RUN_VOID`, `IMG_LIM`, `LIB_LOADED`, blocks, a CRC-16/CCITT-FALSE high byte
+  first; the DCK: chunks 0-1 HOME, 4-5 the image at DOCK `$8000` and chunk 2
+  past 16 KB, 6 EXROM; the flat 64 KB `.bin`) and of `c2cart.py`'s
+  `region_blocks`.
+- The checker's `compileImage()` (`leapc-check.js`): `SH_COMPILE` as for the
+  check, with the program's library, then the cells and the regions' code and
+  static data read from RAM itself (region 1 is under the EXROM).
+- The C profile's `buildCartridge(text, ui)` (identity and EXROM against the
+  loaded ROMs, `outp` to port 244 / 255 asks first, compile errors with their
+  line, one library at a time; the summary names the library), `hasCartridge`
+  and `ownsCartridge` (`"LCPG"` at DOCK `$8000`, for the cartridge test's
+  keyboard table). ⬇ DCK and ▶ Test DCK work as for BASIC.
+- **Differences from RUN** (from the Leap-C project, worth telling a user): the
+  cartridge's report has no line number (there is no source); UDGs are blank at
+  every start; a key after the report restarts the program from cold;
+  `malloc`'s addresses differ. Reports and final screens matched for the 115
+  programs the Leap-C project compared.
+- **Verified.** The IDE's cartridge for the release demo
+  (`examples/cart_hello.c`) is byte-identical to the zip's `demo/hello.dck` and
+  `hello.bin`; on a stock TS2068 in TSRun (Leap-C had qualified it on Fuse and
+  ZEsarUX only) the cartridges run to their report with and without the shapes
+  library (`tests/rom-checks.mjs` section 9, `EXIT 7` with a line drawn and
+  `EXIT 12`); the browser test runs ▶ Test DCK and Stop. Not tried: real
+  hardware, and the C examples from cartridges against the manual.
+
+The text below is the plan and the Leap-C project's answers as they were
+before the build; it is kept for the reasons behind the design.
 
 **The Leap-C project's answers (A Q5).**
 
@@ -454,7 +496,7 @@ roadmap step after 1.0); the other stages do not wait.
   publishes it with the release; the image header carries it, and the
   cartridge refuses an image compiled against another build.
 
-**IDE side:**
+**IDE side (as planned; built as above):**
 
 - `cartridge/c/<version>/` with the cartridge HOME and EXROM, a README with
   the SHA-256s, and the identity check (`romIdentity` of the IDE's ROMs = the
@@ -475,13 +517,14 @@ roadmap step after 1.0); the other stages do not wait.
 
 ## Tests
 
-- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C7); C9's are to come (137 checks in all at `0b419d3`).
+- `tests/rom-checks.mjs`: Leap-C checks for each stage done (C1 to C7 and C9); 150 checks in all at `4798b64` (128 with `LEAPC_ROMS` on beta.2, which skips libraries, the debugger, tapes and the cartridge).
 - `tests/browser-smoke.mjs`: switch to C, run hello world, a compile error
   with the column underline, completion of a library function, tape export
   (done: ⬇ TAP, then Open from BASIC switches to Leap-C), a shapes program
   running with its library (done), the Examples menu (done: 18 programs,
   Fibonacci runs), a breakpoint in a function with the globals and call stack
-  (done, C4), `Finished: exit n` (done), switch back.
+  (done, C4), `Finished: exit n` (done), ▶ Test DCK on a stock TS2068 and
+  Stop (done, C9; 64 checks in all), switch back.
 
 ## Adding a Leap-C release
 
@@ -495,7 +538,13 @@ checked against `SHA256SUMS`); move TSRun to a commit with the new ROMs; add the
 release's `LEAPC_TAPE_SYMBOLS` to `tests/rom-checks.mjs`; run both test suites
 (`LEAPC_ROMS=<dir>` for another ROM pair). The step from beta.2 to 1.0.0
 (`ac0d00f`) changed nothing in the IDE beyond the generated data and the entry
-(the names are stable).
+(the names are stable). A release that changes the ROMs also needs its cartridge
+build: copy `roms/leapc_cart_home.bin` and `roms/leapc_exrom.bin` of its
+`leapc-<version>-cartridge.zip` to `cartridge/c/<release>/` with a
+`cartridge.json` (the published identity) and a README, and run
+`tools/leapc-rom-entry.py <dir> <version> cartridge/c/<release>/` (the third
+argument emits `romIdentity` and `cartridgeDir`). Byte-identical ROMs (1.0.0 and
+1.1.0) keep their entry; only the cartridge directory is new.
 
 ## Owner decisions
 
@@ -506,29 +555,23 @@ release's `LEAPC_TAPE_SYMBOLS` to `tests/rom-checks.mjs`; run both test suites
 - **Order (2026-11-01):** stage 0, then Forth and Leap-C (both unblocked);
   Forth first because its release, manual and cartridge are complete.
 - **Cartridge (2026-10-31):** Leap-C gets a runtime cartridge build (C9),
-  hosted in the Leap-C repository as `make cart`; C9 waits for it.
+  hosted in the Leap-C repository as `make cart`; it came with Leap-C 1.1.0
+  and C9 was built on it (`4798b64`).
 - **Run path (2026-10-31):** no preference; the Leap-C project recommended the
   shell path, which this plan uses.
 
 ## Still open
 
-Only **C9** is open for the IDE, apart from the optional C8 (tools), locals
-in the debugger and driving the key-reading and tape examples in the tests.
-Nothing is open with the Leap-C project except its cartridge build:
+Nothing is open with the Leap-C project:
 [`requests/LEAP_C_QUESTIONS.md`](requests/LEAP_C_QUESTIONS.md) is answered
-([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)); the line-table
-points make a compile-time hook unnecessary (the earlier Q1.4 request is
-withdrawn). Leap-C 1.0.0 is out and adopted, and its `.sym` files (with
-`STMT_DO.cond` and `SH_WAIT_KEY.key_ret`) are in the emulator pack, so the
-earlier question about the commit that carries them is closed.
+([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md); its Q5, the
+cartridge, is implemented by Leap-C 1.1.0 and by C9); the line-table points
+make a compile-time hook unnecessary (the earlier Q1.4 request is withdrawn).
+Leap-C 1.0.0 is out and adopted, its `.sym` files (with `STMT_DO.cond` and
+`SH_WAIT_KEY.key_ret`) are in the emulator pack, and 1.1.0's cartridge is
+adopted (C9).
 
-1. **The cartridge build** (C9): its program image signature and format, the
-   identity value and the DOCK layout, once `make cart` exists (in progress in
-   the Leap-C project, uncommitted in `~/2068-Leap-C` `src/cart/`; the owner has
-   still to approve their M12 plan).
-
-For the IDE: C9 once the cartridge format is settled (read
-[`requests/LEAP_C_CARTRIDGE.md`](requests/LEAP_C_CARTRIDGE.md) first: it came
-from the Leap-C project, uncommitted, and has not been reviewed); locals in the
-debugger; C8 (tools, optional); and driving the key-reading and tape examples in
-the tests.
+For the IDE, all optional: C8 (the UDG and Draw tools); locals in the
+debugger; driving the key-reading and tape examples in the tests; running the
+C examples from cartridges against the manual's results (as V2's 695-program
+comparison); and trying the cartridge on real hardware.
