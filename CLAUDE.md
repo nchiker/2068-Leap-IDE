@@ -144,7 +144,7 @@ Leap-IDE/
 │   ├── overview.md   ← Design doc
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needed; now built)
 │   └── mockup.html   ← Visual mock-up
-└── tsrun/            ← git submodule: TSRun fork, pinned at c52f272
+└── tsrun/            ← git submodule: TSRun fork, pinned at 9893b46
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
@@ -1555,12 +1555,13 @@ characters) and reports `Saved X.tap: on the TS2068, LOAD "X" then RUN`
 (for a program that uses a package: `LOAD "NAME" EXT, then LOAD "X" then RUN`).
 
 ### DCK (Timex dock cartridge) — done, verified; `src/lang/basic/cartridge.js`, toolbar "⬇ DCK"
-The owner approved this on 2026-10-28. Leap 2.0.2, 2.1.0-emu.1 and 2.1.1-emu.1 never look at
+The owner approved this on 2026-10-28. Leap 2.0.2, 2.1.0-emu.1, 2.1.1-emu.1 and 2.1.2-emu.1 never look at
 the dock, and their cold start clears RAM, so a cartridge that runs on a
 **stock TS2068** needs Leap's *cartridge build* (`make cart`, `-DV2_CARTRIDGE`):
 a runtime-only version with no editor. Its source is `cartridge-build/` in this repo: `leap.patch` on Leap's
-`v2.1.1-emu.1` tag (`TAG` in `setup.sh`; both commits applied cleanly when it was
-rebased from `v2.1.0-emu.1`), applied and built by `setup.sh` into `cartridge-build/leap/`
+`v2.1.2-emu.1` tag (`TAG` in `setup.sh`; rebased from `v2.1.1-emu.1` with one conflict, the `OPTIONAL`
+list in `tools/write_v2_crossbank.py`; the 2.1.2 cartridge EXROM had 14 bytes too few, so the symbol-table init and
+the package install call moved from `CART_RUN` into HOME's `CART_LOAD`), applied and built by `setup.sh` into `cartridge-build/leap/`
 (ignored); the details are in `cartridge-build/Docs/CARTRIDGE_STATUS.md`.
 The original spec is [`docs/LEAP_CARTRIDGE_BUILD.md`](docs/LEAP_CARTRIDGE_BUILD.md).
 The release's `roms/leap_v2_exrom.dck` is not this: it is only the EXROM as a

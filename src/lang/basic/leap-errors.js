@@ -2,7 +2,7 @@
  * src/lang/basic/leap-errors.js — GENERATED, do not edit.
  *
  * tools/gen-leap-errors.py from 2068-Leap docs/manual/07_appendices.md
- * (Appendix B) at v2.1.1-emu.1: error code -> {message, cause}.
+ * (Appendix B) at v2.1.2-emu.1: error code -> {message, cause}.
  */
 
 "use strict";
@@ -261,7 +261,7 @@ export const LEAP_RUNTIME_ERRORS = {
   },
   "64": {
     "message": "OUT OF MEMORY",
-    "cause": "an array does not fit"
+    "cause": "an array does not fit; also MODE 1 while arrays occupy memory above $6000"
   },
   "65": {
     "message": "ARRAY SIZE MISMATCH",

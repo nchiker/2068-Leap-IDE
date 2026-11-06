@@ -1,4 +1,4 @@
-From 3dbdca0ac0ee2733efefe6dc966e332ffabbbbe1 Mon Sep 17 00:00:00 2001
+From 81b200d7846c4635b9009e9beee1aec8c2e8b44a Mon Sep 17 00:00:00 2001
 From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 07:57:20 -0400
 Subject: [PATCH 1/2] Cartridge build (V2_CARTRIDGE): Leap 2.1 runtime as an
@@ -31,7 +31,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  create mode 100755 tools/cart_identity.py
 
 diff --git a/Makefile b/Makefile
-index 516d3b5..c47450b 100644
+index 85b69c1..9904fd6 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -1,4 +1,4 @@
@@ -40,7 +40,7 @@ index 516d3b5..c47450b 100644
  
  all: check build
  
-@@ -19,6 +19,19 @@ build:
+@@ -21,6 +21,19 @@ build:
  	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
  	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
  
@@ -302,7 +302,7 @@ index 0000000..acf1cdd
 +CART_SIGNATURE_END:
 +CART_MSG_BAD: DB "NO PROGRAM",0
 diff --git a/rom/v2_exrom.asm b/rom/v2_exrom.asm
-index 0d2cd3b..2026b48 100644
+index aa6708a..d27310f 100644
 --- a/rom/v2_exrom.asm
 +++ b/rom/v2_exrom.asm
 @@ -9,7 +9,12 @@ V2_RD_NEWROW    EQU $BEC4       ; STUDY: scratch of the two-line path
@@ -330,7 +330,7 @@ index 0d2cd3b..2026b48 100644
  
  ; RC: the packed entry slots (include/v2_ktab.inc). Each checks the HOME/EXROM contract first.
      MACRO V2_EXROM_SLOT slotaddr, target
-@@ -75,5 +84,11 @@ V2_VERIFY_KTAB:
+@@ -81,5 +90,11 @@ V2_VERIFY_KTAB:
      ENDIF
      INCLUDE "rom/exrom_editor.asm"
      INCLUDE "rom/exrom_v2_shell.asm"
@@ -343,7 +343,7 @@ index 0d2cd3b..2026b48 100644
      SAVEBIN "v2_exrom.bin", V2_EXROM_ENTRY_ADDR, V2_EXROM_IMAGE_SIZE
 +    ENDIF
 diff --git a/rom/v2_home.asm b/rom/v2_home.asm
-index 3ca63f6..81b1bf8 100644
+index b2581f5..508289c 100644
 --- a/rom/v2_home.asm
 +++ b/rom/v2_home.asm
 @@ -3,6 +3,7 @@
@@ -369,7 +369,7 @@ index 3ca63f6..81b1bf8 100644
      INCLUDE "rom/v2_rst_vectors.inc"
      jp V2_CALC_ENTRY
      INCLUDE "rom/v2_rst30.inc"
-@@ -131,5 +138,11 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
+@@ -138,5 +145,11 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
      INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding
      PKG_CONST_LIST
      PKG_PIN_LIST
@@ -532,15 +532,15 @@ index 0000000..1b99eaa
 +        sys.exit("expected a 16384-byte HOME and an 8192-byte EXROM image")
 +    print("0x%04X" % crc16(home + exrom))
 diff --git a/tools/write_v2_crossbank.py b/tools/write_v2_crossbank.py
-index 8bc2150..915668f 100644
+index a765e02..81ca0da 100644
 --- a/tools/write_v2_crossbank.py
 +++ b/tools/write_v2_crossbank.py
-@@ -132,7 +132,8 @@ NAMES = (
-     "V2_VER_SCOPE",
+@@ -137,7 +137,8 @@ NAMES = (
  )
- # MAINT (AY BEEP): exported only when the HOME build has them (rom/v2_ay_beep.asm placement).
--OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
-+OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES",
+ # MAINT (AY BEEP): exported only when the HOME build has them as HOME code (rom/v2_ay_beep.asm placement;
+ # v2.1.2 G2: SOUND_EXROM is HOME code in the V2_MAINT_AY_HOME build, else an EQU of its EXROM slot).
+-OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES", "SOUND_EXROM")
++OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES", "SOUND_EXROM",
 +            "CART_LOAD", "CART_MSG_BAD")    # CART: the cartridge build only (rom/v2_cart_home.asm)
  
  
@@ -549,21 +549,18 @@ index 8bc2150..915668f 100644
 2.43.0
 
 
-From 891b340f3e8e37b14d6bb0157c5af3008591b624 Mon Sep 17 00:00:00 2001
+From 35621cb82af1cf44d7e4bd4da6547cf87417f42a Mon Sep 17 00:00:00 2001
 From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 10:18:27 -0400
 Subject: [PATCH 2/2] Cartridge build: packages (program image format 2)
 
-The program image may carry a package after the bytecode (length LE16,
-0 = none, then the image). CART_LOAD copies it to EXTENSION_MODULE_BASE and
-sets V2_PACKAGE_LEN; CART_RUN calls its install entry, as LOAD "NAME" EXT
-does. The registry is cleared by the cold start, as on the IDE's checker,
-so the bytecode's package calls match.
+v2.1.2: the symbol-table init and the package install call move from
+CART_RUN (EXROM, which had 34 free bytes) into CART_LOAD (HOME).
 ---
  include/v2_cart.inc   |  5 ++++-
- rom/exrom_v2_cart.asm |  8 ++++++++
- rom/v2_cart_home.asm  | 21 +++++++++++++++++++--
- 3 files changed, 31 insertions(+), 3 deletions(-)
+ rom/exrom_v2_cart.asm | 10 +++++-----
+ rom/v2_cart_home.asm  | 32 +++++++++++++++++++++++++++++---
+ 3 files changed, 38 insertions(+), 9 deletions(-)
 
 diff --git a/include/v2_cart.inc b/include/v2_cart.inc
 index 085ed9c..dc949d3 100644
@@ -582,44 +579,66 @@ index 085ed9c..dc949d3 100644
      IFNDEF CART_IDENTITY
  CART_IDENTITY    EQU 0               ; the Makefile passes the release build's identity (cart target)
 diff --git a/rom/exrom_v2_cart.asm b/rom/exrom_v2_cart.asm
-index cef4b07..961aca9 100644
+index cef4b07..81d2592 100644
 --- a/rom/exrom_v2_cart.asm
 +++ b/rom/exrom_v2_cart.asm
-@@ -14,6 +14,12 @@ CART_RUN:
-     ld (SYM_END_V),hl
-     ld (hl),0
-     call CART_LOAD
-+    jr c,.bad
-+    ld hl,(V2_PACKAGE_LEN)       ; a package: its install entry registers its statements, as
-+    ld a,h                       ; LOAD "NAME" EXT does (the registry was cleared by the cold
-+    or l                         ; start, as on the IDE's checker, so the bytecode's calls match)
-+    call nz,EXTENSION_MODULE_BASE ; CF = the package refused to install
+@@ -9,11 +9,9 @@
+ ; own bytecode, so the image is copied again).
+ ; In: from V2_COLD_START / V2_EXROM_ENTRY (memory initialised, PAS_END = ARR2_BASE, depth 1).
+ CART_RUN:
+-    ld hl,PROG_AREA_START        ; an empty compile symbol table (ARR_RUN_BIND walks nothing, and
+-    ld (SYM_BASE_V),hl           ; VM_INIT puts the array arena just above it)
+-    ld (SYM_END_V),hl
+-    ld (hl),0
+-    call CART_LOAD
++    call CART_LOAD               ; HOME: empty compile symbol table, the image, the package install
++                                 ; (CF = refused). v2.1.2: moved there, the EXROM has no room for it
 +.bad:
      push af
      call V2_RESET_DISPLAY
      pop af
-@@ -26,3 +32,5 @@ CART_RUN:
+@@ -26,3 +24,5 @@ CART_RUN:
      call V2_SESSION_START        ; SESS_CODE_END = EMIT_PTR; VM_INIT; ARR_RUN_INIT
      call V2_COMPILE_RUN.base     ; VM_IP, CLS, VM_RUN, then the message / a key
      rst $00
 +
 +    ASSERT CART_PACKAGE_LEN == V2_PACKAGE_LEN
 diff --git a/rom/v2_cart_home.asm b/rom/v2_cart_home.asm
-index acf1cdd..0bc3ae5 100644
+index acf1cdd..9a0e2ee 100644
 --- a/rom/v2_cart_home.asm
 +++ b/rom/v2_cart_home.asm
-@@ -34,7 +34,9 @@ MATH_RND_SEED:
+@@ -34,9 +34,15 @@ MATH_RND_SEED:
  
  ; CART_LOAD -- map the program image (DOCK chunk 3), check it, copy it, unmap it. Called by CART_RUN
  ; (rom/exrom_v2_cart.asm). Copies SYM_COUNTS, the bytecode to VM_CODE_BASE, and sets EMIT_PTR to its
 -; end. CF = refused: another image format or ROM build, or a bad length. Interrupts are off while
 +; end; copies the package image (if any) to its window and sets V2_PACKAGE_LEN, as LOAD "NAME" EXT
-+; does before calling its install entry (CART_RUN calls it). CF = refused: another image format or
++; does, then calls its install entry itself (v2.1.2: CF = refused by the image or by the package). CF = refused: another image format or
 +; ROM build, or a bad length. Interrupts are off while
  ; chunk 3 is DOCK and on again at the end. Destroys AF, BC, DE, HL.
  CART_LOAD:
++    ld hl,PROG_AREA_START            ; an empty compile symbol table (ARR_RUN_BIND walks nothing, and
++    ld (SYM_BASE_V),hl               ; VM_INIT puts the array arena just above it)
++    ld (SYM_END_V),hl
++    ld (hl),0
      di
-@@ -77,7 +79,22 @@ CART_LOAD:
+     ld a,CART_HSR_LOAD
+     out (PORT_BANK_HOME),a
+@@ -44,7 +50,12 @@ CART_LOAD:
+     ld a,CART_HSR_RUN                ; (keeps CF)
+     out (PORT_BANK_HOME),a
+     ei
+-    ret
++    ret c
++    ld hl,(CART_PACKAGE_LEN)         ; a package: its install entry registers its statements, as
++    ld a,h                           ; LOAD "NAME" EXT does (the registry was cleared by the cold
++    or l                             ; start, as on the IDE's checker, so the bytecode's calls match)
++    ret z                            ; none (CF clear from the `or`)
++    jp EXTENSION_MODULE_BASE         ; CF = the package refused to install
+ .copy:
+     ld hl,CART_IMAGE
+     ld de,CART_SIGNATURE
+@@ -77,7 +88,22 @@ CART_LOAD:
      pop bc
      ld de,VM_CODE_BASE
      ldir

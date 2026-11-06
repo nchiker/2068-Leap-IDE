@@ -1,7 +1,7 @@
 /**
  * src/lang/basic/leap-keywords.js — GENERATED, do not edit.
  *
- * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.1.1-emu.1.
+ * tools/gen-leap-keywords.py from 2068-Leap docs/manual/03_keywords.md at v2.1.2-emu.1.
  * One entry per manual keyword heading: kind (function / statement /
  * operator / command / part of), package (null for core), syntax, the
  * individual forms, the description's first paragraph and the first example.
@@ -9,7 +9,7 @@
 
 "use strict";
 
-export const LEAP_MANUAL_REF = "v2.1.1-emu.1";
+export const LEAP_MANUAL_REF = "v2.1.2-emu.1";
 
 export const LEAP_KEYWORD_ENTRIES = {
   "ABS": {
@@ -374,7 +374,7 @@ export const LEAP_KEYWORD_ENTRIES = {
       "FREE()",
       "FREE(1)"
     ],
-    "desc": "FREE() is the number of bytes still free in the main memory pool, which the program text, the variables and the arrays share. FREE(1) is the number of bytes free in the 2 KB overflow area (segment 2) that arrays use when they do not fit in the main pool, and where the Array Store lives.",
+    "desc": "FREE() is the number of bytes still free in the main memory pool, which the program text, the variables and the arrays share. FREE(1) is the number of bytes free in the 7424-byte overflow area (segment 2) that arrays use when they do not fit in the main pool, and where the Array Store lives. It is 7424 on an empty machine.",
     "example": "PRINT FREE(1)\nDIM a(100)\nPRINT FREE(1)"
   },
   "GOTO": {
@@ -543,14 +543,17 @@ export const LEAP_KEYWORD_ENTRIES = {
   "LOAD": {
     "kind": "command",
     "package": null,
-    "syntax": "LOAD \"name\" LOAD \"\" LOAD \"name\" ARRAY array LOAD \"name\" EXT",
+    "syntax": "LOAD \"name\" LOAD \"\" LOAD \"name\" ARRAY array LOAD \"name\" EXT LOAD \"name\" CODE LOAD \"name\" CODE start LOAD \"name\" CODE start,length",
     "forms": [
       "LOAD \"name\"",
       "LOAD \"\"",
       "LOAD \"name\" ARRAY array",
-      "LOAD \"name\" EXT"
+      "LOAD \"name\" EXT",
+      "LOAD \"name\" CODE",
+      "LOAD \"name\" CODE start",
+      "LOAD \"name\" CODE start,length"
     ],
-    "desc": "Reads from tape what SAVE wrote: | Command | Loads | |---|---| | LOAD \"name\" | the program called name -- and, if it was saved with ALL, the variables and arrays that went with it | | LOAD \"\" | the next program on the tape, whatever its name | | LOAD \"name\" ARRAY a | one array, into the Array Store (the program is not touched) | | LOAD \"name\" EXT | a package (see Part 5) | basic ex=kw.load.1 PRINT \"from tape\"  tape e…",
+    "desc": "Reads from tape what SAVE wrote: | Command | Loads | |---|---| | LOAD \"name\" | the program called name -- and, if it was saved with ALL, the variables and arrays that went with it | | LOAD \"\" | the next program on the tape, whatever its name | | LOAD \"name\" ARRAY a | one array, into the Array Store (the program is not touched); an array of that name already in the store is replaced | | LOAD \"name\" EXT | a package (se…",
     "example": "PRINT \"from tape\""
   },
   "LOWER$": {
@@ -600,7 +603,7 @@ export const LEAP_KEYWORD_ENTRIES = {
     "forms": [
       "MODE m"
     ],
-    "desc": "Selects the video mode: MODE 0 is the normal mode and MODE 1 the TS2068's extended-colour mode (every row of eight pixels can have its own colours; the ROM's own source calls it \"High Resolution Graphics\", which it is not). Any other value is a run-time error. Needs the mode package. See Part 5.",
+    "desc": "Selects the video mode: MODE 0 is the normal mode and MODE 1 the TS2068's extended-colour mode (every row of eight pixels can have its own colours; the ROM's own source calls it \"High Resolution Graphics\", which it is not). Any other value is a run-time error.",
     "example": "MODE 1\nMODE 0\nPRINT \"back to normal\""
   },
   "MOVE": {
@@ -711,7 +714,7 @@ export const LEAP_KEYWORD_ENTRIES = {
       "PEEK(address)"
     ],
     "desc": "The byte (0 to 255) stored at an address (0 to 65535). Reading the ROM works; writing it (with POKE) does nothing.",
-    "example": "POKE 23296, 65\nPRINT PEEK(23296)\nPRINT PEEK(0)"
+    "example": "POKE 30720, 65\nPRINT PEEK(30720)\nPRINT PEEK(0)"
   },
   "PI": {
     "kind": "function",
@@ -751,7 +754,7 @@ export const LEAP_KEYWORD_ENTRIES = {
       "POKE address, value"
     ],
     "desc": "Stores a byte in memory: the low byte of value, so POKE a, 300 stores 44 and POKE a, -1 stores 255. A fraction is cut off. address is 0 to 65535; above that is a run-time error. Writing to the ROM does nothing.",
-    "example": "POKE 23296, 300\nPRINT PEEK(23296)\nPOKE 23296, -1\nPRINT PEEK(23296)"
+    "example": "POKE 30720, 300\nPRINT PEEK(30720)\nPOKE 30720, -1\nPRINT PEEK(30720)"
   },
   "PRINT": {
     "kind": "statement",
@@ -836,12 +839,13 @@ export const LEAP_KEYWORD_ENTRIES = {
   "SAVE": {
     "kind": "command",
     "package": null,
-    "syntax": "SAVE \"name\" SAVE \"name\" ALL SAVE \"name\" ARRAY array SAVE \"name\" EXT",
+    "syntax": "SAVE \"name\" SAVE \"name\" ALL SAVE \"name\" ARRAY array SAVE \"name\" EXT SAVE \"name\" CODE start,length",
     "forms": [
       "SAVE \"name\"",
       "SAVE \"name\" ALL",
       "SAVE \"name\" ARRAY array",
-      "SAVE \"name\" EXT"
+      "SAVE \"name\" EXT",
+      "SAVE \"name\" CODE start,length"
     ],
     "desc": "Writes to tape (or the emulator's tape output). name is up to 10 characters.",
     "example": "x = 5\ny$ = \"hello\"\nz = 2.5"
@@ -1003,8 +1007,8 @@ export const LEAP_KEYWORD_ENTRIES = {
     "forms": [
       "USR(address)"
     ],
-    "desc": "Runs the machine-code routine that starts at address, and gives its result as a number from 0 to 65535.",
-    "example": "REM machine code at 23296: LD HL,777 / RET\nPOKE 23296, 33\nPOKE 23297, 9\nPOKE 23298, 3\nPOKE 23299, 201\nPRINT USR(23296)"
+    "desc": "Runs the machine-code routine that starts at address, and gives its result as a number from 0 to 65535. A routine can be saved and loaded back with SAVE \"name\" CODE start,length and LOAD \"name\" CODE (see SAVE and LOAD).",
+    "example": "REM machine code at 30720: LD HL,777 / RET\nPOKE 30720, 33\nPOKE 30721, 9\nPOKE 30722, 3\nPOKE 30723, 201\nPRINT USR(30720)"
   },
   "VAL": {
     "kind": "function",
@@ -1019,9 +1023,12 @@ export const LEAP_KEYWORD_ENTRIES = {
   "VERIFY": {
     "kind": "command",
     "package": null,
-    "syntax": "VERIFY \"name\"",
+    "syntax": "VERIFY \"name\" VERIFY \"name\" CODE VERIFY \"name\" CODE start VERIFY \"name\" CODE start,length",
     "forms": [
-      "VERIFY \"name\""
+      "VERIFY \"name\"",
+      "VERIFY \"name\" CODE",
+      "VERIFY \"name\" CODE start",
+      "VERIFY \"name\" CODE start,length"
     ],
     "desc": "Compares the tape with what is in memory, without changing memory, and reports VERIFIED or VERIFY FAILED. VERIFY of a program saved with ALL also checks the saved variables, and, like SAVE ... ALL, takes about 2.4 seconds to get ready.",
     "example": "PRINT \"hello\"\nx = 7"
