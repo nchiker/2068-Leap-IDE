@@ -95,6 +95,18 @@ The Studio shows the plan and the byte budget; the programmer never writes a ban
 * **Art pipeline for the Studio:** image import with ordered/error-diffusion dither (Sierra-style) to 8x1 colour,
   with the two-colours-per-cell rule enforced and shown.
 
+## Roadmap and aspirations (owner, 2026-11-09)
+Order of games, each driving the language and runtime forward: **A Breakout** (done), **B shooter** (done, scrolling and
+music still open), **Blockfall** (falling-blocks puzzle; tests the tile engine, arrays and input; in progress), then
+**C platformer**, then the **ultimate goals**:
+* a **Commander Keen-style** smooth-scrolling platformer with big animated sprites (needs sprite frames, sprites over
+  16x16, a scrolling tile world; measured design in `arcade/spike/scroll/RESULTS.md`);
+* a **Doom-style** first-person game: realistically a **Wolfenstein-style raycaster** in a small window at a low frame
+  rate, with the game logic in Arcade BASIC and the raycaster as a hand-written runtime module linked in only for games
+  that use it (feasibility numbers in `arcade/spike/raycast/RESULTS.md`). Doom's own engine (BSP sectors, textured
+  floors and ceilings) is out of reach of a 3.5 MHz Z80.
+These are directions, not commitments: each gets a measured spike before it is promised.
+
 ## 4. Language sketch (provisional, for the owner to react to)
 
 Keep from Leap V2: assignment without `LET`, `IF`/`ELSE`/`ENDIF`, `FOR`/`NEXT`/`STEP`/`EXIT FOR`,

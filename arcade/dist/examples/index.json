@@ -1,0 +1,20 @@
+[
+ {
+  "id": "bounce",
+  "title": "Bounce",
+  "about": "A ball bouncing off the screen edges and a paddle the joystick moves. Keys: O P or the arrows move the paddle.",
+  "file": "bounce.leapgame"
+ },
+ {
+  "id": "breakout",
+  "title": "Breakout",
+  "about": "Bricks, bat and ball with text, tiles, collision and sound. Keys: O P or the arrows; fire (Space) serves.",
+  "file": "breakout.leapgame"
+ },
+ {
+  "id": "shooter",
+  "title": "Shooter",
+  "about": "A vertical shooter with pools of sprites, a scrolling-look sky map and sound. Keys: Q A O P or the arrows move; Space fires.",
+  "file": "shooter.leapgame"
+ }
+]

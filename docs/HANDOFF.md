@@ -137,6 +137,20 @@ complete). Plans: `docs/MULTI_LANGUAGE_PLAN.md`, `LEAP_FORTH_PLAN.md`,
 `LEAP_C_PLAN.md`. Forth's cartridge choices were made on 2026-11-01 (see F8 and the
 owner decisions below).
 
+### Studio (Leap Arcade Studio), slice S1a (2026-11-09, branch `arcade-m3`, not committed)
+
+`studio.html` + `studio.js` + `studio.css` is a second shell on the IDE's modules (not `ide.js`): project panel (files,
+assets), CodeMirror editor for the `arcade` language, TS2068 display with zoom, size panel, problems list, tabs
+Display | Symbols | Sprites. Open it with `python3 -m http.server 8080` and http://localhost:8080/studio.html. Design,
+file list, the emulator's `cartridgeOnly` / `runCartridge` change and the asset-editor host interface:
+[`docs/ARCADE_STUDIO.md`](ARCADE_STUDIO.md) ("As built", "Asset editor host interface"). Traps:
+`arcade/dist/` (runtime + examples) is committed because Pages has no build: after any runtime or example change run
+`node arcade/tools/publish-runtime.mjs` (`--check` reports a stale copy) or the Studio runs old code;
+`tools/stamp-modules.py` now stamps both pages (run it after any `.js` change); `arcade` is deliberately not in
+`PROFILES`; after a Run the stock ROM needs about 2 s to boot into the cartridge, and `V_TICKS` holds RAM-test garbage
+(>= 400 for the template) until the game zeroes it, which tests must allow for. Tests: `node tests/studio-smoke.mjs`,
+`node tests/arcade-project.mjs`.
+
 ## Owner decisions (keep them)
 
 - Leap is V2 (2.1.1-emu.1 now; 2.1.0-emu.1 and 2.0.2-emu.1 are still in the ROM table). V1 is irrelevant.

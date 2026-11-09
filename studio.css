@@ -1,0 +1,86 @@
+/* ================================================================
+   Leap Arcade Studio — layout additions to ide.css (studio.html loads both).
+   Colours come from the ide.css variables only, so both themes work.
+   ================================================================ */
+
+/* Left: the project */
+.panel-project { flex: 0 0 210px; min-width: 170px; background: var(--bg); }
+.project-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 12px; }
+.proj-section { padding: 0 0 6px; }
+.proj-title {
+  padding: 6px 12px 4px;
+  font: 700 10px var(--font-ui); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-muted);
+}
+.proj-list { list-style: none; }
+.proj-row {
+  display: flex; align-items: center; gap: 4px; padding: 3px 8px 3px 12px; cursor: pointer;
+  font: 12px var(--font-code); color: var(--fg);
+}
+.proj-row:hover { background: var(--bg-hover); }
+.proj-row.active { background: var(--hover-sel); box-shadow: inset 2px 0 0 var(--amber-fg); }
+.proj-row .proj-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-row .proj-meta { color: var(--fg-muted); font-size: 10px; }
+.proj-row.has-error .proj-name { color: var(--red-fg); }
+.proj-row .proj-act {
+  border: none; background: none; color: var(--fg-dim); cursor: pointer; font-size: 11px; padding: 0 2px; visibility: hidden;
+}
+.proj-row:hover .proj-act { visibility: visible; }
+.proj-row .proj-act:hover { color: var(--fg); }
+.proj-note { padding: 2px 12px 0; font-size: 10px; line-height: 1.4; color: var(--fg-muted); }
+.asset-group-head { display: flex; align-items: center; padding: 4px 8px 2px 12px; color: var(--fg-soft); font: 600 11px var(--font-ui); }
+.asset-group-head span.asset-count { margin-left: 4px; color: var(--fg-muted); font-weight: 400; }
+.asset-group-head .phbtn { margin-left: auto; }
+.asset-empty { padding: 1px 12px 4px 20px; font-size: 10px; color: var(--fg-dim); }
+
+/* Centre: the editor, with the problems list under it */
+.studio-root .panel-editor { min-width: 320px; }
+.problems {
+  flex: 0 0 auto; max-height: 28%; overflow-y: auto;
+  border-top: 1px solid var(--border); background: var(--bg-panel);
+  font: 11px var(--font-code);
+}
+.problems[hidden] { display: none; }
+.problem {
+  display: flex; gap: 8px; padding: 3px 12px; cursor: pointer; align-items: baseline;
+}
+.problem:hover { background: var(--bg-hover); }
+.problem .p-sev { font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: .05em; }
+.problem.error .p-sev { color: var(--red-fg); }
+.problem.warning .p-sev { color: var(--amber-fg); }
+.problem .p-where { color: var(--fg-muted); white-space: nowrap; }
+.problem .p-msg { color: var(--fg); }
+/* No debugger yet: the breakpoint gutter would do nothing */
+.studio-root .cm-breakpoint-gutter { display: none; }
+
+/* Right: display, symbols, asset editors */
+.panel-right { flex: 0 0 auto; min-width: 340px; background: var(--bg); }
+.panel-right .tab-body { flex: 1; min-height: 0; overflow-y: auto; }
+.panel-right .tab-body[hidden] { display: none; }
+.display-body { display: flex; flex-direction: column; }
+.display-body .emulator-body { flex: 0 0 auto; padding-bottom: 8px; }
+#display-btns[hidden] { display: none; }
+.asset-tool { padding: 0; }
+.asset-tool .tool-note { padding: 12px; }
+
+/* Size and budget */
+.sizes { padding: 8px 14px 14px; border-top: 1px solid var(--border); font: 11px var(--font-code); }
+.sizes-title { font: 700 10px var(--font-ui); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: 6px; }
+.size-bar { height: 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border); overflow: hidden; }
+.size-fill { height: 100%; width: 0; background: var(--green-hi); transition: width .2s; }
+.size-fill.warn { background: var(--amber-fg); }
+.size-fill.over { background: var(--red-fg); }
+.size-total { margin: 4px 0 6px; color: var(--fg); }
+.size-table { width: 100%; border-collapse: collapse; }
+.size-table td { padding: 1px 0; color: var(--fg-muted); }
+.size-table td:last-child { text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+
+/* Status bar: the first error is a link */
+.statusbar #sb-state.has-error { cursor: pointer; text-decoration: underline; }
+
+@media (max-width: 1100px) {
+  .panel-project { flex-basis: 170px; }
+}
+@media (max-width: 700px) {
+  .panel-project, .panel-right { flex: none; min-width: 0; }
+  .studio-root .panel-editor { height: 45vh; }
+}

@@ -1,0 +1,176 @@
+/**
+ * tests/arcade-project.mjs — src/arcade-project.js (the Leap Arcade Studio's project store), in Node. No browser.
+ *
+ *   node tests/arcade-project.mjs
+ *
+ * Validation and migration, the new-project template, the examples in arcade/dist/examples/, asset and file
+ * operations (the asset-editor host's calls), the multi-file source build and its line map, auto-save with a
+ * stand-in storage (and a storage that throws), and compiling projects when the runtime build is published.
+ */
+
+"use strict";
+
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import * as P from '../src/arcade-project.js';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+let failed = 0;
+function check(name, ok, detail = '') {
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
+  if (!ok) failed++;
+}
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// ── New project, validate, serialize ──
+const np = P.newProject('My Game');
+check('newProject: format 1, main.arc, a ball sprite, empty other kinds',
+  np.format === 1 && np.name === 'My Game' && P.MAIN_FILE in np.files && eq(P.listAssets(np, 'sprites'), ['ball']) &&
+  eq(P.listAssets(np, 'tilesets'), []) && eq(P.listAssets(np, 'sfx'), []) && eq(P.listAssets(np, 'maps'), []) && np.framerate === 30);
+let v = P.validateProject(np);
+check('a new project validates', v.ok && eq(v.project, np), v.errors?.join('; '));
+v = P.parseProject(P.serializeProject(np));
+check('serialize / parse round trip is lossless', v.ok && eq(v.project, np));
+check('projectFileName', P.projectFileName({ name: 'My Game!' }) === 'My_Game.leapgame' && P.projectFileName({ name: '  ' }) === 'game.leapgame');
+
+// ── Refusals ──
+const bad = (doc) => P.validateProject(doc);
+check('not an object / no format and no files are refused', !bad(null).ok && !bad([]).ok && !bad({}).ok && !bad('x').ok);
+check('a newer format is refused with a hint', /newer Studio/.test(bad({ format: 2, files: {} }).errors[0]));
+check('format 0 / junk format is refused', !bad({ format: 0, files: {} }).ok && !bad({ format: 'one', files: {} }).ok);
+check('no main.arc is refused', /no main\.arc/.test(bad({ format: 1, files: { 'a.arc': '' } }).errors.join()));
+check('a bad file name or non-text file is refused', !bad({ format: 1, files: { 'main.arc': 'x', '../x.arc': '' } }).ok && !bad({ format: 1, files: { 'main.arc': 5 } }).ok && !bad({ format: 1, files: { 'main.txt': 'x' } }).ok);
+check('a bad asset (shape, name, kind table) is refused with its path',
+  /assets\.sprites\.ball/.test(bad({ format: 1, files: { 'main.arc': '' }, assets: { sprites: { ball: { w: 8 } } } }).errors.join()) &&
+  /bad name/.test(bad({ format: 1, files: { 'main.arc': '' }, assets: { sprites: { '1x': np.assets.sprites.ball } } }).errors.join()) &&
+  !bad({ format: 1, files: { 'main.arc': '' }, assets: { sprites: [] } }).ok);
+// ── Migration / leniency ──
+const lean = P.validateProject({ files: { 'main.arc': 'a\r\nb' }, name: 5, framerate: 99 });
+check('a document without "format" but with files is taken as format 1; defaults and CRLF are fixed',
+  lean.ok && lean.project.format === 1 && lean.project.name === 'Untitled' && lean.project.framerate === 30 && lean.project.files['main.arc'] === 'a\nb' &&
+  lean.warnings.length === 2 && eq(Object.keys(lean.project.assets), P.ASSET_KINDS) && eq(lean.project.scenes, {}), lean.warnings.join('; '));
+check('unknown asset kinds are dropped with a warning', P.validateProject({ format: 1, files: { 'main.arc': '' }, assets: { widgets: {} } }).warnings.length === 1);
+check('parseProject: invalid JSON gives an error, not a throw', !P.parseProject('{nope').ok);
+
+// ── validateAsset ──
+const spr = np.assets.sprites.ball;
+check('validateAsset: sprite ok; wrong row count / hex / frames / phases refused',
+  P.validateAsset('sprites', spr) === null &&
+  /rows but h/.test(P.validateAsset('sprites', { ...spr, h: 9 })) &&
+  /hex/.test(P.validateAsset('sprites', { w: 8, h: 1, frames: [{ rows: [{ bits: 'ZZ' }] }] })) &&
+  P.validateAsset('sprites', { w: 8, h: 1, frames: [] }) !== null &&
+  P.validateAsset('sprites', { ...spr, phases: 3 }) !== null &&
+  P.validateAsset('sprites', { w: 16, h: 1, frames: [{ rows: [{ bits: 'FFFFF' }] }] }) !== null);
+check('validateAsset: the flat "rows" form is accepted too', P.validateAsset('sprites', { w: 8, h: 1, rows: [{ bits: '3C', mask: '3C' }] }) === null);
+check('validateAsset: tileset, map, sfx, unknown kind',
+  P.validateAsset('tilesets', { tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00' })) }] }) === null &&
+  P.validateAsset('tilesets', { tiles: [{ rows: [] }] }) !== null &&
+  P.validateAsset('maps', { w: 2, h: 2, cells: [0, 1, 2, 3] }) === null &&
+  P.validateAsset('maps', { w: 2, h: 2, cells: 'FF00FF00' }) === null &&
+  P.validateAsset('maps', { w: 2, h: 2, cells: [0] }) !== null &&
+  P.validateAsset('sfx', { ticks: [{ tone: 100, vol: 5 }] }) === null &&
+  P.validateAsset('sfx', { ticks: [{ tone: 5000 }] }) !== null &&
+  P.validateAsset('fonts', {}) !== null && P.validateAsset('sprites', 'x') !== null);
+
+// ── Asset operations (the host's calls) ──
+const p = P.newProject('Ops');
+const copy = P.getAsset(p, 'sprites', 'ball');
+copy.w = 99;
+check('getAsset returns a deep copy; absent -> null', P.getAsset(p, 'sprites', 'ball').w === 8 && P.getAsset(p, 'sprites', 'nope') === null && P.getAsset(p, 'fonts', 'x') === null);
+check('setAsset: new name, replace, deep copy in', (() => {
+  const a = P.getAsset(p, 'sprites', 'ball');
+  const r1 = P.setAsset(p, 'sprites', 'ball2', a); a.h = 5;
+  return r1.ok && P.getAsset(p, 'sprites', 'ball2').h === 8 && eq(P.listAssets(p, 'sprites'), ['ball', 'ball2']);
+})());
+check('setAsset refuses a bad name, kind and value without changing anything', (() => {
+  const before = JSON.stringify(p);
+  const r = [P.setAsset(p, 'sprites', '9x', spr), P.setAsset(p, 'sprites', 'a b', spr), P.setAsset(p, 'sprites', 'x'.repeat(32), spr), P.setAsset(p, 'nope', 'x', spr), P.setAsset(p, 'sprites', 'zz', { w: 3 })];
+  return r.every((x) => !x.ok && typeof x.error === 'string') && JSON.stringify(p) === before;
+})());
+check('listAssets is sorted case-insensitively', (() => {
+  const q = P.newProject();
+  for (const n of ['b', 'A', 'c']) P.setAsset(q, 'sprites', n, spr);
+  return eq(P.listAssets(q, 'sprites'), ['A', 'b', 'ball', 'c']);
+})());
+check('renameAsset: ok, keeps order of the table, refuses a clash (any case) and a bad name', (() => {
+  const q = P.newProject(); P.setAsset(q, 'sprites', 'other', spr);
+  const ok = P.renameAsset(q, 'sprites', 'ball', 'puck');
+  const clash = P.renameAsset(q, 'sprites', 'puck', 'OTHER');
+  const badn = P.renameAsset(q, 'sprites', 'puck', '1');
+  const none = P.renameAsset(q, 'sprites', 'zzz', 'y');
+  return ok.ok && !clash.ok && !badn.ok && !none.ok && eq(Object.keys(q.assets.sprites), ['puck', 'other']);
+})());
+check('deleteAsset', (() => { const q = P.newProject(); return P.deleteAsset(q, 'sprites', 'ball') && !P.deleteAsset(q, 'sprites', 'ball') && P.listAssets(q, 'sprites').length === 0; })());
+check('assetReferences finds the SPRITE lines naming an asset', (() => {
+  const q = P.newProject(); const refs = P.assetReferences(q, 'sprites', 'ball');
+  return refs.length === 1 && refs[0].file === 'main.arc' && refs[0].line === 5 && P.assetReferences(q, 'sprites', 'ghost').length === 0;
+})());
+
+// ── Files ──
+check('file operations: main.arc is protected; names are checked; rename keeps contents', (() => {
+  const q = P.newProject();
+  const a = P.setFile(q, 'lib.arc', 'REM lib'), b = P.setFile(q, 'bad name.arc', ''), c = P.setFile(q, 'x.txt', '');
+  const d = P.deleteFile(q, 'main.arc'), e = P.renameFile(q, 'main.arc', 'z.arc');
+  const f = P.renameFile(q, 'lib.arc', 'a.arc'), g = P.renameFile(q, 'a.arc', 'main.arc');
+  return a.ok && !b.ok && !c.ok && !d.ok && !e.ok && f.ok && !g.ok && q.files['a.arc'] === 'REM lib' && P.deleteFile(q, 'a.arc').ok && !P.deleteFile(q, 'a.arc').ok;
+})());
+
+// ── Multi-file source ──
+const mf = P.newProject();
+mf.files = { 'main.arc': 'GAME "x"\nFRAMERATE 30', 'zeta.arc': 'REM z1\nREM z2\n', 'Alpha.arc': 'REM a1' };
+const src = P.buildSource(mf);
+check('buildSource: main.arc first, the rest A to Z (case-insensitive); each file ends in a newline',
+  eq(src.order, ['main.arc', 'Alpha.arc', 'zeta.arc']) && src.text === 'GAME "x"\nFRAMERATE 30\nREM a1\nREM z1\nREM z2\n', JSON.stringify(src.text));
+check('buildSource: lineMap sends each joined line back to its file and line',
+  eq(src.lineMap, [{ file: 'main.arc', line: 1 }, { file: 'main.arc', line: 2 }, { file: 'Alpha.arc', line: 1 }, { file: 'zeta.arc', line: 1 }, { file: 'zeta.arc', line: 2 }]));
+check('locate maps a diagnostic and clamps a line past the end',
+  P.locate(src.lineMap, { line: 4, col: 2, message: 'm' }).file === 'zeta.arc' && P.locate(src.lineMap, { line: 4 }).line === 1 && P.locate(src.lineMap, { line: 99 }).file === 'zeta.arc');
+
+// ── Auto-save ──
+const store = new Map();
+const fake = { getItem: (k) => store.get(k) ?? null, setItem: (k, x) => { store.set(k, x); } };
+check('storeProject / loadProject round trip under leap-studio.project', P.storeProject(np, fake) && store.has('leap-studio.project') && eq(P.loadProject(fake), np));
+store.set('leap-studio.project', '{broken');
+check('loadProject: damaged data -> null', P.loadProject(fake) === null);
+store.set('leap-studio.project', JSON.stringify({ format: 9, files: {} }));
+check('loadProject: unreadable (newer) format -> null', P.loadProject(fake) === null);
+const throwing = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('quota'); } };
+check('blocked or full storage never throws', P.loadProject(throwing) === null && P.storeProject(np, throwing) === false && P.loadProject(null) === null && P.storeProject(np, null) === false);
+check('no storage at all (Node): loadProject / storeProject are harmless', P.loadProject() === null && P.storeProject(np) === false);
+
+// ── The published examples and the template compile ──
+const dist = ROOT + 'arcade/dist/';
+if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.json')) {
+  const { compile } = await import('../src/lang/arcade/arcade-compile.js');
+  const runtime = JSON.parse(readFileSync(dist + 'v2/runtime.json', 'utf8'));
+  const image = new Uint8Array(readFileSync(dist + 'v2/runtime.bin'));
+  const build = (proj) => { const s = P.buildSource(proj); const r = compile(s.text, { runtime, image, assets: proj.assets }); return { ...r, lineMap: s.lineMap }; };
+  const r0 = build(np);
+  check('the new-project template compiles with 0 errors on the v2 runtime', r0.errors.length === 0 && !!r0.dck, r0.errors.map((e) => e.message).join('; '));
+  const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
+  check('the examples index lists bounce, breakout, shooter', eq(index.map((e) => e.id), ['bounce', 'breakout', 'shooter']));
+  for (const ex of index) {
+    const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
+    const res = doc.ok ? build(doc.project) : null;
+    check(`example ${ex.id}: a valid project that compiles with 0 errors`, doc.ok && res.errors.length === 0 && !!res.dck, doc.ok ? res.errors.map((e) => e.message).join('; ') : doc.errors.join('; '));
+    // its source and assets are those of arcade/examples/
+    const arc = readFileSync(ROOT + `arcade/examples/${ex.id}.arc`, 'utf8').replace(/\r\n?/g, '\n');   // (the sources have CRLF line ends)
+    const assets = JSON.parse(readFileSync(ROOT + `arcade/examples/${ex.id}.assets.json`, 'utf8'));
+    check(`example ${ex.id}: identical to arcade/examples/${ex.id}.arc and its assets`, doc.ok && doc.project.files['main.arc'] === arc && eq(doc.project.assets.sprites, assets.sprites ?? {}) && eq(doc.project.assets.sfx, assets.sfx ?? {}));
+  }
+  // an error in the second file comes back with that file's name and line
+  const two = P.newProject();
+  P.setFile(two, 'lib.arc', 'PROC helper(a):\n  a = = 1\nENDP\n');
+  const r2 = build(two);
+  const loc = r2.errors.length ? P.locate(r2.lineMap, r2.errors[0]) : null;
+  check('a compile error in lib.arc maps back to lib.arc, line 2', loc && loc.file === 'lib.arc' && loc.line === 2, JSON.stringify(loc));
+  // a missing asset is an error naming the asset
+  const miss = P.newProject(); P.deleteAsset(miss, 'sprites', 'ball');
+  const r3 = build(miss);
+  check('a SPRITE whose asset is missing from the project is an error', r3.errors.some((e) => /ball/.test(e.message)), r3.errors.map((e) => e.message).join('; '));
+} else {
+  console.log('SKIP  compiling the template and the examples: arcade/dist/ is not published (node arcade/tools/publish-runtime.mjs)');
+}
+
+console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
+process.exit(failed ? 1 : 0);

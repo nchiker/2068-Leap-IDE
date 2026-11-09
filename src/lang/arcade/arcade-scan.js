@@ -1,0 +1,143 @@
+/**
+ * src/lang/arcade/arcade-scan.js — what an Arcade program defines, and block structure (pure; no DOM, no CodeMirror).
+ *
+ *   scanArcade(text)      -> {assets, scenes, procs, fns, vars}  from the parser's AST (never throws)
+ *   blockLines(lines)     -> {depth, dedent, blocks}  indentation and fold ranges by the block words
+ *   inputHints(text)      -> string[]  the keys / joysticks a program reads, for the Studio's hint line
+ *
+ * Positions: `line` is 1-based, `col` 0-based (the parser's).
+ */
+
+"use strict";
+
+import { parse, tokenize } from './arcade-parse.js';
+
+/**
+ * @returns {{
+ *   assets: {kind: string, name: string, asset: string, count: number|null, line: number, col: number}[],
+ *   scenes: {name: string, line: number, col: number}[],
+ *   procs:  {name: string, param: string|null, scene: string|null, line: number, col: number}[],
+ *   fns:    {name: string, param: string, line: number, col: number}[],
+ *   vars:   {name: string, size: number|null, scene: string|null, line: number, col: number}[],
+ * }}
+ */
+export function scanArcade(text) {
+  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [] };
+  let ast;
+  try { ast = parse(text).ast; } catch { return out; }
+  const addDecls = (decls, scene) => {
+    for (const d of decls ?? []) {
+      if (d.type === 'Dim') {
+        for (const it of d.items ?? []) out.vars.push({ name: it.name, size: it.size ?? null, scene, line: it.line, col: it.col });
+      } else if (d.type === 'DefFn') {
+        const p = d.namePos ?? d;
+        out.fns.push({ name: d.name, param: d.param ?? '', line: p.line, col: p.col });
+      }
+    }
+  };
+  const addProcs = (procs, scene) => {
+    for (const p of procs ?? []) {
+      const at = p.namePos ?? p;
+      out.procs.push({ name: p.name, param: p.param ?? null, scene, line: at.line, col: at.col });
+    }
+  };
+  for (const a of ast.assets ?? []) {
+    const at = a.namePos ?? a;
+    out.assets.push({ kind: String(a.kind).toUpperCase(), name: a.name, asset: a.asset, count: a.count ?? null, line: at.line, col: at.col });
+  }
+  addDecls(ast.decls, null);
+  addProcs(ast.procs, null);
+  for (const s of ast.scenes ?? []) {
+    const at = s.namePos ?? s;
+    out.scenes.push({ name: s.name, line: at.line, col: at.col });
+    addDecls(s.decls, s.name);
+    addProcs(s.procs, s.name);
+  }
+  return out;
+}
+
+// ── Block structure ──────────────────────────────────────────────────────────────────────────────────────────
+
+const OPEN = new Map([['IF', 1], ['FOR', 1], ['WHILE', 1], ['PROC', 1], ['SCENE', 1], ['SELECT', 2]]);
+const CLOSE = new Map([['ENDIF', 1], ['NEXT', 1], ['WEND', 1], ['ENDP', 1], ['ENDSCENE', 1], ['ENDSEL', 2]]);
+const MID = new Set(['ELSE', 'CASE']);
+
+const tokenCache = new Map();
+/** Keyword words of one line, upper case, in order, with the words that only look like block words left out. */
+function lineWords(line) {
+  let hit = tokenCache.get(line);
+  if (hit) return hit;
+  const toks = tokenize(line).filter((t) => t.type !== 'newline' && t.type !== 'eof');
+  hit = [];
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.type === 'comment') break;
+    if (t.type !== 'keyword') continue;
+    const prev = toks[i - 1];
+    const prevWord = prev && prev.type === 'keyword' ? prev.value : null;
+    if ((t.value === 'FOR' || t.value === 'WHILE') && prevWord === 'EXIT') continue;     // EXIT FOR / EXIT WHILE
+    if (t.value === 'CASE' && prevWord === 'SELECT') continue;                           // SELECT CASE
+    if (t.value === 'ELSE' && prevWord === 'CASE') continue;                             // CASE ELSE
+    if (t.value === 'SCENE' && prevWord === 'ENTER') continue;                           // (ENTER name)
+    hit.push({ word: t.value, from: t.col, to: t.end, first: i === 0 });
+  }
+  if (tokenCache.size > 4000) tokenCache.clear();
+  tokenCache.set(line, hit);
+  return hit;
+}
+
+/**
+ * Block structure of a program. `depth[i]` = the indent level of line i's body (levels, not columns); `dedent[i]`
+ * = 1 when the line itself sits one level out (it starts with a closer, ELSE or CASE; ENDSEL two, see below).
+ * `blocks` = [{open: line0, close: line0 | null, word}] for folding.
+ */
+export function blockLines(lines) {
+  const depth = [], dedent = [], blocks = [], stack = [];
+  let d = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const words = lineWords(lines[i]);
+    const first = words[0]?.first ? words[0].word : null;
+    let own = 0;
+    if (first && CLOSE.has(first)) own = CLOSE.get(first);
+    else if (first && MID.has(first)) own = 1;
+    // net change over the line
+    let delta = 0;
+    for (const w of words) {
+      if (OPEN.has(w.word)) {
+        delta += OPEN.get(w.word);
+        stack.push({ open: i, close: null, word: w.word, levels: OPEN.get(w.word) });
+      } else if (CLOSE.has(w.word)) {
+        delta -= CLOSE.get(w.word);
+        const b = stack.pop();
+        if (b) { b.close = i; blocks.push(b); }
+      }
+    }
+    depth.push(Math.max(0, d + delta));
+    dedent.push(own);
+    d = Math.max(0, d + delta);
+  }
+  for (const b of stack) blocks.push(b);
+  return { depth, dedent, blocks };
+}
+
+/** The indent level (in levels) line `n` should have: the depth before it, less its own dedent. */
+export function indentLevel(structure, n) {
+  const before = n === 0 ? 0 : structure.depth[n - 1];
+  return Math.max(0, before - structure.dedent[n]);
+}
+
+// ── Input hints ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/** What the program reads from the player: ["Joystick 1 (arrow keys + Space here)", "Keys: Q A O P Space"]. */
+export function inputHints(text) {
+  const hints = [];
+  if (/\bSTICK\s*\(\s*1\s*\)/i.test(text) || /\bSTICK\s*\(/i.test(text)) hints.push('Joystick: arrow keys, Space = fire');
+  const keys = [];
+  for (const m of text.matchAll(/\bKEYDOWN\s*\(\s*(?:"(.)"|(\d+))\s*\)/gi)) {
+    const k = m[1] !== undefined ? m[1].toUpperCase() : (Number(m[2]) === 32 ? ' ' : Number(m[2]) === 13 ? 'ENTER' : String.fromCharCode(Number(m[2])));
+    const label = k === ' ' ? 'Space' : k;
+    if (!keys.includes(label)) keys.push(label);
+  }
+  if (keys.length) hints.push(`Keys: ${keys.join(' ')}`);
+  return hints;
+}

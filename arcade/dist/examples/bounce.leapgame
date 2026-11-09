@@ -1,0 +1,101 @@
+{
+ "format": 1,
+ "name": "Bounce",
+ "framerate": 30,
+ "files": {
+  "main.arc": "REM Bounce: a ball bouncing off the screen edges and a paddle the joystick moves along the bottom.\nREM Arcade v0 subset. Assets (ball, paddle) are in bounce.assets.json.\nGAME \"bounce\"\nFRAMERATE 30\n\nSPRITE ball = \"ball\"\nSPRITE paddle = \"paddle\"\n\nSCENE play\n  DIM bx, by, dx, dy, px\n\n  PROC INIT():\n    bx = 120\n    by = 60\n    dx = 2\n    dy = 2\n    px = 112\n    SHOW ball AT bx, by\n    SHOW paddle AT px, 176\n  ENDP\n\n  PROC FRAME():\n    REM joystick 1: bit 2 = left, bit 3 = right (direction bits 0-3, fire = 16)\n    IF KEYDOWN(\"O\") OR BIT(STICK(1), 2) THEN\n      px = px - 4\n    ENDIF\n    IF KEYDOWN(\"P\") OR BIT(STICK(1), 3) THEN\n      px = px + 4\n    ENDIF\n    IF px < 0 THEN\n      px = 0\n    ENDIF\n    IF px > 224 THEN\n      px = 224\n    ENDIF\n\n    bx = bx + dx\n    by = by + dy\n    IF bx < 0 THEN\n      bx = 0\n      dx = -dx\n    ENDIF\n    IF bx > 232 THEN\n      bx = 232\n      dx = -dx\n    ENDIF\n    IF by < 0 THEN\n      by = 0\n      dy = -dy\n    ENDIF\n    REM the paddle catches the ball when it falls onto it; otherwise the ball bounces off the bottom edge\n    IF by >= 168 AND dy > 0 THEN\n      IF bx + 8 > px AND bx < px + 16 THEN\n        by = 168\n        dy = -2\n      ENDIF\n    ENDIF\n    IF by >= 184 THEN\n      by = 184\n      dy = -2\n    ENDIF\n\n    SHOW ball AT bx, by\n    SHOW paddle AT px, 176\n  ENDP\nENDSCENE\n"
+ },
+ "assets": {
+  "sprites": {
+   "ball": {
+    "w": 8,
+    "h": 8,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "mask": "3C"
+       },
+       {
+        "bits": "7E",
+        "mask": "7E"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "7E",
+        "mask": "7E"
+       },
+       {
+        "bits": "3C",
+        "mask": "3C"
+       }
+      ]
+     }
+    ]
+   },
+   "paddle": {
+    "w": 16,
+    "h": 8,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "FFFF",
+        "mask": "FFFF"
+       },
+       {
+        "bits": "C003",
+        "mask": "C003"
+       },
+       {
+        "bits": "C003",
+        "mask": "C003"
+       },
+       {
+        "bits": "C003",
+        "mask": "C003"
+       },
+       {
+        "bits": "C003",
+        "mask": "C003"
+       },
+       {
+        "bits": "C003",
+        "mask": "C003"
+       },
+       {
+        "bits": "C003",
+        "mask": "C003"
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "tilesets": {},
+  "maps": {},
+  "sfx": {},
+  "music": {}
+ },
+ "scenes": {}
+}
