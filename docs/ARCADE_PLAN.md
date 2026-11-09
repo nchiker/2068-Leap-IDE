@@ -105,6 +105,13 @@ music still open), **Blockfall** (falling-blocks puzzle; tests the tile engine, 
   rate, with the game logic in Arcade BASIC and the raycaster as a hand-written runtime module linked in only for games
   that use it (feasibility numbers in `arcade/spike/raycast/RESULTS.md`). Doom's own engine (BSP sectors, textured
   floors and ceilings) is out of reach of a 3.5 MHz Z80.
+Measured so far (TSRun, hand-written Z80, pixel-exact against JS references; nothing on real hardware yet):
+* **Scrolling** (`arcade/spike/scroll/RESULTS.md`): pre-shifted tile tables repaint a 24x16-cell window (192x128 px) every
+  tick in about 109k T = 3 refreshes (20 fps) with room for about 6 sprites; the full 32x24 screen is about 12-15 fps; the
+  tables can live in cartridge ROM. Parallax measurements are in progress (`arcade/spike/scroll/parallax/`).
+* **Raycasting** (`arcade/spike/raycast/RESULTS.md`): a 128x96 window with 4-pixel columns runs at 20 ticks/s, with
+  2-pixel columns at 12-15; 96x64 with 2-pixel columns at 15; flat-shaded walls only (textured columns would be about 10x
+  slower); one small blocky sprite at 20 ticks/s. So: a Wolfenstein / Catacomb-class game is realistic; Doom proper is not.
 These are directions, not commitments: each gets a measured spike before it is promised.
 
 ## 4. Language sketch (provisional, for the owner to react to)
