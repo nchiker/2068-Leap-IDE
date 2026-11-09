@@ -128,14 +128,14 @@ try {
   // ── Examples ──
   await evaluate("window.confirm = () => true");
   const names = {};
-  for (const id of ['bounce', 'breakout', 'shooter']) {
+  for (const id of ['bounce', 'breakout', 'blockfall', 'shooter']) {   // the shooter last: the steps below run it
     await evaluate("document.getElementById('btn-examples').click()");
     await waitFor(`document.querySelector('#examples-menu .menu-item[data-example="${id}"]')`, 5000);
     await evaluate(`document.querySelector('#examples-menu .menu-item[data-example="${id}"]').click()`);
     const r = await waitFor(`leapStudio.project.name.toLowerCase() === '${id}' && leapStudio.lastCompile && leapStudio.lastCompile.ok !== undefined && ({ ok: leapStudio.lastCompile.ok, errors: leapStudio.lastCompile.errors.length, bytes: leapStudio.lastCompile.usage?.total })`, 15000);
     names[id] = r;
   }
-  check('the three examples open and compile with 0 errors', Object.values(names).every((r) => r && r.ok && r.errors === 0), JSON.stringify(names));
+  check('the four examples open and compile with 0 errors', Object.values(names).every((r) => r && r.ok && r.errors === 0), JSON.stringify(names));
   await evaluate("document.getElementById('btn-run').click()");
   const sh = await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 20 && leapStudio.ticks() < 400 && leapStudio.ticks()', 25000);
   check('the shooter example runs on the TS2068', !!sh, `tick ${sh}`);

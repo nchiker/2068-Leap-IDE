@@ -16,5 +16,11 @@
   "title": "Shooter",
   "about": "A vertical shooter with pools of sprites, a scrolling-look sky map and sound. Keys: Q A O P or the arrows move; Space fires.",
   "file": "shooter.leapgame"
+ },
+ {
+  "id": "blockfall",
+  "title": "Blockfall",
+  "about": "A falling-blocks puzzle: tiles and text only, no sprites. Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.",
+  "file": "blockfall.leapgame"
  }
 ]

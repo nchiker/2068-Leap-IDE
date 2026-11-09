@@ -23,6 +23,7 @@ const EXAMPLES = [
   { id: 'bounce', title: 'Bounce', about: 'A ball bouncing off the screen edges and a paddle the joystick moves. Keys: O P or the arrows move the paddle.' },
   { id: 'breakout', title: 'Breakout', about: 'Bricks, bat and ball with text, tiles, collision and sound. Keys: O P or the arrows; fire (Space) serves.' },
   { id: 'shooter', title: 'Shooter', about: 'A vertical shooter with pools of sprites, a scrolling-look sky map and sound. Keys: Q A O P or the arrows move; Space fires.' },
+  { id: 'blockfall', title: 'Blockfall', about: 'A falling-blocks puzzle: tiles and text only, no sprites. Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.' },
 ];
 
 let differs = 0;
