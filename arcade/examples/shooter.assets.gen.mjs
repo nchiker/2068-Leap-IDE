@@ -56,8 +56,8 @@ const tileRows = (bytes, ink, paper = 0, bright = 1) => ({ rows: bytes.map((b) =
 const quad = (rows16, qx, qy) => rows16.slice(qy * 8, qy * 8 + 8).map((r) => parseInt([...r.slice(qx * 8, qx * 8 + 8)].map((c) => (c === '#' ? '1' : '0')).join(''), 2));
 const tiles = [
   tileRows([0, 0, 0, 0, 0, 0, 0, 0], 7, 0, 1),                    // 0 empty sky
-  tileRows([0, 0, 0, 0, 0, 0x04, 0, 0], 7, 0, 0),                 // 1 dim star
-  tileRows([0, 0, 0x20, 0, 0, 0, 0, 0], 7, 0, 0),                 // 2 dim star
+  tileRows([0, 0, 0, 0, 0, 0x04, 0, 0], 1, 0, 1),                 // 1 dim star (blue; BRIGHT stays 1 so the paper is the same black as every other cell: bright black and normal black differ on some displays)
+  tileRows([0, 0, 0x20, 0, 0, 0, 0, 0], 1, 0, 1),                 // 2 dim star (blue, bright: see tile 1)
   tileRows([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], 7, 0, 1),           // 3 bright star
 ];
 const EXP_INK = [7, 6, 2];
