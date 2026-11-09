@@ -424,7 +424,7 @@ const GAME = (top, body, decl = 'DIM a, b') => `GAME "t"\nFRAMERATE 30\n${top}SC
   const v1ok = compileM(GAME('SPRITE p = "ball"\nSPRITE q = "bat"\n', '    SHOW p AT 1, 1\n    SHOW q AT 2, 2\n    a = HIT(p, q)'), ASSETS, mockRuntime(1));
   check_('v1 runtime: an ordinary game still gets the 14-byte header and 6-byte descriptors', v1ok.errors.length === 0 && v1ok.gen.headerLen === 14 && v1ok.gen.descLen === 6 && v1ok.memory[0x8006] === 0x0E, errText(v1ok));
   // the v2 path with a v0/v1 program: same behaviour as the interpreter
-  const ex = readFileSync(join(ROOT, 'arcade/examples/breakout.arc'), 'utf8'), exAssets = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/breakout.assets.json'), 'utf8'));
+  const ex = readFileSync(join(ROOT, 'arcade/tests/fixtures/breakout-v1.arc'), 'utf8'), exAssets = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/breakout-v1.assets.json'), 'utf8'));
   const rb = compileM(ex, exAssets);
   check_('breakout.arc (a v1 game) also compiles for the v2 runtime', rb.errors.length === 0, errText(rb));
   if (rb.errors.length === 0) {
@@ -1085,6 +1085,26 @@ if (existsSync(RT_JSON)) {
 } else {
   console.log('\nR. End-to-end tests on the real v2 runtime: PENDING (arcade/build/v2/runtime.json does not exist yet).');
   console.log('   Build it (arcade/runtime/v2/) and run:  node tests/arcade-m4.mjs');
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 9. The playable examples breakout.arc and bounce.arc (v2 runtime, keyboard O / P / space and joystick): compile clean, and 240
+//    ticks of a scripted player on the mock match the interpreter (the paddle moves with the keys and with the stick).
+// ---------------------------------------------------------------------------------------------------------------------
+console.log('\n9. Examples breakout.arc and bounce.arc (v2): keyboard and joystick');
+for (const name of ['breakout', 'bounce']) {
+  const src = readFileSync(join(ROOT, `arcade/examples/${name}.arc`), 'utf8');
+  const assets = JSON.parse(readFileSync(join(ROOT, `arcade/examples/${name}.assets.json`), 'utf8'));
+  const r = compileM(src, assets);
+  check_(`${name}.arc compiles for the v2 runtime with no errors and no warnings`, r.errors.length === 0 && r.warnings.length === 0, errText(r) + ' ' + r.warnings.map((w) => w.message).join(' | '));
+  const keys = (t) => (t >= 20 && t < 60 ? [79] : t >= 80 && t < 140 ? [80] : t >= 200 ? [32] : []);   // O, then P, then space
+  const stick = (t) => (t >= 150 && t < 190 ? 4 : 0);                                                      // joystick left
+  const want = interpV2(src, 240, { assets, keys: (t, c) => keys(t).includes(c), stick });
+  const px = (t) => want.ticks[t - 1].vars.PX;
+  check_(`${name}.arc: the paddle moves left with O, right with P and left with the joystick`, px(55) < px(21) && px(135) > px(85) && px(185) < px(152), `${px(21)} ${px(55)} ${px(85)} ${px(135)} ${px(152)} ${px(185)}`);
+  const got = runMock(r, { ticks: 240, stick, keys });
+  const d = diffRun(got, want, ctxFor(src, assets, []));
+  check_(`${name}.arc: 240 ticks on the mock match the interpreter`, d === null, d ?? '');
 }
 
 console.log(`\n${failed ? 'FAIL' : 'PASS'}: arcade-m4 (${passed} checks passed, ${failed} failed${notes ? `, ${notes} notes` : ''})`);

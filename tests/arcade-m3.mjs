@@ -10,7 +10,7 @@
 //   4  differential games on a MOCK runtime (v1 routines implemented in JavaScript from the contract, the v0 arithmetic and
 //      SHOW / HIDE in Z80) vs the reference interpreter: per tick the cell map and attribute map, text cursor and
 //      attribute, SPR_TAB, every variable, V_SFX_ACTIVE and AY_SHADOW
-//   5  the example arcade/examples/breakout.arc: compiles, size, runs on the mock
+//   5  the example arcade/tests/fixtures/breakout-v1.arc: compiles, size, runs on the mock
 //   R  the same games on the REAL v1 runtime (arcade/build/v1/runtime.json), booted from the DCK on a stock TS2068
 //
 // ── Decisions where docs/ARCADE_RUNTIME_API_V1.md is silent (compiler, interpreter and the mock agree on these) ──────
@@ -910,9 +910,9 @@ for (const g of PROBES) {
 // =================================================================================================================
 // 5. The example game
 // =================================================================================================================
-console.log('\n5. Example: arcade/examples/breakout.arc');
+console.log('\n5. Example: arcade/tests/fixtures/breakout-v1.arc');
 const EX_STICK = (t) => (t < 700 ? 8 : t % 30 < 3 ? 16 : 0);
-const EX_SRC = join(ROOT, 'arcade/examples/breakout.arc'), EX_ASSETS = join(ROOT, 'arcade/examples/breakout.assets.json');
+const EX_SRC = join(ROOT, 'arcade/tests/fixtures/breakout-v1.arc'), EX_ASSETS = join(ROOT, 'arcade/tests/fixtures/breakout-v1.assets.json');
 let exampleSrc = null, exampleAssets = null;
 if (existsSync(EX_SRC) && existsSync(EX_ASSETS)) {
   exampleSrc = readFileSync(EX_SRC, 'utf8'); exampleAssets = JSON.parse(readFileSync(EX_ASSETS, 'utf8'));

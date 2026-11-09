@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leap Arcade Studio</title>
+  <link rel="stylesheet" href="ide.css">
+  <link rel="stylesheet" href="studio.css">
+  <script>
+    // The theme before the first paint, so a light theme never flashes dark.
+    // Same key and values as ide.html / ide.js "Theme": the choice is shared between the two pages.
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('leap-ide.theme'); } catch (e) { /* storage blocked */ }
+      if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+    // src/editor.js starts in this language (the Studio's editor profile, src/lang/editors.js STUDIO_EDITORS).
+    window.LEAP_EDITOR_LANGUAGE = 'arcade';
+  </script>
+</head>
+<body>
+
+<div class="ide-root studio-root">
+
+  <!-- ═══ TOOLBAR ══════════════════════════════════════════════════ -->
+  <header class="toolbar">
+    <div class="toolbar-logo">
+      <span class="logo-icon">⬡</span>
+      <span class="logo-name">Leap Arcade Studio</span>
+      <span class="logo-tag">TS2068</span>
+    </div>
+
+    <div class="toolbar-file">
+      <span id="project-name" title="Click to rename the project">Untitled</span><span id="dirty-mark" title="Not saved to a file" hidden> •</span>
+      <button class="phbtn" id="btn-new"  title="New project">New</button>
+      <button class="phbtn" id="btn-open" title="Open a .leapgame project (or add a .arc source file) (Ctrl+O)">Open</button>
+      <span class="menu-anchor">
+        <button class="phbtn" id="btn-examples" title="Open an example game" aria-haspopup="menu" aria-expanded="false">Examples ▾</button>
+        <div class="menu" id="examples-menu" role="menu" hidden></div>
+      </span>
+      <button class="phbtn" id="btn-save" title="Download the project as a .leapgame file (Ctrl+S)">Save</button>
+      <input type="file" id="file-input" accept=".leapgame,.json,.arc" hidden>
+    </div>
+
+    <div class="toolbar-actions">
+      <button id="btn-run"  class="btn btn-run"  title="Compile and run (F5)" disabled>▶ Run</button>
+      <button id="btn-stop" class="btn btn-stop" title="Stop (F6)" disabled>■ Stop</button>
+      <button id="btn-dck"  class="btn"          title="Download the game as a cartridge (.dck) for a stock TS2068" disabled>⬇ DCK</button>
+      <button id="btn-help" class="btn"          title="Words, keys and tips (F1)">? Help</button>
+      <button id="btn-theme" class="btn btn-theme" title="Switch between light and dark">☾</button>
+    </div>
+
+    <div class="status-chip" id="status-chip">
+      <span class="status-dot"></span>
+      <span id="status-text">Starting…</span>
+    </div>
+  </header>
+
+  <!-- ═══ WORKSPACE ════════════════════════════════════════════════ -->
+  <div class="workspace">
+
+    <!-- ── PROJECT PANEL ──────────────────────── -->
+    <aside class="panel panel-project" id="project-panel">
+      <div class="panel-header">
+        <span>Project</span>
+        <div class="panel-header-btns">
+          <button class="phbtn" id="btn-add-file" title="Add a source file">+ File</button>
+        </div>
+      </div>
+      <div class="project-body">
+        <div class="proj-section">
+          <div class="proj-title">Source files</div>
+          <ul class="proj-list" id="file-list"></ul>
+          <p class="proj-note" id="file-order">main.arc is compiled first, then the other files A to Z.</p>
+        </div>
+        <div class="proj-section">
+          <div class="proj-title">Assets</div>
+          <div id="asset-groups"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── EDITOR PANEL ───────────────────────── -->
+    <div class="panel panel-editor" id="editor-panel">
+      <div class="panel-header">
+        <span id="editor-title">main.arc</span>
+        <div class="panel-header-btns">
+          <button class="phbtn edbtn" id="btn-undo"  title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button class="phbtn edbtn" id="btn-redo"  title="Redo (Ctrl+Y)" disabled>Redo</button>
+          <span class="phbtn-sep"></span>
+          <button class="phbtn edbtn" id="btn-find"  title="Find and replace (Ctrl+F, Ctrl+H)">Find</button>
+          <button class="phbtn edbtn" id="btn-tidy"  title="Indent the file by its blocks (Shift+Alt+F)">Tidy</button>
+        </div>
+      </div>
+      <!-- CodeMirror mounts here -->
+      <div id="editor-mount" class="editor-mount"></div>
+      <div class="problems" id="problems" hidden></div>
+    </div>
+
+    <!-- ── RIGHT PANEL: display, tools ────────── -->
+    <div class="panel panel-right" id="right-panel">
+      <div class="panel-header">
+        <div class="panel-tabs" role="tablist">
+          <button class="panel-tab active" data-tab="display">Display</button>
+          <button class="panel-tab" data-tab="symbols">Symbols</button>
+          <button class="panel-tab" data-tab="sprites">Sprites</button>
+        </div>
+        <div class="panel-header-btns" id="display-btns">
+          <button class="phbtn" id="btn-zoom-out" title="Smaller screen">−</button>
+          <span class="zoom-label" id="zoom-label">2×</span>
+          <button class="phbtn" id="btn-zoom-in" title="Larger screen">+</button>
+          <button class="phbtn" id="btn-reset-emu" title="Stop the game and reset the TS2068">Reset</button>
+        </div>
+      </div>
+
+      <div class="tab-body display-body" data-tab="display">
+        <div class="emulator-body">
+          <!-- Focus the screen (click it) to play: arrow keys and Space are joystick 1 -->
+          <div class="bezel" id="ts-bezel" tabindex="0" title="Click to play: arrow keys + Space are the joystick, letters reach KEYDOWN">
+            <canvas id="ts-screen"></canvas>
+          </div>
+          <div class="emu-meta">
+            <span id="emu-rom">Leap Arcade · stock TS2068</span>
+            <span id="input-hint">Click the screen to play.</span>
+          </div>
+        </div>
+
+        <!-- Size and budget of the last successful compile -->
+        <section class="sizes" id="size-panel" aria-label="Size and budget">
+          <div class="sizes-title">Size and budget</div>
+          <div class="size-bar" title="The game's own 16 KB of the cartridge"><div class="size-fill" id="size-fill"></div></div>
+          <div class="size-total" id="size-total">—</div>
+          <table class="size-table" id="size-table"></table>
+        </section>
+      </div>
+      <div class="tab-body tool-body" id="tool-symbols" data-tab="symbols" hidden></div>
+      <div class="tab-body tool-body asset-tool" id="tool-sprites" data-tab="sprites" hidden></div>
+    </div>
+
+  </div><!-- /workspace -->
+
+  <!-- ═══ STATUS BAR ═══════════════════════════════════════════════ -->
+  <div class="statusbar">
+    <span id="sb-state" title="Click to go to the first error">Starting…</span>
+    <span class="sb-sep">·</span>
+    <span id="sb-prog">—</span>
+    <span class="sb-sep">·</span>
+    <span id="sb-cursor">Ln 1, Col 1</span>
+    <span class="sb-right" id="sb-runtime">runtime —</span>
+  </div>
+
+</div><!-- /ide-root -->
+
+<!-- ── Studio modules (type=module — loaded after DOM). tools/stamp-modules.py keeps this map current. ── -->
+<script type="importmap">
+{
+  "imports": {
+    "@codemirror/state": "https://cdn.jsdelivr.net/npm/@codemirror/state@6.4.1/dist/index.js",
+    "@codemirror/view": "https://cdn.jsdelivr.net/npm/@codemirror/view@6.34.3/dist/index.js",
+    "@codemirror/language": "https://cdn.jsdelivr.net/npm/@codemirror/language@6.10.3/dist/index.js",
+    "@codemirror/commands": "https://cdn.jsdelivr.net/npm/@codemirror/commands@6.7.1/dist/index.js",
+    "@codemirror/autocomplete": "https://cdn.jsdelivr.net/npm/@codemirror/autocomplete@6.18.3/dist/index.js",
+    "@codemirror/lint": "https://cdn.jsdelivr.net/npm/@codemirror/lint@6.8.2/dist/index.js",
+    "@codemirror/search": "https://cdn.jsdelivr.net/npm/@codemirror/search@6.5.8/dist/index.js",
+    "@lezer/highlight": "https://cdn.jsdelivr.net/npm/@lezer/highlight@1.2.1/dist/index.js",
+    "@lezer/common": "https://cdn.jsdelivr.net/npm/@lezer/common@1.2.3/dist/index.js",
+    "@lezer/lr": "https://cdn.jsdelivr.net/npm/@lezer/lr@1.4.2/dist/index.js",
+    "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
+    "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
+    "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
+    "./src/arcade-project.js": "./src/arcade-project.js?v=49a82a984f",
+    "./src/emulator.js": "./src/emulator.js?v=c7ebc64993",
+    "./src/files.js": "./src/files.js?v=70f9a1c03a",
+    "./src/help.js": "./src/help.js?v=2738bd9e3b",
+    "./src/lang/arcade/arcade-assets.js": "./src/lang/arcade/arcade-assets.js?v=4a72d1f66f",
+    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=62ddac8dd9",
+    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=1069d3787f",
+    "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=6f1466034c",
+    "./src/lang/arcade/arcade-link.js": "./src/lang/arcade/arcade-link.js?v=90e8eeff5a",
+    "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=6ed26c601a",
+    "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=d23e5b6efd",
+    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=ab88a38332",
+    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=125498ccf2",
+    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=a8d77d5385",
+    "./src/lang/arcade/z80-emit.js": "./src/lang/arcade/z80-emit.js?v=bb4d890929",
+    "./src/lang/basic/cartridge.js": "./src/lang/basic/cartridge.js?v=cb99a1e28a",
+    "./src/lang/basic/editor.js": "./src/lang/basic/editor.js?v=cf1227edb8",
+    "./src/lang/basic/examples.js": "./src/lang/basic/examples.js?v=2c9bdd4c3d",
+    "./src/lang/basic/export.js": "./src/lang/basic/export.js?v=8c6b8c033f",
+    "./src/lang/basic/leap-check.js": "./src/lang/basic/leap-check.js?v=9c94a3f824",
+    "./src/lang/basic/leap-debug.js": "./src/lang/basic/leap-debug.js?v=96e6212810",
+    "./src/lang/basic/leap-errors.js": "./src/lang/basic/leap-errors.js?v=56890ed5f8",
+    "./src/lang/basic/leap-keywords.js": "./src/lang/basic/leap-keywords.js?v=9899e2c747",
+    "./src/lang/basic/leap-lang.js": "./src/lang/basic/leap-lang.js?v=53a435258e",
+    "./src/lang/basic/leap-roms.js": "./src/lang/basic/leap-roms.js?v=6c5141a82c",
+    "./src/lang/basic/leap-words.js": "./src/lang/basic/leap-words.js?v=2f8784b542",
+    "./src/lang/basic/profile.js": "./src/lang/basic/profile.js?v=953d5fa50e",
+    "./src/lang/c/cartridge.js": "./src/lang/c/cartridge.js?v=17ee981627",
+    "./src/lang/c/editor.js": "./src/lang/c/editor.js?v=235f1049ba",
+    "./src/lang/c/examples.js": "./src/lang/c/examples.js?v=8f84ccadb1",
+    "./src/lang/c/leapc-check.js": "./src/lang/c/leapc-check.js?v=cc99bf2946",
+    "./src/lang/c/leapc-debug.js": "./src/lang/c/leapc-debug.js?v=db1f6bed6d",
+    "./src/lang/c/leapc-errors.js": "./src/lang/c/leapc-errors.js?v=42ad76dd31",
+    "./src/lang/c/leapc-keywords.js": "./src/lang/c/leapc-keywords.js?v=61f59ccd05",
+    "./src/lang/c/leapc-roms.js": "./src/lang/c/leapc-roms.js?v=d15979bcba",
+    "./src/lang/c/leapc-scan.js": "./src/lang/c/leapc-scan.js?v=a4ef182711",
+    "./src/lang/c/profile.js": "./src/lang/c/profile.js?v=6ef4ebe8f8",
+    "./src/lang/editors.js": "./src/lang/editors.js?v=272c2ef30a",
+    "./src/lang/forth/cartridge.js": "./src/lang/forth/cartridge.js?v=40028355ea",
+    "./src/lang/forth/editor.js": "./src/lang/forth/editor.js?v=3e3d94d8a4",
+    "./src/lang/forth/examples.js": "./src/lang/forth/examples.js?v=4de6c20ba8",
+    "./src/lang/forth/forth-check.js": "./src/lang/forth/forth-check.js?v=c96c753f5e",
+    "./src/lang/forth/forth-debug.js": "./src/lang/forth/forth-debug.js?v=bc87ce7f3d",
+    "./src/lang/forth/forth-roms.js": "./src/lang/forth/forth-roms.js?v=4064eeb32d",
+    "./src/lang/forth/forth-scan.js": "./src/lang/forth/forth-scan.js?v=030e5a079d",
+    "./src/lang/forth/forth-words.js": "./src/lang/forth/forth-words.js?v=909c305566",
+    "./src/lang/forth/profile.js": "./src/lang/forth/profile.js?v=4f752e918b",
+    "./src/lang/forth/tape.js": "./src/lang/forth/tape.js?v=17a82b5ed3",
+    "./src/lang/keytables.js": "./src/lang/keytables.js?v=e2514632f2",
+    "./src/lang/profiles.js": "./src/lang/profiles.js?v=2a1905fdd2",
+    "./src/lang/spin-demo.js": "./src/lang/spin-demo.js?v=d07dbf383b",
+    "./src/pc-keyboard.js": "./src/pc-keyboard.js?v=6b1aaae1ac",
+    "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=2e12e7b7fa",
+    "./src/tools/sprite-model.js": "./src/tools/sprite-model.js?v=5274fb0073",
+    "./src/tools/symbols.js": "./src/tools/symbols.js?v=16320c0533",
+    "./tsrun/ay.js": "./tsrun/ay.js?v=1d0bc7937d",
+    "./tsrun/dock.js": "./tsrun/dock.js?v=316db509d1",
+    "./tsrun/machine.js": "./tsrun/machine.js?v=195a1d6c5b",
+    "./tsrun/screen.js": "./tsrun/screen.js?v=50a0c322d5",
+    "./tsrun/sound.js": "./tsrun/sound.js?v=b027840217",
+    "./tsrun/tape.js": "./tsrun/tape.js?v=826dffa298",
+    "./tsrun/z80.js": "./tsrun/z80.js?v=26b6c2f044"
+  }
+}
+</script>
+<script type="module" src="src/editor.js?v=d836aeb5be"></script>
+<script type="module" src="studio.js?v=cad62f3e15"></script>
+
+</body>
+</html>

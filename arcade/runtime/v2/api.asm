@@ -258,7 +258,8 @@ RT_RND:
     ret
 
 ; ---------------------------------------------------------------------------------------------------------------
-; RT_STICK: A = 1 or 2 -> HL = 0..31: direction bits 0-3 (active high; all four set reads as none) and fire = 16.
+; RT_STICK: A = 1 or 2 -> HL = 0..31: direction bits 0-3 (active high) and fire = 16.  All four direction lines active at once
+; is impossible for a real stick: it reads as an unconnected port and the whole result is 0 (fire included).
 ; Leap V2's BUILTIN_FN_STICK (rom/exrom_v2_vm_core.asm) reproduced: AY register 7 bit 6 = 0 (port A an input), select
 ; register 14, read it with A8 (joystick 1) or A9 (joystick 2) high in the port address (B = n), invert.  Any other
 ; A gives 0 (V2 raises error 15).
@@ -288,6 +289,9 @@ RT_STICK:
     cp $0F
     jr c,.dirs
     xor a                       ; all four set: no real input
+    jr .done                    ; ... and no fire either.  A stick cannot press up+down+left+right together; the port is
+                                ; unconnected or the emulator answers 0 (ZEsarUX has no joystick on AY port A and reads
+                                ; register 14 as 0 after boot: that used to read as fire held), so the whole port is ignored.
 .dirs:
     bit 7,l
     jr z,.done

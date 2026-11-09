@@ -21,10 +21,10 @@ SCENE play
 
   PROC FRAME():
     REM joystick 1: bit 2 = left, bit 3 = right (direction bits 0-3, fire = 16)
-    IF BIT(STICK(1), 2) THEN
+    IF KEYDOWN("O") OR BIT(STICK(1), 2) THEN
       px = px - 4
     ENDIF
-    IF BIT(STICK(1), 3) THEN
+    IF KEYDOWN("P") OR BIT(STICK(1), 3) THEN
       px = px + 4
     ENDIF
     IF px < 0 THEN

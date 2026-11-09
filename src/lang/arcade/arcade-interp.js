@@ -17,7 +17,8 @@
  *   - SELECT CASE evaluates the selector once, then the case values in order, left to right, until one equals it
  *   - RND(n) = r MOD n where r is the next value of `rnd()` (0..32767); n = 0 gives 0
  *   - BIT(v, n) = 1 if bit n (0..15) of v is set; n outside 0..15 gives 0
- *   - STICK(n) = stick(tick, n) & 31 for n = 1 or 2; any other n gives 0
+ *   - STICK(n) = stick(tick, n) & 31 for n = 1 or 2; any other n gives 0; runtime v2: all four direction bits set (an
+ *     impossible stick, or an unconnected port) gives 0 including fire
  *   - SHOW stores x clamped to 0..239 and y clamped to 0..176 (the runtime's RT_SHOW rule); HIDE clears `visible`
  *   - every variable starts at 0
  * Anything outside the M2/M3 subset throws an Error whose message starts with "interp: unsupported".
@@ -318,7 +319,7 @@ export function interpret(ast, opts = {}) {
             const v = ev(args[0], sc), n = ev(args[1], sc);
             return n >= 0 && n <= 15 ? ((v & 0xFFFF) >> n) & 1 : 0;
           }
-          case 'STICK': { const n = ev(args[0], sc); return n === 1 || n === 2 ? stickValue(tick, n) & 31 : 0; }
+          case 'STICK': { const n = ev(args[0], sc); if (n !== 1 && n !== 2) return 0; const v = stickValue(tick, n) & 31; return V2 && (v & 15) === 15 ? 0 : v; }
           case 'HIT': {
             const a = instOf(args[0], sc), b = instOf(args[1], sc);
             if (a < 0 || b < 0) return 0;

@@ -42,6 +42,7 @@ const suites = [
   'arcade/tests/m4-runtime-regs.mjs',
   'arcade/tests/m4-runtime-skip.mjs',
   'arcade/tests/m4-runtime-perf.mjs',
+  'arcade/tests/m4-runtime-stick.mjs',
   ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs'] : []),
 ];
 

@@ -1,8 +1,8 @@
-REM Breakout: acceptance game A (docs/ARCADE_LANGUAGE.md) written for the v1 runtime.
+REM Breakout: acceptance game A (docs/ARCADE_LANGUAGE.md), for the v2 runtime.
 REM Assets (bat, ball, bricks, wall, brick, lose) are in breakout.assets.json.
-REM   Joystick 1 left / right moves the bat; fire restarts after GAME OVER or YOU WIN.
+REM   Keys O / P (left / right) or joystick 1 move the bat; SPACE or fire restarts after GAME OVER or YOU WIN.
 REM   Six rows of 30 bricks are TILEs (three colours, the upper rows score more); the ball finds a brick with TILEAT.
-REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v1
+REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v2
 GAME "Breakout"
 FRAMERATE 30
 
@@ -83,10 +83,10 @@ SCENE play
   ENDP
 
   PROC PLAYTICK():
-    IF BIT(STICK(1), 2) THEN
+    IF KEYDOWN("O") OR BIT(STICK(1), 2) THEN
       px = px - 4
     ENDIF
-    IF BIT(STICK(1), 3) THEN
+    IF KEYDOWN("P") OR BIT(STICK(1), 3) THEN
       px = px + 4
     ENDIF
     IF px < 0 THEN
@@ -166,7 +166,7 @@ SCENE play
 
   PROC FRAME():
     IF state = 1 THEN
-      IF BIT(STICK(1), 4) THEN
+      IF KEYDOWN(" ") OR BIT(STICK(1), 4) THEN
         CALL NEWGAME()
       ENDIF
     ELSE
