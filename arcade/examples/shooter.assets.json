@@ -1,0 +1,2573 @@
+{
+ "sprites": {
+  "ship": {
+   "w": 16,
+   "h": 16,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "0180",
+       "mask": "0180",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0180",
+       "mask": "0180",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "03C0",
+       "mask": "03C0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "03C0",
+       "mask": "03C0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "07E0",
+       "mask": "07E0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0660",
+       "mask": "07E0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "2664",
+       "mask": "27E4",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "2E74",
+       "mask": "2FF4",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "6FF6",
+       "mask": "6FF6",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7BDE",
+       "mask": "7FFE",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FDBF",
+       "mask": "FFFF",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "E7E7",
+       "mask": "E7E7",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "C3C3",
+       "mask": "C3C3",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "8181",
+       "mask": "8181",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0180",
+       "mask": "0180",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ]
+    }
+   ],
+   "hot": [
+    3,
+    3,
+    10,
+    11
+   ],
+   "phases": 8
+  },
+  "bullet": {
+   "w": 8,
+   "h": 8,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "18",
+       "mask": "18",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "mask": "18",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3C",
+       "mask": "3C",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3C",
+       "mask": "3C",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3C",
+       "mask": "3C",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3C",
+       "mask": "3C",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "mask": "18",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "mask": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      }
+     ]
+    }
+   ],
+   "hot": [
+    2,
+    0,
+    4,
+    8
+   ],
+   "phases": 4
+  },
+  "scout": {
+   "w": 16,
+   "h": 16,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "0000",
+       "mask": "0000",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "07E0",
+       "mask": "07E0",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "1FF8",
+       "mask": "1FF8",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3FFC",
+       "mask": "3FFC",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "799E",
+       "mask": "7FFE",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "E7E7",
+       "mask": "FFFF",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "6FF6",
+       "mask": "6FF6",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "27E4",
+       "mask": "27E4",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "23C4",
+       "mask": "23C4",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "1248",
+       "mask": "1248",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "1008",
+       "mask": "1008",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "300C",
+       "mask": "300C",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0000",
+       "mask": "0000",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0000",
+       "mask": "0000",
+       "ink": 5,
+       "paper": 0,
+       "bright": 1
+      }
+     ]
+    }
+   ],
+   "hot": [
+    1,
+    2,
+    14,
+    11
+   ],
+   "phases": 8
+  },
+  "heavy": {
+   "w": 16,
+   "h": 16,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "300C",
+       "mask": "300C",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "33CC",
+       "mask": "33CC",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "37EC",
+       "mask": "37EC",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3FFC",
+       "mask": "3FFC",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7FFE",
+       "mask": "7FFE",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FE7F",
+       "mask": "FFFF",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "E667",
+       "mask": "FFFF",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "EFF7",
+       "mask": "FFFF",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "BFFD",
+       "mask": "BFFD",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "9FF9",
+       "mask": "9FF9",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "93C9",
+       "mask": "93C9",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "D18B",
+       "mask": "D18B",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "500A",
+       "mask": "500A",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0000",
+       "mask": "0000",
+       "ink": 3,
+       "paper": 0,
+       "bright": 1
+      }
+     ]
+    }
+   ],
+   "hot": [
+    1,
+    0,
+    14,
+    14
+   ],
+   "phases": 8
+  },
+  "shot": {
+   "w": 8,
+   "h": 8,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "mask": "00",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3C",
+       "mask": "3C",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7E",
+       "mask": "7E",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7E",
+       "mask": "7E",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7E",
+       "mask": "7E",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7E",
+       "mask": "7E",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3C",
+       "mask": "3C",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "mask": "00",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      }
+     ]
+    }
+   ],
+   "hot": [
+    2,
+    2,
+    4,
+    4
+   ],
+   "phases": 4
+  }
+ },
+ "tilesets": {
+  "gfx": {
+   "tiles": [
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "04",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "20",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "10",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "38",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "10",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "02",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "01",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "07",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0F",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "40",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "80",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "E0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "E8",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "07",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "03",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "01",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "02",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "E0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "D0",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "80",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "40",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "01",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "11",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "2F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "1F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "3F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "7F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "88",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "D0",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "F0",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FA",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FC",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FC",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "3F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "5F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "1F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "0F",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "27",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "05",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "02",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "FD",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "F8",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "FA",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "F0",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "E4",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "80",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "40",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "20",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "01",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "08",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "40",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "04",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "22",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "02",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "41",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "20",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "20",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "80",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "10",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "08",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "04",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "08",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "22",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "02",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "40",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "04",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "10",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "20",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "48",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "00",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "22",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "10",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "20",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "08",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      },
+      {
+       "bits": "40",
+       "ink": 2,
+       "paper": 0,
+       "bright": 1
+      }
+     ],
+     "flags": 0
+    }
+   ]
+  }
+ },
+ "sfx": {
+  "pew": {
+   "ticks": [
+    {
+     "tone": 90,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 135,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 180,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 225,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 270,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 315,
+     "vol": 8,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  },
+  "boom": {
+   "ticks": [
+    {
+     "tone": 0,
+     "vol": 14,
+     "noise": 6,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 13,
+     "noise": 8,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 12,
+     "noise": 10,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 11,
+     "noise": 12,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 10,
+     "noise": 14,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 9,
+     "noise": 16,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 8,
+     "noise": 18,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 7,
+     "noise": 20,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 6,
+     "noise": 22,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 5,
+     "noise": 24,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 4,
+     "noise": 26,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 3,
+     "noise": 28,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 2,
+     "noise": 30,
+     "mix": 5
+    },
+    {
+     "tone": 0,
+     "vol": 1,
+     "noise": 31,
+     "mix": 5
+    }
+   ]
+  },
+  "hurt": {
+   "ticks": [
+    {
+     "tone": 420,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 505,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 470,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 555,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 520,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 605,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 570,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 655,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 620,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 705,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  },
+  "wave": {
+   "ticks": [
+    {
+     "tone": 300,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 300,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 300,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 300,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 240,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 240,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 240,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 240,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 200,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 200,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 200,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 200,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  },
+  "over": {
+   "ticks": [
+    {
+     "tone": 200,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 216,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 232,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 248,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 264,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 280,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 296,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 312,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 328,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 344,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 360,
+     "vol": 8,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 376,
+     "vol": 8,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 392,
+     "vol": 7,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 408,
+     "vol": 7,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 424,
+     "vol": 6,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 440,
+     "vol": 6,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 456,
+     "vol": 5,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 472,
+     "vol": 5,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 488,
+     "vol": 4,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 504,
+     "vol": 4,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 520,
+     "vol": 3,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 536,
+     "vol": 3,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  }
+ },
+ "maps": {
+  "sky": {
+   "w": 32,
+   "h": 24,
+   "cells": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    1,
+    0,
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    3,
+    0,
+    0,
+    2,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    2,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    3,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2
+   ]
+  }
+ }
+}

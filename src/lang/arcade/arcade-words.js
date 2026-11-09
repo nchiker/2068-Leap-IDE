@@ -12,8 +12,10 @@
  *   cls      'statement' (as in Leap V2), 'game' (new in Arcade), 'structure' (opens / closes a block or a
  *            declaration), 'function' (always written with brackets), 'operator'
  *   syntax   one line, as shown in Help
- *   args     functions only: [{name, type, optional}], type = 'num' | 'str' | 'sprite' | 'sfx' | 'tileset' | 'map'
- *            ('sprite' etc. mean "the name of a declared asset", not an expression)
+ *   args     functions only: [{name, type, optional}], type = 'num' | 'str' | 'key' | 'sprite' | 'sfx' | 'tileset' | 'map'
+ *            ('sprite' etc. mean "the name of a declared asset", not an expression; M4a: a 'sprite' argument is an instance
+ *            reference, `name` or `name(expr)` for a pool; 'key' (KEYDOWN) is a number 0..255 or a one-character string written out
+ *            in the source and looked up when the game is built, checked by the checker itself)
  *   min      the number of required arguments
  *   ret      functions only: 'num' | 'str'
  *   reserved false for a contextual word (FRAME, INIT): it is an ordinary name everywhere except where the
@@ -25,6 +27,11 @@
  *   - (M3) PRINT is `PRINT [AT row, col;] item {; or , item}`; TAB is parsed but not supported by the compiler yet. AT is not
  *     a statement. Full semantics: docs/ARCADE_RUNTIME_API_V1.md "Language semantics" plus the notes in arcade-interp.js.
  *   - POINT(x,y) is kept from V2 (the language doc keeps it); INKEY$, CHR$, CODE, VAL, INT, ... are not in v0.
+ *   - (M4a, runtime API v2, docs/ARCADE_RUNTIME_API_V2.md) arrays `DIM a(n)` (n 1..1000 with a v2 runtime), sprite pools
+ *     `SPRITE name(n) = "asset"`, instance references `name` / `name(expr)` in SHOW, HIDE and HIT, and KEYDOWN("Q") / KEYDOWN(81).
+ *     Decisions where the contract is silent: a bare pool name means instance 0; a single `SPRITE name = ...` accepts `name(0)`
+ *     (and `name(i)` is bounds-checked against 1); KEYDOWN's code is folded at compile time, a one-character string is
+ *     upper-cased (so "q" is Q); the code must be 0..255 and a number the runtime does not know as a key only gets a warning.
  */
 
 "use strict";
@@ -36,7 +43,11 @@ export const LIMITS = Object.freeze({
   minInt: -32768,     // 16-bit signed integers only
   maxInt: 32767,
   maxLiteral: 65535,  // a positive literal may be written up to 65535 (addresses for POKE/PEEK/USR); 32768..65535 wrap to the signed 16-bit value
-  maxDim: 16383,      // DIM a(n): n a literal 1 .. 16383 (V2)
+  maxDim: 16383,      // DIM a(n): n a literal 1 .. 16383 (V2); with a v2 runtime the checker is given maxDimV2 instead
+  maxDimV2: 1000,     // M4a: DIM a(n) with n 1..1000, elements a(0)..a(n) are 16-bit slots in GAME_VARS
+  maxPool: 16,        // M4a: SPRITE name(n): n 1..16 (the runtime has 16 instances in all)
+  maxInstances: 16,   // M4a: instances (things on screen) in all
+  maxAssets: 8,       // M4a: distinct sprite assets (pre-shifted tables)
   // M3 (runtime API v1): the 32 x 24 cell map, 128 tiles, 8 sound effects
   maxCol: 31,         // PRINT AT row, col / TILE x, y: x and col 0..31
   maxRow: 23,         // y and row 0..23
@@ -76,16 +87,16 @@ const WORD_LIST = [
   // ── Game words (new in Arcade) ──
   W('GAME', 'game', 'GAME "title"', 'The game title. Once, at the top level.'),
   W('FRAMERATE', 'game', 'FRAMERATE n', 'Target updates per second: 60 / n must be a whole number of refreshes (60, 30, 20, 15, 12, 10, 6, 5, 4, 3, 2, 1). Once, at the top level.'),
-  W('SPRITE', 'game', 'SPRITE name = "asset"', 'Declare a sprite made in the Studio.'),
+  W('SPRITE', 'game', 'SPRITE name = "asset"  /  SPRITE name(n) = "asset"', 'Declare a sprite made in the Studio. SPRITE name(n) makes a pool of n instances (name(0)..name(n-1)) that share the art; at most 16 instances in all and 8 different assets (v2 runtime). Declaration order is draw order: a later instance appears on top. The asset may say "phases": 8 (default), 4, 2 or 1: fewer phases use less memory, and the x position is then drawn rounded down to a multiple of 2, 4 or 8.'),
   W('SFX', 'game', 'SFX name = "asset"', 'Declare a sound effect made in the Studio (up to 8; PLAY starts one by name).'),
   W('TILESET', 'game', 'TILESET name = "asset"', 'Declare the tile set made in the Studio (up to 128 tiles of 8 x 8 pixels; TILE needs one).'),
   W('MAP', 'game', 'MAP name = "asset"', 'Declare a tile map made in the Studio; it fills the top-left of the 32 x 24 screen cells when the game starts.'),
   W('SCENE', 'game', 'SCENE name ... ENDSCENE', 'A game part with its own PROC INIT and PROC FRAME. May hold DIM, DEF FN and PROC.'),
   W('ENDSCENE', 'structure', 'ENDSCENE', 'Ends a SCENE.'),
   W('ENTER', 'game', 'ENTER scene', 'Switch to another scene (its INIT runs, then its FRAME every tick).'),
-  W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f]', 'Place a sprite at a pixel position (y from the top); FRAME picks the animation frame.'),
+  W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f]  /  SHOW pool(i) AT x, y', 'Place a sprite (or the instance i of a pool) at a pixel position (y from the top); FRAME picks the animation frame. An instance number outside the pool is ignored.'),
   W('AT', 'structure', 'AT row, col  (after PRINT) / AT x, y  (after SHOW)', 'A position: character row and column after PRINT, pixels after SHOW.'),
-  W('HIDE', 'game', 'HIDE sprite', 'Remove a sprite from the screen.'),
+  W('HIDE', 'game', 'HIDE sprite  /  HIDE pool(i)', 'Remove a sprite (or the instance i of a pool) from the screen. An instance number outside the pool is ignored.'),
   W('PLAY', 'game', 'PLAY sfx', 'Start a sound effect by its SFX name (it replaces the one playing).'),
   W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing.'),
   W('TILE', 'game', 'TILE x, y = t', 'Set the screen cell at column x (0..31), row y (0..23) to tile t (0..127) of the TILESET; it takes the tile\'s colours. A cell outside the screen is ignored.'),
@@ -96,7 +107,7 @@ const WORD_LIST = [
   W('CALL', 'structure', 'CALL name(expr)', 'Call a procedure.'),
   W('DEF', 'structure', 'DEF FN f(x) = expr', 'Define a numeric function of one parameter; use it as FN f(expr).'),
   W('FN', 'structure', 'FN f(expr)', 'Call a function made with DEF FN.'),
-  W('DIM', 'statement', 'DIM a, b, c(n), d$(n)', 'Declare variables (every variable must be declared) and arrays (n a literal, one dimension). At the top level a DIM is global; inside a SCENE it belongs to the scene.'),
+  W('DIM', 'statement', 'DIM a, b, c(n), d$(n)', 'Declare variables (every variable must be declared) and arrays (n a literal, one dimension). At the top level a DIM is global; inside a SCENE it belongs to the scene. An array c(n) has the elements c(0)..c(n) (16 bit, all 0 at the start); with a v2 runtime n is 1..1000. An index outside 0..n reads 0 and a write to it is ignored.'),
   W('IF', 'structure', 'IF cond THEN ... [ELSE ...] ENDIF', 'A block; there is no one-line form.'),
   W('THEN', 'structure', 'IF cond THEN', 'Part of IF.'),
   W('ELSE', 'structure', 'ELSE', 'Part of IF (and CASE ELSE).'),
@@ -137,10 +148,10 @@ const WORD_LIST = [
   W('DIV', 'operator', 'a DIV b', 'Integer division. An infix operator in Arcade (a function in V2).'),
 
   // ── Functions (always written with brackets) ──
-  W('HIT', 'function', 'HIT(a, b)', '1 if both sprites are shown and their collision boxes (the sprite\'s hot box, else its whole size) overlap, else 0. Boxes that only touch do not overlap.', { args: ['a:sprite', 'b:sprite'], ret: 'num' }),
+  W('HIT', 'function', 'HIT(a, b)', '1 if both sprites (names, or pool(i) instances) are shown and their collision boxes (the sprite\'s hot box, else its whole size) overlap, else 0. Boxes that only touch do not overlap. An instance number outside its pool gives 0.', { args: ['a:sprite', 'b:sprite'], ret: 'num' }),
   W('BIT', 'function', 'BIT(v, n)', '1 if bit n (0..15) of v is set, else 0.', { args: ['v:num', 'n:num'], ret: 'num' }),
   W('STICK', 'function', 'STICK(n)', 'Joystick 1 or 2 as bits 0..4 (directions, fire = 16).', { args: ['n:num'], ret: 'num' }),
-  W('KEYDOWN', 'function', 'KEYDOWN(code)', '1 while the key with that code is held.', { args: ['code:num'], ret: 'num' }),
+  W('KEYDOWN', 'function', 'KEYDOWN("Q")  /  KEYDOWN(code)', '1 while that key is held, else 0. The key is a one-character string or an ASCII code written as a number (not an expression): A-Z (upper case), 0-9, space (32), enter (13); 1 is CAPS SHIFT and 2 is SYMBOL SHIFT. It is looked up when the game is built. Needs a v2 runtime.', { args: ['code:key'], ret: 'num' }),
   W('TILEAT', 'function', 'TILEAT(x, y)', 'The tile index (0..127) shown in the screen cell at column x, row y, or -1 when the cell holds text or is outside the screen.', { args: ['x:num', 'y:num'], ret: 'num' }),
   W('STR$', 'function', 'STR$(n)', 'A number as text; in M3 only as a PRINT item (or joined to other text with +).', { args: ['n:num'], ret: 'str' }),
   W('LEN', 'function', 'LEN(s$)', 'The length of a string.', { args: ['s:str'], ret: 'num' }),

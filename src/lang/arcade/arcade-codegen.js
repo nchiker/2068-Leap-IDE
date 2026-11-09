@@ -33,6 +33,24 @@
  *  M3-5. A tile index 0..127 is checked against the TILESET's tile count; SFX index = declaration order.
  *  M3-6. STR$(n) and string + string exist only as PRINT items. There are no string variables yet.
  *
+ * ── M4a (runtime API v2, docs/ARCADE_RUNTIME_API_V2.md; `runtime.version >= 2`) ──────────────────────────────────────────────
+ * Arrays, sprite pools with instance references, KEYDOWN, and the v2 image: header 16 bytes (v1's fourteen, then inst_table),
+ * 8-byte sprite descriptors `DB w, DB h, DW data, DW hot, DB phases, DB 0`, one descriptor per distinct ASSET (declarations that
+ * name the same asset share it; at most MAX_ASSETS = 8), and an instance table `DB ninst, ninst x DB asset` (at most MAX_SPRITES
+ * = 16 instances); instance k is drawn after instance k - 1 (declaration order). `sprite_count` is the number of assets.
+ *  M4-1. Array `a(n)`: n + 1 consecutive 16-bit slots (declaration order, before every other slot). A read is
+ *        `<index in HL> LD A,L / SUB lo(n+1) / LD A,H / SBC A,hi(n+1) / JP NC,oob / ADD HL,HL / LD DE,base / ADD HL,DE / LD A,(HL) /
+ *        INC L / LD H,(HL) / LD L,A`: the 16-bit unsigned compare makes a negative index out of range (86 T in range, 18 bytes; a write
+ *        is 102 T with the value in DE; slots are even-aligned so INC L cannot wrap). The out-of-range paths are placed after the procedure's RET: a read
+ *        gives 0; a write is redirected to a hidden sink slot (so the value is still evaluated, as in the interpreter). A constant
+ *        index is a plain `LD HL,(addr)` / `LD (addr),HL` (or 0 / nothing when outside). Evaluation order: index, then value.
+ *  M4-2. Instance references: a bare pool name is instance 0. A constant index is checked at build time; a run-time index is
+ *        checked against the pool size (SHOW, HIDE: skipped; HIT: 0) and added to the first instance's number. SHOW evaluates the
+ *        index, then x, then y (all three even when the index is outside the pool).
+ *  M4-3. KEYDOWN(c): the key (a number, or a one-character string upper-cased) is folded at build time; `LD A,code / CALL RT_KEYDOWN`.
+ *  M4-4. The sprite descriptor's width stays 16 (as in v0 / v1, the pre-shifted data has 16-bit rows); `phases` is the asset's
+ *        `phases` field (1, 2, 4 or 8; default 8).
+ *
  * ── The M2 subset ────────────────────────────────────────────────────────────────────────────────────────────
  * GAME, FRAMERATE, SPRITE (up to 4), exactly one SCENE with PROC INIT and PROC FRAME, scalar numeric DIM
  * (global or in the scene), DEF FN, PROC with at most one parameter, CALL; statements assignment, IF/ELSE, WHILE,
@@ -81,7 +99,9 @@ const MAX_SPRITES = 4;
 const LIMIT_STR = 31;                               // longest string the runtime's RT_PRINTS takes
 const HEADER_V0 = 8;
 const HEADER_V1 = 14;
+const HEADER_V2 = 16;
 const DESC_BYTES = 6;
+const DESC_BYTES_V2 = 8;
 
 class GenError extends Error {
   constructor(node, message) { super(message); this.node = node; }
@@ -125,6 +145,7 @@ const UNSUPPORTED_STMT = {
 };
 const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK']);
 const V1_FUNCS = new Set(['HIT', 'TILEAT']);
+const V2_FUNCS = new Set(['KEYDOWN']);
 /** A string-valued PRINT item: a literal, STR$(n), or those joined with +. */
 const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name === 'STR$') || (e.type === 'Binary' && e.op === '+' && isStrExpr(e.left) && isStrExpr(e.right));
 
@@ -135,16 +156,19 @@ const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name ===
  */
 export function generate(ast, runtime, assets = {}) {
   const errors = [], warnings = [];
+  const v2 = (runtime.version ?? 0) >= 2;
   const v1 = (runtime.version ?? 0) >= 1;
-  const HEADER_BYTES = v1 ? HEADER_V1 : HEADER_V0;
+  const HEADER_BYTES = v2 ? HEADER_V2 : v1 ? HEADER_V1 : HEADER_V0;
+  const DESC_LEN = v2 ? DESC_BYTES_V2 : DESC_BYTES;
   const err = (node, message) => errors.push({ ...pos(node), severity: 'error', message });
-  const notYet = (node, what) => err(node, `${what} is not supported yet in ${v1 ? 'M3' : 'M2'}`);
+  const notYet = (node, what) => err(node, `${what} is not supported yet in ${v2 ? 'M4a' : v1 ? 'M3' : 'M2'}`);
   const sym = runtime.symbols ?? {}, cst = runtime.constants ?? {};
   let curNode = ast;                                // the statement being generated, for "the runtime does not provide" errors
   const GAME_BASE = cst.GAME_BASE ?? 0x8000;
   const VARS_BASE = cst.GAME_VARS_BASE ?? sym.GAME_VARS_BASE;
   const VARS_LIMIT = cst.GAME_VARS_LIMIT ?? sym.GAME_VARS_LIMIT;
-  const MAXSPR = cst.MAX_SPRITES ?? MAX_SPRITES;
+  const MAXSPR = cst.MAX_SPRITES ?? (v2 ? 16 : MAX_SPRITES);
+  const MAXASSETS = cst.MAX_ASSETS ?? 8;
   const need = (name) => {
     if (sym[name] === undefined) throw new GenError(curNode, `the runtime does not provide ${name}`);
     return sym[name];
@@ -156,13 +180,42 @@ export function generate(ast, runtime, assets = {}) {
   if (scenes.length > 1) notYet(scenes[1], 'a second SCENE (M2 has exactly one)');
   const scene = scenes[0];
 
-  const sprites = [];                               // {name, key, asset, node, w, h, data, hot}
+  const sprites = [];                               // v0/v1: {name, key, asset, node, w, h, data, hot} per sprite; v2: per distinct ASSET
   const spriteIndex = new Map();
+  const instRefs = new Map();                       // v2: KEY -> {first, count, pool}
+  const instAssets = [];                            // v2: the asset index of each instance
+  const assetEntry = new Map();                     // v2: asset object -> index in `sprites`
   const tabs = assetTables(assets);
   const sfxList = [], sfxIndex = new Map();         // {name, node, bytes, records}
   let tileset = null, mapAsset = null;              // {node, count, bytes} / {node, bytes}
   for (const a of ast.assets ?? []) {
-    if (a.kind === 'SPRITE') {
+    if (a.kind === 'SPRITE' && v2) {
+      const count = a.count ?? 1;
+      if (instAssets.length + count > MAXSPR) { err(a, `at most ${MAXSPR} sprite instances in all (this declaration would make ${instAssets.length + count})`); continue; }
+      const asset = lookupIn(tabs.sprites, a.asset, a.name);
+      if (asset === undefined) { err(a, `sprite asset "${a.asset}" is not in the project`); continue; }
+      let ai = assetEntry.get(asset);
+      if (ai === undefined) {
+        if (sprites.length >= MAXASSETS) { err(a, `at most ${MAXASSETS} different sprite assets (the art of "${a.asset}" would be the ${sprites.length + 1}th)`); continue; }
+        try {
+          const c = convertSprite(asset);
+          let hot = [0, 0, c.srcW, c.h];
+          if (asset.hot !== undefined) {
+            hot = asset.hot;
+            const okHot = Array.isArray(hot) && hot.length === 4 && hot.every(Number.isInteger) && hot[0] >= 0 && hot[1] >= 0 && hot[2] >= 1 && hot[3] >= 1 && hot[0] + hot[2] <= 16 && hot[1] + hot[3] <= c.h;
+            if (!okHot) throw new Error(`"hot" must be [x, y, w, h] inside the sprite, got ${JSON.stringify(hot)}`);
+          }
+          const phases = asset.phases ?? 8;
+          if (![1, 2, 4, 8].includes(phases)) throw new Error(`"phases" must be 1, 2, 4 or 8, got ${JSON.stringify(phases)}`);
+          ai = sprites.length;
+          assetEntry.set(asset, ai);
+          sprites.push({ name: a.name, key: up(a.name), asset: a.asset, node: a, ...c, hot, phases });
+        } catch (e) { err(a, `sprite "${a.asset}": ${e.message}`); continue; }
+      }
+      instRefs.set(up(a.name), { first: instAssets.length, count, pool: a.count !== null && a.count !== undefined });
+      for (let k = 0; k < count; k++) instAssets.push(ai);
+    } else if (a.kind === 'SPRITE') {
+      if (a.count !== null && a.count !== undefined) { notYet(a, `a sprite pool (SPRITE ${a.name}(${a.count}))`); continue; }
       if (sprites.length >= MAXSPR) { err(a, `at most ${MAXSPR} sprites in M2`); continue; }
       const asset = lookupIn(tabs.sprites, a.asset, a.name);
       if (asset === undefined) { err(a, `sprite asset "${a.asset}" is not in the project`); continue; }
@@ -212,9 +265,20 @@ export function generate(ast, runtime, assets = {}) {
     slotNames.push(name);
     return a;
   };
+  const arrays = new Map();                         // v2: KEY -> {addr, n, name}: n + 1 consecutive slots
   const declare = (dim) => {
     for (const it of dim.items) {
-      if (it.size !== null && it.size !== undefined) { notYet(it, `array ${it.name}(${it.size})`); continue; }
+      if (it.size !== null && it.size !== undefined) {
+        if (!v2) { notYet(it, `array ${it.name}(${it.size})`); continue; }
+        if (it.name.endsWith('$')) { notYet(it, `string array ${it.name}`); continue; }
+        if (it.size < 1 || it.size > 1000) { err(it, `DIM size ${it.size} is out of range (1..1000)`); continue; }
+        if (!arrays.has(up(it.name))) {
+          const addr = slotAddr(slotNames.length);
+          for (let k = 0; k <= it.size; k++) allocSlot(`${up(it.name)}(${k})`);
+          arrays.set(up(it.name), { addr, n: it.size, name: up(it.name) });
+        }
+        continue;
+      }
       if (it.name.endsWith('$')) { notYet(it, `string variable ${it.name}`); continue; }
       if (!varSlots.has(up(it.name))) varSlots.set(up(it.name), allocSlot(up(it.name)));
     }
@@ -237,18 +301,32 @@ export function generate(ast, runtime, assets = {}) {
     switch (e.type) {
       case 'Number': case 'Ident': return;
       case 'String': notYet(e, 'a string'); return;
-      case 'Index': notYet(e, `the array ${e.name}(...)`); return;
+      case 'Index':
+        if (!v2) { notYet(e, `the array ${e.name}(...)`); return; }
+        scanExpr(e.index); return;
       case 'Unary': scanExpr(e.operand); return;
       case 'Binary': scanExpr(e.left); scanExpr(e.right); return;
       case 'FnCall': scanExpr(e.arg); return;
       case 'Func':
-        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name))) { notYet(e, `${e.name}(...)`); return; }
+        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name))) { notYet(e, `${e.name}(...)`); return; }
         if (e.name === 'STICK' && sym.RT_STICK === undefined) { err(e, 'STICK(n) needs RT_STICK, which this runtime does not provide yet'); return; }
+        if (e.name === 'KEYDOWN') {
+          if (sym.RT_KEYDOWN === undefined) err(e, 'KEYDOWN(...) needs RT_KEYDOWN, which this runtime does not provide');
+          return;                           // the key is a literal (checked by the checker); nothing to scan
+        }
+        if (e.name === 'HIT') { e.args.forEach(scanSpriteRef); return; }
         e.args.forEach(scanExpr);
         return;
       default: err(e, `internal: unexpected ${e.type} in an expression`);
     }
   };
+  /** An instance reference (SHOW / HIDE / HIT operand): an Ident, or an Index (v2 only: its index expression is scanned). */
+  function scanSpriteRef(r) {
+    if (r?.type === 'Index') {
+      if (!v2) { notYet(r, `an instance index (${r.name}(...))`); return; }
+      scanExpr(r.index);
+    }
+  }
   const scanPrintItem = (it) => {
     if (!isStrExpr(it)) { scanExpr(it); return; }
     if (it.type === 'Func') scanExpr(it.args[0]);
@@ -282,7 +360,7 @@ export function generate(ast, runtime, assets = {}) {
       }
       switch (s.type) {
         case 'Assign':
-          if (s.target.type !== 'Ident') notYet(s.target, `the array ${s.target.name}(...)`);
+          if (s.target.type !== 'Ident') { if (!v2) notYet(s.target, `the array ${s.target.name}(...)`); else scanExpr(s.target.index); }
           scanExpr(s.value); break;
         case 'If': scanExpr(s.cond); scanStmts(s.then); scanStmts(s.else); break;
         case 'While': scanExpr(s.cond); scanStmts(s.body); break;
@@ -293,7 +371,8 @@ export function generate(ast, runtime, assets = {}) {
           if (s.else) scanStmts(s.else.body);
           break;
         case 'Call': scanExpr(s.arg); break;
-        case 'Show': if (s.frame) notYet(s.frame, 'SHOW ... FRAME'); scanExpr(s.x); scanExpr(s.y); break;
+        case 'Show': if (s.frame) notYet(s.frame, 'SHOW ... FRAME'); scanSpriteRef(s.sprite); scanExpr(s.x); scanExpr(s.y); break;
+        case 'Hide': scanSpriteRef(s.sprite); break;
         default: break;
       }
     }
@@ -311,19 +390,21 @@ export function generate(ast, runtime, assets = {}) {
       if (e.type === 'FnCall') { out.push({ kind: 'F', key: up(e.name), node: e }); ex(e.arg); }
       else if (e.type === 'Unary') ex(e.operand);
       else if (e.type === 'Binary') { ex(e.left); ex(e.right); }
+      else if (e.type === 'Index') ex(e.index);
       else if (e.type === 'Func') e.args.forEach(ex);
     };
     const st = (l) => {
       for (const s of l ?? []) {
         if (!s) continue;
         switch (s.type) {
-          case 'Assign': ex(s.value); break;
+          case 'Assign': if (s.target.type === 'Index') ex(s.target.index); ex(s.value); break;
           case 'If': ex(s.cond); st(s.then); st(s.else); break;
           case 'While': ex(s.cond); st(s.body); break;
           case 'For': ex(s.from); ex(s.to); ex(s.step); st(s.body); break;
           case 'Select': ex(s.expr); for (const c of s.cases) { c.values.forEach(ex); st(c.body); } if (s.else) st(s.else.body); break;
           case 'Call': out.push({ kind: 'P', key: up(s.name), node: s }); ex(s.arg); break;
-          case 'Show': ex(s.x); ex(s.y); break;
+          case 'Show': ex(s.sprite); ex(s.x); ex(s.y); break;
+          case 'Hide': ex(s.sprite); break;
           case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
           case 'Color': ex(s.value); break;
@@ -358,7 +439,7 @@ export function generate(ast, runtime, assets = {}) {
 
   // ── 5. code ──
   const nSprites = sprites.length;
-  const base = GAME_BASE + HEADER_BYTES + DESC_BYTES * nSprites;
+  const base = GAME_BASE + HEADER_BYTES + DESC_LEN * nSprites;
   const e = new Emitter(base);
   const srcMap = [];
   const mark = (node) => {
@@ -475,12 +556,84 @@ export function generate(ast, runtime, assets = {}) {
     for (let i = 0; i < k; i++) e.add('hl', 'hl');
   }
 
+  // ── arrays (v2) ──
+  const deferred = [];                              // out-of-line stubs, emitted after the current callable's RET
+  let arrSink = null;                               // hidden slot that absorbs a write to an index outside the array
+  const flushDeferred = () => { while (deferred.length) deferred.shift()(); };
+  const arrayOf = (x) => {
+    const a = arrays.get(up(x.name));
+    if (!a) throw new GenError(x, `internal: unresolved array ${x.name}`);
+    return a;
+  };
+  /**
+   * HL = index -> HL = the element's address; jumps to `oob` (HL still the index) when the index is outside 0..n.
+   * The bounds test is a 16-bit unsigned compare of HL with n + 1 in A (LD A,L / SUB lo / LD A,H / SBC A,hi: carry = inside), which
+   * leaves HL alone, 32 T; the address is 2 * HL + base, 32 T (LD DE / ADD HL,HL / ADD HL,DE).
+   */
+  function arrayAddr(a, oob) {
+    const lim = a.n + 1;
+    e.ld('a', 'l'); e.sub(lim & 255); e.ld('a', 'h'); e.sbc('a', lim >> 8); e.jp('nc', oob);
+    e.add('hl', 'hl'); e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');
+  }
+  function arrayRead(x) {
+    const a = arrayOf(x);
+    const c = fold(x.index);
+    if (c !== undefined) { if (c >= 0 && c <= a.n) e.ld('hl', M(a.addr + 2 * c)); else e.ld('hl', 0); return; }
+    gen(x.index);
+    const oob = e.newLabel('aoob'), back = e.newLabel('aback');
+    arrayAddr(a, oob);
+    e.ld('a', '(hl)'); e.inc('l'); e.ld('h', '(hl)'); e.ld('l', 'a');       // INC L: element addresses are even, so L cannot wrap
+    e.label(back);
+    deferred.push(() => { e.label(oob); e.ld('hl', 0); e.jp(back); });
+  }
+  function arrayWrite(target, value) {
+    const a = arrayOf(target);
+    const c = fold(target.index);
+    if (c !== undefined) {
+      if (c >= 0 && c <= a.n) { gen(value); e.ld(M(a.addr + 2 * c), 'hl'); }
+      else if (!isSimple(value)) gen(value);        // outside: nothing is stored, but the value is still evaluated
+      return;
+    }
+    gen(target.index);
+    const oob = e.newLabel('aoob'), back = e.newLabel('aback');
+    arrayAddr(a, oob);
+    e.label(back);
+    arrSink ??= allocSlot('arr.sink');
+    const sink = arrSink;
+    deferred.push(() => { e.label(oob); e.ld('hl', sink); e.jp(back); });
+    if (isSimple(value)) { loadSimple('de', value); }
+    else { e.push('hl'); gen(value); e.pop('de'); e.ex('de', 'hl'); }
+    e.ld('(hl)', 'e'); e.inc('l'); e.ld('(hl)', 'd');
+  }
+
+  // ── sprite instances (v2) ──
+  /** An instance reference -> {first, count, idx}: idx is the index expression node, or null for a bare name (instance 0). */
+  function instRef(node) {
+    const r = instRefs.get(up(node.name));
+    if (!r) throw new GenError(node, `internal: unresolved sprite ${node.name}`);
+    return { first: r.first, count: r.count, idx: node.type === 'Index' ? node.index : null };
+  }
+  /** The constant instance number of a reference (-1: constant but outside the pool), or null when the index is a run-time value. */
+  function instConst(r) {
+    if (r.idx === null) return r.first;
+    const k = fold(r.idx);
+    if (k === undefined) return null;
+    return k >= 0 && k < r.count ? r.first + k : -1;
+  }
+  /** HL = raw index -> A = the instance number; jumps to `bad` when the index is outside the pool. Clobbers A and flags only. */
+  function instToA(r, bad) {
+    e.ld('a', 'h'); e.or('a'); e.jp('nz', bad);
+    e.ld('a', 'l'); e.cp(r.count); e.jp('nc', bad);
+    if (r.first) e.add('a', r.first);
+  }
+
   // ── expressions: the value ends up in HL ──
   function gen(x) {
     const c = fold(x);
     if (c !== undefined) { e.ld('hl', c); return; }
     switch (x.type) {
       case 'Ident': e.ld('hl', M(addrOf(x.name))); return;
+      case 'Index': arrayRead(x); return;
       case 'Unary':
         if (x.op === '-') { gen(x.operand); negHL(); } else boolValue(x);
         return;
@@ -608,8 +761,16 @@ export function generate(ast, runtime, assets = {}) {
         return;
       }
       case 'HIT': {
+        if (v2) { hitV2(a[0], a[1]); return; }
         const ia = spriteIndex.get(up(a[0].name)), ib = spriteIndex.get(up(a[1].name));
         e.ld('a', ia); e.ld('e', ib); e.call(need('RT_HIT'));
+        return;
+      }
+      case 'KEYDOWN': {
+        const arg = a[0];
+        const code = arg.type === 'String' ? arg.value.toUpperCase().charCodeAt(0) : fold(arg);
+        if (!Number.isInteger(code) || code < 0 || code > 255) throw new GenError(arg, 'KEYDOWN needs a key written out as a number 0..255 or a one-character string');
+        e.ld('a', code); e.call(need('RT_KEYDOWN'));
         return;
       }
       case 'TILEAT': {
@@ -619,6 +780,38 @@ export function generate(ast, runtime, assets = {}) {
       }
       default: throw new GenError(x, `internal: function ${x.name}`);
     }
+  }
+
+  /** HIT(a, b) with instance references: 0 when either index is outside its pool. */
+  function hitV2(na, nb) {
+    const ra = instRef(na), rb = instRef(nb);
+    const ca = instConst(ra), cb = instConst(rb);
+    const rt = need('RT_HIT');
+    if (ca !== null && cb !== null) {
+      if (ca < 0 || cb < 0) { e.ld('hl', 0); return; }
+      e.ld('a', ca); e.ld('e', cb); e.call(rt); return;
+    }
+    const BAD = e.newLabel('hbad'), END = e.newLabel('hend');
+    if (ca !== null || cb !== null) {
+      const dynRef = ca === null ? ra : rb, k = ca === null ? cb : ca;
+      gen(dynRef.idx);
+      if (k < 0) { e.ld('hl', 0); return; }     // the constant one is outside: HIT is 0 (the index was evaluated)
+      instToA(dynRef, BAD);
+      if (ca === null) { e.ld('e', k); } else { e.ld('e', 'a'); e.ld('a', k); }
+      e.call(rt); e.jr(END);
+      e.label(BAD); e.ld('hl', 0);
+      e.label(END);
+      return;
+    }
+    const BAD1 = e.newLabel('hbad');
+    gen(ra.idx); e.push('hl');
+    gen(rb.idx);
+    instToA(rb, BAD1); e.ld('e', 'a');
+    e.pop('hl'); instToA(ra, BAD);
+    e.call(rt); e.jr(END);
+    e.label(BAD1); e.pop('hl');
+    e.label(BAD); e.ld('hl', 0);
+    e.label(END);
   }
 
   // ── conditions: jump to `label` when the truth of x equals `sense`, else fall through ──
@@ -781,7 +974,9 @@ export function generate(ast, runtime, assets = {}) {
         e.call(rt);
         return;
       }
-      case 'Assign': gen(s.value); e.ld(M(addrOf(s.target.name)), 'hl'); return;
+      case 'Assign':
+        if (s.target.type === 'Index') { arrayWrite(s.target, s.value); return; }
+        gen(s.value); e.ld(M(addrOf(s.target.name)), 'hl'); return;
       case 'If': {
         const ELSE = e.newLabel('else'), END = e.newLabel('endif');
         const hasElse = s.else && s.else.length > 0;
@@ -812,17 +1007,48 @@ export function generate(ast, runtime, assets = {}) {
         return;
       }
       case 'Show': {
-        const idx = spriteIndex.get(up(s.sprite.name));
         const rShow = need('RT_SHOW');
-        if (isSimple(s.y)) { gen(s.x); e.ld('b', 'h'); e.ld('c', 'l'); loadSimple('de', s.y); }
-        else if (isSimple(s.x)) { gen(s.y); e.ex('de', 'hl'); loadSimple('bc', s.x); }
-        else { gen(s.x); e.push('hl'); gen(s.y); e.ex('de', 'hl'); e.pop('bc'); }
-        e.ld('a', idx); e.call(rShow);
+        let k = null, ref = null;
+        if (v2) { ref = instRef(s.sprite); k = instConst(ref); }
+        else k = spriteIndex.get(up(s.sprite.name));
+        const xy = () => {                         // BC = x, DE = y
+          if (isSimple(s.y)) { gen(s.x); e.ld('b', 'h'); e.ld('c', 'l'); loadSimple('de', s.y); }
+          else if (isSimple(s.x)) { gen(s.y); e.ex('de', 'hl'); loadSimple('bc', s.x); }
+          else { gen(s.x); e.push('hl'); gen(s.y); e.ex('de', 'hl'); e.pop('bc'); }
+        };
+        if (k === null) {                          // v2, run-time index: index, x, y; then the pool check
+          gen(ref.idx); e.push('hl');
+          xy();
+          e.pop('hl');
+          const SKIP = e.newLabel('shskip');
+          e.ld('a', 'h'); e.or('a'); e.jr('nz', SKIP);
+          e.ld('a', 'l'); e.cp(ref.count); e.jr('nc', SKIP);
+          if (ref.first) e.add('a', ref.first);
+          e.call(rShow);
+          e.label(SKIP);
+          return;
+        }
+        if (k < 0) {                               // v2, constant index outside the pool: x and y are still evaluated
+          if (!isSimple(s.x)) gen(s.x);
+          if (!isSimple(s.y)) gen(s.y);
+          return;
+        }
+        xy();
+        e.ld('a', k); e.call(rShow);
         return;
       }
       case 'Hide': {
-        const idx = spriteIndex.get(up(s.sprite.name));
-        e.ld('a', idx); e.call(need('RT_HIDE'));
+        const rHide = need('RT_HIDE');
+        if (!v2) { e.ld('a', spriteIndex.get(up(s.sprite.name))); e.call(rHide); return; }
+        const ref = instRef(s.sprite), k = instConst(ref);
+        if (k === null) {
+          const SKIP = e.newLabel('hdskip');
+          gen(ref.idx); instToA(ref, SKIP); e.call(rHide);
+          e.label(SKIP);
+          return;
+        }
+        if (k < 0) return;
+        e.ld('a', k); e.call(rHide);
         return;
       }
       case 'Exit': {
@@ -918,6 +1144,7 @@ export function generate(ast, runtime, assets = {}) {
       if (c.kind === 'F') { gen(c.node.body); }
       else block(c.node.body);
       e.ret();
+      flushDeferred();
     }
     if (used.bit) {
       // HL = v, DE = n -> HL = bit n of v (0 if n is outside 0..15)
@@ -983,6 +1210,7 @@ export function generate(ast, runtime, assets = {}) {
         const codes = [...text].map((ch) => ch.charCodeAt(0));
         e.label(label); e.db(codes.length, ...codes);
       }
+      if (v2) { e.label('inst$table'); e.db(instAssets.length, ...instAssets); }
       dataSize.strings = e.size - mark0;
       v1Info = { tileset: 0, sfxTable: 0, map: 0 };
       if (tileset) { e.label('tileset$'); e.db(tileset.count); for (const b of tileset.bytes) e.db(b); }
@@ -1017,10 +1245,14 @@ export function generate(ast, runtime, assets = {}) {
   }
   const symbols = {
     vars: Object.fromEntries([...varSlots].map(([k, a]) => [k, a])),
+    ...(v2 ? {
+      arrays: Object.fromEntries([...arrays].map(([k, a]) => [k, { addr: a.addr, n: a.n }])),
+      instances: Object.fromEntries([...instRefs].map(([k, r]) => [k, { first: r.first, count: r.count }])),
+    } : {}),
     slots: slotNames.map((n, i) => ({ name: n, addr: slotAddr(i) })),
     procs: Object.fromEntries(reach.filter((r) => r.kind === 'P').map((r) => [r.key, e.addressOf(r.label)])),
     fns: Object.fromEntries(reach.filter((r) => r.kind === 'F').map((r) => [r.key, e.addressOf(r.label)])),
-    sprites: Object.fromEntries(sprites.map((s, i) => [s.key, i])),
+    sprites: v2 ? Object.fromEntries([...instRefs].map(([k, r]) => [k, r.first])) : Object.fromEntries(sprites.map((s, i) => [s.key, i])),
     sfx: Object.fromEntries(sfxList.map((s, i) => [up(s.name), i])),
   };
   const rate = ast.framerate ? ast.framerate.value : 30;
@@ -1033,7 +1265,9 @@ export function generate(ast, runtime, assets = {}) {
     symbols,
     srcMap,
     headerLen: HEADER_BYTES,
+    descLen: DESC_LEN,
     v1: v1Info,
-    usage: { dataBytes: dataSize, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites },
+    v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length } : null,
+    usage: { dataBytes: dataSize, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites },
   };
 }

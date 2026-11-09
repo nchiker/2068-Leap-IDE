@@ -13,6 +13,9 @@
  * docs/ARCADE_RUNTIME_API_V1.md: text, tiles, HIT, PLAY). The caller passes the parsed json and the 65,536-byte image;
  * arcade/tools/arcadec.mjs does it for `--runtime v0|v1|<dir|json>` (v0 is the default there).
  *
+ * (M4a) version 2 = the v2 build (arcade/build/v2/runtime.json, docs/ARCADE_RUNTIME_API_V2.md: arrays, sprite pools and instances,
+ * KEYDOWN, phases); the checker is told the version (DIM sizes), the code generator takes the v2 path. v0 and v1 are unchanged.
+ *
  * parse -> check -> generate -> link. Errors from every stage are returned as
  * {line, col, endCol, severity, message}; when there is an error dck / memory / map are null.
  * `usage` is the linker's byte count (plus `codegen` details) when the build got that far.
@@ -33,7 +36,7 @@ export function compile(text, { runtime, image, assets } = {}) {
   const { ast, errors: perrs } = parse(text);
   take(perrs);
   if (out.errors.length) { sort(out.errors); return out; }
-  take(check(ast));
+  take(check(ast, { version: runtime?.version ?? 0 }));
   if (out.errors.length) { sort(out.errors); sort(out.warnings); return out; }
   if (!runtime || !image) {
     out.errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message: 'no runtime image: build the runtime first (arcade/build/runtime.json and runtime.bin)' });

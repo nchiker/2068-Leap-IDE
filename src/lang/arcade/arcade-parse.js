@@ -52,6 +52,10 @@
  *      cursor to the next row. A separator right before the end of the statement is the "trailing" one (';' keeps the
  *      cursor, so does ','); `PRINT AT 1, 2;` has no trailing separator (the ';' belongs to AT), so it ends the line.
  *      (The M3 grammar needed no parser change beyond the message for a stray AT / TAB.)
+ *  14. (M4a) `SPRITE name(n) = "asset"` declares a pool of n instances (n a literal; the node has `count`, null for a single
+ *      sprite). SHOW and HIDE take an instance reference: a bare name (an Ident) or `name(expr)` (an Index node, like an array
+ *      element); HIT's arguments are ordinary expressions so they already parse that way. The checker and the code generator
+ *      decide what a reference means.
  */
 
 "use strict";
@@ -287,11 +291,22 @@ class Parser {
         } else {
           this.next();
           const name = this.expectName(`a ${v.toLowerCase()} name`);
+          let count = null, countPos = null;
+          if (isSym(this.peek(), '(')) {
+            if (v !== 'SPRITE') this.fail(this.peek(), `only a SPRITE can have a pool size: ${v} ${name.text} = "..."`);
+            this.next();
+            const c = this.peek();
+            if (c.type !== 'number') this.fail(c, `a pool size must be a literal number, e.g. SPRITE ${name.text}(6) = "${name.text}"`);
+            this.next();
+            count = c.value; countPos = pos(c);
+            if (isSym(this.peek(), ',')) this.fail(this.peek(), 'a pool has one size: SPRITE name(n) = "asset"');
+            this.expectSym(')');
+          }
           this.expectSym('=', `expected '=' and the asset name in quotes, e.g. ${v} ${name.text} = "${name.text}"`);
           const s = this.peek();
           if (s.type !== 'string') this.fail(s, `expected the asset name in quotes, e.g. ${v} ${name.text} = "${name.text}"`);
           this.next();
-          const node = this.close(this.mk('Asset', t, { kind: v, name: name.text, namePos: pos(name), asset: s.value }));
+          const node = this.close(this.mk('Asset', t, { kind: v, name: name.text, namePos: pos(name), asset: s.value, count, countPos }));
           prog.assets.push(node); prog.items.push(node);
         }
         return;
@@ -476,7 +491,7 @@ class Parser {
       case 'DIM': return this.dim();
       case 'DEF': return this.defFn();
       case 'SHOW': return this.show();
-      case 'HIDE': { this.next(); return this.close(this.mk('Hide', t, { sprite: this.nameRef('a sprite name') })); }
+      case 'HIDE': { this.next(); return this.close(this.mk('Hide', t, { sprite: this.spriteRef() })); }
       case 'PLAY': { this.next(); return this.close(this.mk('Play', t, { sfx: this.nameRef('a sound effect name') })); }
       case 'ENTER': { this.next(); return this.close(this.mk('Enter', t, { scene: this.nameRef('a scene name', true) })); }
       case 'SILENCE': this.next(); return this.mk('Silence', t, {});
@@ -524,6 +539,14 @@ class Parser {
     if (t.type !== 'ident' && !(allowWord && t.type === 'keyword' && !BLOCK_WORDS.has(t.value))) this.fail(t, `expected ${what} but found ${describe(t)}`);
     this.next();
     return this.mk('Ident', t, { name: t.text });
+  }
+
+  /** An instance reference after SHOW / HIDE: `name` (an Ident) or `name(expr)` (an Index node). */
+  spriteRef() {
+    const t = this.peek();
+    const id = this.nameRef('a sprite name');
+    if (isSym(this.peek(), '(')) return this.indexRest(t);
+    return id;
   }
 
   assign() {
@@ -577,7 +600,7 @@ class Parser {
 
   show() {
     const t = this.next();
-    const sprite = this.nameRef('a sprite name');
+    const sprite = this.spriteRef();
     this.expectKw('AT', 'expected AT: SHOW sprite AT x, y');
     const x = this.expr(); this.expectSym(',', "expected ',' : SHOW sprite AT x, y");
     const y = this.expr();

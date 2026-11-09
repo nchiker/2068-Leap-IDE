@@ -46,6 +46,25 @@
  *     before the first tick like any other (the first tick starts frameDiv refreshes after INIT in this model).
  *   - STR$(n) is only valid as a PRINT item (or joined to text with +); there are no string variables.
  *
+ * ── M4a additions (v2 runtime, `opts.version >= 2`; docs/ARCADE_RUNTIME_API_V2.md) ───────────────────────────────────────────
+ *   - Arrays `DIM a(n)`: n + 1 16-bit elements, all 0 at the start. An index outside 0..n reads 0 and a write is ignored (the value
+ *     and the index are still evaluated, index first). The record has `arrays: {NAME: [n + 1 values]}` beside `vars`.
+ *   - Sprites are INSTANCES (up to 16). `SPRITE name = "a"` is one instance, `SPRITE name(n) = "a"` n consecutive ones; a bare pool
+ *     name is instance 0. SHOW / HIDE / HIT take `name` or `name(expr)`; an index outside the pool makes SHOW and HIDE do nothing
+ *     (their other operands are still evaluated: index, x, y in that order) and HIT give 0. The record's `sprites` has 16 entries
+ *     (the SPR_TAB-equivalent: positions as clamped by SHOW, never rounded for `phases`); the result has `instAsset` (the asset
+ *     index of each instance, assets numbered in order of first use; two declarations of the same asset share it) and
+ *     `assetPhases`. `roundX(x, phases)` (exported) is what the PICTURE model does with x for an asset with fewer than 8 phases.
+ *   - KEYDOWN(c): c is a literal number or a one-character string (upper-cased), looked up with `opts.keys`: a function (tick, code)
+ *     or an array indexed by tick - 1 of arrays / Sets of held codes. Only A-Z, 0-9, 32, 13, 1, 2 are ever held (RT_KEYDOWN gives 0
+ *     for any other code).
+ *
+ *   - `opts.clock` = {play(tick, n), sample(tick)} (default: none) replaces the refresh model above by absolute refresh numbers read
+ *     off a real machine: play(tick, n) is the refresh in which the n-th PLAY / SILENCE call of PROC FRAME `tick` (0 = INIT) ran,
+ *     sample(tick) the refresh at which the state of that tick was sampled. A real runtime samples at the END of the tick, after its
+ *     drawing (which may span refreshes), a PLAY can run in the middle of a long PROC FRAME, and a tick that overruns its frame_div
+ *     is followed by a later one. Only the sound state depends on it: `played` = sample - play, active while played <= records.
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -60,6 +79,10 @@ import { assetTables, lookupAsset, convertTileset, convertSfx, convertMap, BLANK
 
 export const wrap16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
 export const MAX_SPRITES = 4;
+export const MAX_INSTANCES = 16;
+/** x as the picture shows it for an asset with `phases` (8, 4, 2, 1) pre-shifted positions: rounded DOWN to a multiple of 8 / phases. */
+export const roundX = (x, phases = 8) => { const q = 8 / phases; return x - (x % q); };
+const isKnownKey = (c) => (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c === 32 || c === 13 || c === 1 || c === 2;
 export const SHOW_X_MAX = 239;
 export const SHOW_Y_MAX = 176;
 export const BG_ATTR = 0x38;
@@ -96,19 +119,28 @@ export function interpret(ast, opts = {}) {
   };
 
   // ── set-up: sprites, scopes, procs, functions ──
-  const sprites = [];                       // names in declaration order
-  const spriteIndex = new Map();
-  const boxes = [];                         // collision box [hx, hy, hw, hh] per sprite
+  const V2 = (opts.version ?? 0) >= 2;
+  const sprites = [];                       // instance names in declaration order
+  const instRefs = new Map();               // KEY -> {first, count}: the instances a declaration made
+  const boxes = [];                         // collision box [hx, hy, hw, hh] per instance
+  const instAsset = [], assetObjs = [], assetPhases = [];
   const sfxNames = [], sfxIndex = new Map(), sfxLen = [];
   let tileset = null, mapDecl = null;
   const tabs = assetTables(opts.assets);
   for (const a of ast.assets ?? []) {
     if (a.kind === 'SPRITE') {
-      spriteIndex.set(up(a.name), sprites.length);
-      sprites.push(a.name);
+      if (a.count !== null && a.count !== undefined && !V2) throw new Unsupported('a sprite pool', a);
       const as = lookupAsset(tabs.sprites, a.asset, a.name);
       const w = as?.w ?? 16, h = as?.h ?? as?.rows?.length ?? as?.frames?.[0]?.rows?.length ?? 16;
-      boxes.push(as?.hot ? [...as.hot] : [0, 0, w, h]);
+      const count = a.count ?? 1;
+      let ai = as === undefined ? -1 : assetObjs.indexOf(as);
+      if (ai < 0) { ai = assetObjs.length; assetObjs.push(as); assetPhases.push(as?.phases ?? 8); }
+      instRefs.set(up(a.name), { first: sprites.length, count, pool: a.count !== null && a.count !== undefined });
+      for (let k = 0; k < count; k++) {
+        sprites.push(a.count !== null && a.count !== undefined ? `${a.name}(${k})` : a.name);
+        instAsset.push(ai);
+        boxes.push(as?.hot ? [...as.hot] : [0, 0, w, h]);
+      }
     } else if (a.kind === 'SFX') {
       sfxIndex.set(up(a.name), sfxNames.length);
       sfxNames.push(a.name);
@@ -123,7 +155,17 @@ export function interpret(ast, opts = {}) {
       mapDecl = a;
     } else throw new Unsupported(`${a.kind} declaration`, a);
   }
-  if (sprites.length > MAX_SPRITES) throw new Unsupported('more than 4 sprites', ast);
+  const nSprSlots = V2 ? (opts.maxInstances ?? MAX_INSTANCES) : MAX_SPRITES;      // opts.maxInstances: tests with a mock runtime that has more than 16
+  if (sprites.length > nSprSlots) throw new Unsupported(`more than ${nSprSlots} sprites`, ast);
+  if (V2 && assetObjs.length > 8) throw new Unsupported('more than 8 sprite assets', ast);
+  const keysOpt = opts.keys ?? (() => false);
+  const keyHeld = (t, code) => {
+    if (!isKnownKey(code)) return false;
+    if (typeof keysOpt === 'function') return !!keysOpt(t, code);
+    const item = keysOpt[t - 1];
+    if (!item) return false;
+    return item instanceof Set ? item.has(code) : item.includes(code);
+  };
   const frameDiv = 60 / (ast.framerate ? ast.framerate.value : 30);
 
   // ── the cell map, the text state and the sound state ──
@@ -154,13 +196,19 @@ export function interpret(ast, opts = {}) {
     }
   };
   const isStr = (e) => e.type === 'String' || (e.type === 'Func' && e.name === 'STR$') || (e.type === 'Binary' && e.op === '+' && isStr(e.left) && isStr(e.right));
-  const spr = Array.from({ length: MAX_SPRITES }, () => ({ visible: 0, x: 0, y: 0 }));
+  const spr = Array.from({ length: nSprSlots }, () => ({ visible: 0, x: 0, y: 0 }));
 
   const globalScope = new Scope(null);
-  const varNames = [];
+  const varNames = [], arrNames = [];
   const declare = (scope, dim) => {
     for (const it of dim.items) {
-      if (it.size !== null && it.size !== undefined) throw new Unsupported('arrays', it);
+      if (it.size !== null && it.size !== undefined) {
+        if (!V2) throw new Unsupported('arrays', it);
+        if (it.name.endsWith('$')) throw new Unsupported('string arrays', it);
+        scope.vars.set(up(it.name), { arr: new Array(it.size + 1).fill(0), n: it.size });
+        arrNames.push(up(it.name));
+        continue;
+      }
       if (it.name.endsWith('$')) throw new Unsupported('string variables', it);
       scope.vars.set(up(it.name), { v: 0 });
       varNames.push(up(it.name));
@@ -181,19 +229,44 @@ export function interpret(ast, opts = {}) {
   const sceneFns = new Map(fnTable), sceneProcs = new Map(procTable);
   collect(sceneScope, scene, sceneFns, sceneProcs);
 
+  const clock = opts.clock ?? null;
+  let playN = 0;
   const snapshot = (events) => {
+    const st = { active: sfx.active, index: sfx.index, played: sfx.played };
+    if (clock && sfx.index >= 0) { st.played = Math.max(0, clock.sample(tick) - sfx.t0); st.active = sfx.active && st.played <= sfxLen[sfx.index]; }
     const vars = {};
     for (const k of varNames) vars[k] = sceneScope.find(k).v;
+    const arrays = {};
+    for (const k of arrNames) arrays[k] = sceneScope.find(k).arr.slice();
     return {
-      tick, vars, sprites: spr.map((s) => ({ ...s })), events,
+      tick, vars, arrays, sprites: spr.map((s) => ({ ...s })), events,
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
-      sfx: { active: sfx.active, index: sfx.index, played: sfx.played, rec: sfx.active && sfx.played >= 1 ? sfx.played - 1 : -1 },
+      sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
     };
   };
 
   // ── expressions ──
   let events = [];
   const tickStep = () => { if (++steps > maxSteps) throw new Error('interp: step limit exceeded'); };
+
+  /** The absolute instance a SHOW / HIDE / HIT operand names (index evaluated now), or -1 when its index is outside the pool. */
+  function instOf(node, sc) {
+    const r = instRefs.get(up(node.name));
+    if (!r) throw new Error(`interp: unknown sprite ${node.name}`);
+    if (node.type === 'Index') {
+      if (!V2) throw new Unsupported('an instance index', node);
+      const i = ev(node.index, sc);
+      return i >= 0 && i < r.count ? r.first + i : -1;
+    }
+    return r.first;
+  }
+  /** KEYDOWN's key, fixed when the game is built: a literal number, or a one-character string (upper-cased). */
+  function keyCodeOf(a, at) {
+    if (a.type === 'String' && a.value.length === 1) return a.value.toUpperCase().charCodeAt(0);
+    if (a.type === 'Number') return a.value;
+    if (a.type === 'Unary' && a.op === '-' && a.operand.type === 'Number') return -a.operand.value;
+    throw new Unsupported('KEYDOWN with a key that is not written out', at);
+  }
 
   function ev(e, sc) {
     tickStep();
@@ -203,6 +276,13 @@ export function interpret(ast, opts = {}) {
         const c = sc.find(up(e.name));
         if (!c) throw new Error(`interp: undeclared variable ${e.name}`);
         return c.v;
+      }
+      case 'Index': {
+        if (!V2) throw new Unsupported('arrays', e);
+        const c = sc.find(up(e.name));
+        if (!c || !c.arr) throw new Error(`interp: ${e.name} is not an array`);
+        const i = ev(e.index, sc);
+        return i >= 0 && i <= c.n ? c.arr[i] : 0;
       }
       case 'Unary': {
         const v = ev(e.operand, sc);
@@ -240,11 +320,16 @@ export function interpret(ast, opts = {}) {
           }
           case 'STICK': { const n = ev(args[0], sc); return n === 1 || n === 2 ? stickValue(tick, n) & 31 : 0; }
           case 'HIT': {
-            const a = spriteIndex.get(up(args[0].name)), b = spriteIndex.get(up(args[1].name));
+            const a = instOf(args[0], sc), b = instOf(args[1], sc);
+            if (a < 0 || b < 0) return 0;
             if (!spr[a].visible || !spr[b].visible) return 0;
             const [ahx, ahy, ahw, ahh] = boxes[a], [bhx, bhy, bhw, bhh] = boxes[b];
             const al = spr[a].x + ahx, at = spr[a].y + ahy, bl = spr[b].x + bhx, bt = spr[b].y + bhy;
             return al < bl + bhw && bl < al + ahw && at < bt + bhh && bt < at + ahh ? 1 : 0;
+          }
+          case 'KEYDOWN': {
+            if (!V2) throw new Unsupported('function KEYDOWN', e);
+            return keyHeld(tick, keyCodeOf(args[0], e)) ? 1 : 0;
           }
           case 'TILEAT': {
             const x = ev(args[0], sc), y = ev(args[1], sc);
@@ -290,7 +375,14 @@ export function interpret(ast, opts = {}) {
     switch (s.type) {
       case 'Rem': return null;
       case 'Assign': {
-        if (s.target.type !== 'Ident') throw new Unsupported('arrays', s);
+        if (s.target.type === 'Index') {
+          if (!V2) throw new Unsupported('arrays', s);
+          const c = sc.find(up(s.target.name));
+          const i = ev(s.target.index, sc);
+          const v = ev(s.value, sc);
+          if (i >= 0 && i <= c.n) c.arr[i] = v;
+          return null;
+        }
         const v = ev(s.value, sc);
         sc.find(up(s.target.name)).v = v;
         return null;
@@ -340,14 +432,16 @@ export function interpret(ast, opts = {}) {
       }
       case 'Show': {
         if (s.frame) throw new Unsupported('SHOW ... FRAME', s);
-        const idx = spriteIndex.get(up(s.sprite.name));
+        const idx = instOf(s.sprite, sc);
         const x = ev(s.x, sc), y = ev(s.y, sc);
+        if (idx < 0) return null;
         spr[idx] = { visible: 1, x: Math.min(Math.max(x, 0), SHOW_X_MAX), y: Math.min(Math.max(y, 0), SHOW_Y_MAX) };
         events.push({ op: 'show', sprite: idx, x, y });
         return null;
       }
       case 'Hide': {
-        const idx = spriteIndex.get(up(s.sprite.name));
+        const idx = instOf(s.sprite, sc);
+        if (idx < 0) return null;
         spr[idx] = { ...spr[idx], visible: 0 };
         events.push({ op: 'hide', sprite: idx });
         return null;
@@ -391,9 +485,10 @@ export function interpret(ast, opts = {}) {
       case 'Play': {
         const i = sfxIndex.get(up(s.sfx.name));
         sfx.active = true; sfx.index = i; sfx.played = 0;
+        if (clock) sfx.t0 = clock.play(tick, ++playN);
         return null;
       }
-      case 'Silence': sfx.active = false; return null;
+      case 'Silence': sfx.active = false; if (clock) ++playN; return null;
       default: throw new Unsupported(`statement ${s.type}`, s);
     }
   }
@@ -406,15 +501,17 @@ export function interpret(ast, opts = {}) {
 
   tick = 0;
   events = [];
+  playN = 0;
   callProc('INIT');
   const init = snapshot(events);
   const ticks = [];
   for (let t = 1; t <= nTicks; t++) {
     tick = t;
     events = [];
-    advanceRefreshes(frameDiv);          // the refreshes between the previous sample and this tick's PROC FRAME
+    playN = 0;
+    if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
     callProc('FRAME');
     ticks.push(snapshot(events));
   }
-  return { init, ticks, varNames, spriteNames: sprites, sfxNames, frameDiv };
+  return { init, ticks, varNames, arrNames, spriteNames: sprites, sfxNames, frameDiv, instAsset, assetPhases };
 }

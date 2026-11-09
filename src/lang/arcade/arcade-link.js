@@ -14,6 +14,10 @@
  * The rest of $8000-$BFFF is cleared to 0. `memory` is the full 64 KB image; `dck` is a TS2068 DCK with one bank-0
  * block, kinds 0 and 2 only, chunks 0, 1, 4 and 5 shipped (a port of arcade/tools/mkdck.mjs's buildDck).
  *
+ * Runtime API v2 (gen.headerLen 16, gen.descLen 8, docs/ARCADE_RUNTIME_API_V2.md): the header continues +14 DW inst_table (inside the code
+ * area: `DB ninst`, then one asset index per instance); `sprite_count` is the number of ASSETS; each descriptor is
+ * `DB w, DB h, DW data, DW hot, DB phases, DB 0`.
+ *
  * Runtime API v1 (gen.headerLen 14, docs/ARCADE_RUNTIME_API_V1.md): the header continues
  *   +8 DW tileset_ptr   +10 DW sfx_table   +12 DW map_ptr   (0 = none; the data is inside gen.code, see arcade-codegen.js)
  * and the last word of each sprite descriptor is the hot-box pointer (`DB x, y, w, h`; 0 in v0 images). The sprite descriptors
@@ -64,7 +68,7 @@ export function link(gen, runtime, image) {
   const GAME_BASE = cst.GAME_BASE ?? 0x8000;
   const GAME_END = GAME_BASE + 2 * CHUNK;          // chunks 4-5 end at $C000
   const n = gen.sprites.length;
-  const headerLen = gen.headerLen ?? 8, descLen = 6 * n;
+  const headerLen = gen.headerLen ?? 8, descLen = (gen.descLen ?? 6) * n;
   if (gen.base !== GAME_BASE + headerLen + descLen) return fail(`code was generated for base $${gen.base.toString(16)} but the image needs $${(GAME_BASE + headerLen + descLen).toString(16)}`);
 
   const memory = Uint8Array.from(image);
@@ -88,12 +92,14 @@ export function link(gen, runtime, image) {
     w16(GAME_BASE + 10, gen.v1?.sfxTable ?? 0);
     w16(GAME_BASE + 12, gen.v1?.map ?? 0);
   }
+  if (headerLen >= 16) w16(GAME_BASE + 14, gen.v2?.instTable ?? 0);      // v2: inst_table -> DB ninst, ninst x DB asset
   let dataAt = codeEnd;
   gen.sprites.forEach((s, i) => {
-    const d = GAME_BASE + headerLen + 6 * i;
+    const d = GAME_BASE + headerLen + (gen.descLen ?? 6) * i;
     memory[d] = s.w; memory[d + 1] = s.h;
     w16(d + 2, dataAt);
     w16(d + 4, s.hotAddr ?? 0);
+    if ((gen.descLen ?? 6) >= 8) { memory[d + 6] = s.phases ?? 8; memory[d + 7] = 0; }     // v2: DB phases, DB 0
     memory.set(s.data, dataAt);
     dataAt += s.data.length;
   });
@@ -111,6 +117,7 @@ export function link(gen, runtime, image) {
     procs: gen.symbols.procs,
     fns: gen.symbols.fns,
     sprites: gen.symbols.sprites,
+    ...(gen.symbols.arrays ? { arrays: gen.symbols.arrays, instances: gen.symbols.instances } : {}),
     entries: gen.entries,
   };
   const usage = {

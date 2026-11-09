@@ -26,6 +26,12 @@
  *     arcade-codegen.js M3-2/M3-3). Characters of a PRINT string literal must be 32..127 (the font). That TILE needs a TILESET,
  *     the one-TILESET / eight-SFX limits and a tile index beyond the tileset's tile count are code generator errors (they need
  *     the asset), not checker errors.
+ *   - (M4a) check(ast, {version}): with version >= 2 (a v2 runtime) a DIM size must be 1..1000 (LIMITS.maxDimV2), else 1..16383.
+ *     `SPRITE name(n)` needs n in 1..16. SHOW / HIDE / HIT take an instance reference: the name of a SPRITE (a pool: instance 0)
+ *     or `name(expr)` (a numeric index; a literal outside the pool is only a WARNING, because a run-time index outside it is
+ *     defined as "ignored" and the same holds for a literal). The same rule for a literal array index outside 0..n.
+ *     KEYDOWN's argument must be a literal number 0..255 or a one-character string (an error otherwise); a number that is not a
+ *     key the runtime scans (A-Z, 0-9, 32, 13, 1, 2) is a warning.
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
@@ -55,8 +61,12 @@ const up = s => String(s).toUpperCase();
 const typeOfName = name => name.endsWith('$') ? 'str' : 'num';
 const typeWord = t => t === 'str' ? 'a string' : 'a number';
 
+/** Key codes the v2 runtime's RT_KEYDOWN knows (docs/ARCADE_RUNTIME_API_V2.md "Keyboard"). */
+const isKnownKey = (c) => (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c === 32 || c === 13 || c === 1 || c === 2;
+
 class Checker {
-  constructor(ast, errors) {
+  constructor(ast, errors, opts = {}) {
+    this.maxDim = (opts.version ?? 0) >= 2 ? LIMITS.maxDimV2 : LIMITS.maxDim;
     this.ast = ast;
     this.errors = errors;
     this.scopes = [];
@@ -94,7 +104,10 @@ class Checker {
       const key = up(a.name);
       const prev = global.vars.get(key);
       if (prev) { this.err(a.namePos, `'${a.name}' is already declared (line ${prev.pos.line})`); continue; }
-      global.vars.set(key, { name: a.name, type: 'num', kind: 'asset', assetKind: a.kind.toLowerCase(), pos: a.namePos, used: false });
+      if (a.count !== null && a.count !== undefined && (a.count < 1 || a.count > LIMITS.maxPool)) {
+        this.err(a.countPos ?? a, `a pool of ${a.count} sprites is out of range (1..${LIMITS.maxPool})`);
+      }
+      global.vars.set(key, { name: a.name, type: 'num', kind: 'asset', assetKind: a.kind.toLowerCase(), pos: a.namePos, used: false, poolSize: a.count ?? null });
     }
     for (const s of ast.scenes ?? []) {
       const key = up(s.name);
@@ -176,8 +189,8 @@ class Checker {
     for (const it of dim.items ?? []) {
       if (!it.name) continue;
       const key = up(it.name);
-      if (it.size !== null && it.size !== undefined && (it.size < 1 || it.size > LIMITS.maxDim)) {
-        this.err(it.sizePos ?? it, `DIM size ${it.size} is out of range (1..${LIMITS.maxDim})`);
+      if (it.size !== null && it.size !== undefined && (it.size < 1 || it.size > this.maxDim)) {
+        this.err(it.sizePos ?? it, `DIM size ${it.size} is out of range (1..${this.maxDim})`);
       }
       const prev = scope.lookup('vars', key);
       if (prev) {
@@ -190,7 +203,7 @@ class Checker {
       }
       scope.vars.set(key, {
         name: it.name, type: typeOfName(it.name), kind: it.size === null || it.size === undefined ? 'var' : 'array',
-        pos: { line: it.line, col: it.col, endCol: it.endCol }, used: false,
+        pos: { line: it.line, col: it.col, endCol: it.endCol }, used: false, size: it.size ?? null,
       });
     }
   }
@@ -375,10 +388,15 @@ class Checker {
     } else if (e.type === 'Binary' && e.op === '+') { this.printable(e.left); this.printable(e.right); }
   }
 
-  /** SHOW / HIDE / PLAY / HIT operand: an Ident naming a declared asset of `kind`. */
+  /**
+   * SHOW / HIDE / PLAY / HIT operand: an Ident naming a declared asset of `kind`; for a sprite also `name(expr)`, an instance
+   * of a pool (M4a). A literal index outside 0..count-1 is a warning (the instruction is ignored at run time, HIT gives 0).
+   */
   assetRef(node, kind, ctx) {
     if (!node) return;
-    if (node.type !== 'Ident') { this.err(node, `expected a ${kind} name`); return; }
+    const indexed = kind === 'sprite' && node.type === 'Index';
+    if (node.type !== 'Ident' && !indexed) { this.err(node, `expected a ${kind} name`); return; }
+    if (indexed) this.numArg(node.index, ctx, 'an instance index');
     const sym = ctx.scope.lookup('vars', up(node.name));
     if (!sym) {
       this.err(node, `'${node.name}' is not a declared ${kind.toUpperCase()}: add ${kind.toUpperCase()} ${node.name} = "..."`);
@@ -386,7 +404,13 @@ class Checker {
     }
     sym.used = true;
     if (sym.kind !== 'asset') { this.err(node, `'${node.name}' is a variable, not a ${kind.toUpperCase()}`); return; }
-    if (sym.assetKind !== kind) this.err(node, `'${node.name}' is a ${sym.assetKind.toUpperCase()}, not a ${kind.toUpperCase()}`);
+    if (sym.assetKind !== kind) { this.err(node, `'${node.name}' is a ${sym.assetKind.toUpperCase()}, not a ${kind.toUpperCase()}`); return; }
+    if (indexed) {
+      const count = sym.poolSize ?? 1, k = literal(node.index);
+      if (k !== undefined && (k < 0 || k >= count)) {
+        this.warn(node.index, `instance ${k} is outside ${node.name}${sym.poolSize ? `(0..${count - 1})` : ' (a single sprite: only 0)'}: ${ctx.hitCtx ? 'HIT gives 0' : 'the instruction is ignored'}`);
+      }
+    }
   }
 
   // ── expressions: return 'num' | 'str' | '?' ──
@@ -426,6 +450,10 @@ class Checker {
         if (sym.kind !== 'array') {
           this.err(e, sym.kind === 'asset' ? `'${e.name}' is a ${sym.assetKind.toUpperCase()}, not an array` : `'${e.name}' is not an array: declare it as DIM ${e.name}(n)`);
           return '?';
+        }
+        const k = literal(e.index);
+        if (k !== undefined && sym.size !== null && sym.size !== undefined && (k < 0 || k > sym.size)) {
+          this.warn(e.index, `index ${k} is outside ${e.name}(0..${sym.size}): a read gives 0 and a write is ignored`);
         }
         return sym.type;
       }
@@ -475,6 +503,24 @@ class Checker {
     if (!ok) this.err(n, `integer ${negated ? '-' : ''}${n.value} is out of range (${negated ? LIMITS.minInt : '-32768'}..${negated ? LIMITS.maxInt : LIMITS.maxLiteral})`);
   }
 
+  /** KEYDOWN's argument is looked up when the game is built: a literal number 0..255 or a one-character string. */
+  keyArg(a, ctx) {
+    if (a.type === 'String') {
+      if (a.value.length !== 1) this.err(a, `KEYDOWN needs a one-character string, e.g. KEYDOWN("Q"); this one has ${a.value.length} characters`);
+      else if (a.value.charCodeAt(0) > 255) this.err(a, 'KEYDOWN: that character has no key');
+      else if (!isKnownKey(a.value.toUpperCase().charCodeAt(0))) this.warn(a, `KEYDOWN("${a.value}"): the runtime scans only A-Z, 0-9, space and enter; this key is never held`);
+      return;
+    }
+    const k = literal(a);
+    if (k === undefined) {
+      this.ex(a, ctx);
+      this.err(a, 'KEYDOWN needs a number or a one-character string written out, e.g. KEYDOWN("Q") or KEYDOWN(81): the key is chosen when the game is built, not at run time');
+      return;
+    }
+    if (k < 0 || k > 255) this.err(a, `KEYDOWN code ${k} must be 0..255`);
+    else if (!isKnownKey(k)) this.warn(a, `KEYDOWN(${k}): the runtime scans only A-Z (65..90), 0-9 (48..57), space (32), enter (13), 1 (CAPS SHIFT) and 2 (SYMBOL SHIFT); this key is never held`);
+  }
+
   func(e, ctx) {
     const entry = FUNCTIONS.get(e.name);
     if (!entry) { for (const a of e.args ?? []) this.ex(a, ctx); return '?'; }
@@ -484,13 +530,17 @@ class Checker {
       const want = entry.min === max ? `${max}` : `${entry.min} to ${max}`;
       this.err(e, `${entry.name} takes ${want} argument${max === 1 ? '' : 's'}, got ${args.length}`);
     }
+    if (entry.name === 'KEYDOWN') {
+      if (args.length === 1) this.keyArg(args[0], ctx);
+      return 'num';
+    }
     args.forEach((a, i) => {
       const spec = entry.args[i];
       if (!spec) { this.ex(a, ctx); return; }
       if (spec.type === 'num' || spec.type === 'str') {
         const t = this.ex(a, ctx);
         if (t !== '?' && t !== spec.type) this.err(a, `argument ${i + 1} of ${entry.name} must be ${typeWord(spec.type)}, not ${typeWord(t)}`);
-      } else this.assetRef(a, spec.type, ctx);
+      } else this.assetRef(a, spec.type, { ...ctx, hitCtx: entry.name === 'HIT' });
     });
     if (entry.name === 'TILEAT') {
       this.range(args[0], 0, LIMITS.maxCol, 'TILEAT x (the column)');
@@ -503,11 +553,12 @@ class Checker {
 /**
  * Semantic checks. Never throws.
  * @param {object} ast  from parse()
+ * @param {{version?: number}} [opts]  the runtime API version the game is built for (default 0)
  * @returns {{line:number, col:number, endCol:number, severity:'error'|'warning', message:string}[]}
  */
-export function check(ast) {
+export function check(ast, opts = {}) {
   const errors = [];
-  try { new Checker(ast, errors).run(); } catch (e) {
+  try { new Checker(ast, errors, opts).run(); } catch (e) {
     errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message: `internal checker error: ${e && e.message}` });
   }
   errors.sort((a, b) => a.line - b.line || a.col - b.col);
