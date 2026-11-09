@@ -1,0 +1,476 @@
+{
+ "sprites": {
+  "bat": {
+   "w": 16,
+   "h": 8,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "3FFC",
+       "mask": "3FFC"
+      },
+      {
+       "bits": "7FFE",
+       "mask": "7FFE"
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF"
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF"
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF"
+      },
+      {
+       "bits": "FFFF",
+       "mask": "FFFF"
+      },
+      {
+       "bits": "7FFE",
+       "mask": "7FFE"
+      },
+      {
+       "bits": "3FFC",
+       "mask": "3FFC"
+      }
+     ]
+    }
+   ]
+  },
+  "ball": {
+   "w": 8,
+   "h": 8,
+   "frames": [
+    {
+     "rows": [
+      {
+       "bits": "3C",
+       "mask": "3C"
+      },
+      {
+       "bits": "7E",
+       "mask": "7E"
+      },
+      {
+       "bits": "FF",
+       "mask": "FF"
+      },
+      {
+       "bits": "FF",
+       "mask": "FF"
+      },
+      {
+       "bits": "FF",
+       "mask": "FF"
+      },
+      {
+       "bits": "FF",
+       "mask": "FF"
+      },
+      {
+       "bits": "7E",
+       "mask": "7E"
+      },
+      {
+       "bits": "3C",
+       "mask": "3C"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "tilesets": {
+  "bricks": {
+   "tiles": [
+    {
+     "rows": [
+      {
+       "bits": "FF",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "FF",
+       "ink": 0,
+       "paper": 2,
+       "bright": 0
+      }
+     ],
+     "flags": 1
+    },
+    {
+     "rows": [
+      {
+       "bits": "FF",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      },
+      {
+       "bits": "FF",
+       "ink": 0,
+       "paper": 6,
+       "bright": 0
+      }
+     ],
+     "flags": 1
+    },
+    {
+     "rows": [
+      {
+       "bits": "FF",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "81",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      },
+      {
+       "bits": "FF",
+       "ink": 0,
+       "paper": 4,
+       "bright": 1
+      }
+     ],
+     "flags": 1
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 0,
+       "paper": 7,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    }
+   ]
+  }
+ },
+ "sfx": {
+  "wall": {
+   "ticks": [
+    {
+     "tone": 300,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 280,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 260,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 240,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  },
+  "brick": {
+   "ticks": [
+    {
+     "tone": 180,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 165,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 150,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 135,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 120,
+     "vol": 7,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 105,
+     "vol": 5,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  },
+  "lose": {
+   "ticks": [
+    {
+     "tone": 400,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 440,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 480,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 520,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 560,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 600,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 640,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 680,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 720,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 760,
+     "vol": 15,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 800,
+     "vol": 14,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 840,
+     "vol": 13,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 880,
+     "vol": 12,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 920,
+     "vol": 11,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 960,
+     "vol": 10,
+     "noise": 0,
+     "mix": 6
+    },
+    {
+     "tone": 1000,
+     "vol": 9,
+     "noise": 0,
+     "mix": 6
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,39 @@
+REM B1 sprites: 8 XOR sprites, 16x16, 99 steps (SPEC.md)
+REM The shape's set pixels are listed once: ox(k), oy(k) = offset of pixel k (n of them)
+DIM ox(256)
+DIM oy(256)
+n = 0
+FOR r = 0 TO 15
+  w = r * 2663 + 4129
+  FOR k = 0 TO 15
+    IF MOD(w, 2) = 1 THEN
+      ox(n) = 15 - k
+      oy(n) = r
+      n = n + 1
+    ENDIF
+    w = DIV(w, 2)
+  NEXT k
+NEXT r
+PROC blit(s):
+  px = MOD(16 * s + (s + 1) * tt, 240)
+  py = MOD(8 * s + 8 + (MOD(s, 4) + 1) * tt, 176)
+  FOR q = 0 TO n - 1
+    PLOT px + ox(q), py + oy(q)
+  NEXT q
+ENDP
+CLS
+OVER 1
+tt = 0
+FOR i = 0 TO 7
+  CALL blit(i)
+NEXT i
+FOR t = 1 TO 99
+  tt = t - 1
+  FOR i = 0 TO 7
+    CALL blit(i)
+  NEXT i
+  tt = t
+  FOR i = 0 TO 7
+    CALL blit(i)
+  NEXT i
+NEXT t

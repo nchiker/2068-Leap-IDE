@@ -7,6 +7,8 @@ to pick it up.
 
 ## Where it stands
 
+**New project, started 2026-11-09: Leap Arcade / Leap Arcade Studio** (a game-building BASIC and a studio for the stock TS2068, DCK output, 32 KB games). Charter, owner decisions and phases: [`docs/ARCADE_PLAN.md`](ARCADE_PLAN.md). Phase 0 (hardware notes, `docs/ARCADE_HARDWARE_NOTES.md`) is done; phase 1 is done and gate G1 chose native Z80 (`arcade/spike/G1.md`); phase 2 is in progress (`docs/ARCADE_LANGUAGE.md` v0, `docs/ARCADE_CARTRIDGE_MAP.md` L1 drafts). Milestone M1 (a cartridge with one moving sprite) is done: `node arcade/tests/m1.mjs`. Spike code in `arcade/spike/`, runtime in `arcade/runtime/`, parser in `src/lang/arcade/` (in progress). Milestones M2 (Arcade source -> DCK) and M3 (Breakout: text, tiles, HIT, sound; runtime v1) are done too. Build both runtimes first: `node arcade/tools/build-runtime.mjs && node arcade/tools/build-runtime-v1.mjs`. Tests (all must pass): `node tests/arcade-m3.mjs`, `node arcade/tests/m3-runtime{,-text,-sound,-regs,-perf}.mjs`, and `node tests/arcade-parse.mjs`, `node tests/arcade-compile.mjs`, `node arcade/tests/{m1,m1-overrun,extra-regs,m2-runtime,m2-runtime-math,m2-runtime-regs}.mjs`. Nothing of the Arcade work is committed.
+
 All phases are done, and the IDE runs three languages: Leap V2 BASIC (Leap
 2.1.1-emu.1; 2.1.0-emu.1 and 2.0.2-emu.1 stay in the ROM table), Leap-Forth
 (2068-Forth v2.0.1; v2.0 stays) and Leap-C (1.2.0, with its own cartridge

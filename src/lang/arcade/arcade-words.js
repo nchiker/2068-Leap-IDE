@@ -1,0 +1,243 @@
+/**
+ * src/lang/arcade/arcade-words.js — Leap Arcade v0: the word tables (pure; no DOM, no CodeMirror).
+ *
+ * This is the single source for the words of the language. The tokenizer and parser read RESERVED and
+ * BLOCK_WORDS, the checker reads the argument lists of the functions, and the later Help / autocomplete read the
+ * descriptions. To add a word: add one line to WORD_LIST below (docs/ARCADE_LANGUAGE.md asks for four steps:
+ * runtime spec entry, runtime routine + test, Help text = the `desc` here, changelog line). A word that needs new
+ * syntax also needs a case in arcade-parse.js; a built-in function needs nothing else (its argument count and
+ * types are checked from `args`).
+ *
+ * Entry: {name, cls, syntax, desc, args, min, ret, reserved}
+ *   cls      'statement' (as in Leap V2), 'game' (new in Arcade), 'structure' (opens / closes a block or a
+ *            declaration), 'function' (always written with brackets), 'operator'
+ *   syntax   one line, as shown in Help
+ *   args     functions only: [{name, type, optional}], type = 'num' | 'str' | 'sprite' | 'sfx' | 'tileset' | 'map'
+ *            ('sprite' etc. mean "the name of a declared asset", not an expression)
+ *   min      the number of required arguments
+ *   ret      functions only: 'num' | 'str'
+ *   reserved false for a contextual word (FRAME, INIT): it is an ordinary name everywhere except where the
+ *            grammar expects it, so `PROC FRAME()` works.
+ *
+ * Choices made where docs/ARCADE_LANGUAGE.md is silent (also listed in arcade-parse.js):
+ *   - MOD and DIV are infix operators here (V2 has them as functions MOD(a,b) / DIV(a,b)); the call form is gone.
+ *   - `/` is not a word: it is refused with a hint to use DIV (integers only).
+ *   - (M3) PRINT is `PRINT [AT row, col;] item {; or , item}`; TAB is parsed but not supported by the compiler yet. AT is not
+ *     a statement. Full semantics: docs/ARCADE_RUNTIME_API_V1.md "Language semantics" plus the notes in arcade-interp.js.
+ *   - POINT(x,y) is kept from V2 (the language doc keeps it); INKEY$, CHR$, CODE, VAL, INT, ... are not in v0.
+ */
+
+"use strict";
+
+/** Limits shared by the lexer, parser and checker. */
+export const LIMITS = Object.freeze({
+  maxName: 31,        // identifier length (V2)
+  maxString: 31,      // string literal length (V2)
+  minInt: -32768,     // 16-bit signed integers only
+  maxInt: 32767,
+  maxLiteral: 65535,  // a positive literal may be written up to 65535 (addresses for POKE/PEEK/USR); 32768..65535 wrap to the signed 16-bit value
+  maxDim: 16383,      // DIM a(n): n a literal 1 .. 16383 (V2)
+  // M3 (runtime API v1): the 32 x 24 cell map, 128 tiles, 8 sound effects
+  maxCol: 31,         // PRINT AT row, col / TILE x, y: x and col 0..31
+  maxRow: 23,         // y and row 0..23
+  maxTile: 127,       // tile index 0..127
+  maxSfx: 8,          // SFX declarations
+  maxPrintChar: 127,  // string literals printed with PRINT: character codes 32..127
+});
+
+/** FRAMERATE values: 60 / n must be a whole number of refreshes. */
+export const VALID_FRAMERATES = Object.freeze([60, 30, 20, 15, 12, 10, 6, 5, 4, 3, 2, 1]);
+
+/** Asset declarations: keyword -> the asset type name used in argument lists. */
+export const ASSET_KINDS = Object.freeze({ SPRITE: 'sprite', SFX: 'sfx', TILESET: 'tileset', MAP: 'map' });
+
+// ── The word list ─────────────────────────────────────────────────
+function parseArgs(specs = []) {
+  // 'x:num' or 'x:num?' (optional)
+  return specs.map(s => {
+    const [name, t] = s.split(':');
+    const optional = t.endsWith('?');
+    return { name, type: optional ? t.slice(0, -1) : t, optional };
+  });
+}
+
+function W(name, cls, syntax, desc, extra = {}) {
+  const args = parseArgs(extra.args);
+  return Object.freeze({
+    name, cls, syntax, desc,
+    args,
+    min: args.filter(a => !a.optional).length,
+    ret: extra.ret ?? null,
+    reserved: extra.reserved !== false,
+  });
+}
+
+const WORD_LIST = [
+  // ── Game words (new in Arcade) ──
+  W('GAME', 'game', 'GAME "title"', 'The game title. Once, at the top level.'),
+  W('FRAMERATE', 'game', 'FRAMERATE n', 'Target updates per second: 60 / n must be a whole number of refreshes (60, 30, 20, 15, 12, 10, 6, 5, 4, 3, 2, 1). Once, at the top level.'),
+  W('SPRITE', 'game', 'SPRITE name = "asset"', 'Declare a sprite made in the Studio.'),
+  W('SFX', 'game', 'SFX name = "asset"', 'Declare a sound effect made in the Studio (up to 8; PLAY starts one by name).'),
+  W('TILESET', 'game', 'TILESET name = "asset"', 'Declare the tile set made in the Studio (up to 128 tiles of 8 x 8 pixels; TILE needs one).'),
+  W('MAP', 'game', 'MAP name = "asset"', 'Declare a tile map made in the Studio; it fills the top-left of the 32 x 24 screen cells when the game starts.'),
+  W('SCENE', 'game', 'SCENE name ... ENDSCENE', 'A game part with its own PROC INIT and PROC FRAME. May hold DIM, DEF FN and PROC.'),
+  W('ENDSCENE', 'structure', 'ENDSCENE', 'Ends a SCENE.'),
+  W('ENTER', 'game', 'ENTER scene', 'Switch to another scene (its INIT runs, then its FRAME every tick).'),
+  W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f]', 'Place a sprite at a pixel position (y from the top); FRAME picks the animation frame.'),
+  W('AT', 'structure', 'AT row, col  (after PRINT) / AT x, y  (after SHOW)', 'A position: character row and column after PRINT, pixels after SHOW.'),
+  W('HIDE', 'game', 'HIDE sprite', 'Remove a sprite from the screen.'),
+  W('PLAY', 'game', 'PLAY sfx', 'Start a sound effect by its SFX name (it replaces the one playing).'),
+  W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing.'),
+  W('TILE', 'game', 'TILE x, y = t', 'Set the screen cell at column x (0..31), row y (0..23) to tile t (0..127) of the TILESET; it takes the tile\'s colours. A cell outside the screen is ignored.'),
+
+  // ── Structure ──
+  W('PROC', 'structure', 'PROC name(p): ... ENDP', 'A procedure with one by-value parameter, or none. PROC INIT() and PROC FRAME() are the scene entry points.'),
+  W('ENDP', 'structure', 'ENDP', 'Ends a PROC.'),
+  W('CALL', 'structure', 'CALL name(expr)', 'Call a procedure.'),
+  W('DEF', 'structure', 'DEF FN f(x) = expr', 'Define a numeric function of one parameter; use it as FN f(expr).'),
+  W('FN', 'structure', 'FN f(expr)', 'Call a function made with DEF FN.'),
+  W('DIM', 'statement', 'DIM a, b, c(n), d$(n)', 'Declare variables (every variable must be declared) and arrays (n a literal, one dimension). At the top level a DIM is global; inside a SCENE it belongs to the scene.'),
+  W('IF', 'structure', 'IF cond THEN ... [ELSE ...] ENDIF', 'A block; there is no one-line form.'),
+  W('THEN', 'structure', 'IF cond THEN', 'Part of IF.'),
+  W('ELSE', 'structure', 'ELSE', 'Part of IF (and CASE ELSE).'),
+  W('ENDIF', 'structure', 'ENDIF', 'Ends an IF.'),
+  W('FOR', 'structure', 'FOR v = a TO b [STEP s] ... NEXT [v]', 'Counting loop.'),
+  W('TO', 'structure', 'FOR v = a TO b / LINE x0, y0 TO x1, y1', 'Part of FOR and LINE.'),
+  W('STEP', 'structure', 'STEP s', 'Part of FOR.'),
+  W('NEXT', 'structure', 'NEXT [v]', 'Ends a FOR.'),
+  W('EXIT', 'statement', 'EXIT FOR / EXIT WHILE', 'Leave the innermost FOR (or WHILE) loop.'),
+  W('WHILE', 'structure', 'WHILE cond ... WEND', 'Loop while the condition is true.'),
+  W('WEND', 'structure', 'WEND', 'Ends a WHILE.'),
+  W('SELECT', 'structure', 'SELECT CASE n ... CASE v[, v] ... [CASE ELSE ...] ENDSEL', 'Choose by value; no fall-through.'),
+  W('CASE', 'structure', 'CASE v[, v] / CASE ELSE', 'A branch of SELECT.'),
+  W('ENDSEL', 'structure', 'ENDSEL', 'Ends a SELECT.'),
+  W('END', 'statement', 'END', 'End the program.'),
+  W('REM', 'statement', 'REM text', 'A comment to the end of the line (an apostrophe is not a comment).'),
+
+  // ── Statements kept from V2 ──
+  W('PRINT', 'statement', 'PRINT [AT row, col;] item {; or , item} [; or ,]', 'Print text (string literals, STR$(n)) and numbers (decimal, a leading - when negative, no padding) at the cursor in the current INK, PAPER and BRIGHT. AT row, col (0..23, 0..31) first moves the cursor. A comma prints one space. Without a trailing ; or , the cursor then moves to the start of the next row. Text wraps at column 32; the row after 23 is row 0 (no scrolling). TAB is not available yet.'),
+  W('TAB', 'structure', 'TAB col', 'Move the PRINT position to a column (after PRINT).'),
+  W('CLS', 'statement', 'CLS', 'Clear every screen cell to a space on the current PAPER (ink 0) and put the cursor at row 0, column 0. Tiles go too; sprites stay.'),
+  W('INK', 'statement', 'INK n', 'Ink colour 0..7 for the text printed after it (the value is taken AND 7).'),
+  W('PAPER', 'statement', 'PAPER n', 'Paper colour 0..7 for the text printed after it (the value is taken AND 7).'),
+  W('BRIGHT', 'statement', 'BRIGHT n', 'Bright 0 or 1 for the text printed after it (the value is taken AND 1).'),
+  W('FLASH', 'statement', 'FLASH n', 'Flash 0 or 1.'),
+  W('BORDER', 'statement', 'BORDER n', 'Border colour 0..7.'),
+  W('PLOT', 'statement', 'PLOT x, y', 'Set a pixel (y from the top).'),
+  W('LINE', 'statement', 'LINE x0, y0 TO x1, y1', 'Draw a line.'),
+  W('POKE', 'statement', 'POKE addr, value', 'Write a byte.'),
+  W('OUT', 'statement', 'OUT port, value', 'Write to a port.'),
+  W('RANDOMISE', 'statement', 'RANDOMISE n', 'Seed RND.'),
+
+  // ── Operators ──
+  W('AND', 'operator', 'a AND b', 'Logical and, giving 0 or 1 (not bitwise; use BIT for bit tests).'),
+  W('OR', 'operator', 'a OR b', 'Logical or, giving 0 or 1.'),
+  W('NOT', 'operator', 'NOT a', 'Logical not, giving 0 or 1. Binds looser than the comparisons.'),
+  W('MOD', 'operator', 'a MOD b', 'Remainder. An infix operator in Arcade (a function in V2).'),
+  W('DIV', 'operator', 'a DIV b', 'Integer division. An infix operator in Arcade (a function in V2).'),
+
+  // ── Functions (always written with brackets) ──
+  W('HIT', 'function', 'HIT(a, b)', '1 if both sprites are shown and their collision boxes (the sprite\'s hot box, else its whole size) overlap, else 0. Boxes that only touch do not overlap.', { args: ['a:sprite', 'b:sprite'], ret: 'num' }),
+  W('BIT', 'function', 'BIT(v, n)', '1 if bit n (0..15) of v is set, else 0.', { args: ['v:num', 'n:num'], ret: 'num' }),
+  W('STICK', 'function', 'STICK(n)', 'Joystick 1 or 2 as bits 0..4 (directions, fire = 16).', { args: ['n:num'], ret: 'num' }),
+  W('KEYDOWN', 'function', 'KEYDOWN(code)', '1 while the key with that code is held.', { args: ['code:num'], ret: 'num' }),
+  W('TILEAT', 'function', 'TILEAT(x, y)', 'The tile index (0..127) shown in the screen cell at column x, row y, or -1 when the cell holds text or is outside the screen.', { args: ['x:num', 'y:num'], ret: 'num' }),
+  W('STR$', 'function', 'STR$(n)', 'A number as text; in M3 only as a PRINT item (or joined to other text with +).', { args: ['n:num'], ret: 'str' }),
+  W('LEN', 'function', 'LEN(s$)', 'The length of a string.', { args: ['s:str'], ret: 'num' }),
+  W('ABS', 'function', 'ABS(n)', 'Absolute value.', { args: ['n:num'], ret: 'num' }),
+  W('SGN', 'function', 'SGN(n)', '-1, 0 or 1.', { args: ['n:num'], ret: 'num' }),
+  W('RND', 'function', 'RND(n)', 'A random whole number 0 .. n-1.', { args: ['n:num'], ret: 'num' }),
+  W('PEEK', 'function', 'PEEK(addr)', 'Read a byte.', { args: ['addr:num'], ret: 'num' }),
+  W('IN', 'function', 'IN(port)', 'Read a port.', { args: ['port:num'], ret: 'num' }),
+  W('USR', 'function', 'USR(addr)', 'Call machine code; the result is HL.', { args: ['addr:num'], ret: 'num' }),
+  W('POINT', 'function', 'POINT(x, y)', '1 if the pixel is set, else 0.', { args: ['x:num', 'y:num'], ret: 'num' }),
+
+  // ── Contextual words (not reserved) ──
+  W('FRAME', 'game', 'SHOW s AT x, y FRAME f   /   PROC FRAME()', 'Animation frame clause of SHOW; also the name of the per-tick scene procedure.', { reserved: false }),
+  W('INIT', 'game', 'PROC INIT()', 'The scene procedure that runs once when the scene starts.', { reserved: false }),
+];
+
+/** upper-case word -> entry, for every word including the contextual ones. */
+export const ARCADE_WORDS = new Map(WORD_LIST.map(e => [e.name, e]));
+
+/** Words that tokenize as keywords (cannot be names). */
+export const RESERVED = new Set(WORD_LIST.filter(e => e.reserved).map(e => e.name));
+
+/** Built-in functions: upper-case name -> entry. */
+export const FUNCTIONS = new Map(WORD_LIST.filter(e => e.cls === 'function').map(e => [e.name, e]));
+
+/** Words that open or close a block; see arcade-parse.js for how they recover. */
+export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'ENDSEL', 'ENDP', 'ENDSCENE', 'PROC', 'SCENE']);
+
+/** Entry for a word (any case), or null. */
+export function wordEntry(word) {
+  return ARCADE_WORDS.get(String(word).toUpperCase()) ?? null;
+}
+
+/** Words of one class, in table order (autocomplete / Help groups). */
+export function wordsOfClass(cls) {
+  return WORD_LIST.filter(e => e.cls === cls);
+}
+
+/**
+ * Familiar words that Arcade does not have, with the advice shown when one is used as a statement or a name.
+ * They are ordinary names for the tokenizer (V2 does not reserve them either), so `let = 1` still lexes.
+ */
+export const NOT_IN_ARCADE = new Map(Object.entries({
+  LET: 'assign with  x = 1  (no LET)',
+  GOTO: 'there is no GOTO and no labels: use WHILE/WEND, EXIT, SELECT or scenes',
+  GOSUB: 'there is no GOSUB: use PROC and CALL',
+  RETURN: 'there is no RETURN: a PROC ends at ENDP',
+  INPUT: 'there is no INPUT: read STICK or KEYDOWN',
+  STOP: 'there is no STOP: use END',
+  CLEAR: 'there is no CLEAR',
+  FREE: 'there is no FREE',
+  DATA: 'there is no DATA/READ/RESTORE',
+  READ: 'there is no DATA/READ/RESTORE',
+  RESTORE: 'there is no DATA/READ/RESTORE',
+  LIST: 'editor and tape commands are not part of a game',
+  NEW: 'editor and tape commands are not part of a game',
+  RUN: 'editor and tape commands are not part of a game',
+  LOAD: 'editor and tape commands are not part of a game',
+  SAVE: 'editor and tape commands are not part of a game',
+  VERIFY: 'editor and tape commands are not part of a game',
+  LPRINT: 'there are no printer words',
+  LLIST: 'there are no printer words',
+  PALETTE: 'there is no PALETTE: the build chooses the display setup per scene',
+  ULAPLUS: 'there is no ULAPLUS: the build chooses the display setup per scene',
+  MODE: 'there is no MODE: the build chooses the display setup per scene',
+  DRAW: 'there is no DRAW: use LINE',
+  CIRCLE: 'not in v0',
+  FILL: 'not in v0',
+  BEEP: 'sound is PLAY with a SFX asset',
+  SOUND: 'sound is PLAY with a SFX asset',
+  PAUSE: 'the runtime owns the loop: use FRAMERATE',
+  ELSEIF: 'there is no ELSEIF: nest an IF, or use SELECT CASE',
+  CONTINUE: 'there is no CONTINUE',
+  RANDOMIZE: 'spell it RANDOMISE',
+  INKEY$: 'not in v0: use KEYDOWN(code) or STICK(n)',
+  CHR$: 'not in v0 (string words are later)',
+  CODE: 'not in v0 (string words are later)',
+  VAL: 'not in v0 (string words are later)',
+  LEFT$: 'not in v0 (string words are later)',
+  RIGHT$: 'not in v0 (string words are later)',
+  MID$: 'not in v0 (string words are later)',
+  UPPER$: 'not in v0 (string words are later)',
+  LOWER$: 'not in v0 (string words are later)',
+  INT: 'integers only: there is no INT',
+  SQR: 'floating point is not in v0',
+  SIN: 'floating point is not in v0',
+  COS: 'floating point is not in v0',
+  TAN: 'floating point is not in v0',
+  PI: 'floating point is not in v0',
+  ATTR: 'not in v0',
+  INVERSE: 'not in v0',
+  OVER: 'not in v0',
+}));
+
+/** "X is not in Arcade: advice" for a familiar word the language lacks, or null. */
+export function notInArcadeMessage(word) {
+  const h = NOT_IN_ARCADE.get(String(word).toUpperCase());
+  if (!h) return null;
+  return h.startsWith('not in v0') ? `${word} is ${h}` : `${word} is not in Arcade: ${h}`;
+}
