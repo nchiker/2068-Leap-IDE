@@ -156,27 +156,18 @@ ray_boot:
     ld ix,(GAME_VIEWDESC)
     ld a,(ix+0)
     ld (VD_COLW),a
-    cp 4
-    ld a,32
-    ld b,2
-    jr z,.c4
-    ld a,64
-    ld b,4
-.c4:
-    ld (VD_NRAY),a
-    ld a,b
-    ld (VD_RPB),a
-    dec a
-    ld (R_PMASK),a
     ld hl,R_CM                  ; the column masks of the positions: colw 4: $F0, $0F; colw 2: $C0, $30, $0C, $03
-    ld a,(ix+0)
     cp 4
     jr nz,.m2
+    ld a,32                     ; (VD_NRAY, B = rays per byte)
+    ld b,2
     ld (hl),$F0
     inc l
     ld (hl),$0F
     jr .m4
 .m2:
+    ld a,64
+    ld b,4
     ld (hl),$C0
     inc l
     ld (hl),$30
@@ -185,6 +176,11 @@ ray_boot:
     inc l
     ld (hl),$03
 .m4:
+    ld (VD_NRAY),a
+    ld a,b
+    ld (VD_RPB),a
+    dec a
+    ld (R_PMASK),a
     ld a,(ix+1)
     ld (VD_MAPW),a
     dec a
@@ -201,10 +197,22 @@ ray_boot:
     call ray_tables             ; (uses IX)
     ld ix,(GAME_VIEWDESC)
     call ray_pat
+    ld hl,CHAIN_T               ; the row chain: 5 x (8 units + FIX) by repeating the pattern (LDIR with the destination 60 bytes ahead), then 8 units, RET
+    ld de,CHAIN
+    ld bc,CHAIN_PAT_LEN
+    ldir
+    ld hl,CHAIN
+    ld bc,4*CHAIN_PAT_LEN
+    ldir
+    ld hl,CHAIN
+    ld bc,5*8
+    ldir
+    ld a,$C9
+    ld (de),a
+    inc de                      ; DE = DDA
     ld hl,RAM_SRC
-    ld de,RAY_RAM
     ld bc,RAM_SRC_END-RAM_SRC
-    ldir                        ; the row chain and the DDA loop
+    ldir                        ; the DDA loop and the row tails
     call ray_attrs
     ld a,$FF
     ld (R_QUAD),a               ; the DDA loop is patched for no quadrant yet
@@ -218,9 +226,9 @@ ray_boot:
     ld hl,BB_TAB+2              ; nothing drawn yet: col = $FFFF (depth 0 from the boot's clear)
     ld b,MAX_SPRITES
 .bb:
-    ld (hl),$FF
+    ld (hl),a                   ; (A = $FF)
     inc l
-    ld (hl),$FF
+    ld (hl),a
     inc l
     inc l
     inc l
@@ -283,45 +291,24 @@ ray_map:
     jr nz,.cell
     jr .pair
 .ring:
-    ld hl,MAP_RAM               ; rows 0 and 31
-    ld de,MAP_RAM+31*32
+    ld de,1
+    ld hl,MAP_RAM               ; row 0
+    call .line
+    ld hl,MAP_RAM+31*32         ; row 31
+    call .line
+    ld e,32
+    ld hl,MAP_RAM               ; column 0
+    call .line
+    ld hl,MAP_RAM+31            ; column 31 (falls into the line)
+.line:                          ; 32 cells from HL, step DE: a 0 becomes 1
     ld b,32
-.rr:
+.l:
     ld a,(hl)
-    or a
-    jr nz,.r1
-    ld (hl),1
-.r1:
-    ld a,(de)
-    or a
-    jr nz,.r2
-    ld a,1
-    ld (de),a
-.r2:
-    inc hl
-    inc de
-    djnz .rr
-    ld hl,MAP_RAM               ; columns 0 and 31
-    ld de,32
-    ld b,32
-.rc:
-    ld a,(hl)
-    or a
-    jr nz,.c1
-    ld (hl),1
-.c1:
-    push hl
-    ld a,l
-    add a,31
-    ld l,a
-    ld a,(hl)
-    or a
-    jr nz,.c2
-    ld (hl),1
-.c2:
-    pop hl
+    cp 1
+    adc a,0
+    ld (hl),a
     add hl,de
-    djnz .rc
+    djnz .l
     ret
 
 ; ray_tables: RAY_COS (from QTAB through cos_q, the same routine RT_COSA uses), RAY_RECIP, RAY_HGT.
@@ -348,12 +335,9 @@ ray_tables:
     ld ix,RAY_RECIP+4
     ld c,2                      ; n
 .rd:
-    ld hl,0                     ; 65536 / n: the dividend is 1:0000 -> restoring division with a 17-bit dividend, quotient 16 bits
-    ld de,0                     ; DE = quotient
-    ld a,1                      ; A:HL... (the remainder starts at 1 after the top bit)
+    ld de,0                     ; 65536 / n: the dividend is 1:0000 -> restoring division with a 17-bit dividend, quotient 16 bits; DE = quotient
+    ld hl,1                     ; remainder = 1 (the dividend's bit 16)
     ld b,16
-    ld h,0
-    ld l,1                      ; remainder = 1 (the dividend's bit 16)
 .rb:
     add hl,hl                   ; remainder * 2 + next bit (0)
     ex de,hl
@@ -395,15 +379,26 @@ ray_tables:
     ld bc,32
     ld ix,RAY_HGT+32
     ld iy,RAY_HGT_LEN
-    jp inc_div8
+    jr inc_div8
 
 ; inc_div: the table of floor(N / n) for n = BC .. IY - 1 (words at IX), from HL = floor(N / BC), DE = N mod BC.  Clobbers everything.
 inc_div:
+    xor a                       ; the mode (kept in A'): 0 = word entries, 1 = byte entries (inc_div8: the quotient fits a byte)
+    jr inc_go
+inc_div8:
+    ld a,1
+inc_go:
+    ex af,af'
 .s:
     ld (ix+0),l
+    ex af,af'
+    or a
+    jr nz,.b
     ld (ix+1),h
     inc ix
+.b:
     inc ix
+    ex af,af'
     inc bc
     push hl
     push iy
@@ -420,31 +415,6 @@ inc_div:
     jr z,.ok
     dec de                      ; q -= 1
     add hl,bc                   ; rem += n
-    jr .w
-.ok:
-    ex de,hl
-    jr .s
-; inc_div8: the same with byte entries (the quotient fits a byte).
-inc_div8:
-.s:
-    ld (ix+0),l
-    inc ix
-    inc bc
-    push hl
-    push iy
-    pop hl
-    or a
-    sbc hl,bc
-    pop hl
-    ret z
-    ex de,hl
-    or a
-    sbc hl,de
-.w:
-    bit 7,h
-    jr z,.ok
-    dec de
-    add hl,bc
     jr .w
 .ok:
     ex de,hl
@@ -1052,31 +1022,23 @@ gen_mul:
     inc hl
     ld a,b
     or a
-    jr nz,.m
+    jr nz,.hd
     dec c
-    jr nz,.zero
+    jr nz,.hd                   ; m = 0, kind 0: LD HL,0 / RET (A = 0 below ends it)
     ld (hl),$62                 ; LD H,D / LD L,E / RET
     inc hl
     ld (hl),$6B
     inc hl
-    ld (hl),$C9
-    ret
-.zero:
-    ld (hl),$21                 ; LD HL,0 / RET
-    inc hl
-    ld (hl),0
-    inc hl
-    ld (hl),0
-    inc hl
-    ld (hl),$C9
-    ret
-.m:
+    jr .end
+.hd:
     ld (hl),$21                 ; LD HL,0
     inc hl
     ld (hl),0
     inc hl
     ld (hl),0
     inc hl
+    or a
+    jr z,.end                   ; m = 0: LD HL,0 / RET
     ld b,8
 .z:
     rra                         ; skip the zero bits below the lowest set one
@@ -1105,6 +1067,7 @@ gen_mul:
     inc hl
     dec b
     jr nz,.bit
+.end:
     ld (hl),$C9
     ret
 
@@ -1165,11 +1128,8 @@ hit_c:                          ; A = the wall type, C = the side, HL = the perp
     jr c,.in
     ld hl,RAY_HGT_LEN-1
 .in:
-    ld a,l
-    add a,RAY_HGT&$FF
-    ld l,a
     ld a,h
-    adc a,RAY_HGT>>8
+    add a,RAY_HGT>>8            ; (RAY_HGT is page aligned, asserted below: the low byte needs no add)
     ld h,a
     ld a,(hl)
     ld (de),a                   ; HHR
@@ -1350,34 +1310,47 @@ PAT_DEFAULT:                    ; the spike's PAT: (even-row byte, odd-row byte)
     DB $FF,$00, $AA,$00         ; type 3: scanline stripes / sparse stripes
     DB $CC,$CC, $88,$88         ; type 4: vertical bars / thin bars
 
+    MACRO QTAB_DATA
 QTAB:                           ; Q[k] = round(4096 sin(k pi / 128)), k = 0..64
     DW 0, 101, 201, 301, 401, 501, 601, 700, 799, 897, 995, 1092, 1189, 1285, 1380, 1474
     DW 1567, 1660, 1751, 1842, 1931, 2019, 2106, 2191, 2276, 2359, 2440, 2520, 2598, 2675, 2751, 2824
     DW 2896, 2967, 3035, 3102, 3166, 3229, 3290, 3349, 3406, 3461, 3513, 3564, 3612, 3659, 3703, 3745
     DW 3784, 3822, 3857, 3889, 3920, 3948, 3973, 3996, 4017, 4036, 4052, 4065, 4076, 4085, 4091, 4095
     DW 4096
-
+    ENDM
 ; The chain's unit table (RAM addresses of units 0..48; unit 48 = the END's RET).  Unit d at CHAIN + 5 d + 20 floor(d / 8).  Inside one page.
-    IF (($ & $FF) + 2*(VIEW_HH+1)) > 256
-    ALIGN 256
-    ENDIF
+    MACRO UNIT_TAB_DATA
 UNIT_TAB:
     DUP VIEW_HH+1, d
     DW CHAIN+5*d+20*(d/8)
     EDUP
     ASSERT (UNIT_TAB&$FF)+2*(VIEW_HH+1) <= 256
+    ENDM
+; The two tables in the order that needs no padding: the unit table does not straddle a page where it is put, so QTAB (any position) goes before
+; it only when it would otherwise straddle (an ALIGN there once cost 85 bytes).
+    IF (($ & $FF) + 2*(VIEW_HH+1)) <= 256
+    UNIT_TAB_DATA
+    QTAB_DATA
+    ELSE
+    QTAB_DATA
+    IF (($ & $FF) + 2*(VIEW_HH+1)) > 256
+    ALIGN 256
+    ENDIF
+    UNIT_TAB_DATA
+    ENDIF
 
 
 ; ===============================================================================================================
 ; RAM routines: assembled for RAY_RAM, copied there by ray_boot
 ; ===============================================================================================================
-RAM_SRC:
-    DISP RAY_RAM
 ; The row chain: unit d draws row 48 + d (lower, HL') and 47 - d (upper, DE') of one byte column: even d: lower = B' (even-row byte), upper = C'
 ; (odd row); odd d the other way round.  After units 7, 15, ..., 39 the pointers cross a character row (FIX).  Entered at unit 0 with JP; a run ends
-; where the composer patched an RST; the END's RET returns to rw_done.
-CHAIN:
-    DUP VIEW_HH, d
+; where the composer patched an RST; the END's RET returns to rw_done.  The chain (CHAIN .. CHAIN_END, 341 bytes) is built by ray_boot from this
+; pattern, 8 units and a FIX (60 bytes), repeated 5 times, then 8 units and the RET: the same bytes the assembler used to lay out here.
+CHAIN           EQU RAY_RAM
+CHAIN_END       EQU CHAIN+5*VIEW_HH+20*(VIEW_HH/8-1)
+CHAIN_T:
+    DUP 8, d
       IF (d & 1) == 0
         ld (hl),b
         ld a,c
@@ -1388,7 +1361,7 @@ CHAIN:
         ld (de),a
         inc h
         dec d
-      IF (d & 7) == 7 && d != VIEW_HH-1
+      IF (d & 7) == 7
         ld a,l                  ; FIX: the lower pointer to the next character row
         add a,32
         ld l,a
@@ -1405,9 +1378,12 @@ CHAIN:
         ld d,a
       ENDIF
     EDUP
-CHAIN_END:
-    ret
-    ASSERT CHAIN_END == CHAIN+5*VIEW_HH+20*(VIEW_HH/8-1)
+CHAIN_T_END:
+CHAIN_PAT_LEN   EQU CHAIN_T_END-CHAIN_T
+    ASSERT CHAIN_PAT_LEN == 60 && VIEW_HH == 48 && 5*CHAIN_PAT_LEN+8*5+1 == CHAIN_END+1-CHAIN
+
+RAM_SRC:
+    DISP CHAIN_END+1
 
 ; The DDA loop: BC = sdx, DE = sdy, HL = the map pointer.  x steps when sdx < sdy, else y (ties go to y).  The immediates (the deltas) are
 ; patched per ray by ray_one, the step opcodes per quadrant by dda_patch.  Ends with JP HITX / HITY (A = the wall type).

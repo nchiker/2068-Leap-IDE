@@ -38,13 +38,15 @@ ray_bb:
     ld b,a
     ld hl,BB_TAB                ; (entries >= ninst are never written: "not drawn" since the boot)
 .c:
-    ld (hl),0
+    xor a
+    ld (hl),a
     inc l
-    ld (hl),0
+    ld (hl),a
     inc l
-    ld (hl),$FF
+    dec a
+    ld (hl),a
     inc l
-    ld (hl),$FF
+    ld (hl),a
     inc l
     djnz .c
     ld hl,(R_CS)
@@ -468,7 +470,7 @@ bb_tx:
     ld d,(hl)
     pop hl
     ret
-    ASSERT (RAY_BREC&$FF) == 0 && (RAY_BLIST&$FF)+MAX_SPRITES <= 256
+    ASSERT (RAY_BREC&$FF) == 0 && (RAY_BLIST&$FF)+MAX_SPRITES <= 256 && (BB_TAB&$FF) == 0
 
 ; bb_draw: A = instance (projected): generate its row code for the visible columns, run it, BB_TAB.  Clobbers everything (IX, IY, the alternates).
 ; Scratch: R_T0+9 the current byte column ($FF none yet), +10 the first byte column, +11 the emit pointer, +13 tx.
@@ -702,8 +704,7 @@ bb_draw:
     ld a,(R_BI)
     add a,a
     add a,a
-    add a,BB_TAB&$FF
-    ld l,a
+    ld l,a                      ; (BB_TAB is page aligned: ASSERT below)
     ld h,BB_TAB>>8
     ld a,(R_T0+13)
     ld (hl),a
@@ -974,23 +975,15 @@ RT_FXMUL:
     jr nz,.l
     pop af
     jp p,.r
-    ld a,l                      ; negate DE:HL
-    cpl
-    ld l,a
-    ld a,h
-    cpl
-    ld h,a
-    ld a,e
-    cpl
-    ld e,a
-    ld a,d
-    cpl
-    ld d,a
-    inc l
-    jr nz,.r
-    inc h
-    jr nz,.r
-    inc de
+    ld c,l                      ; negate DE:HL, keeping bits 8..23: ~(E:H) + 1 when the low byte is 0 (the carry reaches bit 8), else ~(E:H)
+    ld l,h
+    ld h,e
+    call neg_hl                 ; -(E:H)
+    ld a,c
+    or a
+    ret z
+    dec hl                      ; ~(E:H) = -(E:H) - 1
+    ret
 .r:
     ld l,h                      ; bits 8..23
     ld h,e
@@ -1149,15 +1142,9 @@ rh_get:
     ret z
     inc l
     ld a,(hl)                   ; the asset
-    ld b,4
-.c:
     inc l
-    ld c,(hl)
-    ex de,hl
-    ld (hl),c
-    inc hl
-    ex de,hl
-    djnz .c
+    ld bc,4
+    ldir                        ; x, y
     add a,a
     add a,a
     add a,a

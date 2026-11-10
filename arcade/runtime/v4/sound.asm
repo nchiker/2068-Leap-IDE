@@ -333,5 +333,11 @@ SND_TICK3:
     jp SND_S.out
 
 M_SND3_E:
-    ASSERT M_SND3_E <= $0100    ; the gap ends where the boot code starts
+; KEY_ROWSEL (RT_KEYDOWN's half-row selects): 8 bytes of data, put in the rest of the gap (it saves 8 bytes at the end of the image)
+M_KROW_S:
+KEY_ROWSEL:
+    DB $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+M_KROW_E:
+    ASSERT (KEY_ROWSEL&$FF)+7 < 256 && (KEY_ROWSEL>>8) == 0     ; RT_KEYDOWN adds the row to the low byte
+    ASSERT M_KROW_E <= $0100    ; the gap ends where the boot code starts
     ORG M_SOUND_E.resume

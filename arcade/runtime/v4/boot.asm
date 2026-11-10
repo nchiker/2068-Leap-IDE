@@ -13,6 +13,18 @@ M_HDR_S:
     DB $BC                      ; chunk-spec byte (low-active): DOCK chunks 0,1,6 at hand-off
 M_HDR_E:
 
+; RT_BORDER: A = colour (AND 7).  Writes the ULA port with the beeper and MIC bits 0 and keeps the colour in V_BORDER.  Clobbers AF.
+; (Moved here from tileops.asm: a self-contained routine of 8 bytes in the gap between the header and the RST $10 handler, which saves 8 bytes
+; at the end of the image.)
+M_BORDER_S:
+RT_BORDER:
+    and 7
+    ld (V_BORDER),a
+    out (PORT_ULA),a
+    ret
+M_BORDER_E:
+    ASSERT M_BORDER_E <= $0010
+
 ; v4: the row chain's run switches (ray.asm rw_column).  A run of the chain ends at a unit whose first byte the composer patched to RST $10 (an
 ; even unit: its first instruction is LD (HL),B) or RST $20 (odd: LD (HL),C).  The handler restores that byte, takes the next run's accumulators
 ; from the stack (pushed by the composer under the RST's return address), executes the replaced instruction with them and goes on at the unit's
@@ -46,7 +58,18 @@ RST_ODD:
     ld (hl),c
     ret
 M_RSTO_E:
-    ASSERT M_RSTO_E <= $0038
+
+; walk_sent (tileops.asm walk_setup): A = cells (1..8) -> A = 1 << (cells - 1) (BIT_TAB is page aligned).  Clobbers HL.  Put here, in the gap after the
+; RST $20 handler, to save its 6 bytes at the end of the image.
+M_SENT_S:
+walk_sent:
+    dec a
+    ld l,a
+    ld h,BIT_TAB>>8
+    ld a,(hl)
+    ret
+M_SENT_E:
+    ASSERT M_SENT_E <= $0038
 
     ORG $0066                  ; NMI vector: nothing raises it on a stock TS2068; return harmlessly
 M_NMI_S:
@@ -55,6 +78,10 @@ NMI:
 M_NMI_E:
 
     ORG RT_ENTRY
+M_BITTAB_S:
+BIT_TAB:                        ; page aligned (mark_dirty, tileops index it through L): $0100 is a page start, so it costs no padding here
+    DB $01, $02, $04, $08, $10, $20, $40, $80
+M_BITTAB_E:
 M_BOOT_S:
 ENTRY:
     ; ---- record the hand-off state first (HANDOFF_DIAG: 7 bytes at HO_BASE, kept so the test can check the map) ----
@@ -85,18 +112,14 @@ ENTRY:
                                 ; mapped, so the next instruction is fetched from the same bytes.  Chunk 6 goes
                                 ; back to RAM; chunks 4,5 appear (the game header and the sprite data).
     im 1                        ; frame interrupt through RST $38 (our ISR lives at $0038 in chunk 0)
-    ld a,BORDER_COLOUR
-    out (PORT_ULA),a            ; border blue, beeper off
 
     ; ---- zero the runtime variables, V3VARS, the compiled code's variable area and WORLD_RAM: $E000-$F1FF (stale RAM would
     ; otherwise feed the ISR: see E4's $A5 trap; and compiled variables start at 0) ----
-    ld hl,VARS
-    ld de,VARS+1
-    ld bc,VARS_CLEAR_LEN-1
-    ld (hl),0
-    ldir
+    ld hl,FILL_EARLY
+    call fill_tab               ; the variables to 0, and the keyboard state: nothing scanned yet = every key up ($FF), which must follow the clear
     ld a,BORDER_COLOUR
-    ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour written above
+    out (PORT_ULA),a            ; border blue, beeper off
+    ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour just written
     ld hl,CANARY_VALUE
     ld (STACK_CANARY),hl        ; guards the bottom of the 1 KB stack area (checked every tick)
 
@@ -120,11 +143,6 @@ ENTRY:
     ld (hl),255
     add hl,de
     djnz .sk
-    ld hl,V_KEYS                ; keyboard: nothing scanned yet = every key up
-    ld de,V_KEYS+1
-    ld bc,7
-    ld (hl),$FF
-    ldir
 
     ; ---- v4: ray mode or not (ray.asm ray_check: DIV_EXT | DIV_VIEW and a valid view_desc); build_assets reads V_RAY ----
     call ray_check
@@ -152,4 +170,10 @@ ENTRY:
     ld (V_SHADOW_F4),a          ; matches the port: do not read $F4 back, it is not reliable on hardware
     ei                          ; the ISR can fire from the next instruction
     jp MAIN                     ; the frame loop (main.asm)
+FILL_EARLY:
+    DW VARS, VARS_CLEAR_LEN-1
+    DB 0
+    DW V_KEYS, 7
+    DB $FF
+    DW 0
 M_BOOT_E:
