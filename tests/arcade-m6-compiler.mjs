@@ -222,6 +222,23 @@ console.log('\n3. Data builders: ratios, cam_max, tables, flags, world maps, v3 
 
   // world maps
   const w1 = WIN.convertWorldMap({ w: 24, h: 2, cells: Array.from({ length: 48 }, (_, i) => (i === 3 ? -1 : i === 4 ? null : i === 5 ? 255 : i % 8)) }, 8);
+  // byte-RLE of world_src
+  {
+    const r = rng(0xE1E);
+    let bad = 0;
+    for (let n = 0; n < 200; n++) {
+      const a = new Uint8Array(2048);
+      const mode = n % 4;
+      for (let i = 0; i < 2048;) { const run = mode === 0 ? 1 : mode === 1 ? 1 + Math.floor(r() * 600) : 1 + Math.floor(r() * 12); const v = Math.floor(r() * 32) * 8; for (let k = 0; k < run && i < 2048; k++) a[i++] = v; }
+      const enc = WIN.rleEncode(a), dec = WIN.rleDecode(enc);
+      let pairsOk = enc[enc.length - 1] === 0 && enc.length % 2 === 1;
+      for (let i = 0; i < enc.length - 1; i += 2) if (enc[i] < 1) pairsOk = false;
+      if (Buffer.compare(Buffer.from(dec), Buffer.from(a)) !== 0 || !pairsOk) bad++;
+    }
+    check_('rleEncode / rleDecode round-trip 200 random 2,048-byte maps (single bytes, runs over 255, short runs); every count is 1..255 and a 0 ends', bad === 0, `${bad} wrong`);
+    check_('RLE: all zeros is 8 pairs of 255 + a pair of 8 + the terminator (19 bytes); a run of exactly 255 is one pair; 256 is two', WIN.rleEncode(new Uint8Array(2048)).length === 19 && WIN.rleEncode(new Uint8Array(255)).join() === '255,0,0' && WIN.rleEncode(new Uint8Array(256)).join() === '255,0,1,0,0');
+    check_('RLE decoder edge cases of the contract: more than 2,048 expanded bytes stop at 2,048; fewer zero the rest; an empty stream is all zeros', WIN.rleDecode(Uint8Array.from([255, 8, 255, 8, 255, 8, 255, 8, 255, 8, 255, 8, 255, 8, 255, 8, 200, 9, 0])).filter((b) => b === 8).length === 2040 && WIN.rleDecode(Uint8Array.from([200, 9, 0])).slice(200).every((b) => b === 0) && WIN.rleDecode(Uint8Array.from([0])).every((b) => b === 0));
+  }
   check_('world map: 24 x 2, blank cells (-1, null, 255) become tile 0, world_src row r at r * 128, cell = tile * 8, the rest 0', w1.src.length === 2048 && w1.src[128 + 0] === ((24 % 8) * 8) && w1.src[3] === 0 && w1.src[4] === 0 && w1.src[5] === 0 && w1.src[6] === 6 * 8 && w1.src[24] === 0 && w1.src[256] === 0 && w1.src.slice(256).every((b) => b === 0));
   const full = WIN.convertWorldMap(ASSETS.maps.lv, 8);
   let srcOk = true;
@@ -389,10 +406,16 @@ const w16 = (a) => MEM[a] | (MEM[a + 1] << 8);
   check_('window_desc: the bands (2, ratio 1), (3, ratio 2), (11, ratio 3) follow at +14', [2, 1, 3, 2, 11, 3].every((b, i) => MEM[wd + 14 + i] === b));
   const flagsAt = w16(wd + 8), srcAt = w16(wd + 10), rowsAt = w16(wd + 12);
   check_('window_desc: tile_flags is 32 bytes equal to the tileset\'s flags then zeros', Buffer.from(MEM.slice(flagsAt, flagsAt + 32)).toString('hex') === Buffer.from(WIN.buildTileFlags(TILE_FLAGS)).toString('hex'));
-  check_('window_desc: world_src is the 2,048-byte map, row r at r * 128, cell = tile * 8, columns beyond the width 0', (() => {
-    const lv = ASSETS.maps.lv;
-    for (let r = 0; r < 16; r++) for (let c = 0; c < 128; c++) if (MEM[srcAt + r * 128 + c] !== lv.cells[r * 128 + c] * 8) return false;
+  // an independent decoder (written here from the contract: pairs count 1..255 / value, count 0 ends, 2,048 bytes row-major)
+  const decodeRle = (at) => { const o = []; for (let p = at; MEM[p] !== 0 && o.length < 2048; p += 2) for (let k = 0; k < MEM[p]; k++) o.push(MEM[p + 1]); while (o.length < 2048) o.push(0); return o.slice(0, 2048); };
+  check_('window_desc: world_src is the map byte-RLE encoded; expanded it is 2,048 bytes, row r at r * 128, cell = tile * 8, columns beyond the width 0', (() => {
+    const lv = ASSETS.maps.lv, ex = decodeRle(srcAt);
+    for (let r = 0; r < 16; r++) for (let c = 0; c < 128; c++) if (ex[r * 128 + c] !== lv.cells[r * 128 + c] * 8) return false;
     return true;
+  })());
+  check_('... and the stream is smaller than 2,048 bytes, ends with a count of 0 right where the report says, and the image after it holds the tile flags', (() => {
+    let p = srcAt; while (MEM[p] !== 0) p += 2;
+    return p + 1 - srcAt === PLAT_RES.usage.window.worldSource && PLAT_RES.usage.window.worldSource < 2048 && flagsAt === p + 1;
   })());
   check_('window_desc: tilerows is 256 bytes, tile * 8 + r = the tile\'s row r', (() => { const t = ASSETS.tilesets.ts.tiles; for (let i = 0; i < 8; i++) for (let r = 0; r < 8; r++) if (MEM[rowsAt + i * 8 + r] !== t[i].rows[r].bits) return false; return MEM.slice(rowsAt + 64, rowsAt + 256).every((b) => b === 0); })());
   // the tables in the image against an independent pre-shift of the image's own tilerows
@@ -514,7 +537,7 @@ const w16 = (a) => MEM[a] | (MEM[a + 1] << 8);
 
   // fit, phase memory, variables
   const fit = cm(prog('    v = 1', { top: '' }), withMap('lv', ASSETS.maps.lv), {});
-  check_('the link report has the categories', (() => { const u = fit.usage; return u.window.worldSource === 2048 && u.window.tileFlags === 32 && u.window.tileRows === 256 && u.window.scrollTables === 3584 && u.window.descriptor === 14 + 2 && u.frames > 0 && u.phaseRam && u.gameVars; })());
+  check_('the link report has the categories', (() => { const u = fit.usage; return u.window.worldSource < 2048 && u.window.worldExpanded === 2048 && u.window.tileFlags === 32 && u.window.tileRows === 256 && u.window.scrollTables === 3584 && u.window.descriptor === 14 + 2 && u.frames > 0 && u.phaseRam && u.gameVars; })());
   check_('the link report: GAME_VARS used vs available come from runtime.json (3 slots = 6 of 2,048)', fit.usage.gameVars.used === fit.usage.varBytes && fit.usage.gameVars.available === ADDR.GAME_VARS_LIMIT - ADDR.GAME_VARS_BASE + 1 && fit.usage.gameVars.available === 2048);
   const smallRt = cm(prog('    v = 1', { decl: 'DIM v, w, k, big(1000)' }), ASSETS, { GAME_VARS_LIMIT: 0xE200 + 1999 });
   check_('GAME_VARS out of space: the error gives the byte counts (from runtime.json, not hard-coded)', smallRt.errors.length === 1 && /too many variables.*1004 slots need 2008 bytes.*allows 2000/.test(smallRt.errors[0].message), errText(smallRt));
@@ -738,7 +761,7 @@ console.log('\n10. requiredRuntime and the usage report');
   check_('a sprite wider than 16 or taller than 16 needs v3', rr(prog('    v = 1', { win: '', map: '', sprites: 'SPRITE p = "wide"\n' })).reasons.some((r) => /32 pixels wide/.test(r)) && rr(prog('    v = 1', { win: '', map: '', sprites: 'SPRITE p = "tall"\n' })).reasons.some((r) => /48 pixels tall/.test(r)) && rr(prog('    v = 1', { win: '', map: '', sprites: 'SPRITE p = "player"\n' })).reasons.some((r) => /24 pixels tall/.test(r)));
   check_('a program that fails to parse is still read as far as it goes', rr('WINDOW lv\nBAND 1,').version === 3);
   const u = PLAT_RES.usage, lines = usageLines(u);
-  check_('usageLines: bytes per category, game total, phase memory, GAME_VARS', lines.length === 4 && /scroll tables 3584/.test(lines[0]) && /world source 2048/.test(lines[0]) && /phase memory: at least \d+ of \d+ bytes.*frame slots per asset/.test(lines[2]) && /GAME_VARS: \d+ of 2048/.test(lines[3]), lines.join(' | '));
+  check_('usageLines: bytes per category, game total, phase memory, GAME_VARS', lines.length === 4 && /scroll tables 3584/.test(lines[0]) && /world source \d+/.test(lines[0]) && /phase memory: at least \d+ of \d+ bytes.*frame slots per asset/.test(lines[2]) && /GAME_VARS: \d+ of 2048/.test(lines[3]), lines.join(' | '));
   info(lines.join('\n        '));
 }
 

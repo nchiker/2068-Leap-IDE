@@ -79,7 +79,11 @@ export function runMock(res, { ticks, stick = null }) {
   const descTab = rd16(0x8006), instTab = rd16(0x800E), ninst = ram[instTab];
   const win = (hdr & 0x40) ? rd16(0x8012) : 0;
   const W = win ? { cx: ram[win], cy: ram[win + 1], nbands: ram[win + 2], worldW: ram[win + 3], camMax: rd16(win + 4), tables: rd16(win + 6), flagsAt: rd16(win + 8), srcAt: rd16(win + 10), rowsAt: rd16(win + 12) } : null;
-  if (W) for (let i = 0; i < 2048; i++) ram[ADDR.WORLD_RAM + i] = ram[W.srcAt + i];       // loaded into WORLD_RAM when the scene starts
+  if (W) {                                                                                  // decoded into WORLD_RAM when the scene starts: byte-RLE pairs (count 1..255, value), a count of 0 ends, at most 2,048 bytes, the rest 0
+    let o = 0;
+    for (let p = W.srcAt; ram[p] !== 0 && o < 2048; p += 2) for (let k = 0; k < ram[p] && o < 2048; k++) ram[ADDR.WORLD_RAM + o++] = ram[p + 1];
+    while (o < 2048) ram[ADDR.WORLD_RAM + o++] = 0;
+  }
   for (let i = 0; i < ninst; i++) ram[ADDR.SPR_TAB + 8 * i + 1] = ram[instTab + 1 + i];  // the asset of each instance, set at boot
   const hl = () => (cpu.h << 8) | cpu.l;
   const setHL = (v) => { cpu.h = (v >> 8) & 0xFF; cpu.l = v & 0xFF; };

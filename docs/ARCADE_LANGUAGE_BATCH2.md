@@ -72,7 +72,7 @@ inside a PROC `BAND 16, 1, 1` gets a "must be at the top level" message). `FLIP`
     16 x 24 sprite; the v2 runtime stops at 239 and 176: **the runtime engineer must follow the contract here**). `SPR_TAB` entries in the interpreter's records: `{visible, asset, x, y, frame}`.
 
 **The image and the report**
-18. Header: `frame_div | $C0` (DIV_EXT and DIV_WIN), 20 bytes, `window_desc` at +18, descriptors at `$8014`. After the sprite data: `world_src` (2,048), `tile_flags` (32), `tilerows` (256), `window_desc`
+18. Header: `frame_div | $C0` (DIV_EXT and DIV_WIN), 20 bytes, `window_desc` at +18, descriptors at `$8014`. After the sprite data: `world_src` (the 2,048-byte map **byte-RLE encoded**: pairs `count 1..255, value`, a count of 0 ends; row-major expansion; always RLE, no flag), `tile_flags` (32), `tilerows` (256), `window_desc`
     (14 + 2 per band). The 3,584 table bytes sit at the very end of the game area (**`tables` = `$B200`**, page aligned by construction); if the rest does not fit the linker says how many bytes too many.
 19. Phase memory: a faithful port of the runtime's boot plan (`planPhasePool()` in `arcade-window.js`; `docs/ARCADE_RUNTIME_API_V3.md` "The phase memory: a frame cache per asset"; the runtime tests' JS reference
     is `planPool()` in `arcade/tests/m6-common.mjs`, and a test compares the two on 500 random asset sets): FTABs (4 x nframes per used asset), `min(nframes, instances)` frame slots of
@@ -98,15 +98,14 @@ bit-string shifts and reversals, the interpreter hand-computed, the image layout
 worlds 24..128 wide, queries inside and outside) equal to an independent per-pixel model on both the interpreter and the compiled code, and the byte-identity of five old programs.
 `node tests/arcade-m6-differential.mjs`: the same programs on the real runtime (skips with a message until it has the routines; checks its own harness on v2 meanwhile).
 
-## Proposal (not implemented): a compressed `world_src`
-`world_src` is 2,048 bytes in the image whatever the level. Measured on `arcade/examples/platformer.arc` (128 x 16, 956 non-zero cells, 230 runs in row-major order; the game area is 16,288 of 16,384):
+## world_src is byte-RLE (decided 2026-11-09, contract 3b)
+`world_src` in the image is the 2,048-byte WORLD_RAM contents (row r at r * 128, cell = tile * 8) encoded as pairs `DB count (1..255), DB value` in row-major order, ended by a count of 0 (`rleEncode()` in
+`arcade-window.js`, written by the linker; runs over 255 are split; no format flag). The decoder (the scroll engineer's, at scene start) expands to `WORLD_RAM`: it stops at 2,048 bytes and zeroes the rest if
+the pairs expand to fewer. The interpreter keeps the expanded map (it never sees the stream); the mock runtime decodes the stream out of the image with its own decoder. `usage.window.worldSource` is the
+encoded size, `worldExpanded` 2,048. Measured on `arcade/examples/platformer.arc` (128 x 16, 956 non-zero cells, 230 runs):
 
 | scheme (row-major, 2,048 cells) | bytes | saves |
 |---|---|---|
-| byte RLE, pairs (count 1..255, value), a 0 count ends | **463** | 1,585 |
-| zero-run + literal (control byte: 1..127 zeros, or $80 + n then n literal bytes; 0 ends) | 1,066 | 982 |
-| the same two, column-major | 1,627 / 1,304 | 421 / 744 |
-
-Byte RLE in row-major order clears the 1,000-byte bar by a wide margin (the sky and the ground are long runs of one value). The decoder is a short loop at scene start that expands into `WORLD_RAM`
-(about 30 bytes of Z80, one pass of 2,048 stores; `RT_WORLDLOAD`-style routine owned by the scroll engineer), so the window_desc's `world_src` would point at the compressed stream and carry
-a format flag (e.g. a bit of `nbands`' high nibble or a new descriptor byte). The compiler already has the map as cells: emitting the stream is about 15 lines in `arcade-link.js`. Not done: the binary encoding is unchanged until the contract is edited.
+| **byte RLE (chosen)** | **463** | 1,585 |
+| zero-run + literal | 1,066 | 982 |
+| column-major RLE / zero-run + literal | 1,627 / 1,304 | 421 / 744 |

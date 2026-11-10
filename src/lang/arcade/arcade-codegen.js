@@ -80,7 +80,7 @@
  *
  * ── Language batch 2 (docs/ARCADE_PLATFORMER_CONTRACT.md 3b/4/7, docs/ARCADE_LANGUAGE_BATCH2.md; `runtime.version >= 3`) ─────────────────────────────
  *  B2-1. Header: a WINDOW game has the 20-byte header (frame_div | DIV_EXT | DIV_WIN, map_table at +16, window_desc at +18); the world MAP is not in the
- *        map table and not loaded into the cell map. The linker places the window data: world_src, tile flags, tilerows, window_desc after the sprite
+ *        map table and not loaded into the cell map. The linker places the window data: world_src (byte-RLE), tile flags, tilerows, window_desc after the sprite
  *        data and the 14 scroll-table pages at the end of the game area (page aligned by construction: $B200). `gen.window` carries the bytes.
  *  B2-2. Registers: CAMERA = HL, CALL RT_CAMERA; CAMX() = LD HL,(V_CAM); WORLDTILE / TILEFLAGS = HL x, DE y -> HL; TILEHIT / SOLID store x, y, w, h, mask
  *        (SOLID: mask 1) in RA_X, RA_Y, RA_W, RA_H, RA_V in source order and CALL RT_TILEHIT -> HL; SETWORLD x, y = t stores RA_X, RA_Y, RA_V and CALLs

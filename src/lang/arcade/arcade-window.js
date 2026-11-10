@@ -9,6 +9,7 @@
  *   buildScrollTables(tileRows)  -> Uint8Array(3584)   14 pages of 256: page 2(p-1) = LTAB[p], page 2(p-1)+1 = RTAB[p], p = 1..7
  *   buildTileFlags(flags)        -> Uint8Array(32)
  *   buildWindowDesc(w)           -> Uint8Array          the window_desc record of section 3b (bands included)
+ *   rleEncode(src) / rleDecode(bytes)  world_src as byte-RLE pairs (count 1..255, value), 0 ends; the expansion is exactly 2,048 bytes
  *   scanSpriteUse(ast, resolve)  -> Map(asset -> {frames, flip})   which assets a SHOW gives FRAME (other than the literal 0) or FLIP
  *   planPhasePool(...)           -> plan                the runtime's phase-pool plan (FTABs, frame slots, first fit); buildFrameT(...) the cost of one cache miss
  *   collision model              -> worldTile / tileFlags / tileHit on a 2,048-byte WORLD_RAM (the reference interpreter's)
@@ -84,6 +85,30 @@ export function buildWindowDesc(w) {
     w.tileFlags & 0xFF, w.tileFlags >> 8, w.worldSrc & 0xFF, w.worldSrc >> 8, w.tileRows & 0xFF, w.tileRows >> 8];
   for (const band of w.bands) b.push(band.rows, band.code);
   return Uint8Array.from(b);
+}
+
+// ── world_src: byte-RLE (contract 3b) ────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Encode the 2,048 expanded bytes of WORLD_RAM as pairs `count (1..255), value` in row-major order, ended by a count of 0 (runs longer than 255 are split).
+ * @param {Uint8Array} src
+ */
+export function rleEncode(src) {
+  const out = [];
+  for (let i = 0; i < src.length;) {
+    let j = i;
+    while (j < src.length && src[j] === src[i] && j - i < 255) j++;
+    out.push(j - i, src[i]);
+    i = j;
+  }
+  out.push(0);
+  return Uint8Array.from(out);
+}
+/** What the runtime's decoder does: expand pairs until a count of 0, stop at 2,048 bytes, zero the rest. */
+export function rleDecode(bytes) {
+  const out = new Uint8Array(WORLD_RAM_BYTES);
+  let o = 0;
+  for (let i = 0; i + 1 < bytes.length && bytes[i] !== 0 && o < WORLD_RAM_BYTES; i += 2) for (let k = 0; k < bytes[i] && o < WORLD_RAM_BYTES; k++) out[o++] = bytes[i + 1];
+  return out;
 }
 
 // ── the world map (a MAP used by WINDOW) ────────────────────────────────────────────────────────────────────────────────────────

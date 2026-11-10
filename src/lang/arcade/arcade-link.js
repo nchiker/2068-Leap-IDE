@@ -27,7 +27,7 @@
  * follow the header at +14 (the header's sprite_table pointer says where).
  *
  * Language batch 2 (gen.window set; docs/ARCADE_PLATFORMER_CONTRACT.md 3b): the header is 20 bytes (frame_div | $C0, map_table at +16, window_desc at +18) and
- * the image gets, after the sprite data, world_src (2,048), the 32 tile flags, tilerows (256) and window_desc (14 + 2 per band), and at the very end of the
+ * the image gets, after the sprite data, world_src (the 2,048-byte map byte-RLE encoded: pairs count 1..255 / value, a count of 0 ends), the 32 tile flags, tilerows (256) and window_desc (14 + 2 per band), and at the very end of the
  * game area the 14 scroll-table pages (3,584 bytes, so `tables` is $B200, page aligned). A v3 sprite descriptor carries `nframes` in its last byte.
  * The linker fails with the number of bytes missing when the game does not fit, and when the runtime's phase-pool plan (arcade-window.js planPhasePool: FTABs,
  * min(nframes, instances) frame slots per asset, first fit over POOL_A / B / C of runtime.json) does not fit: exactly when the runtime would stop at boot with
@@ -40,7 +40,7 @@
 
 "use strict";
 
-import { buildWindowDesc } from './arcade-window.js';
+import { buildWindowDesc, rleEncode } from './arcade-window.js';
 
 export const CHUNK = 8192;
 export const SHIPPED_CHUNKS = [0, 1, 4, 5];
@@ -91,7 +91,8 @@ export function link(gen, runtime, image) {
   // language batch 2: the window's data
   const win = gen.window ?? null;
   const descBytes = win ? 14 + 2 * win.bands.length : 0;
-  const winData = win ? win.worldSrc.length + win.tileFlags.length + win.tileRows.length + descBytes : 0;
+  const worldRle = win ? rleEncode(win.worldSrc) : null;
+  const winData = win ? worldRle.length + win.tileFlags.length + win.tileRows.length + descBytes : 0;
   const tablesBytes = win ? win.tables.length : 0;
   const end = codeEnd + spriteBytes + winData;
   if (end + tablesBytes > GAME_END) {
@@ -128,7 +129,7 @@ export function link(gen, runtime, image) {
   let winLayout = null;
   if (win) {
     let at = codeEnd + spriteBytes;
-    const worldSrc = at; memory.set(win.worldSrc, at); at += win.worldSrc.length;
+    const worldSrc = at; memory.set(worldRle, at); at += worldRle.length;
     const tileFlags = at; memory.set(win.tileFlags, at); at += win.tileFlags.length;
     const tileRows = at; memory.set(win.tileRows, at); at += win.tileRows.length;
     const windowDesc = at;
@@ -172,7 +173,7 @@ export function link(gen, runtime, image) {
       // language batch 2: bytes per category and the two capacity figures the Studio shows
       frames: gen.sprites.reduce((n, sp) => n + sp.data.length, 0),
       window: win ? {
-        worldSource: win.worldSrc.length, tileFlags: win.tileFlags.length, tileRows: win.tileRows.length, descriptor: descBytes,
+        worldSource: worldRle.length, worldExpanded: win.worldSrc.length, tileFlags: win.tileFlags.length, tileRows: win.tileRows.length, descriptor: descBytes,
         scrollTables: tablesBytes, camMax: win.camMax, worldW: win.worldW, bands: win.bands.length, at: winLayout,
       } : null,
       phaseRam: { needed: gen.phase.need, available: runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0), miss: gen.phase.miss, K: gen.phase.K, perAsset: gen.phase.perAsset },
