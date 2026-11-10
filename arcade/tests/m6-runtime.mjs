@@ -31,10 +31,10 @@ const PIECES = C.POOL_PIECES(S);
 // ==================================================================================================================
 console.log('1. Memory map v3 and boot state');
 {
-  const json = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../build/v3/runtime.json'), 'utf8'));
+  const json = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), `../build/v${C.RUNTIME_VERSION}/runtime.json`), 'utf8'));
   const K = json.constants;
   check('runtime.json: version 3; MAX_FRAMES 32, SPR_ENT 8, SPR_FRAME_OFF 6, DIV_WIN $40, DIV_EXT $80, WORLD_RAM $EA00, V_CAM $E100 (first word of V3VARS $E100)',
-    json.version === 3 && K.MAX_FRAMES === 32 && K.SPR_ENT === 8 && K.SPR_FRAME_OFF === 6 && K.DIV_WIN === 0x40 && K.DIV_EXT === 0x80 && K.WORLD_RAM === 0xEA00 &&
+    json.version === C.RUNTIME_VERSION && K.MAX_FRAMES === 32 && K.SPR_ENT === 8 && K.SPR_FRAME_OFF === 6 && K.DIV_WIN === 0x40 && K.DIV_EXT === 0x80 && K.WORLD_RAM === 0xEA00 &&
     K.V_CAM === 0xE100 && K.V3VARS === 0xE100 && K.V3VARS_LEN === 256);
   check('runtime.json: GAME_VARS_BASE $E200, GAME_VARS_LIMIT $E9FF (2,048 bytes); POOL_B $F200 (2,176 bytes, to $FA7F); POOL_A $C080 (3,456), POOL_C $D700 (256): PHASE_POOL_BYTES 5,888',
     K.GAME_VARS_BASE === 0xE200 && K.GAME_VARS_LIMIT === 0xE9FF && K.POOL_B === 0xF200 && K.POOL_B_LEN === 2176 && K.POOL_A === 0xC080 && K.POOL_A_LEN === 3456 && K.POOL_C === 0xD700 &&

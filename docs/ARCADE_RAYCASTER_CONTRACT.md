@@ -57,6 +57,9 @@ The runtime must stay within DOCK chunks 0-1 (16,384 bytes); report the size.
   (4) `RT_HIT` in ray mode takes the stored positions as **unsigned** 16-bit values: `|dx|` and `|dy|` are the absolute differences of those, compared with `Ra + Rb` (`R = 4 h`).
   (5) Until the first `RT_VIEW` the pose is x = y = a = 0; at boot every `BB_TAB` entry is `depth` 0, `col` $FFFF (so `SEEN` is -1 before the first draw). `SEEN` / `DEPTH` of an instance outside the pool are -1 and 0 (the compiler decides that without reading `BB_TAB`).
   (6) `BB_ENT` (bytes per instance) is read from `runtime.json`; absent, the compiler assumes the 4 bytes above. `BB_TAB` has no fallback address (the compiler refuses `SEEN` / `DEPTH` without it).
+  (7) *(runtime engineer, 2026-11-10; `ARCADE_RUNTIME_API_V4.md` "As built")* **The outer ring of the 32 x 32 array is never empty**, so that a ray always stops inside the array (R6) whatever the game does at run time: `RT_SETWALL` also ignores a **type 0 written to a cell on row 0 or 31 or column 0 or 31 of the array** (only a 32-wide or 32-high map has its own outer ring there), and the loader turns a 0 there into 1. The loader reads a map value above 4 as 4 and leaves the cells a short list does not reach at 1. Without this rule an opened ring cell of a 32-wide map lets a ray walk through memory (a shallow ray can loop on a zero cycle of addresses). The interpreter should model the `RT_SETWALL` rule (it changes nothing for a map whose width and height are below 32).
+  (8) *(runtime engineer)* `BB_TAB` `col` of a drawn billboard whose centre lies left or right of the view is clamped to 0 or 127.
+  (9) *(runtime engineer)* The render casts from the stored pose clamped to cells 1..30 of the array (a viewer on the array's ring, possible with `RT_VIEW`'s clamp for a map narrower or lower than 32, would cast out of it); `RT_VIEW` stores the contract's clamp. Pictures and `BB_TAB` differ only for a viewer inside a ring wall.
 * `runtime.json` of v4 lists the routines above and `DIV_VIEW`, `WORLD_RAM`, `BB_TAB`, `BB_ENT`, `GAME_VARS_BASE`, `GAME_VARS_LIMIT`, `MAX_FRAMES`, `SPR_ENT`, `SPR_FRAME_OFF`, `VIEW_W` (128), `VIEW_H` (96).
 
 ## 3. Billboards in ray mode
@@ -79,8 +82,8 @@ The runtime must stay within DOCK chunks 0-1 (16,384 bytes); report the size.
 | Render (cast + walls), 128 x 96, 4 px, 16 x 16 map, worst of 16 spike poses | <= 158,500 T (spike 158,344) |
 | same, 2 px | <= 272,000 T (spike 271,681) |
 | 32 x 32 map | up to +10 % of the above |
-| One 16 x 16 billboard at 4 px columns, drawn | <= 9,000 T (spike 8.0k, which excluded the depth test; allow it) |
-| One 32 x 32 billboard at 4 px | <= 31,000 T |
+| One 16 x 16 billboard at 4 px columns, drawn | <= 9,000 T (spike 8.0k, which excluded the depth test; allow it). **As built: 15,145 T, not met** (projection 4.5k + code generation 5.2k + rows 6.1k; the spike's 8.0k was its kernel alone, one byte per source pixel, OR only, no projection or clipping); see `ARCADE_RUNTIME_API_V4.md`, deviation 1 |
+| One 32 x 32 billboard at 4 px | <= 31,000 T. **As built: 40,321 T, not met** (rows 27.1k alone: 85 T per drawn column-row with the mask; the reason above) |
 | Scene-start table build | <= 60 refreshes |
 | Runtime size | <= 16,384 bytes (DOCK chunks 0-1) |
 

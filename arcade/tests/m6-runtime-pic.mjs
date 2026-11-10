@@ -8,7 +8,7 @@
 //  3. the tile operations of language batch 1 (m5-runtime-pic.mjs section 1) over moving v3 sprites at frame_div 1..3 (test_ops.asm, the v3 copy).
 //   node arcade/tests/m6-runtime-pic.mjs        (M6_QUICK=1: shorter)
 import { join } from 'node:path';
-import { assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runtime-v3.mjs';
+const { assembleGame, linkGame, dckOf, RUNTIME_DIR } = await import(process.env.ARCADE_V4 ? '../tools/build-runtime-v4.mjs' : '../tools/build-runtime-v3.mjs');   // (ARCADE_V4: see m6-common.mjs)
 import * as C from './m6-common.mjs';
 import * as C4 from './m4-common.mjs';
 import * as C5 from './m5-common.mjs';

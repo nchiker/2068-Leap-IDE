@@ -8,7 +8,9 @@
 //   * `Model6`: the cell map (M3 model) + instances with frames; `render()` composites the pre-shifted bytes onto the display-file bytes;
 //   * `observe6()`: runs a game on a stock TS2068 (TSRun) one instruction at a time and compares the picture after every refresh with the model.
 import { join } from 'node:path';
-import { buildRuntime, assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runtime-v3.mjs';
+// ARCADE_V4=1 runs the same suites on runtime v4 in non-ray mode (arcade/tests/m8-runtime-v3compat.mjs): v4 must behave as v3 without a window.
+const { buildRuntime, assembleGame, linkGame, dckOf, RUNTIME_DIR } = await import(process.env.ARCADE_V4 ? '../tools/build-runtime-v4.mjs' : '../tools/build-runtime-v3.mjs');
+export const RUNTIME_VERSION = process.env.ARCADE_V4 ? 4 : 3;
 import * as C3 from './m3-common.mjs';
 
 export const { M, Z, FRAME_T, FIRST_PIXEL_T, SCR_X0, SCR_Y0, FRAME_W, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine,

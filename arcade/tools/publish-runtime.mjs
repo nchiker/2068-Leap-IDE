@@ -6,7 +6,8 @@
 // arcade/build/ is generated and git-ignored; GitHub Pages serves static files and has no build, so the Studio
 // (studio.html) loads what this script puts in arcade/dist/:
 //   arcade/dist/v2/runtime.json, runtime.bin   <- arcade/build/v2/ (build it first: node arcade/tools/build-runtime-v2.mjs)
-//   arcade/dist/v3/runtime.json, runtime.bin   <- arcade/build/v3/ (node arcade/tools/build-runtime-v3.mjs); the Studio picks v2 or v3 per program (requiredRuntime)
+//   arcade/dist/v3/runtime.json, runtime.bin   <- arcade/build/v3/ (node arcade/tools/build-runtime-v3.mjs); the Studio picks v2, v3 or v4 per program (requiredRuntime)
+//   arcade/dist/v4/runtime.json, runtime.bin   <- arcade/build/v4/ (node arcade/tools/build-runtime-v4.mjs: the raycaster)
 //   arcade/dist/examples/<id>.leapgame         <- arcade/examples/<id>.arc + <id>.assets.json, as Studio projects
 //   arcade/dist/examples/index.json            the Examples menu: [{id, title, about, file}]
 // With --check nothing is written; exit 1 if arcade/dist/ differs from what would be written (or the runtime is not built).
@@ -52,13 +53,13 @@ function loadBuild(version) {
   put(join(ARCADE, `dist/v${version}/runtime.bin`), bytes);
   return { runtime: JSON.parse(text), image: new Uint8Array(bytes) };
 }
-const builds = { 2: loadBuild(2), 3: loadBuild(3) };
+const builds = { 2: loadBuild(2), 3: loadBuild(3), 4: loadBuild(4) };
 const index = [];
 for (const ex of EXAMPLES) {
   const arc = readFileSync(join(ARCADE, 'examples', `${ex.id}.arc`), 'utf8');
   const assets = JSON.parse(readFileSync(join(ARCADE, 'examples', `${ex.id}.assets.json`), 'utf8'));
   const project = exampleProject(ex.title, arc, assets);
-  const need = requiredRuntime(arc, assets).version === 3 ? 3 : 2;
+  const v = requiredRuntime(arc, assets).version, need = v >= 2 && v <= 4 ? v : 2;
   const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets });
   if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
   if (res.warnings.length) { console.error(`${ex.id}: warning: ${res.warnings[0].message}`); process.exit(1); }
