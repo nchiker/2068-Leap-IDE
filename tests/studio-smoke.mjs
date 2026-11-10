@@ -152,6 +152,21 @@ try {
   await b.shot('studio-platformer');
   await evaluate("document.getElementById('btn-stop').click()");
   await sleep(300);
+  // Vaults needs runtime v4 (the raycaster): chosen by itself, runs, and draws walls into its 16 x 12 cell window
+  await evaluate("document.getElementById('btn-examples').click()");
+  await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="vaults"]\')', 5000);
+  await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="vaults"]\').click()');
+  const vl = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name.startsWith('Vaults') && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length, rt: leapStudio.lang.runtimeLabel() })", 20000);
+  check('Vaults compiles on its own with the v4 runtime, no errors or warnings', !!vl && vl.errors === 0 && vl.warnings === 0 && vl.rt === 'runtime v4', JSON.stringify(vl));
+  await evaluate("document.getElementById('btn-run').click()");
+  const vt = await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 8 && leapStudio.ticks() < 400 && leapStudio.ticks()', 30000);
+  check('Vaults runs on the TS2068 (V_TICKS advances)', !!vt, `tick ${vt}`);
+  await sleep(1500);
+  const winBytes = await evaluate(`(() => { const m = leapStudio.emulator.machine; let n = 0; for (const base of [0x4000, 0x6000]) for (let y = 48; y < 144; y++) { const row = base + ((y & 0xC0) << 5) + ((y & 7) << 8) + ((y & 0x38) << 2); for (let c = 8; c < 24; c++) if (m.bus.read(row + c)) n++; } return n; })()`);
+  check('Vaults draws walls into its window (non-blank bytes in the 128 x 96 area)', winBytes > 200, `${winBytes} bytes`);
+  await b.shot('studio-vaults');
+  await evaluate("document.getElementById('btn-stop').click()");
+  await sleep(300);
   for (const id of ['bounce', 'breakout', 'blockfall', 'shooter']) {   // the shooter last: the steps below run it
     await evaluate("document.getElementById('btn-examples').click()");
     await waitFor(`document.querySelector('#examples-menu .menu-item[data-example="${id}"]')`, 5000);

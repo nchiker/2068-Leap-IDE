@@ -1,0 +1,4718 @@
+{
+ "format": 1,
+ "name": "Vaults (3D maze)",
+ "framerate": 15,
+ "files": {
+  "main.arc": "REM Vaults: the acceptance game of the raycaster slice (docs/ARCADE_RAYCASTER_CONTRACT.md section 8.1): a first-person maze for the v4 runtime.\nREM Find the gold key, open the vault door (a wall of type 4, opened with SETWALL), take the treasure; wraiths (billboards) chase you and can be shot.\nREM Assets (the maze, the HUD panel, six sprites, the tiles, eight sounds, all named vl_...) are in vaults.assets.json, drawn by vaults.assets.gen.mjs; the level data\nREM below (SX0.., EXS.., GXS.., PXS..) is printed by  node arcade/examples/vaults.assets.gen.mjs --data  and checked against the maze by tests/arcade-m8-vaults.mjs.\nREM   Keyboard: O / P turn left / right, Q / A walk forward / back, SPACE shoots (and starts the game).   Joystick 1: left / right turn, up / down walk, fire shoots.\nREM   Angles: 256 to a turn, 0 looks east (+x), 64 south (+y).  Positions are 8.8: 256 units to a cell.\nREM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/vaults.arc --assets arcade/examples/vaults.assets.json --runtime v4\nGAME \"Vaults\"\nFRAMERATE 15\n\nREM ---- tuning.  Distances are in 1/256 cell.  The tick is 4 refreshes (15 a second); the picture takes about two thirds of it, so the game's logic stays small, and a billboard\nREM costs about 10,000 T-states whenever it is in view (more when it is close: tests/arcade-m8-vaults-perf.mjs), so everything farther than SEER is hidden.\nCONST SPD = 44\nCONST TURN = 6\nCONST RAD = 40\nCONST ESTEP = 28\nCONST WAKE = 1536\nCONST RANGE = 1792\nCONST SEER = 1792\nCONST NEN = 5\nCONST NGM = 5\nCONST NPT = 3\n\nREM ---- the level (printed by the generator's --data)\nCONST SX0 = 640\nCONST SY0 = 7296\nCONST KX = 640\nCONST KY = 384\nCONST TX = 7040\nCONST TY = 896\nCONST DX0 = 7040\nCONST DY0 = 1408\nCONST TVX = 3456\nCONST TVY = 1408\n\nREM ---- instances: the player's marker (for HIT) 1 + wraiths 5 + gems 5 + potions 3 + key 1 + treasure 1 = 16.  Wraiths 16 x 16, treasure 16 x 16, gems / potion / key 8 x 8.\nSPRITE me = \"vl_marker\"\nSPRITE wr(5) = \"vl_wraith\"\nSPRITE gem(5) = \"vl_gem\"\nSPRITE pot(3) = \"vl_potion\"\nSPRITE kk = \"vl_key\"\nSPRITE tr = \"vl_treasure\"\nTILESET ts = \"vl_tiles\"\nMAP panel = \"vl_panel\"\nMAP level = \"vl_maze\"\nSFX shot = \"vl_shot\"\nSFX thud = \"vl_thud\"\nSFX kill = \"vl_kill\"\nSFX pick = \"vl_pick\"\nSFX door = \"vl_door\"\nSFX hurt = \"vl_hurt\"\nSFX win = \"vl_win\"\nSFX lose = \"vl_lose\"\n\nVIEW3D level COLW 4 INK 5 CEIL 0 FLOOR 1\n\nSCENE play\n  REM st: 0 title, 1 playing, 2 treasure found, 3 dead.   hud: bit 0 health bar, 1 health number, 2 score, 3 gems, 4 key, 5 print the message (left half), 7 (right half), 6 clear it.\n  DIM st, tt, fc, k3, ti, ei, js, lf, rg, fw, bk, fire, pfire, lab\n  DIM px, py, pa, hp, score, keys, gems, kills, inv, cool, bt, msg, mt, hud\n  DIM ka, kv, tv\n  DIM exs(4) = 1920, 7040, 4224, 6528, 6528\n  DIM eys(4) = 640, 1920, 2176, 4992, 7808\n  DIM gxs(4) = 6528, 7552, 896, 4224, 2176\n  DIM gys(4) = 1152, 1152, 2176, 3968, 4736\n  DIM pxs(2) = 896, 6272, 4224\n  DIM pys(2) = 3200, 7296, 7808\n  REM the wraiths: x, y, health (0 = dead), awake, flash / burst timer\n  DIM ex(4), ey(4), eh(4), ea(4), ef(4), ev(4)\n  REM the things to pick up: still there, and shown (a thing is shown only while the player is within SEER of it)\n  DIM ga(4), oa(2), gv(4), pv(2)\n\n  PROC INIT():\n    CALL RESETWORLD()\n    CALL TITLEINIT()\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- the tick\n  PROC FRAME():\n    js = STICK(1)\n    fire = KEYDOWN(\" \") OR BIT(js, 4)\n    fc = fc + 1\n    IF fc > 30000 THEN fc = 0 ENDIF\n    k3 = k3 + 1\n    IF k3 > 2 THEN k3 = 0 ENDIF\n    tt = tt + 1\n    IF tt > 30000 THEN tt = 30000 ENDIF\n    SELECT CASE st\n      CASE 0\n        CALL TITLETICK()\n      CASE 1\n        CALL PLAYTICK()\n      CASE ELSE\n        CALL ENDTICK()\n    ENDSEL\n    pfire = fire\n  ENDP\n\n  REM Everything in the maze back to how a game starts: the door shut, the wraiths asleep at their posts, every gem, potion, the key and the treasure in place (all of them\n  REM hidden: PICKUPS and ENEMIES show each one when the player comes within SEER of it), the player at the start.\n  PROC RESETWORLD():\n    LOCAL i\n    SETWALL DX0, DY0 = 4\n    FOR i = 0 TO NEN - 1\n      ex(i) = exs(i) : ey(i) = eys(i) : eh(i) = 3 : ea(i) = 0 : ef(i) = 0 : ev(i) = 0\n      HIDE wr(i)\n    NEXT i\n    FOR i = 0 TO NGM - 1\n      ga(i) = 1 : gv(i) = 0\n      HIDE gem(i)\n    NEXT i\n    FOR i = 0 TO NPT - 1\n      oa(i) = 1 : pv(i) = 0\n      HIDE pot(i)\n    NEXT i\n    ka = 1 : kv = 0 : tv = 0\n    HIDE kk\n    HIDE tr\n    px = SX0 : py = SY0\n    SHOW me AT px, py\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- title\n  REM The picture turns slowly on the spot in the colonnade, where a wraith sleeps among the pillars.  The text is put up a piece a tick (TI counts the stages; 10 = waiting\n  REM for fire, 20 up = starting a game).\n  PROC TITLEINIT():\n    st = 0 : tt = 0 : ti = 0\n    BORDER 0 : bt = 0\n    hp = 100 : score = 0 : keys = 0 : gems = 0 : kills = 0 : inv = 0 : cool = 0 : msg = 0 : mt = 0\n    hud = 31\n    CALL RESETWORLD()\n    px = TVX : py = TVY\n    SHOW me AT px, py\n    ev(2) = 1\n    SHOW wr(2) AT ex(2), ey(2) FRAME 0\n  ENDP\n\n  PROC TITLETICK():\n    pa = BAND(pa + 2, 255)\n    VIEW px, py, pa\n    IF ti < 10 THEN\n      CALL TSTAGE(ti)\n      ti = ti + 1\n    ELSE\n      IF ti = 10 THEN\n        CALL HUDTICK()\n        IF fire AND (NOT pfire) THEN ti = 20 ENDIF\n      ELSE\n        CALL GSTAGE(ti - 20)\n        ti = ti + 1\n      ENDIF\n    ENDIF\n  ENDP\n\n  PROC TSTAGE(s):\n    INK 7 : PAPER 0 : BRIGHT 1\n    SELECT CASE s\n      CASE 0\n        FILLC 0, 20, 32, 1 = 32\n      CASE 1\n        FILLC 0, 21, 32, 1 = 32\n      CASE 2\n        INK 6 : PRINT AT 1, 8; \"* V A U L T S *\";\n      CASE 3\n        INK 5 : PRINT AT 3, 1; \"FIND THE KEY. OPEN THE VAULT.\";\n      CASE 4\n        INK 7 : PRINT AT 20, 2; \"PRESS SPACE OR FIRE TO PLAY\";\n      CASE 5\n        INK 3 : PRINT AT 22, 0; \"O P TURN  Q A WALK  SPACE SHOOT\";\n      CASE 6\n        IF lab = 0 THEN\n          INK 7 : PRINT AT 7, 1; \"HEALTH\";\n          PRINT AT 12, 1; \"KEYS\";\n        ENDIF\n      CASE 7\n        IF lab = 0 THEN\n          PRINT AT 7, 25; \"SCORE\";\n          PRINT AT 12, 25; \"GEMS\";\n        ENDIF\n      CASE ELSE\n        lab = 1\n    ENDSEL\n  ENDP\n\n  REM Starting a game takes two ticks: the tagline goes and the maze is put in order again with the player at the start, then the prompt goes and the game begins (the HUD\n  REM numbers are up already).\n  PROC GSTAGE(s):\n    INK 7 : PAPER 0 : BRIGHT 1\n    IF s = 0 THEN\n      FILLC 0, 3, 32, 1 = 32\n      CALL RESETWORLD()\n    ELSE\n      FILLC 0, 20, 32, 1 = 32\n      st = 1 : tt = 0\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- play\n  PROC PLAYTICK():\n    CALL MOVEPLAYER()\n    CALL PICKUPS()\n    IF st = 1 THEN CALL ENEMIES() ENDIF\n    IF st = 1 THEN CALL SHOOT() ENDIF\n    CALL EFFECTS()\n    CALL HUDTICK()\n    VIEW px, py, pa\n  ENDP\n\n  REM Turn, then walk along (COSA, SINA) one axis at a time: the move is made when the two leading corners of the player's box (radius RAD) are in empty cells, so\n  REM the player slides along a wall.  Every other tick a probe 112 units ahead looks for the locked door (wall type 4): with the key it opens.\n  PROC MOVEPLAYER():\n    LOCAL mv, sp, c, s, nx, ny, f, qx, qy\n    lf = KEYDOWN(\"O\") OR BIT(js, 2)\n    rg = KEYDOWN(\"P\") OR BIT(js, 3)\n    fw = KEYDOWN(\"Q\") OR BIT(js, 0)\n    bk = KEYDOWN(\"A\") OR BIT(js, 1)\n    IF lf THEN pa = pa - TURN ENDIF\n    IF rg THEN pa = pa + TURN ENDIF\n    pa = BAND(pa, 255)\n    mv = fw - bk\n    IF mv <> 0 THEN\n      IF mv > 0 THEN sp = SPD ELSE sp = 0 - SPD ENDIF\n      c = COSA(pa) : s = SINA(pa)\n      nx = px + FXMUL(c, sp)\n      IF nx > px THEN f = nx + RAD ELSE f = nx - RAD ENDIF\n      IF WALL(f, py - RAD) = 0 AND WALL(f, py + RAD) = 0 THEN px = nx ENDIF\n      ny = py + FXMUL(s, sp)\n      IF ny > py THEN f = ny + RAD ELSE f = ny - RAD ENDIF\n      IF WALL(px - RAD, f) = 0 AND WALL(px + RAD, f) = 0 THEN py = ny ENDIF\n      SHOW me AT px, py\n      IF mv > 0 AND BAND(fc, 1) = 0 THEN\n        qx = px + FXMUL(c, 112) : qy = py + FXMUL(s, 112)\n        IF WALL(qx, qy) = 4 THEN\n          IF keys > 0 THEN\n            SETWALL qx, qy = 0\n            keys = 0 : hud = BOR(hud, 16)\n            PLAY door\n            CALL SAY(3)\n          ELSE\n            IF mt = 0 THEN\n              PLAY thud\n              CALL SAY(2)\n            ENDIF\n          ENDIF\n        ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM Gems, potions, the key and the treasure.  Each is looked at only every third tick (the player walks 44 units a tick and a pickup is touched over a stretch of 192;\n  REM K, a counter that goes 0 1 2 0 1 2, picks the ones asked this tick: gems K and K + 3, potion K, the key on K = 2, the treasure on K = 1).  A thing farther than SEER is\n  REM hidden and one that comes within it is shown (a billboard in view costs at least 10,000 T-states); a cheap distance test comes before HIT.\n  PROC PICKUPS():\n    LOCAL i, k, ax, ay\n    k = k3\n    FOR i = k TO NGM - 1 STEP 3\n      IF ga(i) THEN\n        ax = ABS(gxs(i) - px) : ay = ABS(gys(i) - py)\n        IF ax < SEER AND ay < SEER THEN\n          IF gv(i) = 0 THEN\n            gv(i) = 1\n            SHOW gem(i) AT gxs(i), gys(i)\n          ENDIF\n          IF ax < 112 AND ay < 112 THEN\n            IF HIT(me, gem(i)) THEN\n              ga(i) = 0 : HIDE gem(i)\n              gems = gems + 1 : score = score + 50 : hud = BOR(hud, 12)\n              PLAY pick\n              CALL SAY(4)\n            ENDIF\n          ENDIF\n        ELSE\n          IF gv(i) THEN\n            gv(i) = 0\n            HIDE gem(i)\n          ENDIF\n        ENDIF\n      ENDIF\n    NEXT i\n    IF oa(k) THEN\n      ax = ABS(pxs(k) - px) : ay = ABS(pys(k) - py)\n      IF ax < SEER AND ay < SEER THEN\n        IF pv(k) = 0 THEN\n          pv(k) = 1\n          SHOW pot(k) AT pxs(k), pys(k)\n        ENDIF\n        IF hp < 100 AND ax < 112 AND ay < 112 THEN\n          IF HIT(me, pot(k)) THEN\n            oa(k) = 0 : HIDE pot(k)\n            hp = hp + 40\n            IF hp > 100 THEN hp = 100 ENDIF\n            hud = BOR(hud, 3)\n            PLAY pick\n            CALL SAY(5)\n          ENDIF\n        ENDIF\n      ELSE\n        IF pv(k) THEN\n          pv(k) = 0\n          HIDE pot(k)\n        ENDIF\n      ENDIF\n    ENDIF\n    IF k = 2 AND ka THEN\n      ax = ABS(KX - px) : ay = ABS(KY - py)\n      IF ax < SEER AND ay < SEER THEN\n        IF kv = 0 THEN\n          kv = 1\n          SHOW kk AT KX, KY\n        ENDIF\n        IF ax < 112 AND ay < 112 THEN\n          IF HIT(me, kk) THEN\n            ka = 0 : HIDE kk\n            keys = 1 : hud = BOR(hud, 16)\n            PLAY pick\n            CALL SAY(1)\n          ENDIF\n        ENDIF\n      ELSE\n        IF kv THEN\n          kv = 0\n          HIDE kk\n        ENDIF\n      ENDIF\n    ENDIF\n    IF k = 1 THEN\n      ax = ABS(TX - px) : ay = ABS(TY - py)\n      IF ax < SEER AND ay < SEER THEN\n        IF tv = 0 THEN\n          tv = 1\n          SHOW tr AT TX, TY\n        ENDIF\n        IF ax < 112 AND ay < 112 THEN\n          IF HIT(me, tr) THEN CALL WIN() ENDIF\n        ENDIF\n      ELSE\n        IF tv THEN\n          tv = 0\n          HIDE tr\n        ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- the wraiths\n  REM A sleeping wraith wakes when the player is within WAKE (6 cells) on both axes; an awake one steps toward him every other tick (ESTEP: about 0.4 of the player's\n  REM speed) and hurts him on touch (HIT).  A wraith is shown only while the player is within SEER (7 cells) of it: a billboard in view costs at least 10,000 T-states, even\n  REM behind a wall.  The wraiths are taken in two halves, the even ones on even ticks and the odd ones on odd ticks (touch, wake and the flash / burst timers count in these\n  REM turns), so only two or three are looked at in a tick.\n  PROC ENEMIES():\n    LOCAL i, ax, ay\n    FOR i = BAND(fc, 1) TO NEN - 1 STEP 2\n      IF eh(i) > 0 THEN\n        ax = ABS(ex(i) - px) : ay = ABS(ey(i) - py)\n        IF ea(i) = 0 THEN\n          IF ax < WAKE AND ay < WAKE THEN ea(i) = 1 ENDIF\n        ELSE\n          CALL MOVEEN(i)\n          IF ax < 160 AND ay < 160 THEN\n            IF HIT(me, wr(i)) THEN CALL HURTME() ENDIF\n          ENDIF\n        ENDIF\n        IF ax < SEER AND ay < SEER THEN\n          IF ev(i) = 0 THEN\n            ev(i) = 1\n            SHOW wr(i) AT ex(i), ey(i) FRAME 0\n          ENDIF\n        ELSE\n          IF ev(i) THEN\n            ev(i) = 0\n            HIDE wr(i)\n          ENDIF\n        ENDIF\n        IF ef(i) > 0 THEN\n          ef(i) = ef(i) - 1\n          IF ef(i) = 0 AND ev(i) THEN SHOW wr(i) AT ex(i), ey(i) FRAME BAND(SHR(fc, 2), 1) ENDIF\n        ENDIF\n      ELSE\n        IF ef(i) > 0 THEN\n          ef(i) = ef(i) - 1\n          IF ef(i) = 0 THEN HIDE wr(i) ENDIF\n        ENDIF\n      ENDIF\n    NEXT i\n  ENDP\n\n  REM One step toward the player on each axis (the lead point 3 steps ahead must be in an empty cell); a wraith that cannot move slides sideways along the wall.\n  PROC MOVEEN(i):\n    LOCAL x, y, sx, sy, mx, my, d, f\n    x = ex(i) : y = ey(i) : mx = 0 : my = 0\n    sx = px - x : sy = py - y\n    IF sx > ESTEP THEN\n      IF WALL(x + 3 * ESTEP, y) = 0 THEN x = x + ESTEP : mx = 1 ENDIF\n    ELSE\n      IF sx < 0 - ESTEP THEN\n        IF WALL(x - 3 * ESTEP, y) = 0 THEN x = x - ESTEP : mx = 1 ENDIF\n      ENDIF\n    ENDIF\n    IF sy > ESTEP THEN\n      IF WALL(x, y + 3 * ESTEP) = 0 THEN y = y + ESTEP : my = 1 ENDIF\n    ELSE\n      IF sy < 0 - ESTEP THEN\n        IF WALL(x, y - 3 * ESTEP) = 0 THEN y = y - ESTEP : my = 1 ENDIF\n      ENDIF\n    ENDIF\n    IF mx + my = 0 THEN\n      IF BAND(SHR(fc, 5) + i, 1) = 0 THEN d = ESTEP ELSE d = 0 - ESTEP ENDIF\n      IF ABS(sx) > ABS(sy) THEN\n        IF WALL(x, y + 3 * d) = 0 THEN y = y + d : my = 1 ENDIF\n      ELSE\n        IF WALL(x + 3 * d, y) = 0 THEN x = x + d : mx = 1 ENDIF\n      ENDIF\n    ENDIF\n    IF mx + my > 0 THEN\n      ex(i) = x : ey(i) = y\n      IF ev(i) THEN\n        f = BAND(SHR(fc, 2), 1)\n        IF ef(i) > 0 THEN f = 2 ENDIF\n        SHOW wr(i) AT x, y FRAME f\n      ENDIF\n    ENDIF\n  ENDP\n\n  PROC HURTME():\n    IF inv = 0 THEN\n      hp = hp - 10 : inv = 12 : hud = BOR(hud, 3)\n      PLAY hurt\n      BORDER 2 : bt = 3\n      IF hp <= 0 THEN\n        hp = 0\n        CALL LOSE()\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- shooting\n  REM Fire (every 6 ticks while held): the wraith that the last picture drew nearest to the middle column (SEEN within a few columns of 64, the more the closer it is)\n  REM and nearer than RANGE (DEPTH) is hit.  A wraith behind a wall was not drawn (SEEN = -1), so a wall protects it.  Three hits destroy one.\n  PROC SHOOT():\n    LOCAL i, best, bd, c, d, tol\n    IF fire AND cool = 0 THEN\n      cool = 6\n      PLAY shot\n      BORDER 7 : bt = 1\n      best = -1 : bd = RANGE\n      FOR i = 0 TO NEN - 1\n        IF eh(i) > 0 THEN\n          c = SEEN(wr(i))\n          IF c >= 0 THEN\n            d = DEPTH(wr(i))\n            tol = 8000 DIV (d + 1)\n            IF tol < 3 THEN tol = 3 ENDIF\n            IF ABS(c - 64) <= tol AND d < bd THEN\n              bd = d : best = i\n            ENDIF\n          ENDIF\n        ENDIF\n      NEXT i\n      IF best >= 0 THEN CALL HITEN(best) ENDIF\n    ENDIF\n  ENDP\n\n  PROC HITEN(i):\n    eh(i) = eh(i) - 1 : ea(i) = 1\n    IF eh(i) <= 0 THEN\n      eh(i) = 0 : ef(i) = 4\n      score = score + 100 : kills = kills + 1 : hud = BOR(hud, 4)\n      SHOW wr(i) AT ex(i), ey(i) FRAME 3\n      PLAY kill\n      CALL SAY(6)\n    ELSE\n      ef(i) = 3\n      SHOW wr(i) AT ex(i), ey(i) FRAME 2\n      PLAY thud\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- timers, gems that sparkle\n  PROC EFFECTS():\n    LOCAL k\n    IF inv > 0 THEN inv = inv - 1 ENDIF\n    IF cool > 0 THEN cool = cool - 1 ENDIF\n    IF bt > 0 THEN\n      bt = bt - 1\n      IF bt = 0 THEN BORDER 0 ENDIF\n    ENDIF\n    IF mt > 0 THEN\n      mt = mt - 1\n      IF mt = 0 THEN hud = BOR(BAND(hud, BNOT(160)), 64) ENDIF\n    ENDIF\n    REM one gem (or the treasure) a tick takes its sparkle frame\n    k = BAND(fc, 7)\n    IF k < NGM THEN\n      IF ga(k) AND gv(k) THEN SHOW gem(k) AT gxs(k), gys(k) FRAME BAND(SHR(fc, 3), 1) ENDIF\n    ELSE\n      IF k = 5 AND tv THEN SHOW tr AT TX, TY FRAME BAND(SHR(fc, 3), 1) ENDIF\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- the HUD\n  REM A message for the bottom strip: MSG says which, MT counts it down (45 ticks), then the line is cleared.\n  PROC SAY(n):\n    msg = n : mt = 45\n    hud = BOR(BAND(hud, BNOT(192)), 32)\n  ENDP\n\n  REM One change a tick (a printed number is 1,000 to 2,500 T and the cells it dirties are repainted by the runtime in the same tick).\n  PROC HUDTICK():\n    LOCAL done\n    IF hud <> 0 THEN\n      INK 6 : PAPER 0 : BRIGHT 1\n      done = 0\n      IF BAND(hud, 32) <> 0 THEN\n        CALL MSGPRINT(0)\n        hud = BOR(BAND(hud, BNOT(32)), 128) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 128) <> 0 THEN\n        CALL MSGPRINT(1)\n        hud = BAND(hud, BNOT(128)) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 64) <> 0 THEN\n        FILLC 0, 20, 32, 1 = 32\n        hud = BAND(hud, BNOT(64)) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 1) <> 0 THEN\n        CALL HPBAR()\n        hud = BAND(hud, BNOT(1)) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 2) <> 0 THEN\n        PRINT AT 9, 3; hp; \" \";\n        hud = BAND(hud, BNOT(2)) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 4) <> 0 THEN\n        PRINT AT 8, 25; score; \"   \";\n        hud = BAND(hud, BNOT(4)) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 8) <> 0 THEN\n        CALL GEMROW()\n        hud = BAND(hud, BNOT(8)) : done = 1\n      ENDIF\n      IF done = 0 AND BAND(hud, 16) <> 0 THEN\n        IF keys > 0 THEN TILE 3, 13 = 6 ELSE TILE 3, 13 = 7 ENDIF\n        hud = BAND(hud, BNOT(16)) : done = 1\n      ENDIF\n      IF done = 0 THEN hud = 0 ENDIF\n    ENDIF\n  ENDP\n\n  REM The health bar: 7 cells of half cells, 100 hit points = 14 halves (any health above 0 shows at least one).\n  PROC HPBAR():\n    LOCAL i, v\n    v = (hp * 14 + 99) DIV 100\n    FOR i = 0 TO 6\n      IF v >= 2 THEN\n        TILE i, 8 = 3\n      ELSE\n        IF v = 1 THEN TILE i, 8 = 4 ELSE TILE i, 8 = 5 ENDIF\n      ENDIF\n      v = v - 2\n    NEXT i\n  ENDP\n\n  PROC GEMROW():\n    LOCAL i\n    FOR i = 0 TO NGM - 1\n      IF i < gems THEN TILE 25 + i, 13 = 8 ELSE TILE 25 + i, 13 = 9 ENDIF\n    NEXT i\n  ENDP\n\n  REM A bottom message is printed in two halves of 15 characters, one a tick: a character costs about 550 T-states to print, and the cells it dirties are repainted too.\n  PROC MSGPRINT(h):\n    IF h = 0 THEN\n      SELECT CASE msg\n        CASE 1\n          INK 6 : PRINT AT 20, 1; \"    YOU TOOK TH\";\n        CASE 2\n          INK 2 : PRINT AT 20, 1; \"THE DOOR IS LOC\";\n        CASE 3\n          INK 6 : PRINT AT 20, 1; \" THE VAULT DOOR\";\n        CASE 4\n          INK 5 : PRINT AT 20, 1; \"         A GEM!\";\n        CASE 5\n          INK 4 : PRINT AT 20, 1; \"      A HEALING\";\n        CASE ELSE\n          INK 7 : PRINT AT 20, 1; \"   WRAITH DESTR\";\n      ENDSEL\n    ELSE\n      SELECT CASE msg\n        CASE 1\n          INK 6 : PRINT AT 20, 16; \"E GOLD KEY!    \";\n        CASE 2\n          INK 2 : PRINT AT 20, 16; \"KED. FIND A KEY\";\n        CASE 3\n          INK 6 : PRINT AT 20, 16; \" GRINDS OPEN!  \";\n        CASE 4\n          INK 5 : PRINT AT 20, 16; \"  +50          \";\n        CASE 5\n          INK 4 : PRINT AT 20, 16; \" DRAUGHT!      \";\n        CASE ELSE\n          INK 7 : PRINT AT 20, 16; \"OYED!  +100    \";\n      ENDSEL\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- the end\n  PROC WIN():\n    st = 2 : tt = 0 : ei = 0\n    score = score + 500 + hp : hud = BOR(hud, 4)\n    PLAY win\n    BORDER 4 : bt = 0\n  ENDP\n\n  PROC LOSE():\n    st = 3 : tt = 0 : ei = 0\n    PLAY lose\n    BORDER 2 : bt = 0\n  ENDP\n\n  REM Treasure found (2) or dead (3): the picture turns slowly, the HUD is brought up to date, the message goes up a line a tick, fire goes back to the title.\n  PROC ENDTICK():\n    IF st = 2 THEN pa = BAND(pa + 3, 255) ENDIF\n    CALL HUDTICK()\n    VIEW px, py, pa\n    IF hud = 0 THEN\n      INK 7 : PAPER 0 : BRIGHT 1\n      SELECT CASE ei\n        CASE 0\n          FILLC 0, 20, 32, 1 = 32\n          ei = 1\n        CASE 1\n          IF st = 2 THEN\n            INK 6 : PRINT AT 20, 4; \"YOU FOUND THE TREASURE!\";\n          ELSE\n            INK 2 : PRINT AT 20, 5; \"THE WRAITHS GOT YOU...\";\n          ENDIF\n          ei = 2\n        CASE 2\n          INK 7 : PRINT AT 21, 6; \"PRESS FIRE FOR THE TITLE\";\n          ei = 3\n        CASE ELSE\n          IF tt > 20 AND fire AND (NOT pfire) THEN CALL TITLEINIT() ENDIF\n      ENDSEL\n    ENDIF\n  ENDP\nENDSCENE\n"
+ },
+ "assets": {
+  "sprites": {
+   "vl_marker": {
+    "w": 16,
+    "h": 16,
+    "hot": [
+     0,
+     0,
+     16,
+     16
+    ],
+    "phases": 1,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "vl_wraith": {
+    "w": 16,
+    "h": 16,
+    "hot": [
+     0,
+     0,
+     16,
+     16
+    ],
+    "phases": 1,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "399C",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "799E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E7E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "DE7B",
+        "mask": "DE7B",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "8E71",
+        "mask": "8E71",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0C30",
+        "mask": "0C30",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "399C",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "799E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E7E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "BC3D",
+        "mask": "BC3D",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "300C",
+        "mask": "300C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "02A0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1550",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "2AA8",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1114",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "288A",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5554",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "2A2A",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5554",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "AAAA",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5555",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "AAAA",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5555",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "8A2A",
+        "mask": "DE7B",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0451",
+        "mask": "8E71",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0820",
+        "mask": "0C30",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "2004",
+        "mask": "2004",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0840",
+        "mask": "0840",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0040",
+        "mask": "0040",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "4104",
+        "mask": "4104",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0240",
+        "mask": "0240",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0820",
+        "mask": "0820",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0002",
+        "mask": "0002",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "4800",
+        "mask": "4800",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0040",
+        "mask": "0040",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1004",
+        "mask": "1004",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0410",
+        "mask": "0410",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "vl_gem": {
+    "w": 8,
+    "h": 8,
+    "hot": [
+     0,
+     0,
+     8,
+     8
+    ],
+    "phases": 1,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "mask": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "6F",
+        "mask": "7F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "mask": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "mask": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "02",
+        "mask": "02",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3A",
+        "mask": "3A",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "6F",
+        "mask": "7F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "mask": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "mask": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "vl_potion": {
+    "w": 8,
+    "h": 8,
+    "hot": [
+     0,
+     0,
+     8,
+     8
+    ],
+    "phases": 1,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "vl_key": {
+    "w": 8,
+    "h": 8,
+    "hot": [
+     0,
+     0,
+     8,
+     8
+    ],
+    "phases": 1,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "78",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "48",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "48",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "78",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "30",
+        "mask": "30",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "36",
+        "mask": "36",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "36",
+        "mask": "36",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "30",
+        "mask": "30",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "vl_treasure": {
+    "w": 16,
+    "h": 16,
+    "hot": [
+     0,
+     0,
+     16,
+     16
+    ],
+    "phases": 1,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5FFC",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5FFA",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "601E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "0400",
+        "mask": "0400",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0E00",
+        "mask": "0E00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5FFC",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "5FFA",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "601E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "tilesets": {
+   "vl_tiles": {
+    "tiles": [
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "20",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "02",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "40",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "08",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "01",
+        "ink": 6,
+        "paper": 0,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "42",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "42",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1C",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1C",
+        "ink": 6,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "24",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "24",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7E",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     }
+    ]
+   }
+  },
+  "maps": {
+   "vl_maze": {
+    "w": 32,
+    "h": 32,
+    "cells": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     2,
+     0,
+     0,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     1,
+     1,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     3,
+     3,
+     3,
+     4,
+     3,
+     3,
+     3,
+     1,
+     1,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     2,
+     2,
+     0,
+     2,
+     2,
+     0,
+     2,
+     2,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     2,
+     2,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "vl_panel": {
+    "w": 32,
+    "h": 24,
+    "cells": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     10,
+     11,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     14,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     16,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     15,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     17,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     7,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     9,
+     9,
+     9,
+     9,
+     9,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     12,
+     13,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ]
+   }
+  },
+  "sfx": {
+   "vl_shot": {
+    "ticks": [
+     {
+      "tone": 50,
+      "vol": 15,
+      "noise": 3,
+      "mix": 4
+     },
+     {
+      "tone": 90,
+      "vol": 13,
+      "noise": 6,
+      "mix": 4
+     },
+     {
+      "tone": 130,
+      "vol": 11,
+      "noise": 9,
+      "mix": 4
+     },
+     {
+      "tone": 170,
+      "vol": 9,
+      "noise": 12,
+      "mix": 4
+     },
+     {
+      "tone": 210,
+      "vol": 7,
+      "noise": 15,
+      "mix": 4
+     },
+     {
+      "tone": 250,
+      "vol": 5,
+      "noise": 18,
+      "mix": 4
+     },
+     {
+      "tone": 290,
+      "vol": 3,
+      "noise": 21,
+      "mix": 4
+     }
+    ]
+   },
+   "vl_thud": {
+    "ticks": [
+     {
+      "tone": 380,
+      "vol": 13,
+      "noise": 9,
+      "mix": 4
+     },
+     {
+      "tone": 410,
+      "vol": 11,
+      "noise": 9,
+      "mix": 4
+     },
+     {
+      "tone": 440,
+      "vol": 9,
+      "noise": 9,
+      "mix": 4
+     },
+     {
+      "tone": 470,
+      "vol": 7,
+      "noise": 9,
+      "mix": 4
+     },
+     {
+      "tone": 500,
+      "vol": 5,
+      "noise": 9,
+      "mix": 4
+     }
+    ]
+   },
+   "vl_kill": {
+    "ticks": [
+     {
+      "tone": 0,
+      "vol": 14,
+      "noise": 4,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 13,
+      "noise": 7,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 12,
+      "noise": 10,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 11,
+      "noise": 13,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 10,
+      "noise": 16,
+      "mix": 5
+     },
+     {
+      "tone": 120,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 144,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 168,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 192,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 216,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 240,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 264,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 288,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 312,
+      "vol": 4,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 336,
+      "vol": 3,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "vl_pick": {
+    "ticks": [
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 60,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "vl_door": {
+    "ticks": [
+     {
+      "tone": 300,
+      "vol": 13,
+      "noise": 18,
+      "mix": 4
+     },
+     {
+      "tone": 310,
+      "vol": 13,
+      "noise": 18,
+      "mix": 4
+     },
+     {
+      "tone": 320,
+      "vol": 12,
+      "noise": 17,
+      "mix": 4
+     },
+     {
+      "tone": 330,
+      "vol": 12,
+      "noise": 17,
+      "mix": 4
+     },
+     {
+      "tone": 340,
+      "vol": 11,
+      "noise": 16,
+      "mix": 4
+     },
+     {
+      "tone": 350,
+      "vol": 11,
+      "noise": 16,
+      "mix": 4
+     },
+     {
+      "tone": 360,
+      "vol": 10,
+      "noise": 15,
+      "mix": 4
+     },
+     {
+      "tone": 370,
+      "vol": 10,
+      "noise": 15,
+      "mix": 4
+     },
+     {
+      "tone": 380,
+      "vol": 9,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 390,
+      "vol": 9,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 400,
+      "vol": 8,
+      "noise": 13,
+      "mix": 4
+     },
+     {
+      "tone": 410,
+      "vol": 8,
+      "noise": 13,
+      "mix": 4
+     },
+     {
+      "tone": 420,
+      "vol": 7,
+      "noise": 12,
+      "mix": 4
+     },
+     {
+      "tone": 430,
+      "vol": 7,
+      "noise": 12,
+      "mix": 4
+     },
+     {
+      "tone": 440,
+      "vol": 6,
+      "noise": 11,
+      "mix": 4
+     },
+     {
+      "tone": 450,
+      "vol": 6,
+      "noise": 11,
+      "mix": 4
+     },
+     {
+      "tone": 460,
+      "vol": 5,
+      "noise": 10,
+      "mix": 4
+     },
+     {
+      "tone": 470,
+      "vol": 5,
+      "noise": 10,
+      "mix": 4
+     }
+    ]
+   },
+   "vl_hurt": {
+    "ticks": [
+     {
+      "tone": 500,
+      "vol": 14,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 480,
+      "vol": 13,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 460,
+      "vol": 12,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 440,
+      "vol": 11,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 420,
+      "vol": 10,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 400,
+      "vol": 9,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 380,
+      "vol": 8,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 360,
+      "vol": 7,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 340,
+      "vol": 6,
+      "noise": 14,
+      "mix": 4
+     },
+     {
+      "tone": 320,
+      "vol": 5,
+      "noise": 14,
+      "mix": 4
+     }
+    ]
+   },
+   "vl_win": {
+    "ticks": [
+     {
+      "tone": 200,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "vl_lose": {
+    "ticks": [
+     {
+      "tone": 180,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 202,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 224,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 246,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 268,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 290,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 312,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 334,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 356,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 378,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 400,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 422,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 444,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 466,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 488,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 510,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 532,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 554,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 576,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 598,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 620,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 642,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 664,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 686,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 708,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 730,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 752,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 774,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 796,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 818,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   }
+  },
+  "music": {}
+ },
+ "scenes": {}
+}

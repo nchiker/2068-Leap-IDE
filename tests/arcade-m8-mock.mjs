@@ -142,7 +142,8 @@ export function runMock4(res, { ticks, stick = null, billboard = null }) {
     },
     [TRAPS.RT_SETWALL]() {
       const x = arg(0), y = arg(1), t = arg(4);               // RA_V is the fifth word of the argument block (RA_X RA_Y RA_W RA_H RA_V)
-      if (x >= 0 && y >= 0 && x < V.mapW * 256 && y < V.mapH * 256 && t >= 0 && t <= 4) ram[ADDR.WORLD_RAM + (y >> 8) * 32 + (x >> 8)] = t;
+      if (x >= 0 && y >= 0 && x < V.mapW * 256 && y < V.mapH * 256 && t >= 0 && t <= 4
+          && !(t === 0 && ((x >> 8) === 0 || (y >> 8) === 0 || (x >> 8) === 31 || (y >> 8) === 31))) ram[ADDR.WORLD_RAM + (y >> 8) * 32 + (x >> 8)] = t;   // contract 2, clarification 7: a 0 on the array's ring is ignored
     },
   };
   const SENT = 0xFFF0; ram[SENT] = 0x76;

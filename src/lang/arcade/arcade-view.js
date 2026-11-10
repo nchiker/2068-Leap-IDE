@@ -88,11 +88,13 @@ export function wallAt(ram, x, y) {
   if (x < 0 || y < 0 || x >= VIEW_STRIDE * 256 || y >= VIEW_STRIDE * 256) return 1;
   return ram[(y >> 8) * VIEW_STRIDE + (x >> 8)];
 }
-/** SETWALL x, y = t: only a cell inside the game's mapW x mapH and only the types 0..4; anything else is ignored. Returns true when it wrote. */
+/** SETWALL x, y = t: only a cell inside the game's mapW x mapH and only the types 0..4 (a 0 on the array's outer ring is ignored too); anything else is ignored. Returns true when it wrote. */
 export function setWallAt(ram, mapW, mapH, x, y, t) {
   if (x < 0 || y < 0 || t < 0 || t > LIMITS.maxWallType) return false;
   const cx = x >> 8, cy = y >> 8;
   if (cx >= mapW || cy >= mapH) return false;
+  // contract section 2, clarification 7: the outer ring of the 32 x 32 array is never empty (a 32-wide or 32-high map has its own ring there)
+  if (t === 0 && (cx === 0 || cy === 0 || cx === VIEW_STRIDE - 1 || cy === VIEW_STRIDE - 1)) return false;
   ram[cy * VIEW_STRIDE + cx] = t;
   return true;
 }

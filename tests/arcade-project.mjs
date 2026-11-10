@@ -146,17 +146,20 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
   const image = new Uint8Array(readFileSync(dist + 'v2/runtime.bin'));
   const rt3 = JSON.parse(readFileSync(dist + 'v3/runtime.json', 'utf8'));
   const im3 = new Uint8Array(readFileSync(dist + 'v3/runtime.bin'));
+  const rt4 = JSON.parse(readFileSync(dist + 'v4/runtime.json', 'utf8'));
+  const im4 = new Uint8Array(readFileSync(dist + 'v4/runtime.bin'));
+  const builds = { 2: { rt: runtime, im: image }, 3: { rt: rt3, im: im3 }, 4: { rt: rt4, im: im4 } };
   // the Studio's rule: the program decides which published runtime it compiles on (requiredRuntime)
   const build = (proj) => {
     const s = P.buildSource(proj);
-    const v3 = requiredRuntime(s.text, proj.assets).version === 3;
-    const r = compile(s.text, { runtime: v3 ? rt3 : runtime, image: v3 ? im3 : image, assets: proj.assets });
+    const b = builds[requiredRuntime(s.text, proj.assets).version];
+    const r = compile(s.text, { runtime: b.rt, image: b.im, assets: proj.assets });
     return { ...r, lineMap: s.lineMap };
   };
   const r0 = build(np);
   check('the new-project template compiles with 0 errors on the v2 runtime', r0.errors.length === 0 && !!r0.dck, r0.errors.map((e) => e.message).join('; '));
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
-  check('the examples index lists bounce, breakout, shooter, blockfall, platformer', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'platformer', 'shooter']));
+  check('the examples index lists bounce, breakout, shooter, blockfall, platformer, vaults', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'platformer', 'shooter', 'vaults']));
   for (const ex of index) {
     const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
     const res = doc.ok ? build(doc.project) : null;

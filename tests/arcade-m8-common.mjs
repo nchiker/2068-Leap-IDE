@@ -23,7 +23,7 @@ export function viewModel(w, h, cells) {
   const api = {
     grid, w, h,
     wall(x, y) { if (x < 0 || y < 0) return 1; const c = Math.floor(x / 256), r = Math.floor(y / 256); return c >= 32 || r >= 32 ? 1 : grid[r][c]; },
-    set(x, y, t) { if (x < 0 || y < 0 || t < 0 || t > 4) return; const c = Math.floor(x / 256), r = Math.floor(y / 256); if (c < w && r < h) grid[r][c] = t; },
+    set(x, y, t) { if (x < 0 || y < 0 || t < 0 || t > 4) return; const c = Math.floor(x / 256), r = Math.floor(y / 256); if (c < w && r < h && !(t === 0 && (c === 0 || r === 0 || c === 31 || r === 31))) grid[r][c] = t; },   // clarification 7: no 0 on the array's ring
     pose(x, y, a) { const cl = (v, n) => (v < 0 ? 0 : Math.min(v, n * 256 - 1)); return { x: cl(x, w), y: cl(y, h), a: ((a % 256) + 256) % 256 }; },
     flat() { return Uint8Array.from(grid.flat()); },
   };

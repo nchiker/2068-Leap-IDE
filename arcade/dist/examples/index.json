@@ -24,6 +24,12 @@
   "file": "platformer.leapgame"
  },
  {
+  "id": "vaults",
+  "title": "Vaults (3D maze)",
+  "about": "A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot. Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.",
+  "file": "vaults.leapgame"
+ },
+ {
   "id": "blockfall",
   "title": "Blockfall",
   "about": "A falling-blocks puzzle: tiles and text only, no sprites. Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.",

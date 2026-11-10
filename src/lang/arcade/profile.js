@@ -25,7 +25,10 @@ import { buildSource, locate } from '../../arcade-project.js';
 export const RUNTIME_PATHS = Object.freeze({
   2: { json: 'arcade/dist/v2/runtime.json', image: 'arcade/dist/v2/runtime.bin' },
   3: { json: 'arcade/dist/v3/runtime.json', image: 'arcade/dist/v3/runtime.bin' },
+  4: { json: 'arcade/dist/v4/runtime.json', image: 'arcade/dist/v4/runtime.bin' },
 });
+/** The runtime a program needs (2, 3 or 4) -> the build to compile against; a version that could not be loaded falls back to the newest loaded one, so the compiler reports the missing words. */
+const pickBuild = (builds, version) => builds[version] || builds[Math.max(...Object.keys(builds).map(Number))];
 export const DCK_BYTES_LIMIT = 16384;          // the game's own share of the cartridge (usage.total + usage.free)
 const LANGUAGE_DOC = 'https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_LANGUAGE.md';
 
@@ -148,6 +151,7 @@ export const arcadeProfile = {
    */
   async attach({ fetchAsset }) {
     const builds = { 2: await loadRuntime(fetchAsset, 2), 3: await loadRuntime(fetchAsset, 3) };
+    try { builds[4] = await loadRuntime(fetchAsset, 4); } catch { /* v4 not published yet: v4 programs then fail to compile with the compiler's own message */ }
     let current = builds[2];                    // the build the last compile used (the Studio reads symbols from lang.runtime)
     /**
      * Compile a project. `replace` ({file, text}) substitutes one file's text (the editor's unsaved text).
@@ -158,7 +162,7 @@ export const arcadeProfile = {
       const p = replace ? { ...project, files: { ...project.files, [replace.file]: replace.text } } : project;
       const src = buildSource(p);
       const t0 = performance.now();
-      current = builds[requiredRuntime(src.text, p.assets).version === 3 ? 3 : 2];
+      current = pickBuild(builds, requiredRuntime(src.text, p.assets).version);
       const res = compile(src.text, { runtime: current.runtime, image: current.image, assets: p.assets });
       const ms = performance.now() - t0;
       const at = (d) => locate(src.lineMap, d);
@@ -174,7 +178,7 @@ export const arcadeProfile = {
       compileProject,
       /** The profile shape's lint(text) for a single text with no assets (the Studio uses compileProject). */
       lint(text) {
-        const b = builds[requiredRuntime(text, {}).version === 3 ? 3 : 2];
+        const b = pickBuild(builds, requiredRuntime(text, {}).version);
         const res = compile(text, { runtime: b.runtime, image: b.image, assets: {} });
         return [...res.errors, ...res.warnings].map(toMark);
       },
