@@ -2,7 +2,7 @@
  "about": "SHA-256 of the DCK and of the game area ($8000-$BFFF) that the compiler BEFORE language batch 2 (git 3266f55) produced for these programs against the real v2 runtime (arcade/build/v2); tests/arcade-m6-compiler.mjs checks that programs that use none of the new words compile to identical bytes.",
  "programs": [
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 2,
    "bytes": 8986,

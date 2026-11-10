@@ -24,7 +24,7 @@ const check = process.argv.includes('--check');
 const EXAMPLES = [
   { id: 'bounce', title: 'Bounce', about: 'A ball bouncing off the screen edges and a paddle the joystick moves. Keys: O P or the arrows move the paddle.' },
   { id: 'breakout', title: 'Breakout', about: 'Bricks, bat and ball with text, tiles, collision and sound. Keys: O P or the arrows; fire (Space) serves.' },
-  { id: 'shooter', title: 'Shooter', about: 'A vertical shooter with pools of sprites, a scrolling-look sky map and sound. Keys: Q A O P or the arrows move; Space fires.' },
+  { id: 'shooter', title: 'Shooter', about: 'A vertical shooter with pools of sprites, a sky map and sound, in three scenes (title, play, game over). Keys: Q A O P or the arrows move; Space fires.' },
   { id: 'platformer', title: 'Leap Runner (platformer)', about: 'A scrolling platformer: a 128-cell level with three parallax bands, a 16x24 hero with animation, enemies, coins and a goal. Keys: O P move, Q or Space jump, A drops through planks.' },
   { id: 'vaults', title: 'Vaults (3D maze)', about: 'A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot. Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.' },
   { id: 'blockfall', title: 'Blockfall', about: 'A falling-blocks puzzle: tiles and text only, no sprites. Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.' },

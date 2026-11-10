@@ -63,6 +63,9 @@
  *     VIEW3D, and the map's size and cells, are reported by the code generator.
  *     (The code generator reports what needs more than the syntax tree: CAMERA, SETWORLD, CAMX, WORLDTILE, TILEFLAGS, TILEHIT and SOLID without a
  *     WINDOW, the map size and tile numbers, a FRAME against the frame count.)
+ *   - (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md) scenes: any number; ENTER does not return, so a statement after it in the same block is "unreachable statement"; a scene
+ *     (not the first) that no ENTER names is a warning; the "FOR variable declared later" check looks at the game level plus the PROC's own scene only (another scene's DIM is not visible to it).
+ *     (A runtime older than v2 refuses a second scene and ENTER in the code generator, which knows the runtime.)
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
@@ -132,7 +135,10 @@ class Checker {
     this.reported = new Set();
     this.assets = new Map();          // 'kind:KEY' -> {name, kind, pos, used, ...}: the asset name spaces (global)
     this.cur = null;                  // the ctx of the statement being checked (for the const-aware literal checks)
-    this.laterVars = new Map();       // KEY -> pos: every DIM / CONST name of the global level and of the scenes, wherever declared
+    this.laterVars = new Map();       // KEY -> pos: every DIM / CONST name of the global level, wherever declared
+    this.sceneLater = new Map();      // batch 4: SCENE node -> Map(KEY -> pos): the DIM / CONST names of that scene, wherever declared (a PROC sees its own scene's only)
+    this.curLater = null;             // the sceneLater map of the scene being checked (null at the game level)
+    this.entered = new Set();         // batch 4: KEYs of the scenes some ENTER names
   }
 
   err(pos, message, severity = 'error') {
@@ -184,14 +190,14 @@ class Checker {
       if (sym) sym.view = true;
     }
     // every variable name of the global level and of each scene, for the "declared after a FOR made it a local" check
-    const addLater = (decls) => {
+    const addLater = (decls, into) => {
       for (const d of decls ?? []) {
-        if (d.type === 'Dim') for (const it of d.items ?? []) { if (it.name && !this.laterVars.has(up(it.name))) this.laterVars.set(up(it.name), { line: it.line }); }
-        else if (d.type === 'Const' && d.name && !this.laterVars.has(up(d.name))) this.laterVars.set(up(d.name), { line: d.line });
+        if (d.type === 'Dim') for (const it of d.items ?? []) { if (it.name && !into.has(up(it.name))) into.set(up(it.name), { line: it.line }); }
+        else if (d.type === 'Const' && d.name && !into.has(up(d.name))) into.set(up(d.name), { line: d.line });
       }
     };
-    addLater(ast.decls);
-    for (const sc of ast.scenes ?? []) addLater(sc.decls);
+    addLater(ast.decls, this.laterVars);
+    for (const sc of ast.scenes ?? []) { const m = new Map(); addLater(sc.decls, m); this.sceneLater.set(sc, m); }
     for (const s of ast.scenes ?? []) {
       const key = up(s.name);
       if (this.scenes.has(key)) this.err(s.namePos, `SCENE '${s.name}' is already defined (line ${this.scenes.get(key).line})`);
@@ -214,6 +220,11 @@ class Checker {
       }
     }
     this.checkBands();
+    // language batch 4: scenes
+    const scenes = ast.scenes ?? [];
+    scenes.forEach((sc, i) => {
+      if (i > 0 && !this.entered.has(up(sc.name)) && this.scenes.get(up(sc.name)) === sc) this.warn(sc.namePos?.line ? sc.namePos : sc, `SCENE '${sc.name}' is never entered: only the first scene starts by itself`);
+    });
 
     // Warnings
     for (const a of this.assets.values()) {
@@ -256,6 +267,11 @@ class Checker {
   }
 
   checkScene(sc) {
+    this.curLater = this.sceneLater.get(sc) ?? null;
+    try { this.checkSceneBody(sc); } finally { this.curLater = null; }
+  }
+
+  checkSceneBody(sc) {
     const scope = this.newScope(this.global);
     this.hoistProcs(scope, sc.procs ?? [], sc.decls ?? []);
     for (const word of ['INIT', 'FRAME']) {
@@ -538,7 +554,7 @@ class Checker {
       if (!s) continue;
       if (ended && s.type !== 'Rem') { this.warn(s, 'unreachable statement'); ended = false; }
       this.stmt(s, ctx);
-      if (s.type === 'End' || s.type === 'Exit') ended = true;
+      if (s.type === 'End' || s.type === 'Exit' || s.type === 'Enter') ended = true;       // (batch 4: ENTER does not return)
     }
   }
 
@@ -570,8 +586,9 @@ class Checker {
           const key = up(v.name);
           let sym = ctx.scope.lookup('vars', key);
           if (!sym && ctx.proc && !ctx.scope.lookup('procs', key) && !ctx.scope.lookup('fns', key) && !notInArcadeMessage(v.name) && !RESERVED.has(key)) {
-            if (this.laterVars.has(key)) {
-              this.err(v, `'${v.name}' is declared later (line ${this.laterVars.get(key).line}) than this PROC: put that DIM above the PROC, or use another name for the FOR variable`);
+            const later = this.laterVars.get(key) ?? this.curLater?.get(key);
+            if (later) {
+              this.err(v, `'${v.name}' is declared later (line ${later.line}) than this PROC: put that DIM above the PROC, or use another name for the FOR variable`);
               sym = { kind: 'var', type: 'num', used: true };
             } else if (v.name.endsWith('$')) {
               this.err(v, 'a FOR variable must be a number');
@@ -684,6 +701,7 @@ class Checker {
       case 'Play': return this.assetRef(s.sfx, 'sfx', ctx);
       case 'Enter':
         if (s.scene && !this.scenes.has(up(s.scene.name))) this.err(s.scene, `ENTER: unknown SCENE '${s.scene.name}'`);
+        else if (s.scene) this.entered.add(up(s.scene.name));
         return;
       case 'Tile':
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the tile');

@@ -115,6 +115,14 @@
  *  B3-2. VIEW x, y, a: HL = x, DE = y, BC = a, CALL RT_VIEW (evaluation order x, y, a); SETWALL x, y = t: RA_X, RA_Y, RA_V, CALL RT_SETWALL (no guard: the runtime ignores t outside 0..4);
  *        COSA / SINA: HL = angle, CALL RT_COSA / RT_SINA; FXMUL / WALL: HL, DE, CALL RT_FXMUL / RT_WALL; SEEN / DEPTH: a read of BB_TAB (+2 / +0 of the instance's BB_ENT bytes).
  *
+ * ── Language batch 4: scenes (docs/ARCADE_LANGUAGE_BATCH4.md; v2 runtime or later) ──────────────────────────────────────────────────────────
+ *  B4-1. A game with several scenes, or any ENTER, gets the scene driver: header init = entry$init (clear all slots, copy the game-level and first-scene initialisers, save SP, JP INIT of scene 0),
+ *        header frame = frame$entry (save SP, dispatch on the current scene index in a hidden slot, tail jump to its FRAME). ENTER k = LD A,k / JP scn$enter: restore SP, PUSH AF, scn$reset, POP AF, store the
+ *        index, then per scene: clear its own slot block (one LDIR), copy its initialisers, JP its INIT. scn$reset is ordinary runtime calls (RT_SILENCE, per instance [RT_SHOWF 0,0,0] + RT_HIDE, INK 0 / BRIGHT 0 /
+ *        PAPER 7, RT_BORDER BORDER_COLOUR, RT_CLS, RT_LOADMAP 0 when there is a screen MAP). No runtime routine is added. Other programs compile to the bytes they always did.
+ *  B4-2. Name scopes: the game level and one per scene (useCtx swaps consts / varSlots / arrays / procs / fns); a callable is scanned, followed and generated in its home scope. A scene's slots are one block
+ *        after the game-level slots; labels are P$s<k>$NAME for scene PROCs of a multi-scene game; symbols / procs / fns / vars / arrays are keyed SCENE.NAME for a scene's own names (plain with one scene).
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -238,9 +246,18 @@ export function generate(ast, runtime, assets = {}) {
   const rtAddrOf = (name) => cst[name] ?? sym[name];
   // ── 1. program-level checks ──
   const scenes = ast.scenes ?? [];
+  const multi = scenes.length > 1;
   if (scenes.length === 0) err(ast, 'the game has no SCENE');
-  if (scenes.length > 1) notYet(scenes[1], 'a second SCENE (M2 has exactly one)');
-  const scene = scenes[0];
+  if (multi && !v2) err(scenes[1], `a second SCENE (M2 has exactly one) is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
+  /** Language batch 4: does the tree hold a node of this type (an ENTER anywhere)? */
+  const containsType = (n, t) => {
+    if (Array.isArray(n)) return n.some((x) => containsType(x, t));
+    if (!n || typeof n !== 'object') return false;
+    if (n.type === t) return true;
+    for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object' && containsType(n[k], t)) return true;
+    return false;
+  };
+  const driver = v2 && (multi || containsType(scenes, 'Enter'));      // the scene driver (contract section 5): several scenes, or an ENTER (of itself)
 
   const sprites = [];                               // v0/v1: {name, key, asset, node, w, h, data, hot} per sprite; v2: per distinct ASSET
   const spriteIndex = new Map();
@@ -339,7 +356,7 @@ export function generate(ast, runtime, assets = {}) {
 
   // ── 2. declarations, procs, functions ──
   // constant folding (independent of the reference interpreter; the fuzz test compares the two)
-  const consts = new Map();                         // batch 1: KEY -> {value, scene}: the CONSTs of the global level and of the scene
+  let consts = new Map();                           // batch 1: KEY -> {value, scene}: the CONSTs of the current name scope (the game level, or a scene's on top of it; batch 4: swapped by useCtx)
   let curC = null;                                  // the callable being generated: {slots: Map KEY -> addr (parameters, locals), isGlobal}
   /** The value of a name as a CONST, or undefined (not a CONST, hidden by a local / parameter, or a scene CONST seen from a top-level PROC). */
   const constVal = (name) => {
@@ -428,7 +445,7 @@ export function generate(ast, runtime, assets = {}) {
     }
   }
 
-  const varSlots = new Map();                       // KEY -> address
+  let varSlots = new Map();                         // KEY -> address (the current name scope)
   const sceneVarKeys = new Set();                   // the variables a SCENE declared (invisible to a top-level PROC)
   const slotNames = [];                             // slot index -> descriptive name
   const slotAddr = (i) => VARS_BASE + 2 * i;
@@ -437,9 +454,10 @@ export function generate(ast, runtime, assets = {}) {
     slotNames.push(name);
     return a;
   };
-  const arrays = new Map();                         // v2: KEY -> {addr, n, name, w?, h?}: n + 1 consecutive slots (2-D: (w+1)*(h+1), n = that - 1)
+  let arrays = new Map();                           // v2: KEY -> {addr, n, name, w?, h?}: n + 1 consecutive slots (2-D: (w+1)*(h+1), n = that - 1)
   const inits = [];                                 // batch 1: {slot, values}: array initialisers (slot = index of the first slot)
-  const declare = (dim, scene) => {
+  const nm = (n, si) => (multi && si >= 0 ? `${up(scenes[si].name)}.${n}` : n);      // batch 4: a scene's slots are named SCENE.NAME in a game with several scenes
+  const declare = (dim, scene, si = -1) => {
     for (const it of dim.items) {
       const dimNodes = it.dims ?? (it.size !== null && it.size !== undefined ? [{ type: 'Number', value: it.size }] : null);
       if (dimNodes) {
@@ -452,21 +470,21 @@ export function generate(ast, runtime, assets = {}) {
         if (!arrays.has(up(it.name))) {
           const total = sizes.reduce((p, n) => p * (n + 1), 1);
           const addr = slotAddr(slotNames.length), first = slotNames.length;
-          for (let k = 0; k < total; k++) allocSlot(sizes.length === 2 ? `${up(it.name)}(${(k / (sizes[1] + 1)) | 0},${k % (sizes[1] + 1)})` : `${up(it.name)}(${k})`);
+          for (let k = 0; k < total; k++) allocSlot(nm(sizes.length === 2 ? `${up(it.name)}(${(k / (sizes[1] + 1)) | 0},${k % (sizes[1] + 1)})` : `${up(it.name)}(${k})`, si));
           arrays.set(up(it.name), { addr, n: total - 1, name: up(it.name), ...(sizes.length === 2 ? { w: sizes[0], h: sizes[1] } : {}) });
           if (scene) sceneVarKeys.add(up(it.name));
           if (it.init) {
             const vals = it.init.map((v) => fold(v));
             if (vals.some((x) => x === undefined)) err(it, `the initial values of ${it.name} must be constant expressions`);
             else if (vals.length > total) err(it, `${vals.length} initial values for ${it.name}, which has only ${total} elements`);
-            else inits.push({ slot: first, values: vals });
+            else inits.push({ slot: first, values: vals, scene: si });
           }
         }
         continue;
       }
       if (it.name.endsWith('$')) { notYet(it, `string variable ${it.name}`); continue; }
       if (it.init) { err(it, `only an array can have initial values (${it.name})`); continue; }
-      if (!varSlots.has(up(it.name))) { varSlots.set(up(it.name), allocSlot(up(it.name))); if (scene) sceneVarKeys.add(up(it.name)); }
+      if (!varSlots.has(up(it.name))) { varSlots.set(up(it.name), allocSlot(nm(up(it.name), si))); if (scene) sceneVarKeys.add(up(it.name)); }
     }
   };
   const declareConst = (c, scene) => {
@@ -474,17 +492,33 @@ export function generate(ast, runtime, assets = {}) {
     if (v === undefined) { err(c, `CONST ${c.name} must be a constant expression`); return; }
     consts.set(up(c.name), { value: v, scene });
   };
-  const procs = new Map(), fns = new Map();         // KEY -> {node, key, label, paramSlot, reach}
-  const addCallables = (holder, isGlobal) => {
-    for (const p of holder.procs ?? []) procs.set(up(p.name), { node: p, key: up(p.name), label: `P$${up(p.name)}`, paramSlot: null, isGlobal });
-    for (const d of holder.decls ?? []) if (d.type === 'DefFn') fns.set(up(d.name), { node: d, key: up(d.name), label: `F$${up(d.name)}`, paramSlot: null, isGlobal });
+  let procs = new Map(), fns = new Map();           // KEY -> {node, key, label, paramSlot, reach, isGlobal, ctx, scene}
+  // Name scopes (batch 4): the game level, and one per scene on top of it. A callable is generated, scanned and followed in the scope of its home, so two scenes
+  // can each have their own `t` and `UPDATE`; a top-level PROC sees the game level only. useCtx() makes a scope the current one.
+  const globalCtx = { consts, varSlots, arrays, procs, fns };
+  const sceneCtx = [];
+  const useCtx = (c) => { consts = c.consts; varSlots = c.varSlots; arrays = c.arrays; procs = c.procs; fns = c.fns; };
+  const allProcs = [], allFns = [];                 // every PROC / DEF FN of the program in source order (the game level first), reachable or not
+  const labelOf = (kind, key, si) => (multi && si >= 0 ? `${kind}$s${si}$${key}` : `${kind}$${key}`);
+  const addCallables = (holder, isGlobal, ctx, si = -1) => {
+    for (const p of holder.procs ?? []) { const c = { node: p, key: up(p.name), label: labelOf('P', up(p.name), si), paramSlot: null, isGlobal, ctx, scene: si }; ctx.procs.set(c.key, c); allProcs.push(c); }
+    for (const d of holder.decls ?? []) if (d.type === 'DefFn') { const c = { node: d, key: up(d.name), label: labelOf('F', up(d.name), si), paramSlot: null, isGlobal, ctx, scene: si }; ctx.fns.set(c.key, c); allFns.push(c); }
   };
   for (const d of ast.decls ?? []) { if (d.type === 'Dim') declare(d, false); else if (d.type === 'Const') declareConst(d, false); }
-  addCallables(ast, true);
-  if (scene) {
-    for (const d of scene.decls ?? []) { if (d.type === 'Dim') declare(d, true); else if (d.type === 'Const') declareConst(d, true); }
-    addCallables(scene, false);                     // scene-level names override global ones
-  }
+  addCallables(ast, true, globalCtx);
+  const sceneSlots = [];                            // per scene: {first, end}: the slots of its own variables (one block, cleared at every entry)
+  scenes.forEach((sc, si) => {
+    const ctx = { consts: new Map(globalCtx.consts), varSlots: new Map(globalCtx.varSlots), arrays: new Map(globalCtx.arrays), procs: new Map(globalCtx.procs), fns: new Map(globalCtx.fns) };
+    sceneCtx.push(ctx);
+    useCtx(ctx);                                    // scene-level names override game-level ones (the checker allows none to clash)
+    const first = slotNames.length;
+    for (const d of sc.decls ?? []) { if (d.type === 'Dim') declare(d, true, si); else if (d.type === 'Const') declareConst(d, true); }
+    sceneSlots.push({ first, end: slotNames.length });
+    addCallables(sc, false, ctx, si);
+  });
+  useCtx(globalCtx);
+  let sceneCurSlot = 0, sceneSpSlot = 0;            // the driver's hidden slots: the current scene's index, the stack pointer saved at entry
+  if (driver) { sceneCurSlot = allocSlot('scene.cur'); sceneSpSlot = allocSlot('scene.sp'); }
 
   // ── 2b. the scrolling window (batch 2) ──
   const raKeys = ['RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V'];
@@ -673,6 +707,10 @@ export function generate(ast, runtime, assets = {}) {
         else for (const k of s.type === 'View' ? ['x', 'y', 'a'] : ['x', 'y', 'value']) scanExpr(s[k]);
         continue;
       }
+      if (s.type === 'Enter') {
+        if (!v2) err(s, `ENTER is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
+        continue;
+      }
       if (s.type === 'Border' || s.type === 'Randomise') {
         const rt = s.type === 'Border' ? 'RT_BORDER' : 'RT_RANDOMISE';
         if (sym[rt] === undefined) notYet(s, s.type === 'Border' ? 'BORDER' : 'RANDOMISE');
@@ -735,9 +773,15 @@ export function generate(ast, runtime, assets = {}) {
       }
     }
   };
-  for (const p of procs.values()) scanStmts(p.node.body);
-  for (const f of fns.values()) scanExpr(f.node.body);
-  const extMaps = v2 && (usesLoadMap || mapList.length > 1);
+  for (const p of allProcs) { useCtx(p.ctx); scanStmts(p.node.body); }
+  for (const f of allFns) { useCtx(f.ctx); scanExpr(f.node.body); }
+  useCtx(globalCtx);
+  if (driver) {                                     // the machine reset of an ENTER is made of ordinary runtime routines (contract section 3)
+    const needed = ['RT_SILENCE', 'RT_HIDE', 'RT_INK', 'RT_BRIGHT', 'RT_PAPER', 'RT_BORDER', 'RT_CLS', ...(mapList.length ? ['RT_LOADMAP'] : [])];
+    for (const n of needed) if (sym[n] === undefined) err(scenes[0], `scenes need ${n}, which this runtime does not provide`);
+    if (sym.BORDER_COLOUR === undefined && cst.BORDER_COLOUR === undefined) err(scenes[0], 'scenes need BORDER_COLOUR, which this runtime does not provide');
+  }
+  const extMaps = v2 && (usesLoadMap || mapList.length > 1 || (driver && mapList.length > 0));
   if (mapList.length > 1 && !(v2 && sym.RT_LOADMAP !== undefined)) err(mapList[1].node, 'several MAPs need a runtime with the map table (the v2 runtime of language batch 1)');
   if (extMaps) {
     if (sym.RT_LOADMAP === undefined) err(ast, 'LOADMAP needs RT_LOADMAP, which this runtime does not provide');
@@ -790,22 +834,20 @@ export function generate(ast, runtime, assets = {}) {
     return out;
   };
   const reach = [];                                 // reachable callables in discovery order
-  const state = new Map();                          // 'P:KEY' -> 'visiting' | 'done'
-  const visit = (kind, key, fromNode) => {
-    const table = kind === 'P' ? procs : fns;
-    const c = table.get(key);
-    const id = `${kind}:${key}`;
+  const state = new Map();                          // callable -> 'visiting' | 'done'
+  const visit = (kind, key, fromNode, ctx) => {
+    const c = (kind === 'P' ? ctx.procs : ctx.fns).get(key);
     if (!c) { err(fromNode, `internal: unknown ${kind === 'P' ? 'PROC' : 'function'} ${key}`); return; }
-    const st = state.get(id);
+    const st = state.get(c);
     if (st === 'visiting') { notYet(fromNode, `recursion (${kind === 'P' ? 'PROC' : 'DEF FN'} ${c.node.name} calls itself)`); return; }
     if (st === 'done') return;
-    state.set(id, 'visiting');
-    for (const call of callsIn(kind === 'P' ? c.node.body : c.node.body)) visit(call.kind, call.key, call.node);
-    state.set(id, 'done');
+    state.set(c, 'visiting');
+    for (const call of callsIn(c.node.body)) visit(call.kind, call.key, call.node, c.ctx);
+    state.set(c, 'done');
     c.kind = kind;
     reach.push(c);
   };
-  for (const entry of ['INIT', 'FRAME']) visit('P', entry, scene);
+  scenes.forEach((sc, si) => { for (const entry of ['INIT', 'FRAME']) visit('P', entry, sc, sceneCtx[si]); });
   if (errors.length) return fail();
 
   // parameter and local slots (only for what is reachable): [parameters][locals to clear][implicit FOR locals that need no clearing]
@@ -865,11 +907,13 @@ export function generate(ast, runtime, assets = {}) {
     return { clear: [...declared, ...implicit.filter((k) => unsafe.has(k))], free: implicit.filter((k) => !unsafe.has(k)) };
   }
   for (const c of reach) {
+    useCtx(c.ctx);
+    const pfx = multi && c.scene >= 0 ? `${up(scenes[c.scene].name)}.` : '';
     c.slots = new Map();
     const plist = c.kind === 'F' ? (c.node.param ? [{ name: c.node.param }] : []) : (c.node.params ?? (c.node.param ? [{ name: c.node.param }] : []));
     c.paramSlots = [];
     for (const q of plist) {
-      const a = allocSlot(`${c.node.name}.${up(q.name)}`);
+      const a = allocSlot(`${pfx}${c.node.name}.${up(q.name)}`);
       c.paramSlots.push(a);
       c.slots.set(up(q.name), a);
     }
@@ -877,10 +921,11 @@ export function generate(ast, runtime, assets = {}) {
     c.clearAddrs = [];
     if (c.kind === 'P') {
       const { clear, free } = analyzeLocals(c);
-      for (const k of clear) { const a = allocSlot(`${c.node.name}.${k}`); c.slots.set(k, a); c.clearAddrs.push(a); }
-      for (const k of free) c.slots.set(k, allocSlot(`${c.node.name}.${k}`));
+      for (const k of clear) { const a = allocSlot(`${pfx}${c.node.name}.${k}`); c.slots.set(k, a); c.clearAddrs.push(a); }
+      for (const k of free) c.slots.set(k, allocSlot(`${pfx}${c.node.name}.${k}`));
     }
   }
+  useCtx(globalCtx);
 
   // ── 5. code ──
   const nSprites = sprites.length;
@@ -1639,6 +1684,7 @@ export function generate(ast, runtime, assets = {}) {
       case 'Tile': tileStmt(s); return;
       case 'Cls': e.call(need('RT_CLS')); return;
       case 'Silence': e.call(need('RT_SILENCE')); return;
+      case 'Enter': e.ld('a', scenes.findIndex((sc) => up(sc.name) === up(s.scene.name))); e.jp('scn$enter'); return;
       case 'Play': e.ld('a', sfxIndex.get(up(s.sfx.name))); e.call(need('RT_PLAY')); return;
       case 'Color': {
         const k = fold(s.value);
@@ -1836,15 +1882,55 @@ export function generate(ast, runtime, assets = {}) {
   }
 
   // array initialisers: runs of words copied by one LDIR each; neighbours are joined when the zero padding costs less than a second LDIR (11 bytes)
-  const initSegments = [];
+  const initSegments = [];                          // {slot, values, label, scene}: with a driver one group per scene (-1 = the game level), never joined across groups
   {
-    const sorted = [...inits].sort((p, q) => p.slot - q.slot);
-    for (const it of sorted) {
-      const last = initSegments[initSegments.length - 1];
-      const gap = last ? it.slot - (last.slot + last.values.length) : 0;
-      if (last && gap >= 0 && gap <= 4) { last.values.push(...new Array(gap).fill(0), ...it.values); }
-      else initSegments.push({ slot: it.slot, values: [...it.values], label: `init$${initSegments.length}` });
+    const groups = new Map();
+    for (const it of inits) { const g = driver ? it.scene : 0; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(it); }
+    for (const g of [...groups.keys()].sort((a, b) => a - b)) {
+      let last = null;
+      for (const it of groups.get(g).sort((p, q) => p.slot - q.slot)) {
+        const gap = last ? it.slot - (last.slot + last.values.length) : 0;
+        if (last && gap >= 0 && gap <= 4) { last.values.push(...new Array(gap).fill(0), ...it.values); }
+        else { last = { slot: it.slot, values: [...it.values], label: `init$${initSegments.length}`, scene: g }; initSegments.push(last); }
+      }
     }
+  }
+
+  /** Language batch 4, contract section 5: the frame entry that dispatches on the current scene, scn$enter (the switch) and scn$reset (the machine back to the game start state). */
+  function emitDriver() {
+    const n = scenes.length, curAddr = sceneCurSlot, spAddr = sceneSpSlot;
+    e.label('frame$entry');
+    e.ld(M(spAddr), 'sp');
+    if (n > 1) {
+      e.ld('a', M(curAddr));
+      for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', labelOf('P', 'FRAME', k)); }
+    }
+    e.jp(labelOf('P', 'FRAME', n - 1));
+    e.label('scn$enter');                                         // A = the scene's index
+    e.ld('sp', M(spAddr)); e.push('af'); e.call('scn$reset'); e.pop('af');
+    e.ld(M(curAddr), 'a');
+    for (let k = 0; k < n; k++) {
+      e.label(`scn$go$${k}`);
+      if (k < n - 1) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('nz', `scn$go$${k + 1}`); }
+      const { first, end } = sceneSlots[k];
+      if (end > first) { e.ld('hl', slotAddr(first)); e.ld('de', slotAddr(first) + 1); e.ld('bc', 2 * (end - first) - 1); e.ld('(hl)', 0); e.ldir(); }
+      for (const seg of initSegments) if (seg.scene === k) { e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
+      e.jp(labelOf('P', 'INIT', k));
+    }
+    e.label('scn$reset');
+    e.call(need('RT_SILENCE'));
+    if (instAssets.length) {
+      e.ld('b', instAssets.length);
+      e.label('scn$reset$l');
+      e.push('bc'); e.ld('a', 'b'); e.dec('a');
+      if (sym.RT_SHOWF !== undefined) { e.push('af'); e.ld('bc', 0); e.ld('de', 0); e.ld('hl', 0); e.call(sym.RT_SHOWF); e.pop('af'); }
+      e.call(need('RT_HIDE')); e.pop('bc'); e.djnz('scn$reset$l');
+    }
+    e.xor('a'); e.call(need('RT_INK')); e.xor('a'); e.call(need('RT_BRIGHT')); e.ld('a', 7); e.call(need('RT_PAPER'));
+    e.ld('a', sym.BORDER_COLOUR ?? cst.BORDER_COLOUR); e.call(need('RT_BORDER'));
+    e.call(need('RT_CLS'));
+    if (mapList.length) { e.xor('a'); e.call(need('RT_LOADMAP')); }
+    e.ret();
   }
 
   // ── emit: entry stub, procs and functions, library routines ──
@@ -1855,9 +1941,12 @@ export function generate(ast, runtime, assets = {}) {
     e.label('entry$init');
     e.ld('hl', L('vars$base')); e.ld('de', L('vars$base', 1)); e.ld('bc', L('vars$len1'));
     e.ld('(hl)', 0); e.ldir();
-    for (const seg of initSegments) { e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
-    e.jp('P$INIT');
+    for (const seg of initSegments) { if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
+    if (!driver) e.jp('P$INIT');
+    else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }          // the stack pointer the runtime called us with: ENTER cuts the stack back to it
+    if (driver) emitDriver();
     for (const c of reach) {
+      useCtx(c.ctx);
       params = new Map(c.slots);
       curC = c;
       loops = [];
@@ -1870,6 +1959,7 @@ export function generate(ast, runtime, assets = {}) {
       flushDeferred();
       curC = null;
     }
+    useCtx(globalCtx);
     if (used.bit) {
       // HL = v, DE = n -> HL = bit n of v (0 if n is outside 0..15)
       const z = 'lib$bit$z', sh = 'lib$bit$sh';
@@ -2011,15 +2101,22 @@ export function generate(ast, runtime, assets = {}) {
     v1Info.map = !extMaps && mapList[0] && mapList[0].bytes ? e.addressOf('map$') : 0;
     v1Info.mapTable = extMaps ? e.addressOf('maps$table') : 0;
   }
+  /** Report keys (contract section 4.4): game-level names plain; a scene's own names SCENE.NAME in a game with several scenes. */
+  const qual = (si, key) => (multi && si >= 0 ? `${up(scenes[si].name)}.${key}` : key);
+  const scoped = (pick, val) => [
+    ...[...pick(globalCtx)].map(([k, v]) => [k, val(v)]),
+    ...sceneCtx.flatMap((c, si) => [...pick(c)].filter(([k]) => !pick(globalCtx).has(k)).map(([k, v]) => [qual(si, k), val(v)])),
+  ];
   const symbols = {
-    vars: Object.fromEntries([...varSlots].map(([k, a]) => [k, a])),
+    vars: Object.fromEntries(scoped((c) => c.varSlots, (a) => a)),
     ...(v2 ? {
-      arrays: Object.fromEntries([...arrays].map(([k, a]) => [k, { addr: a.addr, n: a.n, ...(a.h !== undefined ? { w: a.w, h: a.h } : {}) }])),
+      arrays: Object.fromEntries(scoped((c) => c.arrays, (a) => ({ addr: a.addr, n: a.n, ...(a.h !== undefined ? { w: a.w, h: a.h } : {}) }))),
       instances: Object.fromEntries([...instRefs].map(([k, r]) => [k, { first: r.first, count: r.count }])),
     } : {}),
     slots: slotNames.map((n, i) => ({ name: n, addr: slotAddr(i) })),
-    procs: Object.fromEntries(reach.filter((r) => r.kind === 'P').map((r) => [r.key, e.addressOf(r.label)])),
-    fns: Object.fromEntries(reach.filter((r) => r.kind === 'F').map((r) => [r.key, e.addressOf(r.label)])),
+    procs: Object.fromEntries(reach.filter((r) => r.kind === 'P').map((r) => [qual(r.scene, r.key), e.addressOf(r.label)])),
+    fns: Object.fromEntries(reach.filter((r) => r.kind === 'F').map((r) => [qual(r.scene, r.key), e.addressOf(r.label)])),
+    ...(driver ? { scene: { cur: sceneCurSlot, sp: sceneSpSlot, count: scenes.length, names: scenes.map((sc) => sc.name) } } : {}),
     sprites: v2 ? Object.fromEntries([...instRefs].map(([k, r]) => [k, r.first])) : Object.fromEntries(sprites.map((s, i) => [s.key, i])),
     sfx: Object.fromEntries(sfxList.map((s, i) => [up(s.name), i])),
   };
@@ -2037,7 +2134,7 @@ export function generate(ast, runtime, assets = {}) {
   return {
     errors, warnings,
     code, base,
-    entries: { init: entry('entry$init'), frame: entry('P$FRAME') },
+    entries: { init: entry('entry$init'), frame: entry(driver ? 'frame$entry' : 'P$FRAME') },
     frameDiv: 60 / rate,
     mapFlag: (extMaps || win || view ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0) | (view ? (cst.DIV_VIEW ?? 0x40) : 0),
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,
@@ -2051,6 +2148,6 @@ export function generate(ast, runtime, assets = {}) {
     v1: v1Info,
     v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length, mapTable: extMaps ? v1Info.mapTable : 0 } : null,
     phase: v3 ? phasePlan : null,
-    usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites },
+    usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver },
   };
 }

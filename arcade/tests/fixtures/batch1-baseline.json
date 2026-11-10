@@ -16,7 +16,7 @@
    "sha256": "f044d34d7423747b353e98c70511a501c9567175a63620e7e20d946f135e451f"
   },
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 2,
    "bytes": 8986,

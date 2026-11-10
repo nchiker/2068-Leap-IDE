@@ -384,9 +384,66 @@ function renderProject() {
     if (names.length === 0) ul.append(el('li', 'asset-empty', 'none yet'));
     groups.append(ul);
   }
+  renderScenes();
   $('project-name').textContent = project.name;
   document.title = `${project.name} — Leap Arcade Studio`;
   $('input-hint').textContent = inputHints(P.buildSource(project).text).join(' · ') || 'Click the screen to play.';
+}
+
+// ── Scenes group (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md section 11) ──
+const DISPLAY_CHOICES = [
+  ['auto', 'Auto'], ['buffers', 'Two buffers'], ['fine', '8x1 colour (not built yet)'], ['hires', 'Hi-res text (not built yet)'],
+];
+const DISPLAY_SUIT = { fine: '8x1 colour', hires: 'hi-res text' };
+
+/** The scenes of the last compile that got as far as reading them, else of the last good one (a broken edit keeps the panel). */
+const currentScenes = () => lastCompile?.scenes ?? lastGood?.scenes ?? [];
+
+/** `auto: two buffers, because sprites move`, or, when something else would suit, `auto: a static picture: ... (would suit 8x1 colour, built as two buffers)`. */
+function planText(sc) {
+  if (sc.auto === 'buffers') return `auto: ${sc.reason.replace(/^two display files flipped each tick, /, 'two buffers, ')}`;
+  return `auto: ${sc.reason} — would suit ${DISPLAY_SUIT[sc.auto]}, built as two buffers`;
+}
+
+function setSceneDisplayUi(name, value) {
+  P.setSceneDisplay(project, name, value);
+  changed({ type: 'project', source: 'studio' });
+}
+
+function renderScenes() {
+  const section = $('scene-section');
+  const scenes = currentScenes();
+  const multi = scenes.length >= 2;
+  section.hidden = !multi;
+  const list = $('scene-list');
+  list.replaceChildren();
+  if (!multi) return;
+  scenes.forEach((sc, i) => {
+    const li = el('li', 'proj-row scene-row');
+    li.dataset.scene = sc.name;
+    const head = el('div', 'scene-head');
+    const start = el('span', 'scene-start', i === 0 ? '▶' : '');
+    if (i === 0) start.title = 'The game starts in this scene';
+    head.append(start, el('span', 'proj-name', sc.name));
+    li.append(head, el('div', 'scene-plan', planText(sc)));
+    const sel = el('select', 'scene-select');
+    sel.title = `Display setup of scene ${sc.name}`;
+    sel.setAttribute('aria-label', `Display setup of scene ${sc.name}`);
+    sel.dataset.scene = sc.name;
+    const current = Object.hasOwn(project.scenes ?? {}, sc.name) ? (project.scenes[sc.name]?.display ?? 'auto') : 'auto';
+    const choices = DISPLAY_CHOICES.slice();
+    if (!choices.some(([v]) => v === current)) choices.push([current, `${current} (unknown)`]);   // a loaded project may carry any text
+    for (const [value, label] of choices) {
+      const o = el('option', null, label);
+      o.value = value;
+      if (value === 'fine' || value === 'hires') o.disabled = current !== value;
+      if (value === current) o.selected = true;
+      sel.append(o);
+    }
+    sel.addEventListener('change', () => setSceneDisplayUi(sc.name, sel.value));
+    li.append(sel);
+    list.append(li);
+  });
 }
 
 // ── Build: diagnostics, problems, size panel ─────────────────────
@@ -468,6 +525,7 @@ function renderSizes() {
     ['Tiles', d.tileset],
     ['Map', d.map],
     ['Sound', d.sfx],
+    ['Scenes', (good.scenes?.length ?? 0) >= 2 ? plural(good.scenes.length, 'scene') : undefined],     // (of the build on show)
     ['Header and tables', (u.header ?? 0) + (u.descriptors ?? 0)],
     ['Variables (RAM)', u.varBytes],
     ['Sprites', cg.sprites !== undefined ? `${plural(cg.sprites, 'asset')}, ${cg.instances} on screen` : undefined],

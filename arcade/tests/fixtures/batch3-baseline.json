@@ -2,7 +2,7 @@
  "about": "SHA-256 of the DCK and of the game area ($8000-$BFFF) that the compiler BEFORE language batch 3 (git b259485) produced for these programs against the real runtimes v2 and v3 (arcade/build/v2, arcade/build/v3); tests/arcade-m8-compiler.mjs checks that programs that use none of the batch 3 words compile to identical bytes.",
  "programs": [
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 2,
    "bytes": 8986,
@@ -47,7 +47,7 @@
    "areaSha256": "19ec4b4b4aee31aad31ef38a0e4d8dfd0540befa08f7f6ce16bdda115f67e634"
   },
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 3,
    "bytes": 8986,

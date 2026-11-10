@@ -52,7 +52,7 @@ fresh view says so in its `INIT` (`CAMERA`, `SETWORLD`, `VIEW`, `SETWALL`). (A s
    their value across switches (that is how a score reaches the game over scene).
 4. **Names in reports** (`symbols`, interpreter records, Symbols tab): in a game with **more than one scene**, a scene's variables, arrays, PROCs and DEF FNs are keyed `SCENE.NAME` in upper case
    (`PLAY.ST`); game-level names stay plain. In a game with one scene (with or without `ENTER` of itself) every name stays plain, so old programs and tools are unaffected.
-5. The generated driver adds three hidden slots (current scene, saved stack pointer, a scratch); `symbols.scene = {cur, count, names}` gives the address of the current scene index (0 = first scene) for tests.
+5. The generated driver adds two hidden slots (current scene, saved stack pointer); `symbols.scene = {cur, count, names}` gives the address of the current scene index (0 = first scene) for tests.
 
 ## 5. Code generation (what the compiler emits)
 Used whenever the program has **more than one scene or any `ENTER`**; other programs compile to **identical bytes as before** (hash baselines of batches 1-3, one fixture re-pointed, see section 10).
@@ -75,18 +75,17 @@ scn$reset:                  CALL RT_SILENCE; per instance (loop, instance count 
 New or changed (messages are exact; positions as stated):
 | Check | Severity | Message | At |
 |---|---|---|---|
-| second scene or any `ENTER` on a runtime older than v2 (`check(ast, {version})`) | error | `SCENE: more than one scene needs the v2 runtime (build with --runtime v2)` / `ENTER needs the v2 runtime (build with --runtime v2)` | the second SCENE name / the ENTER |
 | statement after `ENTER` in the same block | warning | `unreachable statement` | the statement |
 | a scene (not the first) that no `ENTER` names | warning | `SCENE 'x' is never entered: only the first scene starts by itself` | the scene name |
 | `ENTER` of an unknown scene | error (existing) | `ENTER: unknown SCENE 'x'` | the name |
 | `FOR` variable declared later: only the names visible to that PROC count (the game level, plus its own scene), not another scene's | fix | `'v' is declared later (line N) than this PROC: ...` (unchanged text) | the variable |
-Code generator errors (all positions as the node): `SCENE 'x' needs PROC INIT and PROC FRAME` is the checker's; in the generator only the 'v1 / v0 runtime' refusal of section 7 is new (a program with several scenes on a runtime below v2).
+Code generator errors (position: the node): on a runtime below v2 a second scene and any `ENTER` keep the old refusals, now with a hint: `a second SCENE (M2 has exactly one) is not supported yet in M2 (build with --runtime v2)` and `ENTER is not supported yet in M2 (build with --runtime v2)` (`M3` on a v1 runtime). (A checker error for it would have changed the message the M2 suite tests; the generator already knows the runtime.)
 
 ## 7. The runtime question
 **No runtime change in v2, v3 or v4: 0 bytes.** Every step of the reset is an existing routine (`RT_SILENCE`, `RT_SHOWF` (v3, v4), `RT_HIDE`, `RT_INK`, `RT_BRIGHT`, `RT_PAPER`, `RT_BORDER`,
 `RT_CLS`, `RT_LOADMAP`), called from game code in the `frame_entry` / `init_entry` context they were built for; the scene dispatch lives in the game image (roughly 90 bytes of driver, 5 bytes per `ENTER`, and about 14 bytes per scene for
 its variable clear plus its initialiser copies). The v4 runtime has 385 bytes free and the v3 735; neither is touched. The cost is image bytes (reported in the Studio's size panel)
-and the tick that switches (section 2.5). A multi-scene program needs runtime v2 or later (the CLI default `v0` refuses it with the message of section 6; the Studio always picks v2 or later).
+and the tick that switches (section 2.5). A multi-scene program needs runtime v2 or later (the CLI default `v0` refuses it with the messages of section 6; the Studio always picks v2 or later).
 What this design cannot do, and what would need a runtime routine, is section 9.
 
 ## 8. The reference interpreter
@@ -127,8 +126,8 @@ override can only pin it and the report says what is not built.
 * The size panel gets a `Scenes` row (`3 scenes`), problems show the display warnings, and the scene examples (below) are in the Examples menu.
 
 ## 12. Example
-`arcade/examples/shooter.arc` (Starfall) becomes real scenes **`title` -> `play` -> `over`** (game-over: fire starts a new `play`): game state at the top level, one scene each. This removes the game-over
-tile save / restore hack (the reset restores the sky from the first MAP) and the state variable. The pre-batch program is kept as `arcade/tests/fixtures/shooter-v1.arc` (+ the same assets), and
+`arcade/examples/shooter.arc` (Starfall) becomes real scenes **`title` -> `play` -> `over`** (game-over: fire starts a new `play`). Only the score and the wave are game-level (the over scene prints them); all gameplay
+variables and PROCs live in the play scene, so every start of `play` zeroes them. This removes the game-over tile save / restore hack (the reset restores the sky from the first MAP) and the state variable. The pre-batch program is kept as `arcade/tests/fixtures/shooter-v1.arc` (+ the same assets), and
 `batch1/2/3-baseline.json` point at it, so "old programs compile to the same bytes" still means the old program (the hashes are unchanged).
 
 ## 13. Acceptance tests
@@ -148,3 +147,10 @@ existing suites unchanged. They must show:
 7. **Studio**: `tests/studio-smoke.mjs` (scenes panel lists a multi-scene game, the override round-trips through save / load, the Symbols labels), `tests/arcade-project.mjs` (`scenes` validation, `setSceneDisplay`),
    a display-plan unit test (every rule of section 10).
 8. Everything else green: `node arcade/tests/run-all.mjs`, `tests/studio-smoke.mjs`, `tests/sprite-editor-smoke.mjs`, `tests/sprite-model.mjs`, `tests/arcade-project.mjs`, `tests/rom-checks.mjs`, `tests/browser-smoke.mjs`.
+
+## 14. As built (2026-11-10)
+* Decisions taken while building: a second scene / `ENTER` on a runtime below v2 is refused by the **code generator** with the old messages plus a hint (a checker error would have changed the M2 suite's text); the driver uses `LD (nn),SP` / `LD SP,(nn)` (ED 73 / ED 7B), the driver has 2 hidden slots (`scene.cur`, `scene.sp`);
+  `ENTER` itself in a one-scene program also gets the driver; the check "FOR variable declared later" was narrowed to the PROC's own scope chain.
+* Measured on the real v2 runtime (TSRun): Starfall title -> play -> over -> play over 1,300 scripted ticks equals the interpreter on every tick (variables, arrays, cells, attributes, cursor, border, sprites). A switch tick costs
+  790k-830k T (13-14 refreshes) with the full-screen sky map (reset: CLS and LOADMAP; plus INIT) and the next tick about 390k T (the runtime redraws every dirty cell); the boot has always cost the same (787k T).
+* Starfall is 8,479 bytes (the one-scene version 8,986): the sky repair code and the state machine are gone.

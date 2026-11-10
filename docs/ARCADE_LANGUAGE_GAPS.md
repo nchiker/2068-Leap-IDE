@@ -18,7 +18,7 @@ It is the work list for language growth, in the order I would do it. Cost = what
 |---|---|---|---|
 | 6 | **Timers and key edges** | five hand-written counters in an 8-state machine; edge and key-repeat logic about 20 lines | `TIMER n` (counts down per tick), `KEYPRESS(c)` (down this tick, up last tick) |
 | 7 | **PRINT formatting** | `PRINT AT r,c;` with no item moves to the next row; no right-align or zero-pad; manual trailing spaces | `PRINT AT r, c; USING "0000"; n`, or `STR$` with width; plain `PRINT AT r, c;` should not advance the row |
-| 8 | **Scenes** | title, game and game over are states in one scene | scenes exist in the language doc but the compiler supports one: implement `SCENE`/`ENTER` |
+| 8 | **Scenes** | title, game and game over are states in one scene | **done (batch 4, 2026-11-10, `docs/ARCADE_LANGUAGE_BATCH4.md`)**: `SCENE` / `ENTER` in the compiler; Starfall is now title / play / over |
 | 9 | **Sound**: `PLAY` needs a literal name; one channel; no music | a `SELECT CASE` picks the effect; no music | `PLAY expr` by index, three-channel effects, `MUSIC` (M4b) |
 | 10 | **Seed and unsupported words**: `RANDOMISE`, `BORDER`, `FLASH` | burn one `RND` per title tick as a seed; frame made of tiles | `RANDOMISE n`, `BORDER n` (cheap), `FLASH` (attribute bit) |
 | 11 | **Wide scores**: 16-bit integers only | score as two limbs with manual zero padding (about 25 lines) | 32-bit `LONG` type (add/sub/compare/print) when a game needs it; or `SCORE` helper |

@@ -1,7 +1,11 @@
 REM Starfall: acceptance game B for milestone M4a (docs/ARCADE_RUNTIME_API_V2.md): a vertical shooter for the v2 runtime.
 REM Assets (ship, bullet, scout, heavy, shot, the gfx tiles, the sky map, five sounds) are in shooter.assets.json,
 REM drawn by shooter.assets.gen.mjs.
-REM   Keyboard: Q up, A down, O left, P right, SPACE fire.   Joystick 1: the stick and fire.   Fire restarts after GAME OVER.
+REM   Keyboard: Q up, A down, O left, P right, SPACE fire.   Joystick 1: the stick and fire.   Fire starts the game and restarts it after GAME OVER.
+REM   Three scenes (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md): title -> play -> over -> play.  The score and the wave are game-level variables
+REM   (the over scene shows them); everything of the game itself lives in the play scene, whose variables ENTER zeroes at every start.  ENTER puts the screen
+REM   (the sky, from the first MAP), the sprites and the sound back to the start state, so no scene cleans up after the one before.
+REM   The version with one scene and a state variable is kept as arcade/tests/fixtures/shooter-v1.arc.
 REM   The ship shoots a pool of 4 bullets; waves of scouts (types 0 and 1) and heavies (types 2 and 3) come down, shoot back
 REM   with a pool of 3 shots, and get faster, more numerous and more varied each wave. Explosions are 2 x 2 tiles in 3 frames.
 REM   The v2 runtime has 16 sprite instances in all (the contract's "bullets 6, enemies 8, shots 4, ship 1" would be 19), so:
@@ -23,17 +27,33 @@ SFX hurt = "hurt"
 SFX wave = "wave"
 SFX over = "over"
 
+REM The score and the wave belong to the whole game: the over scene shows them.
+DIM score, wv
+
+SCENE title
+  PROC INIT():
+    INK 6 : PAPER 0 : BRIGHT 1
+    PRINT AT 8, 12; "STARFALL";
+    INK 5 : PRINT AT 11, 7; "PRESS FIRE TO PLAY";
+    INK 4 : PRINT AT 15, 4; "Q A O P MOVE   SPACE FIRE";
+    INK 4 : PRINT AT 17, 10; "OR JOYSTICK 1";
+  ENDP
+
+  PROC FRAME():
+    IF KEYDOWN(" ") OR BIT(STICK(1), 4) THEN ENTER play ENDIF
+  ENDP
+ENDSCENE
+
 SCENE play
-  REM state: 0 = playing, 1 = game over (waiting for fire)
-  DIM state, px, py, lives, score, wv, js, inv, cool, spl, spt, alive, rel, ow, wt, saved, hud
+  DIM px, py, lives, js, inv, cool, spl, spt, alive, wt, hud
   DIM lf, rg, up, dn, fire, vs, fr, sp0, ssp, sw, fb, ax, ay, i, j, k, m, c, q, f, x, y, ee
   REM bullets 0..3, enemies 0..7 (0..3 scouts, 4..7 heavies), enemy shots 0..2, explosions 0..3
   DIM bx(3), by(3), bon(3)
   DIM ex(7), ey(7), et(7), ep(7), es(7), ed(7), eh(7)
   DIM sx(2), sy(2), sdx(2), son(2)
   DIM xc(3), yc(3), ef(3)
-  REM the zigzag pattern's sideways offsets, and the tiles under the GAME OVER text
-  DIM wob(15), sv(63)
+  REM the zigzag pattern's sideways offsets
+  DIM wob(15)
 
   REM Does the ship touch enemy k?  (scout(k) is outside its pool for k > 3 and heavy(k - 4) for k < 4, which HIT answers with 0)
   DEF FN touch(n) = HIT(ship, scout(n)) OR HIT(ship, heavy(n - 4))
@@ -41,39 +61,13 @@ SCENE play
   PROC INIT():
     wob(0) = 0 : wob(1) = 6 : wob(2) = 11 : wob(3) = 14 : wob(4) = 16 : wob(5) = 14 : wob(6) = 11 : wob(7) = 6
     wob(8) = 0 : wob(9) = -6 : wob(10) = -11 : wob(11) = -14 : wob(12) = -16 : wob(13) = -14 : wob(14) = -11 : wob(15) = -6
-    saved = 0
     CALL NEWGAME()
   ENDP
 
-  REM Start (or restart) a game.
+  REM Start a game (the scene has just been entered: the sky is on the screen, no sprite is shown, the variables are 0).
   PROC NEWGAME():
-    IF saved = 1 THEN
-      REM put the sky back under the GAME OVER text (explosion tiles that were caught in the copy become empty sky)
-      FOR i = 0 TO 31
-        x = sv(i) : IF x > 3 THEN x = 0 ENDIF
-        TILE i, 10 = x
-        x = sv(32 + i) : IF x > 3 THEN x = 0 ENDIF
-        TILE i, 12 = x
-      NEXT i
-      saved = 0
-    ENDIF
     score = 0 : lives = 3 : wv = 0
-    px = 120 : py = 160 : inv = 0 : cool = 0 : state = 0 : alive = 0
-    FOR i = 0 TO 3
-      bon(i) = 0 : ef(i) = 0
-      HIDE bul(i)
-    NEXT i
-    FOR i = 0 TO 7
-      es(i) = 0
-      HIDE scout(i)
-      HIDE heavy(i - 4)
-    NEXT i
-    FOR i = 0 TO 2
-      son(i) = 0
-      HIDE shot(i)
-    NEXT i
-    INK 6 : PAPER 0 : BRIGHT 1
-    PRINT AT 0, 0; "                              ";
+    px = 120 : py = 160 : inv = 0 : cool = 0 : alive = 0
     SHOW ship AT px, py
     CALL NEXTWAVE()
   ENDP
@@ -106,11 +100,7 @@ SCENE play
     up = KEYDOWN("Q") OR BIT(js, 0)
     dn = KEYDOWN("A") OR BIT(js, 1)
     fire = KEYDOWN(" ") OR BIT(js, 4)
-    IF state = 0 THEN
-      CALL PLAYING()
-    ELSE
-      CALL OVERTICK()
-    ENDIF
+    CALL PLAYING()
     CALL UPDATEEXP()
   ENDP
 
@@ -137,28 +127,9 @@ SCENE play
     ENDIF
     CALL BULLETS()
     CALL ENEMIES()
-    IF state = 0 THEN CALL SHOTS() ENDIF
-    IF state = 0 THEN CALL SPAWNER() ENDIF
+    CALL SHOTS()
+    CALL SPAWNER()
     IF hud = 1 THEN CALL SHOWHUD() ENDIF
-  ENDP
-
-  REM The game over state.  The sky under the text is copied 8 columns of each of its two rows a tick (TILEAT), then the text
-  REM is printed; fire restarts once it has been released and pressed again.
-  PROC OVERTICK():
-    ow = ow + 1
-    IF ow <= 4 THEN
-      FOR j = (ow - 1) * 8 TO ow * 8 - 1
-        sv(j) = TILEAT(j, 10)
-        sv(32 + j) = TILEAT(j, 12)
-      NEXT j
-    ENDIF
-    IF ow = 4 THEN
-      saved = 1
-      INK 2 : PRINT AT 10, 11; "GAME OVER";
-      INK 6 : PRINT AT 12, 7; "PRESS FIRE TO PLAY";
-    ENDIF
-    IF fire = 0 THEN rel = 1 ENDIF
-    IF fire AND rel AND ow > 20 THEN CALL NEWGAME() ENDIF
   ENDP
 
   PROC FIREBULLET():
@@ -272,7 +243,6 @@ SCENE play
           IF inv = 0 AND FN touch(k) THEN
             CALL KILL(k)
             CALL PLAYERHIT()
-            IF state <> 0 THEN EXIT FOR ENDIF
           ENDIF
         ENDIF
       ENDIF
@@ -336,7 +306,6 @@ SCENE play
             son(i) = 0
             HIDE shot(i)
             CALL PLAYERHIT()
-            IF state <> 0 THEN EXIT FOR ENDIF
           ENDIF
         ENDIF
       ENDIF
@@ -349,31 +318,12 @@ SCENE play
     ax = px : ay = py
     CALL EXPLODE()
     IF lives <= 0 THEN
-      CALL GAMEOVER()
+      ENTER over
     ELSE
       inv = 40 : px = 120 : py = 160
       PLAY hurt
     ENDIF
     CALL SHOWHUD()
-  ENDP
-
-  PROC GAMEOVER():
-    state = 1 : rel = 0 : ow = 0
-    HIDE ship
-    FOR j = 0 TO 3
-      bon(j) = 0
-      HIDE bul(j)
-    NEXT j
-    FOR j = 0 TO 7
-      es(j) = 0
-      HIDE scout(j)
-      HIDE heavy(j - 4)
-    NEXT j
-    FOR j = 0 TO 2
-      son(j) = 0
-      HIDE shot(j)
-    NEXT j
-    PLAY over
   ENDP
 
   REM Place the next enemy of the wave: its type, a free slot of its pool (types 0, 1 = scouts, 2, 3 = heavies).
@@ -402,5 +352,25 @@ SCENE play
         IF wt > 25 THEN CALL NEXTWAVE() ENDIF
       ENDIF
     ENDIF
+  ENDP
+ENDSCENE
+
+SCENE over
+  DIM ow, rel, fire
+  PROC INIT():
+    PLAY over
+    INK 6 : PAPER 0 : BRIGHT 1
+    PRINT AT 0, 0; "SCORE "; score; "  ";
+    PRINT AT 0, 24; "WAVE "; wv; " ";
+    INK 2 : PRINT AT 10, 11; "GAME OVER";
+    INK 6 : PRINT AT 12, 7; "PRESS FIRE TO PLAY";
+  ENDP
+
+  REM Fire restarts once it has been released and pressed again (it is usually still down when the scene starts).
+  PROC FRAME():
+    ow = ow + 1
+    fire = KEYDOWN(" ") OR BIT(STICK(1), 4)
+    IF fire = 0 THEN rel = 1 ENDIF
+    IF fire AND rel AND ow > 20 THEN ENTER play ENDIF
   ENDP
 ENDSCENE

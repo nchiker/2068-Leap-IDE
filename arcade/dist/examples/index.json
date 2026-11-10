@@ -14,7 +14,7 @@
  {
   "id": "shooter",
   "title": "Shooter",
-  "about": "A vertical shooter with pools of sprites, a scrolling-look sky map and sound. Keys: Q A O P or the arrows move; Space fires.",
+  "about": "A vertical shooter with pools of sprites, a sky map and sound, in three scenes (title, play, game over). Keys: Q A O P or the arrows move; Space fires.",
   "file": "shooter.leapgame"
  },
  {

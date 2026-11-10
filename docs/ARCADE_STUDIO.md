@@ -179,3 +179,13 @@ two ids beyond the contract: `map-shape` and `asset-malformed`; the tone axis of
 batch baselines and the `blockfall-v0` fixture were regenerated, sizes unchanged). **Left as they are, reported by the checker:** Leap Runner's world uses 5 background colour
 attributes (clouds / hills / water differ in paper and ink, so the hero changes colour over them) and Vaults' panel map 4 (HUD tiles); these are art trade-offs for the owner (mark
 the tiles "sprites never pass over" or unify the colours).
+
+## As built: language batch 4, scenes (2026-11-10)
+
+Contract: [`ARCADE_LANGUAGE_BATCH4.md`](ARCADE_LANGUAGE_BATCH4.md) sections 10 and 11. `compile(text, {..., scenes: project.scenes})` returns `out.scenes` (from `src/lang/arcade/arcade-display.js`
+`sceneDisplayPlan`: per scene `auto` setup and `reason`, `override`, `setting`, `built: 'buffers'`, `notes`) and turns the notes into warnings on the scene's line. **Project document:** `scenes` is
+`{name: {display?: 'auto' | 'buffers' | 'fine' | 'hires'}}`; `validateProject` drops a non-object entry (warning) and a non-string `display`; `setSceneDisplay(project, name, value)` (`auto` removes the key).
+**Studio:** a Scenes group in the project panel (hidden for a one-scene game) with one row per scene of the last good compile: a start marker, the plan text (`auto: two buffers, because sprites move`) and a select
+Auto / Two buffers / 8x1 colour / Hi-res text, the last two disabled ("not built yet") unless the loaded project carries them; a change goes through the same changed -> autosave -> recompile path as the asset editors.
+The size panel has a `Scenes` row. The Symbols tab's Scenes group reads `name (start) -> a, b` from `scanArcade`'s new `enters`. **Only the two-buffer setup exists in the runtimes**, so today the override can only pin
+`buffers`; the field, the validation and the UI are in place for the runtimes that will add the others. Tests: `tests/arcade-display.mjs` (73), `tests/arcade-project.mjs`, a block in `tests/studio-smoke.mjs`.

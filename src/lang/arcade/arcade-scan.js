@@ -1,7 +1,7 @@
 /**
  * src/lang/arcade/arcade-scan.js — what an Arcade program defines, and block structure (pure; no DOM, no CodeMirror).
  *
- *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts}  from the parser's AST (never throws)
+ *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts, enters}  from the parser's AST (never throws)
  *   blockLines(lines)     -> {depth, dedent, blocks}  indentation and fold ranges by the block words
  *   inputHints(text)      -> string[]  the keys / joysticks a program reads, for the Studio's hint line
  *   scanRoles(text)       -> {tileset, maps, world, floorplans, view}  what each map / tile set is for (Studio slice S2; never throws)
@@ -21,11 +21,13 @@ import { parse, tokenize } from './arcade-parse.js';
  *   fns:    {name: string, param: string, line: number, col: number}[],
  *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number}[],
  *   consts: {name: string, scene: string|null, line: number, col: number}[],     (language batch 1: CONST name = expr)
+ *   enters: {from: string|null, to: string, line: number, col: number}[],        (language batch 4: every ENTER statement in source order; `from` is the enclosing scene's name, null in a top-level PROC;
+ *                                                                                  line / col are the target name's position)
  * }}
  * `size` is the first dimension when it is a plain number (null for a scalar or a size written as an expression), `dims` 0 (a scalar), 1 or 2.
  */
 export function scanArcade(text) {
-  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [] };
+  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [], enters: [] };
   let ast;
   try { ast = parse(text).ast; } catch { return out; }
   const addDecls = (decls, scene) => {
@@ -52,6 +54,17 @@ export function scanArcade(text) {
       out.procs.push({ name: p.name, param: p.param ?? null, params: (p.params ?? (p.param ? [{ name: p.param }] : [])).map((q) => q.name), locals, scene, line: at.line, col: at.col });
     }
   };
+  // ENTER statements: walk the statement lists of every PROC (an ENTER is never inside an expression)
+  const findEnters = (node, from) => {
+    if (Array.isArray(node)) { for (const x of node) findEnters(x, from); return; }
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'Enter') {
+      const t = node.scene ?? node;
+      out.enters.push({ from, to: String(t.name ?? ''), line: t.line ?? node.line, col: t.col ?? node.col });
+      return;
+    }
+    for (const k of Object.keys(node)) { const v = node[k]; if (v && typeof v === 'object') findEnters(v, from); }
+  };
   for (const a of ast.assets ?? []) {
     const at = a.namePos ?? a;
     out.assets.push({ kind: String(a.kind).toUpperCase(), name: a.name, asset: a.asset, count: a.count ?? null, line: at.line, col: at.col });
@@ -63,7 +76,10 @@ export function scanArcade(text) {
     out.scenes.push({ name: s.name, line: at.line, col: at.col });
     addDecls(s.decls, s.name);
     addProcs(s.procs, s.name);
+    for (const p of s.procs ?? []) findEnters(p.body, s.name);
   }
+  for (const p of ast.procs ?? []) findEnters(p.body, null);
+  out.enters.sort((a, b) => a.line - b.line || a.col - b.col);
   return out;
 }
 
