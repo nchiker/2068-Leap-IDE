@@ -141,14 +141,22 @@ check('no storage at all (Node): loadProject / storeProject are harmless', P.loa
 // ── The published examples and the template compile ──
 const dist = ROOT + 'arcade/dist/';
 if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.json')) {
-  const { compile } = await import('../src/lang/arcade/arcade-compile.js');
+  const { compile, requiredRuntime } = await import('../src/lang/arcade/arcade-compile.js');
   const runtime = JSON.parse(readFileSync(dist + 'v2/runtime.json', 'utf8'));
   const image = new Uint8Array(readFileSync(dist + 'v2/runtime.bin'));
-  const build = (proj) => { const s = P.buildSource(proj); const r = compile(s.text, { runtime, image, assets: proj.assets }); return { ...r, lineMap: s.lineMap }; };
+  const rt3 = JSON.parse(readFileSync(dist + 'v3/runtime.json', 'utf8'));
+  const im3 = new Uint8Array(readFileSync(dist + 'v3/runtime.bin'));
+  // the Studio's rule: the program decides which published runtime it compiles on (requiredRuntime)
+  const build = (proj) => {
+    const s = P.buildSource(proj);
+    const v3 = requiredRuntime(s.text, proj.assets).version === 3;
+    const r = compile(s.text, { runtime: v3 ? rt3 : runtime, image: v3 ? im3 : image, assets: proj.assets });
+    return { ...r, lineMap: s.lineMap };
+  };
   const r0 = build(np);
   check('the new-project template compiles with 0 errors on the v2 runtime', r0.errors.length === 0 && !!r0.dck, r0.errors.map((e) => e.message).join('; '));
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
-  check('the examples index lists bounce, breakout, shooter, blockfall', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'shooter']));
+  check('the examples index lists bounce, breakout, shooter, blockfall, platformer', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'platformer', 'shooter']));
   for (const ex of index) {
     const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
     const res = doc.ok ? build(doc.project) : null;
