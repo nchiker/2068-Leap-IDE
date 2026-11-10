@@ -195,3 +195,49 @@ passes every phase 0-7 (cam 5, 20, 37, 55, 77, 95, 110, 119, 135, 150, 157), the
 * BRIGHT black: the compared bytes are display-file and attribute RAM, so the renderers' difference (TSRun #333, Fuse/ZEsarUX black) cannot appear; the
   cells that use it are the 128 text cells of cell rows 1, 2, 21, 22 (PAPER 0 BRIGHT 1, the title and HUD lines) from tick 12 on. No difference to explain.
 * Not covered: Fuse state (only screens), real keys on Fuse, joystick (ZEsarUX reads AY R14 as 0 = no stick; not exercised), sound, real hardware.
+
+### 10b. Vaults (runtime v4, the raycaster) cross-emulator check, 2026-11-10
+
+`arcade/build/vaults.dck` (`arcade/examples/vaults.arc` compiled against `arcade/build/v4`, whose `runtime.bin` is byte-identical to `arcade/dist/v4/runtime.bin`;
+32,777 bytes: runtime 16,274 + game 11,890) on TSRun, ZEsarUX 13.0 and Fuse 1.9.1, same method as section 10 (`arcade/tools/xemu/vaults-*`; the order of the commands is in the
+header of `vaults-compare.mjs`; scratch files in `arcade/build/xemu/vaults` and `fuse-vaults`). ZEsarUX's `ts2068.rom` (24 KB) is `tsrun/roms/ts2068-0.rom` + `ts2068-1.rom` byte
+for byte (MD5 `91942835...`); Fuse was given those two files. Sampling point: the runtime's `WORK_END` (V_TICKS = N, FRAME call N's work finished), the same instruction on
+every emulator (TSRun by single-stepping each frame, ZEsarUX by a PC breakpoint), and the hidden display file (V_HIDDEN) is the tick's finished picture. In ray mode the 3D
+window is drawn into that file as part of the tick (`ray_tick` returns to `TICK_COUNT`), so the file is the whole picture, window and HUD.
+
+* **Scenario** (`vaults-scenario.json`, made by `vaults-scenario-make.mjs`; 250 ticks = 16.7 s of play at 15 a second, 998 refreshes on TSRun). Ticks 1-178 are the first 178 ticks of
+  the recorded LOSE run (`tests/arcade-m8-vaults-script.mjs`): the title turning on the spot (ticks 1-15), fire on call 15, the game starting (state 1 from tick 17), five ticks of
+  left turn, then walking and turning through the maze from (640, 7296) to (5251, 7002); wraith 4 wakes at about tick 156. Ticks 179-250 were worked out **closed-loop once on
+  TSRun** (turn to face wraith 4, hold fire, then walk on) and are played open-loop everywhere. The shots land: wraith 4's health goes 3 (tick 184), 2 (190), 1 (197), 0 (tick 200: killed,
+  score 100, `WRAITH DESTROYED`); the player then walks 47 ticks. Covered: title (text drawn a piece a tick), the fire edge and the 2-tick game start (ticks 15-18), turning,
+  walking, wall contacts, a billboard drawn at distance with SEEN / DEPTH read by the real raycaster, shooting with hits and a kill, the HUD changes. Not covered: the door, the key,
+  the other pickups, being hurt (the LOSE run's own tail), the win; those are the interpreter and mock tests' ground (`tests/arcade-m8-vaults.mjs`).
+* **Input**: stick values per FRAME call (joystick-1 bits 1 up, 2 down, 4 left, 8 right, 16 fire, the format of the recorded scripts). The game reads KEYDOWN and STICK(1) and ORs
+  them, so the check drives **keys** (O left, P right, Q up, A down, SPACE fire): TSRun on its keyboard matrix, ZEsarUX by ZRCP `send-keys-event` while stopped at `WORK_END`
+  (applied where V_TICKS becomes t, read by the FRAME call that runs next), as in section 10; the game's own key reads (V_KEYS) match TSRun's on all 249 ticks once bits 5-7 are masked and
+  equal the script on all of them. Fuse cannot be fed keys per tick headless, so a **test copy** (`vaults-patch.mjs`, `arcade/build/vaults-script.dck`, not the committed game)
+  replaces `IN A,(C) / LD B,A` in RT_KEYDOWN by a call to a 79-byte stub (bytes of runtime v4's `keys.asm` are identical to v3's) that returns the row byte from a per-tick table; the rest of KEYDOWN still runs.
+  Unlike the platformer's, the stub and the 256-byte table are in the free tail of the **game area** ($B000, $B100; chunk 5 is ROM and the game ends at $AE72), because the v4
+  runtime leaves only 110 bytes free in chunk 1.
+* **Results, TSRun vs ZEsarUX** (real keys, and again script-driven): on all 250 ticks the game variables (ST PX PY PA HP), the key bits read, the border variable and the finished screen
+  are the same; **0 bitmap bytes and 0 attribute bytes differ on any of the 250 ticks** (250 x 6,912 = 1,728,000 bytes compared, not only the sampled ticks) and **0 of the 27 x 5,166
+  state bytes differ** at the sampled ticks (5 12 15-20 30 45 60 80 100 130 160 175 183 184 190 197-201 205 230 250; V4VARS 174 + game variables 2,048 + SPR_TAB 128 + CELL_TILE 768 + the
+  ray map 2,048). The patched copy is validated: script-driven = real-key runs on TSRun and on ZEsarUX (same figures, 0 differences). A third TSRun run with the stick bits sent to
+  **joystick 1** instead (STICK(1) exercised, no key pressed) gives the same 250 screens and game variables and identical state except the game variable JS, which holds the stick value
+  (23 bytes differ over the 27 ticks, all JS).
+* **Results, Fuse** (script cartridge; 2,404 movie frames in 40 s at 60 Hz): all 250 tick screens (1..250) appear byte-identical to TSRun's, in order, frames 142..1141, with 0 unmatched frames inside
+  the span (the frames after 1141 repeat tick 250's picture: the player has stopped). 229 of the 250 ticks have a picture of their own; 21 ticks share a picture with a neighbour (14 groups: the window filled by one close wall,
+  ticks 63-67 and 161; the short stretches of the shooting stand where the view does not change), which the frame match cannot tell apart. 999 refreshes from tick 1's picture to tick 250's against 998 on TSRun. A second Fuse run gave the same figures.
+* **Tick alignment** (the one place the emulators differ, and not in the game): V_FRAMES (the refresh counter) read at `WORK_END` is 3, 4 or 5 refreshes after the previous tick's, average 4.0 on all three
+  (TSRun 3 x 8, 4 x 233, 5 x 7 over 249 intervals, plus 7 for the boot interval; ZEsarUX 3 x 5, 4 x 239, 5 x 4, 6 for boot; Fuse, from its frames, 3 x 10, 4 x 194, 5 x 8 and one 8 across two ticks with the same picture). Between TSRun and ZEsarUX the
+  counter differs by a constant 2 or 3 (boot offset 2) and moves 21 times, always back (ticks 10-12, 16, 65, 72, 152-153, 188-189, 194-195, 198-199, 201-208, 216-218, 226). Reading
+  `WORK_END` at the TSRun instant shows why: the ticks that last 5 refreshes there (152, 188, 194, 198, 216, 218) all end 242 to 5,913 T-states after a frame interrupt (a frame is 58,688
+  T-states) and are followed by a 3; the work ends that close to the interrupt, and a few hundred T-states of difference in where each emulator puts the interrupt moves the sample over the
+  boundary. It is the sampling point, not the pacing (the runtime paces by V_TARGET; the picture and the game state do not move). Tick 200, the kill (HUD message, burst frame), is a true 5-refresh tick (ends 26,146
+  T-states into a frame) on TSRun and ZEsarUX alike. The game never reads V_FRAMES (no RND, no RANDOMISE), so nothing else could depend on it.
+* BRIGHT black: the compared bytes are display-file and attribute RAM, so the renderers' difference (TSRun #333, Fuse/ZEsarUX black) cannot appear in them. In Vaults it is a visible
+  difference in TSRun though: 620 of the 768 cells have PAPER 0 BRIGHT 1 on every sampled tick, among them the 3D window's ceiling (rows 6-11, `CEIL 0`), which TSRun draws dark grey
+  and the other two black. Not a runtime difference (the bytes are equal); it is TSRun issue #333 and shows in the Studio.
+* Not covered: Fuse state (only screens), real keys on Fuse, the AY joystick on ZEsarUX and Fuse (ZEsarUX reads AY R14 as 0 = no stick; the TSRun joystick run is the only STICK(1) with a pressed stick), the border
+  (neither `.scr` has it; V_BORDER, the variable, matches TSRun and ZEsarUX), sound, **memory contention** (none modelled by TSRun; the ticks that overrun are on the tick-length figures above, not on timing of
+  real hardware), real hardware. 250 ticks of one path; the win (key, door, treasure) and the hurt / lose path are not replayed here.
