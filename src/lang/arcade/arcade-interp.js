@@ -90,6 +90,20 @@
  *     opts.rnd the built-in generator is reseeded; with opts.rnd but no opts.reseed a RANDOMISE is "unsupported".
  *   - PRINT AT r, c; with no items only positions the cursor (the parser records the ';' as the trailing separator).
  *
+ * ── Language batch 2 (docs/ARCADE_PLATFORMER_CONTRACT.md 4/5/7, docs/ARCADE_LANGUAGE_BATCH2.md) ──────────────────────────────────────────────────
+ *   With a WINDOW the interpreter keeps the runtime's WORLD_RAM (2,048 bytes, row r column c at r * 128 + c, a cell = tile * 8, loaded from the world map
+ *   when the scene starts), the clamped camera V_CAM (0 at the start; CAMERA x clamps the SIGNED value to 0..cam_max) and the 8-byte SPR_TAB entries;
+ *   the record gets `cam` and `worldRam` (a copy) and every sprite entry `{visible, asset, x, y, frame}` (opts.version >= 3 or a WINDOW).
+ *   - Positions: in a WINDOW game SHOW stores x and y as signed 16-bit values, not clamped; with opts.version >= 3 and no WINDOW they are clamped per
+ *     asset to 0..256 - w and 0..192 - h (w the descriptor width, a multiple of 8); before v3 as always (239 / 176).
+ *   - SHOW s AT x, y [FRAME f] [FLIP]: x, y, then f are evaluated (after the instance index); the stored frame is (f + n if FLIP) AND $FF, n the number of
+ *     source frames the compiler compiled for the asset (all of them when some SHOW gives the asset a FRAME other than the literal 0, else 1); without
+ *     FRAME and FLIP the instance keeps its frame (0 at the start); FLIP alone is frame n. opts.clampFrame clamps the stored value to the compiled
+ *     frame count - 1 instead (the runtime may clamp when storing; the contract clamps at draw time).
+ *   - WORLDTILE / TILEFLAGS / TILEHIT / SOLID / SETWORLD: arcade-window.js (world pixels; outside the world WORLDTILE is 0 and flags are 1 on the left, the
+ *     right and above, 0 below, below winning at a corner; a rectangle with w or h <= 0 touches nothing; SETWORLD ignores a cell outside the world and a
+ *     tile outside 0..min(31, tile count - 1)).
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -100,7 +114,8 @@
 
 "use strict";
 
-import { assetTables, lookupAsset, convertTileset, convertSfx, convertMap, BLANK_CELL, TILE_CELL } from './arcade-assets.js';
+import { assetTables, lookupAsset, convertTileset, convertSfx, convertMap, compiledFrameCount, BLANK_CELL, TILE_CELL } from './arcade-assets.js';
+import { convertWorldMap, scanSpriteUse, ratioCode, camMax as camMaxOf, buildTileFlags, worldTile as winWorldTile, tileFlags as winTileFlags, tileHit as winTileHit } from './arcade-window.js';
 
 export const wrap16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
 export const MAX_SPRITES = 4;
@@ -151,11 +166,15 @@ export function interpret(ast, opts = {}) {
   const sprites = [];                       // instance names in declaration order
   const instRefs = new Map();               // KEY -> {first, count}: the instances a declaration made
   const boxes = [];                         // collision box [hx, hy, hw, hh] per instance
-  const instAsset = [], assetObjs = [], assetPhases = [];
+  const instAsset = [], assetObjs = [], assetPhases = [], assetDims = [], assetSrcFrames = [];
   const sfxNames = [], sfxIndex = new Map(), sfxLen = [];
   let tileset = null;
   const mapDecls = [];
   const tabs = assetTables(opts.assets);
+  const winMapKey = (ast.windows ?? [])[0]?.map ? up(ast.windows[0].map.name) : null;
+  let worldMapDecl = null;
+  const V3 = (opts.version ?? 0) >= 3 || winMapKey !== null;                // 8-byte SPR_TAB entries (asset, frame), the batch 2 words
+  const spriteUse = V3 ? scanSpriteUse(ast, (d) => lookupAsset(tabs.sprites, d.asset, d.name)) : new Map();
   for (const a of ast.assets ?? []) {
     if (a.kind === 'SPRITE') {
       if (a.count !== null && a.count !== undefined && !V2) throw new Unsupported('a sprite pool', a);
@@ -163,7 +182,11 @@ export function interpret(ast, opts = {}) {
       const w = as?.w ?? 16, h = as?.h ?? as?.rows?.length ?? as?.frames?.[0]?.rows?.length ?? 16;
       const count = a.count ?? 1;
       let ai = as === undefined ? -1 : assetObjs.indexOf(as);
-      if (ai < 0) { ai = assetObjs.length; assetObjs.push(as); assetPhases.push(as?.phases ?? 8); }
+      if (ai < 0) {
+        ai = assetObjs.length; assetObjs.push(as); assetPhases.push(as?.phases ?? 8);
+        assetDims.push([8 * Math.ceil(w / 8), h]);                                           // the descriptor width (a multiple of 8) and height: the v3 clamp
+        assetSrcFrames.push(V3 ? compiledFrameCount(as ?? {}, !!spriteUse.get(as)?.frames) : 1);
+      }
       instRefs.set(up(a.name), { first: sprites.length, count, pool: a.count !== null && a.count !== undefined });
       for (let k = 0; k < count; k++) {
         sprites.push(a.count !== null && a.count !== undefined ? `${a.name}(${k})` : a.name);
@@ -180,6 +203,7 @@ export function interpret(ast, opts = {}) {
       const as = lookupAsset(tabs.tilesets, a.asset, a.name);
       tileset = as ? convertTileset(as) : { count: 128, bytes: new Uint8Array(128 * 9).map((_, i) => (i % 9 === 8 ? BG_ATTR : 0)) };
     } else if (a.kind === 'MAP') {
+      if (winMapKey !== null && up(a.name) === winMapKey && !worldMapDecl) { worldMapDecl = a; continue; }      // the window's world is not a screen map
       if (mapDecls.length >= 8) throw new Unsupported('more than 8 MAPs', a);
       mapDecls.push(a);
     } else throw new Unsupported(`${a.kind} declaration`, a);
@@ -222,6 +246,8 @@ export function interpret(ast, opts = {}) {
     }
   };
   if (maps.length) loadMap(maps[0], 0, 0);
+  // language batch 2: the window's world (filled in once the CONSTs are known, below)
+  let win = null;
   const sfx = { active: false, index: -1, played: 0 };
   const putChar = (code) => {
     const i = curRow * 32 + curCol;
@@ -236,7 +262,7 @@ export function interpret(ast, opts = {}) {
     }
   };
   const isStr = (e) => e.type === 'String' || (e.type === 'Func' && e.name === 'STR$') || (e.type === 'Binary' && e.op === '+' && isStr(e.left) && isStr(e.right));
-  const spr = Array.from({ length: nSprSlots }, () => ({ visible: 0, x: 0, y: 0 }));
+  const spr = Array.from({ length: nSprSlots }, (_, i) => (V3 ? { visible: 0, asset: instAsset[i] ?? 0, x: 0, y: 0, frame: 0 } : { visible: 0, x: 0, y: 0 }));
 
   const globalScope = new Scope(null);
   const varNames = [], arrNames = [];
@@ -254,6 +280,7 @@ export function interpret(ast, opts = {}) {
     for (const k of arrNames) arrays[k] = sceneScope.find(k).arr.slice();
     return {
       tick, vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
+      ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
       sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
     };
@@ -328,6 +355,24 @@ export function interpret(ast, opts = {}) {
   const sceneScope = new Scope(globalScope);
   const sceneFns = new Map(fnTable), sceneProcs = new Map(procTable);
   collect(sceneScope, scene, sceneFns, sceneProcs, 'scene');
+  const evConst = (e) => ev(e, sceneScope);
+  // language batch 2: the window's world
+  {
+    const wd = (ast.windows ?? [])[0];
+    if (wd && wd.map) {
+      const decl = worldMapDecl;
+      const as = decl ? lookupAsset(tabs.maps, decl.asset, decl.name) : undefined;
+      if (!decl || !as) throw new Unsupported('a WINDOW whose map is not in the project', wd);
+      const world = convertWorldMap(as, tileset ? tileset.count : 128);
+      const bandCodes = (ast.bands ?? []).map((b) => ratioCode(evConst(b.num), evConst(b.den)));
+      const bandRows = (ast.bands ?? []).map((b) => evConst(b.rows));
+      if (!bandCodes.length) { bandCodes.push(3); bandRows.push(16); }
+      win = {
+        worldW: world.w, ram: world.src.slice(), flags: buildTileFlags(tileset?.flags ?? []), camMax: camMaxOf(world.w, bandCodes), cam: 0, bandCodes, bandRows, tileCount: tileset ? tileset.count : 0,
+        cx: wd.cx ? evConst(wd.cx) : 4, cy: wd.cy ? evConst(wd.cy) : 4,
+      };
+    }
+  }
 
   /** The absolute instance a SHOW / HIDE / HIT operand names (index evaluated now), or -1 when its index is outside the pool. */
   function instOf(node, sc) {
@@ -432,6 +477,15 @@ export function interpret(ast, opts = {}) {
           case 'KEYDOWN': {
             if (!V2) throw new Unsupported('function KEYDOWN', e);
             return keyHeld(tick, keyCodeOf(args[0], e, sc)) ? 1 : 0;
+          }
+          case 'CAMX': if (!win) throw new Unsupported('CAMX without a WINDOW', e); return win.cam;
+          case 'WORLDTILE': { if (!win) throw new Unsupported('WORLDTILE without a WINDOW', e); const x = ev(args[0], sc), y = ev(args[1], sc); return winWorldTile(win.ram, win.worldW, x, y); }
+          case 'TILEFLAGS': { if (!win) throw new Unsupported('TILEFLAGS without a WINDOW', e); const x = ev(args[0], sc), y = ev(args[1], sc); return winTileFlags(win.ram, win.worldW, win.flags, x, y); }
+          case 'TILEHIT': case 'SOLID': {
+            if (!win) throw new Unsupported(`${e.name} without a WINDOW`, e);
+            const x = ev(args[0], sc), y = ev(args[1], sc), w = ev(args[2], sc), h = ev(args[3], sc);
+            const mask = e.name === 'SOLID' ? 1 : ev(args[4], sc);
+            return winTileHit(win.ram, win.worldW, win.flags, x, y, w, h, mask);
           }
           case 'TILEAT': {
             const x = ev(args[0], sc), y = ev(args[1], sc);
@@ -538,12 +592,38 @@ export function interpret(ast, opts = {}) {
         return null;
       }
       case 'Show': {
-        if (s.frame) throw new Unsupported('SHOW ... FRAME', s);
+        if ((s.frame && !V3 && !(s.frame.type === 'Number' && s.frame.value === 0)) || (s.flip && !V3)) throw new Unsupported(s.flip ? 'SHOW ... FLIP' : 'SHOW ... FRAME', s);
         const idx = instOf(s.sprite, sc);
         const x = ev(s.x, sc), y = ev(s.y, sc);
+        const f = s.frame ? ev(s.frame, sc) : 0;
         if (idx < 0) return null;
-        spr[idx] = { visible: 1, x: Math.min(Math.max(x, 0), SHOW_X_MAX), y: Math.min(Math.max(y, 0), SHOW_Y_MAX) };
+        if (!V3) {
+          spr[idx] = { visible: 1, x: Math.min(Math.max(x, 0), SHOW_X_MAX), y: Math.min(Math.max(y, 0), SHOW_Y_MAX) };
+        } else {
+          let frame = spr[idx].frame;
+          if (s.frame || s.flip) {
+            const n = assetSrcFrames[instAsset[idx]] ?? 1;
+            frame = (f + (s.flip ? n : 0)) & 0xFF;
+            if (opts.clampFrame) frame = Math.min(frame, n * (spriteUse.get(assetObjs[instAsset[idx]])?.flip ? 2 : 1) - 1);
+          }
+          let px = x, py = y;
+          if (!win) { const [aw, ah] = assetDims[instAsset[idx]] ?? [16, 16]; px = Math.min(Math.max(x, 0), 256 - aw); py = Math.min(Math.max(y, 0), 192 - ah); }
+          spr[idx] = { visible: 1, asset: instAsset[idx], x: px, y: py, frame };
+        }
         events.push({ op: 'show', sprite: idx, x, y });
+        return null;
+      }
+      case 'Camera': {
+        if (!win) throw new Unsupported('CAMERA without a WINDOW', s);
+        const v = ev(s.value, sc);
+        win.cam = Math.min(Math.max(v, 0), win.camMax);
+        return null;
+      }
+      case 'SetWorld': {
+        if (!win) throw new Unsupported('SETWORLD without a WINDOW', s);
+        const x = ev(s.x, sc), y = ev(s.y, sc), t = ev(s.value, sc);
+        const c = x >> 3, r = y >> 3;
+        if (t >= 0 && t < Math.min(32, win.tileCount) && c >= 0 && c < win.worldW && r >= 0 && r < 16) win.ram[r * 128 + c] = t * 8;
         return null;
       }
       case 'Hide': {

@@ -78,6 +78,20 @@
  *        maps the header is the 18-byte extended one (frame_div | $80, map_table at +16: `DB count, count x DW map`, each map `DB w, DB h`, w*h
  *        cells) and map_ptr is 0; the runtime then loads map 0 at (0, 0) at boot.
  *
+ * ── Language batch 2 (docs/ARCADE_PLATFORMER_CONTRACT.md 3b/4/7, docs/ARCADE_LANGUAGE_BATCH2.md; `runtime.version >= 3`) ─────────────────────────────
+ *  B2-1. Header: a WINDOW game has the 20-byte header (frame_div | DIV_EXT | DIV_WIN, map_table at +16, window_desc at +18); the world MAP is not in the
+ *        map table and not loaded into the cell map. The linker places the window data: world_src, tile flags, tilerows, window_desc after the sprite
+ *        data and the 14 scroll-table pages at the end of the game area (page aligned by construction: $B200). `gen.window` carries the bytes.
+ *  B2-2. Registers: CAMERA = HL, CALL RT_CAMERA; CAMX() = LD HL,(V_CAM); WORLDTILE / TILEFLAGS = HL x, DE y -> HL; TILEHIT / SOLID store x, y, w, h, mask
+ *        (SOLID: mask 1) in RA_X, RA_Y, RA_W, RA_H, RA_V in source order and CALL RT_TILEHIT -> HL; SETWORLD x, y = t stores RA_X, RA_Y, RA_V and CALLs
+ *        RT_SETWORLD, ignoring a tile outside 0..min(31, tile count - 1) (a constant one in 0..127 is an error, as TILE). TILEHIT / SOLID cannot
+ *        stand inside the arguments of FILL, FILLC, COPY, SETWORLD, TILEHIT or SOLID (they share the argument block): an error says so.
+ *  B2-3. SHOW with FRAME or FLIP calls RT_SHOWF (A instance, BC x, DE y, HL frame; the frame is evaluated after x and y); FLIP adds the source frame count
+ *        n to the frame (low byte: `LD A,L / ADD A,n / LD L,A`), so `SHOW s AT x, y FLIP` is frame n. A plain SHOW (and, on a pre-v3 runtime, FRAME 0)
+ *        calls RT_SHOW and keeps the instance's frame. A constant FRAME outside 0..n-1 is an error.
+ *  B2-4. Sprites (v3): the descriptor carries the true width (8 * ceil(w / 8)) and nframes; frames are compiled completely only for an asset that some SHOW
+ *        gives a FRAME other than the literal 0 (else frame 0 only); an asset used with FLIP gets the mirrored frames n..2n-1.
+ *
  * ── The M2 subset ────────────────────────────────────────────────────────────────────────────────────────────
  * GAME, FRAMERATE, SPRITE (up to 4), exactly one SCENE with PROC INIT and PROC FRAME, scalar numeric DIM
  * (global or in the scene), DEF FN, PROC with at most one parameter, CALL; statements assignment, IF/ELSE, WHILE,
@@ -118,7 +132,8 @@
 "use strict";
 
 import { Emitter, L, M } from './z80-emit.js';
-import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, MAX_SFX } from './arcade-assets.js';
+import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, convertSpriteV3, MAX_SFX } from './arcade-assets.js';
+import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, phaseCost } from './arcade-window.js';
 
 const up = (s) => String(s).toUpperCase();
 const w16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -148,8 +163,8 @@ export function convertSprite(asset) {
   const rows = asset.rows ?? asset.frames?.[0]?.rows;
   if (!Array.isArray(rows)) throw new Error('the sprite has no rows');
   const w = asset.w ?? 16, h = asset.h ?? rows.length;
-  if (!(Number.isInteger(w) && w >= 1 && w <= 16)) throw new Error(`width ${w} is not supported yet in M2 (1..16 pixels)`);
-  if (!(Number.isInteger(h) && h >= 1 && h <= 16)) throw new Error(`height ${h} is not supported yet in M2 (1..16 rows)`);
+  if (!(Number.isInteger(w) && w >= 1 && w <= 16)) throw new Error(`width ${w} is not supported yet in M2 (1..16 pixels)${Number.isInteger(w) && w <= 32 ? '; a sprite wider than 16 pixels needs the v3 runtime (build with --runtime v3)' : ''}`);
+  if (!(Number.isInteger(h) && h >= 1 && h <= 16)) throw new Error(`height ${h} is not supported yet in M2 (1..16 rows)${Number.isInteger(h) && h <= 48 ? '; a sprite taller than 16 rows needs the v3 runtime (build with --runtime v3)' : ''}`);
   if (rows.length !== h) throw new Error(`the sprite says h = ${h} but has ${rows.length} rows`);
   const wmask = (1 << w) - 1, shift = 16 - w;
   const data = new Uint8Array(h * 4);
@@ -173,6 +188,8 @@ const UNSUPPORTED_STMT = {
 const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK', 'BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
 const V1_FUNCS = new Set(['HIT', 'TILEAT']);
 const V2_FUNCS = new Set(['KEYDOWN']);
+const V3_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);        // language batch 2 (v3 runtime, need a WINDOW)
+const RT_OF = { CAMX: null, WORLDTILE: 'RT_WORLDTILE', TILEFLAGS: 'RT_TILEFLAGS', TILEHIT: 'RT_TILEHIT', SOLID: 'RT_TILEHIT' };
 /** A string-valued PRINT item: a literal, STR$(n), or those joined with +. */
 const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name === 'STR$') || (e.type === 'Binary' && e.op === '+' && isStrExpr(e.left) && isStrExpr(e.right));
 
@@ -183,6 +200,7 @@ const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name ===
  */
 export function generate(ast, runtime, assets = {}) {
   const errors = [], warnings = [];
+  const v3 = (runtime.version ?? 0) >= 3;
   const v2 = (runtime.version ?? 0) >= 2;
   const v1 = (runtime.version ?? 0) >= 1;
   let HEADER_BYTES = v2 ? HEADER_V2 : v1 ? HEADER_V1 : HEADER_V0;          // 18 with the map table (batch 1, B1-7)
@@ -200,7 +218,14 @@ export function generate(ast, runtime, assets = {}) {
     if (sym[name] === undefined) throw new GenError(curNode, `the runtime does not provide ${name}`);
     return sym[name];
   };
+  const need2 = (name) => {                         // a runtime variable (V_CAM): a constant or a symbol
+    const a = cst[name] ?? sym[name];
+    if (a === undefined) throw new GenError(curNode, `the runtime does not provide ${name}`);
+    return a;
+  };
 
+  /** The address of a runtime variable: a constant of runtime.json (V_CAM, ...) or a symbol. */
+  const rtAddrOf = (name) => cst[name] ?? sym[name];
   // ── 1. program-level checks ──
   const scenes = ast.scenes ?? [];
   if (scenes.length === 0) err(ast, 'the game has no SCENE');
@@ -213,6 +238,10 @@ export function generate(ast, runtime, assets = {}) {
   const instAssets = [];                            // v2: the asset index of each instance
   const assetEntry = new Map();                     // v2: asset object -> index in `sprites`
   const tabs = assetTables(assets);
+  const spriteUse = v3 ? scanSpriteUse(ast, (d) => lookupIn(tabs.sprites, d.asset, d.name)) : new Map();    // asset object -> {frames, flip} (batch 2)
+  const winDecl = v3 ? (ast.windows ?? [])[0] ?? null : null;               // WINDOW: the first one (the checker refuses a second)
+  const worldKey = winDecl?.map ? up(winDecl.map.name) : null;
+  let worldDecl = null;                             // the MAP node the window uses as its world (not part of mapList)
   const sfxList = [], sfxIndex = new Map();         // {name, node, bytes, records}
   let tileset = null;                               // {node, count, bytes}
   const mapList = [];                               // batch 1: {node, w, h, cells, bytes} per MAP in declaration order (at most 8)
@@ -226,11 +255,12 @@ export function generate(ast, runtime, assets = {}) {
       if (ai === undefined) {
         if (sprites.length >= MAXASSETS) { err(a, `at most ${MAXASSETS} different sprite assets (the art of "${a.asset}" would be the ${sprites.length + 1}th)`); continue; }
         try {
-          const c = convertSprite(asset);
+          const use = spriteUse.get(asset);
+          const c = v3 ? convertSpriteV3(asset, { allFrames: !!use?.frames, flip: !!use?.flip }) : convertSprite(asset);
           let hot = [0, 0, c.srcW, c.h];
           if (asset.hot !== undefined) {
             hot = asset.hot;
-            const okHot = Array.isArray(hot) && hot.length === 4 && hot.every(Number.isInteger) && hot[0] >= 0 && hot[1] >= 0 && hot[2] >= 1 && hot[3] >= 1 && hot[0] + hot[2] <= 16 && hot[1] + hot[3] <= c.h;
+            const okHot = Array.isArray(hot) && hot.length === 4 && hot.every(Number.isInteger) && hot[0] >= 0 && hot[1] >= 0 && hot[2] >= 1 && hot[3] >= 1 && hot[0] + hot[2] <= (v3 ? c.w : 16) && hot[1] + hot[3] <= c.h;
             if (!okHot) throw new Error(`"hot" must be [x, y, w, h] inside the sprite, got ${JSON.stringify(hot)}`);
           }
           const phases = asset.phases ?? 8;
@@ -273,6 +303,7 @@ export function generate(ast, runtime, assets = {}) {
       if (asset === undefined) { err(a, `tileset asset "${a.asset}" is not in the project`); continue; }
       try { tileset = { node: a, ...convertTileset(asset) }; } catch (e) { err(a, `tileset "${a.asset}": ${e.message}`); }
     } else if (v1 && a.kind === 'MAP') {
+      if (worldKey !== null && up(a.name) === worldKey && !worldDecl) { worldDecl = a; continue; }       // the window's world: kept apart
       if (mapList.length >= 8) { err(a, 'at most 8 MAPs per game'); continue; }
       mapList.push({ node: a });
     } else { notYet(a, `${a.kind} (${a.name})`); }
@@ -283,7 +314,12 @@ export function generate(ast, runtime, assets = {}) {
     const asset = lookupIn(tabs.maps, m.node.asset, m.node.name);
     if (asset === undefined) err(m.node, `map asset "${m.node.asset}" is not in the project`);
     else if (!tileset) err(m.node, 'a MAP needs a TILESET');
-    else { try { Object.assign(m, convertMap(asset, tileset.count)); } catch (e) { err(m.node, `map "${m.node.asset}": ${e.message}`); } }
+    else {
+      try { Object.assign(m, convertMap(asset, tileset.count)); } catch (e) {
+        const big = v3 && (asset.w > 32 || asset.h > 24);
+        err(m.node, `map "${m.node.asset}": ${e.message}${big ? ' (a map larger than the 32 x 24 screen is a scrolling world: declare it with WINDOW ' + m.node.name + ')' : ''}`);
+      }
+    }
   }
 
   // ── 2. declarations, procs, functions ──
@@ -435,6 +471,57 @@ export function generate(ast, runtime, assets = {}) {
     addCallables(scene, false);                     // scene-level names override global ones
   }
 
+  // ── 2b. the scrolling window (batch 2) ──
+  const raKeys = ['RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V'];
+  let win = null;                                   // {cx, cy, worldW, camMax, bands, world, worldSrc, tileFlags, tileRows, tables}
+  if (winDecl) {
+    const at = winDecl.map ?? winDecl;
+    if (!worldDecl) err(at, `WINDOW: '${winDecl.map?.name}' is not a declared MAP`);
+    else if (!tileset) err(at, 'a WINDOW needs a TILESET: declare one at the top, e.g. TILESET tiles = "tiles"');
+    else {
+      const asset = lookupIn(tabs.maps, worldDecl.asset, worldDecl.name);
+      if (asset === undefined) err(at, `map asset "${worldDecl.asset}" is not in the project`);
+      else {
+        try {
+          const world = convertWorldMap(asset, tileset.count);
+          const cx = winDecl.cx ? fold(winDecl.cx) : 4, cy = winDecl.cy ? fold(winDecl.cy) : 4;
+          if (cx === undefined || cy === undefined || cx < 0 || cx > 8 || cy < 0 || cy > 8) throw new Error('the window position cx, cy must be constants 0..8');
+          const bands = (ast.bands ?? []).map((b) => ({ rows: fold(b.rows), code: ratioCode(fold(b.num), fold(b.den)) }));
+          if (bands.length === 0) bands.push({ rows: 16, code: 3 });
+          if (bands.some((b) => b.rows === undefined || b.rows < 1 || b.code < 0) || bands.length > 4 || bands.reduce((n, b) => n + b.rows, 0) !== 16) throw new Error('the BANDs must be 1 to 4, rows adding up to 16, with an allowed speed');
+          if (tileset.flagsProblem) throw new Error(`tileset "${tileset.node.asset}": ${tileset.flagsProblem}`);
+          const tileRows = buildTileRows(tileset);
+          win = {
+            cx, cy, worldW: world.w, worldH: world.h, camMax: camMaxOf(world.w, bands.map((b) => b.code)), bands, world,
+            worldSrc: world.src, tileFlags: buildTileFlags(tileset.flags), tileRows, tables: buildScrollTables(tileRows),
+          };
+          if (tileset.bytes.slice(0, 8).some((b) => b !== 0)) warnings.push({ ...pos(at), severity: 'warning', message: `tile 0 of the tileset "${tileset.node.asset}" is not blank: tile 0 is the sky of a window world (empty cells and the area beyond a short map are tile 0)` });
+        } catch (ex) { err(at, `world map "${worldDecl.asset}": ${ex.message}`); }
+      }
+    }
+  }
+  /** Does evaluating the expression use the runtime's argument block (TILEHIT / SOLID, also through DEF FN)? */
+  const raMemo = new Map();
+  const usesRA = (x) => {
+    if (!x) return false;
+    switch (x.type) {
+      case 'Unary': return usesRA(x.operand);
+      case 'Binary': return usesRA(x.left) || usesRA(x.right);
+      case 'Index': return usesRA(x.index) || usesRA(x.index2);
+      case 'Func': return x.name === 'TILEHIT' || x.name === 'SOLID' || x.args.some(usesRA);
+      case 'FnCall': {
+        const k = up(x.name);
+        if (usesRA(x.arg)) return true;
+        if (raMemo.has(k)) return raMemo.get(k);
+        raMemo.set(k, false);
+        const r = usesRA(fns.get(k)?.node.body);
+        raMemo.set(k, r);
+        return r;
+      }
+      default: return false;
+    }
+  };
+
   // ── 3. scan for statements and expressions outside the subset ──
   const scanExpr = (e) => {
     if (!e) return;
@@ -448,7 +535,14 @@ export function generate(ast, runtime, assets = {}) {
       case 'Binary': scanExpr(e.left); scanExpr(e.right); return;
       case 'FnCall': scanExpr(e.arg); return;
       case 'Func':
-        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name))) { notYet(e, `${e.name}(...)`); return; }
+        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name)) && !(v3 && V3_FUNCS.has(e.name))) { notYet(e, `${e.name}(...)`); return; }
+        if (V3_FUNCS.has(e.name)) {
+          if (!winDecl) { err(e, `${e.name}() needs a WINDOW: declare the scrolling world at the top, e.g. WINDOW level`); return; }
+          const rt = RT_OF[e.name];
+          if (rt && sym[rt] === undefined) { err(e, `${e.name}(...) needs ${rt}, which this runtime does not provide`); return; }
+          if (e.name === 'CAMX' && rtAddrOf('V_CAM') === undefined) { err(e, 'CAMX() needs V_CAM, which this runtime does not provide'); return; }
+          if (e.name === 'TILEHIT' || e.name === 'SOLID') for (const a of e.args) if (usesRA(a)) err(a, `${e.name} cannot have TILEHIT or SOLID (or a DEF FN that uses one) inside its arguments: they share the runtime's argument block; put the inner one in a variable first`);
+        }
         if (e.name === 'STICK' && sym.RT_STICK === undefined) { err(e, 'STICK(n) needs RT_STICK, which this runtime does not provide yet'); return; }
         if (e.name === 'KEYDOWN') {
           if (sym.RT_KEYDOWN === undefined) err(e, 'KEYDOWN(...) needs RT_KEYDOWN, which this runtime does not provide');
@@ -474,10 +568,45 @@ export function generate(ast, runtime, assets = {}) {
   };
   let usesLoadMap = false;                          // a LOADMAP statement is reachable in the source: the extended header with the map table
   const raReady = ['RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V', 'RA_DY'].every((k) => cst[k] !== undefined) && (cst.RT_ARGS !== undefined || sym.RT_ARGS !== undefined);
+  /** SHOW with FRAME / FLIP (batch 2): the runtime must have RT_SHOWF, a constant frame must exist in the asset. */
+  const frameIsZero = (e) => e && e.type === 'Number' && e.value === 0;
+  function scanShow(s) {
+    scanSpriteRef(s.sprite);
+    scanExpr(s.x); scanExpr(s.y);
+    if (!s.frame && !s.flip) return;
+    if (!v3) {
+      if (s.flip) err(s, 'FLIP needs the v3 runtime (build with --runtime v3)');
+      else if (!frameIsZero(s.frame)) err(s.frame, `SHOW ... FRAME is not supported yet in ${v2 ? 'M4a' : v1 ? 'M3' : 'M2'}; FRAME needs the v3 runtime (build with --runtime v3)`);
+      return;
+    }
+    if (s.frame) scanExpr(s.frame);
+    if (sym.RT_SHOWF === undefined) { err(s, `SHOW ... ${s.flip ? 'FLIP' : 'FRAME'} needs RT_SHOWF, which this runtime does not provide`); return; }
+    const r = instRefs.get(up(s.sprite?.name));
+    const spr = r ? sprites[instAssets[r.first]] : null;
+    if (!spr) return;
+    const fc = s.frame ? fold(s.frame) : 0;
+    if (fc !== undefined && (fc < 0 || fc >= spr.framesSrc)) {
+      err(s.frame ?? s, `FRAME ${fc} is outside the sprite "${spr.asset}": it has ${spr.framesSrc} frame${spr.framesSrc === 1 ? '' : 's'} (0..${spr.framesSrc - 1})${s.flip ? ' (FLIP adds the mirrored ones itself)' : ''}`);
+    }
+  }
   const scanStmts = (list) => {
     for (const s of list ?? []) {
       if (!s) continue;
       if (s.type === 'Local' || s.type === 'Const') continue;                    // declarations: no code
+      if (s.type === 'Camera' || s.type === 'SetWorld') {
+        const rt = s.type === 'Camera' ? 'RT_CAMERA' : 'RT_SETWORLD';
+        if (!v3) err(s, `${s.type === 'Camera' ? 'CAMERA' : 'SETWORLD'} needs the v3 runtime (build with --runtime v3)`);
+        else if (!winDecl) err(s, `${s.type === 'Camera' ? 'CAMERA' : 'SETWORLD'} needs a WINDOW: declare the scrolling world at the top, e.g. WINDOW level`);
+        else if (sym[rt] === undefined) err(s, `${s.type === 'Camera' ? 'CAMERA' : 'SETWORLD'} needs ${rt}, which this runtime does not provide`);
+        else if (s.type === 'SetWorld' && !raReady) err(s, 'SETWORLD needs the runtime argument block (RT_ARGS)');
+        else if (!win) { /* the WINDOW itself failed: already reported */ }
+        else if (s.type === 'Camera') scanExpr(s.value);
+        else {
+          if (!tileset) err(s, 'SETWORLD needs a TILESET');
+          for (const k of ['x', 'y', 'value']) { scanExpr(s[k]); if (usesRA(s[k])) err(s[k], 'SETWORLD cannot have TILEHIT or SOLID (or a DEF FN that uses one) inside its arguments: they share the runtime\'s argument block; put it in a variable first'); }
+        }
+        continue;
+      }
       if (s.type === 'Border' || s.type === 'Randomise') {
         const rt = s.type === 'Border' ? 'RT_BORDER' : 'RT_RANDOMISE';
         if (sym[rt] === undefined) notYet(s, s.type === 'Border' ? 'BORDER' : 'RANDOMISE');
@@ -495,6 +624,7 @@ export function generate(ast, runtime, assets = {}) {
           scanExpr(s.x); scanExpr(s.y);
         } else if (s.type === 'Copy') { for (const k of ['x', 'y', 'w', 'h', 'dx', 'dy']) scanExpr(s[k]); }
         else { for (const k of ['x', 'y', 'w', 'h', 'value']) scanExpr(s[k]); }
+        if (s.type !== 'LoadMap') for (const k of ['x', 'y', 'w', 'h', 'dx', 'dy', 'value']) if (s[k] && usesRA(s[k])) err(s[k], `${name} cannot have TILEHIT or SOLID (or a DEF FN that uses one) inside its arguments: they share the runtime's argument block; put it in a variable first`);
         continue;
       }
       if (v1 && V1_STMT.has(s.type) && !(s.type === 'Color' && s.which === 'FLASH')) {
@@ -533,7 +663,7 @@ export function generate(ast, runtime, assets = {}) {
           if (s.else) scanStmts(s.else.body);
           break;
         case 'Call': for (const a of s.args ?? (s.arg ? [s.arg] : [])) scanExpr(a); break;
-        case 'Show': if (s.frame) notYet(s.frame, 'SHOW ... FRAME'); scanSpriteRef(s.sprite); scanExpr(s.x); scanExpr(s.y); break;
+        case 'Show': scanShow(s); break;
         case 'Hide': scanSpriteRef(s.sprite); break;
         default: break;
       }
@@ -547,6 +677,7 @@ export function generate(ast, runtime, assets = {}) {
     if (sym.RT_LOADMAP === undefined) err(ast, 'LOADMAP needs RT_LOADMAP, which this runtime does not provide');
     HEADER_BYTES = cst.GAME_HEADER_EXT_LEN ?? 18;
   }
+  if (win) HEADER_BYTES = 20;                       // B2-1: DIV_WIN says the header continues +18 DW window_desc (it requires DIV_EXT)
   if (errors.length) return fail();
 
   function fail() { return { errors, warnings, code: null }; }
@@ -575,7 +706,9 @@ export function generate(ast, runtime, assets = {}) {
           case 'Copy': ex(s.x); ex(s.y); ex(s.w); ex(s.h); ex(s.dx); ex(s.dy); break;
           case 'LoadMap': ex(s.x); ex(s.y); break;
           case 'Border': case 'Randomise': ex(s.value); break;
-          case 'Show': ex(s.sprite); ex(s.x); ex(s.y); break;
+          case 'Show': ex(s.sprite); ex(s.x); ex(s.y); ex(s.frame); break;
+          case 'Camera': ex(s.value); break;
+          case 'SetWorld': ex(s.x); ex(s.y); ex(s.value); break;
           case 'Hide': ex(s.sprite); break;
           case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
@@ -643,7 +776,9 @@ export function generate(ast, runtime, assets = {}) {
           }
           case 'Select': ex(s.expr, active); for (const cs of s.cases) { cs.values.forEach((v) => ex(v, active)); st(cs.body, active); } if (s.else) st(s.else.body, active); break;
           case 'Call': for (const a of s.args ?? (s.arg ? [s.arg] : [])) ex(a, active); break;
-          case 'Show': ex(s.sprite, active); ex(s.x, active); ex(s.y, active); break;
+          case 'Show': ex(s.sprite, active); ex(s.x, active); ex(s.y, active); ex(s.frame, active); break;
+          case 'Camera': ex(s.value, active); break;
+          case 'SetWorld': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
           case 'Hide': ex(s.sprite, active); break;
           case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } s.items.forEach((x) => ex(x, active)); break;
           case 'Tile': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
@@ -1068,6 +1203,20 @@ export function generate(ast, runtime, assets = {}) {
         used.tileat = true; e.call('lib$tileat');
         return;
       }
+      case 'CAMX': e.ld('hl', M(need2('V_CAM'))); return;
+      case 'WORLDTILE': case 'TILEFLAGS': {
+        const rt = need(x.name === 'WORLDTILE' ? 'RT_WORLDTILE' : 'RT_TILEFLAGS');
+        operands(a[0], a[1]);                // HL = x, DE = y -> HL
+        e.call(rt);
+        return;
+      }
+      case 'TILEHIT': case 'SOLID': {
+        const rt = need('RT_TILEHIT');
+        const exprs = x.name === 'SOLID' ? [...a, { type: 'Number', value: 1 }] : a;
+        exprs.forEach((arg, i) => setArg(raKeys[i], arg));          // x, y, w, h, mask in source order (nesting of TILEHIT is refused by the scan)
+        e.call(rt);
+        return;
+      }
       default: throw new GenError(x, `internal: function ${x.name}`);
     }
   }
@@ -1307,6 +1456,72 @@ export function generate(ast, runtime, assets = {}) {
     e.ld('a', idx); e.call(rt);
   }
 
+  /** SETWORLD x, y = t: RA_X, RA_Y, RA_V; a tile outside 0..min(31, count - 1) is ignored (a constant one in 0..127 is an error). */
+  function setWorldStmt(s) {
+    const rt = need('RT_SETWORLD');
+    const lim = Math.min(32, tileset.count);
+    const vc = fold(s.value);
+    if (vc !== undefined && (vc < 0 || vc >= lim)) {
+      if (vc >= 0 && vc <= 127) throw new GenError(s.value, `tile ${vc} cannot be placed in the world: the world has the tiles 0..${lim - 1} (the tileset "${tileset.node.asset}" has ${tileset.count}, the window uses at most 32)`);
+      for (const x of [s.x, s.y, s.value]) if (!isSimple(x)) gen(x);       // never stored, but the operands are still evaluated
+      return;
+    }
+    setArg('RA_X', s.x); setArg('RA_Y', s.y);
+    if (vc !== undefined) { e.ld('hl', vc); e.ld(M(raAddr('RA_V')), 'hl'); e.call(rt); return; }
+    gen(s.value);
+    const skip = e.newLabel('swskip');
+    e.ld('a', 'h'); e.or('a'); e.jr('nz', skip);
+    e.ld('a', 'l'); e.cp(lim); e.jr('nc', skip);
+    e.ld(M(raAddr('RA_V')), 'hl'); e.call(rt);
+    e.label(skip);
+  }
+
+  let showIdxSlot = null;                           // hidden slot a run-time SHOW index waits in while x, y, frame are evaluated
+  /** SHOW ... FRAME f / FLIP through RT_SHOWF (A instance, BC x, DE y, HL frame). Evaluation order: index, x, y, frame. */
+  function showFrameStmt(s) {
+    const rShowF = need('RT_SHOWF');
+    const ref = instRef(s.sprite), k = instConst(ref);
+    const spr = sprites[instAssets[ref.first]];
+    const nFlip = s.flip ? spr.framesSrc : 0;
+    const fc = s.frame ? fold(s.frame) : 0;
+    const frameSimple = !s.frame || fc !== undefined || s.frame.type === 'Ident';
+    const frameToHL = () => {                      // HL = the frame (low byte + n for FLIP); touches HL and A only when the frame is simple
+      if (!s.frame || fc !== undefined) { e.ld('hl', (fc ?? 0) + nFlip); return; }
+      if (s.frame.type === 'Ident') e.ld('hl', M(addrOf(s.frame.name))); else gen(s.frame);
+      if (nFlip) { e.ld('a', 'l'); e.add('a', nFlip); e.ld('l', 'a'); }
+    };
+    const regs = () => {                           // BC = x, DE = y, HL = frame
+      if (frameSimple) {
+        if (isSimple(s.y)) { gen(s.x); e.ld('b', 'h'); e.ld('c', 'l'); loadSimple('de', s.y); }
+        else if (isSimple(s.x)) { gen(s.y); e.ex('de', 'hl'); loadSimple('bc', s.x); }
+        else { gen(s.x); e.push('hl'); gen(s.y); e.ex('de', 'hl'); e.pop('bc'); }
+        frameToHL();
+      } else {
+        gen(s.x); e.push('hl'); gen(s.y); e.push('hl'); frameToHL(); e.pop('de'); e.pop('bc');
+      }
+    };
+    if (k === null) {                              // run-time index: parked in a slot, checked last (A only)
+      showIdxSlot ??= allocSlot('show.index');
+      gen(ref.idx); e.ld(M(showIdxSlot), 'hl');
+      regs();
+      const SKIP = e.newLabel('shfskip');
+      e.ld('a', M(showIdxSlot + 1)); e.or('a'); e.jr('nz', SKIP);
+      e.ld('a', M(showIdxSlot)); e.cp(ref.count); e.jr('nc', SKIP);
+      if (ref.first) e.add('a', ref.first);
+      e.call(rShowF);
+      e.label(SKIP);
+      return;
+    }
+    if (k < 0) {                                   // constant index outside the pool: the operands are still evaluated
+      if (!isSimple(s.x)) gen(s.x);
+      if (!isSimple(s.y)) gen(s.y);
+      if (s.frame && !frameSimple) gen(s.frame);
+      return;
+    }
+    regs();
+    e.ld('a', k); e.call(rShowF);
+  }
+
   function stmt(s) {
     if (s.type !== 'Rem') mark(s);
     curNode = s;
@@ -1382,7 +1597,10 @@ export function generate(ast, runtime, assets = {}) {
       case 'Fill': fillStmt(s); return;
       case 'Copy': copyStmt(s); return;
       case 'LoadMap': loadMapStmt(s); return;
+      case 'Camera': gen(s.value); e.call(need('RT_CAMERA')); return;
+      case 'SetWorld': setWorldStmt(s); return;
       case 'Show': {
+        if (s.flip || (s.frame && !(frameIsZero(s.frame) && !v3))) { showFrameStmt(s); return; }
         const rShow = need('RT_SHOW');
         let k = null, ref = null;
         if (v2) { ref = instRef(s.sprite); k = instConst(ref); }
@@ -1696,8 +1914,9 @@ export function generate(ast, runtime, assets = {}) {
     code, base,
     entries: { init: entry('entry$init'), frame: entry('P$FRAME') },
     frameDiv: 60 / rate,
-    mapFlag: extMaps ? (cst.DIV_EXT ?? 0x80) : 0,
+    mapFlag: (extMaps || win ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0),
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,
+    window: win,
     sprites,
     symbols,
     srcMap,
@@ -1705,6 +1924,7 @@ export function generate(ast, runtime, assets = {}) {
     descLen: DESC_LEN,
     v1: v1Info,
     v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length, mapTable: extMaps ? v1Info.mapTable : 0 } : null,
+    phase: v3 ? phaseCost(sprites.map((sp, i) => ({ w: sp.w, h: sp.h, phases: sp.phases ?? 8, nframes: sp.nframes ?? 1, instances: instAssets.filter((a) => a === i).length }))) : null,
     usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites },
   };
 }

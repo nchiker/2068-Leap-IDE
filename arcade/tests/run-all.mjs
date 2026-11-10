@@ -19,6 +19,7 @@ const builds = [
   'arcade/tools/build-runtime.mjs',
   'arcade/tools/build-runtime-v1.mjs',
   'arcade/tools/build-runtime-v2.mjs',
+  'arcade/tools/build-runtime-v3.mjs',
 ];
 const suites = [
   'tests/arcade-parse.mjs',
@@ -27,6 +28,8 @@ const suites = [
   'tests/arcade-m4.mjs',
   'tests/arcade-m5.mjs',
   'tests/arcade-blockfall.mjs',
+  'tests/arcade-m6-compiler.mjs',
+  'tests/arcade-m6-differential.mjs',
   'arcade/tests/m1.mjs',
   'arcade/tests/m1-overrun.mjs',
   'arcade/tests/extra-regs.mjs',

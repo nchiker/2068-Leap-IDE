@@ -52,6 +52,12 @@
  *       LOADMAP a MAP, and TILESET has no use), so no statement can be ambiguous and a SFX `lock` may coexist with a PROC `lock` and a
  *       variable `lock`. Two assets of the SAME kind may not share a name. At most 8 MAPs. Messages that mention a name that is the wrong
  *       kind are kept ("'x' is a SFX, not a SPRITE", "'x' is a variable, not a SPRITE", "'ball' is a SPRITE, not a variable").
+ *   - (language batch 2, docs/ARCADE_LANGUAGE_BATCH2.md) WINDOW BAND CAMERA SETWORLD FLIP and the functions CAMX WORLDTILE TILEFLAGS TILEHIT SOLID need a v3
+ *     runtime (check(ast, {version: 3})): with an older one each use is an error that says so. WINDOW: once, at the top level, naming a declared MAP; its
+ *     AT cx, cy are constants 0..8. BAND rows, num, den: constants, rows 1..16, the ratio one of 0/1 1/4 1/2 1/1 2/1, at most 4, the rows add up to 16,
+ *     and a WINDOW must exist. A MAP used by WINDOW cannot be LOADMAPped. check(ast) with no version option does not complain about the runtime.
+ *     (The code generator reports what needs more than the syntax tree: CAMERA, SETWORLD, CAMX, WORLDTILE, TILEFLAGS, TILEHIT and SOLID without a
+ *     WINDOW, the map size and tile numbers, a FRAME against the frame count.)
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
@@ -60,6 +66,10 @@
 "use strict";
 
 import { FUNCTIONS, RESERVED, VALID_FRAMERATES, LIMITS, notInArcadeMessage } from './arcade-words.js';
+import { ratioCode, RATIO_TEXT } from './arcade-window.js';
+
+/** Functions of language batch 2 that need a WINDOW (and the v3 runtime). */
+const WINDOW_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);
 
 /** Value of a literal operand (`5` or `-5`), else undefined. */
 const literal = (e) => (e?.type === 'Number' ? e.value : e?.type === 'Unary' && e.op === '-' && e.operand?.type === 'Number' ? -e.operand.value : undefined);
@@ -91,6 +101,7 @@ class Scope {
 }
 
 const up = s => String(s).toUpperCase();
+const ast_bands = (ast) => ast?.bands ?? [];
 const typeOfName = name => name.endsWith('$') ? 'str' : 'num';
 const typeWord = t => t === 'str' ? 'a string' : 'a number';
 
@@ -100,6 +111,10 @@ const isKnownKey = (c) => (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c === 
 class Checker {
   constructor(ast, errors, opts = {}) {
     this.maxDim = (opts.version ?? 0) >= 2 ? LIMITS.maxDimV2 : LIMITS.maxDim;
+    this.version = opts.version ?? 0;
+    this.versionKnown = opts.version !== undefined;         // check(ast) alone assumes nothing about the runtime
+    this.windows = (ast?.windows ?? []);
+    this.hasWindow = this.windows.length > 0;
     this.ast = ast;
     this.errors = errors;
     this.scopes = [];
@@ -149,6 +164,11 @@ class Checker {
       }
       this.assets.set(key, { name: a.name, kind, pos: a.namePos, used: false, poolSize: a.count ?? null, index: kind === 'map' ? mapNo - 1 : 0 });
     }
+    // language batch 2: the MAP a WINDOW uses is the world (it is not loaded into the cell map)
+    for (const w of this.windows) {
+      const sym = w.map ? this.assets.get(`map:${up(w.map.name)}`) : null;
+      if (sym) sym.world = true;
+    }
     // every variable name of the global level and of each scene, for the "declared after a FOR made it a local" check
     const addLater = (decls) => {
       for (const d of decls ?? []) {
@@ -173,9 +193,12 @@ class Checker {
         case 'DefFn': this.checkFn(global, item); break;
         case 'Proc': this.checkProc(global, item); break;
         case 'Scene': this.checkScene(item); break;
+        case 'Window': this.checkWindow(item); break;
+        case 'Band': this.checkBand(item); break;
         default: break;
       }
     }
+    this.checkBands();
 
     // Warnings
     for (const a of this.assets.values()) {
@@ -236,6 +259,47 @@ class Checker {
         default: break;
       }
     }
+  }
+
+  // ── language batch 2: the window ──
+  needV3(node, what) {
+    if (this.versionKnown && this.version < 3) this.err(node, `${what} needs the v3 runtime (the scrolling platformer runtime): build with --runtime v3`);
+  }
+  checkWindow(w) {
+    this.needV3(w, 'WINDOW');
+    const prev = this.windows.indexOf(w);
+    if (prev > 0) this.err(w, `WINDOW may appear only once (the first is on line ${this.windows[0].line})`);
+    const ctx = this.topCtx(this.global);
+    if (w.map) this.assetRef(w.map, 'map', ctx);
+    for (const [e, what] of [[w.cx, 'the WINDOW column cx'], [w.cy, 'the WINDOW row cy']]) {
+      if (!e) continue;
+      const v = this.constOf(e, this.global, what);
+      if (v !== undefined && (v < 0 || v > LIMITS.maxWinCell)) this.err(e, `${what} is ${v}: it must be 0..${LIMITS.maxWinCell} (the window is 24 x 16 cells on a 32 x 24 screen)`);
+    }
+  }
+  checkBand(b) {
+    this.needV3(b, 'BAND');
+    if (!this.hasWindow) this.err(b, 'BAND needs a WINDOW: declare the scrolling world first, e.g. WINDOW level');
+    const k = (ast_bands(this.ast)).indexOf(b);
+    if (k >= LIMITS.maxBands) this.err(b, `at most ${LIMITS.maxBands} BANDs (this is the ${k + 1}th)`);
+    const rows = this.constOf(b.rows, this.global, 'the BAND rows');
+    const num = this.constOf(b.num, this.global, 'the BAND speed numerator');
+    const den = this.constOf(b.den, this.global, 'the BAND speed denominator');
+    b.vals = { rows, num, den };
+    if (rows !== undefined && (rows < 1 || rows > LIMITS.winRows)) this.err(b.rows, `the BAND rows are ${rows}: they must be 1..${LIMITS.winRows}`);
+    if (num !== undefined && den !== undefined && ratioCode(num, den) < 0) this.err(b.num, `${num}/${den} is not a band speed: use ${RATIO_TEXT}`);
+  }
+  /** The rows of the BANDs must add up to 16 (when there are any). */
+  checkBands() {
+    const bands = (this.ast?.bands ?? []).filter((b) => b.vals && b.vals.rows !== undefined && b.vals.rows >= 1 && b.vals.rows <= LIMITS.winRows);
+    if (!this.hasWindow || bands.length === 0 || bands.length !== (this.ast.bands ?? []).length) return;
+    let total = 0;
+    for (const b of bands) {
+      total += b.vals.rows;
+      if (total > LIMITS.winRows) { this.err(b.rows, `the BANDs add up to ${total} rows here: the window has ${LIMITS.winRows}`); return; }
+    }
+    if (total !== LIMITS.winRows) { this.err(bands[bands.length - 1].rows, `the BANDs add up to ${total} rows: they must add up to ${LIMITS.winRows} (the window height)`); return; }
+    if (!bands.some((b) => ratioCode(b.vals.num, b.vals.den) === 3)) this.warn(this.windows[0], 'no BAND scrolls at 1/1: the layer the player stands on (and the collision words) should move with the camera, i.e. one BAND n, 1, 1');
   }
 
   // ── constants ──
@@ -510,6 +574,7 @@ class Checker {
         return;
       case 'LoadMap':
         this.assetRef(s.map, 'map', ctx);
+        if (s.map?.type === 'Ident' && this.assets.get(`map:${up(s.map.name)}`)?.world) this.err(s.map, `LOADMAP: '${s.map.name}' is the world of the WINDOW; it is not a map of the screen cells`);
         if (s.x) { this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); }
         return;
       case 'Print':
@@ -525,6 +590,16 @@ class Checker {
         this.assetRef(s.sprite, 'sprite', ctx);
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y');
         if (s.frame) this.numArg(s.frame, ctx, 'the FRAME');
+        if (s.flip) this.needV3(s, 'FLIP');
+        return;
+      case 'Camera':
+        this.needV3(s, 'CAMERA');
+        this.numArg(s.value, ctx, 'the camera');
+        return;
+      case 'SetWorld':
+        this.needV3(s, 'SETWORLD');
+        this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the tile');
+        this.range(s.value, 0, LIMITS.maxWorldTile, 'the world tile index');
         return;
       case 'Hide': return this.assetRef(s.sprite, 'sprite', ctx);
       case 'Play': return this.assetRef(s.sfx, 'sfx', ctx);
@@ -798,6 +873,7 @@ class Checker {
       const want = entry.min === max ? `${max}` : `${entry.min} to ${max}`;
       this.err(e, `${entry.name} takes ${want} argument${max === 1 ? '' : 's'}, got ${args.length}`);
     }
+    if (WINDOW_FUNCS.has(entry.name)) this.needV3(e, `${entry.name}()`);
     if (entry.name === 'KEYDOWN') {
       if (args.length === 1) this.keyArg(args[0], ctx);
       return 'num';

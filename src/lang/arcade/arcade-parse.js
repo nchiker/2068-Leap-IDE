@@ -71,6 +71,13 @@
  *        so `PRINT AT r, c` with no ';' (trailing null) still goes to the next row. A ',' there counts as ';' (no space is printed).
  *      - `FILL x, y, w, h = t` / `FILLC ...` (node Fill {which, x, y, w, h, value}; h is parsed at the additive level like TILE's y),
  *        `COPY x, y, w, h TO dx, dy` (node Copy), `LOADMAP name [AT x, y]` (node LoadMap {map: Ident, x, y}; x, y null without AT).
+ *  16. (language batch 2, docs/ARCADE_LANGUAGE_BATCH2.md)
+ *      - `WINDOW map [AT cx, cy]` and `BAND rows, num, den` are top-level items (nodes Window {map, cx, cy} and Band {rows, num, den}; also listed in
+ *        program.windows / program.bands); inside a SCENE they are reported but recorded. BAND is also the bit function BAND(a, b): a BAND that is
+ *        followed by '(' is the function. In a PROC both give a "top level" message.
+ *      - `CAMERA x` (node Camera {value}) and `SETWORLD x, y = t` (node SetWorld {x, y, value}; y at the additive level like TILE's).
+ *      - SHOW gains `flip` (boolean) beside `frame`: `SHOW s AT x, y [FRAME f] [FLIP]`, the two clauses in either order. FRAME and FLIP are contextual words.
+ *      - WORLDTILE TILEFLAGS TILEHIT SOLID CAMX are ordinary built-in functions (arcade-words.js).
  */
 
 "use strict";
@@ -263,7 +270,7 @@ class Parser {
   program() {
     const prog = this.prog = {
       type: 'Program', line: 1, col: 0, endCol: 0,
-      game: null, framerate: null, assets: [], scenes: [], procs: [], decls: [], items: [],
+      game: null, framerate: null, assets: [], scenes: [], procs: [], decls: [], items: [], windows: [], bands: [],
     };
     this.expects.push(new Set(['PROC', 'SCENE']));
     for (;;) {
@@ -326,6 +333,12 @@ class Parser {
         }
         return;
       }
+      if (v === 'WINDOW' || (v === 'BAND' && !isSym(this.peek(1), '('))) {
+        if (scene) this.record(t, `${v} must be at the top level, outside any SCENE`);
+        const node = v === 'WINDOW' ? this.windowDecl() : this.bandDecl();
+        (v === 'WINDOW' ? prog.windows : prog.bands).push(node); prog.items.push(node);
+        return;
+      }
       if (v === 'SCENE') { this.scene(); return; }
       if (v === 'PROC') {
         const p = this.proc();
@@ -344,6 +357,27 @@ class Parser {
     const hint = t.type === 'ident' && NOT_IN_ARCADE.get(t.value);
     if (scene) this.fail(t, `only DIM, DEF FN and PROC may appear in a SCENE outside a PROC (found ${describe(t)})`);
     this.fail(t, `${describe(t)} cannot start a line here: statements go inside a PROC${hint ? ` (${hint})` : ''}`);
+  }
+
+  /** `WINDOW map [AT cx, cy]` (language batch 2): node Window {map: Ident, cx, cy} (cx, cy null without AT). */
+  windowDecl() {
+    const t = this.next();
+    const map = this.nameRef('a map name: WINDOW level');
+    let cx = null, cy = null;
+    if (isKw(this.peek(), 'AT')) {
+      this.next();
+      cx = this.expr(); this.expectSym(',', "expected ',' : WINDOW map AT cx, cy"); cy = this.expr();
+    }
+    return this.close(this.mk('Window', t, { map, cx, cy }));
+  }
+
+  /** `BAND rows, num, den` (language batch 2): node Band {rows, num, den}. */
+  bandDecl() {
+    const t = this.next();
+    const rows = this.expr(); this.expectSym(',', "expected ',' : BAND rows, num, den");
+    const num = this.expr(); this.expectSym(',', "expected ',' : BAND rows, num, den");
+    const den = this.expr();
+    return this.close(this.mk('Band', t, { rows, num, den }));
   }
 
   scene() {
@@ -565,6 +599,17 @@ class Parser {
         return this.close(this.mk('LoadMap', t, { map, x, y }));
       }
       case 'SHOW': return this.show();
+      case 'CAMERA': { this.next(); return this.close(this.mk('Camera', t, { value: this.expr() })); }
+      case 'SETWORLD': {
+        this.next();
+        const x = this.expr(); this.expectSym(',', "expected ',' : SETWORLD x, y = t");
+        const y = this.addExpr();   // like TILE's y: a comparison would swallow the '='
+        this.expectSym('=', "expected '=' and the tile: SETWORLD x, y = t");
+        const value = this.expr();
+        return this.close(this.mk('SetWorld', t, { x, y, value }));
+      }
+      case 'WINDOW': this.fail(t, 'WINDOW must be at the top level, outside any PROC');
+      // falls through (fail throws)
       case 'HIDE': { this.next(); return this.close(this.mk('Hide', t, { sprite: this.spriteRef() })); }
       case 'PLAY': { this.next(); return this.close(this.mk('Play', t, { sfx: this.nameRef('a sound effect name') })); }
       case 'ENTER': { this.next(); return this.close(this.mk('Enter', t, { scene: this.nameRef('a scene name', true) })); }
@@ -606,6 +651,7 @@ class Parser {
       }
       default:
         if (t.value === 'AT' || t.value === 'TAB') this.fail(t, `${t.text} is not a statement: it only follows PRINT${t.value === 'AT' ? ' or SHOW' : ''}, e.g. PRINT AT 1, 2; "text"`);
+        if (t.value === 'BAND' && !isSym(this.peek(1), '(')) this.fail(t, 'BAND rows, num, den declares a window band: it must be at the top level, outside any PROC');
         if (FUNCTIONS.has(t.value)) this.fail(t, `${t.text} is a function: it gives a value and cannot be a statement`);
         this.fail(t, `${t.text} cannot start a statement here`);
     }
@@ -697,10 +743,18 @@ class Parser {
     this.expectKw('AT', 'expected AT: SHOW sprite AT x, y');
     const x = this.expr(); this.expectSym(',', "expected ',' : SHOW sprite AT x, y");
     const y = this.expr();
-    let frame = null;
-    const f = this.peek();
-    if (f.type === 'ident' && f.value === 'FRAME') { this.next(); frame = this.expr(); }
-    return this.close(this.mk('Show', t, { sprite, x, y, frame }));
+    let frame = null, flip = false;
+    for (;;) {     // FRAME f and FLIP, in either order, each at most once (FLIP: language batch 2)
+      const f = this.peek();
+      if (f.type === 'ident' && f.value === 'FRAME') {
+        if (frame) this.fail(f, 'a SHOW has at most one FRAME clause');
+        this.next(); frame = this.expr();
+      } else if (f.type === 'ident' && f.value === 'FLIP') {
+        if (flip) this.fail(f, 'a SHOW has at most one FLIP');
+        this.next(); flip = true;
+      } else break;
+    }
+    return this.close(this.mk('Show', t, { sprite, x, y, frame, flip }));
   }
 
   callStmt() {
@@ -937,7 +991,7 @@ class Parser {
         const f = FUNCTIONS.get(t.value);
         if (f) {
           this.next();
-          if (!isSym(this.peek(), '(')) this.fail(this.peek(), `${t.text} needs brackets: ${f.syntax}`);
+          if (!isSym(this.peek(), '(')) this.fail(this.peek(), `${t.text} needs brackets: ${f.callSyntax ?? f.syntax}`);
           this.next();
           const args = [];
           if (!isSym(this.peek(), ')')) {

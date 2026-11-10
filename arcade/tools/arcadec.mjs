@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // arcadec.mjs -- Leap Arcade command-line compiler (milestones M2 and M3).
-//   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime v0|v1|v2|v3|<dir or runtime.json>] [-o out.dck]
+//   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime auto|v0|v1|v2|v3|<dir or runtime.json>] [-o out.dck]
 // Compiles with src/lang/arcade/arcade-compile.js against a runtime build: --runtime v0 (the default) is
 // arcade/build/runtime.json + runtime.bin (build them first: node arcade/tools/build-runtime.mjs); --runtime v1 is
 // arcade/build/v1/runtime.json + runtime.bin (text, tiles, collision, sound; runtime API v1); any other value is a
@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compile } from '../../src/lang/arcade/arcade-compile.js';
+import { compile, requiredRuntime } from '../../src/lang/arcade/arcade-compile.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILD = join(HERE, '../build');
@@ -40,6 +40,11 @@ if (src === null) usage('no source file');
 const srcPath = resolve(src);
 const text = readFileSync(srcPath, 'utf8');
 const assets = assetsFile ? JSON.parse(readFileSync(resolve(assetsFile), 'utf8')) : { sprites: {} };
+if (runtimeArg === 'auto') {      // the compiler's own choice: v3 when the program uses window / frame / big-sprite features, else v2
+  const need = requiredRuntime(text, assets);
+  runtimeArg = need.version === 3 ? 'v3' : 'v2';
+  console.log(`runtime ${runtimeArg}${need.reasons.length ? ` (${need.reasons.join('; ')})` : ''}`);
+}
 const rtJson = runtimeArg === 'v0' ? join(BUILD, 'runtime.json')
   : runtimeArg === 'v1' ? join(BUILD, 'v1/runtime.json')
   : runtimeArg === 'v3' ? join(BUILD, 'v3/runtime.json') : runtimeArg === 'v2' ? join(BUILD, 'v2/runtime.json')

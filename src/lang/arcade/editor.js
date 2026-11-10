@@ -78,6 +78,8 @@ function classify(toks, i, atStart) {
     // a familiar word Arcade lacks (GOTO, LET, ...) where a statement should start
     if (atStart && NOT_IN_ARCADE.has(t.value) && !(toks[i + 1]?.type === 'op' && toks[i + 1].text === '=') && !(toks[i + 1]?.type === 'punct' && toks[i + 1].text === '(')) return 'invalid';
     if (atStart && (t.value === 'FRAME' || t.value === 'INIT')) return 'procUse';
+    // the clauses of SHOW (FRAME f, FLIP) are words there, ordinary names elsewhere (language batch 2)
+    if ((t.value === 'FRAME' || t.value === 'FLIP') && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'SHOW')) return 'packageKeyword';
     return 'variableName';
   }
   default: return null;

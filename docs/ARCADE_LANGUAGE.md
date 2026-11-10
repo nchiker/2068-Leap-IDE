@@ -101,3 +101,9 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
   0..w and j 0..h, flat slot i * (h + 1) + j, each index checked on its own, w and h at least 1, at most 1000 slots; `FILL` ignores a tile outside the
   tileset and `FILLC` a character outside 32..127; `RANDOMISE n` seeds n AND $FFFF (0 becomes 1); `LOADMAP` gives a font cell the attribute $38. Slots of
   different PROCs are not shared. New reserved words: CONST LOCAL FILL FILLC COPY LOADMAP BAND BOR BXOR BNOT SHL SHR.
+* 0.2 (2026-11-09, language batch 2, the platformer slice; contract `docs/ARCADE_PLATFORMER_CONTRACT.md`, decisions `docs/ARCADE_LANGUAGE_BATCH2.md`, tests `tests/arcade-m6-compiler.mjs`): `WINDOW map [AT cx, cy]`
+  and `BAND rows, num, den` (top level; BAND is also still the bit function `BAND(a, b)`), `CAMERA x`, `CAMX()`, `SETWORLD x, y = t`, `WORLDTILE(x, y)`, `TILEFLAGS(x, y)`, `TILEHIT(x, y, w, h, mask)`, `SOLID(x, y, w, h)`,
+  and `SHOW s AT x, y [FRAME f] [FLIP]` with FRAME and FLIP compiled (FLIP is a contextual word). Sprites of 8..32 x 1..48 pixels with frames (the compiler appends the mirrored frames to an asset used with FLIP),
+  per-tile `flags` from the tileset, a world map of 24..128 x 1..16 cells with tiles 0..31. Needs the v3 runtime; a pre-v3 runtime refuses the new words with a clear error. New reserved words: WINDOW CAMERA
+  SETWORLD CAMX WORLDTILE TILEFLAGS TILEHIT SOLID. Decisions where the contract was silent are in the batch 2 file (for example the corner rule of TILEFLAGS, `TILEHIT` with w or h <= 0, SETWORLD in pixels with the tile checked by
+  the compiler, which frames are compiled, the phase-memory estimate and `PHASE_POOL_BYTES`).

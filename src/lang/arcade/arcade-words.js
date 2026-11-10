@@ -18,8 +18,10 @@
  *            in the source and looked up when the game is built, checked by the checker itself)
  *   min      the number of required arguments
  *   ret      functions only: 'num' | 'str'
- *   reserved false for a contextual word (FRAME, INIT): it is an ordinary name everywhere except where the
+ *   reserved false for a contextual word (FRAME, FLIP, INIT): it is an ordinary name everywhere except where the
  *            grammar expects it, so `PROC FRAME()` works.
+ *   callSyntax  optional: what the parser quotes when the word is used as a function without brackets (BAND is also a top-level
+ *            statement in language batch 2, so its `syntax` shows both forms).
  *
  * Choices made where docs/ARCADE_LANGUAGE.md is silent (also listed in arcade-parse.js):
  *   - MOD and DIV are infix operators here (V2 has them as functions MOD(a,b) / DIV(a,b)); the call form is gone.
@@ -37,6 +39,10 @@
  *     and the six bit functions are RESERVED now: a program that used one of them as a variable name must rename it. FILL was in
  *     NOT_IN_ARCADE; it is a real word now. Asset names (SPRITE, SFX, TILESET, MAP) live in their own namespaces, apart from variables,
  *     PROCs and DEF FNs (arcade-check.js).
+ *   - (language batch 2, docs/ARCADE_PLATFORMER_CONTRACT.md sections 3b/4/7, docs/ARCADE_LANGUAGE_BATCH2.md) WINDOW, CAMERA, SETWORLD and the
+ *     functions CAMX WORLDTILE TILEFLAGS TILEHIT SOLID are RESERVED; BAND was reserved by batch 1 as a bit function and is now also the top-level
+ *     statement `BAND rows, num, den` (the position tells them apart: a statement starts a line, the function is always followed by a bracket).
+ *     FLIP is contextual like FRAME (`SHOW s AT x, y FRAME f FLIP`), so a variable called `flip` keeps working.
  */
 
 "use strict";
@@ -62,6 +68,16 @@ export const LIMITS = Object.freeze({
   maxTile: 127,       // tile index 0..127
   maxSfx: 8,          // SFX declarations
   maxPrintChar: 127,  // string literals printed with PRINT: character codes 32..127
+  // language batch 2 (the scrolling window, docs/ARCADE_PLATFORMER_CONTRACT.md)
+  winCols: 24,        // the window is 24 x 16 cells
+  winRows: 16,
+  maxWinCell: 8,      // WINDOW AT cx, cy: both 0..8 (24 + 8 = 32, 16 + 8 = 24)
+  minWorldW: 24,      // the world map: 24..128 cells wide, 1..16 tall, tiles 0..31
+  maxWorldW: 128,
+  maxWorldH: 16,
+  maxWorldTile: 31,
+  maxBands: 4,
+  maxFrames: 32,      // frames of a sprite asset after the mirrored copies of FLIP
 });
 
 /** FRAMERATE values: 60 / n must be a whole number of refreshes. */
@@ -88,6 +104,7 @@ function W(name, cls, syntax, desc, extra = {}) {
     min: args.filter(a => !a.optional).length,
     ret: extra.ret ?? null,
     reserved: extra.reserved !== false,
+    callSyntax: extra.callSyntax ?? null,
   });
 }
 
@@ -102,11 +119,14 @@ const WORD_LIST = [
   W('SCENE', 'game', 'SCENE name ... ENDSCENE', 'A game part with its own PROC INIT and PROC FRAME. May hold DIM, DEF FN and PROC.'),
   W('ENDSCENE', 'structure', 'ENDSCENE', 'Ends a SCENE.'),
   W('ENTER', 'game', 'ENTER scene', 'Switch to another scene (its INIT runs, then its FRAME every tick).'),
-  W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f]  /  SHOW pool(i) AT x, y', 'Place a sprite (or the instance i of a pool) at a pixel position (y from the top); FRAME picks the animation frame. An instance number outside the pool is ignored.'),
+  W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f] [FLIP]  /  SHOW pool(i) AT x, y', 'Place a sprite (or the instance i of a pool) at a pixel position (y from the top). FRAME f picks the animation frame (0 is the first frame of the sprite asset; without FRAME the instance keeps the frame it had, 0 at the start); FLIP draws the frame mirrored left to right. FRAME, FLIP, sprites wider or taller than 16 pixels, and a WINDOW need the v3 runtime. In a WINDOW game x and y are world pixels (x from the left of the world, y from the top of the window) and are not clamped; a sprite that is not wholly inside the window is not drawn. An instance number outside the pool is ignored.'),
   W('AT', 'structure', 'AT row, col  (after PRINT) / AT x, y  (after SHOW)', 'A position: character row and column after PRINT, pixels after SHOW.'),
   W('HIDE', 'game', 'HIDE sprite  /  HIDE pool(i)', 'Remove a sprite (or the instance i of a pool) from the screen. An instance number outside the pool is ignored.'),
   W('PLAY', 'game', 'PLAY sfx', 'Start a sound effect by its SFX name (it replaces the one playing).'),
   W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing.'),
+  W('WINDOW', 'game', 'WINDOW map [AT cx, cy]', 'Top level, once: use the declared MAP as a scrolling world shown in a window of 24 x 16 cells (192 x 128 pixels) at screen cell (cx, cy) (default 4, 4; both constants 0..8). The map is 24..128 cells wide and 1..16 tall and uses the tiles 0..31 of the TILESET (tile 0 should be blank: the sky). The cells of the screen outside the window stay yours (HUD text and tiles); cells inside it are repainted from the world every tick. SHOW uses world pixel coordinates. Needs the v3 runtime.'),
+  W('CAMERA', 'game', 'CAMERA x', 'Set the camera: the world x (in pixels) at the left edge of the window. The value is clamped to 0..the largest value the world allows (the world width x 8 - 192, halved when a BAND scrolls at 2/1). CAMX() reads the clamped value. Needs a WINDOW.'),
+  W('SETWORLD', 'game', 'SETWORLD x, y = t', 'Change one cell of the world: the cell that contains the world pixel (x, y) becomes tile t (0..31, a tile of the TILESET); a cell outside the world, or a tile outside the tileset, is ignored. The picture follows on the next tick. Collision words see the new tile at once. Needs a WINDOW.'),
   W('LOADMAP', 'game', 'LOADMAP map  /  LOADMAP map AT x, y', 'Copy the whole of a declared MAP (its w x h cells) onto the screen cells, at the top-left or at cell (x, y); the part that falls outside the 32 x 24 screen is clipped, cells outside the map are left alone. Each tile cell takes its tile\'s colours. A game may declare up to 8 maps; the first one is loaded when the game starts.'),
   W('FILL', 'game', 'FILL x, y, w, h = t', 'Set the w x h screen cells from column x, row y to tile t (0..127 of the TILESET), each with the tile\'s colours. The rectangle is clipped to the 32 x 24 screen; a w or h of 0 or less does nothing. Much cheaper than a TILE loop.'),
   W('FILLC', 'game', 'FILLC x, y, w, h = c', 'Like FILL with the font character c (32..127) and the current text colours (INK, PAPER, BRIGHT). FILLC 0, 0, 32, 24 = 32 blanks the screen cells (CLS also resets the cursor).'),
@@ -163,12 +183,17 @@ const WORD_LIST = [
 
   // ── Functions (always written with brackets) ──
   W('HIT', 'function', 'HIT(a, b)', '1 if both sprites (names, or pool(i) instances) are shown and their collision boxes (the sprite\'s hot box, else its whole size) overlap, else 0. Boxes that only touch do not overlap. An instance number outside its pool gives 0.', { args: ['a:sprite', 'b:sprite'], ret: 'num' }),
-  W('BAND', 'function', 'BAND(a, b)', 'The bits set in both a and b (16 bit). AND is logical (0 or 1); BAND is bitwise.', { args: ['a:num', 'b:num'], ret: 'num' }),
+  W('BAND', 'function', 'BAND(a, b)  /  BAND rows, num, den  (a window band, top level)', 'BAND(a, b): the bits set in both a and b (16 bit). AND is logical (0 or 1); BAND is bitwise. As a statement at the top level, BAND rows, num, den declares one scrolling band of a WINDOW (1 to 4 of them, in order from the top of the window): the band is `rows` cell rows tall (the rows of all BANDs add up to 16) and scrolls at num/den of the camera speed: 0/1 (fixed), 1/4, 1/2, 1/1 or 2/1. Band k shows the rows of the world map that follow the rows of the bands above it. Without BAND the window is one band of 16 rows at 1/1.', { args: ['a:num', 'b:num'], ret: 'num', callSyntax: 'BAND(a, b)' }),
   W('BOR', 'function', 'BOR(a, b)', 'The bits set in a or b (16 bit). OR is logical (0 or 1); BOR is bitwise.', { args: ['a:num', 'b:num'], ret: 'num' }),
   W('BXOR', 'function', 'BXOR(a, b)', 'The bits set in exactly one of a and b (16 bit).', { args: ['a:num', 'b:num'], ret: 'num' }),
   W('BNOT', 'function', 'BNOT(a)', 'Every bit of a flipped (16 bit): BNOT(0) is -1. NOT is logical (0 or 1); BNOT is bitwise.', { args: ['a:num'], ret: 'num' }),
   W('SHL', 'function', 'SHL(a, n)', 'a shifted left by n bits (16 bit); 0 when n is outside 0..15. A constant n is a few inline instructions; a run-time n costs about 50 + 24 x n T-states.', { args: ['a:num', 'n:num'], ret: 'num' }),
   W('SHR', 'function', 'SHR(a, n)', 'a shifted right by n bits, keeping the sign (arithmetic shift): SHR(-8, 1) is -4. When n is outside 0..15 the result is 0 for a non-negative a and -1 for a negative one. A run-time n costs about 50 + 29 x n T-states.', { args: ['a:num', 'n:num'], ret: 'num' }),
+  W('CAMX', 'function', 'CAMX()', 'The camera in world pixels, as clamped by CAMERA (0 at the start). Needs a WINDOW.', { args: [], ret: 'num' }),
+  W('WORLDTILE', 'function', 'WORLDTILE(x, y)', 'The tile (0..31) of the world cell that contains the world pixel (x, y), x from the left of the world, y from the top of the window; 0 outside the world. Needs a WINDOW.', { args: ['x:num', 'y:num'], ret: 'num' }),
+  W('TILEFLAGS', 'function', 'TILEFLAGS(x, y)', 'The flags byte (bit 0 solid, 1 hazard, 2 pickup, 3 ladder / one-way, 4..7 yours; set per tile in the tileset) of the world cell at the world pixel (x, y). Outside the world it is 1 (solid) on the left, the right and above, and 0 below. Needs a WINDOW.', { args: ['x:num', 'y:num'], ret: 'num' }),
+  W('TILEHIT', 'function', 'TILEHIT(x, y, w, h, mask)', 'The flags of every world cell the rectangle x..x+w-1, y..y+h-1 touches, ANDed with mask, ORed together: 0 when nothing in the rectangle has a flag of the mask (a w or h of 0 or less touches nothing). Cells outside the world count as in TILEFLAGS. Needs a WINDOW.', { args: ['x:num', 'y:num', 'w:num', 'h:num', 'mask:num'], ret: 'num' }),
+  W('SOLID', 'function', 'SOLID(x, y, w, h)', 'TILEHIT(x, y, w, h, 1): 1 when any cell the rectangle touches is solid (flag bit 0), else 0. Needs a WINDOW.', { args: ['x:num', 'y:num', 'w:num', 'h:num'], ret: 'num' }),
   W('BIT', 'function', 'BIT(v, n)', '1 if bit n (0..15) of v is set, else 0.', { args: ['v:num', 'n:num'], ret: 'num' }),
   W('STICK', 'function', 'STICK(n)', 'Joystick 1 or 2 as bits 0..4 (directions, fire = 16).', { args: ['n:num'], ret: 'num' }),
   W('KEYDOWN', 'function', 'KEYDOWN("Q")  /  KEYDOWN(code)', '1 while that key is held, else 0. The key is a one-character string or an ASCII code written as a number (not an expression): A-Z (upper case), 0-9, space (32), enter (13); 1 is CAPS SHIFT and 2 is SYMBOL SHIFT. It is looked up when the game is built. Needs a v2 runtime.', { args: ['code:key'], ret: 'num' }),
@@ -185,6 +210,7 @@ const WORD_LIST = [
 
   // ── Contextual words (not reserved) ──
   W('FRAME', 'game', 'SHOW s AT x, y FRAME f   /   PROC FRAME()', 'Animation frame clause of SHOW; also the name of the per-tick scene procedure.', { reserved: false }),
+  W('FLIP', 'game', 'SHOW s AT x, y [FRAME f] FLIP', 'Draw the frame mirrored left to right. The compiler adds a mirrored copy of every frame of the sprite asset (so the asset may have at most 16 frames); the collision box of the asset is not mirrored.', { reserved: false }),
   W('INIT', 'game', 'PROC INIT()', 'The scene procedure that runs once when the scene starts.', { reserved: false }),
 ];
 
