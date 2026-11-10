@@ -37,6 +37,7 @@ import { convertSpriteV3 } from '../src/lang/arcade/arcade-assets.js';
 import * as WIN from '../src/lang/arcade/arcade-window.js';
 import { rng, ASSETS, PROGRAMS, worldModel, diffV3, TILE_FLAGS } from './arcade-m6-common.mjs';
 import { compileMock, runMock, mockRuntime, ADDR } from './arcade-m6-mock.mjs';
+import { planPool, poolNeed } from '../arcade/tests/m6-common.mjs';        // the runtime's JS reference of the phase-pool plan (only to compare the compiler's port with)
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -260,15 +261,37 @@ console.log('\n3. Data builders: ratios, cam_max, tables, flags, world maps, v3 
   check_('16 frames with FLIP (32) and 32 frames without are accepted', one({ w: 8, h: 1, frames: Array.from({ length: 16 }, () => ({ rows: [{ bits: 1 }] })) }, { allFrames: true, flip: true }).nframes === 32 && one({ w: 8, h: 1, frames: Array.from({ length: 32 }, () => ({ rows: [{ bits: 1 }] })) }, { allFrames: true }).nframes === 32);
   check_('a frame with the wrong number of rows is refused with its number', (() => { try { one({ w: 8, h: 2, frames: [fr('81'), { rows: [{ bits: 1 }] }] }, { allFrames: true }); return false; } catch (e) { return /frame 1 has 1 rows/.test(e.message); } })());
 
-  // phase memory
-  const ref = [
-    { w: 16, h: 24, phases: 4, nframes: 16, instances: 1 }, { w: 16, h: 16, phases: 4, nframes: 4, instances: 3 }, { w: 16, h: 16, phases: 4, nframes: 2, instances: 3 },
-    { w: 8, h: 8, phases: 8, nframes: 4, instances: 4 }, { w: 8, h: 8, phases: 8, nframes: 1, instances: 1 },
-  ];
-  const pc = WIN.phaseCost(ref);
-  check_('phase cost (placeholder formula h * 2 * (w/8 + (shift > 0))): the player 16 x 24, 4 phases is 528 bytes per frame', pc.perAsset[0].bytesPerFrame === 528 && pc.perAsset[1].bytesPerFrame === 352 && pc.perAsset[3].bytesPerFrame === 240);
-  info(`reference art set of the contract: ${pc.eager} bytes if every frame of every sprite is kept in every phase, ${pc.lazy} bytes with a cache of the current frame per instance; the contract says about 5,600 are available`);
-  check_('the reference art set fits 5,600 only as a per-instance cache (the eager figure exceeds it): both numbers are reported', pc.lazy <= 5600 && pc.eager > 5600);
+  // phase memory: the runtime's plan (docs/ARCADE_RUNTIME_API_V3.md), ported in arcade-window.js, equal to planPool() of arcade/tests/m6-common.mjs
+  {
+    const r = rng(0x9001);
+    const ri = (lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+    let diffs = 0, okN = 0, failN = 0, partial = 0, first = '';
+    for (let n = 0; n < 500; n++) {
+      const na = ri(1, 8);
+      const assets = Array.from({ length: na }, () => ({ w: 8 * ri(1, 4), h: ri(1, 48), phases: [1, 2, 4, 8][ri(0, 3)], nframes: ri(1, 32), instances: r() < 0.15 ? 0 : ri(1, 5) }));
+      const pieces = r() < 0.5 ? WIN.DEFAULT_POOL_PIECES : [[0xC080, ri(0, 5000)], [0xF200, ri(0, 3000)], [0xD700, ri(0, 400)]];
+      const mine = WIN.planPhasePool(assets, pieces);
+      const ref = assets.map((a) => ({ nf: a.nframes, phases: a.phases, slen: (a.phases - 1) * a.h * 2 * (a.w / 8 + 1) }));
+      const want = planPool(ref, assets.map((a) => a.instances), pieces);
+      const need = poolNeed(ref, assets.map((a) => a.instances));
+      if (mine.ok !== want.ok || mine.miss !== want.miss || mine.K.join() !== want.K.join() || mine.need !== need) { diffs++; first ||= `set ${n}: ${JSON.stringify({ mine: [mine.ok, mine.miss, mine.K, mine.need], want: [want.ok, want.miss, want.K, need] })}`; }
+      if (mine.ok) { okN++; if (assets.some((a, k) => a.phases > 1 && a.instances > 0 && mine.K[k] < a.nframes)) partial++; } else failN++;
+    }
+    check_('planPhasePool equals planPool() of the runtime tests (ok, miss, K per asset, the fragmentation-free need) for 500 random asset sets', diffs === 0, `${diffs} differ ${first}; ${okN} fit (${partial} with an uncached frame), ${failN} do not`);
+    check_('... and the random sets cover all three outcomes (fully cached, partly cached, boot failure)', okN - partial > 20 && partial > 20 && failN > 20, `${okN - partial} / ${partial} / ${failN}`);
+    check_('the pieces come from runtime.json (POOL_A / B / C and their lengths), with the real build\'s as the default', WIN.poolPieces({}).map((p) => p.join(':')).join() === '49280:3456,61952:2176,55040:256' && WIN.poolPieces({ POOL_B: 1, POOL_B_LEN: 2 })[1].join() === '1,2');
+    // the contract's reference art set at the phases the runtime document names: fully cached
+    const set = [
+      { w: 16, h: 24, phases: 2, nframes: 16, instances: 1 }, { w: 16, h: 16, phases: 4, nframes: 4, instances: 3 }, { w: 16, h: 16, phases: 4, nframes: 2, instances: 3 },
+      { w: 8, h: 8, phases: 8, nframes: 4, instances: 4 }, { w: 8, h: 8, phases: 8, nframes: 1, instances: 1 },
+    ];
+    const pl = WIN.planPhasePool(set);
+    check_('the contract\'s reference art set (player 2 / walker 4 / flyer 4 / coin 8 / shot 8 phases) is fully cached: K = nframes for every asset', pl.ok && pl.K.join() === '16,4,2,4,1', pl.K.join());
+    const set4 = [{ ...set[0], phases: 4 }, ...set.slice(1)];
+    check_('with the player at 4 phases only part of its 16 frames stay cached (K = 6, as the runtime document says); the rest stay cached', WIN.planPhasePool(set4).K.join() === '6,4,2,4,1', WIN.planPhasePool(set4).K.join());
+    check_('the build-time estimate follows the measured table (8x8/8 about 14,250, 16x24/4 about 32,088 T), scaled by area x (phases - 1)', Math.abs(WIN.buildFrameT(8, 8, 8) - 14250) < 6000 && Math.abs(WIN.buildFrameT(16, 24, 4) - 32088) < 8000 && WIN.buildFrameT(32, 48, 8) > WIN.buildFrameT(16, 24, 4) * 4);
+    info(`build estimates: 8x8/8 ${WIN.buildFrameT(8, 8, 8)}, 16x16/4 ${WIN.buildFrameT(16, 16, 4)}, 16x24/4 ${WIN.buildFrameT(16, 24, 4)}, 32x32/4 ${WIN.buildFrameT(32, 32, 4)} T`);
+  }
 }
 
 // =================================================================================================================
@@ -495,16 +518,31 @@ const w16 = (a) => MEM[a] | (MEM[a + 1] << 8);
   check_('the link report: GAME_VARS used vs available come from runtime.json (3 slots = 6 of 2,048)', fit.usage.gameVars.used === fit.usage.varBytes && fit.usage.gameVars.available === ADDR.GAME_VARS_LIMIT - ADDR.GAME_VARS_BASE + 1 && fit.usage.gameVars.available === 2048);
   const smallRt = cm(prog('    v = 1', { decl: 'DIM v, w, k, big(1000)' }), ASSETS, { GAME_VARS_LIMIT: 0xE200 + 1999 });
   check_('GAME_VARS out of space: the error gives the byte counts (from runtime.json, not hard-coded)', smallRt.errors.length === 1 && /too many variables.*1004 slots need 2008 bytes.*allows 2000/.test(smallRt.errors[0].message), errText(smallRt));
-  check_('the link report: phase memory needed (every frame kept, and the current frame of each instance kept) vs the runtime constant PHASE_POOL_BYTES (default 5,600)', fit.usage.phaseRam.available === 5600 && fit.usage.phaseRam.needed > 0 && fit.usage.phaseRam.lazy > 0 && fit.usage.phaseRam.perAsset.length === 2);
+  check_('the link report: phase memory (at least N of the pool, the frame slots K/nframes per asset)', fit.usage.phaseRam.available === 5888 || fit.usage.phaseRam.available === 3456 + 2176 + 256, String(fit.usage.phaseRam.available));
+  check_('... PHASE_POOL_BYTES of runtime.json is the capacity reported', cm(prog('    v = 1'), ASSETS, { PHASE_POOL_BYTES: 5888 }).usage.phaseRam.available === 5888 && cm(prog('    v = 1'), ASSETS, { PHASE_POOL_BYTES: 1234 }).usage.phaseRam.available === 1234);
   const ph = cm(PLAT);
-  check_('the platformer\'s art needs more than 5,600 with every frame kept: a WARNING says it fits only with the per-instance cache; it still compiles', ph.errors.length === 0 && ph.warnings.some((w) => /sprite phase memory.*the game fits only with the second design/.test(w.message)), ph.warnings.map((w) => w.message).join(' | '));
-  const phBig = cm(PLAT, ASSETS, { PHASE_POOL_BYTES: 40000 });
-  check_('with PHASE_POOL_BYTES raised there is no phase warning (the constant is read from runtime.json)', phBig.errors.length === 0 && !phBig.warnings.some((w) => /phase memory/.test(w.message)) && phBig.usage.phaseRam.available === 40000);
-  const phSmall = cm(PLAT, ASSETS, { PHASE_POOL_BYTES: 600 });
-  check_('with PHASE_POOL_BYTES lower than even one frame per instance the link FAILS and gives the bytes missing', phSmall.errors.length === 1 && /does not fit in phase memory.*every frame kept in every phase, or \d+ with the current frame of each instance kept, and the runtime has 600 \(\d+ missing/.test(phSmall.errors[0].message) && !phSmall.dck, errText(phSmall));
+  const pw = ph.warnings.filter((w) => /frames stay cached/.test(w.message));
+  check_('the platformer: the 16-frame player at 8 phases cannot stay cached: ONE warning for it, naming the asset, K of N, the estimate and the advice, at the SPRITE line', ph.errors.length === 0 && pw.length === 1 && /^asset p: only \d+ of 16 frames stay cached; a frame that is not cached is built when first drawn \(about \d+ cycles for this size\) which can overrun the tick; use fewer phases \(phases 2 or 1\) or fewer frames$/.test(pw[0].message) && pw[0].line === 5, pw.map((w) => w.line + ' ' + w.message).join(' | '));
+  const poolBad = cm(PLAT, ASSETS, { POOL_A_LEN: 100, POOL_B_LEN: 100, POOL_C_LEN: 100 });
+  const planBad = WIN.planPhasePool([{ w: 16, h: 24, phases: 8, nframes: 16, instances: 1 }, { w: 8, h: 8, phases: 8, nframes: 4, instances: 4 }, { w: 16, h: 16, phases: 8, nframes: 1, instances: 2 }], [[0, 100], [0, 100], [0, 100]]);
+  check_('a pool too small for the frame tables and one slot per instance: the link FAILS, N bytes of art do not fit (the runtime\'s FC_MISS), no cartridge', poolBad.errors.length === 1 && /^\d+ bytes of sprite art do not fit in the phase pool.*magenta border/.test(poolBad.errors[0].message) && !poolBad.dck, errText(poolBad));
+  const refSet = {
+    sprites: {
+      player: { w: 16, h: 24, phases: 2, frames: Array.from({ length: 8 }, () => ({ rows: Array.from({ length: 24 }, () => ({ bits: 'FFFF' })) })) },
+      walker: { w: 16, h: 16, phases: 4, frames: Array.from({ length: 2 }, () => ({ rows: Array.from({ length: 16 }, () => ({ bits: 'FFFF' })) })) },
+      flyer: { w: 16, h: 16, phases: 4, frames: Array.from({ length: 2 }, () => ({ rows: Array.from({ length: 16 }, () => ({ bits: 'FFFF' })) })) },
+      coin: { w: 8, h: 8, phases: 8, frames: Array.from({ length: 4 }, () => ({ rows: Array.from({ length: 8 }, () => ({ bits: 'FF' })) })) },
+      shot: { w: 8, h: 8, phases: 8, rows: Array.from({ length: 8 }, () => ({ bits: 'FF' })) },
+    },
+  };
+  const refSrc = prog('    SHOW pl AT 1, 1 FRAME k FLIP\n    SHOW wk(k) AT 1, 1 FRAME k FLIP\n    SHOW fl(k) AT 1, 1 FRAME k\n    SHOW cn(k) AT 1, 1 FRAME k\n    SHOW sh AT 1, 1', { sprites: 'SPRITE pl = "player"\nSPRITE wk(3) = "walker"\nSPRITE fl(3) = "flyer"\nSPRITE cn(4) = "coin"\nSPRITE sh = "shot"\n' });
+  const refRes = cm(refSrc, withAssets(refSet));
+  check_('compiled: the reference art set (player 2 / walker 4 / flyer 4 / coin 8 / shot 8 phases, FLIP on player and walker) links with K = nframes for every asset and no cache warning', refRes.errors.length === 0 && refRes.usage.phaseRam.K.join() === '16,4,2,4,1' && !refRes.warnings.some((w) => /stay cached/.test(w.message)), errText(refRes) + ' ' + refRes.warnings.map((w) => w.message).join(' | ') + ' K=' + refRes.usage.phaseRam?.K);
+  const refPlan = planPool([[16, 24, 2, 16], [16, 16, 4, 4], [16, 16, 4, 2], [8, 8, 8, 4], [8, 8, 8, 1]].map(([w, h, ph, nf]) => ({ nf, phases: ph, slen: (ph - 1) * h * 2 * (w / 8 + 1) })), [1, 3, 3, 4, 1], WIN.DEFAULT_POOL_PIECES);
+  check_('... and equals planPool() of the runtime tests for it', refPlan.ok && refPlan.K.join() === refRes.usage.phaseRam.K.join());
   // the game area
   const manyFrames = withAssets({ sprites: { player: { w: 32, h: 48, frames: Array.from({ length: 32 }, () => ({ rows: Array.from({ length: 48 }, () => ({ bits: 'FFFFFFFF' })) })) } } });
-  const big = cm(prog('    SHOW p AT 1, 1 FRAME 3', { sprites: 'SPRITE p = "player"\n' }), manyFrames, { PHASE_POOL_BYTES: 1e9 });
+  const big = cm(prog('    SHOW p AT 1, 1 FRAME 3', { sprites: 'SPRITE p = "player"\n' }), manyFrames);
   check_('32 frames of a 32 x 48 sprite (12 KB of data) plus the window data: the linker fails and says how many bytes too many', big.errors.length === 1 && /the game does not fit.*too many/.test(big.errors[0].message) && !big.dck, errText(big));
 }
 
@@ -514,7 +552,8 @@ const w16 = (a) => MEM[a] | (MEM[a + 1] << 8);
 console.log('\n6. Compiled code on the mock v3 runtime vs the reference interpreter');
 const interpFor = (src, ticks, stick, o = {}) => interpret(parse(src).ast, { version: 3, ticks, assets: ASSETS, stick, maxSteps: 2_000_000_000, rnd: undefined, ...o });
 {
-  for (const p of PROGRAMS) {
+  // the acceptance game (needsFullRuntime: KEYDOWN, FILLC, PLAY, PRINT ...) is not for the mock: tests/arcade-m6-platformer.mjs and the differential test (real runtime only) run it
+  for (const p of PROGRAMS.filter((q) => !q.needsFullRuntime)) {
     const res = cm(p.src);
     if (!check_(`${p.name}: compiles`, res.errors.length === 0, errText(res))) continue;
     const got = runMock(res, { ticks: p.ticks, stick: p.stick });
@@ -527,6 +566,25 @@ const interpFor = (src, ticks, stick, o = {}) => interpret(parse(src).ast, { ver
       const changed = want.ticks[p.ticks - 1].worldRam.reduce((n, b, i) => n + (b !== want.init.worldRam[i] ? 1 : 0), 0);
       check_('the platformer actually scrolls, changes the world, uses frames and mirrored frames (the run is not trivial)', Math.max(...cams) > 40 && changed >= 2 && [...frames].some((f) => f >= 12) && [...frames].some((f) => f >= 1 && f < 8) && want.ticks.some((t) => t.vars.SCORE !== 0), `max camera ${Math.max(...cams)}, ${changed} cells changed, frames ${[...frames].join()}`);
       info(`the platformer's PROC FRAME takes ${Math.min(...got.tstates)}..${Math.max(...got.tstates)} T-states on the mock (traps cost nothing); code ${res.usage.code} bytes, game ${res.usage.total} of ${res.usage.total + res.usage.free}`);
+    }
+  }
+}
+
+// the acceptance game on the v3 build in the tree (window routines that the build lacks yet are given placeholder addresses: this checks the size and the phase pool, not the run)
+{
+  const p3 = join(ROOT, 'arcade/build/v3/runtime.json'), src = join(ROOT, 'arcade/examples/platformer.arc'), as = join(ROOT, 'arcade/examples/platformer.assets.json');
+  if (!existsSync(p3) || !existsSync(src) || !existsSync(as)) info('SKIP: arcade/build/v3 or arcade/examples/platformer.arc does not exist');
+  else {
+    const rt = JSON.parse(readFileSync(p3, 'utf8')), img = new Uint8Array(readFileSync(join(dirname(p3), rt.image ?? 'runtime.bin')));
+    const stubbed = ['RT_CAMERA', 'RT_WORLDTILE', 'RT_TILEFLAGS', 'RT_TILEHIT', 'RT_SETWORLD', 'RT_SHOWF'].filter((n) => rt.symbols[n] === undefined);
+    for (const n of stubbed) rt.symbols[n] = 0xC000;
+    const res = compile(readFileSync(src, 'utf8'), { runtime: rt, image: img, assets: JSON.parse(readFileSync(as, 'utf8')) });
+    info(`platformer.arc on arcade/build/v3${stubbed.length ? ` (stubbed: ${stubbed.join(' ')})` : ''}: ${res.usage ? `game area ${res.usage.gameArea.used} of ${res.usage.gameArea.available} bytes, ${res.usage.gameArea.free} free` : 'no link'}`);
+    check_('platformer.arc compiles on the v3 build with no errors and no warnings', res.errors.length === 0 && res.warnings.length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
+    if (res.usage) {
+      const u = res.usage;
+      check_('... and fits the 16 KB game area (code + data + frames + window data + scroll tables)', u.gameArea.used <= u.gameArea.available && u.gameArea.free >= 0, `${u.gameArea.used} of ${u.gameArea.available}`);
+      check_('... and every multi-phase asset keeps all its frames cached (K = nframes)', u.phaseRam.perAsset.every((a, i) => res.gen.sprites[i].phases === 1 || a.K === a.nframes), u.phaseRam.K.join('/'));
     }
   }
 }
@@ -680,7 +738,7 @@ console.log('\n10. requiredRuntime and the usage report');
   check_('a sprite wider than 16 or taller than 16 needs v3', rr(prog('    v = 1', { win: '', map: '', sprites: 'SPRITE p = "wide"\n' })).reasons.some((r) => /32 pixels wide/.test(r)) && rr(prog('    v = 1', { win: '', map: '', sprites: 'SPRITE p = "tall"\n' })).reasons.some((r) => /48 pixels tall/.test(r)) && rr(prog('    v = 1', { win: '', map: '', sprites: 'SPRITE p = "player"\n' })).reasons.some((r) => /24 pixels tall/.test(r)));
   check_('a program that fails to parse is still read as far as it goes', rr('WINDOW lv\nBAND 1,').version === 3);
   const u = PLAT_RES.usage, lines = usageLines(u);
-  check_('usageLines: bytes per category, game total, phase memory, GAME_VARS', lines.length === 4 && /scroll tables 3584/.test(lines[0]) && /world source 2048/.test(lines[0]) && /phase memory: needed \d+ .* available 5600/.test(lines[2]) && /GAME_VARS: \d+ of 2048/.test(lines[3]), lines.join(' | '));
+  check_('usageLines: bytes per category, game total, phase memory, GAME_VARS', lines.length === 4 && /scroll tables 3584/.test(lines[0]) && /world source 2048/.test(lines[0]) && /phase memory: at least \d+ of \d+ bytes.*frame slots per asset/.test(lines[2]) && /GAME_VARS: \d+ of 2048/.test(lines[3]), lines.join(' | '));
   info(lines.join('\n        '));
 }
 

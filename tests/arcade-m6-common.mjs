@@ -6,6 +6,10 @@
 //   independent models   worldModel(...) -> {tile, flags, hit, ...} written per PIXEL (not like arcade-window.js) for the collision fuzz
 //   diffV3(got, want)    compare a snapshot of a machine with an interpreter record (variables, arrays, SPR_TAB entries, WORLD_RAM, V_CAM)
 
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 export function rng(seed) {
   let a = seed >>> 0;
   return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -177,10 +181,43 @@ SCENE s
 ENDSCENE
 `;
 
+// ── the acceptance game (arcade/examples/platformer.arc) ───────────────────────────────────────────────────────────────────────────
+// Its assets are merged into ASSETS under names that do not clash with the miniature's (hero, walker, flyer, spincoin, the tileset pf, the map level, six sounds), so the
+// differential runs find them. The two scripts are the recorded play-through to the flag (played twice) and a run that loses all three lives, goes back to the title and starts again.
+// NOTE: the game PLAYs sounds, prints a HUD and reads KEYDOWN; tests/arcade-m6-mock.mjs has no such routines, so arcade-m6-compiler.mjs section 6 cannot compile these two
+// (it would report RT_PLAY missing). They run on the mock with stubs in tests/arcade-m6-platformer.mjs, and on the real runtime in arcade-m6-differential.mjs.
+import { RUNS as WIN_RUNS, LENGTH as WIN_LENGTH } from './arcade-m6-platformer-script.mjs';
+const EX_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'arcade', 'examples');
+export const PLATFORMER_GAME = readFileSync(join(EX_DIR, 'platformer.arc'), 'utf8');
+const PLATFORMER_JSON = JSON.parse(readFileSync(join(EX_DIR, 'platformer.assets.json'), 'utf8'));
+Object.assign(ASSETS.sprites, PLATFORMER_JSON.sprites);
+Object.assign(ASSETS.tilesets, PLATFORMER_JSON.tilesets);
+Object.assign(ASSETS.sfx, PLATFORMER_JSON.sfx);
+Object.assign(ASSETS.maps, PLATFORMER_JSON.maps);
+/** run-length list [[value, ticks], ...] -> stick(t) for tick t = 1, 2, ... (0 after the end) */
+export const stickFromRuns = (runs) => { const a = []; for (const [v, n] of runs) for (let i = 0; i < n; i++) a.push(v); return (t) => a[t - 1] ?? 0; };
+export const WIN_STICK = stickFromRuns(WIN_RUNS);
+export { WIN_LENGTH };
+/**
+ * The play-through twice, with the end screen and the title between: after the flag, wait PAD ticks, fire (back to the title, which restores the coins), then the same input again.
+ * The bats' path depends on the game's frame counter, which is not reset by a new game, so PAD is chosen to make the counter at the second start equal (modulo the bats' period of 32
+ * ticks) to its value at the first start (tick 12): the second game then repeats the first exactly.
+ */
+const TWICE_PAD = (() => { let k = (((-1 - WIN_LENGTH) % 32) + 32) % 32; while (k < 11) k += 32; return k; })();
+export const TWICE_RUNS = [...WIN_RUNS, [0, TWICE_PAD], [16, 1], ...WIN_RUNS];
+export const TWICE_STICK = stickFromRuns(TWICE_RUNS);
+export const TWICE_LENGTH = 2 * WIN_LENGTH + TWICE_PAD + 1;
+/** Over the title: fire starts a game at tick 12; then right, a little left (the hero faces left: the FLIP frames), right again without jumping (the walkers cost the three lives), wait, fire for the title, fire again for a new game, run right. */
+export const OVER_RUNS = [[0, 11], [16, 1], [0, 1], [8, 20], [4, 14], [8, 220], [0, 15], [16, 1], [0, 30], [16, 1], [0, 1], [8, 60]];
+export const OVER_STICK = stickFromRuns(OVER_RUNS);
+export const OVER_LENGTH = OVER_RUNS.reduce((n, [, k]) => n + k, 0);
+
 export const PROGRAMS = [
   { name: 'platformer (gravity, SOLID, SETWORLD coins, camera, FRAME + FLIP, pools)', src: PLATFORMER, ticks: 600, stick: (t) => (t < 30 ? 0 : t % 100 < 70 ? (t % 25 < 3 ? 8 | 1 : 8) : t % 100 < 80 ? 4 : t % 100 < 90 ? 4 | 1 : 0) },
   { name: 'every word with constants and variables (ratio 2 band, window at (3, 2))', src: WORDS, ticks: 160, stick: () => 0 },
   { name: 'a short 24-wide world, a fixed band, a window at (0, 0)', src: SHORT, ticks: 90, stick: () => 0 },
+  { name: 'platformer.arc, two play-throughs from the title to the flag with the title between (coins, stomps, FLIP, checkpoints, camera, state machine)', src: PLATFORMER_GAME, ticks: TWICE_LENGTH, stick: TWICE_STICK, needsFullRuntime: true },
+  { name: 'platformer.arc, three lives lost, game over, back to the title, a new game', src: PLATFORMER_GAME, ticks: OVER_LENGTH, stick: OVER_STICK, needsFullRuntime: true },
 ];
 
 // ── independent collision model (per pixel; a different formulation from arcade-window.js) ──────────────────────────────────────────

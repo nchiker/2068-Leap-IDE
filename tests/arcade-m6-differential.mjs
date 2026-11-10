@@ -118,7 +118,7 @@ if (!R || missing.length) {
     check_('harness self-check on the v2 runtime (bounce.arc, 60 ticks against the interpreter)', r.ok, r.detail);
   } else skip_('harness self-check on the v2 runtime', 'arcade/build/v2/runtime.json does not exist');
 } else {
-  for (const p of PROGRAMS) {
+  for (const p of PROGRAMS) {          // includes the needsFullRuntime entries (platformer.arc): they run on the real runtime only, never on the mock
     const ticks = QUICK ? Math.min(p.ticks, 150) : p.ticks;
     const t0 = Date.now();
     const r = compare(R, p.src, ASSETS, { ticks, stick: p.stick, version: 3, label: p.name.split(' ')[0] });

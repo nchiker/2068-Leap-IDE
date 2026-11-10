@@ -133,7 +133,7 @@
 
 import { Emitter, L, M } from './z80-emit.js';
 import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, convertSpriteV3, MAX_SFX } from './arcade-assets.js';
-import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, phaseCost } from './arcade-window.js';
+import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, buildFrameT } from './arcade-window.js';
 
 const up = (s) => String(s).toUpperCase();
 const w16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -1908,6 +1908,16 @@ export function generate(ast, runtime, assets = {}) {
     sprites: v2 ? Object.fromEntries([...instRefs].map(([k, r]) => [k, r.first])) : Object.fromEntries(sprites.map((s, i) => [s.key, i])),
     sfx: Object.fromEntries(sfxList.map((s, i) => [up(s.name), i])),
   };
+  // runtime v3: the phase pool plan the boot will make (a miss stops the runtime at boot: the linker fails), and a warning for each asset whose frames do not all stay cached
+  let phasePlan = null;
+  if (v3) {
+    phasePlan = planPhasePool(sprites.map((sp, i) => ({ w: sp.w, h: sp.h, phases: sp.phases ?? 8, nframes: sp.nframes ?? 1, instances: instAssets.filter((a) => a === i).length })), poolPieces(cst));
+    phasePlan.pieces = poolPieces(cst);
+    if (phasePlan.ok) sprites.forEach((sp, i) => {
+      const ph = sp.phases ?? 8, n = sp.nframes ?? 1, k = phasePlan.K[i];
+      if (ph > 1 && k < n) warnings.push({ ...pos(sp.node), severity: 'warning', message: `asset ${sp.name}: only ${k} of ${n} frames stay cached; a frame that is not cached is built when first drawn (about ${buildFrameT(sp.w, sp.h, ph)} cycles for this size) which can overrun the tick; use fewer phases (phases 2 or 1) or fewer frames` });
+    });
+  }
   const rate = ast.framerate ? ast.framerate.value : 30;
   return {
     errors, warnings,
@@ -1924,7 +1934,7 @@ export function generate(ast, runtime, assets = {}) {
     descLen: DESC_LEN,
     v1: v1Info,
     v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length, mapTable: extMaps ? v1Info.mapTable : 0 } : null,
-    phase: v3 ? phaseCost(sprites.map((sp, i) => ({ w: sp.w, h: sp.h, phases: sp.phases ?? 8, nframes: sp.nframes ?? 1, instances: instAssets.filter((a) => a === i).length }))) : null,
+    phase: v3 ? phasePlan : null,
     usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites },
   };
 }

@@ -29,9 +29,9 @@
  * Language batch 2 (gen.window set; docs/ARCADE_PLATFORMER_CONTRACT.md 3b): the header is 20 bytes (frame_div | $C0, map_table at +16, window_desc at +18) and
  * the image gets, after the sprite data, world_src (2,048), the 32 tile flags, tilerows (256) and window_desc (14 + 2 per band), and at the very end of the
  * game area the 14 scroll-table pages (3,584 bytes, so `tables` is $B200, page aligned). A v3 sprite descriptor carries `nframes` in its last byte.
- * The linker fails with the number of bytes missing when the game does not fit, and when even the smaller of the two phase-memory estimates (every frame
- * kept, or the current frame of each instance kept) exceeds PHASE_POOL_BYTES (runtime.json constant, default 5,600); a warning when only one of them does
- * (see arcade-window.js phaseCost).
+ * The linker fails with the number of bytes missing when the game does not fit, and when the runtime's phase-pool plan (arcade-window.js planPhasePool: FTABs,
+ * min(nframes, instances) frame slots per asset, first fit over POOL_A / B / C of runtime.json) does not fit: exactly when the runtime would stop at boot with
+ * the magenta border. The code generator warns for each asset whose frames do not all stay cached.
  *
  * `map` (for the debugger and the Studio): {lines: [{addr, line, col}] sorted by address, vars: {NAME: addr},
  * slots: [{name, addr}], procs, fns, sprites, entries}; findSource(map, addr) returns the last line entry at or
@@ -98,13 +98,9 @@ export function link(gen, runtime, image) {
     return fail(`the game does not fit: ${end + tablesBytes - GAME_BASE} bytes (code ${gen.code.length}, sprites ${spriteBytes}${win ? `, window data ${winData} and scroll tables ${tablesBytes}` : ''}) in the ${GAME_END - GAME_BASE}-byte game area, ${end + tablesBytes - GAME_END} too many`);
   }
   const warnings = [];
-  if (gen.phase && (gen.sprites.some((sp) => (sp.nframes ?? 1) > 1 || sp.w > 16 || sp.h > 16) || win)) {
-    const avail = runtime.constants?.PHASE_POOL_BYTES ?? 5600;
-    const { eager, lazy } = gen.phase, best = Math.min(eager, lazy), worst = Math.max(eager, lazy);
-    if (best > avail) return fail(`the sprite art does not fit in phase memory: it needs ${eager} bytes with every frame kept in every phase, or ${lazy} with the current frame of each instance kept, and the runtime has ${avail} (${best - avail} missing even for the smaller); use fewer phases, fewer frames, smaller sprites or fewer instances`);
-    if (worst > avail) warnings.push({ line: 1, col: 0, endCol: 0, severity: 'warning', message: `sprite phase memory: ${eager} bytes if every frame of every sprite is kept in every phase, ${lazy} if the runtime keeps the current frame of each instance; the runtime has ${avail}, so the game fits only with the ${eager <= avail ? 'first' : 'second'} design` });
+  if (gen.phase && !gen.phase.ok) {
+    return fail(`${gen.phase.miss} bytes of sprite art do not fit in the phase pool (${runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0)} bytes): the runtime would stop at boot with a magenta border; use fewer phases, fewer instances or smaller sprites (the frame tables and one frame slot per instance must fit)`);
   }
-
   const w16 = (a, v) => { memory[a] = v & 0xFF; memory[a + 1] = (v >> 8) & 0xFF; };
   w16(GAME_BASE, gen.entries.init);
   w16(GAME_BASE + 2, gen.entries.frame);
@@ -170,6 +166,8 @@ export function link(gen, runtime, image) {
     free: GAME_END - end,
     varBytes: gen.usage.varBytes,
     dckBytes: dck.length,
+    // the whole 16 KB game area: everything above plus the scroll tables (`total` and `free` leave the tables out, as they were first reported)
+    gameArea: { used: end + tablesBytes - GAME_BASE, available: GAME_END - GAME_BASE, free: GAME_END - end - tablesBytes },
     ...(gen.phase ? {
       // language batch 2: bytes per category and the two capacity figures the Studio shows
       frames: gen.sprites.reduce((n, sp) => n + sp.data.length, 0),
@@ -177,7 +175,7 @@ export function link(gen, runtime, image) {
         worldSource: win.worldSrc.length, tileFlags: win.tileFlags.length, tileRows: win.tileRows.length, descriptor: descBytes,
         scrollTables: tablesBytes, camMax: win.camMax, worldW: win.worldW, bands: win.bands.length, at: winLayout,
       } : null,
-      phaseRam: { needed: gen.phase.eager, lazy: gen.phase.lazy, available: runtime.constants?.PHASE_POOL_BYTES ?? 5600, perAsset: gen.phase.perAsset },
+      phaseRam: { needed: gen.phase.need, available: runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0), miss: gen.phase.miss, K: gen.phase.K, perAsset: gen.phase.perAsset },
       gameVars: { used: gen.usage.varBytes, available: (cst.GAME_VARS_LIMIT ?? 0) - (cst.GAME_VARS_BASE ?? 0) + 1 },
     } : {}),
   };

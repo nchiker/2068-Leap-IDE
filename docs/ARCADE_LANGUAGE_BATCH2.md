@@ -74,11 +74,15 @@ inside a PROC `BAND 16, 1, 1` gets a "must be at the top level" message). `FLIP`
 **The image and the report**
 18. Header: `frame_div | $C0` (DIV_EXT and DIV_WIN), 20 bytes, `window_desc` at +18, descriptors at `$8014`. After the sprite data: `world_src` (2,048), `tile_flags` (32), `tilerows` (256), `window_desc`
     (14 + 2 per band). The 3,584 table bytes sit at the very end of the game area (**`tables` = `$B200`**, page aligned by construction); if the rest does not fit the linker says how many bytes too many.
-19. Phase memory (placeholder until `docs/ARCADE_RUNTIME_API_V3.md` documents the real allocation): one pre-shifted copy of a frame is `h * 2 * (w/8 + (shift > 0 ? 1 : 0))` bytes. Two totals are reported: every frame of every
-    sprite in every phase (`needed`), and the current frame of each instance in every phase (`lazy`, the per-instance cache the contract allows). **The link fails (with the bytes missing) only when even the smaller
-    exceeds `PHASE_POOL_BYTES`; it warns when only one does.** `PHASE_POOL_BYTES` is a `runtime.json` constant (fallback 5,600). The check runs only for a game that uses a v3 feature (a window, more than one frame, a sprite wider or taller than 16). For the contract's reference art set the eager total is 11,760 and the lazy one 3,840.
+19. Phase memory: a faithful port of the runtime's boot plan (`planPhasePool()` in `arcade-window.js`; `docs/ARCADE_RUNTIME_API_V3.md` "The phase memory: a frame cache per asset"; the runtime tests' JS reference
+    is `planPool()` in `arcade/tests/m6-common.mjs`, and a test compares the two on 500 random asset sets): FTABs (4 x nframes per used asset), `min(nframes, instances)` frame slots of
+    `(phases - 1) x h x 2 x (w/8 + 1)` bytes for every used asset with phases > 1, then more slots asset by asset while they fit, everything first fit over `POOL_A`, `POOL_B`, `POOL_C` (addresses and lengths
+    from `runtime.json`, defaults $C080 3,456 / $F200 2,176 / $D700 256; `PHASE_POOL_BYTES` is the capacity the report shows). **The link fails exactly when the runtime would stop at boot with the magenta border**
+    ("N bytes of sprite art do not fit in the phase pool", N = the runtime's `FC_MISS`), for every v3 build. **The code generator warns once per asset whose K < nframes** (at its SPRITE line): "asset X: only K of N
+    frames stay cached; a frame that is not cached is built when first drawn (about T cycles for this size) ...", T = the measured table of the runtime document scaled by area x (phases - 1) (`buildFrameT`, a
+    least-squares fit, to the nearest 100: 16x24/4 gives about 25,900 where 32,088 was measured).
 20. `usage` (the linker's report) gains, for a v3 build: `frames` (sprite frame bytes), `window` ({worldSource, tileFlags, tileRows, descriptor, scrollTables, camMax, worldW, bands, at: {addresses}}), `phaseRam`
-    ({needed, lazy, available, perAsset}) and `gameVars` ({used, available}, from `GAME_VARS_BASE` / `GAME_VARS_LIMIT` of `runtime.json`); `usageLines(usage)` renders them. A variable overflow reports the byte counts.
+    ({needed (the fragmentation-free minimum), available, miss, K, perAsset}) and `gameVars` ({used, available}, from `GAME_VARS_BASE` / `GAME_VARS_LIMIT` of `runtime.json`); `usageLines(usage)` renders them. A variable overflow reports the byte counts.
 
 ## What the runtime engineer must match
 * The header and `window_desc` as above; `V_CAM` and `WORLD_RAM` before PROC INIT: `V_CAM` 0, `WORLD_RAM` loaded from `world_src` (and rows/columns outside the map 0).
@@ -93,3 +97,16 @@ bit-string shifts and reversals, the interpreter hand-computed, the image layout
 (600 ticks) and two more window programs on the mock runtime equal to the interpreter tick by tick, SHOW in every register shape, **3,367 collision queries** (WORLDTILE, TILEFLAGS, TILEHIT, SOLID, with SETWORLD between them,
 worlds 24..128 wide, queries inside and outside) equal to an independent per-pixel model on both the interpreter and the compiled code, and the byte-identity of five old programs.
 `node tests/arcade-m6-differential.mjs`: the same programs on the real runtime (skips with a message until it has the routines; checks its own harness on v2 meanwhile).
+
+## Proposal (not implemented): a compressed `world_src`
+`world_src` is 2,048 bytes in the image whatever the level. Measured on `arcade/examples/platformer.arc` (128 x 16, 956 non-zero cells, 230 runs in row-major order; the game area is 16,288 of 16,384):
+
+| scheme (row-major, 2,048 cells) | bytes | saves |
+|---|---|---|
+| byte RLE, pairs (count 1..255, value), a 0 count ends | **463** | 1,585 |
+| zero-run + literal (control byte: 1..127 zeros, or $80 + n then n literal bytes; 0 ends) | 1,066 | 982 |
+| the same two, column-major | 1,627 / 1,304 | 421 / 744 |
+
+Byte RLE in row-major order clears the 1,000-byte bar by a wide margin (the sky and the ground are long runs of one value). The decoder is a short loop at scene start that expands into `WORLD_RAM`
+(about 30 bytes of Z80, one pass of 2,048 stores; `RT_WORLDLOAD`-style routine owned by the scroll engineer), so the window_desc's `world_src` would point at the compressed stream and carry
+a format flag (e.g. a bit of `nbands`' high nibble or a new descriptor byte). The compiler already has the map as cells: emitting the stream is about 15 lines in `arcade-link.js`. Not done: the binary encoding is unchanged until the contract is edited.

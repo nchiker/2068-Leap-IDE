@@ -79,7 +79,7 @@ export function usageLines(u) {
     `code ${u.code}  descriptors ${u.descriptors}  header ${u.header}  sprite data ${u.spriteData}` + (u.window ? `  world source ${u.window.worldSource}  tile flags ${u.window.tileFlags}  tile rows ${u.window.tileRows}  window descriptor ${u.window.descriptor}  scroll tables ${u.window.scrollTables}` : ''),
     `game total ${u.total} bytes, free ${u.free} of ${u.total + u.free}`,
   ];
-  if (u.phaseRam) lines.push(`phase memory: needed ${u.phaseRam.needed} (every frame, every phase) / ${u.phaseRam.lazy} (current frame per instance), available ${u.phaseRam.available}`);
+  if (u.phaseRam) lines.push(`phase memory: at least ${u.phaseRam.needed} of ${u.phaseRam.available} bytes (frame tables and one slot per instance); frame slots per asset: ${u.phaseRam.perAsset.map((a) => `${a.K}/${a.nframes}`).join(' ')}`);
   if (u.gameVars) lines.push(`GAME_VARS: ${u.gameVars.used} of ${u.gameVars.available} bytes`);
   return lines;
 }

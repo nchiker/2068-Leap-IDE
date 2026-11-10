@@ -10,7 +10,7 @@
  *   buildTileFlags(flags)        -> Uint8Array(32)
  *   buildWindowDesc(w)           -> Uint8Array          the window_desc record of section 3b (bands included)
  *   scanSpriteUse(ast, resolve)  -> Map(asset -> {frames, flip})   which assets a SHOW gives FRAME (other than the literal 0) or FLIP
- *   phaseCost(...)               -> bytes               the placeholder phase-memory formula (see below)
+ *   planPhasePool(...)           -> plan                the runtime's phase-pool plan (FTABs, frame slots, first fit); buildFrameT(...) the cost of one cache miss
  *   collision model              -> worldTile / tileFlags / tileHit on a 2,048-byte WORLD_RAM (the reference interpreter's)
  */
 
@@ -155,28 +155,51 @@ export function scanSpriteUse(ast, resolve) {
   return use;
 }
 
-/** Shifts a sprite with `phases` pre-shifted copies keeps: 8 -> 0..7, 4 -> 0 2 4 6, 2 -> 0 4, 1 -> 0. */
-export const shiftsOf = (phases) => Array.from({ length: phases }, (_, k) => k * (8 / phases));
+// ── the phase pool (runtime v3: docs/ARCADE_RUNTIME_API_V3.md "The phase memory: a frame cache per asset") ────────────────────────────────
+/** The pool pieces of the real v3 build ($C080 3,456 / $F200 2,176 / $D700 256 = 5,888); runtime.json's POOL_A / POOL_A_LEN ... override them. */
+export const DEFAULT_POOL_PIECES = Object.freeze([[0xC080, 3456], [0xF200, 2176], [0xD700, 256]]);
+export function poolPieces(constants = {}) {
+  const c = constants, p = (n, d) => [c[`POOL_${n}`] ?? d[0], c[`POOL_${n}_LEN`] ?? d[1]];
+  return [p('A', DEFAULT_POOL_PIECES[0]), p('B', DEFAULT_POOL_PIECES[1]), p('C', DEFAULT_POOL_PIECES[2])];
+}
 
 /**
- * PLACEHOLDER phase-memory formula, until the runtime engineer documents the real one in docs/ARCADE_RUNTIME_API_V3.md:
- * one pre-shifted copy of a frame takes h * 2 * (w / 8 + (shift > 0 ? 1 : 0)) bytes (mask and image, one extra byte column when shifted).
- * `eager` keeps every frame of every asset in every phase; `lazy` is the contract's other allowed design, a cache of the current frame of each
- * INSTANCE (all its phases). The linker fails only when even `lazy` does not fit and warns when only `eager` does not.
+ * A faithful port of the runtime's boot plan (assets.asm plan_pool; the JS reference is planPool() in arcade/tests/m6-common.mjs). Every allocation is first fit
+ * over the pieces in order and never straddles two. 1. for every asset with an instance, in index order: its FTAB (4 x nframes); 2. for every such asset with
+ * phases > 1: min(nframes, its instances) slots of (phases - 1) x h x 2 x (w/8 + 1) bytes; 3. more slots, asset by asset in index order, one at a time while
+ * one fits, up to nframes. If anything of steps 1-2 does not fit the runtime stops at boot (magenta border) with the missing bytes in FC_MISS.
  * @param {{w: number, h: number, phases: number, nframes: number, instances: number}[]} assets  w is the descriptor width (8, 16, 24, 32)
+ * @param {number[][]} pieces  [[address, length], ...]
+ * @returns {{ok: boolean, miss: number, K: number[], need: number, perAsset: {ftab: number, slot: number, K: number, nframes: number, built: number}[]}}
+ *   K[a] = frame slots of asset a (0 for a 1-phase or unused asset); need = the fragmentation-free minimum of steps 1-2 (the runtime's poolNeed)
  */
-export function phaseCost(assets) {
-  let eager = 0, lazy = 0;
-  const perAsset = [];
-  for (const a of assets) {
-    let oneFrame = 0;
-    for (const s of shiftsOf(a.phases)) oneFrame += a.h * 2 * (a.w / 8 + (s > 0 ? 1 : 0));
-    perAsset.push({ bytesPerFrame: oneFrame, eager: oneFrame * a.nframes, lazy: oneFrame * a.instances });
-    eager += oneFrame * a.nframes;
-    lazy += oneFrame * a.instances;
+export function planPhasePool(assets, pieces = DEFAULT_POOL_PIECES) {
+  const next = pieces.map(([a]) => a), end = pieces.map(([a, l]) => a + l);
+  const alloc = (n) => { for (let p = 0; p < next.length; p++) if (next[p] + n <= end[p]) { const at = next[p]; next[p] += n; return at; } return -1; };
+  const slen = assets.map((a) => (a.phases - 1) * a.h * 2 * (a.w / 8 + 1));
+  const used = assets.map((a) => a.instances > 0);
+  const K = assets.map(() => 0);
+  let miss = 0, need = 0;
+  assets.forEach((a, k) => { if (!used[k]) return; need += 4 * a.nframes; if (alloc(4 * a.nframes) < 0) miss += 4 * a.nframes; });
+  assets.forEach((a, k) => {
+    if (!used[k] || a.phases === 1) return;
+    need += Math.min(a.nframes, a.instances) * slen[k];
+    for (let j = 0; j < Math.min(a.nframes, a.instances); j++) { if (alloc(slen[k]) < 0) miss += slen[k]; else K[k]++; }
+  });
+  if (!miss) {
+    assets.forEach((a, k) => {
+      if (!used[k] || a.phases === 1) return;
+      while (K[k] < a.nframes) { if (alloc(slen[k]) < 0) break; K[k]++; }
+    });
   }
-  return { eager, lazy, perAsset };
+  return { ok: miss === 0, miss, K, need, perAsset: assets.map((a, k) => ({ ftab: used[k] ? 4 * a.nframes : 0, slot: slen[k], K: K[k], nframes: a.nframes, built: a.phases > 1 ? K[k] : a.nframes })) };
 }
+
+/** TSRun measurements of one frame's build (docs/ARCADE_RUNTIME_API_V3.md "A cache miss"): [w, h, phases, T-states]. */
+const BUILD_T = [[8, 8, 8, 14250], [16, 16, 4, 21512], [16, 16, 8, 34824], [16, 24, 4, 32088], [24, 16, 4, 25494], [32, 32, 4, 59488], [32, 48, 2, 52176]];
+const BUILD_K = (() => { let num = 0, den = 0; for (const [w, h, p, t] of BUILD_T) { const x = w * h * (p - 1); num += t * x; den += x * x; } return num / den; })();
+/** About how many T-states building one frame's copies takes: the measured table scaled by area x (phases - 1) (a least-squares fit), to the nearest 100. */
+export const buildFrameT = (w, h, phases) => Math.round((BUILD_K * w * h * (phases - 1)) / 100) * 100;
 
 // ── the collision model on WORLD_RAM (the reference interpreter's; tests use an independent per-pixel model) ─────────────────────────
 /**
