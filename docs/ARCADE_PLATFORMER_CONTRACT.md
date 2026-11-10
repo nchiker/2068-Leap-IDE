@@ -86,6 +86,20 @@ that file already shows** (two cached `col0` per band, one per display file); (4
 for every camera 0..cam_max, both display files, every phase 0..7, every band layout** (tests, section 7).
 **Blank-cell path** (spike: 216k -> 156-168k on open levels): optional in v3.0, assembled in only if the measured worst tick of the acceptance game needs it; the engineer reports the decision.
 
+## 3b. Binding encodings (compiler <-> runtime; neither side may change them without editing this section)
+
+* **Header.** `frame_div` bit 7 (`DIV_EXT`, `$80`) = 18-byte header with `map_table` at `+16` (unchanged). New: bit 6 (`DIV_WIN`, `$40`) = **20-byte header**, `+18 DW window_desc` (bit 6 requires bit 7).
+  `frame_div AND $3F` is the divisor. Sprite descriptors follow the header (`sprite_table` says where). A descriptor is `DB w, DB h, DW data, DW hot, DB phases, DB nframes`.
+* **`window_desc`:** `+0 DB cx, +1 DB cy, +2 DB nbands (1..4), +3 DB world_w (24..128), +4 DW cam_max, +6 DW tables, +8 DW tile_flags, +10 DW world_src, +12 DW tilerows, +14 nbands x (DB rows, DB ratio_code)`.
+  `tables` is 256-byte aligned: 14 pages, page `2*(p-1)` = `LTAB[p]`, page `2*(p-1)+1` = `RTAB[p]` for p = 1..7, each indexed by `tile*8 + r` (tiles 0..31, so entries 0..255). `tilerows` = 256 bytes, `tile*8 + r` = the tile's row r (phase 0 copy path).
+  `tile_flags` = 32 bytes. `world_src` = 2,048 bytes, row `r` at `+ r*128`, cells beyond `world_w` and rows beyond the map's height are 0. All pointers are inside the game image (`$8000-$BFFF`).
+* **Routines (all CALLs; clobber AF BC DE HL; IX, IY and alternates preserved):**
+  `RT_SHOW` (A = instance, BC = x, DE = y; as v2; **keeps the instance's frame**; in window mode x, y are not clamped), **`RT_SHOWF`** (the same with **HL = frame**),
+  `RT_HIDE` (as v2), `RT_HIT` (as v2), **`RT_CAMERA`** (HL = camera), **`RT_WORLDTILE`** (HL = x, DE = y; returns HL), **`RT_TILEFLAGS`** (HL = x, DE = y; returns HL),
+  **`RT_TILEHIT`** (`RA_X, RA_Y, RA_W, RA_H` = the rectangle, `RA_V` = mask; returns HL), **`RT_SETWORLD`** (`RA_X, RA_Y`, `RA_V` = tile). The argument block `RT_ARGS` / `RA_*` is v2's (batch 1).
+  `CAMX()` is `LD HL,(V_CAM)` (a compiler-emitted read of the runtime variable, no routine). A frame argument is taken `AND $FF`, then clamped to `nframes - 1` at draw time.
+* `runtime.json` of v3 lists those routines and constants `DIV_WIN`, `WORLD_RAM`, `V_CAM`, `GAME_VARS_BASE`, `GAME_VARS_LIMIT`, `MAX_FRAMES` (32), `SPR_ENT` (8), `SPR_FRAME_OFF` (6).
+
 ## 4. Collision (runtime routines on `WORLD_RAM`; coordinates are world pixels: x from the left of the world, y from the top of the window, i.e. row `y >> 3`)
 
 | Routine | Meaning |
