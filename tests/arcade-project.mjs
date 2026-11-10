@@ -231,7 +231,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
   };
   const r0 = build(np);
   check('the new-project template compiles with 0 errors on the v2 runtime', r0.errors.length === 0 && !!r0.dck, r0.errors.map((e) => e.message).join('; '));
-  // a three-channel effect compiles and the size accounting follows its bytes (usage.sfx: the groups of 12 bytes + terminator + the table)
+  // a three-channel effect compiles and the size accounting follows its bytes (usage.sfx: the delta stream (batch 5 item 17) + the table)
   {
     const withSfx = (extra) => {
       const q = P.newProject('s3');
@@ -241,7 +241,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
     };
     const one = withSfx({}), three = withSfx({ ticksB: [{ tone: 200, vol: 8, noise: 0, mix: 6 }], ticksC: [] });
     const sfxBytes = (r) => (r.usage?.data ?? r.usage)?.sfx;
-    check('a three-channel effect compiles; the size panel (usage.sfx) counts 3 * 12 + 4 bytes instead of 4 * 4, plus the table', one.errors.length === 0 && three.errors.length === 0 && sfxBytes(one) === 16 + 3 && sfxBytes(three) === 40 + 3 && three.errors.length === 0, `${sfxBytes(one)} -> ${sfxBytes(three)}`);
+    check('a three-channel effect compiles; the size panel (usage.sfx) counts the delta stream (4 header + 23 + 9 + 3 entry bytes + $FF = 40, worked by hand) instead of 4 * 4, plus the table', one.errors.length === 0 && three.errors.length === 0 && sfxBytes(one) === 16 + 3 && sfxBytes(three) === 40 + 3 && three.errors.length === 0, `${sfxBytes(one)} -> ${sfxBytes(three)}`);
     const empties = withSfx({ ticksB: [], ticksC: null });
     check('empty ticksB / ticksC compile to exactly the one-channel size and image', sfxBytes(empties) === sfxBytes(one) && Buffer.compare(Buffer.from(empties.dck), Buffer.from(one.dck)) === 0);
   }

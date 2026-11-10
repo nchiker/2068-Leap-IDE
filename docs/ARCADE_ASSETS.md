@@ -59,9 +59,18 @@ The Studio's editors enforce the two-colours-per-row rule while drawing and prev
   then C) whose record has noise on at that refresh, else channel A's.
 * **Image** (`convertSfx(asset)` -> `{records, channels, bytes}`): one channel (no `ticksB` / `ticksC`, or both empty) is exactly the old form, `channels: 1`:
   4-byte records (`tone_lo`, `tone_hi | vol << 4`, `noise | mix << 5`, `0`) and the terminator record `0, $FF, 0, 0`. With channel B or C the image is
-  a run of **groups of 12 bytes**, records A, B, C of one refresh, byte 3 of the first record of the effect = **3** (the channel count; 0 or 1 = one
-  channel), then the terminator record `0, $FF, 0, 0` in place of a group: `records * 12 + 4` bytes. `records` is the length of the longest channel,
-  which is what the interpreter's sound-length model uses. The size panel counts these bytes.
+  a **register delta stream** (revised 2026-11-10; the first version's 12-byte groups never shipped): the 4-byte header `0, 0, 0, 3` (byte 3 = the
+  channel count; 0 or 1 = a one-channel effect), then **one entry per refresh**: `n` (0..11) followed by `n` pairs `reg, value` in ascending register
+  order, and the single byte `$FF` at the end. The compiler works out the 11 AY register values of each refresh, so the runtime has no channel logic:
+  R0 / R2 / R4 = tone low bytes of A / B / C, R1 / R3 / R5 = the tone high nibbles (`(tone >> 8) & 15`), R6 = the noise of the lowest channel
+  whose record has noise on that refresh (none: channel A's), R7 = the mixer (bit `c` = channel `c`'s mix bit 0, tone off; bit `3 + c` = its mix bit 1,
+  noise off; bits 6 and 7 zero; c = 0 for A), R8 / R9 / R10 = the volumes of A / B / C. The **first entry holds all 11 registers**
+  (the compiler cannot know what the chip held); every later entry holds only the registers whose value differs from the previous refresh's, so a steady
+  stretch costs one byte per refresh. Size: `4 + sum over refreshes of (1 + 2 * changed registers) + 1`; for example three 30-tick fades (steady tones,
+  volume falling every second tick) take 141 bytes where the 12-byte groups would take 364. `records` is the length of the longest channel, which is
+  what the interpreter's sound-length model uses. The size panel and the sound editor (`sfxInfo`) count the real encoded length
+  (`sfxRefreshRegisters` and `sfxStreamLength` in `src/lang/arcade/arcade-assets.js` are the shared source). Tested by `tests/sfx-stream.mjs` with an
+  independent stream player. The runtime half (`SND_TICK` reading the stream) is separate: the current runtimes cannot play a three-channel effect yet.
 * `music`: *later* (pattern/instrument format when game B needs it; the player runs in the interrupt).
 
 ## Size accounting

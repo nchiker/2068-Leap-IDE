@@ -2,7 +2,7 @@
  * src/lang/arcade/arcade-assets.js — Leap Arcade asset converters for milestone M3 (pure; no DOM, no node: imports).
  *
  *   convertTileset(asset)   -> {count, bytes, tiles}   bytes = count x (8 bitmap bytes + 1 attribute byte), the runtime v1 format
- *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: 12 per tick (batch 5)
+ *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: a register delta stream (batch 5)
  *   convertMap(asset, n)    -> {w, h, cells, bytes}    bytes = the 768 CELL_TILE bytes (tile = 128 + index, blank = 32)
  *   lookupAsset(table, ...names) -> asset | undefined  exact name first, then case-insensitive
  *   assetTables(assets)     -> {sprites, tilesets, sfx, maps}   see below
@@ -102,14 +102,8 @@ function sfxRecord(t, where) {
   return [tone & 0xFF, hi, noise | (mix << 5), 0];
 }
 
-/**
- * Sound effect asset -> image.  `asset` = {ticks, ticksB?, ticksC?} (channel A, B, C; B and C are optional arrays of the same records, null / absent / empty = none).
- *   one channel  (no ticksB / ticksC, or both empty): 4 bytes per record + the terminator record `0, $FF, 0, 0`  -> {records, channels: 1, bytes}
- *   three channels: groups of 12 bytes (records A, B, C of one refresh; a shorter channel is padded with the silent record), byte 3 of the FIRST record
- *     = 3 (the channel count), then the terminator record in place of a group  -> {records: the longest channel, channels: 3, bytes}
- * Every record of every channel has the field ranges and the unstorable rule (tone 3840..4095 with volume 15) of the one-channel form.
- */
-export function convertSfx(asset) {
+/** The channels of a sound asset as three arrays of ticks ([ticks, ticksB, ticksC]); B and C absent / null = []. Throws the "must be an array" errors. */
+function sfxChannels(asset) {
   const ticks = asset?.ticks;
   if (!Array.isArray(ticks)) throw new Error('the sound effect has no "ticks" array');
   const extra = [asset?.ticksB, asset?.ticksC].map((v, k) => {
@@ -117,24 +111,71 @@ export function convertSfx(asset) {
     if (!Array.isArray(v)) throw new Error(`the sound effect's "ticks${SFX_CHANNEL_NAMES[k + 1]}" (channel ${SFX_CHANNEL_NAMES[k + 1]}) must be an array of ticks`);
     return v;
   });
+  return [ticks, ...extra];
+}
+
+/**
+ * The AY register values of a three-channel effect, one array of 11 numbers (R0..R10) per refresh (docs/ARCADE_LANGUAGE_BATCH5.md items 16 and 17):
+ *   R0 / R1 = tone A low byte / high nibble, R2 / R3 = B, R4 / R5 = C; R6 = the noise of the lowest channel (A, B, C) whose record has noise on
+ *   (mix bit 1 = 0) that refresh, none: channel A's noise; R7 = bit c = channel c's mix bit 0 (tone off), bit 3 + c = its mix bit 1 (noise off), bits 6, 7 = 0;
+ *   R8 / R9 / R10 = the volumes of A / B / C.  A channel shorter than the longest contributes the silent record (tone 0, vol 0, noise 0, mix 7) after its end.
+ * Every record has the field ranges and the unstorable rule of the one-channel form.  Used by convertSfx and by the sound editor's size accounting.
+ */
+export function sfxRefreshRegisters(asset) {
+  const chans = sfxChannels(asset);
+  const L = Math.max(...chans.map((c) => c.length));
+  const out = [];
+  for (let r = 0; r < L; r++) {
+    const recs = chans.map((c, k) => (r < c.length ? sfxRecord(c[r], `channel ${SFX_CHANNEL_NAMES[k]} tick ${r}`) : SFX_SILENT_RECORD));
+    const regs = new Array(11).fill(0);
+    let noiseReg = recs[0][2] & 31, found = false, mixer = 0;
+    recs.forEach((rec, c) => {
+      const tone = rec[0] | ((rec[1] & 15) << 8), vol = rec[1] >> 4, noise = rec[2] & 31, mix = rec[2] >> 5;
+      regs[c * 2] = tone & 0xFF;
+      regs[c * 2 + 1] = tone >> 8;
+      regs[8 + c] = vol;
+      mixer |= (mix & 1) << c;
+      mixer |= ((mix >> 1) & 1) << (3 + c);
+      if (!found && (mix & 2) === 0) { found = true; noiseReg = noise; }
+    });
+    regs[6] = noiseReg;
+    regs[7] = mixer;
+    out.push(regs);
+  }
+  return out;
+}
+
+/** The byte length of the delta-stream image of the per-refresh registers `regs` (sfxRefreshRegisters): 4-byte header, entries, the $FF end. */
+export function sfxStreamLength(regs) {
+  let n = 4 + 1;
+  regs.forEach((r, i) => { n += 1 + 2 * (i === 0 ? 11 : r.reduce((c, v, k) => c + (v !== regs[i - 1][k] ? 1 : 0), 0)); });
+  return n;
+}
+
+/**
+ * Sound effect asset -> image.  `asset` = {ticks, ticksB?, ticksC?} (channel A, B, C; B and C are optional arrays of the same records, null / absent / empty = none).
+ *   one channel  (no ticksB / ticksC, or both empty): 4 bytes per record + the terminator record `0, $FF, 0, 0`  -> {records, channels: 1, bytes}
+ *   three channels: the delta stream of item 17: header `0, 0, 0, 3`; per refresh an entry `n, (reg, value) x n` (the first all 11 registers, later
+ *     only the registers that differ from the refresh before, ascending); the single byte $FF ends it  -> {records: the longest channel, channels: 3, bytes}
+ * Every record of every channel has the field ranges and the unstorable rule (tone 3840..4095 with volume 15) of the one-channel form.
+ */
+export function convertSfx(asset) {
+  const [ticks, ...extra] = sfxChannels(asset);
   if (extra[0].length === 0 && extra[1].length === 0) {
     const bytes = new Uint8Array((ticks.length + 1) * 4);
     ticks.forEach((t, i) => bytes.set(sfxRecord(t, `tick ${i}`), i * 4));
     bytes.set([0, 0xFF, 0, 0], ticks.length * 4);       // terminator record
     return { records: ticks.length, channels: 1, bytes };
   }
-  const chans = [ticks, ...extra];
-  const records = Math.max(...chans.map((c) => c.length));
-  const bytes = new Uint8Array(records * 12 + 4);
-  for (let r = 0; r < records; r++) {
-    chans.forEach((c, k) => {
-      const rec = r < c.length ? sfxRecord(c[r], `channel ${SFX_CHANNEL_NAMES[k]} tick ${r}`) : SFX_SILENT_RECORD;
-      bytes.set(rec, r * 12 + k * 4);
-    });
-  }
-  if (records) bytes[3] = 3;                              // the channel count rides in the reserved byte of the first record
-  bytes.set([0, 0xFF, 0, 0], records * 12);               // terminator record in place of a group
-  return { records, channels: 3, bytes };
+  const regs = sfxRefreshRegisters(asset);
+  const out = [0, 0, 0, 3];
+  regs.forEach((cur, i) => {
+    const pairs = [];
+    cur.forEach((v, k) => { if (i === 0 || v !== regs[i - 1][k]) pairs.push(k, v); });
+    out.push(pairs.length / 2, ...pairs);
+  });
+  out.push(0xFF);
+  return { records: regs.length, channels: 3, bytes: Uint8Array.from(out) };
 }
 
 export function convertMap(asset, tileCount = MAX_TILES) {

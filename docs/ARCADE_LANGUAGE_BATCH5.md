@@ -98,3 +98,7 @@ with the variables.
 6. **Mutation**: >= 30 deliberate bugs in the new compiler code (prologue, edge logic, timers' scoping, `lib$fmt`, `PLAY` range check) and the interpreter, all killed.
 7. **Studio**: sound editor model and smoke tests for tracks B / C; project validation; asset checks.
 8. Everything else green: `node arcade/tests/run-all.mjs`, `tests/studio-smoke.mjs`, the other suites of batch 4's list.
+
+# As built, three-channel effects (2026-11-10)
+The delta-stream format of items 17-18 is built: encoder `convertSfx` (`arcade-assets.js`, tests `tests/sfx-stream.mjs`, 3,500 random assets against an independent stream player), players in `sound.asm` of v2, v3 and v4 (`arcade/tests/m10-runtime-sound.mjs`, 73 checks, an end-to-end game on each runtime; `m10-mutations.mjs` 37 mutants killed). Costs: 260 T (no change) / 539 T (3 changes) / 755 T (6) / 1,115 T (11) per refresh against the first version's 2,162 T median; targets of item 18 were missed by 4-24 % (see `ARCADE_SPACE_PLAN.md` section 4 item 1). The tick is 50 bytes; `AY_SHADOW` is now at `$E000`; free bytes v2 7,047, v3 2,159, v4 1,873.
+

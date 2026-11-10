@@ -1,8 +1,8 @@
 "use strict";
 // m10-mutations.mjs -- mutation test of m10-runtime-sound.mjs (three-channel sound effects): copies arcade/ (runtime v2, v1 and v0 for the helpers, tools, tests) to a temporary
-// directory, applies one deliberate bug at a time to the NEW code of v2's sound.asm (v3 and v4 carry the same file), rebuilds and runs m10 on v2 (M10_VERSIONS=2); a mutation is
+// directory, applies one deliberate bug at a time to the NEW code (the delta-stream tick, RT_PLAY's start of a stream) of v2's sound.asm (v3 and v4 carry the same file), rebuilds and runs m10 on v2 (M10_VERSIONS=2); a mutation is
 // KILLED when the test fails.  Every mutant must be killed.  A pattern that does not occur exactly once is reported, not run.
-//   node arcade/tests/m10-mutations.mjs [name-fragment]       (about 15 s per mutant)
+//   node arcade/tests/m10-mutations.mjs [name-fragment] [--shard=i/n]       (about 20 s per mutant; --shard splits the list for parallel runs)
 //   node arcade/tests/m10-mutations.mjs --check               only verify that every pattern occurs once
 import { cpSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, rmSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -16,40 +16,51 @@ const TSRUN = join(ARCADE, '../tsrun');
 const args = process.argv.slice(2);
 const check = args.includes('--check');
 const only = args.find((a) => !a.startsWith('--'));
+const shard = (args.find((a) => a.startsWith('--shard=')) ?? '').slice(8).split('/').map(Number);      // --shard=i/n: mutants i, i + n, i + 2n ... (0-based i)
 
 const E = (from, to) => ({ file: 'sound.asm', from, to });
 const NOP3 = '    nop\n    nop\n    nop';
 const MUTANTS = [
+  // ---- RT_PLAY / RT_SILENCE ----
   ['RT_PLAY: three channels recognised by byte 3 = 2', [E('; byte 3 of the first record: 3 = three channels\n    cp 3', '; byte 3 of the first record: 3 = three channels\n    cp 2')]],
   ['RT_PLAY: byte 3 read from offset 2', [E('    ld hl,3\n    add hl,de', '    ld hl,2\n    add hl,de')]],
+  ['RT_PLAY: the test of byte 3 inverted', [E('    jr z,.three                 ; A = 3', '    jr nz,.three                ; A = 3')]],
   ['RT_PLAY: V_SFX_ACTIVE not cleared before the mode and the pointer change', [E('    xor a\n    ld (V_SFX_ACTIVE),a         ; the interrupt leaves', '    xor a\n    nop\n    nop\n    nop                         ; the interrupt leaves')]],
   ['RT_PLAY: V_SFX_CH never written', [E('.mode:\n    ld (V_SFX_CH),a', '.mode:\n' + NOP3)]],
+  ['RT_PLAY: a three-channel stream starts at the header (V_SFX_PTR = effect + 3)', [E('    inc hl\n    ex de,hl                    ; DE -> the stream', '    nop\n    ex de,hl                    ; DE -> the stream')]],
+  ['RT_PLAY: a three-channel stream starts at the effect itself (V_SFX_PTR = effect)', [E('    inc hl\n    ex de,hl                    ; DE -> the stream', '    nop\n    nop                         ; DE -> the stream')]],
   ['RT_PLAY: a one-channel effect over a three-channel one leaves B and C on', [E('    call z,SND_QUIET_BC         ;', NOP3 + '                         ;')]],
   ['RT_PLAY: the 3 -> 1 silencing also clears channel A (starts at R8)', [E('    ld hl,AY_SHADOW+9\n    ld bc,$0209', '    ld hl,AY_SHADOW+8\n    ld bc,$0309')]],
   ['RT_PLAY: the 3 -> 1 silencing stops after R9', [E('    ld bc,$0209', '    ld bc,$0109')]],
   ['RT_SILENCE: only R8 and R9', [E('    ld bc,$0308                 ; B = 3 registers', '    ld bc,$0208                 ; B = 3 registers')]],
   ['RT_SILENCE / silencing: writes even when the volume is already 0', [E('    ld a,(hl)\n    or a\n    jr z,.next                  ; already silent', '    ld a,(hl)\n    or a\n    nop\n    nop                         ; already silent')]],
   ['RT_SILENCE / silencing: the shadow is not updated', [E('    xor a\n    ld (hl),a\n    ld a,c\n    out (PORT_AY_REG),a', '    xor a\n    nop\n    ld a,c\n    out (PORT_AY_REG),a')]],
-  ['entry test: three channels when V_SFX_CH is 1', [E('    cp 3\n    jr z,.three', '    cp 1\n    jr z,.three')]],
-  ['entry test: inverted', [E('    cp 3\n    jr z,.three', '    cp 3\n    jr nz,.three')]],
-  ['tick3: the terminator is read from byte 0', [E('    inc de\n    ld a,(de)\n    dec de\n    inc a\n    jr z,.end', '    ld a,(de)\n    nop\n    nop\n    inc a\n    jr z,.end')]],
+  // ---- the entry test ----
+  ['entry test: three channels when V_SFX_CH is 1', [E('(+27 T)\n    cp 3\n    jr z,.three', '(+27 T)\n    cp 1\n    jr z,.three')]],
+  ['entry test: inverted', [E('(+27 T)\n    cp 3\n    jr z,.three', '(+27 T)\n    cp 3\n    jr nz,.three')]],
+  // ---- the delta-stream tick ----
+  ['tick3: HL not saved (the entry pushes nothing, the exit pops)', [E('    push hl\n    ld hl,(V_SFX_PTR)           ; HL -> the entry', '    nop\n    ld hl,(V_SFX_PTR)           ; HL -> the entry')]],
+  ['tick3: n is read again as the first pair byte (HL not advanced past n)', [E('    inc hl\n    or a                        ; (the flags stay', '    nop\n    or a                        ; (the flags stay')]],
+  ['tick3: the test of n lost (every entry has pairs)', [E('    or a                        ; (the flags stay for .some: S = $FF)\n    jr nz,.some', '    cp a                        ; (the flags stay for .some: S = $FF)\n    jr nz,.some')]],
+  ['tick3: n = 0 test inverted', [E('    jr nz,.some\n.x0:', '    jr z,.some\n.x0:')]],
+  ['tick3: an entry does not store the next pointer (n = 0)', [E('.x0:                            ; the exit of every entry (the ISR\'s own pop af / ei / ret: the same three bytes as JP ISR_DONE, 10 T faster)\n    ld (V_SFX_PTR),hl           ; HL -> the next entry', '.x0:                            ; the exit of every entry (the ISR\'s own pop af / ei / ret: the same three bytes as JP ISR_DONE, 10 T faster)\n' + NOP3 + '                         ; HL -> the next entry')]],
+  ['tick3: an entry with pairs does not store the next pointer', [E('    ld (V_SFX_PTR),hl           ; (.x0 again, inline', NOP3 + '                         ; (.x0 again, inline')]],
+  ['tick3: the exit of n = 0 does not restore HL', [E('    ld (V_SFX_PTR),hl           ; HL -> the next entry\n    pop hl', '    ld (V_SFX_PTR),hl           ; HL -> the next entry\n    nop')]],
+  ['tick3: the exit does not enable interrupts', [E('    pop hl\n    pop af\n    ei\n    ret\n.end:', '    pop hl\n    pop af\n    nop\n    ret\n.end:')]],
+  ['tick3: $FF test inverted (the end is taken for a positive n)', [E('    jp m,.stop', '    jp p,.stop')]],
   ['tick3: the end does not silence the volumes', [E('    call RT_SILENCE             ; V_SFX_ACTIVE = 0', NOP3 + '                         ; V_SFX_ACTIVE = 0')]],
-  ['tick3: only two channels of tone', [E('    ld bc,$0300                 ; B = 3 channels, C = the register', '    ld bc,$0200                 ; B = 3 channels, C = the register')]],
-  ['tick3: tone high not masked to 4 bits', [E('    and $0F                     ; tone high', '    nop\n    nop                         ; tone high')]],
-  ['tick3: the record step is 3 bytes', [E('    inc de\n    inc de\n    inc de                      ; the next record', '    inc de\n    inc de\n    nop                         ; the next record')]],
-  ['tick3: no noise found leaves R6 = 0 instead of A\'s noise', [E('    ld de,$0080                 ; D = noise-off bits', '    ld de,$0000                 ; D = noise-off bits')]],
-  ['tick3: noise sense inverted (the lowest channel with noise OFF)', [E('    bit 0,d\n    jr nz,.nonoise', '    bit 0,d\n    jr z,.nonoise')]],
-  ['tick3: tone-off and noise-off accumulators swapped', [E('    rra\n    rl c\n    rra\n    rl d', '    rra\n    rl d\n    rra\n    rl c')]],
-  ['tick3: noise-off bits go to R7 bits 2-4', [E('    add a,a\n    add a,a\n    add a,a                     ; noise off -> R7 bits 3-5', '    add a,a\n    add a,a\n    nop                         ; noise off -> R7 bits 3-5')]],
-  ['tick3: R7 bits 6-7 set (joystick port output)', [E('    or c                        ; tone off -> R7 bits 0-2', '    or c                        ; tone off -> R7 bits 0-2\n    or $40')]],
-  ['tick3: volume nibble shifted 3 times', [E('    rrca\n    rrca\n    rrca\n    rrca\n    and $0F\n    call SND_W                  ; R8, R9, R10', '    rrca\n    rrca\n    rrca\n    nop\n    and $0F\n    call SND_W                  ; R8, R9, R10')]],
-  ['tick3: volumes read from byte 0 of the records', [E('    inc de                      ; byte 1 of record A', '    nop                         ; byte 1 of record A')]],
-  ['tick3: the pointer advances 11 bytes', [E('    dec de\n    ld (V_SFX_PTR),de           ; the next group', '    nop\n    ld (V_SFX_PTR),de           ; the next group')]],
-  ['SND_W: always writes', [E('    cp (hl)\n    ret z\n    ld (hl),a\n    ld a,c', '    cp (hl)\n    nop\n    ld (hl),a\n    ld a,c')]],
-  ['SND_W: the shadow is not updated', [E('    ret z\n    ld (hl),a\n    ld a,c', '    ret z\n    nop\n    ld a,c')]],
-  ['SND_W: wrong register selected', [E('    ld a,c\n    out (PORT_AY_REG),a\n    ld a,(hl)', '    ld a,l\n    out (PORT_AY_REG),a\n    ld a,(hl)')]],
-  ['tick3: tone loop starts at the wrong shadow register (R1)', [E('    ld hl,AY_SHADOW\n    ld bc,$0300                 ; B = 3 channels', '    ld hl,AY_SHADOW+1\n    ld bc,$0300                 ; B = 3 channels')]],
-  ['tick3: R6 written with the R7 value', [E('    ld hl,AY_SHADOW+6\n    ld c,6\n    ld a,e', '    ld hl,AY_SHADOW+6\n    ld c,6\n    ld a,d')]],
+  ['tick3: BC is not preserved', [E('    push bc\n    push de\n    ld b,a                      ; B = pairs', '    push de\n    ld b,a                      ; B = pairs'), E('    djnz .pair\n    pop de\n    pop bc\n', '    djnz .pair\n    pop de\n')]],
+  ['tick3: DE is not preserved', [E('    push bc\n    push de\n    ld b,a                      ; B = pairs', '    push bc\n    ld b,a                      ; B = pairs'), E('    djnz .pair\n    pop de\n    pop bc\n', '    djnz .pair\n    pop bc\n')]],
+  ['tick3: the pair count is 1', [E('    ld b,a                      ; B = pairs', '    ld b,1                      ; B = pairs')]],
+  ['tick3: the loop stops after the first pair', [E('    djnz .pair\n    pop de', '    nop\n    nop\n    pop de')]],
+  ['tick3: the register is not skipped (read twice)', [E('    ld a,(hl)                   ; register\n    inc hl', '    ld a,(hl)                   ; register\n    nop')]],
+  ['tick3: the value is not skipped (the next register is the value)', [E('    ld a,(hl)                   ; value\n    inc hl', '    ld a,(hl)                   ; value\n    nop')]],
+  ['tick3: the register is selected on the data port', [E('    out (PORT_AY_REG),a         ; select it', '    out (PORT_AY_DATA),a        ; select it')]],
+  ['tick3: the value is written to the select port', [E('    out (PORT_AY_DATA),a        ; write it', '    out (PORT_AY_REG),a         ; write it')]],
+  ['tick3: the shadow is not updated', [E('    ld (de),a                   ; and keep the shadow exact', '    nop                         ; and keep the shadow exact')]],
+  ['tick3: the shadow offset is one too high', [E('    ld e,a                      ; DE -> AY_SHADOW + register', '    inc a\n    ld e,a                      ; DE -> AY_SHADOW + register')]],
+  ['tick3: the shadow page is wrong', [E('    ld d,AY_SHADOW>>8', '    ld d,(AY_SHADOW>>8)-1')]],
+  ['tick3: the shadow gets the register instead of the value', [E('    ld (de),a                   ; and keep the shadow exact', '    ld a,e\n    ld (de),a                   ; and keep the shadow exact')]],
 ];
 
 if (check) {
@@ -63,14 +74,16 @@ if (check) {
 const tmp = mkdtempSync(join(tmpdir(), 'm10mut-'));
 let killed = 0; const survived = [], broken = [];
 try {
-  for (const [name, edits] of MUTANTS) {
+  for (const [mi, [name, edits]] of MUTANTS.entries()) {
     if (only && !name.includes(only)) continue;
+    if (shard.length === 2 && mi % shard[1] !== shard[0]) continue;
     const root = join(tmp, 'root');
     rmSync(root, { recursive: true, force: true });
     mkdirSync(join(root, 'arcade'), { recursive: true });
     for (const d of ['runtime/v2', 'runtime/v1', 'runtime/v0', 'tools', 'tests']) cpSync(join(ARCADE, d), join(root, 'arcade', d), { recursive: true });
     mkdirSync(join(root, 'arcade/build/v2'), { recursive: true });
     symlinkSync(TSRUN, join(root, 'tsrun'));
+    symlinkSync(join(ARCADE, '../src'), join(root, 'src'));      // m10 compiles a game with the real compiler (src/lang/arcade)
     let bad = false;
     for (const e of edits) {
       const p = join(root, 'arcade/runtime/v2', e.file);

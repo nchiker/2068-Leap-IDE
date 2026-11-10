@@ -504,7 +504,7 @@ console.log('\n7. Three tracks: model, info, validation, rendering');
 
   // info and validation
   const i3 = S.sfxInfo(m3);
-  ok('sfxInfo of a three-channel effect: longest track ticks, ticks * 12 + 4 bytes, channels 3, the track lengths', i3.ticks === 2 && i3.bytes === 28 && i3.channels === 3 && same(i3.tracks, [1, 2, 1]) && Math.abs(i3.seconds - 2 / S.REFRESH_HZ) < 1e-12);
+  ok('sfxInfo of a three-channel effect: longest track ticks, the delta stream\'s length (the same as convertSfx), channels 3, the track lengths', i3.ticks === 2 && i3.bytes === convertSfx(m3).bytes.length && i3.bytes > 28 && i3.channels === 3 && same(i3.tracks, [1, 2, 1]) && Math.abs(i3.seconds - 2 / S.REFRESH_HZ) < 1e-12);
   ok('sfxInfo of a one-channel effect is as before: (ticks + 1) * 4, channels 1', (() => { const i = S.sfxInfo(fx(tk(1), tk(2))); return i.bytes === 12 && i.channels === 1 && i.ticks === 2; })());
   ok('sfxInfo bytes equal convertSfx bytes for 200 random effects of one to three channels', (() => {
     let good = 0;
@@ -648,27 +648,26 @@ console.log('\n8. convertSfx: one channel unchanged, three channels');
   const B = [{ tone: 0x0FF, vol: 2, noise: 31, mix: 5 }];
   const C = [{ tone: 0xE01, vol: 14, noise: 1, mix: 4 }, { tone: 1, vol: 1, noise: 2, mix: 3 }, { tone: 4095, vol: 0, noise: 0, mix: 0 }];
   const r = convertSfx({ ticks: A, ticksB: B, ticksC: C });
-  // spelled out explicitly (tone_lo, tone_hi | vol << 4, noise | mix << 5, 0): refresh 0 = A0 B0 C0
-  const g0 = [0x23, 0x01 | (5 << 4), 3 | (6 << 5), 3, 0xFF, 0x00 | (2 << 4), 31 | (5 << 5), 0, 0x01, 0x0E | (14 << 4), 1 | (4 << 5), 0];
-  const g1 = [0x45, 0x00 | (15 << 4), 0 | (6 << 5), 0, 0, 0, 0xE0, 0, 1, 0 | (1 << 4), 2 | (3 << 5), 0];
-  const g2 = [0, 0, 0xE0, 0, 0, 0, 0xE0, 0, 0xFF, 0x0F | (0 << 4), 0 | (0 << 5), 0];
-  const img = [...g0, ...g1, ...g2, 0, 0xFF, 0, 0];
-  ok('three channels: groups of 12 bytes (A, B, C records), shorter channels padded with tone 0 / vol 0 / noise 0 / mix 7, byte 3 of the first record = 3, one terminator',
-    r.channels === 3 && r.records === 3 && same(Array.from(r.bytes), img) && r.bytes.length === 3 * 12 + 4, Array.from(r.bytes).slice(0, 14).join(','));
-  ok('only the FIRST record carries the channel count: byte 3 of every other record is 0', r.bytes.every((b, k) => k === 3 ? b === 3 : (k % 4 !== 3 || b === 0)));
-  ok('channel B alone (A given): A is the first record of each group, B the second, C silent padding', (() => {
+  // spelled out by hand (batch 5 item 17, the delta stream): header 0,0,0,3; refresh 0 = all 11 registers; later entries = the registers that changed
+  //   r0: R0..R5 = 23 01 FF 00 01 0E, R6 = 31 (B is the lowest channel with noise on), R7 = 10 (A noise off, B tone off, C tone and noise on), R8..R10 = 5 2 14
+  //   r1: A 45/0 vol 15, B and C pad / C tone 1 vol 1 mix 3, no noise on -> R6 = A's noise 0, R7 = 62; r2: only C (4095, mix 0), R7 = 27
+  const img = [0, 0, 0, 3,
+    11, 0, 0x23, 1, 1, 2, 0xFF, 3, 0, 4, 1, 5, 0x0E, 6, 31, 7, 10, 8, 5, 9, 2, 10, 14,
+    9, 0, 0x45, 1, 0, 2, 0, 5, 0, 6, 0, 7, 62, 8, 15, 9, 0, 10, 1,
+    6, 0, 0, 4, 0xFF, 5, 0x0F, 7, 27, 8, 0, 10, 0,
+    0xFF];
+  ok('three channels: the delta stream (header 0,0,0,3; the first entry all 11 registers; later entries the changes; $FF), shorter channels padded with the silent record',
+    r.channels === 3 && r.records === 3 && same(Array.from(r.bytes), img) && r.bytes.length === 60, Array.from(r.bytes).join(','));
+  ok('the header is 0, 0, 0, 3 and the stream ends with the single byte $FF', r.bytes[0] === 0 && r.bytes[1] === 0 && r.bytes[2] === 0 && r.bytes[3] === 3 && r.bytes[r.bytes.length - 1] === 0xFF);
+  ok('channel B alone (A given): A and B registers follow their records, C is the silent padding', (() => {
     const o = convertSfx({ ticks: [{ tone: 10, vol: 1, noise: 0, mix: 6 }], ticksB: [{ tone: 20, vol: 2, noise: 0, mix: 6 }, { tone: 21, vol: 3, noise: 0, mix: 6 }] });
-    return o.records === 2 && o.channels === 3 && o.bytes.length === 28 && same(Array.from(o.bytes.slice(0, 12)), [10, 0x10, 6 << 5, 3, 20, 0x20, 6 << 5, 0, 0, 0, 0xE0, 0])
-      && same(Array.from(o.bytes.slice(12, 24)), [0, 0, 0xE0, 0, 21, 0x30, 6 << 5, 0, 0, 0, 0xE0, 0]) && same(Array.from(o.bytes.slice(24)), [0, 0xFF, 0, 0]);
+    return o.records === 2 && o.channels === 3 && o.bytes.length === 39
+      && same(Array.from(o.bytes), [0, 0, 0, 3, 11, 0, 10, 1, 0, 2, 20, 3, 0, 4, 0, 5, 0, 6, 0, 7, 60, 8, 1, 9, 2, 10, 0, 5, 0, 0, 2, 21, 7, 61, 8, 0, 9, 3, 0xFF]);
   })());
   ok('an empty channel A with a track B is allowed: A is all silent padding, records = B\'s length', (() => {
     const o = convertSfx({ ticks: [], ticksB: [{ tone: 20, vol: 2, noise: 0, mix: 6 }] });
-    return o.records === 1 && o.channels === 3 && same(Array.from(o.bytes.slice(0, 4)), [0, 0, 0xE0, 3]) && o.bytes.length === 16;
-  })());
-  ok('the terminator\'s second byte is $FF and no record of the effect has it (every channel: the unstorable rule)', (() => {
-    const o = convertSfx({ ticks: A, ticksB: B, ticksC: C });
-    for (let k = 0; k < o.records; k++) for (let c = 0; c < 3; c++) if (o.bytes[k * 12 + c * 4 + 1] === 0xFF) return false;
-    return o.bytes[o.bytes.length - 3] === 0xFF;
+    return o.records === 1 && o.channels === 3 && o.bytes.length === 28
+      && same(Array.from(o.bytes), [0, 0, 0, 3, 11, 0, 0, 1, 0, 2, 20, 3, 0, 4, 0, 5, 0, 6, 0, 7, 61, 8, 0, 9, 2, 10, 0, 0xFF]);
   })());
   const msg = (e) => { try { convertSfx(e); return null; } catch (x) { return x.message; } };
   ok('errors name the channel: "channel B tick 1 tone ...", "channel C tick 0: tone 3900 with volume 15 cannot be stored", channel A in a multi-channel effect too',
@@ -678,10 +677,10 @@ console.log('\n8. convertSfx: one channel unchanged, three channels');
     && /^tick 2 vol must be/.test(msg({ ticks: [tk(1), tk(2), { tone: 1, vol: 16 }] })));
   ok('a ticksB / ticksC that is not an array is refused naming the channel (null, undefined and [] mean none)',
     /ticksB.*channel B.*array/.test(msg({ ticks: [], ticksB: 'x' })) && /ticksC.*channel C/.test(msg({ ticks: [], ticksC: 7 })) && msg({ ticks: [], ticksB: null, ticksC: undefined }) === null && msg({ ticks: [tk(1)], ticksB: [], ticksC: [] }) === null);
-  ok('records is the longest channel (the interpreter\'s sound-length model) and the image length is records * 12 + 4', (() => {
+  ok('records is the longest channel (the interpreter\'s sound-length model); the image starts 0,0,0,3, ends $FF and its first entry is 11 pairs', (() => {
     for (const [a, b, c] of [[3, 0, 5], [7, 2, 1], [0, 4, 0], [1, 1, 1]]) {
       const o = convertSfx({ ticks: Array(a).fill(tk(5)), ticksB: Array(b).fill(tk(6)), ticksC: Array(c).fill(tk(7)) });
-      if (o.records !== Math.max(a, b, c) || o.bytes.length !== o.records * 12 + 4 || o.channels !== 3) return false;
+      if (o.records !== Math.max(a, b, c) || o.bytes.length < 4 + 23 + 1 || o.bytes[4] !== 11 || o.bytes[o.bytes.length - 1] !== 0xFF || same(Array.from(o.bytes.slice(0, 4)), [0, 0, 0, 3]) === false || o.channels !== 3) return false;
     }
     return true;
   })());

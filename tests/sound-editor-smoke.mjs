@@ -21,6 +21,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from '
 import { tmpdir, homedir } from 'node:os';
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { convertSfx } from '../src/lang/arcade/arcade-assets.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const outDir = process.argv[2] ?? mkdtempSync(join(tmpdir(), 'sound-smoke-'));
@@ -528,7 +529,7 @@ try {
   check('Reverse on B reverses B ticks 0..3 and leaves A alone', aT.ticksB[1].vol === 7 && aT.ticksB[3].vol === 0 && same(aT.ticks, BASE.ticks));
   // the info panel and the tone lane
   const infoT = await text('[data-role=info]');
-  check('the info panel counts the groups: 8 ticks, (8 x 12 + 4) = 100 bytes, three channels', /8 ticks/.test(infoT) && /100 bytes/.test(infoT) && /ticks × 12 \+ 4/.test(infoT), infoT);
+  check('the info panel counts the delta stream: 8 ticks, the byte count convertSfx gives for the edited asset, three channels', /8 ticks/.test(infoT) && infoT.includes(`${convertSfx(aT).bytes.length} bytes on the cartridge`) && /delta stream: three channels/.test(infoT), infoT);
   check('the track note lists the three lengths', /A 8, B 7, C 0/.test(await text('[data-role=track-note]')), await text('[data-role=track-note]'));
   await click(tab('a'));
   const pix = (i, tone) => evaluate(`(() => { const c = document.querySelector('[data-role=lanes]'), st = t.editor.getState(), y = Math.round(st.lanes.tone.y + Math.log(Math.max(${tone}, st.toneTop) / st.toneTop) / Math.log(4095 / st.toneTop) * st.lanes.tone.h);

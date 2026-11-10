@@ -841,7 +841,7 @@ export function createSoundEditor(container, host) {
     if (!sfx) { infoEl.textContent = ''; return; }
     const i = M.sfxInfo(sfx);
     infoEl.replaceChildren();
-    const sizeRule = i.channels === 3 ? '(ticks × 12 + 4: three channels)' : '((ticks + 1) × 4)';
+    const sizeRule = i.channels === 3 ? '(delta stream: three channels)' : '((ticks + 1) × 4)';
     infoEl.append(document.createTextNode(`${i.ticks} tick${i.ticks === 1 ? '' : 's'}, ${i.seconds.toFixed(2)} s\n${i.bytes} bytes on the cartridge ${sizeRule}\n`));
     const c = H.count();
     if (c !== null) {

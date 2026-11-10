@@ -38,6 +38,7 @@
 "use strict";
 
 export { createHistory } from './sprite-model.js';
+import { sfxRefreshRegisters, sfxStreamLength } from '../lang/arcade/arcade-assets.js';
 
 // ── constants ─────────────────────────────────────────────────────────────────────────────────────────────────
 export const AY_CLOCK = 1764000;                       // CPU / 2 as TSRun has it (unconfirmed on hardware, ARCADE_HARDWARE_NOTES.md section 4)
@@ -381,15 +382,27 @@ export function newSfx(preset = 'beep') {
 }
 
 // ── information and validation ────────────────────────────────────────────────────────────────────────────────
+/** Byte length of the three-channel image of an effect (arcade-assets.js: the delta stream).  Fields convertSfx would refuse are clamped first, so a size is always shown. */
+function streamBytes(sfx) {
+  const fix = (list) => (Array.isArray(list) ? list : []).map((t) => {
+    const f = (k, d) => Math.max(FIELDS[k].min, Math.min(FIELDS[k].max, Math.round(num(t?.[k], d))));
+    const r = { tone: f('tone', 0), vol: f('vol', 0), noise: f('noise', 0), mix: f('mix', 0) };
+    if (((r.tone >> 8) | (r.vol << 4)) === 0xFF) r.vol = 14;
+    return r;
+  });
+  return sfxStreamLength(sfxRefreshRegisters({ ticks: fix(sfx?.ticks), ticksB: fix(sfx?.ticksB), ticksC: fix(sfx?.ticksC) }));
+}
 /**
  * Size of an effect: {ticks (the longest track), seconds (at refreshHz), bytes on the cartridge, channels (1 or 3), tracks: [a, b, c] lengths}.
- * One channel: (ticks + 1) * 4 bytes; with channel B or C: ticks * 12 + 4 (groups of 12 bytes and the terminator record).
+ * One channel: (ticks + 1) * 4 bytes; with channel B or C: the length of the register delta stream (arcade-assets.js sfxStreamLength: 4-byte header, one
+ * entry per refresh with only the changed registers, the $FF end).  An effect convertSfx would refuse is sized as if its fields were clamped (the editor shows
+ * the problem separately through validateSfx).
  */
 export function sfxInfo(sfx, refreshHz = REFRESH_HZ) {
   const tracks = trackLengths(sfx);
   const ticks = Math.max(...tracks);
   const multi = tracks[1] > 0 || tracks[2] > 0;
-  return { ticks, seconds: ticks / refreshHz, bytes: multi ? ticks * 12 + 4 : (ticks + 1) * 4, channels: multi ? 3 : 1, tracks };
+  return { ticks, seconds: ticks / refreshHz, bytes: multi ? streamBytes(sfx) : (ticks + 1) * 4, channels: multi ? 3 : 1, tracks };
 }
 /**
  * The compiler's rules (arcade-assets.js convertSfx) plus the editor's notes.

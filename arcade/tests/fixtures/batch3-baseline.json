@@ -7,7 +7,7 @@
    "runtime": 2,
    "bytes": 8986,
    "dckBytes": 32777,
-   "dckSha256": "0df92f9cf87d4e83a294dd3363aa2d30e799179a79df739617cb575a15ef2544",
+   "dckSha256": "d8451d777f8e830704322a19c78c7fdbc4c18b170fc98769ca7e190f3dd2fe1b",
    "areaSha256": "7479e6fd6e55da4bb7162610cfcb142024fb5e793094301eb6518e913dc2f72c"
   },
   {
@@ -16,7 +16,7 @@
    "runtime": 2,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "06e6270c7018ed1cda3910617d8ac7e5d430ade85c8c0b3927b30dd01042c6bd",
+   "dckSha256": "b5d67e82c7c3618a2e4f6d9cbf7ddb0a16019f22a16b78aa4d690ed40e3ab0ff",
    "areaSha256": "3b993be6b1acc16b2222c108569737441a5e504b585a0533664bac7a0cd201c5"
   },
   {
@@ -25,7 +25,7 @@
    "runtime": 2,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "e89bfa69a07642fdad3b512e9af1f41733c24433263fd45cd9a9930122df3e92",
+   "dckSha256": "bf5bfc899427e0fc2fe47184878f96c2a92a7027a0dad001227e26f171323862",
    "areaSha256": "2a2eba5c01fdb7d0c5c6642cae443db4a1d237246ea086d56f89aaeb2edcddc6"
   },
   {
@@ -34,7 +34,7 @@
    "runtime": 2,
    "bytes": 465,
    "dckBytes": 32777,
-   "dckSha256": "ddb4e6f446747679ee940cb18b6d9a5fa866cfb752765350975b42c1ce53b16d",
+   "dckSha256": "f685385c7d87440ec1023f9bed5c8ad158e0d64c74187eaabe57044f5a87540e",
    "areaSha256": "a6814209d6d164b305bb3a6509691e65f7933597f5177f83ea922f4ccaa16b63"
   },
   {
@@ -43,7 +43,7 @@
    "runtime": 2,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "d45621dada3d2de4b3a8cecb9b01faf835d87272e1eaca6404440581fafc179a",
+   "dckSha256": "40ada4cf01f61e9ee0befe28c93a1b86670a37d23e44c9123edf4fc52c6e1078",
    "areaSha256": "19ec4b4b4aee31aad31ef38a0e4d8dfd0540befa08f7f6ce16bdda115f67e634"
   },
   {
@@ -52,8 +52,8 @@
    "runtime": 3,
    "bytes": 8986,
    "dckBytes": 32777,
-   "dckSha256": "b574f0b48d14c2bc2e2cbe0d5e54512d2eafaa661c4f40ed30f8ac60eda308dd",
-   "areaSha256": "2f4a86fad4cb9bd863aea81ef37fbced48871b3c468b05fc95378d6c5e000d15"
+   "dckSha256": "e558be3973e557d05aa7605f562c1432ebd33020de23bce5b1dbed4968244e5a",
+   "areaSha256": "19c389df08397e45be49ef8332113e6f55a6a3008cd4d62d5296c1e817cb43da"
   },
   {
    "src": "arcade/examples/breakout.arc",
@@ -61,8 +61,8 @@
    "runtime": 3,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "4b2ecd9488d6c789952c73990968fbc110a7420cf17d2a253d06c302e72a8dc4",
-   "areaSha256": "bca6b71aeddcf7e39ee5650da384faa655dc48890b2095cdcf75b1d32fcb58c7"
+   "dckSha256": "f991f24de8e3710cfab700b5502f2e4ae4f0c75f137dea3148046c85e7056072",
+   "areaSha256": "3d0f1ec46d9648b5f10d9982adafd7ce995fde833177d083d79c379ad8518587"
   },
   {
    "src": "arcade/examples/blockfall.arc",
@@ -70,8 +70,8 @@
    "runtime": 3,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "8652aa470ddf919251e948eafa1b177c89d05ed89fef6153711fda260c4bce28",
-   "areaSha256": "6aa48afa6778d093e9cde2265f7ebbbc82cfee353a07a0ff5bb34d54a442b809"
+   "dckSha256": "3ad388a1b85da399272b4ab9145ee55f213bcda29e328890e3a24f016cbe4834",
+   "areaSha256": "7b95d6eba5f0f55981a148992f094999ebecc59c1acc850d71373ff58069c64b"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -79,8 +79,8 @@
    "runtime": 3,
    "bytes": 465,
    "dckBytes": 32777,
-   "dckSha256": "0fe93326a172c6820661c4ea3a3a4b6f5e1945d9dcd13d30b729851b1beadad1",
-   "areaSha256": "cae2993fc00766c144b0d135ec5961854830673218a45fff4bb24bad8c499a9b"
+   "dckSha256": "ef6f6d718280b849d7b196c783fd8425410a6881b6bf386b7ac11ab3a19339ac",
+   "areaSha256": "697ac532598cf4564bde9e2855504efc311e0cdf874b06eb06bc69d4fcf609b4"
   },
   {
    "src": "arcade/tests/fixtures/blockfall-v0.arc",
@@ -88,8 +88,8 @@
    "runtime": 3,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "297f3e73b8b753ac5e3d2c19a2a9f2f39fdf66382dd7d3ddc9d32a3835a5b918",
-   "areaSha256": "c36cf8a10198902dbfc85f89cb51700ab24252cb2d6222123fb4845f96a098ec"
+   "dckSha256": "9d9ad15ccd558c24698013267450140c66eef04627686808a83af689d88b73d2",
+   "areaSha256": "2eca306879dbf84d222fdef4a9f8e9aa9c595cb7fafa10c0e02dcd49935ca2a0"
   },
   {
    "src": "arcade/examples/platformer.arc",
@@ -97,8 +97,8 @@
    "runtime": 3,
    "bytes": 9059,
    "dckBytes": 32777,
-   "dckSha256": "cfc14d11bf58614a524f38c2c910f98a3a31bc2ffe5e411ddff69cd541c2eab6",
-   "areaSha256": "faf8d82a2996307dfa30784d574df7cf5febe69d98fdf5b572a158b77ef6067f"
+   "dckSha256": "f4f1cfbaef4339a3cdf9efeba7ea8b1a1857864ddc632a7a662aabaf57edb23d",
+   "areaSha256": "46529a0bbfe10473bfdb2e5294fb799ee8cdf182345f725252aa64c9989f7777"
   }
  ]
 }

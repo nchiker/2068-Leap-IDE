@@ -163,23 +163,23 @@ W_TROWS         EQU $5B00
 W_ATTRT         EQU $5C00
 W_FLAGT         EQU $5D00
 
-V_FRAMES        EQU VARS+$00    ; word: refresh counter, incremented by the ISR
-V_SYNC          EQU VARS+$02    ; byte: handshake between the main loop and the ISR (the "frame ready" flag and the
+V_FRAMES        EQU VARS+$70    ; word: refresh counter, incremented by the ISR
+V_SYNC          EQU VARS+$72    ; byte: handshake between the main loop and the ISR (the "frame ready" flag and the
                                 ;   flip request in one byte):  0 = main loop busy, 1 = frame ready (set by the ISR),
                                 ;   2 / 3 = main loop finished the hidden file, show display file 0 / 1 at the next
                                 ;   interrupt (SYNC_REQUEST + file)
 SYNC_BUSY       EQU 0
 SYNC_READY      EQU 1
 SYNC_REQUEST    EQU 2
-V_SHADOW_FF     EQU VARS+$04    ; byte: last value written to port $FF (never read the port back)
-V_SHADOW_F4     EQU VARS+$05    ; byte: last value written to port $F4
-V_HIDDEN        EQU VARS+$06    ; byte: index (0/1) of the file the main loop is drawing into
-V_DIV           EQU VARS+$07    ; byte: frame_div from the game header (>= 1)
-V_TICKS         EQU VARS+$08    ; word: ticks completed (incremented just before the tick's flip request)
-V_TARGET        EQU VARS+$0A    ; word: V_FRAMES value at which the next tick may start
-V_NINST         EQU VARS+$0C    ; byte: ninst from the header (instances), clamped to MAX_SPRITES
-V_I             EQU VARS+$0D    ; byte: loop index of erase_all / draw_all / the boot's asset loop
-RT_SEED         EQU VARS+$0E    ; word: RT_RND state (readable and writable; 0 is replaced by 1 at the next call)
+V_SHADOW_FF     EQU VARS+$74    ; byte: last value written to port $FF (never read the port back)
+V_SHADOW_F4     EQU VARS+$75    ; byte: last value written to port $F4
+V_HIDDEN        EQU VARS+$76    ; byte: index (0/1) of the file the main loop is drawing into
+V_DIV           EQU VARS+$77    ; byte: frame_div from the game header (>= 1)
+V_TICKS         EQU VARS+$78    ; word: ticks completed (incremented just before the tick's flip request)
+V_TARGET        EQU VARS+$7A    ; word: V_FRAMES value at which the next tick may start
+V_NINST         EQU VARS+$7C    ; byte: ninst from the header (instances), clamped to MAX_SPRITES
+V_I             EQU VARS+$7D    ; byte: loop index of erase_all / draw_all / the boot's asset loop
+RT_SEED         EQU VARS+$7E    ; word: RT_RND state (readable and writable; 0 is replaced by 1 at the next call)
 V_H             EQU VARS+$10    ; byte: scratch
 V_X             EQU VARS+$11    ; byte: scratch
 V_Y             EQU VARS+$12    ; byte: scratch
@@ -207,7 +207,7 @@ V_ANYSKIP       EQU VARS+$60    ; byte: 1 when the skip analysis marked an insta
 ; v3 draw scratch (the formerly free $E04E-$E05D and $E061-$E06F)
 V_FTE           EQU VARS+$55    ; word: draw_all: the FTAB entry of the frame being built (a cache miss)
 V_HBASE         EQU VARS+$5A    ; byte: draw_all: $40 + the hidden file's offset (the high byte of its first row)
-AY_SHADOW       EQU VARS+$70    ; 16 bytes: what the sound code last wrote to AY registers 0..15 (boot zeroes the AY and this)
+AY_SHADOW       EQU VARS+$00    ; 16 bytes, PAGE ALIGNED ($E000: the delta tick addresses it as D = $E0, E = register; it and the 16 bytes of V_FRAMES..RT_SEED swapped places): what the sound code last wrote to AY registers 0..15 (boot zeroes the AY and this)
 V_SFX_CH        EQU VARS+$80    ; byte: channels of the playing effect, set by RT_PLAY from byte 3 of its first record (3 = groups of three records, else 1; boot 0 = 1)
 ; Scratch of the cell renderer, the text routines and RT_HIT (all in chunk 7; none is used by the ISR)
 E_NR            EQU VARS+$82    ; byte: erase: rows left
