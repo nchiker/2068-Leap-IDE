@@ -56,11 +56,11 @@ Order: B0, B1 (v2), B2, B3, B1 (v3, v4), B4, B5.
 7. **Not space, but queued:** gap items 10 (`RANDOMISE` / `BORDER` / `FLASH` words partly done) and 11 (32-bit scores); Studio debugger; real-hardware tests.
 8. **Rejected for now:** a game with both WINDOW and VIEW3D (needs the 4.5 KB scroll engine inside v4: 1.7 KB free), textured walls (speed, not space), cartridges above 64 KB.
 
-## 5. Decisions still open for the owner
-* Accept the revised sound design (item 1) and drop the 12-byte-group format before PR #5 is merged? (Recommended: yes; merge PR #5 after it.)
-* Chunk 6 as a third bank (40 KB total) in the first banking release, or later? (Recommended: later; design the directory for it now.)
-* Whether the per-asset `mapped` / `banked` override should exist in the language (e.g. a `BANK` clause on an asset declaration) or only in the project document.
-* When to run `/z80-skills:shrink-z80` for v3 (it has to be typed by the owner).
+## 5. Decisions (owner, 2026-11-10)
+* **Revised sound design accepted** (delta stream computed by the compiler); build it **before PR #5 is merged**, so the 12-byte-group format never reaches `main`.
+* **Chunk 6 as a third bank: later** (the directory is designed for it now).
+* **Banked-asset control: automatic placement, with a per-asset `mapped` / `banked` / `auto` override in the project document only, not in the language** (the owner took the recommendation; the "project document only" reading is mine, as with the per-scene display override). A `BANK` clause in the language can be added later without breaking anything.
+* **Still the owner's to type:** `/z80-skills:shrink-z80` runs. The v3 pass was started on 2026-11-10 (two workers, patches to be verified and combined by the main thread).
 
 ## 6. How to resume
 * Branches: `main` has Studio S2 and language batch 4 (PR #4 merged 2026-11-10); `arcade-batch5` (PR #5 open, not merged) has batch 5 and the v4 size pass; later commits on it: the contract change for the sound format (this plan's item 1).
