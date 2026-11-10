@@ -114,6 +114,15 @@
  *   - SEEN(s) / DEPTH(s) read what the harness injects: opts.billboard(tick, instance) -> {depth, col} (col -1 = not drawn), the values of the PREVIOUS tick's draw as the
  *     runtime leaves them in BB_TAB when PROC FRAME of `tick` starts; default: not drawn (depth 0, col -1). An instance outside the pool: SEEN -1, DEPTH 0.
  *
+ * ── Language batch 4: scenes (docs/ARCADE_LANGUAGE_BATCH4.md) ──────────────────────────────────────────────────────────────────────────────
+ *   Any number of SCENEs. The first starts the game: its variables are 0 and its array initialisers applied (the game-level ones too); the other
+ *   scenes' variables are 0 until entered. `ENTER name` abandons the running PROCs at once (an exception caught where INIT / FRAME was called) and
+ *   switches: sound stopped (SILENCE), every sprite instance hidden (with a v3 model also at 0, 0 frame 0), text state ink 0 paper 7 bright 0, border
+ *   opts.border0 ?? 1, CLS, the first map loaded at (0, 0); then the target scene's scope is rebuilt (its variables 0, its initialisers applied, its CONSTs
+ *   re-evaluated) and its INIT runs, inside the same tick. Game-level variables, the RND state, WINDOW and VIEW3D state are untouched. A scene's own
+ *   names are keyed `SCENE.NAME` in `vars` / `arrays` when the game has more than one scene (plain otherwise); the record has `scene` (the current
+ *   scene's index). Entering scenes in a ring of INITs longer than 1,000 switches in one call throws "interp: scene switch loop".
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -146,6 +155,11 @@ class Unsupported extends Error {
     super(`interp: unsupported ${what}`);
     this.node = node;
   }
+}
+
+/** ENTER (batch 4): thrown by the statement, caught where INIT / FRAME was called. */
+class SceneSwitch {
+  constructor(index, node) { this.index = index; this.node = node; }
 }
 
 class Scope {
@@ -280,6 +294,10 @@ export function interpret(ast, opts = {}) {
 
   const globalScope = new Scope(null);
   const varNames = [], arrNames = [];
+  const nameRecs = [];                       // batch 4: {key, name, kind: 'v' | 'a', scene: -1 (game level) | index}: every variable the records report
+  const sceneList = ast.scenes ?? [];
+  const multi = sceneList.length > 1;
+  let curScene = 0;
   const fnTable = new Map(), procTable = new Map();
   const clock = opts.clock ?? null;
   let playN = 0;
@@ -289,11 +307,11 @@ export function interpret(ast, opts = {}) {
     const st = { active: sfx.active, index: sfx.index, played: sfx.played };
     if (clock && sfx.index >= 0) { st.played = Math.max(0, clock.sample(tick) - sfx.t0); st.active = sfx.active && st.played <= sfxLen[sfx.index]; }
     const vars = {};
-    for (const k of varNames) vars[k] = sceneScope.find(k).v;
+    for (const r of nameRecs) if (r.kind === 'v') vars[r.key] = cellOf(r).v;
     const arrays = {};
-    for (const k of arrNames) arrays[k] = sceneScope.find(k).arr.slice();
+    for (const r of nameRecs) if (r.kind === 'a') arrays[r.key] = cellOf(r).arr.slice();
     return {
-      tick, vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
+      tick, scene: curScene, vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
@@ -306,7 +324,13 @@ export function interpret(ast, opts = {}) {
   const tickStep = () => { if (++steps > maxSteps) throw new Error('interp: step limit exceeded'); };
 
   // ── declarations (CONST, DIM with sizes / initialisers, PROCs, DEF FNs) ──
-  const declare = (scope, dim) => {
+  const declare = (scope, dim, si = -1) => {
+    const note = (it, kind) => {
+      const key = multi && si >= 0 ? `${up(sceneList[si].name)}.${up(it.name)}` : up(it.name);
+      if (nameRecs.some((r) => r.key === key)) return;
+      nameRecs.push({ key, name: up(it.name), kind, scene: si });
+      (kind === 'v' ? varNames : arrNames).push(key);
+    };
     for (const it of dim.items) {
       const dims = it.dims ?? (it.size !== null && it.size !== undefined ? [{ type: 'Number', value: it.size }] : null);
       if (dims) {
@@ -317,17 +341,17 @@ export function interpret(ast, opts = {}) {
         const arr = new Array(total).fill(0);
         (it.init ?? []).forEach((v, k) => { const val = ev(v, scope); if (k < total) arr[k] = val; });
         scope.vars.set(up(it.name), sizes.length === 2 ? { arr, n: total - 1, w: sizes[0], h: sizes[1] } : { arr, n: sizes[0] });
-        arrNames.push(up(it.name));
+        note(it, 'a');
         continue;
       }
       if (it.name.endsWith('$')) throw new Unsupported('string variables', it);
       scope.vars.set(up(it.name), { v: 0 });
-      varNames.push(up(it.name));
+      note(it, 'v');
     }
   };
-  const collect = (scope, holder, fns, procs, home) => {
+  const collect = (scope, holder, fns, procs, home, si = -1) => {
     for (const d of holder.decls ?? []) {
-      if (d.type === 'Dim') declare(scope, d);
+      if (d.type === 'Dim') declare(scope, d, si);
       else if (d.type === 'Const') scope.vars.set(up(d.name), { v: ev(d.value, scope), isConst: true });
       else if (d.type === 'DefFn') fns.set(up(d.name), Object.assign(Object.create(d), { home }));
     }
@@ -365,11 +389,16 @@ export function interpret(ast, opts = {}) {
     return ps;
   }
   collect(globalScope, ast, fnTable, procTable, 'global');
-  if ((ast.scenes ?? []).length !== 1) throw new Unsupported('anything but exactly one SCENE', ast);
-  const scene = ast.scenes[0];
-  const sceneScope = new Scope(globalScope);
-  const sceneFns = new Map(fnTable), sceneProcs = new Map(procTable);
-  collect(sceneScope, scene, sceneFns, sceneProcs, 'scene');
+  if (sceneList.length === 0) throw new Unsupported('a game with no SCENE', ast);
+  // batch 4: one record per scene: its scope (rebuilt at every entry), its PROC and DEF FN tables (scene-level names override game-level ones)
+  const sceneInfo = sceneList.map((node, i) => {
+    const info = { node, scope: new Scope(globalScope), fns: new Map(fnTable), procs: new Map(procTable) };
+    collect(info.scope, node, info.fns, info.procs, 'scene', i);
+    if (i > 0) for (const c of info.scope.vars.values()) if (c.arr) c.arr.fill(0);        // another scene's arrays are 0 (no initialisers) until it is entered
+    return info;
+  });
+  let sceneScope = sceneInfo[0].scope, sceneFns = sceneInfo[0].fns, sceneProcs = sceneInfo[0].procs;
+  const cellOf = (r) => (r.scene < 0 ? globalScope : sceneInfo[r.scene].scope).vars.get(r.name);
   const evConst = (e) => ev(e, sceneScope);
   // language batch 2: the window's world
   {
@@ -723,6 +752,7 @@ export function interpret(ast, opts = {}) {
         return null;
       }
       case 'Local': case 'Const': return null;
+      case 'Enter': throw new SceneSwitch(sceneIndex.get(up(s.scene.name)), s);
       case 'Border': border = ev(s.value, sc) & 7; return null;
       case 'Randomise': {
         let sd;
@@ -779,10 +809,42 @@ export function interpret(ast, opts = {}) {
     run(p.body, procScope(p, []));
   };
 
+  // ── scenes (batch 4) ──
+  const sceneIndex = new Map(sceneList.map((n, i) => [up(n.name), i]));
+  const border0 = opts.border0 ?? 1;
+  /** The machine back to the state the game started in (contract section 3): sound, sprites, text state, border, screen, first map. */
+  const resetMachine = () => {
+    sfx.active = false; if (clock) ++playN;                                                   // SILENCE
+    for (let i = 0; i < spr.length; i++) spr[i] = V3 ? { visible: 0, asset: instAsset[i] ?? 0, x: 0, y: 0, frame: 0 } : { ...spr[i], visible: 0 };
+    textAttr = (textAttr & ~0x7F) | BG_ATTR;                                                  // INK 0, PAPER 7, BRIGHT 0
+    border = border0;
+    cells.fill(BLANK_CELL); attrs.fill(((textAttr >> 3) & 7) << 3); curRow = 0; curCol = 0;   // CLS
+    if (maps.length) loadMap(maps[0], 0, 0);
+  };
+  /** The scene becomes the current one with a fresh scope: its variables 0, its initialisers applied. */
+  const enterScene = (k) => {
+    const info = sceneInfo[k];
+    info.scope = new Scope(globalScope);
+    collect(info.scope, info.node, info.fns, info.procs, 'scene', k);
+    curScene = k; sceneScope = info.scope; sceneFns = info.fns; sceneProcs = info.procs;
+  };
+  let pending = null;
+  /** Call INIT or FRAME of the current scene; an ENTER inside it is left in `pending`. */
+  const execute = (name) => {
+    try { callProc(name); } catch (ex) { if (ex instanceof SceneSwitch) pending = ex.index; else throw ex; }
+  };
+  const settle = () => {
+    for (let guard = 0; pending !== null; ) {
+      if (++guard > 1000) throw new Error('interp: scene switch loop');
+      const k = pending; pending = null;
+      resetMachine(); enterScene(k); execute('INIT');
+    }
+  };
+
   tick = 0;
   events = [];
   playN = 0; rndN = 0;
-  callProc('INIT');
+  execute('INIT'); settle();
   const init = snapshot(events);
   const ticks = [];
   for (let t = 1; t <= nTicks; t++) {
@@ -790,8 +852,8 @@ export function interpret(ast, opts = {}) {
     events = [];
     playN = 0; rndN = 0;
     if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
-    callProc('FRAME');
+    execute('FRAME'); settle();
     ticks.push(snapshot(events));
   }
-  return { init, ticks, varNames, arrNames, spriteNames: sprites, sfxNames, frameDiv, instAsset, assetPhases };
+  return { init, ticks, varNames, arrNames, scenes: sceneList.map((n) => n.name), spriteNames: sprites, sfxNames, frameDiv, instAsset, assetPhases };
 }

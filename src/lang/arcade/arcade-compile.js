@@ -1,10 +1,13 @@
 /**
  * src/lang/arcade/arcade-compile.js — Leap Arcade compile pipeline, milestone M2 (pure; no DOM, no node: imports).
  *
- *   compile(text, {runtime, image, assets}) -> {dck, memory, map, errors, warnings, usage}
+ *   compile(text, {runtime, image, assets, scenes}) -> {dck, memory, map, errors, warnings, usage, scenes}
  *
  *   runtime  the parsed arcade/build/runtime.json
  *   image    the runtime's 65,536-byte memory image (runtime.bin) as a Uint8Array
+ *   scenes   the project's scenes object ({name: {display: 'auto'|'buffers'|'fine'|'hires'}}), optional; `out.scenes` is the per-scene display plan
+ *            (arcade-display.js, language batch 4 section 10), set as soon as the program checks without errors (absent before that, also
+ *            when a later stage fails), and its notes are warnings
  *   assets   {sprites: {name: {w, h, rows: [{bits, mask}]}}} (or that sprites map itself); since M3 also
  *            {sprites, tilesets: {name: {tiles}}, sfx: {name: {ticks}}, maps: {name: {w, h, cells}}} (arcade-assets.js)
  *
@@ -28,6 +31,7 @@ import { check } from './arcade-check.js';
 import { generate } from './arcade-codegen.js';
 import { link } from './arcade-link.js';
 import { assetTables, lookupAsset } from './arcade-assets.js';
+import { sceneDisplayPlan } from './arcade-display.js';
 
 const V3_WORDS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);
 const V4_WORDS = new Set(['COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']);        // language batch 3 (the raycaster runtime)
@@ -96,7 +100,7 @@ export function usageLines(u) {
   return lines;
 }
 
-export function compile(text, { runtime, image, assets } = {}) {
+export function compile(text, { runtime, image, assets, scenes } = {}) {
   const out = { dck: null, memory: null, map: null, errors: [], warnings: [], usage: null };
   const sort = (l) => l.sort((a, b) => a.line - b.line || a.col - b.col);
   const take = (list) => { for (const d of list) (d.severity === 'warning' ? out.warnings : out.errors).push(d); };
@@ -106,6 +110,11 @@ export function compile(text, { runtime, image, assets } = {}) {
   if (out.errors.length) { sort(out.errors); return out; }
   take(check(ast, { version: runtime?.version ?? 0 }));
   if (out.errors.length) { sort(out.errors); sort(out.warnings); return out; }
+  out.scenes = sceneDisplayPlan(ast, { scenes });
+  for (const sc of out.scenes) {
+    for (const message of sc.notes) out.warnings.push({ line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'warning', message });
+  }
+  sort(out.warnings);
   if (!runtime || !image) {
     out.errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message: 'no runtime image: build the runtime first (arcade/build/runtime.json and runtime.bin)' });
     return out;

@@ -1,9 +1,10 @@
 /**
  * src/lang/arcade/arcade-scan.js — what an Arcade program defines, and block structure (pure; no DOM, no CodeMirror).
  *
- *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts}  from the parser's AST (never throws)
+ *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts, enters}  from the parser's AST (never throws)
  *   blockLines(lines)     -> {depth, dedent, blocks}  indentation and fold ranges by the block words
  *   inputHints(text)      -> string[]  the keys / joysticks a program reads, for the Studio's hint line
+ *   scanRoles(text)       -> {tileset, maps, world, floorplans, view}  what each map / tile set is for (Studio slice S2; never throws)
  *
  * Positions: `line` is 1-based, `col` 0-based (the parser's).
  */
@@ -20,11 +21,13 @@ import { parse, tokenize } from './arcade-parse.js';
  *   fns:    {name: string, param: string, line: number, col: number}[],
  *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number}[],
  *   consts: {name: string, scene: string|null, line: number, col: number}[],     (language batch 1: CONST name = expr)
+ *   enters: {from: string|null, to: string, line: number, col: number}[],        (language batch 4: every ENTER statement in source order; `from` is the enclosing scene's name, null in a top-level PROC;
+ *                                                                                  line / col are the target name's position)
  * }}
  * `size` is the first dimension when it is a plain number (null for a scalar or a size written as an expression), `dims` 0 (a scalar), 1 or 2.
  */
 export function scanArcade(text) {
-  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [] };
+  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [], enters: [] };
   let ast;
   try { ast = parse(text).ast; } catch { return out; }
   const addDecls = (decls, scene) => {
@@ -51,6 +54,17 @@ export function scanArcade(text) {
       out.procs.push({ name: p.name, param: p.param ?? null, params: (p.params ?? (p.param ? [{ name: p.param }] : [])).map((q) => q.name), locals, scene, line: at.line, col: at.col });
     }
   };
+  // ENTER statements: walk the statement lists of every PROC (an ENTER is never inside an expression)
+  const findEnters = (node, from) => {
+    if (Array.isArray(node)) { for (const x of node) findEnters(x, from); return; }
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'Enter') {
+      const t = node.scene ?? node;
+      out.enters.push({ from, to: String(t.name ?? ''), line: t.line ?? node.line, col: t.col ?? node.col });
+      return;
+    }
+    for (const k of Object.keys(node)) { const v = node[k]; if (v && typeof v === 'object') findEnters(v, from); }
+  };
   for (const a of ast.assets ?? []) {
     const at = a.namePos ?? a;
     out.assets.push({ kind: String(a.kind).toUpperCase(), name: a.name, asset: a.asset, count: a.count ?? null, line: at.line, col: at.col });
@@ -62,7 +76,65 @@ export function scanArcade(text) {
     out.scenes.push({ name: s.name, line: at.line, col: at.col });
     addDecls(s.decls, s.name);
     addProcs(s.procs, s.name);
+    for (const p of s.procs ?? []) findEnters(p.body, s.name);
   }
+  for (const p of ast.procs ?? []) findEnters(p.body, null);
+  out.enters.sort((a, b) => a.line - b.line || a.col - b.col);
+  return out;
+}
+
+// ── Roles of tile sets and maps (Studio slice S2, docs/ARCADE_STUDIO_S2_CONTRACT.md section 3) ───────────────────
+
+/**
+ * What the program does with its tile set and maps, from the parser's AST (a partial AST after a syntax error is used as far as it goes; a parser
+ * that throws gives the empty answer). Asset names are those written in the quotes of the declarations.
+ *   tileset     the asset of the first TILESET declaration, or null
+ *   maps        {mapDeclName: assetName} for every MAP declaration (the window's world and the view's floor plan included)
+ *   world       the asset of the MAP the WINDOW names, or null
+ *   floorplans  [asset of the MAP the VIEW3D names] (empty without a VIEW3D, or when it names no declared MAP)
+ *   view        {bright, ceil, floor}: the VIEW3D's effective BRIGHT (default 1), CEIL paper (0) and FLOOR paper (1), a number 0..7 (BRIGHT 0..1) when the
+ *               clause is a constant expression (numbers, CONSTs, unary minus, + - *), else null for that field; null without a VIEW3D
+ */
+export function scanRoles(text) {
+  const out = { tileset: null, maps: {}, world: null, floorplans: [], view: null };
+  let ast;
+  try { ast = parse(String(text ?? '')).ast; } catch { return out; }
+  try {
+    const up = (s) => String(s).toUpperCase();
+    const decl = new Map();                     // UP(map decl name) -> asset
+    for (const a of ast.assets ?? []) {
+      const kind = String(a.kind).toUpperCase();
+      if (kind === 'TILESET' && out.tileset === null) out.tileset = a.asset;
+      else if (kind === 'MAP') { out.maps[a.name] = a.asset; if (!decl.has(up(a.name))) decl.set(up(a.name), a.asset); }
+    }
+    const win = (ast.windows ?? [])[0];
+    if (win?.map?.name !== undefined) out.world = decl.get(up(win.map.name)) ?? null;
+    const view = (ast.views ?? [])[0];
+    if (view) {
+      const fp = view.map?.name !== undefined ? decl.get(up(view.map.name)) : undefined;
+      if (fp !== undefined) out.floorplans.push(fp);
+      const consts = new Map();
+      for (const d of ast.decls ?? []) if (d.type === 'Const') consts.set(up(d.name), d.value);
+      const fold = (e, depth = 0) => {
+        if (!e || depth > 20) return null;
+        if (e.type === 'Number') return e.value;
+        if (e.type === 'Unary' && e.op === '-') { const v = fold(e.operand, depth + 1); return v === null ? null : -v; }
+        if (e.type === 'Ident' && consts.has(up(e.name))) return fold(consts.get(up(e.name)), depth + 1);
+        if (e.type === 'Binary' && (e.op === '+' || e.op === '-' || e.op === '*')) {
+          const a = fold(e.left, depth + 1), b = fold(e.right, depth + 1);
+          return a === null || b === null ? null : e.op === '+' ? a + b : e.op === '-' ? a - b : a * b;
+        }
+        return null;
+      };
+      const pick = (node, dflt, hi) => {
+        if (!node) return dflt;
+        const v = fold(node);
+        return v !== null && Number.isInteger(v) && v >= 0 && v <= hi ? v : null;
+      };
+      const c = view.clauses ?? {};
+      out.view = { bright: pick(c.bright, 1, 1), ceil: pick(c.ceil, 0, 7), floor: pick(c.floor, 1, 7) };
+    }
+  } catch { /* keep what was found */ }
   return out;
 }
 

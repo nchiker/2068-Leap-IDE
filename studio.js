@@ -18,7 +18,8 @@
 import { createEmulator } from './src/emulator.js';
 import { STUDIO_PROFILES } from './src/lang/profiles.js';
 import { setAssetSource } from './src/lang/arcade/editor.js';
-import { inputHints } from './src/lang/arcade/arcade-scan.js';
+import { inputHints, scanArcade, scanRoles } from './src/lang/arcade/arcade-scan.js';
+import { checkAssets } from './src/lang/arcade/arcade-assetcheck.js';
 import { toggleHelp, setHelpProfile } from './src/help.js';
 import { createSymbolsTool } from './src/tools/symbols.js';
 import * as P from './src/arcade-project.js';
@@ -176,6 +177,35 @@ const TS_RGB = Array.from({ length: 16 }, (_, i) => {
   return { name: (i & 8 ? 'bright ' : '') + COLOUR_NAMES[i & 7], rgb: '#' + hex(level(2)) + hex(level(4)) + hex(level(1)) };
 });
 
+// ── Source roles, asset warnings, "used by" (docs/ARCADE_STUDIO_S2_CONTRACT.md sections 3 and 7) ──
+let rolesCache = { version: -1, value: null, warnings: [] };
+function refreshRoles() {
+  if (rolesCache.version === version) return rolesCache;
+  let value = null;
+  try { value = scanRoles(P.buildSource(project).text); } catch { value = null; }
+  let warnings = [];
+  try { warnings = checkAssets(project, value); } catch (e) { console.error('[Studio] checkAssets threw', e); }
+  rolesCache = { version, value, warnings };
+  return rolesCache;
+}
+const sourceRoles = () => refreshRoles().value;
+const projectAssetWarnings = () => refreshRoles().warnings.map((w) => ({ ...w }));
+
+/** What uses an asset: source lines naming it, and (for a tile set) the maps drawn with it. */
+function usedBy(kind, name) {
+  const out = { assets: [], source: P.assetReferences(project, kind, name) };
+  if (kind === 'tilesets') {
+    const roles = sourceRoles();
+    for (const mname of P.listAssets(project, 'maps')) {
+      const m = project.assets.maps[mname];
+      const own = typeof m.tileset === 'string' && m.tileset !== '' ? m.tileset : null;
+      const eff = own && Object.hasOwn(project.assets.tilesets, own) ? own : (roles?.tileset ?? null);
+      if (eff === name) out.assets.push(mname);
+    }
+  }
+  return out;
+}
+
 function makeHost(id) {
   const fire = (ev) => changed({ ...ev, source: id });
   return {
@@ -208,6 +238,10 @@ function makeHost(id) {
     onSelectAsset(fn) { selectListeners.add(fn); return () => selectListeners.delete(fn); },
     selectAsset: (kind, name) => selectAsset(kind, name),
     getUsage: () => lastGood?.usage ?? lastCompile?.usage ?? null,
+    roles: () => sourceRoles(),
+    assetWarnings: (kind, name) => projectAssetWarnings().filter((w) => (kind === undefined || w.kind === kind) && (name === undefined || w.asset === name)),
+    usedBy: (kind, name) => usedBy(kind, name),
+    soundCount: () => scanArcade(P.buildSource(project).text).assets.filter((a) => a.kind === 'SFX').length,
     status: (text) => say(String(text), 'idle'),
     palette: TS_RGB,
   };
@@ -216,7 +250,7 @@ const studioHost = makeHost('studio');
 
 const NEW_ASSET = {
   sprites: () => ({ w: 16, h: 16, frames: [{ rows: Array.from({ length: 16 }, () => ({ bits: '0000', mask: '0000', ink: 7, paper: 0, bright: 0 })) }] }),
-  tilesets: () => ({ tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00', ink: 7, paper: 0, bright: 0 })) }] }),
+  tilesets: () => ({ tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00', ink: 0, paper: 7, bright: 0 })), flags: 0 }] }),
   maps: () => ({ w: 32, h: 24, tileset: '', cells: 'FF'.repeat(32 * 24) }),
   sfx: () => ({ ticks: [{ tone: 200, vol: 0, noise: 0, mix: 6 }] }),
 };
@@ -258,6 +292,9 @@ function assetMeta(kind, a) {
 // a create…Editor(container, host) export; loaded the first time its tab is opened.
 const ASSET_EDITORS = {
   sprites: { tab: 'sprites', module: './src/tools/sprite-editor.js', factory: 'createSpriteEditor', container: 'tool-sprites', title: 'sprite editor' },
+  tilesets: { tab: 'tilesets', module: './src/tools/tile-editor.js', factory: 'createTileEditor', container: 'tool-tilesets', title: 'tile editor' },
+  maps: { tab: 'maps', module: './src/tools/map-editor.js', factory: 'createMapEditor', container: 'tool-maps', title: 'map editor' },
+  sfx: { tab: 'sfx', module: './src/tools/sound-editor.js', factory: 'createSoundEditor', container: 'tool-sfx', title: 'sound editor' },
 };
 const editors = {};              // kind -> {api} | {missing: true}
 
@@ -347,9 +384,66 @@ function renderProject() {
     if (names.length === 0) ul.append(el('li', 'asset-empty', 'none yet'));
     groups.append(ul);
   }
+  renderScenes();
   $('project-name').textContent = project.name;
   document.title = `${project.name} — Leap Arcade Studio`;
   $('input-hint').textContent = inputHints(P.buildSource(project).text).join(' · ') || 'Click the screen to play.';
+}
+
+// ── Scenes group (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md section 11) ──
+const DISPLAY_CHOICES = [
+  ['auto', 'Auto'], ['buffers', 'Two buffers'], ['fine', '8x1 colour (not built yet)'], ['hires', 'Hi-res text (not built yet)'],
+];
+const DISPLAY_SUIT = { fine: '8x1 colour', hires: 'hi-res text' };
+
+/** The scenes of the last compile that got as far as reading them, else of the last good one (a broken edit keeps the panel). */
+const currentScenes = () => lastCompile?.scenes ?? lastGood?.scenes ?? [];
+
+/** `auto: two buffers, because sprites move`, or, when something else would suit, `auto: a static picture: ... (would suit 8x1 colour, built as two buffers)`. */
+function planText(sc) {
+  if (sc.auto === 'buffers') return `auto: ${sc.reason.replace(/^two display files flipped each tick, /, 'two buffers, ')}`;
+  return `auto: ${sc.reason} — would suit ${DISPLAY_SUIT[sc.auto]}, built as two buffers`;
+}
+
+function setSceneDisplayUi(name, value) {
+  P.setSceneDisplay(project, name, value);
+  changed({ type: 'project', source: 'studio' });
+}
+
+function renderScenes() {
+  const section = $('scene-section');
+  const scenes = currentScenes();
+  const multi = scenes.length >= 2;
+  section.hidden = !multi;
+  const list = $('scene-list');
+  list.replaceChildren();
+  if (!multi) return;
+  scenes.forEach((sc, i) => {
+    const li = el('li', 'proj-row scene-row');
+    li.dataset.scene = sc.name;
+    const head = el('div', 'scene-head');
+    const start = el('span', 'scene-start', i === 0 ? '▶' : '');
+    if (i === 0) start.title = 'The game starts in this scene';
+    head.append(start, el('span', 'proj-name', sc.name));
+    li.append(head, el('div', 'scene-plan', planText(sc)));
+    const sel = el('select', 'scene-select');
+    sel.title = `Display setup of scene ${sc.name}`;
+    sel.setAttribute('aria-label', `Display setup of scene ${sc.name}`);
+    sel.dataset.scene = sc.name;
+    const current = Object.hasOwn(project.scenes ?? {}, sc.name) ? (project.scenes[sc.name]?.display ?? 'auto') : 'auto';
+    const choices = DISPLAY_CHOICES.slice();
+    if (!choices.some(([v]) => v === current)) choices.push([current, `${current} (unknown)`]);   // a loaded project may carry any text
+    for (const [value, label] of choices) {
+      const o = el('option', null, label);
+      o.value = value;
+      if (value === 'fine' || value === 'hires') o.disabled = current !== value;
+      if (value === current) o.selected = true;
+      sel.append(o);
+    }
+    sel.addEventListener('change', () => setSceneDisplayUi(sc.name, sel.value));
+    li.append(sel);
+    list.append(li);
+  });
 }
 
 // ── Build: diagnostics, problems, size panel ─────────────────────
@@ -387,8 +481,19 @@ function renderResult() {
     row.addEventListener('click', () => jumpTo(d));
     box.append(row);
   }
-  box.hidden = list.length === 0;
-  $('editor-title').textContent = list.length ? `${activeFile} — ${plural(res.errors.length, 'error')}${res.warnings.length ? `, ${plural(res.warnings.length, 'warning')}` : ''}` : activeFile;
+  // asset warnings the compile does not report itself (docs/ARCADE_STUDIO_S2_CONTRACT.md section 3); a click selects the asset
+  const assetWarns = projectAssetWarnings().filter((w) => !w.compilerAlso);
+  const assetLabel = { tilesets: 'tiles', maps: 'map', sfx: 'sound', sprites: 'sprite' };
+  for (const w of assetWarns) {
+    const row = el('div', `problem ${w.severity}`);
+    row.dataset.asset = `${w.kind}/${w.asset}`;
+    row.append(el('span', 'p-sev', w.severity), el('span', 'p-where', `${assetLabel[w.kind] ?? w.kind}: ${w.asset}`), el('span', 'p-msg', w.message));
+    row.addEventListener('click', () => selectAsset(w.kind, w.asset));
+    box.append(row);
+  }
+  box.hidden = list.length + assetWarns.length === 0;
+  const nWarn = res.warnings.length + assetWarns.length;
+  $('editor-title').textContent = list.length || assetWarns.length ? `${activeFile} — ${plural(res.errors.length, 'error')}${nWarn ? `, ${plural(nWarn, 'warning')}` : ''}` : activeFile;
   $('sb-prog').textContent = res.ok
     ? `${res.usage.total} of ${res.usage.total + res.usage.free} bytes · ${Math.max(1, Math.round(res.ms))} ms`
     : `${plural(res.errors.length, 'error')}`;
@@ -420,6 +525,7 @@ function renderSizes() {
     ['Tiles', d.tileset],
     ['Map', d.map],
     ['Sound', d.sfx],
+    ['Scenes', (good.scenes?.length ?? 0) >= 2 ? plural(good.scenes.length, 'scene') : undefined],     // (of the build on show)
     ['Header and tables', (u.header ?? 0) + (u.descriptors ?? 0)],
     ['Variables (RAM)', u.varBytes],
     ['Sprites', cg.sprites !== undefined ? `${plural(cg.sprites, 'asset')}, ${cg.instances} on screen` : undefined],
@@ -849,6 +955,7 @@ window.leapIDE = {
 window.leapStudio = {
   get project() { return project; },
   get activeFile() { return activeFile; },
+  get selected() { return selected; },
   get emulator() { return emulator; },
   get lang() { return lang; },
   get lastCompile() { return lastCompile; },

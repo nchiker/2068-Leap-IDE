@@ -37,6 +37,7 @@ function button(label, title, onClick, cls = '') {
   const b = el('button', 'sprited-btn ' + cls, label, { type: 'button' });
   if (title) b.title = title;
   b.addEventListener('click', onClick);
+  b.addEventListener('mousedown', (e) => e.preventDefault());       // the editor keeps the keyboard focus (shortcuts keep working)
   return b;
 }
 function select(options, value, onChange, title) {
@@ -209,6 +210,12 @@ export function createSpriteEditor(container, host) {
   const root = el('div', 'sprited', null, { tabindex: '0' });
   root.dataset.role = 'sprite-editor';
   container.append(root);
+  // a click on a button, label or empty space gives the focus to the editor, so Ctrl+Z, Ctrl+C and the tool keys work even after a
+  // button was disabled or the strips were rebuilt (either drops focus to the page)
+  root.addEventListener('pointerdown', (e) => {
+    const tag = e.target?.tagName;
+    if (tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') root.focus({ preventScroll: true });
+  });
 
   const bar = el('div', 'sprited-bar');
   const nameSel = el('select', 'sprited-select', null, { 'aria-label': 'Sprite' });

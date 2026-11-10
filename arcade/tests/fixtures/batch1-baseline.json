@@ -6,7 +6,7 @@
    "assets": "arcade/examples/breakout.assets.json",
    "runtime": 2,
    "bytes": 1505,
-   "sha256": "df8a7bb066862e9ccfe4b31bb676a1e707448df5a6a530f086ca05e584f675c7"
+   "sha256": "01c92f85ae997cbe5ab289de7e17de5769c303942c081772fc44b5027445320a"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -16,7 +16,7 @@
    "sha256": "f044d34d7423747b353e98c70511a501c9567175a63620e7e20d946f135e451f"
   },
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 2,
    "bytes": 8986,
@@ -27,7 +27,7 @@
    "assets": "arcade/tests/fixtures/blockfall-v0.assets.json",
    "runtime": 2,
    "bytes": 7848,
-   "sha256": "9673cb245ef89303eb167419f9157b0fd4a2316c00ef7515f6370d2e0746ad7d"
+   "sha256": "a0623fae338cd0ae5048dc8944781649bf8b133135f782f39e0256d39b937155"
   },
   {
    "src": "arcade/tests/fixtures/breakout-v1.arc",

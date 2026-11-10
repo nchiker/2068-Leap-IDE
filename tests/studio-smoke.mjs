@@ -125,6 +125,57 @@ try {
   await evaluate(`(() => { window.confirm = () => true; document.querySelector('.proj-row[data-file="extra.arc"] .proj-act:last-child').click(); return true; })()`);
   check('deleting extra.arc removes it', (await evaluate("Object.keys(leapStudio.project.files).join()")) === 'main.arc');
 
+  // ── Scenes (language batch 4 section 11): the Scenes group, the display override, the Symbols labels ──
+  const TWO = 'GAME "two"\nFRAMERATE 30\nSPRITE ball = "ball"\nSCENE title\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    IF KEYDOWN(" ") THEN\n      ENTER play\n    ENDIF\n  ENDP\nENDSCENE\n' +
+    'SCENE play\n  DIM x\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    SHOW ball AT x, 8\n  ENDP\nENDSCENE\n';
+  check('a one-scene game hides the Scenes group', await evaluate("document.getElementById('scene-section').hidden && document.querySelectorAll('#scene-list .scene-row').length === 0"));
+  await setSource(TWO);
+  const rows = await waitFor(`(() => { const r = [...document.querySelectorAll('#scene-list .scene-row')]; return r.length === 2 ? r.map((x) => ({ name: x.dataset.scene, start: x.querySelector('.scene-start').textContent, plan: x.querySelector('.scene-plan').textContent, value: x.querySelector('select').value, opts: [...x.querySelectorAll('option')].map((o) => o.value + (o.disabled ? '!' : '')).join() })) : null; })()`, 8000);
+  check('a two-scene game shows the Scenes group with two rows (the plan is there although code generation may refuse two scenes)', !!rows && !(await evaluate("document.getElementById('scene-section').hidden")), JSON.stringify(rows));
+  check('the first scene carries the start marker, the second none', rows && rows[0].name === 'title' && rows[0].start === '▶' && rows[1].name === 'play' && rows[1].start === '', JSON.stringify(rows));
+  check('the plan text: "auto: two buffers, because sprites move" for play; the static title is advised hi-res but built as two buffers',
+    rows && rows[1].plan === 'auto: two buffers, because sprites move' && /^auto: text only: .* would suit hi-res text, built as two buffers$/.test(rows[0].plan), JSON.stringify(rows?.map((r) => r.plan)));
+  check('the select offers Auto / Two buffers / 8x1 / Hi-res, the last two disabled, Auto chosen', rows && rows.every((r) => r.value === 'auto' && r.opts === 'auto,buffers,fine!,hires!'), JSON.stringify(rows?.map((r) => r.opts)));
+  const sizeRow = await evaluate("[...document.querySelectorAll('#size-table tr')].map((r) => r.textContent).find((t) => /^Scenes/.test(t)) ?? null");
+  const okNow = await evaluate('leapStudio.lastCompile.ok');
+  check('the size panel has a "Scenes" row "2 scenes" once the two-scene game builds (until then the last good build, a one-scene game, shows none)', okNow ? sizeRow === 'Scenes2 scenes' : sizeRow === null, `ok=${okNow} row=${sizeRow}`);
+  // the Symbols tab: `title (start) -> play`, `play`
+  await evaluate("document.querySelector('.panel-tab[data-tab=\"symbols\"]').click()");
+  const syms = await waitFor(`(() => { const t = [...document.querySelectorAll('#tool-symbols .sym-name')].map((n) => n.textContent); return t.some((x) => /^title/.test(x)) ? t : null; })()`, 5000);
+  check('the Symbols tab labels the scenes: "title (start) -> play" and "play"', !!syms && syms.includes('title (start) -> play') && syms.includes('play'), JSON.stringify(syms));
+  await evaluate("document.querySelector('.panel-tab[data-tab=\"display\"]').click()");
+  // choosing a display: the project changes (dirty mark), is auto-saved, recompiled, and the select keeps it
+  await evaluate(`(() => { const s = document.querySelector('#scene-list select[data-scene="play"]'); s.value = 'buffers'; s.dispatchEvent(new Event('change')); return true; })()`);
+  const chosen = await evaluate(`({ scenes: JSON.stringify(leapStudio.project.scenes), dirty: !document.getElementById('dirty-mark').hidden, value: document.querySelector('#scene-list select[data-scene="play"]').value })`);
+  check('choosing "Two buffers" writes project.scenes.play.display and marks the project changed', chosen.scenes === '{"play":{"display":"buffers"}}' && chosen.dirty && chosen.value === 'buffers', JSON.stringify(chosen));
+  await sleep(1200);
+  const savedScenes = await evaluate(`JSON.parse(localStorage.getItem('leap-studio.project')).scenes`);
+  check('it is auto-saved with the project', JSON.stringify(savedScenes) === '{"play":{"display":"buffers"}}', JSON.stringify(savedScenes));
+  const after = await evaluate(`({ value: document.querySelector('#scene-list select[data-scene="play"]').value, rows: document.querySelectorAll('#scene-list .scene-row').length, fine: document.querySelector('#scene-list select[data-scene="play"] option[value="fine"]').disabled })`);
+  check('after the recompile the group is rebuilt with the choice kept (8x1 still disabled)', after.value === 'buffers' && after.rows === 2 && after.fine === true, JSON.stringify(after));
+  // a project that carries "fine" (loaded from a file): the option is shown and selectable, and the compiler warns that it is not built
+  await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes.play.display = 'fine'; p.scenes.title = { display: 'q' }; leapStudio.openProject(p, {saved: false}); return true; })()`);
+  const fineRow = await waitFor(`(() => { const s = document.querySelector('#scene-list select[data-scene="play"]'); return s ? [s.value, s.querySelector('option[value="fine"]').disabled, document.querySelector('#scene-list select[data-scene="title"]').value].join() : null; })()`, 8000);
+  check('a loaded "fine" shows as chosen and enabled; an unknown value is shown too', fineRow === 'fine,false,q', fineRow);
+  const warns = await waitFor(`(() => { const w = leapStudio.lastCompile?.warnings?.map((d) => d.message).filter((m) => /display/.test(m)); return w && w.length === 2 ? w : null; })()`, 8000);
+  check('the compiler warnings reach the problems list ("is not built into any runtime yet", "is not a display setup")',
+    !!warns && warns.some((m) => /display 'fine' \(8 x 1 colour\) is not built/.test(m)) && warns.some((m) => /'q' is not a display setup/.test(m)) &&
+    (await evaluate("[...document.querySelectorAll('#problems .problem.warning')].filter((r) => /display/.test(r.textContent)).length")) === 2, JSON.stringify(warns));
+  // Save and Open round trip of the override
+  await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes = { play: { display: 'buffers' } }; leapStudio.openProject(p, {saved: false}); return true; })()`);
+  await evaluate(`(() => { window.smokeDownloads = []; HTMLAnchorElement.prototype.click = function () { if (this.download) fetch(this.href).then(r => r.text()).then(t => smokeDownloads.push({ name: this.download, text: t })); }; return true; })()`);
+  await evaluate("document.getElementById('btn-save').click()");
+  const sv = await waitFor('window.smokeDownloads[0]', 5000);
+  check('Save writes the override into the .leapgame', !!sv && JSON.parse(sv.text).scenes?.play?.display === 'buffers', sv?.text?.slice(-120));
+  await evaluate("(() => { window.confirm = () => true; document.getElementById('btn-new').click(); return true; })()");
+  await sleep(300);
+  check('New starts without scenes', (await evaluate('JSON.stringify(leapStudio.project.scenes)')) === '{}' && await evaluate("document.getElementById('scene-section').hidden"));
+  await evaluate(`(() => { const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(sv?.text ?? '')}], 'two.leapgame'));
+    const input = document.getElementById('file-input'); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
+  const reread = await waitFor(`(() => { const s = document.querySelector('#scene-list select[data-scene="play"]'); return s ? s.value : null; })()`, 10000);
+  check('Open reads it back: the select shows "Two buffers" for play', reread === 'buffers', String(reread));
+  await setSource('GAME "x"\nFRAMERATE 30\nSCENE play\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n  ENDP\nENDSCENE\n');
+
   // ── Examples ──
   await evaluate("window.confirm = () => true");
   const names = {};
@@ -178,7 +229,8 @@ try {
   await evaluate("document.getElementById('btn-run').click()");
   const sh = await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 20 && leapStudio.ticks() < 400 && leapStudio.ticks()', 25000);
   check('the shooter example runs on the TS2068', !!sh, `tick ${sh}`);
-  check('the input hint names the example\'s keys', /Keys: O P Q A Space/.test(await evaluate("document.getElementById('input-hint').textContent")), await evaluate("document.getElementById('input-hint').textContent"));
+  const h = await evaluate("document.getElementById('input-hint').textContent");   // keys come in source order: the title scene (Space) is read first
+  check('the input hint names the example\'s keys (all five, in source order)', (() => { const m = /Keys: ([^·]*)/.exec(h); return !!m && ['O', 'P', 'Q', 'A', 'Space'].every((k) => m[1].split(' ').includes(k)); })(), await evaluate("document.getElementById('input-hint').textContent"));
   await b.shot('studio-shooter');
   await evaluate("document.getElementById('btn-stop').click()");
 
@@ -196,6 +248,46 @@ try {
   } else {
     console.log('SKIP  sprite editor: src/tools/sprite-editor.js is not present');
   }
+
+  // ── Slice S2: tile, map and sound editors, asset warnings (docs/ARCADE_STUDIO_S2_CONTRACT.md) ──
+  for (const [kind, name, tab, box] of [['tilesets', 'gfx', 'tilesets', 'tool-tilesets'], ['maps', 'sky', 'maps', 'tool-maps'], ['sfx', 'pew', 'sfx', 'tool-sfx']]) {
+    if (!existsSync(ROOT + { tilesets: 'src/tools/tile-editor.js', maps: 'src/tools/map-editor.js', sfx: 'src/tools/sound-editor.js' }[kind])) { console.log(`SKIP  ${kind} editor: not present`); continue; }
+    await evaluate(`document.querySelector('.proj-row[data-asset="${kind}/${name}"]').click()`);
+    const ok = await waitFor(`document.getElementById('${box}').children.length > 0 && !document.getElementById('${box}').hidden && document.querySelector('.panel-tab[data-tab="${tab}"]').classList.contains('active')`, 10000);
+    check(`selecting ${kind}/${name} opens the ${tab} tab with its editor`, !!ok, await status());
+    await b.shot('studio-' + tab);
+  }
+  // a real click on the tile editor's pixel grid edits the tile through the host and recompiles
+  if (existsSync(ROOT + 'src/tools/tile-editor.js')) {
+    await evaluate(`document.querySelector('.proj-row[data-asset="tilesets/gfx"]').click()`);
+    await waitFor(`document.querySelector('#tool-tilesets [data-role=grid]')`, 10000);
+    await evaluate(`document.querySelector('#tool-tilesets [data-role=strip] [data-tile="1"]').click()`);
+    const before = await evaluate(`JSON.stringify(leapStudio.project.assets.tilesets.gfx.tiles[1].rows.map((r) => r.bits))`);
+    const v0 = await evaluate('leapStudio.project.assets.tilesets.gfx.tiles.length && 1');
+    const pt = await evaluate(`(() => { const r = document.querySelector('#tool-tilesets [data-role=grid]').getBoundingClientRect(); return { x: r.left + r.width * 0.06, y: r.top + r.height * 0.06, w: r.width }; })()`);
+    const mouse = (type, x, y, buttons) => b.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+    await mouse('mouseMoved', pt.x, pt.y, 0); await mouse('mousePressed', pt.x, pt.y, 1); await mouse('mouseReleased', pt.x, pt.y, 0);
+    const after = await evaluate(`JSON.stringify(leapStudio.project.assets.tilesets.gfx.tiles[1].rows.map((r) => r.bits))`);
+    check('a real click on the tile grid changes the tile in the project', before !== after && !!v0, `${before} -> ${after}`);
+    const re = await waitFor(`leapStudio.lastCompile && leapStudio.lastCompile.ok`, 8000);
+    check('the edited game still compiles', !!re);
+  }
+  // asset warnings reach the problems list: a minority background attribute in the shooter's sky map, and BRIGHT black mixed
+  const warned = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s2'); const t = h.getAsset('tilesets', 'gfx');
+      for (const r of t.tiles[2].rows) { r.ink = 2; r.paper = 5; r.bright = 0; }
+      for (const r of t.tiles[1].rows) { r.paper = 0; r.bright = 0; }
+      for (const r of t.tiles[3].rows) { r.paper = 0; r.bright = 1; }
+      return h.setAsset('tilesets', 'gfx', t).ok; })()`);
+  check('host: a tile set write with mixed colours is accepted', warned === true);
+  const probs = await waitFor(`(() => { const rows = [...document.querySelectorAll('#problems .problem[data-asset]')]; return rows.length ? rows.map((r) => r.dataset.asset + ' ' + r.textContent) : null; })()`, 8000);
+  check('the problems list carries the asset warnings (colour attributes / black and BRIGHT black)', !!probs && probs.some((t) => /^maps\/sky/.test(t) || /^tilesets\/gfx/.test(t)), JSON.stringify(probs)?.slice(0, 300));
+  if (probs) {
+    await evaluate(`document.querySelector('#problems .problem[data-asset]').click()`);
+    const sel = await waitFor(`leapStudio.selected && (leapStudio.selected.kind === 'maps' || leapStudio.selected.kind === 'tilesets')`, 3000);
+    check('clicking an asset warning selects that asset', !!sel);
+  }
+  const hostApi = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s3'); return { roles: !!h.roles(), w: Array.isArray(h.assetWarnings()), by: h.usedBy('tilesets', 'gfx').assets.join(), sfx: h.soundCount() }; })()`);
+  check('host: roles(), assetWarnings(), usedBy() and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
 
   // ── Project files: save, open, round trip ──
   await evaluate(`(() => {

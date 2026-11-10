@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- tests/sound-editor-test.html: a blank page that mounts the Studio's sound editor on a fake host. Driven by tests/sound-editor-smoke.mjs.
+     ?theme=light|dark picks the ide.css palette. ?example=shooter|platformer|vaults|blockfall|breakout fills the project with that example's
+     effects (default shooter). window.t exposes the host, the editor, the log of what the editor did and the AudioContext stub's record. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sound editor test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } #mount, #bare { width: 900px; } </style>
+</head>
+<body>
+<div id="mount"></div>
+<div id="bare"></div>
+<script type="module">
+import { createSoundEditor } from '../src/tools/sound-editor.js';
+import * as M from '../src/tools/sound-model.js';
+import { validateAsset } from '../src/arcade-project.js';
+import { scanArcade, scanRoles } from '../src/lang/arcade/arcade-scan.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+
+// an AudioContext stub that records what the editor asks of Web Audio (so the test can check one buffer of the expected length)
+const audio = { contexts: 0, buffers: [], sources: [], started: 0, stopped: 0 };
+class FakeAudioContext {
+  constructor() { audio.contexts++; this.sampleRate = 22050; this.state = 'running'; this.currentTime = 0; this.destination = {}; }
+  resume() { return Promise.resolve(); }
+  close() { return Promise.resolve(); }
+  createBuffer(ch, length, rate) {
+    const b = { numberOfChannels: ch, length, sampleRate: rate, data: new Float32Array(length), getChannelData() { return this.data; }, copyToChannel(d) { this.data.set(d); } };
+    audio.buffers.push(b);
+    return b;
+  }
+  createBufferSource() {
+    const n = { buffer: null, onended: null, connect() {}, start() { audio.started++; }, stop() { audio.stopped++; } };
+    audio.sources.push(n);
+    return n;
+  }
+}
+window.AudioContext = FakeAudioContext;
+
+const example = q.get('example') ?? 'shooter';
+const assetsOf = await (await fetch(`../arcade/examples/${example}.assets.json`)).json();
+const sfx = assetsOf.sfx ?? {};
+const copy = (v) => JSON.parse(JSON.stringify(v));
+const sourceFor = (names) => `GAME "test"\n${names.map((n) => `SFX ${n} = "${n}"`).join('\n')}\n\nSCENE play\nEND SCENE\n`;
+const project = { format: 1, name: 'test', framerate: 30, files: { 'main.arc': sourceFor(Object.keys(sfx)) }, assets: { sprites: {}, tilesets: {}, maps: {}, sfx: copy(sfx), music: {} }, scenes: {} };
+
+// the asset checks are written by somebody else: use them when present, else a stand-in that knows the one sfx rule
+let checkAssets = (p) => {
+  const out = [];
+  for (const [name, a] of Object.entries(p.assets.sfx ?? {})) {
+    const bad = (a.ticks ?? []).map((t, i) => (t.vol === 15 && t.tone >= 3840 ? i : -1)).filter((i) => i >= 0);
+    if (bad.length) out.push({ id: 'sfx-unstorable', severity: 'error', kind: 'sfx', asset: name, ticks: bad, compilerAlso: true, message: `sound effect "${name}": ticks ${bad.join(', ')} cannot be stored` });
+  }
+  return out;
+};
+let realChecks = false;
+try { checkAssets = (await import('../src/lang/arcade/arcade-assetcheck.js')).checkAssets; realChecks = true; } catch { /* stub */ }
+
+const listeners = new Set(), selListeners = new Set();
+const log = { sets: [], deletes: [], renames: [], status: [], selects: [], refused: [], invalid: 0, unstorable: 0, ids: [] };
+const ID = 'sound-editor';
+const fire = (ev) => { for (const fn of [...listeners]) fn(ev); };
+const roles = () => { try { return scanRoles(project.files['main.arc']); } catch { return null; } };
+const unstorable = (value) => (value.ticks ?? []).some((t) => (t.tone >> 8 | t.vol << 4) === 0xFF);
+const host = {
+  id: ID,
+  getProject: () => project,
+  listAssets: (kind) => Object.keys(project.assets[kind] ?? {}).sort(),
+  getAsset: (kind, name) => (project.assets[kind]?.[name] ? copy(project.assets[kind][name]) : null),
+  setAsset(kind, name, value) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,30}$/.test(name)) return { ok: false, error: 'bad name' };
+    const bad = validateAsset(kind, value);
+    if (bad) { log.refused.push(bad); return { ok: false, error: bad }; }
+    if (kind === 'sfx' && unstorable(value)) log.unstorable++;
+    project.assets[kind][name] = copy(value);
+    log.sets.push(name);
+    fire({ type: 'asset', kind, name, source: ID });
+    return { ok: true };
+  },
+  deleteAsset(kind, name) { if (!project.assets[kind][name]) return false; delete project.assets[kind][name]; log.deletes.push(name); fire({ type: 'asset', kind, name, source: ID }); return true; },
+  renameAsset(kind, a, b) {
+    if (project.assets[kind][b]) return { ok: false, error: 'clash' };
+    project.assets[kind][b] = project.assets[kind][a]; delete project.assets[kind][a]; log.renames.push([a, b]);
+    fire({ type: 'asset', kind, name: b, oldName: a, source: ID }); return { ok: true };
+  },
+  onProjectChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+  onSelectAsset: (fn) => { selListeners.add(fn); return () => selListeners.delete(fn); },
+  selectAsset: (kind, name) => { log.selects.push(name); for (const fn of selListeners) fn({ kind, name }); },
+  getUsage: () => null,
+  status: (t) => log.status.push(t),
+  palette: [],
+  // contract section 7
+  roles,
+  assetWarnings: (kind, name) => checkAssets(project, roles()).filter((w) => (kind === undefined || w.kind === kind) && (name === undefined || w.asset === name)),
+  soundCount: () => scanArcade(project.files['main.arc']).assets.filter((a) => a.kind === 'SFX').length,
+  usedBy: (kind, name) => (kind === 'sfx' && new RegExp(`SFX\\s+\\w+\\s*=\\s*"${name}"`, 'i').test(project.files['main.arc']) ? [`main.arc: SFX "${name}"`] : []),
+};
+const editor = createSoundEditor(document.getElementById('mount'), host);
+
+window.t = {
+  host, editor, project, log, M, audio, realChecks, example,
+  /** An asset change made by somebody else (another editor, an example, Open). */
+  externalSet(name, asset) { project.assets.sfx[name] = copy(asset); fire({ type: 'asset', kind: 'sfx', name, source: 'other' }); },
+  replaceProject(p) { project.assets = copy(p.assets); fire({ type: 'project', source: 'studio' }); },
+  setSource(text) { project.files['main.arc'] = text; fire({ type: 'source', source: 'studio' }); },
+  sourceFor,
+  /** A second editor on a host that has only the required members (no warnings, no count, no events, no status). */
+  mountBare() {
+    const bareHost = { getProject: () => project, getAsset: host.getAsset, setAsset: host.setAsset, listAssets: host.listAssets };
+    window.bare = createSoundEditor(document.getElementById('bare'), bareHost);
+    return true;
+  },
+};
+window.testReady = true;
+</script>
+</body>
+</html>

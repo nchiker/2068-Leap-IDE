@@ -174,5 +174,5 @@ SETWORLD x, y = t                     REM statement
 * Transparent layers: not deferred, **rejected by measurement** (129k-398k T; parallax RESULTS). Revisit only if a game needs it.
 * Animated tiles: groups with the Studio tile editor (the animation data is authored there); a game can animate by `SETWORLD` meanwhile.
 * Music (`MUSIC`, 3 AY channels) and scenes in the compiler: separate planned items (M4b and gap-list #8) that do not touch the scroll engine.
-* The Studio world-map editor and asset warnings (mixed BRIGHT-black paper, sky tile 0 not blank, background cells with differing attributes): Studio slice S2, planned next.
+* The Studio world-map editor and asset warnings (mixed BRIGHT-black paper, sky tile 0 not blank, background cells with differing attributes): Studio slice S2, done 2026-11-10 (`ARCADE_STUDIO_S2_CONTRACT.md`).
 * Real hardware (the SCLD / contention question, `ARCADE_HARDWARE_NOTES.md` item 0): needs the owner's machine; every number here is TSRun-only until then.

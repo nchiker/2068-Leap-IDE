@@ -2,7 +2,7 @@
  "about": "SHA-256 of the DCK and of the game area ($8000-$BFFF) that the compiler BEFORE language batch 3 (git b259485) produced for these programs against the real runtimes v2 and v3 (arcade/build/v2, arcade/build/v3); tests/arcade-m8-compiler.mjs checks that programs that use none of the batch 3 words compile to identical bytes.",
  "programs": [
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 2,
    "bytes": 8986,
@@ -16,8 +16,8 @@
    "runtime": 2,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "b4e6bc0313b95668e58b1ba4640a44551c00812f1d50a040f2cfb4089206b8ba",
-   "areaSha256": "458d572a86bf6ac5568a08b2e926e2e8f4f9e2d9212b3ba5437aac3708b79b46"
+   "dckSha256": "6b581c7c74db176db2575a949e18da81e880739d61b5aedb643f9fa98dd0fa4c",
+   "areaSha256": "3b993be6b1acc16b2222c108569737441a5e504b585a0533664bac7a0cd201c5"
   },
   {
    "src": "arcade/examples/blockfall.arc",
@@ -25,8 +25,8 @@
    "runtime": 2,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "ed72cc8453f9b16cc837b70e71626300553eb58064ca006f022a01adb78d2304",
-   "areaSha256": "4a790091bf900d948abc5c750337c745440eaa96fb482509c5584207ba922df8"
+   "dckSha256": "55855d13228ea077846d4d29513e983edbc1c0ab7f6dfead59671fd32d06d3d4",
+   "areaSha256": "2a2eba5c01fdb7d0c5c6642cae443db4a1d237246ea086d56f89aaeb2edcddc6"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -43,11 +43,11 @@
    "runtime": 2,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "c3df5736eb0330217c186c8746bb2f25dd46060914fa41b8b8fc1a934d560c6c",
-   "areaSha256": "a712eb93f54f2136b3a0904571945d57b8543dc73c53c64e8f853a50f8535a95"
+   "dckSha256": "85c0084fe1230de02af5d756d57fabb0180634bb99c2d0b155358631725bf097",
+   "areaSha256": "19ec4b4b4aee31aad31ef38a0e4d8dfd0540befa08f7f6ce16bdda115f67e634"
   },
   {
-   "src": "arcade/examples/shooter.arc",
+   "src":"arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 3,
    "bytes": 8986,
@@ -61,8 +61,8 @@
    "runtime": 3,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "2a0355b90418091c39769f10de200e74dce3cb964f81a79ed207c2f143354918",
-   "areaSha256": "82b3cfe617ce3cf2dd760d93b2a2bde41fecc1f1b7d55fe345adf486d5434e9e"
+   "dckSha256": "b1a03bd7c760cb1159ec86fbc15670d175687de4c5e550a1a189a3902db59133",
+   "areaSha256": "eed578757583bc4514f76ce299577a2fbee40891aacd7b389a6da95e12cef31c"
   },
   {
    "src": "arcade/examples/blockfall.arc",
@@ -70,8 +70,8 @@
    "runtime": 3,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "ebc004da44e3d4cd5f6d8890e90a26cc3c71a3a64fb8b99e8bb134baa0d8ab92",
-   "areaSha256": "706310312300337201866b6bbcb841e038fd84cc84634cc0267087ac8d55f5e3"
+   "dckSha256": "70e8c2b1aba9e5eaae7412a43e53ec5983ff5ae12629a49d67f808ee0af30c8c",
+   "areaSha256": "87e8566a1376d1f19b7c3a02ed2f1796ba2460e25089ef070397c819195d994d"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -88,8 +88,8 @@
    "runtime": 3,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "2e09a2170419e247e6071a991b4a0a2e8398bd7bb81f2618ad8216f0c8980eee",
-   "areaSha256": "b013f501b186408560c98b56f725265e0e5ecd7bded6d4cae601ed410bcdb4c9"
+   "dckSha256": "7426b503fa927f64ce9b328ae583744164fcc5f71f2ac3bc90b0e1e110c2dfbf",
+   "areaSha256": "ca45ec8ea6b79eace04734aea1727571983527e7837c9ca44ead793f5866056c"
   },
   {
    "src": "arcade/examples/platformer.arc",

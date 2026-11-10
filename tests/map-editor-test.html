@@ -1,0 +1,89 @@
+<!doctype html>
+<!-- tests/map-editor-test.html: a blank page that mounts the Studio's map editor on a fake host. Driven by tests/map-editor-smoke.mjs.
+     ?theme=light|dark picks the ide.css palette. window.t exposes the host, the editor, the project and a log of what the editor did;
+     t.load(name) replaces the project by an example of arcade/examples (name.arc + name.assets.json). -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Map editor test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } #mount { width: 1000px; } </style>
+</head>
+<body>
+<div id="mount"></div>
+<script type="module">
+import { createMapEditor } from '../src/tools/map-editor.js';
+import * as M from '../src/tools/map-model.js';
+import * as T from '../src/tools/tile-model.js';
+import { PALETTE } from '../src/tools/sprite-model.js';
+import { validateAsset, exampleProject, buildSource, assetReferences } from '../src/arcade-project.js';
+import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
+import { checkAssets } from '../src/lang/arcade/arcade-assetcheck.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+
+const copy = (v) => JSON.parse(JSON.stringify(v));
+const project = { format: 1, name: 'test', framerate: 30, files: { 'main.arc': '' }, assets: { sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {} }, scenes: {} };
+const listeners = new Set(), selListeners = new Set();
+const log = { sets: [], bad: [], deletes: [], renames: [], status: [], selects: [] };
+const ID = 'map-editor';
+const fire = (ev) => { for (const fn of [...listeners]) fn(ev); };
+let rolesCache = { text: null, roles: null };
+const roles = () => {
+  const text = buildSource(project).text;
+  if (rolesCache.text !== text) rolesCache = { text, roles: scanRoles(text) };
+  return rolesCache.roles;
+};
+const host = {
+  id: ID,
+  getProject: () => project,
+  listAssets: (kind) => Object.keys(project.assets[kind] ?? {}).sort(),
+  getAsset: (kind, name) => (project.assets[kind]?.[name] ? copy(project.assets[kind][name]) : null),
+  setAsset(kind, name, value) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,30}$/.test(name)) { log.bad.push('name'); return { ok: false, error: 'bad name' }; }
+    const bad = validateAsset(kind, value);
+    if (bad) { log.bad.push(bad); return { ok: false, error: bad }; }
+    project.assets[kind][name] = copy(value);
+    log.sets.push(name);
+    fire({ type: 'asset', kind, name, source: ID });
+    return { ok: true };
+  },
+  deleteAsset(kind, name) { if (!project.assets[kind][name]) return false; delete project.assets[kind][name]; log.deletes.push(name); fire({ type: 'asset', kind, name, source: ID }); return true; },
+  renameAsset(kind, a, b) {
+    if (project.assets[kind][b]) return { ok: false, error: 'clash' };
+    project.assets[kind][b] = project.assets[kind][a]; delete project.assets[kind][a]; log.renames.push([a, b]);
+    fire({ type: 'asset', kind, name: b, oldName: a, source: ID }); return { ok: true };
+  },
+  onProjectChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+  onSelectAsset: (fn) => { selListeners.add(fn); return () => selListeners.delete(fn); },
+  selectAsset: (kind, name) => { log.selects.push(name); for (const fn of selListeners) fn({ kind, name }); },
+  getUsage: () => null,
+  status: (t) => log.status.push(t),
+  palette: PALETTE,
+  roles,
+  assetWarnings: (kind, name) => checkAssets(project, roles()).filter((w) => (!kind || w.kind === kind) && (!name || w.asset === name)),
+  usedBy: (kind, name) => assetReferences(project, kind, name).map((r) => `${r.file}:${r.line}`),
+};
+if (q.get('noroles') === '1') { delete host.roles; delete host.assetWarnings; delete host.usedBy; }
+const editor = createMapEditor(document.getElementById('mount'), host);
+
+async function load(ex) {
+  const [arc, assets] = await Promise.all([fetch(`../arcade/examples/${ex}.arc`).then((r) => r.text()), fetch(`../arcade/examples/${ex}.assets.json`).then((r) => r.json())]);
+  const p = exampleProject(ex, arc, assets);
+  project.files = p.files; project.assets = p.assets;
+  log.sets.length = 0; log.bad.length = 0;
+  fire({ type: 'project', source: 'studio' });
+  return Object.keys(project.assets.maps);
+}
+window.t = {
+  host, editor, project, log, M, T,
+  load,
+  /** An asset change made by somebody else (another editor, an example, Open). */
+  externalSet(kind, name, asset) { project.assets[kind][name] = copy(asset); fire({ type: 'asset', kind, name, source: 'other' }); },
+  setSource(text) { project.files['main.arc'] = text; fire({ type: 'source', source: 'studio' }); },
+};
+window.testReady = true;
+</script>
+</body>
+</html>

@@ -52,6 +52,51 @@ check('a document without "format" but with files is taken as format 1; defaults
 check('unknown asset kinds are dropped with a warning', P.validateProject({ format: 1, files: { 'main.arc': '' }, assets: { widgets: {} } }).warnings.length === 1);
 check('parseProject: invalid JSON gives an error, not a throw', !P.parseProject('{nope').ok);
 
+// ── Scenes (language batch 4: per-scene display override) ──
+{
+  const base = { format: 1, files: { 'main.arc': '' } };
+  const sc = (scenes) => P.validateProject({ ...base, scenes });
+  const ok1 = sc({ title: { display: 'buffers' }, play: { display: 'fine', note: 'x' }, over: {} });
+  check('scenes: valid entries are kept, other keys too, no warnings', ok1.ok && eq(ok1.project.scenes, { title: { display: 'buffers' }, play: { display: 'fine', note: 'x' }, over: {} }) && ok1.warnings.length === 0, JSON.stringify(ok1));
+  const odd = sc({ a: { display: 'q' } });
+  check('scenes: an unknown display value is kept as it is (the compiler warns)', odd.ok && odd.project.scenes.a.display === 'q' && odd.warnings.length === 0);
+  const nonObj = sc({ a: 'fine', b: 3, c: null, d: [], e: { display: 'auto' } });
+  check('scenes: a non-object entry is dropped with a warning each', nonObj.ok && eq(Object.keys(nonObj.project.scenes), ['e']) && nonObj.warnings.length === 4 && nonObj.warnings.every((w) => /^scenes\.[abcd] is not an object/.test(w)), JSON.stringify(nonObj.warnings));
+  const nonStr = sc({ a: { display: 5, keep: 1 }, b: { display: null }, c: { display: ['fine'] } });
+  check('scenes: a non-text display is dropped with a warning, the entry and its other keys stay',
+    nonStr.ok && eq(nonStr.project.scenes, { a: { keep: 1 }, b: {}, c: {} }) && nonStr.warnings.length === 3 && nonStr.warnings.every((w) => /display is not text/.test(w)), JSON.stringify(nonStr));
+  const notObj = P.validateProject({ ...base, scenes: [1] });
+  check('scenes: a scenes value that is not an object becomes {} with a warning', notObj.ok && eq(notObj.project.scenes, {}) && notObj.warnings.length === 1);
+  check('scenes: absent is {} without a warning', P.validateProject(base).ok && eq(P.validateProject(base).project.scenes, {}) && P.validateProject(base).warnings.length === 0);
+  const protoDoc = P.validateProject(JSON.parse('{"format":1,"files":{"main.arc":""},"scenes":{"__proto__":{"display":"fine"},"ok":{}}}'));
+  check('scenes: a "__proto__" entry does not touch the prototype', protoDoc.ok && eq(Object.keys(protoDoc.project.scenes), ['ok']) && ({}).display === undefined);
+  check('scenes: validation does not modify the document it read', (() => { const d = { ...base, scenes: { a: { display: 5, k: 1 } } }; sc(d.scenes); P.validateProject(d); return d.scenes.a.display === 5; })());
+
+  const pj = P.newProject('S');
+  check('setSceneDisplay returns the project', P.setSceneDisplay(pj, 'play', 'buffers') === pj);
+  check('setSceneDisplay: sets scenes.play.display', eq(pj.scenes, { play: { display: 'buffers' } }));
+  P.setSceneDisplay(pj, 'title', 'fine');
+  check('setSceneDisplay: several scenes', eq(pj.scenes, { play: { display: 'buffers' }, title: { display: 'fine' } }));
+  pj.scenes.play.note = 'keep me';
+  P.setSceneDisplay(pj, 'play', 'auto');
+  check('setSceneDisplay "auto" removes the key but keeps the entry while it has other keys', eq(pj.scenes.play, { note: 'keep me' }));
+  delete pj.scenes.play.note; pj.scenes.play.display = 'hires';
+  P.setSceneDisplay(pj, 'play', 'auto');
+  check('setSceneDisplay "auto" removes the entry when it is empty', !('play' in pj.scenes) && 'title' in pj.scenes);
+  P.setSceneDisplay(pj, 'title', '');
+  check('setSceneDisplay with a falsy value removes it too', eq(pj.scenes, {}));
+  check('setSceneDisplay on a scene without an entry and "auto" is a no-op', eq(P.setSceneDisplay(pj, 'nothing', 'auto').scenes, {}) && eq(P.setSceneDisplay(pj, 'nothing', null).scenes, {}));
+  const legacy = { ...P.newProject(), scenes: undefined };
+  P.setSceneDisplay(legacy, 'a', 'buffers');
+  check('setSceneDisplay makes scenes when the project has none', eq(legacy.scenes, { a: { display: 'buffers' } }));
+  P.setSceneDisplay(pj, 'play', 'buffers'); P.setSceneDisplay(pj, 'over', 'fine'); P.setSceneDisplay(pj, 'x', 'q');
+  const back = P.parseProject(P.serializeProject(pj));
+  check('scenes: serialize / parse round trip keeps every display value (even a loaded unknown one)', back.ok && eq(back.project.scenes, { play: { display: 'buffers' }, over: { display: 'fine' }, x: { display: 'q' } }) && eq(back.project, pj) && back.warnings.length === 0, JSON.stringify(back.project?.scenes));
+  P.setSceneDisplay(pj, 'play', 'auto');
+  const back2 = P.parseProject(P.serializeProject(pj));
+  check('scenes: a removed display stays removed after a round trip', back2.ok && !('play' in back2.project.scenes));
+}
+
 // ── validateAsset ──
 const spr = np.assets.sprites.ball;
 check('validateAsset: sprite ok; wrong row count / hex / frames / phases refused',

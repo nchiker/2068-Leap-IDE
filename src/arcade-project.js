@@ -114,7 +114,7 @@ export function validateAsset(kind, value) {
   }
   case 'sfx': {
     if (!Array.isArray(value.ticks)) return 'a sound effect needs "ticks": [...]';
-    if (value.ticks.length > 1000) return 'a sound effect has at most 1000 ticks';
+    if (value.ticks.length > 1800) return 'a sound effect has at most 1800 ticks';
     for (let i = 0; i < value.ticks.length; i++) {
       const t = value.ticks[i];
       if (!isObj(t)) return `tick ${i} is not an object`;
@@ -174,7 +174,20 @@ export function validateProject(doc) {
   const unknown = Object.keys(src).filter((k) => !ASSET_KINDS.includes(k));
   if (unknown.length) warnings.push(`unknown asset kinds ignored: ${unknown.join(', ')}`);
 
-  const scenes = isObj(doc.scenes) ? clone(doc.scenes) : {};
+  // scenes: {name: {display?: 'auto'|'buffers'|'fine'|'hires', ...}} (language batch 4 section 10). An unknown display value is kept (the compiler warns);
+  // a non-object entry or a non-text display is dropped with a warning; other keys of an entry are kept.
+  const scenes = {};
+  if (doc.scenes !== undefined && !isObj(doc.scenes)) warnings.push('"scenes" is not an object; ignored');
+  for (const [sname, entry] of Object.entries(isObj(doc.scenes) ? doc.scenes : {})) {
+    if (sname === '__proto__') continue;
+    if (!isObj(entry)) { warnings.push(`scenes.${sname} is not an object; ignored`); continue; }
+    const e = clone(entry);
+    if (e.display !== undefined && typeof e.display !== 'string') {
+      warnings.push(`scenes.${sname}.display is not text; ignored`);
+      delete e.display;
+    }
+    scenes[sname] = e;
+  }
   if (errors.length) return { ok: false, errors };
   return { ok: true, project: { format: FORMAT, name, framerate, files, assets, scenes }, warnings };
 }
@@ -292,6 +305,24 @@ export function setAsset(project, kind, name, value) {
   if (bad) return { ok: false, error: bad };
   project.assets[kind][name] = clone(value);
   return { ok: true };
+}
+
+/**
+ * Set a scene's display setup ('auto' or a falsy value removes the key, and the entry when nothing else is in it). Returns the project.
+ * (The compiler judges the value: arcade-display.js.)
+ */
+export function setSceneDisplay(project, name, value) {
+  if (!isObj(project.scenes)) project.scenes = {};
+  if (!value || value === 'auto') {
+    if (Object.hasOwn(project.scenes, name) && isObj(project.scenes[name])) {
+      delete project.scenes[name].display;
+      if (Object.keys(project.scenes[name]).length === 0) delete project.scenes[name];
+    }
+    return project;
+  }
+  if (!Object.hasOwn(project.scenes, name) || !isObj(project.scenes[name])) project.scenes[name] = {};
+  project.scenes[name].display = String(value);
+  return project;
 }
 
 export function deleteAsset(project, kind, name) {

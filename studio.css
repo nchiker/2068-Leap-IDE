@@ -32,6 +32,17 @@
 .asset-group-head .phbtn { margin-left: auto; }
 .asset-empty { padding: 1px 12px 4px 20px; font-size: 10px; color: var(--fg-dim); }
 
+/* Scenes group of the project panel: a name, a start marker, the plan text, the display select */
+.proj-section[hidden] { display: none; }
+.scene-row { display: block; cursor: default; padding: 4px 8px 6px 12px; }
+.scene-row .scene-head { display: flex; align-items: center; gap: 4px; }
+.scene-row .scene-start { color: var(--green-hi); font-size: 10px; width: 10px; }
+.scene-row .scene-plan { margin: 2px 0 3px; font: 10px/1.4 var(--font-ui); color: var(--fg-muted); overflow-wrap: anywhere; }
+.scene-row .scene-select {
+  width: 100%; padding: 2px 4px; border-radius: 3px; border: 1px solid var(--border);
+  background: var(--bg-panel); color: var(--fg); font: 11px var(--font-ui);
+}
+
 /* Centre: the editor, with the problems list under it */
 .studio-root .panel-editor { min-width: 320px; }
 .problems {

@@ -106,7 +106,7 @@ void TRI_DOWN_L;
 export const TILES = [
   /*  0 blank black */ tile(BLANK, 7, 0, 1),
   /*  1 panel: a sparse dark-blue dot pattern, the stone of the walls around the window */ tile(['........', '..#.....', '........', '......#.', '........', '.#......', '........', '....#...'], 1, 0, 1),
-  /*  2 bezel: brass bricks round the window */ tile(['########', '#.......', '#.......', '########', '...#....', '...#....', '########', '.......#'], 6, 0, 0),
+  /*  2 bezel: brass bricks round the window (BRIGHT 1 like every black-paper tile: bright black and plain black differ on some displays) */ tile(['########', '#.......', '#.......', '########', '...#....', '...#....', '########', '.......#'], 6, 0, 1),
   /*  3 bar, full */ tile(['........', '########', '########', '########', '########', '########', '########', '........'], 2, 0, 1),
   /*  4 bar, half */ tile(['........', '####....', '####....', '####....', '####....', '####....', '####....', '........'], 2, 0, 1),
   /*  5 bar, empty: a dark outline */ tile(['........', '########', '#......#', '#......#', '#......#', '#......#', '########', '........'], 1, 0, 1),

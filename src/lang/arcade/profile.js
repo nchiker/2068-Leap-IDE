@@ -66,10 +66,17 @@ const help = {
   ],
 };
 
+/** The Symbols tab's label for a scene: `name`, `(start)` on the first, then ` -> a, b` (its distinct ENTER targets in order of first appearance). */
+function sceneLabel(s, scene, i) {
+  const targets = [];
+  for (const e of s.enters ?? []) if (e.from === scene.name && !targets.includes(e.to)) targets.push(e.to);
+  return scene.name + (i === 0 ? ' (start)' : '') + (targets.length ? ` -> ${targets.join(', ')}` : '');
+}
+
 function symbolGroups(text) {
   const s = scanArcade(text);
   return [
-    ['Scenes', s.scenes.map((x) => [x.name, x.line])],
+    ['Scenes', s.scenes.map((x, i) => [sceneLabel(s, x, i), x.line])],
     ['Constants', s.consts.map((c) => [c.name, c.line])],
     ['Procedures', s.procs.map((p) => [`${p.name}(${(p.params ?? (p.param !== null ? [p.param] : [])).join(', ')})`, p.line])],
     ['Functions', s.fns.map((f) => [`FN ${f.name}(${f.param})`, f.line])],
@@ -163,12 +170,12 @@ export const arcadeProfile = {
       const src = buildSource(p);
       const t0 = performance.now();
       current = pickBuild(builds, requiredRuntime(src.text, p.assets).version);
-      const res = compile(src.text, { runtime: current.runtime, image: current.image, assets: p.assets });
+      const res = compile(src.text, { runtime: current.runtime, image: current.image, assets: p.assets, scenes: p.scenes });
       const ms = performance.now() - t0;
       const at = (d) => locate(src.lineMap, d);
       return {
         ok: res.errors.length === 0 && !!res.dck,
-        dck: res.dck, map: res.map, usage: res.usage,
+        dck: res.dck, map: res.map, usage: res.usage, scenes: res.scenes ?? null,
         errors: res.errors.map(at), warnings: res.warnings.map(at),
         order: src.order, lineCount: src.lineMap.length, ms,
       };
