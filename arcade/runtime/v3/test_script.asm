@@ -10,6 +10,8 @@
 ;   op 14 HIT a, b  (result -> log) 15 TILEAT row, col (result -> log)                 16 BURN (about 80,000 T)
 ; op 17 STICK n (result -> log)   18 KEYDOWN code (result -> log)   19 SHOW8 i, x, y (bytes)   20 DEEP n (push n words and drop them).
 ; op 21 SHOWF i, x(2), y(2), f(2) (RT_SHOWF)   22 SHOW8F i, x, y, f (bytes; RT_SHOWF)
+; v3 part 2 (arcade/tests/m7-*.mjs): op 23 CAMERA x(2)   24 WORLDTILE x(2), y(2) (-> log)   25 TILEFLAGS x(2), y(2) (-> log)
+; op 26 TILEHIT x(2), y(2), w(2), h(2), mask(2) (-> log)   27 SETWORLD x(2), y(2), t(2)   28 SPIN n(2): n passes of 26 T (game logic stand-in)
 ; Layout: $8000 header (16 bytes), $8010 DW map_table (0), $8012 DW window_desc (0) -- so a test can set DIV_EXT / DIV_WIN --, $8014 DW the
 ; script's start (the test writes it), code from $8016.
 ; The log (one word per HIT / TILEAT / STICK) is at G_LOGBUF, its length in G_LOGN.
@@ -59,7 +61,7 @@ GAME_FRAME_ENTRY:
     ld a,(hl)
     inc hl
     or a
-    jr z,.end
+    jp z,.end
     cp 1
     jp z,.show
     cp 2
@@ -104,13 +106,25 @@ GAME_FRAME_ENTRY:
     jp z,.showf
     cp 22
     jp z,.show8f
+    cp 23
+    jp z,.camera
+    cp 24
+    jp z,.worldtile
+    cp 25
+    jp z,.tileflags
+    cp 26
+    jp z,.tilehit
+    cp 27
+    jp z,.setworld
+    cp 28
+    jp z,.spin28
     jp .loop                    ; unknown op: skipped
 .end:
     ld (G_SP),hl
     ret
 .resume:
     ld hl,(G_SP)
-    jr .loop
+    jp .loop
 
 .show:
     ld a,(hl)
@@ -308,6 +322,71 @@ GAME_FRAME_ENTRY:
     ex de,hl
     ld sp,hl
     jp .resume
+.camera:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl
+    ld (G_SP),hl
+    ex de,hl
+    call RT_CAMERA
+    jp .resume
+.worldtile:
+    call .xy
+    call RT_WORLDTILE
+    call log_hl
+    jp .resume
+.tileflags:
+    call .xy
+    call RT_TILEFLAGS
+    call log_hl
+    jp .resume
+.tilehit:
+    ld de,RT_ARGS               ; x, y, w, h, mask -> RA_X .. RA_V
+    ld bc,10
+    ldir
+    ld (G_SP),hl
+    call RT_TILEHIT
+    call log_hl
+    jp .resume
+.setworld:
+    ld de,RT_ARGS               ; x, y -> RA_X, RA_Y; t -> RA_V
+    ld bc,4
+    ldir
+    ld de,RA_V
+    ld bc,2
+    ldir
+    ld (G_SP),hl
+    call RT_SETWORLD
+    jp .resume
+.spin28:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl
+    ld (G_SP),hl
+    ld a,d
+    or e
+    jp z,.resume
+.s28:
+    dec de
+    ld a,d
+    or e
+    jr nz,.s28
+    jp .resume
+.xy:                            ; HL = x, DE = y from the script
+    ld c,(hl)
+    inc hl
+    ld b,(hl)
+    inc hl
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl
+    ld (G_SP),hl
+    ld h,b
+    ld l,c
+    ret
 .keydown:
     ld a,(hl)
     inc hl

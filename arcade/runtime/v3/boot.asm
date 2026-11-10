@@ -101,6 +101,7 @@ ENTRY:
     inc a                       ; a header with frame_div 0 is read as 1
 .divok:
     ld (V_DIV),a
+    call window_boot            ; v3 part 2 (scroll.asm): window mode when DIV_EXT | DIV_WIN and a valid window_desc
     ld hl,RT_SEED_INIT
     ld (RT_SEED),hl
 

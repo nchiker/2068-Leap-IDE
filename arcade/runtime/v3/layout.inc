@@ -92,6 +92,77 @@ WORLD_RAM_LEN   EQU $0800
 VARS_CLEAR_LEN  EQU $1200       ; boot zeroes $E000-$F1FF
 V_CAM           EQU V3VARS+0    ; word: the clamped camera in pixels (window mode, runtime v3 part 2; 0 until then)
 
+; ---------------------------------------------------------------------------------------------------------------
+; Runtime v3 part 2: the scrolling window (scroll.asm; docs/ARCADE_PLATFORMER_CONTRACT.md sections 3, 3b, 4, 5; docs/ARCADE_RUNTIME_API_V3.md
+; "As built (v3 part 2)").  V3VARS $E102-$E1AE; $E1AF-$E1BF stay free.  Everything is zero after the boot's clear; window_boot fills the
+; window's part only when the header has DIV_EXT | DIV_WIN and a valid window_desc.
+; ---------------------------------------------------------------------------------------------------------------
+V_WIN           EQU VARS+$61    ; byte: 1 = window mode (a formerly free byte of the variables, NOT in V3VARS: see the As built notes)
+W_CX            EQU V3VARS+$02  ; byte: the window's screen cell column (0..8)
+W_CY            EQU V3VARS+$03  ; byte: its screen cell row (0..8)
+W_NB            EQU V3VARS+$04  ; byte: bands (1..4)
+W_WW            EQU V3VARS+$05  ; byte: world width in cells (24..128)
+W_TABHI         EQU V3VARS+$06  ; byte: the page of the scroll tables (LTAB[1])
+W_BEND          EQU V3VARS+$07  ; byte: low byte of W_BANDS + 2 * nbands
+W_CAMMAX        EQU V3VARS+$08  ; word: cam_max (the descriptor's, clamped to floor((8 world_w - 192) / max ratio))
+W_WXR           EQU V3VARS+$0A  ; word: 8 * world_w (the collision routines' right edge, exclusive)
+W_WX0           EQU V3VARS+$0C  ; byte: 8 cx      (the window's left pixel column)
+W_WX1           EQU V3VARS+$0D  ; byte: 8 cx + 191 (its right pixel column, inclusive)
+W_WY0           EQU V3VARS+$0E  ; byte: 8 cy
+W_WY1           EQU V3VARS+$0F  ; byte: 8 cy + 127
+W_BMBASE        EQU V3VARS+$10  ; word: display file 1 address of the window's top left byte
+W_ATBASE        EQU V3VARS+$12  ; word: display file 1 attribute address of the window's top left cell
+W_DMASK0        EQU V3VARS+$14  ; byte: AND mask of dirty byte 0 of a window row (columns 0-7: the window's ones cleared)
+W_DMASK3        EQU V3VARS+$15  ; byte: the same for dirty byte 3 (columns 24-31); bytes 1 and 2 are always inside the window
+W_BANDS         EQU V3VARS+$18  ; 8 bytes: nbands x (rows, ratio_code), copied from window_desc
+W_AC            EQU V3VARS+$20  ; 8 bytes: the col0 whose attributes display file 0 (+0..3) / 1 (+4..7) shows per band ($FF = none)
+W_CAMC          EQU V3VARS+$28  ; word: window_repaint / win_draw_all: the camera of this tick
+W_DST           EQU V3VARS+$2A  ; word: window_repaint: the bitmap address of the next window row
+W_ADST          EQU V3VARS+$2C  ; word: window_repaint: the attribute address of the band's first row
+W_RB            EQU V3VARS+$2E  ; word: window_repaint: WORLD_RAM + 128 * the band's first row
+W_BP            EQU V3VARS+$30  ; word: window_repaint: the band record
+W_ACP           EQU V3VARS+$32  ; byte: window_repaint: low byte of the band's W_AC entry for the hidden file
+W_ROWS          EQU V3VARS+$33  ; byte: window_repaint: rows of the band
+W_CR            EQU V3VARS+$34  ; byte: rows left (row loops)
+W_P             EQU V3VARS+$35  ; byte: the band's phase (pixel position AND 7)
+W_C0            EQU V3VARS+$36  ; byte: the band's col0 (pixel position >> 3)
+W_I             EQU V3VARS+$38  ; byte: win_draw_all: instance
+W_AREC          EQU V3VARS+$39  ; byte: win_draw_all: low byte of the instance's AST record
+W_FR            EQU V3VARS+$3A  ; byte: win_draw_all: the frame byte (unclamped)
+W_SX            EQU V3VARS+$3B  ; byte: win_draw_all: screen x of the footprint (rounded to the phase granularity)
+W_SY            EQU V3VARS+$3C  ; byte: screen y
+W_SX1           EQU V3VARS+$3D  ; byte: sx + w - 1
+W_SY1           EQU V3VARS+$3E  ; byte: sy + h - 1
+W_NRING         EQU V3VARS+$3F  ; byte: ring records this tick
+W_RING          EQU V3VARS+$40  ; 16 x 4 bytes: the footprint cell rectangle (c0, c1, r0, r1) of every drawn instance not wholly inside the window
+W_RP            EQU V3VARS+$80  ; word: ring_repair: the next record
+W_RN            EQU V3VARS+$82  ; byte: ring_repair: records left
+W_RC0           EQU V3VARS+$83  ; byte: ring_repair: c0
+W_RC1           EQU V3VARS+$84  ; byte: c1
+W_RC            EQU V3VARS+$85  ; byte: current column
+W_RR            EQU V3VARS+$86  ; byte: current row
+W_RR1           EQU V3VARS+$87  ; byte: r1
+TH_ACC          EQU V3VARS+$88  ; byte: RT_TILEHIT: the OR of the flags so far
+TH_RA           EQU V3VARS+$89  ; byte: first world row
+TH_RB           EQU V3VARS+$8A  ; byte: last world row
+TH_CA           EQU V3VARS+$8B  ; byte: first world column
+TH_CB           EQU V3VARS+$8C  ; byte: last world column
+TH_NC           EQU V3VARS+$8D  ; byte: columns
+TH_NR           EQU V3VARS+$8E  ; byte: rows left
+WH_A            EQU V3VARS+$90  ; 12 bytes: window RT_HIT: the first box as 24-bit x0, x1, y0, y1
+WH_B            EQU V3VARS+$9C  ; 12 bytes: the second
+WH_X            EQU V3VARS+$A8  ; word: scratch
+WH_Y            EQU V3VARS+$AA  ; word
+WH_DEST         EQU V3VARS+$AC  ; word
+WH_T            EQU V3VARS+$AE  ; byte: the top byte of a 24-bit edge
+W3_END          EQU V3VARS+$AF  ; first free byte ($E1AF-$E1BF free)
+; Three pages of the display files' unused tails (RAM chunk 2), written once by window_boot in window mode only (a non-window game never
+; touches them): the phase-0 tile rows (a page-aligned copy of window_desc's tilerows, which need not be page aligned), and the attribute
+; and the flags of tile t at + 8 t (indexed by a world cell byte = tile * 8).
+W_TROWS         EQU $5B00
+W_ATTRT         EQU $5C00
+W_FLAGT         EQU $5D00
+
 V_FRAMES        EQU VARS+$00    ; word: refresh counter, incremented by the ISR
 V_SYNC          EQU VARS+$02    ; byte: handshake between the main loop and the ISR (the "frame ready" flag and the
                                 ;   flip request in one byte):  0 = main loop busy, 1 = frame ready (set by the ISR),

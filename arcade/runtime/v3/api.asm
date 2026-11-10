@@ -34,6 +34,9 @@ RT_SHOW:
     ld l,(hl)                   ; L = the frame the instance has
     push hl
 show_f:                         ; A = index (< ninst), BC = x, DE = y; the frame on the stack (low byte)
+    ld hl,V_WIN
+    bit 0,(hl)
+    jr nz,show_w                ; window mode (v3 part 2, scroll.asm): x, y stored signed and unclamped (29 T on the non-window path)
     add a,a
     add a,a
     add a,a
@@ -136,6 +139,8 @@ show_f:                         ; A = index (< ninst), BC = x, DE = y; the frame
     ld h,V_CHG>>8
     ld (hl),2
     ret
+show_w:
+    jp show_win
     ASSERT (SPR_TAB&7) == 0
 
 ; ---------------------------------------------------------------------------------------------------------------

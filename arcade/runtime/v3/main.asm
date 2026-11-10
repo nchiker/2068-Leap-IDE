@@ -52,11 +52,16 @@ WORK_START:                     ; (labels for the tests' cycle counting and samp
     ld (V_HOFF),a
     ld hl,(GAME_FRAME)
     call call_hl                ; frame_entry: may call RT_SHOW / RT_HIDE / RT_MUL / RT_TILE / RT_PRINTS ... and use any register
+AFTER_FRAME:                    ; (v3 part 2) window mode: the window's own tick work (scroll.asm win_tick), which comes back to TICK_COUNT
+    ld a,(V_WIN)
+    or a
+    jp nz,win_tick
 SKIP_CALL:
     call skip_analysis
     call erase_all
     call redraw_dirty           ; cells changed by init_entry / frame_entry (or by the map at boot) appear in this file now
     call draw_all
+TICK_COUNT:
     ld hl,(V_TICKS)
     inc hl
     ld (V_TICKS),hl             ; ticks completed (counts this one from here on)

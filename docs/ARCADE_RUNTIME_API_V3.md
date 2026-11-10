@@ -161,3 +161,140 @@ its 16 frames cached (6 walkers and no flyer: K = 7; 6 flyers and no walker: K =
 
 The JS model (`m6-common.mjs`) is written from the contract and this file: `preShift()` builds a copy pixel by pixel, `Model6.render()` composites the
 copies onto display-file bytes (cross-checked against a pixel-by-pixel compositor), `planPool()` and `CacheSim` model the plan and the replacement rule.
+
+## As built (v3 part 2: the scrolling window, sprites in window mode, the camera, collision), 2026-11-09
+
+Part 2 is `arcade/runtime/v3/scroll.asm` (new) plus small window branches in `main.asm`, `api.asm` (`RT_SHOW` / `RT_SHOWF`), `text.asm` (`RT_HIT`) and
+`boot.asm`. **Size:** runtime 15,649 of 16,384 bytes in DOCK chunks 0-1 (`scroll.asm` 4,514 bytes); 735 bytes are left (424 of them after `scroll.asm`,
+the rest in the gaps `$0005-$0037`, `$0068-$00FF`, `$019C-$01FF`). `runtime.json` gains `RT_CAMERA`, `RT_WORLDTILE`, `RT_TILEFLAGS`, `RT_TILEHIT`,
+`RT_SETWORLD` (symbols) and the constants `V_WIN`, `W_*`, `W3_END`, `W_TROWS`, `W_ATTRT`, `W_FLAGT`, `WORLD_RAM_LEN` (with `DIV_WIN`, `WORLD_RAM`, `V_CAM` from part 1).
+
+### Window mode on or off
+
+Window mode (`V_WIN` = 1) is on when `frame_div` has **both** `DIV_EXT` and `DIV_WIN` and `window_desc` passes these checks at boot: the pointer in
+`$8000-$BFFF`; `cx`, `cy` 0..8; `nbands` 1..4; `world_w` 24..128; `tables` page aligned with its 14 pages inside the game image (high byte `$80..$B2`);
+`tile_flags`, `world_src`, `tilerows` in `$8000-$BFFF`; every band 1..16 rows with `ratio_code` 0..4, the rows adding up to 16. Otherwise the game runs
+exactly as part 1 (nothing of the window is written; part 1's test with a `DIV_WIN` header and a nonsense descriptor still passes). The boot then:
+expands the byte-RLE `world_src` into `WORLD_RAM` (pairs count 1..255, value; count 0 ends; the expansion stops at 2,048 bytes; a short list leaves the
+rest 0), copies `tilerows` to the page `$5B00`, puts the attribute (`TILE_ATTR`) and the flags of tile t at `$5C00 + 8t` and `$5D00 + 8t`, computes the
+geometry, sets every band's attribute cache to "none", and **clamps cam_max** to `floor((8 world_w - 192) / max ratio)` (the descriptor's value is
+kept when smaller). `V_CAM` is 0.
+
+### Memory map additions
+
+| Where | What |
+|---|---|
+| `$E061` | `V_WIN` (byte, a formerly free byte of the variables; see deviation 6) |
+| `$E100-$E101` | `V_CAM` (part 1) |
+| `$E102-$E127` | window state: `W_CX`, `W_CY`, `W_NB`, `W_WW`, `W_TABHI`, `W_BEND`, `W_CAMMAX`, `W_WXR` (8 world_w), `W_WX0/1`, `W_WY0/1` (window pixel bounds), `W_BMBASE`, `W_ATBASE`, `W_DMASK0/3`, `W_BANDS` (8), `W_AC` (8: the col0 whose attributes file 0 / 1 shows per band, `$FF` = none) |
+| `$E128-$E1AE` | tick scratch (repaint, `win_draw_all`, the 16 x 4-byte ring records `W_RING`, ring repair) and the routines' scratch (`TH_*` for `RT_TILEHIT`, `WH_*` for the window `RT_HIT`) |
+| `$E1AF-$E1BF` | free |
+| `$5B00` / `$5C00` / `$5D00` | tile rows (phase-0 copy path) / tile attribute at + 8t / tile flags at + 8t: three pages of display file 1's unused tail, written once by the boot, **in window mode only** |
+
+`$5E00-$5FFF` and `$7B00-$7FFF` stay unused. The stack: a window tick uses at most 26 bytes of the runtime's own (`win_draw_all` > `fc_miss` >
+`build_frame`, as part 1) plus 10 for an interrupt (measured, `m7-runtime-mem.mjs`).
+
+### The tick in window mode (`main.asm` `AFTER_FRAME` -> `win_tick` -> `TICK_COUNT`)
+
+1. `frame_entry`; 2. `win_mask_dirty`: the hidden file's dirty bits of the window's cells are cleared (16 rows x 4 bytes: byte 0 AND a mask, bytes 1-2
+zero, byte 3 AND a mask; 1,414 T), so `redraw_dirty` never draws a window cell from the cell map; 3. `redraw_dirty` (HUD / border cells);
+4. `window_repaint`: every band at `floor(camera x ratio)` (0 fixed, cam >> 2, cam >> 1, cam, cam x 2), bitmap of all 384 cells (V2 tables read from the
+game image, the phase-0 copy path through the `$5B00` page, cell-major, boustrophedon, 24 columns unrolled), then per band the attribute pass when the
+hidden file's cached col0 of that band differs; 5. `win_draw_all`: sprites after the repaint, no erase, no skip analysis, the part 1 frame / cache
+logic (`fc_miss`) and blitters; 6. `ring_repair`; 7. the flip request. Non-window games take the part 1 path (one `LD A,(V_WIN) / OR A / JP NZ` more per
+tick); `RT_SHOW` / `RT_SHOWF` / `RT_HIT` test `V_WIN` too (29 T: `RT_SHOW` changing a position now 596 T, under part 1's 600 T bound).
+
+**Column col0 + 24.** The phase <> 0 path reads world column col0 + 24 of each row (the right neighbour of the last cell). It is read only when the band's
+position is not a multiple of 8, and then position <= cam_max x ratio <= 8 world_w - 192 gives col0 + 24 <= world_w - 1 <= 127: the read stays in the
+band's own world row. cam_max is clamped at boot and `RT_CAMERA` clamps to it, so this holds for any descriptor. The phase-0 path reads columns
+col0..col0 + 23 only. Nothing outside `WORLD_RAM` is read; the repaint writes only the window's bytes of the hidden file (tested: everything else of both
+files poisoned and unchanged over all sweeps).
+
+**Sprites.** `sx = (x - V_CAM + 8 cx) AND xmask`, `sy = y + 8 cy` (16-bit; a sum that wraps cannot land in 0..255: x - V_CAM + 8 cx < -32768 wraps to
+>= 31,936, > 32767 to < 0). Drawn when the footprint lies on the screen and meets the window; a drawn footprint not wholly inside the window gets a ring
+record (its cell rectangle); `ring_repair` then redraws, with `draw_cell`, the record's cells outside the window, per row as one run left of the window
+and one right of it. Hidden instances and instances that miss cost one test.
+
+### Routines (CALL; clobber AF BC DE HL; IX, IY and the alternates preserved; no DI; interrupts may arrive at any instruction)
+
+| Routine | In | Out | T (CALL + RET, measured) |
+|---|---|---|---|
+| `RT_CAMERA` | HL = camera (signed) | `V_CAM` = clamp(HL, 0, cam_max) (cam_max 0 in non-window mode) | 118 |
+| `RT_WORLDTILE` | HL = x, DE = y (signed) | HL = tile 0..31; outside 0 | 98..290 |
+| `RT_TILEFLAGS` | HL = x, DE = y | HL = flags; outside: below (y >= 128) 0 whatever x, else (left, right, above) 1 | 99..285 |
+| `RT_TILEHIT` | `RA_X, RA_Y, RA_W, RA_H`, `RA_V` = mask | HL = OR of (flags AND mask) over the cells of x..x+w-1, y..y+h-1 (exact 17-bit edges); w or h <= 0: 0 | 16x24 box: 1,228..1,417 |
+| `RT_SETWORLD` | `RA_X, RA_Y`, `RA_V` = tile | the cell = tile x 8 (outside the world: nothing); the attribute caches are invalidated when the new tile's attribute differs | 113..596 |
+| `RT_SHOW` / `RT_SHOWF` | as part 1 | window mode: x, y stored signed, unclamped; frame as part 1 | 241 / 203 (non-window: part 1's + 29) |
+| `RT_HIT` | as part 1 | window mode: boxes on the stored positions as exact 24-bit values | 2,434 (both visible; non-window: part 1's + 29) |
+
+`RT_TILEHIT` visits only the cells inside the world; rows above / columns beside the world are decided from the clipped ranges (so any rectangle,
+x = -32768 or w = 32767 included, is exact). 1..5 columns use unrolled rows; more columns loop and stop early once every bit of the mask is found.
+
+### Measured (TSRun, no contention; `arcade/tests/m7-runtime-perf.mjs`)
+
+`window_repaint`, every camera 0..cam_max into both files, direct calls (interrupts off, as the spikes):
+
+| Layout | worst, every band's attributes included | bitmap only: worst / mean / best | in a running game, the interrupt's time included |
+|---|---:|---:|---:|
+| 1 band | **124,641** (budget 130,000) | 112,033 / 107,722 / 77,832 | 124,969 |
+| 3 bands 2/3/11 at 1/4, 1/2, 1 | 126,433 | 113,613 / 109,292 / 79,330 | 126,761 |
+| 4 bands 2/4/6/4 at 1/4, 1/2, 1, 2 | **127,301** (budget 135,000) | 114,375 / 108,942 / 80,051 | 127,629 |
+
+The cost does not depend on the world's content (a solid world and a 53 % sky one give the same numbers: there is no blank-cell path).
+
+The contract's tick (3 bands, player 16x24 4 phases 8 frames, 5 enemies 16x16 4 phases, a shot 8x8; the camera following; the HUD score printed every
+tick; 4 `TILEHIT` + 2 `TILEFLAGS`; the real frame interrupt; frame_div 3): the runtime's part of a tick, worst **157,013** T (mean 147,287); + 15,000 of
+game logic = **172,013** <= 176,064; with the tick's repaint replaced by the layout's worst repaint: 172,752. Means: repaint 117,319, sprites 25,514 (7),
+ring repair 87, `redraw_dirty` 2,316, dirty mask 1,414. With 4 coins more (11 sprites) it does not fit: 181,833.
+Sprites drawn in window mode: 16x24 4 phases unaligned **4,677** (budget 5,200), 16x16 8 phases 3,977, 8x8 8 phases 2,403 (part 1's non-window draw
+plus about 450 T of culling and 16-bit position work). Ring repair: `draw_cell` 333 + **318** T a repaired cell (budget 600), measured with a 16x24 sprite
+straddling the left edge (one cell a row outside; wider overhangs cost less a cell).
+
+**The acceptance game** (`arcade/examples/platformer.arc`, compiled by the compiler of this branch, the recorded play-through to the flag twice, 863
+ticks, on this runtime): mean tick 160,605 T; **182 of 860 ticks exceed 3 refreshes**. The game's own logic (`frame_entry`) is 22,980 T on average and up
+to 120,256 (55,000-62,000 in the ticks around 186-202); the runtime's part exceeds 176,064 - 15,000 in 25 ticks (worst 173,176 with 34,813 of sprites and
+6,050 of ring repair; one tick of 183,290 redraws 44,485 T of HUD cells). So the overrun is mainly the game's logic, then sprites near the window edge.
+
+**Blank-cell path: not included.** (1) The contract's tick fits without it (172,013 / 172,752 of 176,064). (2) It does not fit the ROM: the spike's
+path is about +1.1 KB, 735 bytes are left. (3) It makes the worst case worse: on a world without blank cells the spike measured +8 % for the bitmap,
+which would take the solid-world repaint to about 134,000 (1 band; budget 130,000) and 137,000 (4 bands; budget 135,000) (estimates from the spike's
+ratio, not built). It would help open levels (the platformer's world is 53 % sky; spike: -28 % at 70-76 % blank pairs).
+
+### Deviations from the contract, and why
+
+1. **Section 5, the screen x.** Built: `sx = (x - V_CAM + 8 cx)` rounded down to the asset's phase granularity; the contract says `(x rounded) - V_CAM +
+   8 cx`. With a camera that is not a multiple of the granularity the contract's formula gives shifts the asset has no copy for (a 4-phase sprite at an
+   odd screen x). The sprite stays on its world position to within granularity - 1 pixels, as before; with the camera following it, its screen
+   position does not jitter.
+2. **Attribute caches and SETWORLD.** Section 3 runs a band's attribute pass only when the file's col0 changes; a `SETWORLD` that changes a tile's
+   attribute would then leave the old colour. `RT_SETWORLD` invalidates every band's cache (both files) when the new tile's attribute differs from the
+   old one's (next two ticks pay the passes).
+3. **window_desc is validated** (the list above); a descriptor that fails, or `DIV_WIN` without `DIV_EXT`, means non-window mode. The contract is silent.
+4. **cam_max is clamped at boot** to the contract's formula (protects the col0 + 24 reads against a wrong descriptor).
+5. **Three RAM pages** (`$5B00-$5DFF`, the display file's unused tail): section 3b does not require `tilerows` to be page aligned, and the copy path
+   indexes a page; the attribute / flags tables indexed by tile x 8 save about 4,600 T per attribute pass and make the collision loops 26 T a cell.
+6. **`V_WIN` is not in V3VARS** (`$E061`): part 1's memory test poisons `$E102-$E1BF` as free in non-window games; a mode flag there would be set by the
+   poison. Every other part 2 variable is in `$E102-$E1AE`.
+7. **Window cells' dirty bits are cleared every tick** (`win_mask_dirty`, 1,414 T) rather than never set: the cell setters (text, tiles, batch 1 tile
+   operations) stay as in part 1.
+8. **`RT_HIT` in window mode** is exact (24-bit edges), as the interpreter (exact integers).
+
+### Tests (all on TSRun with the stock ROMs; `M7_QUICK=1` shortens them)
+
+| File | What |
+|---|---|
+| `m7-runtime.mjs` (36 checks) | boot: the byte-RLE world for 8 encodings (random, runs of 255, exactly 2,048, cut short, too long, the empty list, sky only, a 9-row map), nothing written past `WORLD_RAM`, the three pages, cam_max, 18 bad descriptors refused; `window_repaint` against a pixel-by-pixel reference compositor for **every camera 0..cam_max**, up and down and random jumps, each camera in both files, 11 layouts (1 band; 2/3/11; ratio 2; a fixed band; 4 bands twice; worlds 24, 25, 26, 77, 128 wide; windows at (0,0), (8,8), (8,0), (0,8), (3,5), (4,4)), bitmap and attributes, outside the window unchanged, the attribute pass exactly when a band's col0 changed (10,134 repaints, 4,407 distinct cameras in the full run); whole games compared after every refresh (both files, also the TSRun screen colours): sprites of 6 sizes crossing the four edges and four corners with HUD text and tiles in every cell around the window, sprites off the screen edges (windows (0,0) and (8,8)), random games with camera walks incl. clamps, SETWORLD, collision ops, HIT, HUD printing (also into the window) at frame_div 1..3; after every tick the ring records = the model's; non-window games as part 1 |
+| `m7-runtime-api.mjs` (19) | the collision routines against the model (worlds 24, 61, 100, 128 wide; 18,100 random queries incl. extreme values, SETWORLD between them, `WORLD_RAM` compared; 6,864 corner / edge / huge-rectangle queries), the attribute-cache invalidation, `RT_CAMERA`, `RT_SHOW`/`SHOWF`/`HIDE`/`HIT` in window mode (12,000 calls, SPR_TAB compared after each; 3,125 HIT pairs; exact boxes at +-32768, differences of 65,536 and more), IX / IY / alternates kept |
+| `m7-runtime-regs.mjs` (12) | an interrupt injected at every instruction boundary of `scroll.asm` and the window branches (26 ranges, 49,396 injections at 3,234 addresses); chaos; IX, IY and the alternates kept across window ticks with cache misses |
+| `m7-runtime-mem.mjs` (15) | the map; free areas poisoned (T2, T4, `$E0FC-$E0FF`, `$E1AF-$E1BF`, `$5E00-$5FFF`, `$7B00-$7FFF`, the unallocated pool, `SPR_DRAWN`); play writes only the hidden file, cell map, dirty maps, SPR_TAB, variables, V3VARS to `W3_END`, the cache scratch, GAME_VARS, RT_ARGS, the stack and `WORLD_RAM` in the cells SETWORLD named; the pages and tables unchanged; the stack depth |
+| `m7-runtime-perf.mjs` (6) | the numbers above |
+| `m7-mutations.mjs` | 73 deliberate bugs in the part 2 code, run against the four suites above in their quick form (`--shard=i/4`, about 3 minutes): **71 killed, 2 survivors, both equivalent and marked so with the proof in the file** (the screen-right-edge test is redundant with the 8-bit window test; `lt24`'s sign bit vs bit 0 cannot change an axis result). Part 1's `m6-mutations.mjs` still kills all 48 |
+
+The models (`m7-common.mjs`) are written from the contract, not from the Z80 code: the window data (tables, tile rows, the RLE world, the descriptor)
+are built by the test's own builders, the window is composited pixel by pixel from the tile rows, the sprites pixel by pixel from their source rows,
+and the collision model takes one representative of each kind of row / column outside the world.
+
+**Note for the compiler's differential test** (`tests/arcade-m6-differential.mjs`): it fails 3 of its 5 programs on this runtime at the first tick whose
+stick input changes, because it sets the joystick at frame boundaries for "the tick about to run", while a window tick starts in the middle of a frame
+(STICK then reads the previous tick's value). Setting the joystick when `PROC FRAME` is entered (a scratch copy of the test), all five programs agree
+with the interpreter: the miniature platformer (600 ticks), the two short programs, and `platformer.arc` (863 and 375 ticks).

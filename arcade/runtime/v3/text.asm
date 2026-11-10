@@ -337,6 +337,9 @@ RT_TILEAT:
 ; [x, x + w), so touching boxes do not hit and a box with w = 0 or h = 0 never hits.
 ; ---------------------------------------------------------------------------------------------------------------
 RT_HIT:
+    ld hl,V_WIN
+    bit 0,(hl)
+    jr nz,hit_w                 ; window mode (v3 part 2, scroll.asm): the stored signed positions, exact
     push de
     ld de,HB_A
     call hit_box
@@ -371,6 +374,8 @@ RT_HIT:
 .no:
     ld hl,0
     ret
+hit_w:
+    jp win_hit
 
 ; hit_box: A = sprite index, DE = destination (4 words: x0, x1, y0, y1).  Carry set = filled; carry clear = no such sprite,
 ; hidden, or an empty box.  Clobbers AF, BC, DE, HL.

@@ -71,7 +71,9 @@ const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITE
   'AST_NF', 'AST_NINST', 'AST_FTAB', 'AST_CLEN', 'AST_RR', 'AST_K', 'FC_MISS', 'FC_MISSES', 'T4_FREE', 'T4_FREE_LEN', 'VARS_CLEAR_LEN',
   // language batch 1 (tile operations)
   'RT_ARGS', 'RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V', 'RA_DX', 'RA_DY', 'GAME_MAPTAB', 'GAME_HEADER_EXT_LEN', 'DIV_EXT', 'MAX_MAPS', 'V_BORDER', 'V_NMAP', 'V_MAPTAB',
-  'TO_BUFT', 'TO_BUFA', 'TO_VARS', 'RT_SEED', 'V_FRAMES'];
+  'TO_BUFT', 'TO_BUFA', 'TO_VARS', 'RT_SEED', 'V_FRAMES',
+  // v3 part 2 (the scrolling window, docs/ARCADE_RUNTIME_API_V3.md "As built (v3 part 2)")
+  'V_WIN', 'W_CX', 'W_CY', 'W_NB', 'W_WW', 'W_CAMMAX', 'W_WXR', 'W_BANDS', 'W_AC', 'W_RING', 'W_NRING', 'W3_END', 'W_TROWS', 'W_ATTRT', 'W_FLAGT', 'WORLD_RAM_LEN'];
 
 export function buildRuntime({ quiet = true } = {}) {
   mkdirSync(WORK, { recursive: true });
