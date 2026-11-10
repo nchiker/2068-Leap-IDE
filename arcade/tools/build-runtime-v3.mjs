@@ -1,6 +1,6 @@
 "use strict";
 // build-runtime-v3.mjs -- assemble the Leap Arcade runtime v3 (arcade/runtime/v3/runtime.asm) with sjasmplus.  A copy of
-// build-runtime-v1.mjs (v0 and v1 untouched) pointed at the v3 sources, with the v2 constants (docs/ARCADE_RUNTIME_API_V2.md).
+// build-runtime-v1.mjs (v0 and v1 untouched) pointed at the v3 sources, with the v3 constants (docs/ARCADE_PLATFORMER_CONTRACT.md, docs/ARCADE_RUNTIME_API_V3.md).
 //   node arcade/tools/build-runtime-v3.mjs        builds, prints chunk usage
 // Writes into arcade/build/v3/ (docs/ARCADE_RUNTIME_API_V1.md):
 //   runtime.bin   65,536-byte memory image: chunks 0-1 = runtime, chunks 4-5 = the placeholder game image
@@ -56,15 +56,19 @@ function chunkUsage(syms) {
 
 /** Constants the contract names (docs/ARCADE_RUNTIME_API.md) plus the ones tests and the linker need. */
 const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITES', 'STACK_TOP', 'STACK_CANARY', 'CANARY_VALUE',
-  'SPR_XMAX', 'SPR_YMAX', 'SPR_W', 'SPR_H', 'RT_SEED_INIT', 'F4_PLAY', 'DFILE0', 'DFILE1', 'DATTR0', 'DATTR1', 'ROW_TAB',
-  'PHASE_LEN', 'BG_ATTR', 'GAME_HEADER_LEN', 'SD_LEN', 'GAME_INIT',
+  'SPR_XMAX', 'SPR_YMAX', 'SPR_W', 'SPR_H', 'RT_SEED_INIT', 'F4_PLAY', 'DFILE0', 'DFILE1', 'DATTR0', 'DATTR1',
+  'BG_ATTR', 'GAME_HEADER_LEN', 'SD_LEN', 'GAME_INIT',
   'GAME_FRAME', 'GAME_DIV', 'GAME_NSPR', 'GAME_SPRTAB', 'GAME_TILESET', 'GAME_SFX', 'GAME_MAP', 'SD_DATA', 'SD_HOT',
   'CELL_TILE', 'CELL_ATTR', 'CELL_COUNT', 'CELL_ROWS', 'CELL_COLS', 'DIRTY0', 'DIRTY1', 'DIRTY_LEN', 'TILE_ATTR', 'GLYPH_TAB',
   'MAX_TILES', 'MAX_SFX', 'CELL_BLANK',
   // v2
-  'MAX_ASSETS', 'SPR_ENT', 'SPR_ASSET_OFF', 'SPR_DRAWN_FILE', 'GAME_INSTTAB', 'STACK_LIMIT', 'PHASE_PTR', 'PHASE_PTR_LEN', 'POOL_A', 'POOL_A_SLOTS',
-  'POOL_B', 'POOL_B_SLOTS', 'POOL_C', 'POOL_C_SLOTS', 'SLOT_COUNT', 'AST', 'AST_LEN', 'AST_H', 'AST_WB', 'AST_XMASK', 'AST_PHASES', 'AST_HOT',
-  'SPR_TAB', 'INST_ASSET', 'SPR_DRAWN', 'T2_FREE', 'T2_FREE_LEN', 'T3', 'T3_LEN', 'SD_W', 'SD_H', 'SD_PHASES', 'VBUF',
+  'MAX_ASSETS', 'SPR_ENT', 'SPR_ASSET_OFF', 'SPR_DRAWN_FILE', 'GAME_INSTTAB', 'STACK_LIMIT', 'POOL_A', 'POOL_A_LEN',
+  'POOL_B', 'POOL_B_LEN', 'POOL_C', 'POOL_C_LEN', 'AST', 'AST_LEN', 'AST_H', 'AST_WB', 'AST_XMASK', 'AST_PHASES', 'AST_HOT',
+  'SPR_TAB', 'INST_ASSET', 'SPR_DRAWN', 'T2_FREE', 'T2_FREE_LEN', 'T3', 'T3_LEN', 'SD_W', 'SD_H', 'SD_PHASES',
+  // v3 part 1 (docs/ARCADE_PLATFORMER_CONTRACT.md sections 1, 2, 3b; docs/ARCADE_RUNTIME_API_V3.md)
+  'DIV_WIN', 'GAME_WINDESC', 'GAME_HEADER_WIN_LEN', 'V3VARS', 'V3VARS_LEN', 'V_CAM', 'WORLD_RAM', 'WORLD_RAM_LEN', 'MAX_FRAMES', 'MAX_H',
+  'SPR_FRAME_OFF', 'SPR_X_OFF', 'SPR_Y_OFF', 'SD_NFRAMES', 'PHASE_OFF', 'PHASE_OFF_LEN', 'PHASE_POOL_BYTES', 'POOL_FAIL_BORDER', 'FTE_LEN',
+  'AST_NF', 'AST_NINST', 'AST_FTAB', 'AST_CLEN', 'AST_RR', 'AST_K', 'FC_MISS', 'FC_MISSES', 'T4_FREE', 'T4_FREE_LEN', 'VARS_CLEAR_LEN',
   // language batch 1 (tile operations)
   'RT_ARGS', 'RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V', 'RA_DX', 'RA_DY', 'GAME_MAPTAB', 'GAME_HEADER_EXT_LEN', 'DIV_EXT', 'MAX_MAPS', 'V_BORDER', 'V_NMAP', 'V_MAPTAB',
   'TO_BUFT', 'TO_BUFA', 'TO_VARS', 'RT_SEED', 'V_FRAMES'];

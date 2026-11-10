@@ -114,6 +114,8 @@ GAME_FRAME_ENTRY:
     jp z,.rnd
     cp 29
     jp z,.loadmapptr
+    cp 31
+    jp z,.show8f
     jp .loop                    ; unknown op: skipped
 .end:
     ld (G_SP),hl
@@ -242,6 +244,24 @@ GAME_FRAME_ENTRY:
     ld (G_SP),hl
     call RT_STICK
     call log_hl
+    jp .resume
+.show8f:                        ; (v3) op 31 SHOW8F i, x, y, f (bytes): RT_SHOWF
+    ld a,(hl)
+    inc hl
+    ld c,(hl)
+    ld b,0
+    inc hl
+    ld e,(hl)
+    ld d,0
+    inc hl
+    push af
+    ld a,(hl)
+    inc hl
+    ld (G_SP),hl
+    ld l,a
+    ld h,0
+    pop af
+    call RT_SHOWF
     jp .resume
 .show8:                         ; SHOW i, x (1 byte), y (1 byte): a short form so that scenes with 16 instances fit
     ld a,(hl)

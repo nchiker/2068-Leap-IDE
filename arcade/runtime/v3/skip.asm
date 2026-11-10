@@ -16,7 +16,7 @@
 ; itself (nothing else was drawn there, by (b) applied to the previous ticks' records), so they already are what erase + draw would produce.
 ; Rectangles are in cells (cx0, cx1, cy0, cy1, inclusive) in SK_RECT[i]: a candidate's is exact (from its record: the bytes and rows its blit
 ; wrote); an idle instance's is (255, 0, 255, 0), which no rectangle meets; for the others it is the join of the 3 x 3 cells from the first cell of
-; their old record and from the cell of their current position (a superset of what they can touch, since a sprite is at most 16 x 16).
+; their old record and from the cell of their current position (v3: the join of the exact box of the old record and the box of the new position from the asset's size, cx1 = cx0 + wb covering a shifted copy).
 ;
 ; The analysis runs only when SKIP_MIN or more instances are candidates (see the measured cost in docs/ARCADE_RUNTIME_API_V2.md: it only pays off
 ; when about a third of the instances stand still; a skipped instance saves 3,000 to 5,000 T).  Out: V_ANYSKIP = 1 when at least one instance was marked.  Clobbers AF, BC, DE, HL.
@@ -91,65 +91,59 @@ skip_analysis:
     call sk_recrect             ; B = cx0, C = cx1, D = cy0, E = cy1
     ld a,2
     jr .store
-    ; ---- kind 1: the join of the old box (if drawn) and the new one (if visible) ----
+    ; ---- kind 1: the join of the old box (if drawn: exact, from the record) and the new one (if visible: from the position and the asset) ----
 .kind1:
     ld a,d
-    or a
-    jr z,.noold
-    ld a,(SK_I)
-    call sk_recptr
-    call sk_recrect
-    ld a,b
-    ld (SK_T+0),a               ; old cx0
-    ld a,d
-    ld (SK_T+1),a               ; old cy0
-    jr .oldok
-.noold:
-    ld a,(SK_I)                 ; no old record: the old box is the new one
-    call sk_entptr
-    call sk_entcell
-    ld a,b
-    ld (SK_T+0),a
-    ld a,d
-    ld (SK_T+1),a
-.oldok:
+    ld (SK_T+7),a               ; the record flag
     ld a,(SK_I)
     call sk_entptr
     ld a,(hl)
     or a
-    jr z,.nonew
-    call sk_entcell             ; B = cx0 (new), D = cy0 (new)
-    jr .join
-.nonew:
-    ld a,(SK_T+0)
-    ld b,a
-    ld a,(SK_T+1)
-    ld d,a
-.join:                          ; box = [min(cx0), max(cx0) + 2] x [min(cy0), max(cy0) + 2]
-    ld a,(SK_T+0)
+    jr z,.k1old                 ; not visible: the old box alone
+    call sk_entrect             ; B, C, D, E = the new box
+    ld a,(SK_T+7)
+    or a
+    jr z,.k1done                ; nothing drawn: the new box alone
+    ld hl,SK_T
+    ld (hl),b
+    inc l
+    ld (hl),c
+    inc l
+    ld (hl),d
+    inc l
+    ld (hl),e
+    ld a,(SK_I)
+    call sk_recptr
+    call sk_recrect             ; B, C, D, E = the old box
+    ld hl,SK_T                  ; the join: min cx0, max cx1, min cy0, max cy1
+    ld a,(hl)
     cp b
-    jr c,.c0lo
-    add a,2                     ; old >= new: cx0 = new (B), cx1 = old + 2
-    ld c,a
-    jr .c0done
-.c0lo:                          ; old < new: cx0 = old, cx1 = new + 2
-    ld c,b
-    inc c
-    inc c
+    jr nc,.j0
     ld b,a
-.c0done:
-    ld a,(SK_T+1)
+.j0:
+    inc l
+    ld a,(hl)
+    cp c
+    jr c,.j1
+    ld c,a
+.j1:
+    inc l
+    ld a,(hl)
     cp d
-    jr c,.r0lo
-    add a,2
-    ld e,a
-    jr .r0done
-.r0lo:
-    ld e,d
-    inc e
-    inc e
+    jr nc,.j2
     ld d,a
-.r0done:
+.j2:
+    inc l
+    ld a,(hl)
+    cp e
+    jr c,.k1done
+    ld e,a
+    jr .k1done
+.k1old:
+    ld a,(SK_I)
+    call sk_recptr
+    call sk_recrect
+.k1done:
     ld a,1
     jr .store
 .idle:
@@ -286,41 +280,65 @@ sk_recptr:
 
 ; sk_entptr: A = instance -> HL = its SPR_TAB entry.  Clobbers AF.
 sk_entptr:
-    ld l,a
     add a,a
-    add a,l
+    add a,a
     add a,a
     add a,SPR_TAB&$FF
     ld l,a
     ld h,SPR_TAB>>8
     ret
 
-; sk_entcell: HL -> an SPR_TAB entry -> B = x / 8, D = y / 8 (the first cell of the sprite at its position).  Clobbers AF, HL.
-sk_entcell:
+; sk_entrect: HL -> an SPR_TAB entry -> the cells the instance can cover at its position: B = cx0, C = cx1 = cx0 + wb (the extra byte of a
+; shifted copy included), D = cy0, E = cy1 (exact).  Clobbers AF, HL.
+sk_entrect:
+    inc hl
+    ld a,(hl)                   ; the asset
+    inc hl
+    ld b,(hl)                   ; x
     inc hl
     inc hl
-    ld a,(hl)
+    ld d,(hl)                   ; y
+    add a,a
+    add a,a
+    add a,a
+    add a,a
+    add a,AST&$FF
+    ld l,a
+    ld h,AST>>8
+    ld e,(hl)                   ; AST_H
+    ld a,l
+    add a,AST_WB-AST_H
+    ld l,a
+    ld c,(hl)                   ; AST_WB
+    ld a,b
     rrca
     rrca
     rrca
     and $1F
-    ld b,a
-    inc hl
-    inc hl
-    ld a,(hl)
+    ld b,a                      ; cx0
+    add a,c
+    ld c,a                      ; cx1
+    ld a,d
+    add a,e
+    dec a                       ; the last row (y <= 192 - h)
     rrca
     rrca
     rrca
     and $1F
-    ld d,a
+    ld e,a                      ; cy1
+    ld a,d
+    rrca
+    rrca
+    rrca
+    and $1F
+    ld d,a                      ; cy0
     ret
 
 ; sk_recrect: HL -> a record (flag, E, D, N) -> the exact cell rectangle of what was drawn: B = cx0, C = cx1, D = cy0, E = cy1.
-; Clobbers AF, HL.
+; N = cell rows << 3 | columns.  Clobbers AF, HL.
 sk_recrect:
     inc hl
-    ld a,(hl)
-    ld c,a                      ; C = E (screen address low: cell column and row bits)
+    ld c,(hl)                   ; C = E (screen address low: cell column and row bits)
     inc hl
     ld d,(hl)                   ; D = screen address high
     inc hl
@@ -329,24 +347,16 @@ sk_recrect:
     and $1F
     ld b,a                      ; B = cx0
     ld a,e
-    rlca
-    rlca
-    rlca
-    and 3                       ; n_cols
+    and 7
     add a,b
     dec a
-    ld (SK_T+6),a               ; cx1
+    ld (SK_T+6),a               ; cx1 = cx0 + columns - 1
     ld a,e
-    and $1F
-    ld e,a                      ; E = height
-    ld a,d
+    rrca
+    rrca
+    rrca
     and 7
-    add a,e
     dec a
-    rrca
-    rrca
-    rrca
-    and 3
     ld e,a                      ; E = cell rows - 1
     ld a,c
     rlca
@@ -384,14 +394,14 @@ sk_dirty:
     ld a,(hl)
     sub b
     inc a
-    ld c,a                      ; C = columns (1..3)
+    ld c,a                      ; C = columns (1..5)
     inc l
     ld d,(hl)                   ; D = row
     inc l
     ld a,(hl)
     sub d
     inc a
-    ld e,a                      ; E = rows (1..3)
+    ld e,a                      ; E = rows (1..7)
     ; the 16 bit mask of the columns: MASK_TAB[(columns - 1) * 8 + (cx0 AND 7)]
     ld a,c
     dec a
@@ -445,10 +455,12 @@ sk_dirty:
     scf
     ret
 
-; MASK_TAB[(columns - 1) * 8 + (cx0 AND 7)] = ((1 << columns) - 1) << (cx0 AND 7), 16 bit.  (Page aligned: L is the index.)
-    ALIGN 64
+; MASK_TAB[(columns - 1) * 8 + (cx0 AND 7)] = ((1 << columns) - 1) << (cx0 AND 7), 16 bit, columns 1..5.  (Inside one page: L is the index.)
+    IF ($ & $FF) + 80 > 256
+    ALIGN 256
+    ENDIF
 MASK_TAB:
-    DUP 3, n
+    DUP 5, n
     DUP 8, k
     DW ((1<<(n+1))-1)<<k
     EDUP

@@ -1,6 +1,7 @@
-; layout.inc -- every address and constant of the Leap Arcade runtime v2 (layout L1, docs/ARCADE_CARTRIDGE_MAP.md,
-; contract docs/ARCADE_RUNTIME_API_V2.md, extending V1 and docs/ARCADE_RUNTIME_API.md).  Copy of arcade/runtime/v1/layout.inc
-; (v0 and v1 stay untouched) with assets / instances, per-asset phases, the keyboard and the M4a memory re-plan.
+; layout.inc -- every address and constant of the Leap Arcade runtime v3 (layout L1, docs/ARCADE_CARTRIDGE_MAP.md; contracts
+; docs/ARCADE_PLATFORMER_CONTRACT.md (binding for v3), docs/ARCADE_RUNTIME_API_V2.md, V1 and docs/ARCADE_RUNTIME_API.md).  Copy of
+; arcade/runtime/v2/layout.inc (v0-v2 stay untouched) with the v3 part 1 changes: memory map v3 (V3VARS, GAME_VARS 2 KB, WORLD_RAM,
+; pool B moved), sprite frames, sizes up to 32 x 48, 8-byte SPR_TAB entries, the phase-memory frame cache (docs/ARCADE_RUNTIME_API_V3.md).
 ; Nothing else in the runtime hard-codes an address.
 
 ; ---------------------------------------------------------------------------------------------------------------
@@ -37,9 +38,10 @@ GAME_TILESET    EQU GAME_BASE+8 ; DW  tileset_ptr: DB count (<= 128), count x (8
 GAME_SFX        EQU GAME_BASE+10 ; DW sfx_table: DB count (<= 8), count x DW sfx_ptr (each: 4-byte records, terminator byte 1 = $FF)
 GAME_MAP        EQU GAME_BASE+12 ; DW map_ptr: 768 cell bytes copied into CELL_TILE at boot
 GAME_INSTTAB    EQU GAME_BASE+14 ; DW inst_table: DB ninst (<= MAX_SPRITES), then ninst bytes, each the asset index of that instance (0 = none)
-; Asset descriptor (8 bytes): DB width (8 or 16), DB height (1..16), DW data, DW hot, DB phases (8, 4, 2 or 1), DB 0.
-; Data = height rows of (width 16: 4 bytes mask_hi, mask_lo, image_hi, image_lo; width 8: 2 bytes mask, image); leftmost pixel = bit 7 of the
-; first byte; mask 1 = background shows.  hot = 0: the whole sprite (width x height) is the collision box; else a pointer to DB x, y, w, h.
+; Asset descriptor v3 (8 bytes): DB width (8, 16, 24, 32), DB height (1..48), DW data, DW hot, DB phases (8, 4, 2 or 1), DB nframes (1..32; 0 = 1).
+; Data = nframes blocks of height rows; a row is wb mask bytes then wb image bytes (wb = width / 8; leftmost pixel = bit 7 of the first byte;
+; mask 1 = background shows, image 1 = ink): the v2 rows generalised (width 16 = mask_hi, mask_lo, image_hi, image_lo; width 8 = mask, image).
+; hot = 0: the whole sprite (width x height) is the collision box; else a pointer to DB x, y, w, h (one box per asset, any frame).
 GAME_HEADER_LEN EQU 16
 SD_LEN          EQU 8
 SD_W            EQU 0
@@ -47,6 +49,7 @@ SD_H            EQU 1
 SD_DATA         EQU 2
 SD_HOT          EQU 4
 SD_PHASES       EQU 6
+SD_NFRAMES      EQU 7
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; Display files (both always RAM in play)
@@ -62,24 +65,32 @@ CELL_BLANK      EQU 32          ; the boot value of every cell: font space
 BORDER_COLOUR   EQU 1           ; blue
 
 ; ---------------------------------------------------------------------------------------------------------------
-; RAM chunk 7 ($E000-$FFFF), never paged.  Map, from the bottom (M4a re-plan: the v1 stack region was 3838 bytes of which the
-; runtime used 10; the stack is now limited to 1 KB and the freed $F000-$FAFF holds the sprite phase pool B and a table):
-;   $E000-$E0FF  runtime variables (below)
-;   $E100-$EFFF  GAME_VARS: the compiled code's 16-bit variable slots and arrays (3839 bytes).  Boot zeroes all of $E000-$EFFF.
-;   $F000-$FA7F  POOL_B: phase slots 32..59 (28 slots of 96 bytes)
-;   $FA80-$FAFF  T3: 128 bytes free (boot leaves them alone)
+; RAM chunk 7 ($E000-$FFFF), never paged.  Map v3 (docs/ARCADE_PLATFORMER_CONTRACT.md section 1, binding):
+;   $E000-$E0FF  runtime variables (below; as v2)
+;   $E100-$E1FF  V3VARS (256 bytes, zeroed at boot): V_CAM (word, $E100) and the scrolling window's / collision's state (runtime v3 part 2:
+;                $E102-$E1BF are reserved for it); $E1C0-$E1FF the frame cache's scratch (FC_*, below)
+;   $E200-$E9FF  GAME_VARS: the compiled code's 16-bit variable slots and arrays (2,048 bytes).  Zeroed at boot.
+;   $EA00-$F1FF  WORLD_RAM (2,048 bytes, page aligned; row r, column c at + r*128 + c; a cell = tile * 8).  Zeroed at boot (part 2 fills it).
+;   $F200-$FA7F  POOL_B: 2,176 bytes of the phase pool (frame tables and frame slots, see below)
+;   $FA80-$FAFF  T3: the tile operations' RAM (as v2)
 ;   $FB00-$FB01  STACK_CANARY ($5AA5, written at boot, checked every tick; a changed value stops the machine with a red border)
-;   $FB02-$FEFF  stack, 1022 bytes (grows down from STACK_TOP); the runtime itself uses at most 10, compiled code gets the rest
+;   $FB02-$FEFF  stack, 1022 bytes (grows down from STACK_TOP); the runtime itself uses at most 10 between ticks (26 in the tick work when draw_all builds a frame: fc_miss), compiled code gets the rest
 ;   $FF00-$FFFF  hand-off record (diagnostics; above the stack top, so a push can never reach it)
+; Boot zeroes $E000-$F1FF (variables, V3VARS, GAME_VARS, WORLD_RAM).
 ; ---------------------------------------------------------------------------------------------------------------
 STACK_TOP       EQU $FF00
 STACK_CANARY    EQU $FB00
 STACK_LIMIT     EQU STACK_CANARY+2      ; lowest legal SP
 CANARY_VALUE    EQU $5AA5
 VARS            EQU $E000
-GAME_VARS_BASE  EQU $E100
-GAME_VARS_LIMIT EQU $EFFF       ; last usable byte
-VARS_CLEAR_LEN  EQU $1000       ; boot zeroes $E000-$EFFF
+V3VARS          EQU $E100
+V3VARS_LEN      EQU $0100
+GAME_VARS_BASE  EQU $E200
+GAME_VARS_LIMIT EQU $E9FF       ; last usable byte (2,048 bytes)
+WORLD_RAM       EQU $EA00
+WORLD_RAM_LEN   EQU $0800
+VARS_CLEAR_LEN  EQU $1200       ; boot zeroes $E000-$F1FF
+V_CAM           EQU V3VARS+0    ; word: the clamped camera in pixels (window mode, runtime v3 part 2; 0 until then)
 
 V_FRAMES        EQU VARS+$00    ; word: refresh counter, incremented by the ISR
 V_SYNC          EQU VARS+$02    ; byte: handshake between the main loop and the ISR (the "frame ready" flag and the
@@ -122,6 +133,9 @@ V_KIND          EQU VARS+$3E    ; 16 bytes, per instance: the skip analysis' cla
 V_END           EQU VARS+$5E    ; byte: draw_all: 4 * ninst
 V_RBASE         EQU VARS+$5F    ; byte: draw_all: the low byte of the hidden file's SPR_DRAWN records
 V_ANYSKIP       EQU VARS+$60    ; byte: 1 when the skip analysis marked an instance this tick
+; v3 draw scratch (the formerly free $E04E-$E05D and $E061-$E06F)
+V_FTE           EQU VARS+$55    ; word: draw_all: the FTAB entry of the frame being built (a cache miss)
+V_HBASE         EQU VARS+$5A    ; byte: draw_all: $40 + the hidden file's offset (the high byte of its first row)
 AY_SHADOW       EQU VARS+$70    ; 16 bytes: what the sound code last wrote to AY registers 0..15 (boot zeroes the AY and this)
 ; Scratch of the cell renderer, the text routines and RT_HIT (all in chunk 7; none is used by the ISR)
 E_NR            EQU VARS+$82    ; byte: erase: rows left
@@ -146,39 +160,47 @@ HO_SP           EQU HO_BASE+$05 ; word: SP at hand-off
 HO_MARK_VALUE   EQU $5AA5
 
 ; ---------------------------------------------------------------------------------------------------------------
-; Tables in RAM chunk 6 ($C000-$DFFF; chunk 6 is RAM because $F4 bit 6 is 0).  M4a map:
-;   $C000-$C17F  ROW_TAB: 192 words, address of pixel row y's first byte in display file 1 (add $2000 for file 2)
-;   $C180-$C1FF  PHASE_PTR: 8 assets x 8 shifts x DW.  Asset a, x shift s (0..7): the address of that shifted copy at PHASE_PTR + 16 a + 2 s
-;                (0 for a shift the asset does not have).  The low byte is $80 + 16 a + 2 s <= $FE, so it never carries into the high byte.
-;   $C200-$CDFF  POOL_A: phase slots 0..31 (32 slots of PHASE_LEN = 96 bytes)
+; Tables in RAM chunk 6 ($C000-$DFFF; chunk 6 is RAM because $F4 bit 6 is 0).  v3 map:
+;   $C000-$C07F  PHASE_OFF: 8 assets x 8 shifts x DW.  Asset a, x shift s (1..7, a multiple of the asset's granularity): the offset of that
+;                shift's copy inside a frame slot of the asset, at PHASE_OFF + 16 a + 2 s (shift 0 is never copied: it is drawn from the game image)
+;   $C080-$CDFF  POOL_A: 3,456 bytes of the phase pool  (v2's ROW_TAB is gone: draw_all computes the row address)
 ;   $CE00-$D0FF  CELL_TILE: 768 bytes, row-major (row r, column c at + r*32 + c), the value of each 8x8 cell: bit 7 = 0 a font
 ;                character (code 0..127; 0..31 draw blank), bit 7 = 1 a game tile (value - 128)
 ;   $D100-$D3FF  CELL_ATTR: 768 bytes, the attribute of each cell
 ;   $D400-$D45F  DIRTY0: 96 bytes, bit (idx AND 7) of byte idx / 8 = cell idx must be redrawn into display file 1
-;   $D460-$D4BF  SPR_TAB: MAX_SPRITES (16) x 6 bytes, indexed by instance: DB visible, DB asset, DW x, DW y
-;   $D4C0-$D4FF  AST: MAX_ASSETS (8) x AST_LEN (8) bytes, one record per asset (below)
+;   $D460-$D4DF  SPR_TAB: MAX_SPRITES (16) x 8 bytes, indexed by instance: DB visible, DB asset, DW x, DW y, DB frame, DB 0
+;   $D4E0-$D4FF  T2 free: 32 bytes
 ;   $D500-$D55F  DIRTY1: the same for display file 2  (DIRTY1 = DIRTY0 + $100)
 ;   $D560-$D5DF  SPR_DRAWN: 2 files x 16 instances x 4 bytes: DB drawn flag, DB E, DB D, DB N = what is drawn in THAT file: the screen address E, D
-;                (in that file) of the first byte of the first row the blit wrote, N = n_cols << 5 | height
-;   $D5E0-$D5FF  T2 free: 32 bytes
+;                (in that file) of the first byte of the first row the blit wrote, N = cell rows << 3 | byte columns  (1..7 rows, 1..5 columns)
+;   $D5E0-$D5FF  T4 free: 32 bytes
 ;   $D600-$D67F  TILE_ATTR: the attribute of each of the 128 game tiles (BG_ATTR for tiles the game did not define)
-;   $D680-$D7FF  POOL_C: phase slots 60..63 (4 slots)
+;   $D680-$D6FF  AST: MAX_ASSETS (8) x AST_LEN (16) bytes, one record per asset (below)
+;   $D700-$D7FF  POOL_C: 256 bytes of the phase pool
 ;   $D800-$DFFF  GLYPH_TAB: the glyphs of the 256 cell values as 8 "planes": pixel row k (0..7) of the glyph of value v is at
 ;                + 256 k + v (so a renderer walks the rows with INC B): v 0..31 blank, 32..127 the font (copied from the
 ;                runtime's FONT_GLYPHS at boot), 128..255 the game tiles (copied from tileset_ptr)
-;   free: T2 $D5E0-$D5FF (32), T3 $FA80-$FAFF (128; language batch 1 uses $FA80-$FAF5), vars $E0FC-$E0FF (4; $E0F8-$E0FB are V_BORDER, V_NMAP, V_MAPTAB)
-; Phase slots: the pre-shifted copies of the assets' art.  A slot is PHASE_LEN = 96 bytes (16 rows x 6, the largest a copy can be: 16 rows
-; of a 16 wide sprite shifted into a 3-byte window), 64 slots in three pieces (POOL_A 32 + POOL_B 28 + POOL_C 4), so 8 assets x 8 phases
-; always fit.  The address of slot n is SLOT_TAB + 2 n (a table in the runtime, built by the assembler).
-; A copy holds the sprite's height rows (not always 16) of 2 x wb bytes, wb = width/8 + (shift > 0): pairs mask, image per screen byte
-; (mask 1 = background shows, image 1 = ink).  A shift 0 copy of a 16 wide sprite is therefore 4 bytes a row, any other 6; 8 wide: 2 and 4.
-; The whole of chunk 6 from CELL_TILE up is cleared and filled at boot (stale RAM would otherwise be drawn); PHASE_PTR is cleared by the boot.
+;   free: T2 $D4E0-$D4FF (32), T4 $D5E0-$D5FF (32), vars $E0FC-$E0FF (4)
+;
+; THE PHASE POOL (POOL_A + POOL_B + POOL_C = PHASE_POOL_BYTES = 5,888 bytes) holds, for every asset that has at least one instance:
+;   FTAB: nframes entries of 4 bytes, DW rom (the address of the frame's rows in the game image), DW slot (the frame slot holding its
+;         pre-shifted copies, 0 = not in the cache)
+;   frame slots (assets with phases > 1 only): SLOT = (phases - 1) x CLEN bytes, CLEN = h x 2 x (wb + 1): the copies of one frame for every
+;         non-zero shift (shift s at + PHASE_OFF[a][s]); a copy is h rows of (wb + 1) (mask, image) pairs (mask 1 = background shows).
+;   Shift 0 is drawn straight from the game image (DOCK chunks 4-5), so it costs no RAM, and an asset with 1 phase costs only its FTAB.
+; The boot's plan (assets.asm, reproduced by the linker: docs/ARCADE_RUNTIME_API_V3.md):
+;   1. FTAB of every used asset (index order);  2. min(nframes, instances of the asset) slots of every used asset with phases > 1 (index
+;   order);  3. more slots, asset by asset in index order, while they fit, up to nframes per asset.  Every allocation is FIRST FIT over the
+;   pieces POOL_A, POOL_B, POOL_C (in that order; nothing straddles two pieces).  If anything of steps 1-2 does not fit, the boot stops with a
+;   MAGENTA border (POOL_FAIL_BORDER), interrupts off, and the bytes that did not fit in FC_MISS; nothing outside the pool is written.
+;   When an asset has a slot for every frame (K = nframes) all its frames are built at boot and never rebuilt; otherwise (K < nframes) the
+;   slots are a cache: frames 0..K-1 are built at boot, a frame that is not cached is built when it is drawn (into the slot of a frame that
+;   no other visible instance of the asset shows, round robin).
 ; ---------------------------------------------------------------------------------------------------------------
-ROW_TAB         EQU $C000
-PHASE_PTR       EQU $C180
-PHASE_PTR_LEN   EQU 128
-POOL_A          EQU $C200
-POOL_A_SLOTS    EQU 32
+PHASE_OFF       EQU $C000
+PHASE_OFF_LEN   EQU 128
+POOL_A          EQU $C080
+POOL_A_LEN      EQU $0D80
 CELL_TILE       EQU $CE00       ; page aligned (cell index idx: high byte + idx >> 8)
 CELL_ATTR       EQU CELL_TILE+$0300             ; the code adds 3 to the high byte of a CELL_TILE address to reach this
 CELL_COUNT      EQU 768
@@ -186,52 +208,82 @@ CELL_ROWS       EQU 24
 CELL_COLS       EQU 32
 DIRTY0          EQU $D400
 SPR_TAB         EQU $D460
-AST             EQU $D4C0
 DIRTY1          EQU DIRTY0+$0100
 DIRTY_LEN       EQU 96
 SPR_DRAWN       EQU $D560
 TILE_ATTR       EQU $D600
-POOL_C          EQU $D680
-POOL_C_SLOTS    EQU 4
+AST             EQU $D680
+POOL_C          EQU $D700
+POOL_C_LEN      EQU $0100
 GLYPH_TAB       EQU $D800
 GLYPH_LEN       EQU $0800
-POOL_B          EQU $F000
-POOL_B_SLOTS    EQU 28
+POOL_B          EQU $F200
+POOL_B_LEN      EQU $0880
+PHASE_POOL_BYTES EQU POOL_A_LEN+POOL_B_LEN+POOL_C_LEN
 T3              EQU $FA80       ; (language batch 1: the tile operations' RAM, see the end of this file; free for a game that does not call them)
 T3_LEN          EQU $0080
-T2_FREE         EQU $D5E0
+T2_FREE         EQU $D4E0
 T2_FREE_LEN     EQU $0020
+T4_FREE         EQU $D5E0
+T4_FREE_LEN     EQU $0020
 CHUNK6_CLEAR    EQU CELL_TILE   ; boot clears CHUNK6_CLEAR .. $DFFF
 CHUNK6_CLEAR_LEN EQU $E000-CELL_TILE
 MAX_TILES       EQU 128
 MAX_SFX         EQU 8
+POOL_FAIL_BORDER EQU 3          ; magenta: the art does not fit the phase pool (boot stops)
 
-; Phases and assets
+; Phases, frames, assets
 MAX_SPRITES     EQU 16          ; instances (things on screen)
 MAX_ASSETS      EQU 8           ; assets (shared art)
-PHASE_ROWS      EQU 16
-PHASE_ROWLEN    EQU 6           ; bytes per row of the largest copy
-PHASE_LEN       EQU PHASE_ROWS*PHASE_ROWLEN     ; 96 bytes per slot
-SLOT_COUNT      EQU POOL_A_SLOTS+POOL_B_SLOTS+POOL_C_SLOTS
-SPR_ENT         EQU 6           ; bytes per SPR_TAB entry
+MAX_FRAMES      EQU 32
+MAX_H           EQU 48
+FTE_LEN         EQU 4           ; bytes of an FTAB entry: DW rom, DW slot
+SPR_ENT         EQU 8           ; bytes per SPR_TAB entry
 SPR_ASSET_OFF   EQU 1           ; offset of the asset index inside an SPR_TAB entry
+SPR_X_OFF       EQU 2
+SPR_Y_OFF       EQU 4
+SPR_FRAME_OFF   EQU 6           ; offset of the frame byte
 INST_ASSET      EQU SPR_TAB+SPR_ASSET_OFF       ; the asset byte of instance 0; instance i at + SPR_ENT * i
 SPR_DRAWN_FILE  EQU MAX_SPRITES*4       ; bytes of SPR_DRAWN per display file
 
-; Asset record AST (AST_LEN bytes at AST + 8 a), built at boot from the descriptor
-AST_LEN         EQU 8
-AST_H           EQU 0           ; height, 1..16
-AST_WB          EQU 1           ; width / 8 (1 or 2): bytes the sprite covers when x is a multiple of 8
-AST_XMASK       EQU 2           ; AND mask that rounds x down to the phase granularity: $FF (8 phases), $FE (4), $FC (2), $F8 (1)
-AST_PHASES      EQU 3           ; 8, 4, 2 or 1
-AST_HOT         EQU 4           ; collision box x, y, w, h (4 bytes)
+; Asset record AST (AST_LEN bytes at AST + 16 a), built at boot from the descriptor
+AST_LEN         EQU 16          ; (the order of H, NF, FTAB, WB, XMASK is the order draw_all reads them in)
+AST_H           EQU 0           ; height, 1..48
+AST_NF          EQU 1           ; frames, 1..32
+AST_FTAB        EQU 2           ; word: the FTAB (0: the asset has no instance)
+AST_WB          EQU 4           ; width / 8 (1..4): bytes the sprite covers when x is a multiple of 8
+AST_XMASK       EQU 5           ; AND mask that rounds x down to the phase granularity: $FF (8 phases), $FE (4), $FC (2), $F8 (1)
+AST_PHASES      EQU 6           ; 8, 4, 2 or 1
+AST_NINST       EQU 7           ; instances of this asset (boot)
+AST_HOT         EQU 8           ; collision box x, y, w, h (4 bytes)
+AST_CLEN        EQU 12          ; word: bytes of one pre-shifted copy, h x 2 x (wb + 1)
+AST_RR          EQU 14          ; the next frame the cache looks at for a victim (round robin)
+AST_K           EQU 15          ; frame slots of the asset (K = nframes: every frame stays; K < nframes: a cache)
+
+; The frame cache's scratch in V3VARS ($E1C0-$E1FF)
+FC_VARS         EQU V3VARS+$C0
+FC_MISS         EQU FC_VARS+0   ; word: boot: bytes of the art that did not fit the phase pool (0 = it fits)
+FC_NEXT         EQU FC_VARS+2   ; 3 words: boot: the next free byte of POOL_A, POOL_B, POOL_C
+FC_PROT         EQU FC_VARS+8   ; 4 bytes: a miss: bit f = frame f is shown by a visible instance of the asset (protected)
+BF_SRC          EQU FC_VARS+12  ; word: build: the frame's rows in the game image
+BF_DST          EQU FC_VARS+14  ; word: build: the slot
+BF_ROWS         EQU FC_VARS+16  ; byte: build: rows left
+BF_NPH          EQU FC_VARS+17  ; byte: build: phases - 1
+BF_CNT          EQU FC_VARS+18  ; byte: build: phases left in the row
+BF_G            EQU FC_VARS+19  ; byte: build: bits between two phases (8 / phases)
+BF_CLEN         EQU FC_VARS+20  ; word: build: bytes of one copy
+BF_ROWDST       EQU FC_VARS+22  ; word: build: the row's first byte in the first copy
+FC_A            EQU FC_VARS+24  ; byte: boot / miss: asset being handled
+FC_SLEN         EQU FC_VARS+25  ; word: boot: slot size of the asset being handled
+FC_MISSES       EQU FC_VARS+27  ; word: frames built because of a cache miss since boot (statistics for the tests)
+FC_F            EQU FC_VARS+29  ; byte: miss: the frame wanted
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; Sprite limits
 ; ---------------------------------------------------------------------------------------------------------------
-SPR_W           EQU 16
+SPR_W           EQU 16          ; (v0 names, kept for the tools; v3 clamps per asset: x 0..256 - width, y 0..192 - height)
 SPR_H           EQU 16
-SPR_XMAX        EQU 239         ; RT_SHOW clamps x to 0..239 and y to 0..176 for every asset (the contract of v0)
+SPR_XMAX        EQU 239
 SPR_YMAX        EQU 176
 
 ; Keyboard (keys.asm)
@@ -243,6 +295,9 @@ KEY_TAB_LAST    EQU 'Z'         ; the key table covers codes 0..'Z'
 ; ---------------------------------------------------------------------------------------------------------------
 ; Header extension: bit 7 of frame_div (DIV_EXT) says the header is 18 bytes long and $8010 is the map table pointer.
 DIV_EXT         EQU $80
+DIV_WIN         EQU $40         ; v3: bit 6 = the 20-byte header with $8012 DW window_desc (requires DIV_EXT); frame_div AND $3F is the divisor
+GAME_WINDESC    EQU GAME_BASE+18
+GAME_HEADER_WIN_LEN EQU 20
 GAME_MAPTAB     EQU GAME_BASE+16        ; DW map_table: DB count (0..MAX_MAPS), count x DW map_ptr; a map: DB w, DB h, w*h cell bytes (row-major)
 GAME_HEADER_EXT_LEN EQU 18
 MAX_MAPS        EQU 8

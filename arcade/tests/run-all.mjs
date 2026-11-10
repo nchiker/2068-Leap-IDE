@@ -53,7 +53,12 @@ const suites = [
   'arcade/tests/m5-runtime-mem.mjs',
   'arcade/tests/m5-runtime-regs.mjs',
   'arcade/tests/m5-runtime-perf.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs'] : []),
+  'arcade/tests/m6-runtime.mjs',
+  'arcade/tests/m6-runtime-pic.mjs',
+  'arcade/tests/m6-runtime-mem.mjs',
+  'arcade/tests/m6-runtime-regs.mjs',
+  'arcade/tests/m6-runtime-perf.mjs',
+  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs'] : []),
 ];
 
 function run(file, isBuild) {

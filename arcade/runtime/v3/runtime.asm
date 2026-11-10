@@ -1,4 +1,4 @@
-; runtime.asm -- Leap Arcade runtime v2, top file.  Assembled with sjasmplus by arcade/tools/build-runtime-v2.mjs.
+; runtime.asm -- Leap Arcade runtime v3, top file.  Assembled with sjasmplus by arcade/tools/build-runtime-v3.mjs.
     DEVICE NOSLOT64K
     INCLUDE "layout.inc"
     INCLUDE "boot.asm"          ; $0000 header, $0066 NMI, $0100 entry         (DOCK chunk 0)

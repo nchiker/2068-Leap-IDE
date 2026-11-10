@@ -128,12 +128,23 @@ erase_all:
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; draw_all: draw every visible instance into display file V_HIDDEN, in index order (a higher index lies on top), and record what was drawn in
-; that file's SPR_DRAWN entry.  The x of the SPR_TAB entry (0..239) is rounded down to the asset's phase granularity here (AST_XMASK) -- THE place
-; where the rounding happens; the stored x stays as RT_SHOW set it.  B = 4 * instance (the loop variable, kept on the stack across the blit).
+; that file's SPR_DRAWN entry.  The x of the SPR_TAB entry is rounded down to the asset's phase granularity here (AST_XMASK) -- THE place
+; where the rounding happens; the stored x stays as RT_SHOW set it.  The frame byte is clamped to nframes - 1 here.  Shift 0 is drawn from the
+; frame's rows in the game image (FTAB rom), any other shift from the frame's slot (FTAB slot + PHASE_OFF[asset][shift]); a frame without a slot
+; is built into one first (fc_miss, assets.asm).  B = 4 * instance (the loop variable, kept on the stack across the blit).
 ; An instance marked by the skip analysis (record flag $81) is not drawn; its mark is cleared here (the erase has passed it).
 ; V_CHG: each instance that is drawn pays one of the two ticks (one per display file) it owes after a change.
 ; Clobbers AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------------------------------------------
+    MACRO PHASE_ADD             ; HL += the word at (B, C) (B = PHASE_OFF >> 8); A free
+        ld a,(bc)
+        add a,l
+        ld l,a
+        inc c
+        ld a,(bc)
+        adc a,h
+        ld h,a
+    ENDM
 draw_all:
     ld a,(V_NINST)
     or a
@@ -146,11 +157,13 @@ draw_all:
     rrca
     add a,SPR_DRAWN&$FF
     ld (V_RBASE),a              ; the low byte of this file's records
+    ld a,(V_HOFF)
+    or DFILE0>>8
+    ld (V_HBASE),a              ; the high byte of the hidden file's first row
     ld b,0
 .loop:
-    ld a,b                      ; the SPR_TAB entry: SPR_TAB + 6 i = SPR_TAB + 4 i + 2 i
-    srl a
-    add a,b
+    ld a,b                      ; the SPR_TAB entry: SPR_TAB + 8 i = SPR_TAB + 2 * (4 i)
+    add a,a
     add a,SPR_TAB&$FF
     ld l,a
     ld h,SPR_TAB>>8
@@ -162,102 +175,123 @@ draw_all:
     jr z,.draw
     ld a,(V_RBASE)              ; a marked instance: clear the mark, draw nothing
     add a,b
-    ld l,a
-    ld h,SPR_DRAWN>>8
-    bit 7,(hl)
-    jr z,.draw0
-    res 7,(hl)
+    ld e,a
+    ld d,SPR_DRAWN>>8
+    ld a,(de)
+    bit 7,a
+    jr z,.draw
+    res 7,a
+    ld (de),a
     jp .next
-.draw0:
-    ld a,b                      ; (HL = the entry again)
-    srl a
-    add a,b
-    add a,SPR_TAB&$FF
-    ld l,a
-    ld h,SPR_TAB>>8
-.draw:
-    inc hl
-    ld e,(hl)                   ; E = asset
-    inc hl
-    ld c,(hl)                   ; C = x (the low byte: RT_SHOW clamped x to 0..239)
-    inc hl
-    inc hl
-    ld d,(hl)                   ; D = y (0..176)
-    ld a,b                      ; one of the two ticks owed to the display files is paid
-    rrca
+.draw:                          ; HL = the entry, B = 4 i
+    ld a,b
+    ld (V_I),a
+    rrca                        ; one of the two ticks owed to the display files is paid
     rrca
     add a,V_CHG&$FF
-    ld l,a
-    ld h,V_CHG>>8
-    ld a,(hl)
+    ld e,a
+    ld d,V_CHG>>8
+    ld a,(de)
     or a
     jr z,.paid
-    dec (hl)
+    dec a
+    ld (de),a
 .paid:
-    ld a,e                      ; the asset record
+    inc l
+    ld a,(hl)                   ; the asset
+    add a,a
     add a,a
     add a,a
     add a,a
     add a,AST&$FF
-    ld l,a
+    ld c,a                      ; C = its record (low byte)
+    inc l
+    ld e,(hl)                   ; E = x (the low byte: RT_SHOW clamped x to 0..256-w)
+    inc l
+    inc l
+    ld d,(hl)                   ; D = y (0..192-h)
+    inc l
+    inc l
+    ld b,(hl)                   ; B = the frame, unclamped
+    ld l,c
     ld h,AST>>8
-    ld a,(hl)
+    ld a,(hl)                   ; AST_H
     ld (V_H),a                  ; rows
-    inc l
-    ld a,(hl)                   ; AST_WB: bytes at a multiple of 8
-    inc l
-    ld l,(hl)                   ; AST_XMASK
-    ld h,a                      ; (H = WB, L = XMASK)
-    ld a,c
-    and l                       ; x rounded down to the phase granularity
-    ld c,a                      ; C = xd
-    and 7                       ; the shift (a multiple of the granularity)
-    ld l,a
-    ld a,h
-    jr z,.wb                    ; aligned: WB bytes, else one more
-    inc a
-.wb:
-    ld (V_X),a                  ; bytes the blit touches (1..3)
-    ld a,e
-    rlca
-    rlca
-    rlca
-    rlca                        ; 16 * asset
-    ld h,a
-    ld a,l
-    add a,a
-    add a,h
-    add a,PHASE_PTR&$FF
-    ld l,a
-    ld h,PHASE_PTR>>8
+    inc l                       ; AST_NF
+    ld a,b                      ; the frame, clamped to nframes - 1
+    cp (hl)
+    jr c,.fok
     ld a,(hl)
+    dec a
+.fok:
+    add a,a
+    add a,a
+    inc l                       ; AST_FTAB
+    add a,(hl)
+    ld b,a
     inc l
-    ld h,(hl)
-    ld l,a                      ; HL = the phase copy for (asset, shift)
-    push hl
+    ld a,(hl)
+    adc a,0
+    inc l                       ; AST_WB
+    push af                     ; A = the high byte of the frame's FTAB entry (B = its low byte)
+    push bc
+    ld b,(hl)                   ; B = wb
+    inc l
+    ld a,e
+    and (hl)                    ; x rounded down to the phase granularity (AST_XMASK)
+    ld e,a                      ; E = xd
+    and 7
+    jr z,.s0
+    add a,a
+    add a,c
+    sub (AST&$FF)-(PHASE_OFF&$FF)
+    ld c,a                      ; C = the low byte of PHASE_OFF[asset][shift] (>= 2: never 0)
+    inc b                       ; B = window bytes: wb + 1
+    jr .s1
+.s0:
+    ld c,a                      ; C = 0: shift 0, window wb
+.s1:
+    ld a,d                      ; the record's N = cell rows << 3 | window bytes
+    ld (V_Y),a
+    and 7
+    ld h,a
+    ld a,(V_H)
+    add a,h
+    dec a                       ; (y AND 7) + h - 1 (<= 54): its bits 3-5 are the cell rows - 1
+    and $38
+    add a,8
+    or b
+    ld l,a                      ; L = N
+    ld a,d                      ; the screen address of row y: H = $40 + hoff + (y AND $C0) / 8 + (y AND 7), L = (y AND $38) * 4 + xd / 8
+    rrca
+    rrca
+    rrca
+    and $18
+    or h
+    ld h,a
+    ld a,(V_HBASE)
+    or h
+    ld h,a
     ld a,d
-    ld (V_Y),a                  ; (only its low 3 bits are used by the blit: y AND 7)
-    ld l,d                      ; the screen address: ROW_TAB[y] + xd / 8 (+ the hidden file's offset)
-    ld h,0
-    add hl,hl
-    ld de,ROW_TAB
-    add hl,de
-    ld e,(hl)
-    inc hl
-    ld d,(hl)
-    ld a,c
+    rlca
+    rlca
+    and $E0
+    ld d,a
+    ld a,e
     rrca
     rrca
     rrca
     and $1F
-    add a,e                     ; the row start has its low 5 bits clear, so no carry
-    ld e,a
-    ld a,(V_HOFF)
     or d
-    ld d,a                      ; DE = the screen address of the first byte of the first row
-    ld a,(V_RBASE)              ; the record: (1, E, D, n_cols << 5 | height)
-    add a,b
+    ld e,a
+    ld d,h                      ; DE = the screen address of the first byte of the first row
+    ld a,(V_I)                  ; the record: (1, E, D, N)
+    ld h,a
+    ld a,(V_RBASE)
+    add a,h
+    ld h,l                      ; (H = N)
     ld l,a
+    ld a,h
     ld h,SPR_DRAWN>>8
     ld (hl),1
     inc l
@@ -265,29 +299,94 @@ draw_all:
     inc l
     ld (hl),d
     inc l
-    ld a,(V_X)
-    rrca
-    rrca
-    rrca                        ; n_cols << 5
-    ld c,a
-    ld a,(V_H)
-    or c
     ld (hl),a
-    pop hl
-    ld a,(V_X)
-    push bc                     ; (B = the loop variable)
+    pop hl                      ; L = the low byte of the FTAB entry (from B)
+    ld a,h
+    pop hl                      ; H = its high byte (from A)
+    ld l,a                      ; HL = the frame's FTAB entry
+    ld a,c
+    or a
+    jr nz,.shifted
+    ld a,(hl)                   ; ---- shift 0: the rows in the game image, wb (B) bytes a row ----
+    inc hl
+    ld h,(hl)
+    ld l,a
+    ld a,b
+    cp 1
+    jr nz,.r24
+    call blitp1                 ; (8 wide: a row is one mask, image pair)
+    jp .done
+.r24:
+    cp 3
+    jr nz,.r4
+    call blitr3
+    jp .done
+.r4:
+    cp 4
+    jr nz,.r2
+    call blitr4
+    jp .done
+.shifted:                       ; ---- a pre-shifted copy in the frame's slot, wb + 1 (B) bytes a row ----
+    inc hl
+    inc hl
+    ld a,(hl)
+    inc hl
+    or (hl)
+    jr z,.miss
+    ld a,(hl)
+    dec hl
+    ld l,(hl)
+    ld h,a                      ; HL = the slot
+.slot:
+    ld a,b
+    ld b,PHASE_OFF>>8           ; + PHASE_OFF[asset][shift]
+    cp 3
+    jr nz,.p2
+    PHASE_ADD
+    call blitp3                 ; 16 wide
+    jp .done
+.p2:
     cp 2
-    jr c,.b1
-    jr z,.b2
-    call blit3
-    jr .done
-.b1:
-    call blit1
-    jr .done
-.b2:
-    call blit2
-.done:
+    jr nz,.p4
+    PHASE_ADD
+    call blitp2                 ; 8 wide
+    jp .done
+.p4:
+    cp 4
+    jr nz,.p5
+    PHASE_ADD
+    call blitp4                 ; 24 wide
+    jp .done
+.p5:
+    PHASE_ADD
+    call blitp5                 ; 32 wide
+    jp .done
+.miss:                          ; the frame has no slot: build it into one (the record is written; with no victim nothing is drawn, which the
+    dec hl                      ; erase handles like any record)
+    dec hl
+    dec hl
+    ld (V_FTE),hl
+    push bc
+    push de
+    ld a,c
+    sub PHASE_OFF&$FF
+    rrca
+    rrca
+    rrca
+    rrca
+    and $0F                     ; the asset (C - PHASE_OFF = 16 a + 2 shift)
+    call fc_miss
+    pop de
     pop bc
+    ld a,h
+    or l
+    jr nz,.slot
+    jr .done
+.r2:
+    call blitr2                 ; 16 wide, shift 0 (falls into .done)
+.done:
+    ld a,(V_I)
+    ld b,a
 .next:
     ld a,b
     add a,4

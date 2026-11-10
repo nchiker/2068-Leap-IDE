@@ -15,7 +15,7 @@ M_VIDEO_S:
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; video_init: both display files all-blank (every cell is a font space: pixels 0, attribute BG_ATTR), the cell map and
-; its tables, the row table and the pre-shifted sprite tables.  Clobbers everything.  Boot only (uses IX, IY).
+; its tables and the sprite art (v3: no row table; draw_all computes the row address).  Clobbers everything.  Boot only (uses IX, IY).
 ; ---------------------------------------------------------------------------------------------------------------
 video_init:
     ld hl,DFILE0
@@ -38,7 +38,6 @@ video_init:
     ld bc,DATTR_LEN-1
     ld (hl),BG_ATTR
     ldir
-    call build_row_table
     call cells_init
     jp build_assets
 
@@ -159,31 +158,6 @@ glyph_put:
     jr nz,.row
     ret
 
-; build_row_table: ROW_TAB[y] = address of the first byte of pixel row y in display file 1 (192 words).
-; Walks the Spectrum-style screen layout with the usual "one row down" step.
-build_row_table:
-    ld hl,DFILE0
-    ld ix,ROW_TAB
-    ld b,192
-.row:
-    ld (ix+0),l
-    ld (ix+1),h
-    inc ix
-    inc ix
-    inc h                       ; next pixel row inside the character cell: H + 1
-    ld a,h
-    and 7
-    jr nz,.next                 ; still inside the cell
-    ld a,l                      ; next character row: L + 32
-    add a,32
-    ld l,a
-    jr c,.next                  ; wrapped into the next third: H already points there
-    ld a,h
-    sub 8                       ; same third: undo the 8 added by the 8 pixel rows
-    ld h,a
-.next:
-    djnz .row
-    ret
 ; ---------------------------------------------------------------------------------------------------------------
 ; draw_cell: BC = cell index (0..767).  Draws that cell into the HIDDEN display file (V_HOFF): its attribute byte from
 ; CELL_ATTR and its 8 bitmap rows from GLYPH_TAB (row k of the glyph of value v at GLYPH_TAB + 256 k + v: one INC B per row).

@@ -379,10 +379,9 @@ hit_box:
     ld hl,V_NINST
     cp (hl)
     ret nc                      ; index >= ninst (carry clear)
-    ld c,a
     add a,a
-    add a,c
     add a,a
+    add a,a                     ; 8 * index (SPR_ENT)
     ld e,a
     ld d,0
     ld hl,SPR_TAB
@@ -404,8 +403,9 @@ hit_box:
     ld (V_HITY),de              ; y
     add a,a
     add a,a
-    add a,a                     ; 8 * asset
-    add a,(AST&$FF)+AST_HOT     ; (AST + 8 * 7 + 4 does not carry out of the low byte: asserted in sprite.asm)
+    add a,a
+    add a,a                     ; 16 * asset (AST_LEN)
+    add a,(AST&$FF)+AST_HOT     ; (AST + 16 * 7 + 7 does not carry out of the low byte: asserted in sprite.asm)
     ld l,a
     ld h,AST>>8                 ; HL -> the asset's hot x, y, w, h
     inc hl

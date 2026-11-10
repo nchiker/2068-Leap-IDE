@@ -1,4 +1,5 @@
-; boot.asm -- LROS header (DOCK chunk 0 offset 0), NMI stub and the cold start.  From arcade/runtime/v1/boot.asm (v2: assets / instances, keyboard state, the M4a memory map).
+; boot.asm -- LROS header (DOCK chunk 0 offset 0), NMI stub and the cold start.  From arcade/runtime/v1/boot.asm (v2: assets / instances, keyboard state, the M4a memory map;
+; v3: the memory map v3 and frame_div AND $3F).
 ;
 ; The stock ROM finds the header at $0000 of the DOCK, waits about 103 frames (its own banner), maps the chunks the
 ; spec byte asks for and jumps to ENTRY with interrupts ENABLED, IM 1, SP=$61FE (chunk 3), $F4 = $43, $FF = $00.
@@ -52,7 +53,7 @@ ENTRY:
     ld a,BORDER_COLOUR
     out (PORT_ULA),a            ; border blue, beeper off
 
-    ; ---- zero the runtime variables and the compiled code's variable area: $E000-$EFFF (stale RAM would
+    ; ---- zero the runtime variables, V3VARS, the compiled code's variable area and WORLD_RAM: $E000-$F1FF (stale RAM would
     ; otherwise feed the ISR: see E4's $A5 trap; and compiled variables start at 0) ----
     ld hl,VARS
     ld de,VARS+1
@@ -95,7 +96,7 @@ ENTRY:
 
     ; ---- header values the main loop uses ----
     ld a,(GAME_DIV)
-    and $7F                     ; bit 7 (DIV_EXT) says the header has a map table; it is not part of the divisor
+    and $3F                     ; bit 7 (DIV_EXT: a map table) and bit 6 (DIV_WIN: a window descriptor, runtime v3 part 2; ignored here) are not part of the divisor
     jr nz,.divok
     inc a                       ; a header with frame_div 0 is read as 1
 .divok:

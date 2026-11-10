@@ -6,49 +6,114 @@
 M_API_S:
 
 ; ---------------------------------------------------------------------------------------------------------------
-; RT_SHOW: A = instance index, BC = x, DE = y (signed 16-bit; x is clamped to 0..SPR_XMAX, y to 0..SPR_YMAX).
-; Makes the instance visible at that position.  An index >= ninst is ignored.  The stored x is unrounded: the draw rounds it down to the
-; asset's phase granularity (main.asm draw_all).
+; RT_SHOW: A = instance index, BC = x, DE = y (signed 16-bit).  Makes the instance visible at that position with the frame it already has
+; (0 at start).  RT_SHOWF: the same with HL = frame (taken AND $FF; draw_all clamps it to nframes - 1).
+; Non-window mode clamps per asset: x to 0..256 - width, y to 0..192 - height.  An index >= ninst is ignored.  The stored x is unrounded: the draw
+; rounds it down to the asset's phase granularity (main.asm draw_all).  Nothing changes (visible, x, y, frame equal): nothing is written;
+; otherwise the entry is written and V_CHG[i] = 2 (the skip analysis: the two display files still owe a draw).  28..567 T (measured).
 ; ---------------------------------------------------------------------------------------------------------------
+RT_SHOWF:
+    push hl                     ; L = the frame
+    ld hl,V_NINST
+    cp (hl)
+    jr c,show_f
+    pop hl
+    ret                         ; index >= ninst: no such instance
 RT_SHOW:
     ld hl,V_NINST
     cp (hl)
     ret nc                      ; index >= ninst: no such instance
-    push af                     ; the index
-    ld h,b
-    ld l,c
-    ld a,SPR_XMAX
-    call clamp_hl
-    ld b,l                      ; B = clamped x (0..239: the high byte is 0)
-    ex de,hl
-    ld a,SPR_YMAX
-    call clamp_hl
-    ld c,l                      ; C = clamped y (0..176)
-    pop af
-    ld e,a                      ; E = the index
+    ld h,a
     add a,a
-    add a,e
-    add a,a                     ; i * 6
+    add a,a
+    add a,a
+    add a,(SPR_TAB&$FF)+SPR_FRAME_OFF
+    ld l,a
+    ld a,h
+    ld h,SPR_TAB>>8
+    ld l,(hl)                   ; L = the frame the instance has
+    push hl
+show_f:                         ; A = index (< ninst), BC = x, DE = y; the frame on the stack (low byte)
+    add a,a
+    add a,a
+    add a,a
     add a,SPR_TAB&$FF
-    ld d,a                      ; D = the low byte of the entry (SPR_TAB..+95 stays inside one page)
     ld l,a
     ld h,SPR_TAB>>8
+    push hl                     ; the entry
+    inc l
+    ld a,(hl)                   ; the asset
+    add a,a
+    add a,a
+    add a,a
+    add a,a
+    add a,AST&$FF
+    ld l,a
+    ld h,AST>>8
+    ld a,192
+    sub (hl)                    ; y max = 192 - h (AST_H; 144..191)
+    push af
+    ld a,l
+    add a,AST_WB-AST_H
+    ld l,a
+    ld a,(hl)
+    add a,a
+    add a,a
+    add a,a
+    neg
+    ld h,a                      ; H = x max = 256 - 8 wb (224..248)
+    xor a                       ; ---- x: signed 16-bit -> 0..x max ----
+    bit 7,b
+    jr nz,.xs                   ; negative: 0
+    ld a,b
+    or a
+    ld a,h
+    jr nz,.xs                   ; 256 or more: the maximum
+    ld a,c
+    cp h
+    jr c,.xs
+    ld a,h
+.xs:
+    ld c,a
+    pop hl                      ; H = y max
+    ld b,c                      ; B = x
+    xor a                       ; ---- y ----
+    bit 7,d
+    jr nz,.ys
+    ld a,d
+    or a
+    ld a,h
+    jr nz,.ys
+    ld a,e
+    cp h
+    jr c,.ys
+    ld a,h
+.ys:
+    ld c,a                      ; C = y
+    pop hl                      ; HL = the entry
+    pop de                      ; E = the frame
     ld a,(hl)
     or a
-    jr z,.write                 ; hidden: it is shown now
+    jr z,.w                     ; hidden: it is shown now
     inc l
     inc l
     ld a,(hl)
     cp b
-    jr nz,.write                ; x differs
+    jr nz,.w                    ; x differs
     inc l
     inc l
     ld a,(hl)
     cp c
-    ret z                       ; visible at this position already: nothing changes, so nothing has to be redrawn
-.write:
-    ld l,d
-    ld h,SPR_TAB>>8
+    jr nz,.w                    ; y differs
+    inc l
+    inc l
+    ld a,(hl)
+    cp e
+    ret z                       ; visible at this position with this frame already: nothing has to be redrawn
+.w:
+    ld a,l
+    and $F8
+    ld l,a                      ; back to the start of the entry (entries are 8-aligned)
     ld (hl),1                   ; visible
     inc l
     inc l                       ; (the second byte is the instance's asset: set at boot, never changed)
@@ -59,31 +124,19 @@ RT_SHOW:
     ld (hl),c
     inc l
     ld (hl),0                   ; y high
-    ld a,e                      ; the entry changed: it has to be drawn into both display files (V_CHG counts the ticks still owed)
+    inc l
+    ld (hl),e                   ; frame
+    ld a,l                      ; the entry changed: it has to be drawn into both display files (V_CHG counts the ticks still owed)
+    sub (SPR_TAB&$FF)+SPR_FRAME_OFF
+    rrca
+    rrca
+    rrca
     add a,V_CHG&$FF
     ld l,a
     ld h,V_CHG>>8
     ld (hl),2
     ret
-
-; clamp_hl: HL = signed value, A = maximum (0..255) -> HL in 0..A.  Clobbers AF, C.
-clamp_hl:
-    bit 7,h
-    jr nz,.zero
-    ld c,a
-    ld a,h
-    or a
-    jr nz,.max                  ; above 255
-    ld a,c
-    cp l
-    ret nc                      ; max >= value
-.max:
-    ld l,c
-    ld h,0
-    ret
-.zero:
-    ld hl,0
-    ret
+    ASSERT (SPR_TAB&7) == 0
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; RT_HIDE: A = instance index.  An index >= ninst is ignored.
@@ -92,9 +145,8 @@ RT_HIDE:
     ld hl,V_NINST
     cp (hl)
     ret nc
-    ld e,a
     add a,a
-    add a,e
+    add a,a
     add a,a
     add a,SPR_TAB&$FF
     ld l,a

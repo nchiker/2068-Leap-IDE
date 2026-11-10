@@ -1,4 +1,5 @@
-; test_script.asm -- the script-driven test game of the M4a runtime tests (v2; copy of the M3 one).  It is only an interpreter: every tick frame_entry
+; test_script.asm -- the script-driven test game of the runtime v3 tests (arcade/tests/m6-*.mjs; copy of the v2 one with SHOWF ops and the script
+; start in the image: v3 art is large, so the test places the script after it).  Originally the M4a / M3 one.  It is only an interpreter: every tick frame_entry
 ; executes the ops of ONE tick from a script the test writes into the game image (so the tests can generate random scenes and
 ; replay them in JavaScript).  The header, the sprite table, the tileset, the sfx table, the map and the script are data at the
 ; fixed addresses below, written by arcade/tests/m4-common.mjs (scriptGame) into the linked image (sprite art included: the tests generate
@@ -8,6 +9,9 @@
 ;   op 10 CLS                       11 TILE t, row, col          12 PLAY i             13 SILENCE
 ;   op 14 HIT a, b  (result -> log) 15 TILEAT row, col (result -> log)                 16 BURN (about 80,000 T)
 ; op 17 STICK n (result -> log)   18 KEYDOWN code (result -> log)   19 SHOW8 i, x, y (bytes)   20 DEEP n (push n words and drop them).
+; op 21 SHOWF i, x(2), y(2), f(2) (RT_SHOWF)   22 SHOW8F i, x, y, f (bytes; RT_SHOWF)
+; Layout: $8000 header (16 bytes), $8010 DW map_table (0), $8012 DW window_desc (0) -- so a test can set DIV_EXT / DIV_WIN --, $8014 DW the
+; script's start (the test writes it), code from $8016.
 ; The log (one word per HIT / TILEAT / STICK) is at G_LOGBUF, its length in G_LOGN.
     DEVICE NOSLOT64K
     INCLUDE "runtime.inc"
@@ -36,10 +40,15 @@ G_LOGBUF        EQU GAME_VARS_BASE+$100         ; up to 512 words
     DW 0                        ; sfx_table
     DW 0                        ; map_ptr
     DW SCRIPT_INST              ; inst_table
+    DW 0                        ; $8010 map_table (read only with DIV_EXT)
+    DW 0                        ; $8012 window_desc (read only with DIV_WIN)
+SCRIPT_PTR:
+    DW SCRIPT_BASE              ; $8014 the script's start
+    ASSERT SCRIPT_PTR == $8014
 
 init_entry:
 GAME_INIT_ENTRY:
-    ld hl,SCRIPT_BASE
+    ld hl,(SCRIPT_PTR)
     ld (G_SP),hl
     ret
 
@@ -91,7 +100,11 @@ GAME_FRAME_ENTRY:
     jp z,.show8
     cp 20
     jp z,.deep
-    jr .loop                    ; unknown op: skipped
+    cp 21
+    jp z,.showf
+    cp 22
+    jp z,.show8f
+    jp .loop                    ; unknown op: skipped
 .end:
     ld (G_SP),hl
     ret
@@ -231,6 +244,48 @@ GAME_FRAME_ENTRY:
     inc hl
     ld (G_SP),hl
     call RT_SHOW
+    jp .resume
+.showf:                         ; SHOWF i, x(2), y(2), f(2)
+    ld a,(hl)
+    inc hl
+    ld c,(hl)
+    inc hl
+    ld b,(hl)
+    inc hl
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl
+    push af
+    ld a,(hl)
+    inc hl
+    push af
+    ld a,(hl)
+    inc hl
+    ld (G_SP),hl
+    ld h,a
+    pop af
+    ld l,a
+    pop af
+    call RT_SHOWF
+    jp .resume
+.show8f:                        ; SHOW8F i, x, y, f (bytes)
+    ld a,(hl)
+    inc hl
+    ld c,(hl)
+    ld b,0
+    inc hl
+    ld e,(hl)
+    ld d,0
+    inc hl
+    push af
+    ld a,(hl)
+    inc hl
+    ld (G_SP),hl
+    ld l,a
+    ld h,0
+    pop af
+    call RT_SHOWF
     jp .resume
 .deep:                          ; DEEP n(2): push n words on the stack, then drop them again (the stack-depth tests)
     ld c,(hl)
