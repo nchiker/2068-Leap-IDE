@@ -5,7 +5,7 @@
 //                       node arcade/examples/platformer.assets.gen.mjs --ascii    (prints the tiles, the sprite frames and the level)
 //                       node arcade/examples/platformer.assets.gen.mjs --data     (prints the DIM lines of the level data that platformer.arc carries)
 //
-// Asset names all start with "pf-" (pf-hero, pf-walker, pf-bat, pf-coin, pf-tiles, pf-world, pf-jump ...), so that the tests can merge them into the shared
+// Asset names all start with "pf_" (pf_hero, pf_walker, pf_bat, pf_tiles, pf_world, pf_jump ...), so that the tests can merge them into the shared
 // ASSETS of tests/arcade-m6-common.mjs without clashing with the names of the test programs.
 // ART CONVENTIONS. Everything is ASCII: '#' = a lit pixel (ink), '-' = a covered but unlit pixel (paper: it hides what is behind the sprite
 // and shows the paper colour of the cell), '.' = transparent (sprites) or paper (tiles). A sprite is coloured from the screen cell under it
@@ -44,7 +44,7 @@ const TILES = [
   /* 3 brick */ tile(['########', '...#....', '...#....', '...#....', '########', '#.......', '#.......', '#.......'], 6, 2, 1, FLAG.SOLID),
   /* 4 plank: the sky's own attribute, so a sprite crossing it keeps its colour */ tile(['########', '#.#.#.#.', '########', '.#....#.', '........', '........', '........', '........'], 0, 5, 1, FLAG.ONEWAY),
   /* 5 spikes */ tile(['........', '........', '........', '..#...#.', '..#...#.', '.###.###', '.###.###', '########'], 7, 5, 1, FLAG.HAZARD),
-  /* 6 coin (the static picture; the spinning sprite is drawn over it) */ tile(['..####..', '.#.##.#.', '#..##..#', '#..##..#', '#..##..#', '#..##..#', '.#.##.#.', '..####..'], 6, 5, 1, FLAG.PICKUP),
+  /* 6 coin (frame 0 of the spin) */ tile(['..####..', '.#.##.#.', '#..##..#', '#..##..#', '#..##..#', '#..##..#', '.#.##.#.', '..####..'], 6, 5, 1, FLAG.PICKUP),
   /* 7 pole */ tile(['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'], 7, 5, 1, FLAG.GOAL),
   /* 8 flag */ tile(['...#####', '...#####', '...####.', '...###..', '...##...', '...##...', '...##...', '...##...'], 2, 5, 1, FLAG.GOAL),
   /* 9 sign */ tile(['........', '..#####.', '..##..##', '..#####.', '....#...', '....#...', '....#...', '....#...'], 0, 5, 1),
@@ -58,8 +58,10 @@ const TILES = [
   /* 15 cloud left */ tile(['........', '........', '....###.', '..######', '.#######', '########', '########', '.#######'], 7, 5, 1),
   /* 16 cloud middle */ tile(['........', '........', '........', '########', '########', '########', '########', '########'], 7, 5, 1),
   /* 17 cloud right */ tile(['........', '........', '.###....', '######..', '#######.', '########', '########', '#######.'], 7, 5, 1),
+  /* 18 coin, turning (the animation is the tiles 6, 18, 19, 18 swapped by the game with SETWORLD) */ tile(['...##...', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '...##...'], 6, 5, 1, FLAG.PICKUP),
+  /* 19 coin, edge on */ tile(['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'], 6, 5, 1, FLAG.PICKUP),
 ];
-export const T = { SKY: 0, GRASS: 1, DIRT: 2, BRICK: 3, PLANK: 4, SPIKES: 5, COIN: 6, POLE: 7, FLAG: 8, SIGN: 9, F_BLANK: 10, F_UP: 11, F_DOWN: 12, F_FILL: 13, M_BLANK: 14, CLOUD_L: 15, CLOUD_M: 16, CLOUD_R: 17 };
+export const T = { SKY: 0, GRASS: 1, DIRT: 2, BRICK: 3, PLANK: 4, SPIKES: 5, COIN: 6, POLE: 7, FLAG: 8, SIGN: 9, F_BLANK: 10, F_UP: 11, F_DOWN: 12, F_FILL: 13, M_BLANK: 14, CLOUD_L: 15, CLOUD_M: 16, CLOUD_R: 17, COIN_MID: 18, COIN_EDGE: 19 };
 
 // ── the level ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const COLS = 128, ROWS = 16;
@@ -127,7 +129,7 @@ export function buildLevel() {
   const top = (c) => { for (let r = 5; r < ROWS; r++) if (g[r][c] === T.GRASS || g[r][c] === T.BRICK) return r; return 16; };
   const walker = (c) => [c * 8, top(c) * 8 - 16, 0];
   const flyer = (c, y) => [c * 8, y, 1];
-  const spawns = [walker(20), walker(36), flyer(46, 56), flyer(62, 56), walker(58), walker(66), walker(88), flyer(80, 64), flyer(100, 56), walker(110), walker(118)];
+  const spawns = [walker(20), walker(36), flyer(46, 56), walker(58), walker(66), flyer(73, 56), walker(88), flyer(91, 64), flyer(108, 56), walker(110), walker(118)];
   spawns.sort((a, b) => a[0] - b[0]);
   const checkpoints = [[52 * 8, 88], [74 * 8, 88], [104 * 8, 88]];       // [x, y] of the player's sprite (feet on the ground)
   return { g, coins, spawns, checkpoints, goalX: 122 * 8, start: [24, 88] };
@@ -291,17 +293,6 @@ const FLYER = [
     '................',
   ],
 ];
-// The spinning coin, 8 x 8, four frames over the coin tile: it covers the whole cell (mask = 8 x 8) so that the tile's picture does not show
-const COIN_ART = [
-  ['..####..', '.#.##.#.', '#..##..#', '#..##..#', '#..##..#', '#..##..#', '.#.##.#.', '..####..'],
-  ['..####..', '.#-##-#.', '.#-##-#.', '.#-##-#.', '.#-##-#.', '.#-##-#.', '.#-##-#.', '..####..'],
-  ['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'],
-  ['..####..', '.#-##-#.', '.#-##-#.', '.#-##-#.', '.#-##-#.', '.#-##-#.', '.#-##-#.', '..####..'],
-].map((f, k) => (k === 0 ? f : f.map((r) => [...r].map((c) => (c === '.' ? '-' : c)).join(''))));
-// frame 0: the mask is the full 8 x 8 too (paper pixels '-' where the coin is hollow or the cell is empty)
-COIN_ART[0] = COIN_ART[0].map((r) => [...r].map((c) => (c === '.' ? '-' : c)).join(''));
-const COIN_WHOLE = COIN_ART.map((f) => f.map((r) => [...r].map((c) => (c === '#' ? '#' : '-')).join('')));
-
 // ── sound ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const ticks = (n, f) => Array.from({ length: n }, (_, k) => f(k));
 const sfx = {
@@ -319,14 +310,13 @@ export function buildAssets() {
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) cells.push(LEVEL.g[r][c]);
   return {
     sprites: {
-      'pf-hero': sprite(HERO_FRAMES, { hot: [3, 2, 10, 22], phases: 2 }),
-      'pf-walker': sprite(WALKER, { hot: [1, 4, 14, 12], phases: 4 }),
-      'pf-bat': sprite(FLYER, { hot: [2, 3, 12, 10], phases: 4 }),
-      'pf-coin': sprite(COIN_WHOLE, { hot: [0, 0, 8, 8], phases: 8, ink: 6 }),
+      'pf_hero': sprite(HERO_FRAMES, { hot: [3, 2, 10, 22], phases: 2 }),
+      'pf_walker': sprite(WALKER, { hot: [1, 4, 14, 12], phases: 4 }),
+      'pf_bat': sprite(FLYER, { hot: [2, 3, 12, 10], phases: 4 }),
     },
-    tilesets: { 'pf-tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
-    sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['pf-' + k, v])),
-    maps: { 'pf-world': { w: COLS, h: ROWS, cells } },
+    tilesets: { 'pf_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
+    sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['pf_' + k, v])),
+    maps: { 'pf_world': { w: COLS, h: ROWS, cells } },
   };
 }
 
@@ -349,10 +339,24 @@ if (MAIN) {
     arr('cxs', LEVEL.coins.map(([c]) => c * 8)); arr('cys', LEVEL.coins.map(([, r]) => r * 8));
     arr('sx', LEVEL.spawns.map((s) => s[0])); arr('sy', LEVEL.spawns.map((s) => s[1])); arr('sty', LEVEL.spawns.map((s) => s[2]));
     arr('ckx', LEVEL.checkpoints.map((c) => c[0])); arr('cky', LEVEL.checkpoints.map((c) => c[1]));
+    // a respawn at checkpoint k (0 = the start): the camera is x - 72 clamped to 0..832; the first coin not left of it, the first enemy not 48 px behind it
+    const rs = [24, ...LEVEL.checkpoints.map((c) => c[0])].map((x) => Math.max(0, Math.min(832, x - 72)));
+    // the walkers' turning points: from its spawn the walker steps 8 px at a time; it turns at the first x where the cell in front of it (left: x - 1, right: x + 16) is
+    // solid at its body (rows y+4..y+11) or has no floor (solid or one-way) under it (y + 16)
+    const grid = LEVEL.g, flagsOf = (t) => TILES[t].flags;
+    const cellAt = (x, y) => (x < 0 || x >= COLS * 8 ? 1 : y < 0 ? 1 : y >= 128 ? 0 : flagsOf(grid[y >> 3][x >> 3]));
+    const blocked = (x, y, dir) => { const ax = dir > 0 ? x + 16 : x - 1; return !!(cellAt(ax, y + 4) & 1 || cellAt(ax, y + 11) & 1 || !(cellAt(ax, y + 16) & 9)); };
+    const turn = (s, dir) => { let x = s[0]; while (!blocked(x, s[1], dir)) x += 8 * dir; return x; };
+    arr('wlo', LEVEL.spawns.map((s) => (s[2] === 0 ? turn(s, -1) : 0)));
+    arr('whi', LEVEL.spawns.map((s) => (s[2] === 0 ? turn(s, 1) : 0)));
+    const cix = Array.from({ length: 17 }, (_, b) => { const k = LEVEL.coins.findIndex(([c]) => c * 8 + 8 > 64 * b); return k < 0 ? LEVEL.coins.length : k; });
+    arr('cix', cix);
+    arr('rcf', rs.map((cam) => LEVEL.coins.findIndex(([c]) => c * 8 + 8 > cam)));
+    arr('rnx', rs.map((cam) => LEVEL.spawns.findIndex(([x]) => x >= cam - 48)));
     console.log(`  REM ${LEVEL.coins.length} coins, ${LEVEL.spawns.length} enemies, goal at x ${LEVEL.goalX}`);
     process.exit(0);
   }
   const assets = buildAssets();
   writeFileSync(join(HERE, 'platformer.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-  console.log(`platformer.assets.json: ${Object.keys(assets.sprites).length} sprites (hero ${assets.sprites['pf-hero'].frames.length} frames), ${TILES.length} tiles, ${Object.keys(assets.sfx).length} sound effects, a ${COLS} x ${ROWS} world with ${LEVEL.coins.length} coins and ${LEVEL.spawns.length} enemies`);
+  console.log(`platformer.assets.json: ${Object.keys(assets.sprites).length} sprites (hero ${assets.sprites['pf_hero'].frames.length} frames), ${TILES.length} tiles, ${Object.keys(assets.sfx).length} sound effects, a ${COLS} x ${ROWS} world with ${LEVEL.coins.length} coins and ${LEVEL.spawns.length} enemies`);
 }

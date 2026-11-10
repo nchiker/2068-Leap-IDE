@@ -16,12 +16,16 @@
 "use strict";
 
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
-import { compile } from './arcade-compile.js';
+import { compile, requiredRuntime } from './arcade-compile.js';
 import { ARCADE_WORDS, VALID_FRAMERATES } from './arcade-words.js';
 import { scanArcade } from './arcade-scan.js';
 import { buildSource, locate } from '../../arcade-project.js';
 
-export const RUNTIME_PATHS = Object.freeze({ json: 'arcade/dist/v2/runtime.json', image: 'arcade/dist/v2/runtime.bin' });
+/** The published runtime builds the Studio compiles against: v2 for the older games, v3 for programs that need it (frames, big sprites, WINDOW; requiredRuntime()). */
+export const RUNTIME_PATHS = Object.freeze({
+  2: { json: 'arcade/dist/v2/runtime.json', image: 'arcade/dist/v2/runtime.bin' },
+  3: { json: 'arcade/dist/v3/runtime.json', image: 'arcade/dist/v3/runtime.bin' },
+});
 export const DCK_BYTES_LIMIT = 16384;          // the game's own share of the cartridge (usage.total + usage.free)
 const LANGUAGE_DOC = 'https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_LANGUAGE.md';
 
@@ -93,11 +97,12 @@ const driver = {
  * @param {(path: string) => Promise<Uint8Array>} fetchAsset
  * @returns {Promise<{runtime: object, image: Uint8Array}>}
  */
-export async function loadRuntime(fetchAsset) {
-  const json = await fetchAsset(RUNTIME_PATHS.json);
-  const image = await fetchAsset(RUNTIME_PATHS.image);
+export async function loadRuntime(fetchAsset, version = 2) {
+  const paths = RUNTIME_PATHS[version];
+  const json = await fetchAsset(paths.json);
+  const image = await fetchAsset(paths.image);
   const runtime = JSON.parse(new TextDecoder().decode(json));
-  if (image.length !== 65536) throw new Error(`${RUNTIME_PATHS.image} is ${image.length} bytes; expected 65,536`);
+  if (image.length !== 65536) throw new Error(`${paths.image} is ${image.length} bytes; expected 65,536`);
   return { runtime, image };
 }
 
@@ -142,7 +147,8 @@ export const arcadeProfile = {
    * }>}
    */
   async attach({ fetchAsset }) {
-    const { runtime, image } = await loadRuntime(fetchAsset);
+    const builds = { 2: await loadRuntime(fetchAsset, 2), 3: await loadRuntime(fetchAsset, 3) };
+    let current = builds[2];                    // the build the last compile used (the Studio reads symbols from lang.runtime)
     /**
      * Compile a project. `replace` ({file, text}) substitutes one file's text (the editor's unsaved text).
      * @returns {{ok: boolean, dck: Uint8Array|null, errors: object[], warnings: object[], usage: object|null,
@@ -152,7 +158,8 @@ export const arcadeProfile = {
       const p = replace ? { ...project, files: { ...project.files, [replace.file]: replace.text } } : project;
       const src = buildSource(p);
       const t0 = performance.now();
-      const res = compile(src.text, { runtime, image, assets: p.assets });
+      current = builds[requiredRuntime(src.text, p.assets).version === 3 ? 3 : 2];
+      const res = compile(src.text, { runtime: current.runtime, image: current.image, assets: p.assets });
       const ms = performance.now() - t0;
       const at = (d) => locate(src.lineMap, d);
       return {
@@ -163,14 +170,15 @@ export const arcadeProfile = {
       };
     }
     return {
-      runtime,
+      get runtime() { return current.runtime; },
       compileProject,
       /** The profile shape's lint(text) for a single text with no assets (the Studio uses compileProject). */
       lint(text) {
-        const res = compile(text, { runtime, image, assets: {} });
+        const b = builds[requiredRuntime(text, {}).version === 3 ? 3 : 2];
+        const res = compile(text, { runtime: b.runtime, image: b.image, assets: {} });
         return [...res.errors, ...res.warnings].map(toMark);
       },
-      runtimeLabel: () => `runtime v${runtime.version ?? 0}`,
+      runtimeLabel: () => `runtime v${current.runtime.version ?? 0}`,
     };
   },
 };

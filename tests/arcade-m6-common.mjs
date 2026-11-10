@@ -199,16 +199,15 @@ export const stickFromRuns = (runs) => { const a = []; for (const [v, n] of runs
 export const WIN_STICK = stickFromRuns(WIN_RUNS);
 export { WIN_LENGTH };
 /**
- * The play-through twice, with the end screen and the title between: after the flag, wait PAD ticks, fire (back to the title, which restores the coins), then the same input again.
- * The bats' path depends on the game's frame counter, which is not reset by a new game, so PAD is chosen to make the counter at the second start equal (modulo the bats' period of 32
- * ticks) to its value at the first start (tick 12): the second game then repeats the first exactly.
+ * The play-through twice, with the end screen and the title between: after the flag, wait PAD ticks (the end text needs 4 and half a second), fire (back to the title, which gives the
+ * coins back in 5 ticks), then the same input again. A new game resets the game's frame counter, so the second game repeats the first exactly.
  */
-const TWICE_PAD = (() => { let k = (((-1 - WIN_LENGTH) % 32) + 32) % 32; while (k < 11) k += 32; return k; })();
+const TWICE_PAD = 12;
 export const TWICE_RUNS = [...WIN_RUNS, [0, TWICE_PAD], [16, 1], ...WIN_RUNS];
 export const TWICE_STICK = stickFromRuns(TWICE_RUNS);
 export const TWICE_LENGTH = 2 * WIN_LENGTH + TWICE_PAD + 1;
 /** Over the title: fire starts a game at tick 12; then right, a little left (the hero faces left: the FLIP frames), right again without jumping (the walkers cost the three lives), wait, fire for the title, fire again for a new game, run right. */
-export const OVER_RUNS = [[0, 11], [16, 1], [0, 1], [8, 20], [4, 14], [8, 220], [0, 15], [16, 1], [0, 30], [16, 1], [0, 1], [8, 60]];
+export const OVER_RUNS = [[0, 13], [16, 1], [0, 1], [8, 20], [4, 14], [8, 220], [0, 15], [16, 1], [0, 30], [16, 1], [0, 1], [8, 60]];
 export const OVER_STICK = stickFromRuns(OVER_RUNS);
 export const OVER_LENGTH = OVER_RUNS.reduce((n, [, k]) => n + k, 0);
 

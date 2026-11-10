@@ -42,9 +42,9 @@ title (the level scrolls by itself there).
   platforms and islands above it. A 16 x 24 hero in an 88-pixel band: a full jump (hold the key) rises 36 pixels (4.5 tiles) and lasts 17 ticks (0.85 s,
   about 42 pixels forward at top speed), a short hop 11 pixels; the highest platform is 3 tiles (24 px) above the ground, the tallest wall 2 tiles,
   the widest pit 4 tiles (32 px) and the gaps between the islands 3.
-* **Tiles** (18 of the 32 allowed; tile 0 blank): 0 sky, 1 grass, 2 dirt, 3 brick, 4 plank, 5 spikes, 6 coin, 7 pole, 8 flag, 9 sign;
-  10-13 mountain pieces (far band); 14-17 clouds (mid band). **Flags:** bit 0 solid (grass, dirt, brick), bit 1 hazard (spikes), bit 2
-  pickup (coin), bit 3 one-way (plank), bit 4 goal (pole, flag).
+* **Tiles** (20 of the 32 allowed; tile 0 blank): 0 sky, 1 grass, 2 dirt, 3 brick, 4 plank, 5 spikes, 6 coin, 7 pole, 8 flag, 9 sign;
+  10-13 mountain pieces (far band); 14-17 clouds (mid band); 18-19 the coin's other spin frames. **Flags:** bit 0 solid (grass, dirt, brick), bit 1
+  hazard (spikes), bit 2 pickup (the three coin tiles), bit 3 one-way (plank), bit 4 goal (pole, flag).
 * **Collision** is `SOLID` / `TILEHIT` with the hero's hot box (x+3, y+2, 10 x 22): X and Y are moved separately; after each move one
   `SOLID` query on the new box, and if it hits the box is put on the tile's face (tile snapping; no pixel loop; the speed is below 8
   pixels a tick so a tile cannot be skipped). **One-way planks** are not solid (flag 8 only): while falling, when the feet cross into a
@@ -52,29 +52,37 @@ title (the level scrolls by itself there).
   **Hazards, pickups and the goal** are one `TILEHIT(box, mask 2 | 4 | 16)` a tick and a branch on the bits.
 * **Physics** is integer: x in 1/8 pixel (accelerate 4, top speed 20 = 2.5 px/tick, friction 4), y in whole pixels (gravity 1, jump -9,
   terminal 7; gravity is a whole pixel so a standing player is pushed into the floor every tick), coyote time of 3 ticks, jump cut when the key is released early.
-* **Enemies.** Walkers (4 slots) patrol 2 px/tick and turn at a wall (`SOLID` one pixel in front) or an edge (`TILEHIT` for a floor under the
-  front foot), tested once per tile of walking. Bats (2 slots) fly 56 px either way of where they appeared and bob on a 16-entry sine
-  table. All 11 live in a spawn list sorted by x; the next one appears when it comes within 216 pixels of the camera and a slot of its type
-  is free, one a tick, and leaves when it is 48 pixels behind. A stomped one stays dead until the next game; a respawn at a checkpoint
-  brings back the ones ahead. Contact is `HIT(hero, enemy)`; it is a stomp when the hero is falling and his feet are in the enemy's top
-  part (`py <= ey - 12`).
-* **Coins: tiles for logic, sprites for the spin.** A coin is a pickup *tile* in the world (a still coin picture, flag 4), collected with
-  `SETWORLD` (so the collision words and the picture agree); over each coin in view a *sprite* pool of 6 (`cn`, 8 x 8, 4 frames, 8
-  phases, mask covering the whole cell) draws the spinning coin exactly over the tile. Why not tile animation through `SETWORLD`
-  swaps: spinning 50 tiles would be a loop of `SETWORLD`s every few ticks (about 15 coins in view x 4 frames, a run-time call each, far
-  over the logic budget on a tick), while 6 `SHOW`s of a sorted list cost a handful of compares. Why not sprites only: a seventh coin
-  in view (the list is sorted by x, 6 are shown) is still there, as a still coin, and a coin the sprite pool misses does not become
-  invisible. The instance budget is 13 of 16: 6 coins, 4 walkers, 2 bats, the hero.
+* **Enemies.** Walkers (4 slots) patrol between the two turning points of their spawn entry (`WLO` / `WHI`: where a wall or the edge of their
+  ground is; the generator works them out from the map and a test recomputes them with its own probe rule, so there is no run-time query),
+  4 pixels every other tick (walkers on the even ticks, bats on the odd ones, which halves their cost per tick and spreads it). Bats (2 slots)
+  fly 56 px either way of where they appeared and bob on a 16-entry sine table. All 11 live in a spawn list sorted by x; the next one appears
+  when it comes within 216 pixels of the camera and a slot of its type is free, one a tick, and leaves when it is 48 pixels behind. A stomped
+  one stays dead until the next game; a respawn at a checkpoint brings back the ones ahead (`RNX` says where the list restarts). Contact is
+  `HIT(hero, enemy)`, asked only when the boxes can overlap and the touch can matter; it is a stomp when the hero is falling and his feet are
+  in the enemy's top part (`py <= ey - 12`).
+* **Coins are tiles that spin by SETWORLD.** A coin is a pickup *tile* in the world (flag 4, collected with `SETWORLD`, so the collision words and
+  the picture agree). Its spin is the tile swapped through four frames (tiles 6, 18, 19, 18 in `CT`): one or two coins a tick, each every
+  8 ticks (a turn takes 32), at most 14 coins are ever in view. **Why not a sprite over each coin** (the first version, a pool of six 8 x 8
+  sprites over the still tiles): measured on the real runtime, a drawn 8 x 8 sprite costs about 2,400 T, 14,000 T on a tick with six coins in
+  view, which with the repaint pushed ticks over three refreshes; the tile swap costs one `SETWORLD` (500 T) per coin turned, the
+  attribute is the same for all four frames so no attribute pass is made, and every coin in view spins, not only six. The price is that all the
+  coins spin in step (a wave, not independent). Picking a coin up needs no list scan from the start: `CIX` says where in the sorted list to start.
 * **Sprite phases and the phase pool.** Runtime v3 caches pre-shifted copies of each frame in a shared 5,888-byte pool and builds an uncached
   frame (about 32,000 T for a 16 x 24) when it is first drawn, which would overrun the tick. So every asset's `phases` is chosen so that
   **all frames stay cached** (`planPool()` of `arcade/tests/m6-common.mjs`, asserted in `tests/arcade-m6-platformer.mjs`): hero 2 phases (16 frames
-  with the mirrored ones), walker and bat 4, coin 8; the plan needs 2,872 bytes at least and gives K = nframes for all four. The price: x is drawn
+  with the mirrored ones), walker and bat 4; the plan needs 1,960 bytes at least and gives K = nframes for all three. The price: x is drawn
   rounded down to the phase granularity, so the **hero moves in steps of 4 pixels** on screen (walker and bat 2, coin cells exactly), against a
-  top speed of 2.5 px a tick; the logic position stays exact.
+  top speed of 2.5 px a tick; the logic position stays exact. Walkers and bats move in 4-pixel steps every other tick.
 * **Camera** follows with a dead zone (the hero stays between 72 and 112 pixels from the window's left edge) and clamps (`CAMERA`
   clamps to 0..832). The title pans the camera back and forth along the world by itself.
 * **HUD** is text in the cell map outside the window (default window at (4, 4): 4 rows above and below, 4 columns each side): row 1
-  `SCORE` and `LIVES`, row 2 `COINS n/50`, rows 21-22 the hints and the end-screen messages. Black paper, BRIGHT.
+  `SCORE` and `LIVES`, row 2 `COINS n/50`, rows 21-22 the hints and the end-screen messages. Black paper, BRIGHT. The labels are printed once when a game
+  starts; only a number that changed is printed again, one a call, on every fourth tick.
+* **Cost control** (the tick budget is three refreshes, 176,064 T, of which the runtime's repaint takes up to 126,000): work that is not needed every tick is
+  spread over ticks. Starting a game, the title text and the end text are put up a stage a tick (a row of text cells costs about 30,000 T to redraw in both
+  display files, so one row a tick); the taken coins come back ten a tick on the title; hazards, pickups and the goal are asked every fourth tick
+  (a box overlaps a coin, a spike or the flag for at least 4 ticks), a coin taken is handled the tick after; Q and A are read every other tick;
+  while standing still on the same tiles no collision query is made; respawn data (`RCF` / `RNX`) are tables. Measured results are in the next section.
 * **Sound** (6 `SFX`): jump, coin, stomp, hurt, win, over.
 * **Input** reads `STICK(1)` and `KEYDOWN` together, as the shooter does.
 
@@ -93,6 +101,20 @@ A cell holds two colours, and a sprite is drawn in the colours of the cell under
 4. Tile attributes are per tile (the first row's ink / paper / bright; every row of a tile carries the same). Black paper is BRIGHT
    wherever it occurs (the HUD), as in the other examples.
 5. No tile in the two backdrop bands is black on black (attribute 0 means "nothing here" for layers); there are no transparent layers.
+
+## Tick cost on the real runtime v3 (TSRun, real interrupt; `node tests/arcade-m6-platformer-perf.mjs`)
+
+Two recorded runs, whole tick = the runtime's work plus the game's `PROC FRAME`, interrupt time included, budget 176,064 T (3 refreshes at 20 fps):
+
+| | before | after |
+|---|---|---|
+| win run played twice (853 ticks): median / 95th / worst / ticks over budget | 164,328 / 200,081 / 270,214 / 188 | 146,443 / 162,004 / 171,393 / 0 |
+| game over run (377 ticks): same | 117,699 / 166,618 / 270,214 / 10 | 106,467 / 149,752 / 168,471 / 0 |
+| `PROC FRAME` (win run): median / 95th / worst / mean | 20,537 / 47,302 / 120,274 / 22,977 | 15,500 / 20,652 / 25,500 / 15,479 |
+
+The worst spikes were the title restore (50 `SETWORLD`s and two `FILLC`s of 4 rows each, 120,000 T), the HUD (nine prints a change), the respawn
+(list searches) and six coin sprites (14,000 T of drawing); the remaining cost is the runtime's repaint (about 112,000 T on average, 126,000 at
+the worst camera) plus up to five sprites (about 10,000 T on average).
 
 ## Tests
 

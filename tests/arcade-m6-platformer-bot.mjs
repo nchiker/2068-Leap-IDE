@@ -56,8 +56,9 @@ function expand(script, startVars) {
 }
 
 export function search({ maxTicks = 2600, width = 4, log = () => {} } = {}) {
-  let script = [...new Array(11).fill(0), FIRE, 0];          // the title: wait 11 ticks, press fire on tick 12 (starts the game), release
+  let script = [...new Array(13).fill(0), FIRE, ...new Array(6).fill(0)];          // the title: 12 ticks of set-up stages, fire on tick 14, release; the six start-up stages take ticks 15..20 (the game plays from tick 21)
   let last = run(script, script.length).at(-1).vars;
+  if (last.ST !== 1) throw new Error('the game did not start after the title prefix');
   let guard = 0;
   while (script.length < maxTicks && last.ST === 1 && guard++ < 500) {
     const first = expand(script, last).sort((a, b) => b.sc - a.sc).slice(0, width);

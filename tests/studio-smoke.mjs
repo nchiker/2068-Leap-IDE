@@ -128,6 +128,30 @@ try {
   // ── Examples ──
   await evaluate("window.confirm = () => true");
   const names = {};
+  // Leap Runner needs runtime v3 (frames, big sprites, a scrolling window): the Studio must choose it by itself, run it and scroll
+  await evaluate("document.getElementById('btn-examples').click()");
+  await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="platformer"]\')', 5000);
+  await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="platformer"]\').click()');
+  const pf = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name.startsWith('Leap Runner') && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length, rt: leapStudio.lang.runtimeLabel(), bytes: leapStudio.lastCompile.usage?.total })", 20000);
+  check('Leap Runner compiles on its own with the v3 runtime, no errors or warnings', !!pf && pf.errors === 0 && pf.warnings === 0 && pf.rt === 'runtime v3', JSON.stringify(pf));
+  await evaluate("document.getElementById('btn-run').click()");
+  const pt = await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 8 && leapStudio.ticks() < 400 && leapStudio.ticks()', 25000);
+  check('Leap Runner runs on the TS2068 (V_TICKS advances)', !!pt, `tick ${pt}`);
+  const camX = () => evaluate(`(() => { const m = leapStudio.emulator.machine, S = leapStudio.lang.runtime.symbols, a = S.V_CAM; return m.bus.read(a) | (m.bus.read(a + 1) << 8); })()`);
+  await evaluate("document.getElementById('ts-bezel').focus()");
+  await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+  await sleep(300);
+  await b.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+  await sleep(1500);
+  const c0 = await camX();
+  await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+  await sleep(4000);
+  await b.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+  const c1 = await camX();
+  check('Leap Runner: holding right scrolls the world (the camera follows the hero)', c1 > c0 + 40, `camera ${c0} -> ${c1}`);
+  await b.shot('studio-platformer');
+  await evaluate("document.getElementById('btn-stop').click()");
+  await sleep(300);
   for (const id of ['bounce', 'breakout', 'blockfall', 'shooter']) {   // the shooter last: the steps below run it
     await evaluate("document.getElementById('btn-examples').click()");
     await waitFor(`document.querySelector('#examples-menu .menu-item[data-example="${id}"]')`, 5000);

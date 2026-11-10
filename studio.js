@@ -5,7 +5,7 @@
  * (several source files and assets), not one text. It owns
  *  - the project (src/arcade-project.js: the .leapgame document, auto-save in localStorage 'leap-studio.project',
  *    download / open, examples from arcade/dist/examples/),
- *  - the build: profile.attach() loads the runtime (arcade/dist/v2/), compileProject() compiles all files with the
+ *  - the build: profile.attach() loads the runtime (arcade/dist/v2/ and v3/), compileProject() compiles all files with the
  *    assets, 400 ms after typing stops for diagnostics, and on Run,
  *  - the TS2068 (src/emulator.js, a cartridge-only profile: Run starts the compiled DCK on the stock ROMs),
  *  - the project panel, the problems list, the size panel, the right-hand tabs and the asset editors' host
@@ -826,7 +826,7 @@ async function boot() {
     lang = await profile.attach({ fetchAsset });
   } catch (err) {
     console.error('[Studio] the compiler could not be loaded', err);
-    setStatus(`The Arcade runtime is not available (${err.message}). Build it: node arcade/tools/build-runtime-v2.mjs, then node arcade/tools/publish-runtime.mjs`, 'error');
+    setStatus(`The Arcade runtime is not available (${err.message}). Build it: node arcade/tools/build-runtime-v2.mjs and build-runtime-v3.mjs, then node arcade/tools/publish-runtime.mjs`, 'error');
     return;
   }
   $('btn-run').disabled = !emulator;

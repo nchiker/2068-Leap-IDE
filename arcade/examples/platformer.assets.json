@@ -1,6 +1,6 @@
 {
  "sprites": {
-  "pf-hero": {
+  "pf_hero": {
    "w": 16,
    "h": 24,
    "hot": [
@@ -1389,7 +1389,7 @@
     }
    ]
   },
-  "pf-walker": {
+  "pf_walker": {
    "w": 16,
    "h": 16,
    "hot": [
@@ -1634,7 +1634,7 @@
     }
    ]
   },
-  "pf-bat": {
+  "pf_bat": {
    "w": 16,
    "h": 16,
    "hot": [
@@ -1878,263 +1878,10 @@
      ]
     }
    ]
-  },
-  "pf-coin": {
-   "w": 8,
-   "h": 8,
-   "hot": [
-    0,
-    0,
-    8,
-    8
-   ],
-   "phases": 8,
-   "frames": [
-    {
-     "rows": [
-      {
-       "bits": "3C",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "99",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "99",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "99",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "99",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "3C",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      }
-     ]
-    },
-    {
-     "rows": [
-      {
-       "bits": "3C",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "3C",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      }
-     ]
-    },
-    {
-     "rows": [
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "18",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      }
-     ]
-    },
-    {
-     "rows": [
-      {
-       "bits": "3C",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "5A",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      },
-      {
-       "bits": "3C",
-       "mask": "FF",
-       "ink": 6,
-       "paper": 5,
-       "bright": 1
-      }
-     ]
-    }
-   ]
   }
  },
  "tilesets": {
-  "pf-tiles": {
+  "pf_tiles": {
    "tiles": [
     {
      "rows": [
@@ -3089,12 +2836,118 @@
       }
      ],
      "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "24",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      }
+     ],
+     "flags": 4
+    },
+    {
+     "rows": [
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      },
+      {
+       "bits": "18",
+       "ink": 6,
+       "paper": 5,
+       "bright": 1
+      }
+     ],
+     "flags": 4
     }
    ]
   }
  },
  "sfx": {
-  "pf-jump": {
+  "pf_jump": {
    "ticks": [
     {
      "tone": 300,
@@ -3140,7 +2993,7 @@
     }
    ]
   },
-  "pf-coin": {
+  "pf_coin": {
    "ticks": [
     {
      "tone": 120,
@@ -3204,7 +3057,7 @@
     }
    ]
   },
-  "pf-stomp": {
+  "pf_stomp": {
    "ticks": [
     {
      "tone": 0,
@@ -3256,7 +3109,7 @@
     }
    ]
   },
-  "pf-hurt": {
+  "pf_hurt": {
    "ticks": [
     {
      "tone": 200,
@@ -3332,7 +3185,7 @@
     }
    ]
   },
-  "pf-win": {
+  "pf_win": {
    "ticks": [
     {
      "tone": 200,
@@ -3432,7 +3285,7 @@
     }
    ]
   },
-  "pf-over": {
+  "pf_over": {
    "ticks": [
     {
      "tone": 120,
@@ -3534,7 +3387,7 @@
   }
  },
  "maps": {
-  "pf-world": {
+  "pf_world": {
    "w": 128,
    "h": 16,
    "cells": [
