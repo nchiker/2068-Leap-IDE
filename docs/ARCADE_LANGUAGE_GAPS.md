@@ -31,3 +31,9 @@ It is the work list for language growth, in the order I would do it. Cost = what
 ## Also from the Studio and examples
 * A colour check for assets: warn when a project mixes BRIGHT-on and BRIGHT-off **black** paper (TSRun draws them as
   two different blacks; see the shooter fix, commit 45bf27f).
+
+## Art rule learned from the shooter (2026-11-09)
+A sprite is coloured from the attribute of the screen cell under it. So **every background cell a sprite can pass over must
+carry the same ink, paper and BRIGHT**, or sprites change colour as they move (colour bleed). Make background variety
+(dim and bright stars) with shapes, not attributes. The Studio should warn when the background tiles of a project's maps
+use different attributes (and when BRIGHT-on and BRIGHT-off black paper are mixed, see above).
