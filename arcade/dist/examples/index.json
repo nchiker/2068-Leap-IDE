@@ -18,6 +18,12 @@
   "file": "shooter.leapgame"
  },
  {
+  "id": "platformer",
+  "title": "Leap Runner (platformer)",
+  "about": "A scrolling platformer: a 128-cell level with three parallax bands, a 16x24 hero with animation, enemies, coins and a goal. Keys: O P move, Q or Space jump, A drops through planks.",
+  "file": "platformer.leapgame"
+ },
+ {
   "id": "blockfall",
   "title": "Blockfall",
   "about": "A falling-blocks puzzle: tiles and text only, no sprites. Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.",

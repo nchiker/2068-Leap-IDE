@@ -10,6 +10,9 @@
 // It skips cleanly, saying why, while the runtime lacks the window routines: the lead switches it on by building the runtime (node arcade/tools/build-runtime-v3.mjs).
 // While it skips it still checks the HARNESS on the v2 runtime (a plain program: variables and SPR_TAB against the interpreter), so the machinery is known to work.
 //
+// Input: the programs' `stick(t)` (and `keys(t)`, a list of key codes, if an entry has one; platformer.arc's scripts use the joystick only, though the game reads KEYDOWN too) is put
+// on the machine when PROC FRAME is entered for tick t; the interpreter gets the same.
+//
 // How a tick is sampled: the state is read when the game's PROC FRAME is entered (the previous tick's PROC FRAME has finished and the drawing of its picture
 // cannot change variables, SPR_TAB, WORLD_RAM or V_CAM): the k-th entry shows the state after tick k - 1 (the first entry: after PROC INIT).
 import { readFileSync, existsSync } from 'node:fs';
@@ -39,10 +42,12 @@ function loadRuntime(dir) {
   const rt = JSON.parse(readFileSync(json, 'utf8'));
   return { rt, img: new Uint8Array(readFileSync(join(dirname(json), rt.image ?? 'runtime.bin'))), dir };
 }
+const KEYROWS = ['\x01ZXCV', 'ASDFG', 'QWERT', '12345', '09876', 'POIUY', '\rLKJH', ' \x02MNB'];      // the TS2068 matrix, as RT_KEYDOWN reads it
+const KEYPOS = new Map(); KEYROWS.forEach((r, row) => [...r].forEach((ch, bit) => KEYPOS.set(ch.charCodeAt(0), [row, bit])));
 const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
 
 /** Boot the cartridge, run until the game's PROC FRAME has been entered ticks + 1 times; return the snapshots taken at those entries. */
-function runReal(R, res, { ticks, stick }) {
+function runReal(R, res, { ticks, stick, keys }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
   const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
   const must = (e) => { if (e) throw new Error(e); };
@@ -70,32 +75,34 @@ function runReal(R, res, { ticks, stick }) {
   for (let f = 0; f < 400 && rd16(SYM.HO_MARK) !== SYM.HO_MARK_VALUE; f++) M_.runFrame(m);
   if (rd16(SYM.HO_MARK) !== SYM.HO_MARK_VALUE) { out.error = 'the runtime did not boot'; return out; }
   const fe = res.map.entries.frame;
-  let tick = 1;
+  // The input of tick k is put on the machine when PROC FRAME is ENTERED for that tick, not at a frame boundary: a window tick starts in the middle of a refresh,
+  // so STICK / KEYDOWN read in it would otherwise see the previous tick's input.
+  const setInput = (k) => {
+    const sv = stick ? stick(k) : 0;
+    m.joystick[0] = contact(typeof sv === 'number' ? sv : sv[1] | 0);
+    m.joystick[1] = contact(typeof sv === 'number' ? 0 : sv[2] | 0);
+    for (let r = 0; r < 8; r++) m.keyMatrix[r] = 0x1F;
+    for (const c of keys ? keys(k) : []) { const p = KEYPOS.get(c); if (p) m.keyMatrix[p[0]] &= ~(1 << p[1]); }
+  };
+  setInput(1);
   const origRead = m.bus.read;
   m.bus.read = function (a) {
-    if (a === fe && out.snaps.length < ticks + 1 && m.cpu.pc === fe) out.snaps.push(snap());
+    if (a === fe && out.snaps.length < ticks + 1 && m.cpu.pc === fe) { out.snaps.push(snap()); setInput(out.snaps.length); }      // snapshot k - 1 = the state before tick k runs
     return origRead.call(this, a);
   };
   const div = res.memory[0x8004] & 0x3F;
   const maxFrames = 400 + (ticks + 3) * div * 6;
-  for (let f = 0; f < maxFrames && out.snaps.length < ticks + 1; f++) {
-    const sv = stick ? stick(Math.max(1, out.snaps.length)) : 0;      // the stick of the tick about to run
-    m.joystick[0] = contact(typeof sv === 'number' ? sv : sv[1] | 0);
-    m.joystick[1] = contact(typeof sv === 'number' ? 0 : sv[2] | 0);
-    M_.runFrame(m);
-    tick = out.snaps.length;
-  }
-  void tick;
+  for (let f = 0; f < maxFrames && out.snaps.length < ticks + 1; f++) M_.runFrame(m);
   if (out.snaps.length < ticks + 1) out.error = `only ${out.snaps.length} of ${ticks + 1} samples (PROC FRAME entered ${out.snaps.length} times)`;
   return out;
 }
 
-function compare(R, src, assets, { ticks, stick, version, label }) {
+function compare(R, src, assets, { ticks, stick, keys, version, label }) {
   const res = compile(src, { runtime: R.rt, image: R.img, assets });
   if (res.errors.length) return { ok: false, detail: 'compile: ' + errText(res) };
-  const got = runReal(R, res, { ticks, stick });
+  const got = runReal(R, res, { ticks, stick, keys });
   if (got.error) return { ok: false, detail: got.error };
-  const want = interpret(parse(src).ast, { version, ticks, assets, stick, maxSteps: 2_000_000_000 });
+  const want = interpret(parse(src).ast, { version, ticks, assets, stick, keys: keys ? (t, c) => [...keys(t)].includes(c) : undefined, maxSteps: 2_000_000_000 });
   let d = diffV3(got.snaps[0], want.init, `${label} after INIT`);
   for (let t = 1; !d && t <= ticks; t++) d = diffV3(got.snaps[t], want.ticks[t - 1], `${label} after tick ${t}`);
   return { ok: d === null, detail: d ?? `${ticks} ticks` };
@@ -121,10 +128,9 @@ if (!R || missing.length) {
   for (const p of PROGRAMS) {          // includes the needsFullRuntime entries (platformer.arc): they run on the real runtime only, never on the mock
     const ticks = QUICK ? Math.min(p.ticks, 150) : p.ticks;
     const t0 = Date.now();
-    const r = compare(R, p.src, ASSETS, { ticks, stick: p.stick, version: 3, label: p.name.split(' ')[0] });
+    const r = compare(R, p.src, ASSETS, { ticks, stick: p.stick, keys: p.keys, version: 3, label: p.name.split(' ')[0] });
     check_(`${p.name}: ${ticks} ticks equal to the interpreter (variables, SPR_TAB entries, WORLD_RAM, V_CAM)`, r.ok, `${r.detail}; ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   }
-  info('the platformer.arc of the slice (arcade/examples) should be added to PROGRAMS when it exists: >= 600 ticks of the acceptance game');
 }
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}: arcade-m6-differential (${passed} checks passed, ${failed} failed, ${skipped} skipped)`);
 process.exit(failed === 0 ? 0 : 1);

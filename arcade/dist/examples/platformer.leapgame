@@ -1,0 +1,5602 @@
+{
+ "format": 1,
+ "name": "Leap Runner (platformer)",
+ "framerate": 20,
+ "files": {
+  "main.arc": "REM Leap Runner: the acceptance game of the platformer slice (docs/ARCADE_PLATFORMER_CONTRACT.md section 8): a side-scrolling\nREM platformer for the v3 runtime.  Assets (hero, walker, bat, coin, the tiles, the world map, six sounds, all named pf-...) are in\nREM platformer.assets.json, drawn and laid out by platformer.assets.gen.mjs; the level data below (CXS/CYS, SX/SY/STY, CKX/CKY) is\nREM printed by  node arcade/examples/platformer.assets.gen.mjs --data  and checked against the map by tests/arcade-m6-platformer.mjs.\nREM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank.   Joystick 1: the stick and fire.\nREM   128 x 16 cell world, three bands (2 / 3 / 11 rows at 1/4, 1/2, 1/1).  Stomp the walkers and bats by jumping on them (HIT while\nREM   falling), touch them from the side and you lose a life (brief invulnerability); spikes and the pit send you to the last checkpoint.\nREM   50 coins (pickup tiles, a spinning sprite over each one in view), a flag at the far end.\nREM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/platformer.arc --assets arcade/examples/platformer.assets.json --runtime v3\nGAME \"Leap Runner\"\nFRAMERATE 20\n\nREM level and physics.  Positions are pixels; the player's x also lives in 1/8 pixels (x8) for smooth acceleration.\nCONST NC = 50\nCONST NS = 11\nCONST BX = 3\nCONST BY = 2\nCONST BW = 10\nCONST BH = 22\nCONST ACC = 4\nCONST VMAX = 20\nCONST FRIC = 4\nCONST GRAV = 1\nCONST VFALL = 7\nCONST VJUMP = -9\nCONST LZ = 72\nCONST RZ = 112\nCONST DEADY = 120\n\nREM instances: coins first, the hero last (a later instance is drawn on top): 6 + 4 + 2 + 1 = 13 of the 16\nSPRITE cn(6) = \"pf-coin\"\nSPRITE wk(4) = \"pf-walker\"\nSPRITE fl(2) = \"pf-bat\"\nSPRITE hero = \"pf-hero\"\nTILESET pf = \"pf-tiles\"\nMAP level = \"pf-world\"\nSFX jump = \"pf-jump\"\nSFX coin = \"pf-coin\"\nSFX stomp = \"pf-stomp\"\nSFX hurt = \"pf-hurt\"\nSFX win = \"pf-win\"\nSFX over = \"pf-over\"\n\nWINDOW level\nBAND 2, 1, 4\nBAND 3, 1, 2\nBAND 11, 1, 1\n\nSCENE play\n  REM st: 0 title, 1 playing, 2 level complete, 3 game over\n  DIM st, tt, fc, js, lf, rg, up, dn, fire, jmp, pj, pfire\n  DIM px, py, x8, vx, vy, face, gnd, cg, anim, fr, inv, dropt, fx\n  DIM lives, score, coins, hud, ck, rx, ry\n  DIM cam, nx, cf, cnp, cr, cdirty, cnx\n  DIM csx(5), csy(5)\n  REM the coins (sorted by x): their cell's pixel position and whether taken\n  DIM cxs(49) = 64, 72, 80, 96, 104, 112, 120, 192, 200, 304, 312, 320, 328, 352, 360, 368, 376, 424, 432, 440, 464, 496, 504, 512, 520, 528, 536, 568, 576, 616, 624, 640, 648, 696, 704, 720, 728, 752, 760, 800, 808, 832, 840, 848, 888, 896, 912, 920, 944, 952\n  DIM cys(49) = 104, 104, 104, 88, 80, 80, 88, 104, 104, 80, 80, 80, 80, 80, 80, 80, 80, 96, 88, 96, 96, 80, 80, 64, 64, 64, 64, 96, 96, 80, 80, 96, 96, 88, 88, 72, 72, 88, 88, 96, 96, 104, 104, 96, 96, 96, 80, 80, 104, 104\n  DIM cc(49)\n  REM the enemies (sorted by x): spawn position, type (0 walker, 1 bat), killed; and the checkpoints\n  DIM sx(10) = 160, 288, 368, 464, 496, 528, 640, 704, 800, 880, 944\n  DIM sy(10) = 96, 96, 56, 88, 56, 80, 64, 80, 56, 96, 96\n  DIM sty(10) = 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0\n  DIM sd(10)\n  DIM ckx(2) = 416, 592, 832\n  DIM cky(2) = 88, 88, 88\n  REM six enemy slots: 0..3 walkers (sprites wk), 4..5 bats (sprites fl): alive, position, direction, spawn entry, origin x\n  DIM en(5), ex(5), ey(5), ed(5), ek(5), e0(5)\n  REM the bats' vertical path: a sine, +-12 pixels in 16 steps\n  DIM sn(15) = 0, 5, 9, 11, 12, 11, 9, 5, 0, -5, -9, -11, -12, -11, -9, -5\n\n  PROC INIT():\n    CALL TITLEINIT()\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- states\n  PROC FRAME():\n    js = STICK(1)\n    lf = KEYDOWN(\"O\") OR BIT(js, 2)\n    rg = KEYDOWN(\"P\") OR BIT(js, 3)\n    up = KEYDOWN(\"Q\") OR BIT(js, 0)\n    dn = KEYDOWN(\"A\") OR BIT(js, 1)\n    fire = KEYDOWN(\" \") OR BIT(js, 4)\n    jmp = fire OR up\n    tt = tt + 1\n    fc = fc + 1\n    IF fc > 30000 THEN fc = 0 ENDIF\n    SELECT CASE st\n      CASE 0\n        CALL TITLETICK()\n      CASE 1\n        CALL PLAYTICK()\n      CASE ELSE\n        CALL ENDTICK()\n    ENDSEL\n    pj = jmp\n    pfire = fire\n  ENDP\n\n  REM The title: the level scrolls by itself (the camera ping-pongs along the world); fire starts the game.\n  PROC TITLEINIT():\n    LOCAL i\n    st = 0 : tt = 0 : cam = 0\n    HIDE hero\n    CALL CLEARENEMIES()\n    FOR i = 0 TO NC - 1\n      cc(i) = 0\n      SETWORLD cxs(i), cys(i) = 6\n    NEXT i\n    cf = 0 : cnp = 6 : cdirty = 1\n    INK 7 : PAPER 0 : BRIGHT 1\n    FILLC 0, 0, 32, 4 = 32\n    FILLC 0, 20, 32, 4 = 32\n    INK 6 : PRINT AT 1, 10; \"LEAP RUNNER\";\n    PRINT AT 21, 6; \"PRESS SPACE OR FIRE\";\n    PRINT AT 22, 4; \"O P MOVE   Q OR SPACE JUMP\";\n  ENDP\n\n  PROC TITLETICK():\n    LOCAL p\n    p = (tt * 2) MOD 1664\n    IF p > 832 THEN p = 1664 - p ENDIF\n    IF tt > 8000 THEN tt = 0 ENDIF\n    CAMERA p\n    cam = CAMX()\n    CALL SPINCOINS()\n    IF fire AND (NOT pfire) THEN CALL NEWGAME() ENDIF\n  ENDP\n\n  PROC NEWGAME():\n    LOCAL i\n    score = 0 : lives = 3 : coins = 0 : ck = 0 : hud = 1\n    rx = 24 : ry = 88 : cnx = ckx(0)\n    FOR i = 0 TO NS - 1\n      sd(i) = 0\n    NEXT i\n    INK 7 : PAPER 0 : BRIGHT 1\n    FILLC 0, 0, 32, 4 = 32\n    FILLC 0, 21, 32, 1 = 32\n    st = 1 : tt = 0 : inv = 0 : dropt = 0 : pj = 1\n    CALL RESPAWN()\n  ENDP\n\n  REM Put the player at the checkpoint, the camera on him, the enemies back to where the camera is.\n  PROC RESPAWN():\n    px = rx : py = ry : x8 = px * 8 : vx = 0 : vy = 0 : face = 1 : gnd = 1 : cg = 3\n    cam = px - LZ\n    CAMERA cam\n    cam = CAMX()\n    CALL CLEARENEMIES()\n    nx = 0\n    WHILE nx < NS AND sx(nx) < cam - 48\n      nx = nx + 1\n    WEND\n    cf = 0 : cdirty = 1\n    WHILE cf < NC AND cxs(cf) + 8 <= cam\n      cf = cf + 1\n    WEND\n  ENDP\n\n  PROC PLAYTICK():\n    CALL PLAYER()\n    IF st = 1 THEN\n      CALL FOLLOW()\n      CALL DRAWPLAYER()\n      CALL ENEMIES()\n      CALL SPINCOINS()\n      IF inv > 0 THEN\n        inv = inv - 1\n        IF inv <= 30 AND BAND(inv, 2) <> 0 THEN HIDE hero ENDIF\n      ENDIF\n      IF hud THEN CALL SHOWHUD() ENDIF\n    ENDIF\n  ENDP\n\n  REM Level complete (2) and game over (3): the world stays up; fire (after half a second) goes back to the title.\n  PROC ENDTICK():\n    IF st = 2 THEN\n      SHOW hero AT px, py FRAME 5 + BAND(SHR(tt, 2), 1)\n    ENDIF\n    CALL SPINCOINS()\n    IF tt > 10 AND fire AND (NOT pfire) THEN CALL TITLEINIT() ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- the player\n  PROC PLAYER():\n    LOCAL d, nx2, ny, r\n    d = rg - lf\n    IF d <> 0 THEN\n      vx = vx + d * ACC\n      IF vx > VMAX THEN vx = VMAX ENDIF\n      IF vx < -VMAX THEN vx = -VMAX ENDIF\n      face = d\n    ELSE\n      IF vx > 0 THEN\n        vx = vx - FRIC\n        IF vx < 0 THEN vx = 0 ENDIF\n      ENDIF\n      IF vx < 0 THEN\n        vx = vx + FRIC\n        IF vx > 0 THEN vx = 0 ENDIF\n      ENDIF\n    ENDIF\n    REM horizontal: move, then if the box is inside a solid tile put its edge on the tile's face\n    x8 = x8 + vx\n    nx2 = SHR(x8, 3)\n    IF nx2 <> px THEN\n      IF SOLID(nx2 + BX, py + BY, BW, BH) THEN\n        IF vx > 0 THEN\n          nx2 = SHR(nx2 + BX + BW - 1, 3) * 8 - BW - BX\n        ELSE\n          nx2 = SHR(nx2 + BX, 3) * 8 + 8 - BX\n        ENDIF\n        x8 = nx2 * 8 : vx = 0\n      ENDIF\n      px = nx2\n    ENDIF\n    REM jump (with a little coyote time), variable height, drop through planks\n    IF gnd THEN\n      cg = 3\n    ELSE\n      IF cg > 0 THEN cg = cg - 1 ENDIF\n    ENDIF\n    IF jmp AND (NOT pj) AND cg > 0 THEN\n      vy = VJUMP : cg = 0 : gnd = 0\n      PLAY jump\n    ENDIF\n    IF (NOT jmp) AND vy < -3 THEN vy = -3 ENDIF\n    IF dn THEN\n      dropt = 5\n    ELSE\n      IF dropt > 0 THEN dropt = dropt - 1 ENDIF\n    ENDIF\n    REM vertical: gravity, then land on a solid tile, on a plank the feet cross, or bump the head\n    vy = vy + GRAV\n    IF vy > VFALL THEN vy = VFALL ENDIF\n    ny = py + vy\n    gnd = 0\n    IF vy > 0 THEN\n      IF SOLID(px + BX, ny + BY, BW, BH) THEN\n        r = SHR(ny + BY + BH - 1, 3)\n        ny = r * 8 - BY - BH : vy = 0 : gnd = 1\n      ELSE\n        IF dropt = 0 THEN\n          r = SHR(ny + BY + BH - 1, 3)\n          IF r > SHR(py + BY + BH - 1, 3) THEN\n            IF TILEHIT(px + BX, r * 8, BW, 1, 8) THEN\n              ny = r * 8 - BY - BH : vy = 0 : gnd = 1\n            ENDIF\n          ENDIF\n        ENDIF\n      ENDIF\n    ELSE\n      IF vy < 0 THEN\n        IF SOLID(px + BX, ny + BY, BW, BH) THEN\n          r = SHR(ny + BY, 3)\n          ny = r * 8 + 8 - BY : vy = 0\n        ENDIF\n      ENDIF\n    ENDIF\n    py = ny\n    REM what the box touches: hazard (2), pickup (4), goal (16)\n    fx = TILEHIT(px + BX, py + BY, BW, BH, 22)\n    IF fx <> 0 THEN\n      IF BAND(fx, 16) <> 0 THEN\n        CALL WIN()\n      ELSE\n        IF BAND(fx, 4) <> 0 THEN CALL PICKUP() ENDIF\n        IF BAND(fx, 2) <> 0 THEN CALL DIE() ENDIF\n      ENDIF\n    ENDIF\n    IF st = 1 AND py > DEADY THEN CALL DIE() ENDIF\n    IF st = 1 THEN\n      IF px >= cnx THEN\n        rx = ckx(ck) : ry = cky(ck) : ck = ck + 1\n        IF ck < 3 THEN cnx = ckx(ck) ELSE cnx = 32000 ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM Take the coins the box overlaps (the coins list is sorted by x; the pickup tile goes with SETWORLD).\n  PROC PICKUP():\n    LOCAL k\n    k = cf\n    WHILE k < NC\n      IF cxs(k) >= px + BX + BW THEN EXIT WHILE ENDIF\n      IF cc(k) = 0 AND cxs(k) + 8 > px + BX AND cys(k) < py + BY + BH AND cys(k) + 8 > py + BY THEN\n        cc(k) = 1\n        SETWORLD cxs(k), cys(k) = 0\n        coins = coins + 1 : score = score + 10 : hud = 1 : cdirty = 1\n        PLAY coin\n      ENDIF\n      k = k + 1\n    WEND\n  ENDP\n\n  PROC DRAWPLAYER():\n    IF inv > 30 THEN\n      fr = 7\n    ELSE\n      IF gnd = 0 THEN\n        IF vy < 0 THEN fr = 5 ELSE fr = 6 ENDIF\n      ELSE\n        IF ABS(vx) < 2 THEN\n          fr = 0\n        ELSE\n          anim = anim + ABS(vx)\n          IF anim > 20000 THEN anim = 0 ENDIF\n          fr = 1 + BAND(SHR(anim, 6), 3)\n        ENDIF\n      ENDIF\n    ENDIF\n    IF face > 0 THEN\n      SHOW hero AT px, py FRAME fr\n    ELSE\n      SHOW hero AT px, py FRAME fr FLIP\n    ENDIF\n  ENDP\n\n  REM The camera follows with a dead zone (LZ..RZ pixels from the window's left edge); CAMERA clamps to the world.\n  PROC FOLLOW():\n    cam = CAMX()\n    IF px - cam < LZ THEN cam = px - LZ ENDIF\n    IF px + 16 - cam > RZ THEN cam = px + 16 - RZ ENDIF\n    CAMERA cam\n    cam = CAMX()\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- life and death\n  PROC HURT():\n    lives = lives - 1 : hud = 1\n    IF lives <= 0 THEN\n      CALL GAMEOVER()\n    ELSE\n      inv = 40 : vy = -5 : vx = 0 - face * 16 : gnd = 0\n      PLAY hurt\n    ENDIF\n  ENDP\n\n  REM A hazard or the pit: a life, back to the last checkpoint.\n  PROC DIE():\n    lives = lives - 1 : hud = 1\n    IF lives <= 0 THEN\n      CALL GAMEOVER()\n    ELSE\n      PLAY hurt\n      inv = 30\n      CALL RESPAWN()\n    ENDIF\n  ENDP\n\n  PROC GAMEOVER():\n    st = 3 : tt = 0\n    HIDE hero\n    CALL CLEARENEMIES()\n    PLAY over\n    INK 2 : PAPER 0 : BRIGHT 1\n    FILLC 0, 21, 32, 2 = 32\n    PRINT AT 21, 11; \"GAME OVER\";\n    CALL ENDTEXT()\n  ENDP\n\n  PROC WIN():\n    st = 2 : tt = 0 : score = score + 500 : vx = 0 : vy = 0\n    CALL CLEARENEMIES()\n    PLAY win\n    INK 6 : PAPER 0 : BRIGHT 1\n    FILLC 0, 21, 32, 2 = 32\n    PRINT AT 21, 8; \"LEVEL COMPLETE!\";\n    CALL ENDTEXT()\n  ENDP\n\n  REM The common last line of the two end screens; the score is printed again (the last coin or stomp may not have been).\n  PROC ENDTEXT():\n    CALL SHOWHUD()\n    INK 7 : PAPER 0 : BRIGHT 1\n    PRINT AT 22, 7; \"PRESS FIRE FOR TITLE\";\n  ENDP\n\n  PROC CLEARENEMIES():\n    LOCAL i\n    FOR i = 0 TO 5\n      en(i) = 0\n      HIDE wk(i) : HIDE fl(i - 4)\n    NEXT i\n  ENDP\n\n  PROC SHOWHUD():\n    INK 7 : PAPER 0 : BRIGHT 1\n    PRINT AT 1, 2; \"SCORE\";\n    PRINT AT 1, 16; \"LIVES\";\n    PRINT AT 2, 2; \"COINS\";\n    INK 6\n    PRINT AT 1, 8; score; \" \";\n    PRINT AT 1, 22; lives;\n    PRINT AT 2, 8; coins; \"/50\";\n    hud = 0\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- enemies\n  PROC ENEMIES():\n    LOCAL i\n    CALL SPAWNER()\n    FOR i = 0 TO 3\n      IF en(i) THEN CALL WALKER(i) ENDIF\n    NEXT i\n    FOR i = 4 TO 5\n      IF en(i) THEN CALL BAT(i) ENDIF\n    NEXT i\n  ENDP\n\n  REM At most one new enemy a tick: the next entry of the sorted list when it comes within 216 pixels of the camera\n  REM (a walker needs a free walker slot, a bat a free bat slot; killed or passed entries are skipped).\n  PROC SPAWNER():\n    LOCAL k, lo, hi\n    IF nx < NS THEN\n      IF sx(nx) < cam + 216 THEN\n        IF sd(nx) = 0 AND sx(nx) > cam - 48 THEN\n          IF sty(nx) = 0 THEN\n            lo = 0 : hi = 3\n          ELSE\n            lo = 4 : hi = 5\n          ENDIF\n          FOR k = lo TO hi\n            IF en(k) = 0 THEN\n              en(k) = 1 : ex(k) = sx(nx) : ey(k) = sy(nx) : ek(k) = nx : e0(k) = sx(nx)\n              ed(k) = -1 + sty(nx) * 2\n              nx = nx + 1\n              EXIT FOR\n            ENDIF\n          NEXT k\n        ELSE\n          nx = nx + 1\n        ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM A walker patrols its ground at 2 pixels a tick and turns at a wall or an edge; the test is made once a tile.\n  PROC WALKER(i):\n    LOCAL ax, f, x, d\n    d = ed(i)\n    x = ex(i) + d * 2\n    IF x < cam - 48 THEN\n      en(i) = 0\n      HIDE wk(i)\n    ELSE\n      IF BAND(x, 7) = 0 THEN\n        IF d > 0 THEN ax = x + 16 ELSE ax = x - 1 ENDIF\n        IF SOLID(ax, ey(i) + 4, 1, 8) THEN\n          d = 0 - d\n        ELSE\n          IF NOT TILEHIT(ax, ey(i) + 16, 1, 1, 9) THEN d = 0 - d ENDIF\n        ENDIF\n        ed(i) = d\n      ENDIF\n      ex(i) = x\n      f = BAND(SHR(x, 3), 1)\n      IF d > 0 THEN\n        SHOW wk(i) AT x, ey(i) FRAME f\n      ELSE\n        SHOW wk(i) AT x, ey(i) FRAME f FLIP\n      ENDIF\n      IF ABS(x - px) < 20 THEN\n        IF HIT(hero, wk(i)) THEN CALL TOUCH(i) ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM A bat flies to and fro 56 pixels either side of where it appeared and bobs on the sine table.\n  PROC BAT(i):\n    LOCAL f, x, y\n    x = ex(i) + ed(i) * 2\n    IF x < cam - 80 THEN\n      en(i) = 0\n      HIDE fl(i - 4)\n    ELSE\n      IF ABS(x - e0(i)) > 56 THEN ed(i) = 0 - ed(i) ENDIF\n      ex(i) = x\n      y = sy(ek(i)) + sn(BAND(SHR(fc, 1) + i * 5, 15))\n      ey(i) = y\n      f = BAND(SHR(fc, 1), 1)\n      SHOW fl(i - 4) AT x, y FRAME f\n      IF ABS(x - px) < 20 THEN\n        IF HIT(hero, fl(i - 4)) THEN CALL TOUCH(i) ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM The player met enemy slot i: falling onto it from above stomps it, anything else hurts.\n  PROC TOUCH(i):\n    IF vy > 0 AND py <= ey(i) - 12 THEN\n      en(i) = 0 : sd(ek(i)) = 1\n      HIDE wk(i) : HIDE fl(i - 4)\n      vy = -6 : score = score + 100 : hud = 1\n      PLAY stomp\n    ELSE\n      IF inv = 0 THEN CALL HURT() ENDIF\n    ENDIF\n  ENDP\n\n  REM ---------------------------------------------------------------------------------------------------------------- coins\n  REM Up to six spinning coins are drawn over the pickup tiles of the coins in view (the tile itself shows a still coin, so a\n  REM seventh coin in view is still there, only not spinning).  The list is sorted by x: CF is the first coin not left of the\n  REM camera.  Coins do not move, so the six slots are mapped (CSX / CSY) only when something changes (CF moves on, a coin is\n  REM taken, a new coin comes into view on the right) and a slot is drawn again, with the next spin frame, once every 4 ticks\n  REM (slot s on the ticks where fc MOD 4 = s MOD 4), which spreads the SHOWs over the ticks.\n  PROC SPINCOINS():\n    LOCAL n, k, f\n    WHILE cf < NC AND cxs(cf) + 8 <= cam\n      cf = cf + 1 : cdirty = 1\n    WEND\n    IF cdirty = 0 AND cnp < 6 AND cr < NC THEN\n      IF cxs(cr) < cam + 192 THEN cdirty = 1 ENDIF\n    ENDIF\n    f = BAND(SHR(fc, 2), 3)\n    IF cdirty THEN\n      n = 0 : k = cf\n      WHILE n < 6 AND k < NC\n        IF cxs(k) >= cam + 192 THEN EXIT WHILE ENDIF\n        IF cc(k) = 0 THEN\n          csx(n) = cxs(k) : csy(n) = cys(k)\n          SHOW cn(n) AT csx(n), csy(n) FRAME f\n          n = n + 1\n        ENDIF\n        k = k + 1\n      WEND\n      cr = k\n      FOR k = n TO cnp - 1\n        HIDE cn(k)\n      NEXT k\n      cnp = n : cdirty = 0\n    ELSE\n      k = BAND(fc, 3)\n      IF k < cnp THEN SHOW cn(k) AT csx(k), csy(k) FRAME f ENDIF\n      k = k + 4\n      IF k < cnp THEN SHOW cn(k) AT csx(k), csy(k) FRAME f ENDIF\n    ENDIF\n  ENDP\nENDSCENE\n"
+ },
+ "assets": {
+  "sprites": {
+   "pf-hero": {
+    "w": 16,
+    "h": 24,
+    "hot": [
+     3,
+     2,
+     10,
+     22
+    ],
+    "phases": 2,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "67E6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "63C6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "2184",
+        "mask": "23C4",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1E78",
+        "mask": "1E78",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3E7C",
+        "mask": "3E7C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "67E6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "63C6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "2184",
+        "mask": "23C4",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E38",
+        "mask": "0E38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1C",
+        "mask": "1C1C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C0C",
+        "mask": "1C0C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "380E",
+        "mask": "380E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3802",
+        "mask": "3802",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "780F",
+        "mask": "780F",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7800",
+        "mask": "7800",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "67E6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "63C6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "2184",
+        "mask": "23C4",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FC0",
+        "mask": "0FC0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FE0",
+        "mask": "0FE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "67E6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "63C6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "2184",
+        "mask": "23C4",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1CE0",
+        "mask": "1CE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3870",
+        "mask": "3870",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3070",
+        "mask": "3070",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7038",
+        "mask": "7038",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "4038",
+        "mask": "4038",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "F078",
+        "mask": "F078",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "003C",
+        "mask": "003C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "67E6",
+        "mask": "67E6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "63C6",
+        "mask": "63C6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "2184",
+        "mask": "23C4",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FC0",
+        "mask": "0FC0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FE0",
+        "mask": "0FE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "6FFB",
+        "mask": "6FFB",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "6BD6",
+        "mask": "6FF6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDC",
+        "mask": "7FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3BD8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FE0",
+        "mask": "0FE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF0",
+        "mask": "1FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C70",
+        "mask": "1C70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C70",
+        "mask": "1C70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0EE0",
+        "mask": "0EE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FC0",
+        "mask": "0FC0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FC0",
+        "mask": "1FC0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "124C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1002",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "09E4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "CFF9",
+        "mask": "CFF9",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "6BD6",
+        "mask": "6FF6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FEC",
+        "mask": "3FEC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "17A0",
+        "mask": "1FE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C38",
+        "mask": "1C38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C38",
+        "mask": "1C38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "700E",
+        "mask": "700E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "700E",
+        "mask": "700E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "F00F",
+        "mask": "F00F",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "F00F",
+        "mask": "F00F",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C1E",
+        "mask": "1FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "154C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "128C",
+        "mask": "1FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0BF4",
+        "mask": "0FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07F8",
+        "mask": "07F8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "6FFB",
+        "mask": "6FFB",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "6BD6",
+        "mask": "6FF6",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7BDC",
+        "mask": "7FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3BD8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "03C0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C38",
+        "mask": "1C38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C38",
+        "mask": "1C38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "700E",
+        "mask": "700E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "700E",
+        "mask": "700E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "F00F",
+        "mask": "F00F",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "F00F",
+        "mask": "F00F",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "pf-walker": {
+    "w": 16,
+    "h": 16,
+    "hot": [
+     1,
+     4,
+     14,
+     12
+    ],
+    "phases": 4,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "799E",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7AD6",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C38",
+        "mask": "1C38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3C3C",
+        "mask": "3C3C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "799E",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7AD6",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1E78",
+        "mask": "1E78",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C38",
+        "mask": "1C38",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "pf-bat": {
+    "w": 16,
+    "h": 16,
+    "hot": [
+     2,
+     3,
+     12,
+     10
+    ],
+    "phases": 4,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "8001",
+        "mask": "8001",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "C003",
+        "mask": "C003",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "E3C7",
+        "mask": "E3C7",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "F7EF",
+        "mask": "F7EF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FBDF",
+        "mask": "FFFF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FDBF",
+        "mask": "FFFF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7DBE",
+        "mask": "7DBE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF0",
+        "mask": "1FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FE0",
+        "mask": "0FE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0380",
+        "mask": "0380",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0420",
+        "mask": "0420",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E70",
+        "mask": "0E70",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "57A8",
+        "mask": "5FE8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FFEE",
+        "mask": "FFFE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FFFB",
+        "mask": "FFFF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7DBE",
+        "mask": "7DBE",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3FF8",
+        "mask": "3FF8",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1FF0",
+        "mask": "1FF0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0FE0",
+        "mask": "0FE0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "07C0",
+        "mask": "07C0",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0380",
+        "mask": "0380",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   },
+   "pf-coin": {
+    "w": 8,
+    "h": 8,
+    "hot": [
+     0,
+     0,
+     8,
+     8
+    ],
+    "phases": 8,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     },
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "mask": "FF",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "tilesets": {
+   "pf-tiles": {
+    "tiles": [
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "B5",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "04",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "20",
+        "ink": 4,
+        "paper": 2,
+        "bright": 0
+       }
+      ],
+      "flags": 1
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "22",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "84",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "11",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "40",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 2,
+        "bright": 0
+       }
+      ],
+      "flags": 1
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 2,
+        "bright": 1
+       }
+      ],
+      "flags": 1
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "42",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 8
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "22",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "22",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "77",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "77",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 2
+     },
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "99",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "5A",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3C",
+        "ink": 6,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 4
+     },
+     {
+      "rows": [
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 16
+     },
+     {
+      "rows": [
+       {
+        "bits": "1F",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1F",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1E",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "1C",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "18",
+        "ink": 2,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 16
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "33",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3E",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "08",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "08",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "08",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "08",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "01",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "07",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "0F",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "1F",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "80",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "E0",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "F8",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "0E",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "70",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     }
+    ]
+   }
+  },
+  "maps": {
+   "pf-world": {
+    "w": 128,
+    "h": 16,
+    "cells": [
+     10,
+     10,
+     11,
+     12,
+     10,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     10,
+     10,
+     10,
+     11,
+     12,
+     10,
+     10,
+     10,
+     11,
+     12,
+     10,
+     10,
+     10,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     10,
+     10,
+     10,
+     11,
+     12,
+     10,
+     10,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     10,
+     10,
+     10,
+     11,
+     12,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     11,
+     13,
+     13,
+     13,
+     13,
+     12,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     10,
+     10,
+     11,
+     13,
+     13,
+     13,
+     13,
+     12,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     10,
+     11,
+     13,
+     13,
+     13,
+     13,
+     12,
+     10,
+     10,
+     11,
+     13,
+     13,
+     12,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     10,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     16,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     16,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     15,
+     16,
+     17,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     14,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     8,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     4,
+     4,
+     4,
+     4,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     7,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     6,
+     6,
+     0,
+     0,
+     6,
+     6,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     7,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     0,
+     0,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     3,
+     3,
+     3,
+     0,
+     0,
+     4,
+     4,
+     4,
+     4,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     7,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     0,
+     6,
+     0,
+     0,
+     6,
+     0,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     3,
+     3,
+     3,
+     3,
+     0,
+     0,
+     0,
+     4,
+     4,
+     4,
+     4,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     6,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     3,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     7,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     9,
+     0,
+     0,
+     0,
+     6,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     5,
+     5,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     3,
+     3,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     3,
+     3,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     5,
+     5,
+     0,
+     0,
+     0,
+     0,
+     3,
+     3,
+     0,
+     0,
+     6,
+     6,
+     0,
+     0,
+     7,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     0,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2
+    ]
+   }
+  },
+  "sfx": {
+   "pf-jump": {
+    "ticks": [
+     {
+      "tone": 300,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 272,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 244,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 216,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 132,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "pf-coin": {
+    "ticks": [
+     {
+      "tone": 120,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 120,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 120,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "pf-stomp": {
+    "ticks": [
+     {
+      "tone": 0,
+      "vol": 14,
+      "noise": 6,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 12,
+      "noise": 8,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 10,
+      "noise": 10,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 8,
+      "noise": 12,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 6,
+      "noise": 14,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 4,
+      "noise": 16,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 2,
+      "noise": 18,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 0,
+      "noise": 20,
+      "mix": 5
+     }
+    ]
+   },
+   "pf-hurt": {
+    "ticks": [
+     {
+      "tone": 200,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 230,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 260,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 290,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 320,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 350,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 380,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 410,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 440,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 470,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 500,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 530,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "pf-win": {
+    "ticks": [
+     {
+      "tone": 200,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 180,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 180,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 140,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 140,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 115,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 115,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 80,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "pf-over": {
+    "ticks": [
+     {
+      "tone": 120,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 140,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 180,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 220,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 240,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 260,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 280,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 300,
+      "vol": 4,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 320,
+      "vol": 3,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 340,
+      "vol": 2,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 360,
+      "vol": 2,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 380,
+      "vol": 2,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 400,
+      "vol": 2,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 420,
+      "vol": 2,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   }
+  },
+  "music": {}
+ },
+ "scenes": {}
+}
