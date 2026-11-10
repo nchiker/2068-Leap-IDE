@@ -108,7 +108,12 @@ music still open), **Blockfall** (falling-blocks puzzle; tests the tile engine, 
 Measured so far (TSRun, hand-written Z80, pixel-exact against JS references; nothing on real hardware yet):
 * **Scrolling** (`arcade/spike/scroll/RESULTS.md`): pre-shifted tile tables repaint a 24x16-cell window (192x128 px) every
   tick in about 109k T = 3 refreshes (20 fps) with room for about 6 sprites; the full 32x24 screen is about 12-15 fps; the
-  tables can live in cartridge ROM. Parallax measurements are in progress (`arcade/spike/scroll/parallax/`).
+  tables can live in cartridge ROM. Parallax (`arcade/spike/scroll/parallax/RESULTS.md`, pixel-exact, 24x16 window): **banded parallax (each horizontal
+  band scrolling at its own speed) is nearly free**: 109k T plus about 240 T per extra band, i.e. 3 refreshes (20 fps) with
+  3-4 bands. A true transparent second layer costs 129k T (empty) to 398k T (every cell used) and needs 12 KB of table ROM:
+  affordable at 15 fps for a sparse layer (5-15 % of cells; ground and platforms as opaque tiles); three transparent layers
+  are not offered as a general mechanism. A retained far-layer buffer saves only 7 %. Art rule: a cell with overlay pixels
+  takes the overlay's colours (one colour pair per cell).
 * **Raycasting** (`arcade/spike/raycast/RESULTS.md`): a 128x96 window with 4-pixel columns runs at 20 ticks/s, with
   2-pixel columns at 12-15; 96x64 with 2-pixel columns at 15; flat-shaded walls only (textured columns would be about 10x
   slower); one small blocky sprite at 20 ticks/s. So: a Wolfenstein / Catacomb-class game is realistic; Doom proper is not.
