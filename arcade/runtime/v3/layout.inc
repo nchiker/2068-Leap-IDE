@@ -24,8 +24,8 @@ SCLD_BOOT       EQU $00         ; mode 0, file 1 shown, interrupt on, DOCK selec
 HANDOFF_SP      EQU $61FE       ; where the stock ROM leaves SP (chunk 3); documented, only checked by the test
 
 RT_BASE         EQU $0000       ; DOCK chunks 0-1: header, ISR, boot, video routines, frame loop, API routines
-RT_ENTRY        EQU $0100       ; cold start
-RT_VIDEO        EQU $0200       ; video.asm; main.asm and api.asm follow it without a fixed address
+RT_ENTRY        EQU $0100       ; the boot's ORG: BIT_TAB (8 bytes, page aligned) first, then the cold start ENTRY at $0108
+RT_VIDEO        EQU $0200       ; no longer where video.asm is: it follows the boot code directly (the constant is kept for the tools)
 GAME_BASE       EQU $8000       ; DOCK chunks 4-5: the game image written by the compiler's linker
 
 ; Game header at GAME_BASE (docs/ARCADE_RUNTIME_API.md "Image layout", V1 "Game image header v1", V2 "Sprite assets and instances")

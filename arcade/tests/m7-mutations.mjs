@@ -35,7 +35,7 @@ const MUTANTS = [
   ['boot: the tile rows copy is 255 bytes', [E(SC, '    ld de,W_TROWS\n    ld bc,256', '    ld de,W_TROWS\n    ld bc,255')]],
   ['boot: the flags go to the attribute page (inc d missing)', [E(SC, '    inc d                       ; W_FLAGT = W_ATTRT + $100', '    nop                         ; W_FLAGT = W_ATTRT + $100')]],
   ['boot: dirty byte 3 masked like byte 0 (no CPL)', [E(SC, '    ld (W_DMASK0),a\n    cpl', '    ld (W_DMASK0),a\n    nop')]],
-  ['boot: the attribute caches start at 0 instead of $FF', [E(SC, '.ac:\n    ld (hl),$FF', '.ac:\n    ld (hl),$00')]],
+  ['boot: the attribute caches start at 0 instead of $FF', [E(SC, '.inv:\n    ld (hl),$FF', '.inv:\n    ld (hl),$00')]],
   ['boot: the attribute base ignores cx', [E(SC, '    ld a,(W_CX)\n    ld e,a\n    ld d,DATTR0>>8', '    xor a\n    ld e,a\n    ld d,DATTR0>>8')]],
   // ---- window_repaint and the row loops ----
   ['repaint: ratio 2 is not doubled', [E(SC, '    jr c,.sh\n    add hl,hl\n    ret', '    jr c,.sh\n    nop\n    ret')]],

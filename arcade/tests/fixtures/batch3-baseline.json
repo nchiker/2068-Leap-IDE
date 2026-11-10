@@ -52,8 +52,8 @@
    "runtime": 3,
    "bytes": 8986,
    "dckBytes": 32777,
-   "dckSha256": "5dac7ddd844dd79fc6337bee3cd6aef489ea0a90b517530d3f413debb67d685a",
-   "areaSha256": "f957f3bff6f4ede99b3c5e23d1a2a3f57a562c5c4d4f14dce2763f6c71976013"
+   "dckSha256": "b574f0b48d14c2bc2e2cbe0d5e54512d2eafaa661c4f40ed30f8ac60eda308dd",
+   "areaSha256": "2f4a86fad4cb9bd863aea81ef37fbced48871b3c468b05fc95378d6c5e000d15"
   },
   {
    "src": "arcade/examples/breakout.arc",
@@ -61,8 +61,8 @@
    "runtime": 3,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "85814765ede15703d608ddb3ea5b6c503ede9bb4f939e0743d34604796accf84",
-   "areaSha256": "eed578757583bc4514f76ce299577a2fbee40891aacd7b389a6da95e12cef31c"
+   "dckSha256": "4b2ecd9488d6c789952c73990968fbc110a7420cf17d2a253d06c302e72a8dc4",
+   "areaSha256": "bca6b71aeddcf7e39ee5650da384faa655dc48890b2095cdcf75b1d32fcb58c7"
   },
   {
    "src": "arcade/examples/blockfall.arc",
@@ -70,8 +70,8 @@
    "runtime": 3,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "48675d008e6ef6e1371f6de0b78ad3fb7ac7829ddfccda91345624df4cff2d1e",
-   "areaSha256": "87e8566a1376d1f19b7c3a02ed2f1796ba2460e25089ef070397c819195d994d"
+   "dckSha256": "8652aa470ddf919251e948eafa1b177c89d05ed89fef6153711fda260c4bce28",
+   "areaSha256": "6aa48afa6778d093e9cde2265f7ebbbc82cfee353a07a0ff5bb34d54a442b809"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -79,8 +79,8 @@
    "runtime": 3,
    "bytes": 465,
    "dckBytes": 32777,
-   "dckSha256": "c5810b6fb63884fde6c97289088c9c9e43908766ca0eb6eb2a09c118359be7cd",
-   "areaSha256": "bcda8d940d842c0f1559f37cccf8264246c9da9355c703de36af801c77a4386c"
+   "dckSha256": "0fe93326a172c6820661c4ea3a3a4b6f5e1945d9dcd13d30b729851b1beadad1",
+   "areaSha256": "cae2993fc00766c144b0d135ec5961854830673218a45fff4bb24bad8c499a9b"
   },
   {
    "src": "arcade/tests/fixtures/blockfall-v0.arc",
@@ -88,8 +88,8 @@
    "runtime": 3,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "acc31f94dab13ff88a275300b460f5362a117ce80f623cfb1ff7229ef04984e5",
-   "areaSha256": "ca45ec8ea6b79eace04734aea1727571983527e7837c9ca44ead793f5866056c"
+   "dckSha256": "297f3e73b8b753ac5e3d2c19a2a9f2f39fdf66382dd7d3ddc9d32a3835a5b918",
+   "areaSha256": "c36cf8a10198902dbfc85f89cb51700ab24252cb2d6222123fb4845f96a098ec"
   },
   {
    "src": "arcade/examples/platformer.arc",
@@ -97,8 +97,8 @@
    "runtime": 3,
    "bytes": 9059,
    "dckBytes": 32777,
-   "dckSha256": "e1358b1c3a6ae6fa18d8edc2ad2e72a00067160b8c2129ff21c4ead45d6a0fd4",
-   "areaSha256": "5539ad064d42f6450163ab12d4bb1135e935ba6e825cbc75e4c3783760699521"
+   "dckSha256": "cfc14d11bf58614a524f38c2c910f98a3a31bc2ffe5e411ddff69cd541c2eab6",
+   "areaSha256": "faf8d82a2996307dfa30784d574df7cf5febe69d98fdf5b572a158b77ef6067f"
   }
  ]
 }

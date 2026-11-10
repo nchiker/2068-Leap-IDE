@@ -13,6 +13,53 @@ M_HDR_S:
     DB $BC                      ; chunk-spec byte (low-active): DOCK chunks 0,1,6 at hand-off
 M_HDR_E:
 
+; Small routines and tables of other modules that need no particular address, placed in the 51 bytes between the header and the ISR at $0038
+; (code that is cold: each saves its size at the end of the image).  All four are reached by absolute CALL / data access.
+; RT_BORDER (tileops.asm RT_BORDER's API): A = colour (AND 7).  Writes the ULA port with the beeper and MIC bits 0 and keeps the colour in V_BORDER.  Clobbers AF.
+M_GAPA_S:
+RT_BORDER:
+    and 7
+    ld (V_BORDER),a
+    out (PORT_ULA),a
+    ret
+; KEY_ROWSEL (RT_KEYDOWN): the half-row selects, in page 0 so that RT_KEYDOWN adds the row to the low byte.
+KEY_ROWSEL:
+    DB $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+    ASSERT (KEY_ROWSEL&$FF)+7 < 256 && (KEY_ROWSEL>>8) == 0
+; walk_sent (tileops.asm walk_setup): A = cells (1..8) -> A = 1 << (cells - 1) (BIT_TAB is page aligned).  Clobbers HL.
+walk_sent:
+    dec a
+    ld l,a
+    ld h,BIT_TAB>>8
+    ld a,(hl)
+    ret
+; delta_axis (tileops.asm RT_COPY): HL = destination - source position (from SBC), C = limit -> carry clear: A = the difference as a signed byte,
+; |difference| < limit; carry set: the rectangles cannot overlap on this axis.  Clobbers AF.
+delta_axis:
+    ld a,h
+    or a
+    jr z,.pos
+    inc a
+    jr nz,.big                  ; below -256
+    ld a,l
+    add a,c                     ; carry when difference >= -limit; zero then when it is exactly -limit
+    jr nc,.big
+    jr z,.big
+    ld a,l
+    or a
+    ret
+.pos:
+    ld a,l
+    cp c
+    jr nc,.big
+    or a
+    ret
+.big:
+    scf
+    ret
+M_GAPA_E:
+    ASSERT M_GAPA_E <= $0038    ; the ISR follows
+
     ORG $0066                   ; NMI vector: nothing raises it on a stock TS2068; return harmlessly
 M_NMI_S:
 NMI:
@@ -20,6 +67,10 @@ NMI:
 M_NMI_E:
 
     ORG RT_ENTRY
+M_BITTAB_S:
+BIT_TAB:                        ; page aligned (mark_dirty, tileops index it through L): $0100 is a page start, so it costs no padding here
+    DB $01, $02, $04, $08, $10, $20, $40, $80
+M_BITTAB_E:
 M_BOOT_S:
 ENTRY:
     ; ---- record the hand-off state first (HANDOFF_DIAG: 7 bytes at HO_BASE, kept so the test can check the map) ----
@@ -50,18 +101,14 @@ ENTRY:
                                 ; mapped, so the next instruction is fetched from the same bytes.  Chunk 6 goes
                                 ; back to RAM; chunks 4,5 appear (the game header and the sprite data).
     im 1                        ; frame interrupt through RST $38 (our ISR lives at $0038 in chunk 0)
-    ld a,BORDER_COLOUR
-    out (PORT_ULA),a            ; border blue, beeper off
 
     ; ---- zero the runtime variables, V3VARS, the compiled code's variable area and WORLD_RAM: $E000-$F1FF (stale RAM would
     ; otherwise feed the ISR: see E4's $A5 trap; and compiled variables start at 0) ----
-    ld hl,VARS
-    ld de,VARS+1
-    ld bc,VARS_CLEAR_LEN-1
-    ld (hl),0
-    ldir
+    ld hl,FILL_EARLY
+    call fill_tab               ; the variables to 0, and the keyboard state: nothing scanned yet = every key up ($FF), which must follow the clear
     ld a,BORDER_COLOUR
-    ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour written above
+    out (PORT_ULA),a            ; border blue, beeper off
+    ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour just written
     ld hl,CANARY_VALUE
     ld (STACK_CANARY),hl        ; guards the bottom of the 1 KB stack area (checked every tick)
 
@@ -85,11 +132,6 @@ ENTRY:
     ld (hl),255
     add hl,de
     djnz .sk
-    ld hl,V_KEYS                ; keyboard: nothing scanned yet = every key up
-    ld de,V_KEYS+1
-    ld bc,7
-    ld (hl),$FF
-    ldir
 
     ; ---- video: both display files (all cells blank), the cell map, glyphs, tiles, row table, pre-shifted sprite tables ----
     call video_init
@@ -105,14 +147,17 @@ ENTRY:
     ld hl,RT_SEED_INIT
     ld (RT_SEED),hl
 
-    ; ---- ISR variables LAST: the ISR reads the shadow and the request byte, so they are set right before EI ----
-    xor a
-    ld (V_SYNC),a               ; SYNC_BUSY: no frame ready, no flip requested
-    ld (V_SHADOW_FF),a          ; matches what is in the port ($FF = 0): file 1 shown
-    ld hl,0
-    ld (V_FRAMES),hl
+    ; ---- ISR variables LAST: the ISR reads the shadow and the request byte, so they are set right before EI.  V_SYNC = SYNC_BUSY (no frame ready, no
+    ; flip requested), V_SHADOW_FF = 0 (matches the port: file 1 shown) and V_FRAMES = 0 are already so: the clear above set them and nothing
+    ; has touched them since (interrupts are off) ----
     ld a,F4_PLAY
     ld (V_SHADOW_F4),a          ; matches the port: do not read $F4 back, it is not reliable on hardware
     ei                          ; the ISR can fire from the next instruction
     jp MAIN                     ; the frame loop (main.asm)
+FILL_EARLY:
+    DW VARS, VARS_CLEAR_LEN-1
+    DB 0
+    DW V_KEYS, 7
+    DB $FF
+    DW 0
 M_BOOT_E:
