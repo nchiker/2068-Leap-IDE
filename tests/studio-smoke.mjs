@@ -197,6 +197,46 @@ try {
     console.log('SKIP  sprite editor: src/tools/sprite-editor.js is not present');
   }
 
+  // ── Slice S2: tile, map and sound editors, asset warnings (docs/ARCADE_STUDIO_S2_CONTRACT.md) ──
+  for (const [kind, name, tab, box] of [['tilesets', 'gfx', 'tilesets', 'tool-tilesets'], ['maps', 'sky', 'maps', 'tool-maps'], ['sfx', 'pew', 'sfx', 'tool-sfx']]) {
+    if (!existsSync(ROOT + { tilesets: 'src/tools/tile-editor.js', maps: 'src/tools/map-editor.js', sfx: 'src/tools/sound-editor.js' }[kind])) { console.log(`SKIP  ${kind} editor: not present`); continue; }
+    await evaluate(`document.querySelector('.proj-row[data-asset="${kind}/${name}"]').click()`);
+    const ok = await waitFor(`document.getElementById('${box}').children.length > 0 && !document.getElementById('${box}').hidden && document.querySelector('.panel-tab[data-tab="${tab}"]').classList.contains('active')`, 10000);
+    check(`selecting ${kind}/${name} opens the ${tab} tab with its editor`, !!ok, await status());
+    await b.shot('studio-' + tab);
+  }
+  // a real click on the tile editor's pixel grid edits the tile through the host and recompiles
+  if (existsSync(ROOT + 'src/tools/tile-editor.js')) {
+    await evaluate(`document.querySelector('.proj-row[data-asset="tilesets/gfx"]').click()`);
+    await waitFor(`document.querySelector('#tool-tilesets [data-role=grid]')`, 10000);
+    await evaluate(`document.querySelector('#tool-tilesets [data-role=strip] [data-tile="1"]').click()`);
+    const before = await evaluate(`JSON.stringify(leapStudio.project.assets.tilesets.gfx.tiles[1].rows.map((r) => r.bits))`);
+    const v0 = await evaluate('leapStudio.project.assets.tilesets.gfx.tiles.length && 1');
+    const pt = await evaluate(`(() => { const r = document.querySelector('#tool-tilesets [data-role=grid]').getBoundingClientRect(); return { x: r.left + r.width * 0.06, y: r.top + r.height * 0.06, w: r.width }; })()`);
+    const mouse = (type, x, y, buttons) => b.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
+    await mouse('mouseMoved', pt.x, pt.y, 0); await mouse('mousePressed', pt.x, pt.y, 1); await mouse('mouseReleased', pt.x, pt.y, 0);
+    const after = await evaluate(`JSON.stringify(leapStudio.project.assets.tilesets.gfx.tiles[1].rows.map((r) => r.bits))`);
+    check('a real click on the tile grid changes the tile in the project', before !== after && !!v0, `${before} -> ${after}`);
+    const re = await waitFor(`leapStudio.lastCompile && leapStudio.lastCompile.ok`, 8000);
+    check('the edited game still compiles', !!re);
+  }
+  // asset warnings reach the problems list: a minority background attribute in the shooter's sky map, and BRIGHT black mixed
+  const warned = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s2'); const t = h.getAsset('tilesets', 'gfx');
+      for (const r of t.tiles[2].rows) { r.ink = 2; r.paper = 5; r.bright = 0; }
+      for (const r of t.tiles[1].rows) { r.paper = 0; r.bright = 0; }
+      for (const r of t.tiles[3].rows) { r.paper = 0; r.bright = 1; }
+      return h.setAsset('tilesets', 'gfx', t).ok; })()`);
+  check('host: a tile set write with mixed colours is accepted', warned === true);
+  const probs = await waitFor(`(() => { const rows = [...document.querySelectorAll('#problems .problem[data-asset]')]; return rows.length ? rows.map((r) => r.dataset.asset + ' ' + r.textContent) : null; })()`, 8000);
+  check('the problems list carries the asset warnings (colour attributes / black and BRIGHT black)', !!probs && probs.some((t) => /^maps\/sky/.test(t) || /^tilesets\/gfx/.test(t)), JSON.stringify(probs)?.slice(0, 300));
+  if (probs) {
+    await evaluate(`document.querySelector('#problems .problem[data-asset]').click()`);
+    const sel = await waitFor(`leapStudio.selected && (leapStudio.selected.kind === 'maps' || leapStudio.selected.kind === 'tilesets')`, 3000);
+    check('clicking an asset warning selects that asset', !!sel);
+  }
+  const hostApi = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s3'); return { roles: !!h.roles(), w: Array.isArray(h.assetWarnings()), by: h.usedBy('tilesets', 'gfx').assets.join(), sfx: h.soundCount() }; })()`);
+  check('host: roles(), assetWarnings(), usedBy() and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
+
   // ── Project files: save, open, round trip ──
   await evaluate(`(() => {
     window.smokeDownloads = [];

@@ -54,13 +54,12 @@ const tile = (bytes, ink, paper, bright) => ({ rows: bytes.map((b) => ({ bits: b
 const BLOCK = [0xFF, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0xFF];            // black outline, coloured inside
 const tiles = [
   tile([0, 0, 0, 0, 0x10, 0, 0, 0], 1, 0, 1),                                // 0 empty well cell: a dark blue dot
-  ...PIECES.map((p) => tile(BLOCK, 0, p.paper, 1)),                          // 1..7 blocks (L is white, not bright: the flash tile is bright)
+  ...PIECES.map((p) => tile(BLOCK, 0, p.paper, 1)),                          // 1..7 blocks (all BRIGHT 1: one black everywhere; the flash tile is a checker, so L stays told apart by its outline)
   tile([0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55], 0, 7, 1),          // 8 flash: bright white checker
   tile([0xFE, 0xFE, 0xFE, 0x00, 0xEF, 0xEF, 0xEF, 0x00], 5, 1, 1),          // 9 frame: cyan bricks on blue
-  tile([0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA], 7, 0, 0),          // 10 dimmed block: grey dither
-  tile([0, 0, 0, 0, 0, 0, 0, 0], 0, 0, 0),                                   // 11 blank
+  tile([0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA], 1, 0, 1),          // 10 dimmed block: blue dither (BRIGHT stays 1: bright black and plain black differ on some displays)
+  tile([0, 0, 0, 0, 0, 0, 0, 0], 0, 0, 1),                                   // 11 blank (black, bright like the rest)
 ];
-tiles[7].rows.forEach((r) => { r.bright = 0; });                              // L: white, normal brightness
 
 // ── sounds: one record per refresh (60 per second), on one AY channel; mix 6 = tone, 5 = noise, 4 = both ───────────────────────────
 const ticks = (n, f) => Array.from({ length: n }, (_, k) => f(k));

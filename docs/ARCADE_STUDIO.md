@@ -138,6 +138,10 @@ export function createSpriteEditor(container, host) -> { refresh(), select(name)
 | `selectAsset(kind, name)` | Ask the Studio to select that asset: highlights it in the project panel, switches the right-hand tab to the editor of that kind, and fires `onSelectAsset`. |
 | `getUsage()` | The last compile's `usage` object (`{sprites, ...}` as `compile()` returns it) or `null`. |
 | `status(text)` | Show a short message in the Studio's status bar. |
+| `roles()` | (S2) `scanRoles` of the project's current source: `{tileset, maps, world, floorplans, view}` or `null`. |
+| `assetWarnings(kind?, name?)` | (S2) The asset checks (`src/lang/arcade/arcade-assetcheck.js`, contract `ARCADE_STUDIO_S2_CONTRACT.md` section 3) for the live project, filtered; a new array of `{id, severity, kind, asset, tile?, cells?, message, compilerAlso}`. |
+| `usedBy(kind, name)` | (S2) `{assets: [maps drawn with this tile set], source: [{file, line}]}`. |
+| `soundCount()` | (S2) How many `SFX` lines the source declares (the game takes at most 8). |
 | `palette` | `[{name, rgb}]` of the 8 TS2068 colours x 2 brightness (index = `ink + 8 * bright`), the same RGB the emulator shows, for swatches. |
 
 ### Asset values
@@ -150,3 +154,28 @@ As `docs/ARCADE_ASSETS.md` and `arcade-assets.js` define them. Sprite: `{w, h, f
 Every successful `setAsset`/`deleteAsset`/`renameAsset` triggers: dirty mark, auto-save (400 ms debounce), a diagnostics
 compile (the size panel updates), and `onProjectChange` for all subscribers, including the caller (use `ev.source` to skip your own).
 The Studio never calls `setAsset` on its own except for New/Open/Examples (those send `type: 'project'`).
+
+## As built: slice S2, tile, map and sound editors and asset warnings (2026-11-10)
+
+Contract and decisions: [`ARCADE_STUDIO_S2_CONTRACT.md`](ARCADE_STUDIO_S2_CONTRACT.md). Right-hand tabs are now Display | Symbols | Sprites | Tiles | Maps | Sounds
+(`ASSET_EDITORS` in `studio.js`; picking an asset in the project panel opens its tab). Each editor is a pure model plus a UI module with a headless-Chrome smoke test on a fake host:
+
+| Part | Files | Tests |
+|---|---|---|
+| Checks | `src/lang/arcade/arcade-assetcheck.js` (`checkAssets`, helpers), `scanRoles` in `arcade-scan.js` | `tests/arcade-assetcheck.mjs` (125) |
+| Tiles | `src/tools/tile-model.js`, `tile-editor.js` | `tests/tile-model.mjs` (135), `tile-editor-smoke.mjs` (73) |
+| Maps | `src/tools/map-model.js`, `map-editor.js` | `tests/map-model.mjs` (138), `map-editor-smoke.mjs` (78) |
+| Sound | `src/tools/sound-model.js` (includes the AY renderer), `sound-editor.js` | `tests/sound-model.mjs` (121), `sound-editor-smoke.mjs` (112) |
+| Studio | host members `roles`, `assetWarnings`, `usedBy`, `soundCount` (table above); asset warnings in the problems list (click selects the asset; rules marked `compilerAlso` stay out because the compile reports them) | block in `tests/studio-smoke.mjs` |
+
+Where the build differs from the contract text, the contract has been corrected (mix values 6 / 4 / 5 / 7; `usedBy` shape; undo depth: `createHistory(x, 201)`).
+Choices made while building: `validateAsset` allows 1,800 ticks (was 1,000) and `'tilesets'` still 256 (the tile model is stricter: 128); in a map the source does not use
+(or with no source roles) the editor shows a cell map with relaxed limits (1..128 x 1..32); the erase tool paints tile 0 in a world map, code 0 in a floor plan, blank in a cell map;
+`background-attr-mix` belongs to the **map** (its `asset` is the map name; the tile editor also lists the ones of maps drawn with its set); `floorplan-shape` is always an error;
+two ids beyond the contract: `map-shape` and `asset-malformed`; the tone axis of the sound editor covers tone 16..4095.
+
+**What the checks found in our own examples** (and what was done): Breakout, Blockfall and Vaults mixed plain and BRIGHT black in their tile sets (fixed the way the shooter was in
+`45bf27f`: one black everywhere; Breakout's green brick is now dim, Blockfall's L piece is bright and its game-over dimmed block is blue dither, Vaults' brass bezel is bright; the
+batch baselines and the `blockfall-v0` fixture were regenerated, sizes unchanged). **Left as they are, reported by the checker:** Leap Runner's world uses 5 background colour
+attributes (clouds / hills / water differ in paper and ink, so the hero changes colour over them) and Vaults' panel map 4 (HUD tiles); these are art trade-offs for the owner (mark
+the tiles "sprites never pass over" or unify the colours).

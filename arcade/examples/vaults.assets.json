@@ -1246,49 +1246,49 @@
        "bits": "FF",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "80",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "80",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "FF",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "10",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "10",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "FF",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       },
       {
        "bits": "01",
        "ink": 6,
        "paper": 0,
-       "bright": 0
+       "bright": 1
       }
      ],
      "flags": 0

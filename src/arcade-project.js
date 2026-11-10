@@ -114,7 +114,7 @@ export function validateAsset(kind, value) {
   }
   case 'sfx': {
     if (!Array.isArray(value.ticks)) return 'a sound effect needs "ticks": [...]';
-    if (value.ticks.length > 1000) return 'a sound effect has at most 1000 ticks';
+    if (value.ticks.length > 1800) return 'a sound effect has at most 1800 ticks';
     for (let i = 0; i < value.ticks.length; i++) {
       const t = value.ticks[i];
       if (!isObj(t)) return `tick ${i} is not an object`;

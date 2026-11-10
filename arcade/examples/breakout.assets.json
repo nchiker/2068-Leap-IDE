@@ -200,49 +200,49 @@
        "bits": "FF",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "81",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "81",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "81",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "81",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "81",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "81",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FF",
        "ink": 0,
        "paper": 4,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 1

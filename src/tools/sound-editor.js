@@ -1,0 +1,943 @@
+/**
+ * src/tools/sound-editor.js — the sound editor of the Leap Arcade Studio.
+ *
+ *   createSoundEditor(container, host) -> { refresh(), render(), select(name), destroy(), getState() }
+ *
+ * `host` is the asset-editor host of docs/ARCADE_STUDIO.md ("Asset editor host interface") with the S2 additions of
+ * docs/ARCADE_STUDIO_S2_CONTRACT.md section 7.  Used members: getProject(), listAssets(kind), getAsset(kind, name), setAsset(kind, name, value),
+ * deleteAsset, renameAsset, onProjectChange, onSelectAsset, status(text), id and the optional assetWarnings(kind, name), soundCount() and
+ * usedBy(kind, name).  Every one is optional except one way to read the effects and setAsset; a missing member switches its feature off.
+ * The editor never touches the project object, localStorage for project data (only its own zoom), the code editor or the emulator.
+ *
+ * The data model, every operation and the AY renderer are in sound-model.js (pure); this file is the UI: lanes over the tick timeline
+ * (volume bars, tone curve on a log pitch axis, noise period, tone-on / noise-on rows) on one canvas, painting by pointer, a range
+ * selection with the operations of contract section 6, a numeric row editor, presets, Play (Web Audio), a waveform thumbnail,
+ * size / count readouts and the effect's warnings.  A stroke or an operation is one undo step and one host.setAsset().
+ */
+
+"use strict";
+
+import * as M from './sound-model.js';
+
+const PREF_KEY = 'leap-studio.sfxed';
+const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
+const ZOOMS = [2, 3, 4, 6, 8, 12, 16, 24];
+const UNDO_STEPS = 200;
+const BLANK_TICK = { tone: 200, vol: 0, noise: 0, mix: 6 };
+const PRESET_LABELS = { beep: 'beep', laser: 'laser', blip: 'blip', explosion: 'explosion (noise)', powerup: 'power-up', hurt: 'hurt' };
+
+// Lane geometry (canvas pixels, top to bottom); labels in the label column use the same numbers.
+const LANES = {
+  ruler: { y: 0, h: 18 },
+  vol: { y: 22, h: 72 },
+  tone: { y: 98, h: 150 },
+  noise: { y: 252, h: 48 },
+  tmix: { y: 304, h: 16 },
+  nmix: { y: 322, h: 16 },
+};
+const LANE_ORDER = ['ruler', 'vol', 'tone', 'noise', 'tmix', 'nmix'];
+const LANES_H = 338;
+const LABEL_W = 44;
+const LANE_LABELS = { vol: 'volume', tone: 'tone', noise: 'noise', tmix: 'tone on', nmix: 'noise on' };
+const LANE_FIELD = { vol: 'vol', tone: 'tone', noise: 'noise' };
+// The tone lane's log pitch axis runs from tone TONE_TOP (the top, about 6.9 kHz) to 4095 (the bottom, 27 Hz): 8 octaves, 150 px.
+const TONE_TOP = 16;
+const LN_SPAN = Math.log(4095 / TONE_TOP);
+
+// ── DOM helpers (no innerHTML anywhere: user data only goes through textContent / value) ─────────────────────────
+function el(tag, cls, text, attrs) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = text;
+  if (attrs) for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+function button(label, title, onClick, cls = '', role = '') {
+  const b = el('button', 'sfxed-btn ' + cls, label, { type: 'button' });
+  if (title) b.title = title;
+  if (role) b.dataset.role = role;
+  b.addEventListener('click', onClick);
+  return b;
+}
+function select(options, value, onChange, title, role = '') {
+  const s = el('select', 'sfxed-select');
+  for (const [v, label] of options) { const o = el('option', null, label); o.value = String(v); s.append(o); }
+  s.value = String(value);
+  if (title) s.title = title;
+  if (role) s.dataset.role = role;
+  s.addEventListener('change', () => onChange(s.value));
+  return s;
+}
+function input(value, title, width, role, type = 'number', attrs = {}) {
+  const i = el('input', 'sfxed-num', null, { type, ...attrs });
+  i.value = String(value);
+  i.style.width = width + 'px';
+  if (title) i.title = title;
+  if (role) i.dataset.role = role;
+  return i;
+}
+const label = (text, title) => { const l = el('span', 'sfxed-label', text); if (title) l.title = title; return l; };
+const sep = () => el('span', 'sfxed-sep');
+
+const STYLE_ID = 'sfxed-style';
+const CSS = `
+.sfxed { display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; padding: 8px 10px; color: var(--fg, #cdd9e5); background: var(--bg-panel, #13171f);
+  font: 12px var(--font-ui, system-ui, sans-serif); outline: none; position: relative; min-width: 0; }
+.sfxed * { box-sizing: border-box; }
+.sfxed [hidden] { display: none !important; }
+.sfxed-bar, .sfxed-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sfxed-btn { font: 11px var(--font-ui, system-ui, sans-serif); color: var(--fg, #cdd9e5); background: var(--bg-surface, #1c2128); border: 1px solid var(--border-hi, #444c56);
+  border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.sfxed-btn:hover { background: var(--bg-hover, #22292f); }
+.sfxed-btn:disabled { opacity: .45; cursor: default; }
+.sfxed-btn.on { border-color: var(--amber-fg, #e3b341); color: var(--amber-fg, #e3b341); background: var(--bg-active, #2d333b); }
+.sfxed-btn.sm { padding: 1px 6px; }
+.sfxed-select, .sfxed-num { font: 11px var(--font-ui, system-ui, sans-serif); color: var(--fg, #cdd9e5); background: var(--bg, #0d1117); border: 1px solid var(--border-hi, #444c56); border-radius: 4px; padding: 2px 4px; }
+.sfxed-label { color: var(--fg-muted, #768390); font-size: 11px; }
+.sfxed-sep { width: 1px; align-self: stretch; background: var(--border, #2d333b); margin: 0 2px; }
+.sfxed-warn { margin: 0; padding: 0; list-style: none; font-size: 11px; line-height: 1.45; }
+.sfxed-warn li { padding: 2px 6px; border-left: 3px solid var(--amber-fg, #e3b341); color: var(--fg, #cdd9e5); background: var(--bg-surface, #1c2128); margin-bottom: 2px; }
+.sfxed-warn li.err { border-left-color: var(--red-fg, #f78166); color: var(--red-fg, #f78166); cursor: pointer; }
+.sfxed-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sfxed-lanes { display: flex; width: fit-content; max-width: 100%; align-items: flex-start; min-width: 0; border: 1px solid var(--border-hi, #444c56); border-radius: 4px; background: var(--bg, #0d1117); }
+.sfxed-labels { position: relative; flex: none; width: ${LABEL_W}px; height: ${LANES_H}px; color: var(--fg-muted, #768390); font: 10px var(--font-ui, system-ui, sans-serif); }
+.sfxed-labels span { position: absolute; left: 4px; white-space: nowrap; line-height: 12px; }
+.sfxed-labels span.note { left: auto; right: 3px; color: var(--fg-dim, #3d444c); }
+.sfxed-scroll { flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.sfxed-canvas { display: block; cursor: crosshair; touch-action: none; }
+.sfxed-hint { height: 30px; overflow: hidden; font: 11px var(--font-code, monospace); color: var(--fg-muted, #768390); white-space: pre-wrap; }
+.sfxed-ops { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border: 1px solid var(--border, #2d333b); border-radius: 6px; background: var(--bg-surface, #1c2128); }
+.sfxed-ops .sfxed-row b { font-weight: 600; font-size: 11px; min-width: 52px; }
+.sfxed-foot { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.sfxed-wave { display: block; border: 1px solid var(--border-hi, #444c56); border-radius: 3px; background: var(--bg, #0d1117); }
+.sfxed-info { font: 11px/1.5 var(--font-code, monospace); color: var(--fg, #cdd9e5); margin: 0; white-space: pre-wrap; }
+.sfxed-info .over { color: var(--amber-fg, #e3b341); }
+.sfxed-msg { min-height: 16px; color: var(--fg-muted, #768390); font-size: 11px; }
+.sfxed-msg.err { color: var(--red-fg, #f78166); }
+.sfxed-msg.warn { color: var(--amber-fg, #e3b341); }
+.sfxed-empty { color: var(--fg-muted, #768390); padding: 24px 8px; }
+`;
+function injectStyle() {
+  if (document.getElementById(STYLE_ID)) return;
+  const st = el('style');
+  st.id = STYLE_ID;
+  st.textContent = CSS;
+  document.head.append(st);
+}
+
+function loadPrefs() {
+  try { const p = JSON.parse(localStorage.getItem(PREF_KEY) ?? 'null'); if (p && typeof p === 'object') return p; } catch { /* storage blocked or damaged */ }
+  return {};
+}
+function savePrefs(p) { try { localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch { /* storage blocked */ } }
+
+const deepCopy = (v) => JSON.parse(JSON.stringify(v));
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const centsText = (c) => (c >= 0 ? '+' : '-') + Math.abs(c) + 'c';
+const NOTE_RE = /^[A-Ga-g][#b]?-?\d$/;
+/** A tone period typed as a number or a note name ('A4'); NaN when it is neither. */
+function parseTone(text) {
+  const s = String(text).trim();
+  if (s === '') return NaN;
+  if (NOTE_RE.test(s)) { try { return M.toneOfNote(s); } catch { return NaN; } }
+  return Number(s);
+}
+const parseNum = (text) => (String(text).trim() === '' ? NaN : Number(text));
+
+export function createSoundEditor(container, host) {
+  injectStyle();
+  const prefs = loadPrefs();
+  const hostId = host?.id ?? 'sound-editor';
+
+  // ── host access (every call guarded: a missing member degrades, it does not throw) ──
+  const H = {
+    list() {
+      try {
+        if (host.listAssets) return host.listAssets('sfx');
+        return Object.keys(host.getProject()?.assets?.sfx ?? {}).sort();
+      } catch { return []; }
+    },
+    get(name) {
+      try {
+        if (host.getAsset) return host.getAsset('sfx', name);
+        const a = host.getProject()?.assets?.sfx?.[name];
+        return a ? deepCopy(a) : null;
+      } catch { return null; }
+    },
+    set(name, asset) { try { return host.setAsset('sfx', name, asset) ?? { ok: true }; } catch (e) { return { ok: false, error: e.message }; } },
+    del(name) { try { return host.deleteAsset ? host.deleteAsset('sfx', name) !== false : false; } catch { return false; } },
+    rename(a, b) {
+      try {
+        if (host.renameAsset) return host.renameAsset('sfx', a, b) ?? { ok: true };
+        const v = H.get(a);
+        const r = H.set(b, v);
+        if (r.ok) H.del(a);
+        return r;
+      } catch (e) { return { ok: false, error: e.message }; }
+    },
+    warnings(name) {
+      if (typeof host?.assetWarnings !== 'function') return null;
+      try { const w = host.assetWarnings('sfx', name); return Array.isArray(w) ? w : null; } catch { return null; }
+    },
+    count() {
+      if (typeof host?.soundCount !== 'function') return null;
+      try { const n = host.soundCount(); return Number.isInteger(n) ? n : null; } catch { return null; }
+    },
+    usedBy(name) { try { const u = host?.usedBy?.('sfx', name); return Array.isArray(u) ? u : []; } catch { return []; } },
+  };
+
+  // ── state ──
+  let name = null;                      // the effect being edited (an asset name) or null
+  let sfx = null;                       // its editing form (sound-model)
+  let hist = null;
+  let lastStored = '';                  // JSON of the asset as last read from / written to the host
+  let cur = 0;                          // the tick the row editor shows
+  let rng = [0, 0];                     // the selected range (inclusive); operations act on it
+  let anchor = 0;                       // the end of the range that stays put while it is extended
+  let zoom = Number.isInteger(prefs.zoom) && prefs.zoom >= 0 ? prefs.zoom : 0;     // 0 = fit
+  let colW = 8;
+  let stroke = null;                    // {mode: 'paint' | 'select', lane, last: {i, v}, target, changed, msg}
+  let hostMarks = new Set();            // ticks the host's warnings mark
+  let hoverTick = -1;
+  let prefillKey = '';
+  let destroyed = false;
+  const cleanups = [];
+
+  // playback
+  let actx = null, src = null, playing = false, playStart = 0, playDur = 0, raf = 0, playX = -1;
+
+  const keepPrefs = () => savePrefs({ zoom });
+
+  // ── skeleton ──
+  const root = el('div', 'sfxed', null, { tabindex: '0' });
+  root.dataset.role = 'sound-editor';
+  container.append(root);
+
+  const bar = el('div', 'sfxed-bar');
+  const nameSel = el('select', 'sfxed-select', null, { 'aria-label': 'Sound effect' });
+  nameSel.style.minWidth = '110px';
+  nameSel.dataset.role = 'name';
+  nameSel.addEventListener('change', () => { if (nameSel.value) loadEffect(nameSel.value); });
+  const presetSel = select([['blank', 'blank'], ...M.PRESETS.map((p) => [p, PRESET_LABELS[p] ?? p])], 'beep', () => {}, 'The effect New starts from', 'preset');
+  const btnNew = button('New', 'Create an effect from the preset', () => newCmd(), '', 'new');
+  const btnDup = button('Duplicate', 'Copy this effect under a new name', () => duplicateCmd(), '', 'dup');
+  const btnRen = button('Rename', 'Rename this effect', () => renameCmd(), '', 'rename');
+  const btnDel = button('Delete', 'Delete this effect', () => deleteCmd(), '', 'delete');
+  bar.append(nameSel, label('preset'), presetSel, btnNew, btnDup, btnRen, btnDel);
+
+  const transport = el('div', 'sfxed-bar');
+  const btnPlay = button('▶ Play', 'Play the effect (Space)', () => play(false), 'on', 'play');
+  const btnPlayR = button('▶ Range', 'Play the selected ticks only', () => play(true), '', 'play-range');
+  const btnStop = button('■ Stop', 'Stop playing (Space)', () => stopPlay(), '', 'stop');
+  const btnUndo = button('Undo', 'Undo (Ctrl+Z)', () => undo(), '', 'undo');
+  const btnRedo = button('Redo', 'Redo (Ctrl+Y)', () => redo(), '', 'redo');
+  const zoomLabel = label('', 'Pixels per tick');
+  zoomLabel.dataset.role = 'zoom';
+  transport.append(btnPlay, btnPlayR, btnStop, sep(), btnUndo, btnRedo, sep(), button('−', 'Zoom out', () => setZoom(-1), 'sm', 'zoom-out'), zoomLabel,
+    button('+', 'Zoom in', () => setZoom(1), 'sm', 'zoom-in'), button('Fit', 'Fit the whole effect in the width', () => { zoom = 0; keepPrefs(); renderAll(); }, 'sm', 'zoom-fit'));
+
+  const warnList = el('ul', 'sfxed-warn');
+  warnList.dataset.role = 'warnings';
+  const emptyNote = el('div', 'sfxed-empty', 'No sound effects in this project yet. Pick a preset and press New.');
+  emptyNote.dataset.role = 'empty';
+  const body = el('div', 'sfxed-body');
+  body.dataset.role = 'body';
+  const msg = el('div', 'sfxed-msg');
+  msg.dataset.role = 'message';
+  root.append(bar, transport, warnList, emptyNote, body, msg);
+
+  // lanes: a label column and the scrolling canvas
+  const lanesBox = el('div', 'sfxed-lanes');
+  const labelCol = el('div', 'sfxed-labels');
+  for (const k of LANE_ORDER) {
+    if (!LANE_LABELS[k]) continue;
+    const s_ = el('span', null, LANE_LABELS[k]);
+    s_.style.top = (k === 'tmix' || k === 'nmix' ? LANES[k].y + (LANES[k].h - 12) / 2 : LANES[k].y + 1) + 'px';
+    labelCol.append(s_);
+  }
+  const noteLabels = [];
+  for (const midi of [33, 45, 57, 69, 81, 93, 105]) {                      // A1 .. A7 guides on the tone lane
+    const s = el('span', 'note', M.noteOfTone(M.toneOfNote(midi)).name);
+    s.style.top = (LANES.tone.y + toneToF(M.toneOfNote(midi)) * LANES.tone.h - 6) + 'px';
+    labelCol.append(s); noteLabels.push(s);
+  }
+  const scroller = el('div', 'sfxed-scroll');
+  scroller.dataset.role = 'scroller';
+  const canvas = el('canvas', 'sfxed-canvas');
+  canvas.dataset.role = 'lanes';
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  scroller.append(canvas);
+  lanesBox.append(labelCol, scroller);
+  const hint = el('div', 'sfxed-hint', '');
+  hint.dataset.role = 'hint';
+
+  // the row editor for the tick under the cursor
+  const rowEd = el('div', 'sfxed-row');
+  rowEd.dataset.role = 'row-editor';
+  const tickIn = input(0, 'The tick shown (0-based)', 54, 'tick-index', 'number', { min: '0', step: '1' });
+  const fIn = {
+    tone: input(0, 'Tone period 0..4095 (higher = lower pitch; frequency = 110250 / period)', 58, 'f-tone', 'number', { min: '0', max: '4095', step: '1' }),
+    vol: input(0, 'Volume 0..15', 44, 'f-vol', 'number', { min: '0', max: '15', step: '1' }),
+    noise: input(0, 'Noise period 0..31', 44, 'f-noise', 'number', { min: '0', max: '31', step: '1' }),
+    mix: input(0, 'Mixer 0..7: bit 0 = tone off, bit 1 = noise off. 6 tone only, 4 tone + noise, 5 noise only, 7 silent', 44, 'f-mix', 'number', { min: '0', max: '7', step: '1' }),
+  };
+  const noteOut = label('', 'The nearest note to the tone');
+  noteOut.dataset.role = 'note';
+  const mixOut = label('', '');
+  mixOut.dataset.role = 'mix-text';
+  tickIn.addEventListener('change', () => { const v = parseNum(tickIn.value); if (Number.isFinite(v)) selectTick(Math.round(v)); else syncRow(); });
+  for (const f of M.FIELD_NAMES) {
+    fIn[f].addEventListener('change', () => {
+      const v = parseNum(fIn[f].value);
+      edit(() => M.setTick(sfx, cur, f, v));
+    });
+  }
+  rowEd.append(label('tick'), button('◀', 'Previous tick (Left)', () => selectTick(cur - 1), 'sm', 'tick-prev'), tickIn, button('▶', 'Next tick (Right)', () => selectTick(cur + 1), 'sm', 'tick-next'),
+    sep(), label('tone'), fIn.tone, noteOut, label('vol'), fIn.vol, label('noise'), fIn.noise, label('mix'), fIn.mix, mixOut);
+
+  // range operations
+  const ops = el('div', 'sfxed-ops');
+  ops.dataset.role = 'ops';
+  const rangeLabel = label('', 'The ticks the operations below act on');
+  rangeLabel.dataset.role = 'range';
+  const insN = input(1, 'How many ticks to insert (copies of the last selected tick)', 44, 'ins-n', 'number', { min: '1', max: '1800', step: '1' });
+  const scaleF = input(0.5, 'Volume factor', 52, 'scale-f', 'number', { min: '0', step: '0.1' });
+  const swFrom = input(0, 'First tone (a number, or a note name such as A4)', 58, 'sw-from', 'text');
+  const swTo = input(0, 'Last tone (a number, or a note name such as A5)', 58, 'sw-to', 'text');
+  const swMode = select([['tone', 'linear in tone'], ['semitones', 'linear in semitones']], 'semitones', () => {}, 'Linear in the period, or in pitch (musical)', 'sw-mode');
+  const repN = input(2, 'Play the range this many times in all', 44, 'rep-n', 'number', { min: '1', max: '1800', step: '1' });
+  const setField = select(M.FIELD_NAMES.map((f) => [f, f]), 'vol', () => {}, 'The field to set', 'set-field');
+  const setVal = input(8, 'The value', 52, 'set-val', 'number', { step: '1' });
+  const rangeOf = () => [rng[0], rng[1]];
+  const opRow = (...kids) => { const r = el('div', 'sfxed-row'); r.append(...kids); return r; };
+  const selAll = button('All', 'Select every tick (Ctrl+A)', () => { anchor = 0; rng = [0, sfx.ticks.length - 1]; cur = rng[1]; renderAll(); }, 'sm', 'select-all');
+  ops.append(
+    opRow(el('b', null, 'Range'), rangeLabel, selAll),
+    opRow(el('b', null, 'Ticks'), button('Insert', 'Insert ticks after the range', () => edit(() => M.insertTicks(sfx, rng[1] + 1, parseNum(insN.value) || 0)), '', 'op-insert'), insN,
+      button('Delete', 'Delete the selected ticks (an effect keeps at least one)', () => edit(() => M.deleteTicks(sfx, ...rangeOf())), '', 'op-delete'),
+      button('Duplicate', 'Copy the range and insert the copy right after it', () => edit(() => M.duplicateRange(sfx, ...rangeOf())), '', 'op-duplicate'),
+      button('Reverse', 'Play the range backwards', () => edit(() => M.reverseRange(sfx, ...rangeOf())), '', 'op-reverse'),
+      label('repeat'), repN, button('Repeat', 'Play the range this many times in all', () => edit(() => M.repeatRange(sfx, ...rangeOf(), parseNum(repN.value))), '', 'op-repeat')),
+    opRow(el('b', null, 'Volume'), button('Scale', 'Multiply the volume of the range', () => edit(() => M.scaleVolume(sfx, ...rangeOf(), parseNum(scaleF.value))), '', 'op-scale'), label('×'), scaleF,
+      button('Fade in', 'Volume rises from 0 to what it was over the range', () => edit(() => M.fade(sfx, ...rangeOf(), 'in')), '', 'op-fade-in'),
+      button('Fade out', 'Volume falls from what it was to 0 over the range', () => edit(() => M.fade(sfx, ...rangeOf(), 'out')), '', 'op-fade-out')),
+    opRow(el('b', null, 'Pitch'), button('Sweep', 'Glide the tone from the first value to the last over the range', () => edit(() => M.sweep(sfx, ...rangeOf(), parseTone(swFrom.value), parseTone(swTo.value), swMode.value, 'tone')), '', 'op-sweep'),
+      label('from'), swFrom, label('to'), swTo, swMode),
+    opRow(el('b', null, 'Set'), button('Set', 'Set one field of every tick in the range', () => edit(() => M.setRange(sfx, ...rangeOf(), setField.value, parseNum(setVal.value))), '', 'op-set'), setField, label('='), setVal));
+
+  // thumbnail and information
+  const foot = el('div', 'sfxed-foot');
+  const wave = el('canvas', 'sfxed-wave');
+  wave.dataset.role = 'wave';
+  wave.width = 280; wave.height = 48;
+  const infoEl = el('pre', 'sfxed-info');
+  infoEl.dataset.role = 'info';
+  foot.append(wave, infoEl);
+  body.append(lanesBox, hint, rowEd, ops, foot);
+
+  // ── messages ──
+  function say(text, kind = '') {
+    msg.textContent = text;
+    msg.className = 'sfxed-msg ' + kind;
+    if (text) { try { host?.status?.(text); } catch { /* the host's status bar is optional */ } }
+  }
+
+  // ── geometry ──
+  function toneToF(tone) { return clamp(Math.log(Math.max(tone, TONE_TOP) / TONE_TOP) / LN_SPAN, 0, 1); }
+  const tickCount = () => (sfx ? sfx.ticks.length : 0);
+  const secs = (i) => i / M.REFRESH_HZ;
+  const fitColW = () => {
+    const avail = (root.clientWidth ? root.clientWidth - LABEL_W - 26 : 0) || 600;      // the root's width, not the scroller's: that one follows the canvas
+    return clamp(Math.floor(avail / Math.max(1, tickCount())), 3, 24);
+  };
+  const zoomed = () => (zoom > 0 ? zoom : fitColW());
+  function setZoom(dir) {
+    const here = zoomed();
+    let idx = ZOOMS.findIndex((v) => v >= here);
+    if (idx < 0) idx = ZOOMS.length - 1;
+    if (dir < 0 && ZOOMS[idx] >= here) idx--; else if (dir > 0 && ZOOMS[idx] <= here) idx++;
+    zoom = ZOOMS[clamp(idx, 0, ZOOMS.length - 1)];
+    keepPrefs();
+    renderAll();
+  }
+  function laneAt(y) {
+    let best = 'vol', bd = Infinity;
+    for (const k of LANE_ORDER) {
+      const L = LANES[k];
+      const d = y < L.y ? L.y - y : y > L.y + L.h ? y - (L.y + L.h) : 0;
+      if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+  }
+  function valueAt(lane, y) {
+    const L = LANES[lane];
+    const f = clamp((y - L.y) / L.h, 0, 1);
+    if (lane === 'vol') return Math.round((1 - f) * 15);
+    if (lane === 'noise') return Math.round((1 - f) * 31);
+    return clamp(Math.round(TONE_TOP * Math.exp(f * LN_SPAN)), 1, 4095);          // tone: the top of the lane is the highest pitch
+  }
+  function pointerInfo(e) {
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const i = clamp(Math.floor(x / colW), 0, Math.max(0, tickCount() - 1));
+    return { x, y, i, lane: laneAt(y) };
+  }
+
+  // ── effect loading and saving ──
+  function setEffect(s) {
+    sfx = s;
+    hist = M.createHistory(sfx, UNDO_STEPS + 1);
+  }
+  function clampSel() {
+    const n = tickCount();
+    if (!n) { cur = 0; rng = [0, 0]; anchor = 0; return; }
+    cur = clamp(cur, 0, n - 1);
+    rng = [clamp(rng[0], 0, n - 1), clamp(rng[1], 0, n - 1)];
+    if (rng[0] > rng[1]) rng = [rng[1], rng[0]];
+    anchor = clamp(anchor, 0, n - 1);
+  }
+  function loadEffect(n, keepSel = false) {
+    const asset = H.get(n);
+    if (asset === null || asset === undefined) { say(`Sound effect "${n}" is not in the project`, 'err'); return false; }
+    let s;
+    try { s = M.fromAsset(asset); } catch (e) { name = n; sfx = null; hist = null; lastStored = ''; say(`Cannot read sound effect "${n}": ${e.message}`, 'err'); renderAll(); return false; }
+    stopPlay();
+    name = n;
+    lastStored = JSON.stringify(asset);
+    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; }
+    setEffect(s);
+    clampSel();
+    renderAll();
+    return true;
+  }
+  /** Write the effect to the host; false (with the host's reason in the status line) when it refuses. */
+  function save() {
+    if (!name || !sfx) return true;
+    const asset = M.toAsset(sfx);
+    const r = H.set(name, deepCopy(asset));
+    if (r && r.ok === false) { say(`The Studio did not accept the sound effect: ${r.error ?? 'unknown reason'}`, 'err'); return false; }
+    lastStored = JSON.stringify(asset);
+    return true;
+  }
+  /**
+   * Apply an edit (fn mutates `sfx` and returns {message?, range?}), record it for undo, store it in the project and redraw.
+   * A refusal by the model (a message and no change) goes to the status line in red; a clamp (a message and a change) in amber.
+   */
+  function edit(fn) {
+    if (!sfx || stroke) return false;
+    let res;
+    try { res = fn() ?? {}; } catch (e) { say(e.message, 'err'); sfx = hist.current; clampSel(); renderAll(); return false; }
+    if (res.range) { rng = [res.range[0], res.range[1]]; anchor = rng[0]; cur = rng[0]; }
+    clampSel();
+    const changed = hist.commit(sfx);
+    if (changed && !save()) { sfx = hist.undo() ?? hist.current; clampSel(); renderAll(); return false; }
+    renderAll();
+    if (res.message) say(res.message, changed ? 'warn' : 'err');
+    else say('');
+    return changed;
+  }
+  function undo() {
+    if (!hist?.canUndo || stroke) return;
+    sfx = hist.undo();
+    clampSel();
+    save();
+    renderAll();
+  }
+  function redo() {
+    if (!hist?.canRedo || stroke) return;
+    sfx = hist.redo();
+    clampSel();
+    if (!save()) sfx = hist.undo();
+    clampSel();
+    renderAll();
+  }
+
+  // ── commands: new, duplicate, rename, delete ──
+  function uniqueName(base) {
+    const have = new Set(H.list().map((n) => n.toUpperCase()));
+    let n = base, i = 1;
+    while (have.has(n.toUpperCase())) n = base.replace(/\d+$/, '') + (++i);
+    return n;
+  }
+  function askName(question, dflt) {
+    const v = (window.prompt?.(question, dflt) ?? '').trim();
+    if (!v) return null;
+    if (!NAME_RE.test(v)) { say('A sound name is a letter followed by up to 30 letters, digits or _', 'err'); return null; }
+    if (v.toUpperCase() !== (name ?? '').toUpperCase() && H.list().some((n) => n.toUpperCase() === v.toUpperCase())) { say(`There is already a sound effect called "${v}"`, 'err'); return null; }
+    return v;
+  }
+  function newCmd() {
+    const preset = presetSel.value;
+    const n = askName('Name of the new sound effect', uniqueName(preset === 'blank' ? 'sound1' : preset));
+    if (!n) return;
+    const value = preset === 'blank' ? { ticks: [{ ...BLANK_TICK }] } : M.newSfx(preset);
+    const r = H.set(n, M.toAsset(value));
+    if (r.ok === false) { say(r.error ?? 'The Studio did not accept the sound effect', 'err'); return; }
+    loadEffect(n);
+    say(`New sound effect "${n}" (${preset}): press Play, then draw on the lanes`);
+  }
+  function duplicateCmd() {
+    if (!sfx) return;
+    const n = askName('Name of the copy', uniqueName(name + '2'));
+    if (!n) return;
+    const r = H.set(n, M.toAsset(sfx));
+    if (r.ok === false) { say(r.error ?? 'The Studio did not accept the sound effect', 'err'); return; }
+    loadEffect(n);
+    say(`Copied to "${n}"`);
+  }
+  function renameCmd() {
+    if (!sfx) return;
+    const n = askName(`Rename "${name}" to`, name);
+    if (!n || n === name) return;
+    const r = H.rename(name, n);
+    if (r.ok === false) { say(r.error ?? 'Could not rename', 'err'); return; }
+    name = n;
+    lastStored = JSON.stringify(M.toAsset(sfx));
+    renderAll();
+    say(`Renamed to "${n}". Source lines that name the old effect are not changed`);
+  }
+  function deleteCmd() {
+    if (!sfx && !name) return;
+    const users = H.usedBy(name);
+    const extra = users.length ? ` The source still uses it (${users.slice(0, 3).join(', ')}).` : '';
+    if (window.confirm && !window.confirm(`Delete the sound effect "${name}"?${extra}`)) return;
+    const old = name;
+    if (!H.del(old)) { say('Could not delete', 'err'); return; }
+    const rest = H.list();
+    name = null; sfx = null; hist = null;
+    if (rest.length) loadEffect(rest[0]); else renderAll();
+    say(`Deleted "${old}"`);
+  }
+
+  // ── selection ──
+  function selectTick(i) {
+    if (!sfx) return;
+    cur = clamp(i, 0, tickCount() - 1);
+    rng = [cur, cur]; anchor = cur;
+    ensureVisible(cur);
+    renderAll();
+  }
+  function extendTo(i) {
+    cur = clamp(i, 0, tickCount() - 1);
+    rng = [Math.min(anchor, cur), Math.max(anchor, cur)];
+    ensureVisible(cur);
+    renderAll();
+  }
+  function ensureVisible(i) {
+    const x0 = i * colW, x1 = x0 + colW;
+    if (x0 < scroller.scrollLeft) scroller.scrollLeft = x0;
+    else if (x1 > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = x1 - scroller.clientWidth;
+  }
+
+  // ── painting ──
+  /** Apply a value to ticks between the last painted tick and tick i (a drag fast enough to skip ticks leaves no gaps). */
+  function paintTo(i, v) {
+    const s = stroke, prev = s.last;
+    const from = prev ? prev.i : i, step = i >= from ? 1 : -1;
+    const v0 = prev ? prev.v : v;
+    for (let k = prev && i !== from ? from + step : from; ; k += step) {
+      const frac = i === from ? 1 : (k - from) / (i - from);
+      let r;
+      if (s.lane === 'tmix' || s.lane === 'nmix') {
+        const t = sfx.ticks[k];
+        r = M.setTick(sfx, k, 'mix', s.lane === 'tmix' ? M.mixOf(s.target, M.noiseOn(t.mix)) : M.mixOf(M.toneOn(t.mix), s.target));
+      } else if (s.lane === 'tone') {                              // the tone axis is logarithmic, so a drag glides in pitch
+        r = M.setTick(sfx, k, 'tone', Math.exp(Math.log(Math.max(1, v0)) + (Math.log(Math.max(1, v)) - Math.log(Math.max(1, v0))) * frac));
+      } else r = M.setTick(sfx, k, LANE_FIELD[s.lane], v0 + (v - v0) * frac);
+      if (r.message) s.msg = r.message;
+      if (k === i) break;
+    }
+    s.last = { i, v };
+    cur = i;
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!sfx || e.button !== 0) return;
+    root.focus({ preventScroll: true });
+    e.preventDefault();
+    const p = pointerInfo(e);
+    if (p.lane === 'ruler' || e.shiftKey) {
+      anchor = p.i; cur = p.i; rng = [p.i, p.i];
+      stroke = { mode: 'select', lane: p.lane };
+      canvas.setPointerCapture?.(e.pointerId);
+      drawLanes(); syncRow(); syncRange();
+      return;
+    }
+    const before = JSON.stringify(sfx.ticks);
+    stroke = { mode: 'paint', lane: p.lane, last: null, target: false, msg: null, before };
+    if (p.lane === 'tmix') stroke.target = !M.toneOn(sfx.ticks[p.i].mix);
+    else if (p.lane === 'nmix') stroke.target = !M.noiseOn(sfx.ticks[p.i].mix);
+    canvas.setPointerCapture?.(e.pointerId);
+    rng = [p.i, p.i]; anchor = p.i;
+    paintTo(p.i, valueAt(p.lane, p.y));
+    drawLanes(); syncRow(); syncRange();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!sfx) return;
+    const p = pointerInfo(e);
+    hoverTick = p.i;
+    if (stroke?.mode === 'select') { cur = p.i; rng = [Math.min(anchor, p.i), Math.max(anchor, p.i)]; syncRow(); syncRange(); }
+    else if (stroke?.mode === 'paint') {
+      const v = LANE_FIELD[stroke.lane] ? valueAt(stroke.lane, p.y) : 0;
+      if (!stroke.last || stroke.last.i !== p.i || stroke.last.v !== v) paintTo(p.i, v);
+      rng = [p.i, p.i]; anchor = p.i;
+      syncRow(); syncRange();
+    }
+    showHint(p);
+    drawLanes();
+  });
+  canvas.addEventListener('pointerleave', () => { hoverTick = -1; if (!stroke) { hint.textContent = ''; if (sfx) drawLanes(); } });
+  const endStroke = () => {
+    const s = stroke;
+    if (!s) return;
+    stroke = null;
+    if (s.mode === 'select') { renderAll(); return; }
+    let changed = false;
+    if (JSON.stringify(sfx.ticks) !== s.before) {
+      changed = hist.commit(sfx);
+      if (changed && !save()) { sfx = hist.undo() ?? hist.current; clampSel(); }
+    }
+    renderAll();
+    if (s.msg && changed) say(s.msg, 'warn');
+  };
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+
+  function showHint(p) {
+    const t = sfx.ticks[p.i];
+    if (!t) { hint.textContent = ''; return; }
+    let s = `tick ${p.i} (${secs(p.i).toFixed(3)} s)   tone ${t.tone}   vol ${t.vol}   noise ${t.noise}   mix ${t.mix} (${mixName(t.mix)})`;
+    if (p.lane === 'tone') {
+      const n = M.noteOfTone(valueAt('tone', p.y));
+      s += `\npointer: ${n.name} ${centsText(n.cents)}  (${n.freq.toFixed(1)} Hz, tone ${valueAt('tone', p.y)})`;
+    }
+    hint.textContent = s;
+  }
+  const mixName = (mix) => { const f = M.MIX_FORMS.find((x) => x.tone === M.toneOn(mix) && x.noise === M.noiseOn(mix)); return f ? f.label : '?'; };
+
+  // ── drawing ──
+  function drawLanes() {
+    if (!sfx) return;
+    const n = tickCount();
+    colW = zoomed();
+    const W = Math.max(1, n * colW);
+    if (canvas.width !== W || canvas.height !== LANES_H) { canvas.width = W; canvas.height = LANES_H; }
+    canvas.style.width = W + 'px'; canvas.style.height = LANES_H + 'px';
+    zoomLabel.textContent = `${colW} px/tick`;
+    const ctx = canvas.getContext('2d');
+    const cs = getComputedStyle(root);
+    const col = (v, fb) => cs.getPropertyValue(v).trim() || fb;
+    const C = {
+      bg: col('--bg', '#0d1117'), panel: col('--bg-surface', '#1c2128'), border: col('--border', '#2d333b'), borderHi: col('--border-hi', '#444c56'),
+      fg: col('--fg', '#cdd9e5'), muted: col('--fg-muted', '#768390'), amber: col('--amber-fg', '#e3b341'), ok: col('--ok-fg', '#8ddb8c'),
+      blue: col('--blue-fg', '#79c0ff'), red: col('--red-fg', '#f78166'), dim: col('--fg-dim', '#3d444c'),
+    };
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, LANES_H);
+    for (const k of ['vol', 'tone', 'noise', 'tmix', 'nmix']) { const L = LANES[k]; ctx.fillStyle = C.panel; ctx.globalAlpha = .55; ctx.fillRect(0, L.y, W, L.h); ctx.globalAlpha = 1; }
+    // ruler and vertical grid
+    const steps = [1, 2, 5, 10, 20, 50, 100, 200];
+    const stepT = steps.find((s) => s * colW >= 30) ?? 200;
+    ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < n; i += stepT) {
+      const x = i * colW;
+      ctx.fillStyle = C.border; ctx.globalAlpha = .8; ctx.fillRect(x, LANES.vol.y, 1, LANES_H - LANES.vol.y); ctx.globalAlpha = 1;
+      ctx.fillStyle = C.muted; ctx.fillText(String(i), x + 3, LANES.ruler.y + 9);
+      ctx.fillRect(x, LANES.ruler.h - 5, 1, 5);
+    }
+    // tone guide lines (A1 .. A7)
+    ctx.fillStyle = C.border;
+    for (const midi of [33, 45, 57, 69, 81, 93, 105]) ctx.fillRect(0, Math.round(LANES.tone.y + toneToF(M.toneOfNote(midi)) * LANES.tone.h), W, 1);
+    // selection
+    ctx.fillStyle = C.amber; ctx.globalAlpha = .16;
+    ctx.fillRect(rng[0] * colW, 0, (rng[1] - rng[0] + 1) * colW, LANES_H);
+    ctx.globalAlpha = 1;
+    // lanes
+    const bw = Math.max(1, colW - (colW > 3 ? 1 : 0));
+    let prev = null;
+    for (let i = 0; i < n; i++) {
+      const t = sfx.ticks[i], x = i * colW;
+      const bad = t.vol === 15 && t.tone >= M.UNSTORABLE_TONE_FROM && t.tone <= 4095 || hostMarks.has(i);
+      if (bad) { ctx.fillStyle = C.red; ctx.globalAlpha = .22; ctx.fillRect(x, LANES.vol.y, colW, LANES_H - LANES.vol.y); ctx.globalAlpha = 1; ctx.fillStyle = C.red; ctx.fillRect(x, 0, colW, 3); }
+      const tOn = M.toneOn(t.mix), nOn = M.noiseOn(t.mix);
+      // volume bar
+      const vh = Math.round(clamp(t.vol, 0, 15) / 15 * LANES.vol.h);
+      ctx.fillStyle = bad ? C.red : C.amber;
+      ctx.globalAlpha = tOn || nOn ? 1 : .35;
+      ctx.fillRect(x, LANES.vol.y + LANES.vol.h - vh, bw, vh);
+      ctx.globalAlpha = 1;
+      // noise bar
+      const nh = Math.round(clamp(t.noise, 0, 31) / 31 * LANES.noise.h);
+      ctx.fillStyle = C.blue; ctx.globalAlpha = nOn ? 1 : .3;
+      ctx.fillRect(x, LANES.noise.y + LANES.noise.h - nh, bw, nh);
+      ctx.globalAlpha = 1;
+      // mix rows
+      ctx.fillStyle = C.ok; ctx.globalAlpha = tOn ? 1 : .18; ctx.fillRect(x, LANES.tmix.y + 1, bw, LANES.tmix.h - 2); ctx.globalAlpha = 1;
+      ctx.fillStyle = C.blue; ctx.globalAlpha = nOn ? 1 : .18; ctx.fillRect(x, LANES.nmix.y + 1, bw, LANES.nmix.h - 2); ctx.globalAlpha = 1;
+      // tone curve
+      const cx = x + colW / 2, cy = LANES.tone.y + toneToF(t.tone) * LANES.tone.h;
+      if (tOn) {
+        ctx.strokeStyle = C.ok; ctx.fillStyle = C.ok; ctx.lineWidth = 1.5;
+        if (prev) { ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(cx, cy); ctx.stroke(); }
+        ctx.fillRect(Math.round(cx - 1.5), Math.round(cy - 1.5), 3, 3);
+        prev = { x: cx, y: cy };
+      } else {
+        prev = null;
+        ctx.strokeStyle = C.muted; ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(cx - 1.5) + .5, Math.round(cy - 1.5) + .5, 3, 3);
+      }
+    }
+    // the tick under the cursor and under the pointer
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = C.fg;
+    ctx.strokeRect(cur * colW + .5, LANES.vol.y - 3.5, Math.max(1, colW - 1), LANES_H - LANES.vol.y + 3);
+    if (hoverTick >= 0 && hoverTick !== cur) { ctx.strokeStyle = C.muted; ctx.strokeRect(hoverTick * colW + .5, LANES.vol.y - 3.5, Math.max(1, colW - 1), LANES_H - LANES.vol.y + 3); }
+    for (const k of LANE_ORDER.slice(1)) { ctx.fillStyle = C.borderHi; ctx.fillRect(0, LANES[k].y - 2, W, 1); }
+    if (playX >= 0) { ctx.fillStyle = C.fg; ctx.fillRect(Math.round(playX), 0, 2, LANES_H); }
+  }
+
+  function drawWave() {
+    const ctx = wave.getContext('2d');
+    const cs = getComputedStyle(root);
+    const col = (v, fb) => cs.getPropertyValue(v).trim() || fb;
+    ctx.fillStyle = col('--bg', '#0d1117'); ctx.fillRect(0, 0, wave.width, wave.height);
+    ctx.fillStyle = col('--border', '#2d333b'); ctx.fillRect(0, wave.height / 2, wave.width, 1);
+    if (!sfx || !sfx.ticks.length) return;
+    const data = M.renderSfx(sfx, { rate: 8000 });
+    const per = data.length / wave.width;
+    ctx.fillStyle = col('--amber-fg', '#e3b341');
+    for (let x = 0; x < wave.width; x++) {
+      let lo = 0, hi = 0;
+      const a = Math.floor(x * per), b = Math.max(a + 1, Math.floor((x + 1) * per));
+      for (let k = a; k < b && k < data.length; k++) { if (data[k] < lo) lo = data[k]; if (data[k] > hi) hi = data[k]; }
+      const y0 = wave.height / 2 - hi * 2 * (wave.height / 2 - 2), y1 = wave.height / 2 - lo * 2 * (wave.height / 2 - 2);
+      ctx.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+    }
+  }
+
+  // ── controls ──
+  function syncRow() {
+    if (!sfx) return;
+    const t = sfx.ticks[cur];
+    tickIn.value = String(cur);
+    tickIn.max = String(Math.max(0, tickCount() - 1));
+    if (!t) return;
+    for (const f of M.FIELD_NAMES) fIn[f].value = String(t[f]);
+    const nt = M.noteOfTone(t.tone);
+    noteOut.textContent = M.toneOn(t.mix) ? `${nt.name} ${centsText(nt.cents)}` : 'tone off';
+    mixOut.textContent = `= ${mixName(t.mix)}`;
+  }
+  function syncRange() {
+    if (!sfx) return;
+    const n = rng[1] - rng[0] + 1;
+    rangeLabel.textContent = n === 1 ? `tick ${rng[0]}` : `ticks ${rng[0]}..${rng[1]} (${n})`;
+    const key = `${name}:${rng[0]}-${rng[1]}`;
+    if (key !== prefillKey) {                                   // the sweep starts and ends where the range does
+      prefillKey = key;
+      swFrom.value = String(sfx.ticks[rng[0]]?.tone ?? 0);
+      swTo.value = String(sfx.ticks[rng[1]]?.tone ?? 0);
+    }
+  }
+  function syncControls() {
+    const has = !!sfx;
+    btnUndo.disabled = !hist?.canUndo;
+    btnRedo.disabled = !hist?.canRedo;
+    btnDup.disabled = btnRen.disabled = btnDel.disabled = !has && !name;
+    btnPlay.disabled = btnPlayR.disabled = !has;
+    btnStop.disabled = !playing;
+    btnPlay.textContent = playing ? '▶ Again' : '▶ Play';
+    const names = H.list();
+    nameSel.replaceChildren();
+    for (const n of names) { const o = el('option', null, n); o.value = n; nameSel.append(o); }
+    if (name && names.includes(name)) nameSel.value = name;
+  }
+  function renderInfo() {
+    if (!sfx) { infoEl.textContent = ''; return; }
+    const i = M.sfxInfo(sfx);
+    infoEl.replaceChildren();
+    infoEl.append(document.createTextNode(`${i.ticks} tick${i.ticks === 1 ? '' : 's'}, ${i.seconds.toFixed(2)} s\n${i.bytes} bytes on the cartridge ((ticks + 1) × 4)\n`));
+    const c = H.count();
+    if (c !== null) {
+      const line = el('span', c > M.MAX_SFX ? 'over' : '', `effects in this project: ${c} of ${M.MAX_SFX}`);
+      line.dataset.role = 'count';
+      infoEl.append(line);
+    }
+  }
+  function renderWarnings() {
+    warnList.replaceChildren();
+    hostMarks = new Set();
+    if (!sfx) return;
+    const items = [];
+    const hw = H.warnings(name);
+    const v = M.validateSfx(sfx);
+    if (hw) {
+      for (const w of hw) {
+        if (w.kind && w.kind !== 'sfx') continue;
+        items.push({ sev: w.severity === 'error' ? 'err' : 'warn', text: w.message, ticks: Array.isArray(w.ticks) ? w.ticks : [], id: w.id });
+        if (Array.isArray(w.ticks)) for (const t of w.ticks) hostMarks.add(t);
+      }
+    }
+    if (v.unstorable.length && !items.some((x) => x.id === 'sfx-unstorable')) {
+      items.push({ sev: 'err', text: v.errors.find((e) => /\$FF/.test(e)) ?? 'a tick cannot be stored', ticks: v.unstorable, id: 'sfx-unstorable' });
+    }
+    if (!hw) for (const e of v.errors) if (!/\$FF/.test(e)) items.push({ sev: 'err', text: e, ticks: [], id: 'local' });
+    for (const w of v.warnings) items.push({ sev: 'warn', text: w, ticks: [], id: 'local' });
+    for (const it of items) {
+      const li = el('li', it.sev, it.text);
+      li.dataset.id = it.id ?? '';
+      if (it.ticks.length) {
+        li.title = 'Click to go to the first marked tick';
+        li.addEventListener('click', () => selectTick(it.ticks[0]));
+      }
+      warnList.append(li);
+    }
+    for (const t of v.unstorable) hostMarks.add(t);
+  }
+  function renderAll() {
+    if (destroyed) return;
+    const has = !!sfx;
+    const names = H.list();
+    emptyNote.hidden = has || names.length > 0 || !!name;
+    body.hidden = !has;
+    warnList.hidden = !has;
+    if (has) { clampSel(); renderWarnings(); syncRow(); syncRange(); }
+    else warnList.replaceChildren();
+    syncControls();
+    if (has) { layoutLanes(); drawLanes(); drawWave(); renderInfo(); }
+    else infoEl.textContent = '';
+  }
+  function layoutLanes() {
+    colW = zoomed();
+    zoomLabel.textContent = `${colW} px/tick`;
+  }
+
+  // ── playback (Web Audio; the AudioContext is made on the first Play, which is a user gesture) ──
+  function play(rangeOnly) {
+    if (!sfx) return;
+    stopPlay();
+    const AC = window.AudioContext ?? window.webkitAudioContext;
+    if (!AC) { say('This browser has no Web Audio: the preview cannot play', 'err'); return; }
+    try { if (!actx) actx = new AC(); } catch (e) { say(`Could not start audio: ${e.message}`, 'err'); return; }
+    const asset = rangeOnly ? { ...sfx, ticks: sfx.ticks.slice(rng[0], rng[1] + 1) } : sfx;
+    const rate = actx.sampleRate || 44100;
+    const data = M.renderSfx(asset, { rate });
+    if (!data.length) { say('Nothing to play'); return; }
+    try { actx.resume?.(); } catch { /* the context may already run */ }
+    const buf = actx.createBuffer(1, data.length, rate);
+    if (typeof buf.copyToChannel === 'function') buf.copyToChannel(data, 0); else buf.getChannelData(0).set(data);
+    const node = actx.createBufferSource();
+    node.buffer = buf;
+    node.connect(actx.destination);
+    src = node;
+    node.onended = () => { if (src === node) endPlay(); };
+    node.start();
+    playing = true;
+    playStart = performance.now();
+    playDur = data.length / rate * 1000;
+    const x0 = rangeOnly ? rng[0] * colW : 0, x1 = rangeOnly ? (rng[1] + 1) * colW : tickCount() * colW;
+    const tick = () => {
+      if (!playing || destroyed) return;
+      const f = (performance.now() - playStart) / playDur;
+      if (f >= 1) { playX = -1; drawLanes(); return; }
+      playX = x0 + (x1 - x0) * f;
+      drawLanes();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    syncControls();
+  }
+  function endPlay() {
+    playing = false; src = null; playX = -1;
+    cancelAnimationFrame(raf);
+    if (!destroyed) { syncControls(); if (sfx) drawLanes(); }
+  }
+  function stopPlay() {
+    if (!playing && !src) return;
+    const node = src;
+    src = null;
+    try { if (node) { node.onended = null; node.stop(); } } catch { /* it may have ended */ }
+    endPlay();
+  }
+
+  // ── keyboard ──
+  root.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+    if (mod && k === 'a') { if (sfx) { e.preventDefault(); anchor = 0; rng = [0, tickCount() - 1]; cur = rng[1]; renderAll(); } return; }
+    if (mod || e.altKey || !sfx) return;
+    if (k === ' ' || k === 'spacebar') { if (t && t.tagName === 'BUTTON') return; e.preventDefault(); if (playing) stopPlay(); else play(false); }
+    else if (k === 'arrowleft') { e.preventDefault(); e.shiftKey ? extendTo(cur - 1) : selectTick(cur - 1); }
+    else if (k === 'arrowright') { e.preventDefault(); e.shiftKey ? extendTo(cur + 1) : selectTick(cur + 1); }
+    else if (k === 'home') { e.preventDefault(); e.shiftKey ? extendTo(0) : selectTick(0); }
+    else if (k === 'end') { e.preventDefault(); e.shiftKey ? extendTo(tickCount() - 1) : selectTick(tickCount() - 1); }
+  });
+
+  // ── host events ──
+  const unsub = [];
+  try {
+    const u = host?.onProjectChange?.((ev) => {
+      if (destroyed || !ev || ev.source === hostId) return;
+      if (ev.type === 'source') { if (sfx) renderInfo(); return; }
+      if (ev.type === 'asset' && ev.kind && ev.kind !== 'sfx') return;
+      outsideChange(ev);
+    });
+    if (typeof u === 'function') unsub.push(u);
+  } catch { /* no change events */ }
+  try {
+    const u = host?.onSelectAsset?.((ev) => { if (!destroyed && ev?.kind === 'sfx' && ev.name) select_(ev.name); });
+    if (typeof u === 'function') unsub.push(u);
+  } catch { /* no selection events */ }
+  // the colours come from CSS variables, so a theme switch needs a redraw
+  try {
+    const mo = new MutationObserver(() => { if (!destroyed && sfx) { drawLanes(); drawWave(); } });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    cleanups.push(() => mo.disconnect());
+  } catch { /* no MutationObserver */ }
+
+  function reconcile() {
+    const names = H.list();
+    if (name && names.includes(name)) {
+      const cur_ = H.get(name);
+      if (cur_ && JSON.stringify(cur_) !== lastStored) loadEffect(name, true);
+      else renderAll();
+    } else if (names.length) loadEffect(names[0]);
+    else { stopPlay(); name = null; sfx = null; hist = null; lastStored = ''; renderAll(); }
+  }
+  function outsideChange(ev) {
+    if (stroke) stroke = null;
+    const names = H.list();
+    if (ev.type === 'asset' && ev.oldName && ev.oldName === name && names.includes(ev.name)) name = ev.name;
+    reconcile();
+  }
+  function select_(n) {
+    if (!n || !H.list().includes(n)) return;
+    if (n === name && sfx) { renderAll(); return; }
+    loadEffect(n);
+  }
+
+  // ── public ──
+  function refresh() {
+    if (destroyed) return;
+    reconcile();
+  }
+  function destroy() {
+    destroyed = true;
+    stopPlay();
+    try { actx?.close?.(); } catch { /* ignore */ }
+    for (const u of unsub) { try { u(); } catch { /* ignore */ } }
+    for (const c of cleanups) c();
+    root.remove();
+  }
+
+  refresh();
+  return {
+    refresh, render: refresh, destroy, select: select_,
+    /** For tests and debugging: a copy of what is being edited. */
+    getState: () => ({
+      name, cur, range: [...rng], zoom: sfx ? colW : 0, colW, playing, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
+      asset: sfx ? M.toAsset(sfx) : null, lanes: LANES, toneTop: TONE_TOP, labelWidth: LABEL_W, marks: [...hostMarks],
+    }),
+  };
+}

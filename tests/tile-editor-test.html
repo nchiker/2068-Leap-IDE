@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- tests/tile-editor-test.html: a blank page that mounts the Studio's tile editor on a fake host that holds a project. Driven by tests/tile-editor-smoke.mjs.
+     ?theme=light|dark picks the ide.css palette; ?bare=1 removes the S2 host members (roles, assetWarnings, usedBy); ?project=platformer|shooter picks the example (default platformer). window.t exposes the host,
+     the editor and a log of what the editor did. The host validates with src/arcade-project.js, computes roles with scanRoles and asset warnings with
+     checkAssets, as the Studio's host does. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Tile editor test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } #mount { width: 1000px; } </style>
+</head>
+<body>
+<div id="mount"></div>
+<script type="module">
+import { createTileEditor } from '../src/tools/tile-editor.js';
+import * as T from '../src/tools/tile-model.js';
+import * as M from '../src/tools/map-model.js';
+import * as P from '../src/arcade-project.js';
+import { PALETTE } from '../src/tools/sprite-model.js';
+import { checkAssets } from '../src/lang/arcade/arcade-assetcheck.js';
+import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+const copy = (v) => JSON.parse(JSON.stringify(v));
+async function example(name) {
+  const [arc, assets] = await Promise.all([fetch(`../arcade/examples/${name}.arc`).then((r) => r.text()), fetch(`../arcade/examples/${name}.assets.json`).then((r) => r.json())]);
+  return P.exampleProject(name, arc, assets);
+}
+let project = await example(q.get('project') ?? 'platformer');
+
+const listeners = new Set(), selListeners = new Set();
+const log = { sets: [], deletes: [], renames: [], status: [], selects: [], validations: [] };
+const ID = 'tile-editor';
+const fire = (ev) => { for (const fn of [...listeners]) fn(ev); };
+const roles = () => { try { return scanRoles(P.buildSource(project).text); } catch { return null; } };
+const host = {
+  id: ID,
+  getProject: () => project,
+  listAssets: (kind) => P.listAssets(project, kind),
+  getAsset: (kind, name) => P.getAsset(project, kind, name),
+  setAsset(kind, name, value) {
+    const r = P.setAsset(project, kind, name, value);      // validates (validateAsset) before storing
+    log.validations.push(r.ok ? 'ok' : r.error);
+    if (!r.ok) return r;
+    log.sets.push(name);
+    fire({ type: 'asset', kind, name, source: ID });
+    return r;
+  },
+  deleteAsset(kind, name) { const ok = P.deleteAsset(project, kind, name); if (ok) { log.deletes.push(name); fire({ type: 'asset', kind, name, source: ID }); } return ok; },
+  renameAsset(kind, a, b) {
+    const r = P.renameAsset(project, kind, a, b);
+    if (r.ok) { log.renames.push([a, b]); fire({ type: 'asset', kind, name: b, oldName: a, source: ID }); }
+    return r;
+  },
+  onProjectChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+  onSelectAsset: (fn) => { selListeners.add(fn); return () => selListeners.delete(fn); },
+  selectAsset: (kind, name) => { log.selects.push(name); for (const fn of selListeners) fn({ kind, name }); },
+  getUsage: () => null,
+  status: (t) => log.status.push(t),
+  palette: PALETTE,
+  roles,
+  assetWarnings: (kind, name) => checkAssets(project, roles()).filter((w) => (kind === undefined || w.kind === kind) && (name === undefined || w.asset === name)),
+  usedBy(kind, name) {
+    const out = { assets: [], source: P.assetReferences(project, kind, name) };
+    if (kind === 'tilesets') {
+      const r = roles();
+      for (const mn of P.listAssets(project, 'maps')) {
+        const m = project.assets.maps[mn];
+        const own = typeof m.tileset === 'string' && m.tileset !== '' ? m.tileset : null;
+        if ((own ?? r?.tileset ?? null) === name) out.assets.push(mn);
+      }
+    }
+    return out;
+  },
+};
+if (q.get('bare') === '1') { delete host.roles; delete host.assetWarnings; delete host.usedBy; }   // a host without the S2 members: those features are off
+const editor = createTileEditor(document.getElementById('mount'), host);
+window.t = {
+  host, editor, log, T, M, P,
+  get project() { return project; },
+  /** An asset change made by somebody else (another editor, an example, Open). */
+  externalSet(kind, name, asset) { project.assets[kind][name] = copy(asset); fire({ type: 'asset', kind, name, source: 'other' }); },
+  /** A new project (as Open or an example does). */
+  async openExample(name) { project = await example(name); fire({ type: 'project', source: 'studio' }); },
+  replaceProject(p) { project = p; fire({ type: 'project', source: 'studio' }); },
+  /** The code editor changed a file. */
+  setSource(text) { project.files['main.arc'] = text; fire({ type: 'source', source: 'studio' }); },
+};
+window.testReady = true;
+</script>
+</body>
+</html>

@@ -16,8 +16,8 @@
    "runtime": 2,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "b4e6bc0313b95668e58b1ba4640a44551c00812f1d50a040f2cfb4089206b8ba",
-   "areaSha256": "458d572a86bf6ac5568a08b2e926e2e8f4f9e2d9212b3ba5437aac3708b79b46"
+   "dckSha256": "6b581c7c74db176db2575a949e18da81e880739d61b5aedb643f9fa98dd0fa4c",
+   "areaSha256": "3b993be6b1acc16b2222c108569737441a5e504b585a0533664bac7a0cd201c5"
   },
   {
    "src": "arcade/examples/blockfall.arc",
@@ -25,8 +25,8 @@
    "runtime": 2,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "ed72cc8453f9b16cc837b70e71626300553eb58064ca006f022a01adb78d2304",
-   "areaSha256": "4a790091bf900d948abc5c750337c745440eaa96fb482509c5584207ba922df8"
+   "dckSha256": "55855d13228ea077846d4d29513e983edbc1c0ab7f6dfead59671fd32d06d3d4",
+   "areaSha256": "2a2eba5c01fdb7d0c5c6642cae443db4a1d237246ea086d56f89aaeb2edcddc6"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -43,8 +43,8 @@
    "runtime": 2,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "c3df5736eb0330217c186c8746bb2f25dd46060914fa41b8b8fc1a934d560c6c",
-   "areaSha256": "a712eb93f54f2136b3a0904571945d57b8543dc73c53c64e8f853a50f8535a95"
+   "dckSha256": "85c0084fe1230de02af5d756d57fabb0180634bb99c2d0b155358631725bf097",
+   "areaSha256": "19ec4b4b4aee31aad31ef38a0e4d8dfd0540befa08f7f6ce16bdda115f67e634"
   }
  ]
 }
