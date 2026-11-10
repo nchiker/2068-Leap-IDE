@@ -1158,6 +1158,22 @@ tested separately.
 
 **Details: [`docs/BUILD_PHASES.md`](docs/BUILD_PHASES.md).** The phase table (1 to 8, multi-language stages, new releases) with files and status. All phases are done.
 
+## Leap Arcade and Leap Arcade Studio
+
+A second product lives in this repository next to the IDE: **Leap Arcade**, a game-building structured BASIC compiled in
+JavaScript (`src/lang/arcade/`) to native Z80 for the stock TS2068 and delivered as a DCK cartridge, and **Leap Arcade
+Studio** (`studio.html`, `studio.js`, `src/arcade-project.js`, `src/tools/sprite-*.js`), a browser editor with projects, a
+sprite editor, the compiler and the emulator. The IDE above is unchanged by it. Runtimes are `arcade/runtime/v0` to `v4`
+(published builds in `arcade/dist/`; the compiler and the Studio choose v2, v3 or v4 per program), examples are in
+`arcade/examples/` (bounce, breakout, shooter, blockfall, platformer "Leap Runner", raycaster "Vaults"). Everything about it
+(plan, contracts, language batches, hardware notes, tests, traps) starts at **`docs/HANDOFF.md`** ("Leap Arcade / Leap Arcade
+Studio") and `docs/ARCADE_PLAN.md`. Test it with `node arcade/tests/run-all.mjs`, `node tests/studio-smoke.mjs`,
+`tests/arcade-project.mjs`, `tests/sprite-editor-smoke.mjs` and `tests/sprite-model.mjs`. Run it with
+`python3 -m http.server 8080` and open `http://localhost:8080/studio.html`. All its numbers are emulator-only (TSRun, ZEsarUX
+13.0, Fuse 1.9.1); real hardware is untested.
+
+---
+
 ## Source Repositories
 
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
