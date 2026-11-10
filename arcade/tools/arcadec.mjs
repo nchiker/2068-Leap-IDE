@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // arcadec.mjs -- Leap Arcade command-line compiler (milestones M2 and M3).
-//   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime v0|v1|v2|<dir or runtime.json>] [-o out.dck]
+//   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime v0|v1|v2|v3|<dir or runtime.json>] [-o out.dck]
 // Compiles with src/lang/arcade/arcade-compile.js against a runtime build: --runtime v0 (the default) is
 // arcade/build/runtime.json + runtime.bin (build them first: node arcade/tools/build-runtime.mjs); --runtime v1 is
 // arcade/build/v1/runtime.json + runtime.bin (text, tiles, collision, sound; runtime API v1); any other value is a
@@ -19,7 +19,7 @@ const BUILD = join(HERE, '../build');
 
 function usage(msg) {
   if (msg) console.error(`arcadec: ${msg}`);
-  console.error('usage: node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime v0|v1|v2|<dir|runtime.json>] [-o out.dck]');
+  console.error('usage: node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime v0|v1|v2|v3|<dir|runtime.json>] [-o out.dck]');
   process.exit(2);
 }
 
@@ -42,7 +42,7 @@ const text = readFileSync(srcPath, 'utf8');
 const assets = assetsFile ? JSON.parse(readFileSync(resolve(assetsFile), 'utf8')) : { sprites: {} };
 const rtJson = runtimeArg === 'v0' ? join(BUILD, 'runtime.json')
   : runtimeArg === 'v1' ? join(BUILD, 'v1/runtime.json')
-  : runtimeArg === 'v2' ? join(BUILD, 'v2/runtime.json')
+  : runtimeArg === 'v3' ? join(BUILD, 'v3/runtime.json') : runtimeArg === 'v2' ? join(BUILD, 'v2/runtime.json')
   : (runtimeArg.endsWith('.json') ? resolve(runtimeArg) : join(resolve(runtimeArg), 'runtime.json'));
 if (!existsSync(rtJson)) usage(`no runtime build at ${rtJson}`);
 const runtime = JSON.parse(readFileSync(rtJson, 'utf8'));
