@@ -15,7 +15,7 @@ exists, expensive after):**
 | D3 | **Horizontal scrolling only**, camera in whole pixels, 16-bit. The window shows world rows 0..15. | What Keen needs first; vertical is a later module. |
 | D4 | **Parallax = bands** (P1): the 16 window rows are split into 1..4 bands of whole cell rows; each band has its own speed ratio and reads its own rows of the world map. **No transparent layers.** | Banded is nearly free (+237 T/band); transparent layers cost 129k-398k T (parallax RESULTS). |
 | D5 | **The world map is RAM** (`WORLD_RAM`, 2,048 bytes = 128 columns x 16 rows, one byte per cell = tile * 8, 32 tiles), copied from the game image when the scene starts. The scroll tables (pre-shifted tiles, 3,584 bytes) are **ROM data in the game image** (the compiler pre-shifts, page aligned). | Pickups and breakable blocks need to change the world; tables cost no RAM. |
-| D6 | **In window mode the world is repainted from the maps every tick**; sprites are drawn afterwards with **no erase and no skip analysis**. Sprites use **world pixel coordinates**; the runtime subtracts the camera. A sprite not wholly inside the window is **not drawn** (culled); clipping at the window edge is a later refinement (needs ring-cell repair). Sprites never write attributes (they take the cell's colours, as in v2). | Spike: stateless repaint makes both display files trivially correct; saves ~1/3 of a sprite's cost. |
+| D6 | **In window mode the world is repainted from the maps every tick**; sprites are drawn afterwards with **no erase and no skip analysis**. Sprites use **world pixel coordinates**; the runtime subtracts the camera. A sprite that overhangs the window edge is **clipped** (drawn, then the overhanging cells outside the window are restored from the cell map by ring repair; section 5). Sprites never write attributes (they take the cell's colours, as in v2). | Spike: stateless repaint makes both display files trivially correct; saves ~1/3 of a sprite's cost. |
 | D7 | **Sprite frames: up to 16 per asset (32 with the compiler's mirrored copies, `FLIP`).** Widths 8, 16, 24, 32; heights 1..48. | Platformer characters. |
 | D8 | **Tile flags** (8 bits per tile, from the tileset's `flags`): bit 0 solid, bit 1 hazard, bit 2 pickup, bit 3 ladder/one-way (game-defined), bits 4-7 game-defined. Collision queries are **runtime routines on `WORLD_RAM`** in world pixel coordinates. | Compiled loops over tiles are 5-6x dearer (batch 1 measurements). |
 
@@ -112,9 +112,12 @@ All four are `DI`-free, clobber only AF BC DE HL, and cost: `RT_TILEHIT` of a 16
 
 ## 5. Sprites in window mode
 
-`RT_SHOW` stores x, y as signed 16-bit **unclamped** (world pixels; v3 window mode only). At `draw_all` time: `sx = x - V_CAM + 8*cx`, `sy = y + 8*cy`; the instance is drawn
-only when `sx >= 8*cx`, `sx + w <= 8*(cx+24)`, `sy >= 8*cy`, `sy + h <= 8*(cy+16)`, using the phase rounding of the asset (x rounded down to a multiple of 8/phases **before** the test is
-applied to `sx`, as v2 rounds before the blit). Draw order: lowest instance first. Hidden instances and culled ones cost one test.
+`RT_SHOW` stores x, y as signed 16-bit **unclamped** (world pixels; v3 window mode only). At `draw_all` time: `sx = (x rounded down to the asset's phase granularity) - V_CAM + 8*cx`, `sy = y + 8*cy`.
+**Clipping at the window edge (in this slice, by ring repair):** an instance is drawn when its footprint `[sx, sx+w) x [sy, sy+h)` intersects the window rectangle `[8*cx, 8*(cx+24)) x [8*cy, 8*(cy+16))` AND lies
+entirely on the 256 x 192 screen (a footprint that leaves the screen is not drawn; with the default `cx`, `cy` = 4 the 32 pixel margin holds any sprite that touches the window). A footprint that misses the window is not drawn.
+After **all** instances are drawn, `ring_repair` redraws, from the cell map (`draw_cell`, bitmap and attribute, into the hidden file), every cell **outside** the window that any drawn footprint touched, so the part of a sprite that overhangs the
+window disappears and the HUD/border cells are restored. (Repair after the last draw also removes the overhang of overlapping sprites; cells are redrawn idempotently, so a cell touched twice is only wasted time.) Cost target: <= 600 T per repaired cell
+beyond `draw_cell` itself; a sprite wholly inside the window costs one rectangle test. Draw order: lowest instance first. Hidden instances and instances that miss the window cost one test.
 `RT_HIT` works on the stored world positions (16-bit compare; the v2 hit box logic with unclamped values).
 
 ## 6. Budgets (TSRun, no contention modelled; **the engineer reports measured numbers, not estimates**)
@@ -158,8 +161,8 @@ SETWORLD x, y = t                     REM statement
    with 8 walk/jump frames and `FLIP`, walkers and flyers with frames, solid and one-way platforms, hazards, collectible coins (`SETWORLD` removes them), a HUD in the cell map outside the window (score, lives),
    camera following the player, stomp/hit interaction by `HIT`, sound effects, a goal. Plays on TSRun, ZEsarUX 13.0 and Fuse 1.9.1 (screens compared as the earlier games).
 2. Runtime tests (all on TSRun, stock ROMs): the repaint equals the JS reference for every camera position of a 128-wide world (cam_max steps of 1 for one full sweep per band layout; all 8 phases; both
-   display files; attributes), edge cameras, `col0` changes on consecutive ticks, ratio 2 and fixed bands; every sprite size/frame/phase against an independent JS pre-shift and compositor, including culling at all four window
-   edges; the collision routines against JS models (random worlds, random rectangles including outside); register preservation with injected interrupts (`m5-runtime-regs` style); memory-write confinement
+   display files; attributes), edge cameras, `col0` changes on consecutive ticks, ratio 2 and fixed bands; every sprite size/frame/phase against an independent JS pre-shift and compositor, including clipping and ring repair at all four window
+   edges and corners (the HUD cells outside the window equal the cell map after every tick); the collision routines against JS models (random worlds, random rectangles including outside); register preservation with injected interrupts (`m5-runtime-regs` style); memory-write confinement
    (`m5-runtime-mem` style, the new regions disjoint, poisoned free areas untouched); a mutation run of >= 40 deliberate bugs on `scroll.asm`, the collision routines and the new blitters (all killed or justified).
 3. Compiler tests: parser/checker positive and negative for every new word, interpreter semantics, a differential run of >= 600 ticks of the platformer against the runtime (state equality per tick), fuzzed collision
    queries (>= 3,000) against the interpreter. All existing suites stay green (`node arcade/tests/run-all.mjs`).
@@ -167,5 +170,5 @@ SETWORLD x, y = t                     REM statement
 
 ## 9. Not in this slice (listed so nobody assumes it)
 
-Sprite clipping at the window edge (ring repair); vertical scrolling; window sizes other than 24 x 16; transparent layers; animated tiles; music; the Studio map/tile editors (a world-map editor and asset warnings follow:
+Vertical scrolling; window sizes other than 24 x 16; transparent layers; animated tiles; music; the Studio map/tile editors (a world-map editor and asset warnings follow:
 mixed BRIGHT-black paper, sky tile 0 not blank, background cells with differing attributes); scenes in the compiler; real hardware (the SCLD / contention question stays open, `ARCADE_HARDWARE_NOTES.md` item 0).
