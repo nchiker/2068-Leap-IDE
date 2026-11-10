@@ -114,11 +114,17 @@ export function validateAsset(kind, value) {
   }
   case 'sfx': {
     if (!Array.isArray(value.ticks)) return 'a sound effect needs "ticks": [...]';
-    if (value.ticks.length > 1800) return 'a sound effect has at most 1800 ticks';
-    for (let i = 0; i < value.ticks.length; i++) {
-      const t = value.ticks[i];
-      if (!isObj(t)) return `tick ${i} is not an object`;
-      if (!(Number.isInteger(t.tone) && t.tone >= 0 && t.tone <= 4095)) return `tick ${i}: "tone" must be 0..4095`;
+    // ticks = channel A; ticksB / ticksC (batch 5) = channels B and C, null or absent = none
+    for (const [key, who] of [['ticks', ''], ['ticksB', 'channel B '], ['ticksC', 'channel C ']]) {
+      const list = value[key];
+      if (key !== 'ticks' && (list === undefined || list === null)) continue;
+      if (!Array.isArray(list)) return `"${key}" must be an array of ticks (or null for none)`;
+      if (list.length > 1800) return `a sound effect has at most 1800 ticks${who ? ` per channel (${who.trim()} has ${list.length})` : ''}`;
+      for (let i = 0; i < list.length; i++) {
+        const t = list[i];
+        if (!isObj(t)) return `${who}tick ${i} is not an object`;
+        if (!(Number.isInteger(t.tone) && t.tone >= 0 && t.tone <= 4095)) return `${who}tick ${i}: "tone" must be 0..4095`;
+      }
     }
     return null;
   }

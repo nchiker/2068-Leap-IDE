@@ -13,6 +13,10 @@
  * (volume bars, tone curve on a log pitch axis, noise period, tone-on / noise-on rows) on one canvas, painting by pointer, a range
  * selection with the operations of contract section 6, a numeric row editor, presets, Play (Web Audio), a waveform thumbnail,
  * size / count readouts and the effect's warnings.  A stroke or an operation is one undo step and one host.setAsset().
+ *
+ * Three tracks (language batch 5): tabs A / B / C pick the AY channel being edited (B and C start empty and are stored only when they hold ticks); every
+ * lane, operation and the row editor work on the selected track; the timeline is as long as the longest track and its tone lane shows all three
+ * curves, the selected one bright; painting a track past its end extends it with silent ticks; Play mixes the channels.
  */
 
 "use strict";
@@ -24,6 +28,8 @@ const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
 const ZOOMS = [2, 3, 4, 6, 8, 12, 16, 24];
 const UNDO_STEPS = 200;
 const BLANK_TICK = { tone: 200, vol: 0, noise: 0, mix: 6 };
+const TRACK_NAMES = M.TRACKS.map((t) => t.name);
+const TRACK_COLOUR = ['ok', 'blue', 'amber'];          // the tone lane's curve colour of channel A, B, C (CSS variable families of the theme)
 const PRESET_LABELS = { beep: 'beep', laser: 'laser', blip: 'blip', explosion: 'explosion (noise)', powerup: 'power-up', hurt: 'hurt' };
 
 // Lane geometry (canvas pixels, top to bottom); labels in the label column use the same numbers.
@@ -115,6 +121,10 @@ const CSS = `
 .sfxed-msg { min-height: 16px; color: var(--fg-muted, #768390); font-size: 11px; }
 .sfxed-msg.err { color: var(--red-fg, #f78166); }
 .sfxed-msg.warn { color: var(--amber-fg, #e3b341); }
+.sfxed-tab.empty { color: var(--fg-muted, #768390); }
+.sfxed-tab.t0.on { border-color: var(--ok-fg, #8ddb8c); color: var(--ok-fg, #8ddb8c); }
+.sfxed-tab.t1.on { border-color: var(--blue-fg, #79c0ff); color: var(--blue-fg, #79c0ff); }
+.sfxed-tab.t2.on { border-color: var(--amber-fg, #e3b341); color: var(--amber-fg, #e3b341); }
 .sfxed-empty { color: var(--fg-muted, #768390); padding: 24px 8px; }
 `;
 function injectStyle() {
@@ -191,6 +201,7 @@ export function createSoundEditor(container, host) {
   let sfx = null;                       // its editing form (sound-model)
   let hist = null;
   let lastStored = '';                  // JSON of the asset as last read from / written to the host
+  let track = 0;                        // the channel being edited: 0 = A, 1 = B, 2 = C
   let cur = 0;                          // the tick the row editor shows
   let rng = [0, 0];                     // the selected range (inclusive); operations act on it
   let anchor = 0;                       // the end of the range that stays put while it is extended
@@ -236,6 +247,18 @@ export function createSoundEditor(container, host) {
   transport.append(btnPlay, btnPlayR, btnStop, sep(), btnUndo, btnRedo, sep(), button('−', 'Zoom out', () => setZoom(-1), 'sm', 'zoom-out'), zoomLabel,
     button('+', 'Zoom in', () => setZoom(1), 'sm', 'zoom-in'), button('Fit', 'Fit the whole effect in the width', () => { zoom = 0; keepPrefs(); renderAll(); }, 'sm', 'zoom-fit'));
 
+  const trackBar = el('div', 'sfxed-bar');
+  trackBar.dataset.role = 'tracks';
+  const trackBtns = TRACK_NAMES.map((n, ch) => {
+    const b = button(n, `Edit channel ${n} (the AY plays the three channels together)`, () => setTrack(ch), `sfxed-tab t${ch}`, `track-${n.toLowerCase()}`);
+    b.setAttribute('aria-pressed', 'false');
+    return b;
+  });
+  const btnClearTrack = button('Clear track', 'Remove every tick of this channel (B and C are not stored when empty)', () => edit(() => { if (track === 0) return { message: 'channel A keeps at least one tick' }; sfx[M.TRACKS[track].key].length = 0; return { message: null }; }), '', 'track-clear');
+  const trackNote = label('', 'The length of each channel; the effect lasts as long as the longest');
+  trackNote.dataset.role = 'track-note';
+  trackBar.append(label('channel'), ...trackBtns, btnClearTrack, trackNote);
+
   const warnList = el('ul', 'sfxed-warn');
   warnList.dataset.role = 'warnings';
   const emptyNote = el('div', 'sfxed-empty', 'No sound effects in this project yet. Pick a preset and press New.');
@@ -244,7 +267,7 @@ export function createSoundEditor(container, host) {
   body.dataset.role = 'body';
   const msg = el('div', 'sfxed-msg');
   msg.dataset.role = 'message';
-  root.append(bar, transport, warnList, emptyNote, body, msg);
+  root.append(bar, transport, trackBar, warnList, emptyNote, body, msg);
 
   // lanes: a label column and the scrolling canvas
   const lanesBox = el('div', 'sfxed-lanes');
@@ -289,7 +312,12 @@ export function createSoundEditor(container, host) {
   for (const f of M.FIELD_NAMES) {
     fIn[f].addEventListener('change', () => {
       const v = parseNum(fIn[f].value);
-      edit(() => M.setTick(sfx, cur, f, v));
+      edit(() => {
+        const c = M.clampField(f, v);
+        if (c.value === null) return c;
+        M.padTrack(sfx, track, cur + 1);                       // a tick past the track's end: the track grows to it
+        return M.setTick(V(), cur, f, v);
+      });
     });
   }
   rowEd.append(label('tick'), button('◀', 'Previous tick (Left)', () => selectTick(cur - 1), 'sm', 'tick-prev'), tickIn, button('▶', 'Next tick (Right)', () => selectTick(cur + 1), 'sm', 'tick-next'),
@@ -310,20 +338,20 @@ export function createSoundEditor(container, host) {
   const setVal = input(8, 'The value', 52, 'set-val', 'number', { step: '1' });
   const rangeOf = () => [rng[0], rng[1]];
   const opRow = (...kids) => { const r = el('div', 'sfxed-row'); r.append(...kids); return r; };
-  const selAll = button('All', 'Select every tick (Ctrl+A)', () => { anchor = 0; rng = [0, sfx.ticks.length - 1]; cur = rng[1]; renderAll(); }, 'sm', 'select-all');
+  const selAll = button('All', 'Select every tick (Ctrl+A)', () => { anchor = 0; rng = [0, tickCount() - 1]; cur = rng[1]; renderAll(); }, 'sm', 'select-all');
   ops.append(
     opRow(el('b', null, 'Range'), rangeLabel, selAll),
-    opRow(el('b', null, 'Ticks'), button('Insert', 'Insert ticks after the range', () => edit(() => M.insertTicks(sfx, rng[1] + 1, parseNum(insN.value) || 0)), '', 'op-insert'), insN,
-      button('Delete', 'Delete the selected ticks (an effect keeps at least one)', () => edit(() => M.deleteTicks(sfx, ...rangeOf())), '', 'op-delete'),
-      button('Duplicate', 'Copy the range and insert the copy right after it', () => edit(() => M.duplicateRange(sfx, ...rangeOf())), '', 'op-duplicate'),
-      button('Reverse', 'Play the range backwards', () => edit(() => M.reverseRange(sfx, ...rangeOf())), '', 'op-reverse'),
-      label('repeat'), repN, button('Repeat', 'Play the range this many times in all', () => edit(() => M.repeatRange(sfx, ...rangeOf(), parseNum(repN.value))), '', 'op-repeat')),
-    opRow(el('b', null, 'Volume'), button('Scale', 'Multiply the volume of the range', () => edit(() => M.scaleVolume(sfx, ...rangeOf(), parseNum(scaleF.value))), '', 'op-scale'), label('×'), scaleF,
-      button('Fade in', 'Volume rises from 0 to what it was over the range', () => edit(() => M.fade(sfx, ...rangeOf(), 'in')), '', 'op-fade-in'),
-      button('Fade out', 'Volume falls from what it was to 0 over the range', () => edit(() => M.fade(sfx, ...rangeOf(), 'out')), '', 'op-fade-out')),
-    opRow(el('b', null, 'Pitch'), button('Sweep', 'Glide the tone from the first value to the last over the range', () => edit(() => M.sweep(sfx, ...rangeOf(), parseTone(swFrom.value), parseTone(swTo.value), swMode.value, 'tone')), '', 'op-sweep'),
+    opRow(el('b', null, 'Ticks'), button('Insert', 'Insert ticks after the range', () => edit(() => M.insertTicks(V(), rng[1] + 1, parseNum(insN.value) || 0)), '', 'op-insert'), insN,
+      button('Delete', 'Delete the selected ticks (channel A keeps at least one)', () => edit(() => M.deleteTicks(V(), ...rangeOf())), '', 'op-delete'),
+      button('Duplicate', 'Copy the range and insert the copy right after it', () => edit(() => M.duplicateRange(V(), ...rangeOf())), '', 'op-duplicate'),
+      button('Reverse', 'Play the range backwards', () => edit(() => M.reverseRange(V(), ...rangeOf())), '', 'op-reverse'),
+      label('repeat'), repN, button('Repeat', 'Play the range this many times in all', () => edit(() => M.repeatRange(V(), ...rangeOf(), parseNum(repN.value))), '', 'op-repeat')),
+    opRow(el('b', null, 'Volume'), button('Scale', 'Multiply the volume of the range', () => edit(() => M.scaleVolume(V(), ...rangeOf(), parseNum(scaleF.value))), '', 'op-scale'), label('×'), scaleF,
+      button('Fade in', 'Volume rises from 0 to what it was over the range', () => edit(() => M.fade(V(), ...rangeOf(), 'in')), '', 'op-fade-in'),
+      button('Fade out', 'Volume falls from what it was to 0 over the range', () => edit(() => M.fade(V(), ...rangeOf(), 'out')), '', 'op-fade-out')),
+    opRow(el('b', null, 'Pitch'), button('Sweep', 'Glide the tone from the first value to the last over the range', () => edit(() => M.sweep(V(), ...rangeOf(), parseTone(swFrom.value), parseTone(swTo.value), swMode.value, 'tone')), '', 'op-sweep'),
       label('from'), swFrom, label('to'), swTo, swMode),
-    opRow(el('b', null, 'Set'), button('Set', 'Set one field of every tick in the range', () => edit(() => M.setRange(sfx, ...rangeOf(), setField.value, parseNum(setVal.value))), '', 'op-set'), setField, label('='), setVal));
+    opRow(el('b', null, 'Set'), button('Set', 'Set one field of every tick in the range', () => edit(() => M.setRange(V(), ...rangeOf(), setField.value, parseNum(setVal.value))), '', 'op-set'), setField, label('='), setVal));
 
   // thumbnail and information
   const foot = el('div', 'sfxed-foot');
@@ -344,7 +372,10 @@ export function createSoundEditor(container, host) {
 
   // ── geometry ──
   function toneToF(tone) { return clamp(Math.log(Math.max(tone, TONE_TOP) / TONE_TOP) / LN_SPAN, 0, 1); }
-  const tickCount = () => (sfx ? sfx.ticks.length : 0);
+  const tickCount = () => (sfx ? M.effectLength(sfx) : 0);                    // the effect: its longest track
+  const V = () => M.trackView(sfx, track);                                     // the editing functions' view of the selected track
+  const tr = () => sfx[M.TRACKS[track].key] ?? [];                              // the selected track's ticks (may be shorter than the effect)
+  const trackName = () => TRACK_NAMES[track];
   const secs = (i) => i / M.REFRESH_HZ;
   const fitColW = () => {
     const avail = (root.clientWidth ? root.clientWidth - LABEL_W - 26 : 0) || 600;      // the root's width, not the scroller's: that one follows the canvas
@@ -404,7 +435,7 @@ export function createSoundEditor(container, host) {
     stopPlay();
     name = n;
     lastStored = JSON.stringify(asset);
-    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; }
+    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; track = 0; }
     setEffect(s);
     clampSel();
     renderAll();
@@ -509,6 +540,15 @@ export function createSoundEditor(container, host) {
     say(`Deleted "${old}"`);
   }
 
+  // ── tracks ──
+  function setTrack(ch) {
+    if (!sfx || ch === track || stroke) return;
+    track = ch;
+    prefillKey = '';
+    renderAll();
+    say(tr().length ? `Editing channel ${trackName()}` : `Channel ${trackName()} is empty: draw on a lane, or press Insert, to add ticks`);
+  }
+
   // ── selection ──
   function selectTick(i) {
     if (!sfx) return;
@@ -530,20 +570,23 @@ export function createSoundEditor(container, host) {
   }
 
   // ── painting ──
+  const tracksJson = () => JSON.stringify(M.TRACKS.map(({ key }) => sfx[key] ?? []));
   /** Apply a value to ticks between the last painted tick and tick i (a drag fast enough to skip ticks leaves no gaps). */
   function paintTo(i, v) {
     const s = stroke, prev = s.last;
+    if (M.padTrack(sfx, track, Math.max(i, prev ? prev.i : i) + 1)) s.padded = true;          // painting past the track's end extends it with silent ticks
     const from = prev ? prev.i : i, step = i >= from ? 1 : -1;
+    const view = V();
     const v0 = prev ? prev.v : v;
     for (let k = prev && i !== from ? from + step : from; ; k += step) {
       const frac = i === from ? 1 : (k - from) / (i - from);
       let r;
       if (s.lane === 'tmix' || s.lane === 'nmix') {
-        const t = sfx.ticks[k];
-        r = M.setTick(sfx, k, 'mix', s.lane === 'tmix' ? M.mixOf(s.target, M.noiseOn(t.mix)) : M.mixOf(M.toneOn(t.mix), s.target));
+        const t = view.ticks[k];
+        r = M.setTick(view, k, 'mix', s.lane === 'tmix' ? M.mixOf(s.target, M.noiseOn(t.mix)) : M.mixOf(M.toneOn(t.mix), s.target));
       } else if (s.lane === 'tone') {                              // the tone axis is logarithmic, so a drag glides in pitch
-        r = M.setTick(sfx, k, 'tone', Math.exp(Math.log(Math.max(1, v0)) + (Math.log(Math.max(1, v)) - Math.log(Math.max(1, v0))) * frac));
-      } else r = M.setTick(sfx, k, LANE_FIELD[s.lane], v0 + (v - v0) * frac);
+        r = M.setTick(view, k, 'tone', Math.exp(Math.log(Math.max(1, v0)) + (Math.log(Math.max(1, v)) - Math.log(Math.max(1, v0))) * frac));
+      } else r = M.setTick(view, k, LANE_FIELD[s.lane], v0 + (v - v0) * frac);
       if (r.message) s.msg = r.message;
       if (k === i) break;
     }
@@ -562,10 +605,10 @@ export function createSoundEditor(container, host) {
       drawLanes(); syncRow(); syncRange();
       return;
     }
-    const before = JSON.stringify(sfx.ticks);
+    const before = tracksJson();
     stroke = { mode: 'paint', lane: p.lane, last: null, target: false, msg: null, before };
-    if (p.lane === 'tmix') stroke.target = !M.toneOn(sfx.ticks[p.i].mix);
-    else if (p.lane === 'nmix') stroke.target = !M.noiseOn(sfx.ticks[p.i].mix);
+    if (p.lane === 'tmix') stroke.target = !M.toneOn((tr()[p.i] ?? BLANK_TICK).mix);
+    else if (p.lane === 'nmix') stroke.target = !M.noiseOn((tr()[p.i] ?? BLANK_TICK).mix);
     canvas.setPointerCapture?.(e.pointerId);
     rng = [p.i, p.i]; anchor = p.i;
     paintTo(p.i, valueAt(p.lane, p.y));
@@ -592,7 +635,7 @@ export function createSoundEditor(container, host) {
     stroke = null;
     if (s.mode === 'select') { renderAll(); return; }
     let changed = false;
-    if (JSON.stringify(sfx.ticks) !== s.before) {
+    if (tracksJson() !== s.before) {
       changed = hist.commit(sfx);
       if (changed && !save()) { sfx = hist.undo() ?? hist.current; clampSel(); }
     }
@@ -603,8 +646,8 @@ export function createSoundEditor(container, host) {
   canvas.addEventListener('pointercancel', endStroke);
 
   function showHint(p) {
-    const t = sfx.ticks[p.i];
-    if (!t) { hint.textContent = ''; return; }
+    const t = tr()[p.i];
+    if (!t) { hint.textContent = `tick ${p.i} (${secs(p.i).toFixed(3)} s)   channel ${trackName()} has no tick here: painting adds it`; return; }
     let s = `tick ${p.i} (${secs(p.i).toFixed(3)} s)   tone ${t.tone}   vol ${t.vol}   noise ${t.noise}   mix ${t.mix} (${mixName(t.mix)})`;
     if (p.lane === 'tone') {
       const n = M.noteOfTone(valueAt('tone', p.y));
@@ -650,12 +693,31 @@ export function createSoundEditor(container, host) {
     ctx.fillStyle = C.amber; ctx.globalAlpha = .16;
     ctx.fillRect(rng[0] * colW, 0, (rng[1] - rng[0] + 1) * colW, LANES_H);
     ctx.globalAlpha = 1;
-    // lanes
+    // the other tracks' tone curves, dim (the selected track draws its own below, bright)
+    const isBad = (t) => t.vol === 15 && t.tone >= M.UNSTORABLE_TONE_FROM && t.tone <= 4095;
+    for (let ch = 0; ch < 3; ch++) {
+      if (ch === track) continue;
+      const list = sfx[M.TRACKS[ch].key] ?? [];
+      ctx.strokeStyle = ctx.fillStyle = C[TRACK_COLOUR[ch]]; ctx.lineWidth = 1.5; ctx.globalAlpha = .4;
+      let pv = null;
+      for (let i = 0; i < list.length; i++) {
+        const t = list[i], cx = i * colW + colW / 2, cy = LANES.tone.y + toneToF(t.tone) * LANES.tone.h;
+        if (M.toneOn(t.mix)) {
+          if (pv) { ctx.beginPath(); ctx.moveTo(pv.x, pv.y); ctx.lineTo(cx, cy); ctx.stroke(); }
+          ctx.fillRect(Math.round(cx - 1.5), Math.round(cy - 1.5), 3, 3);
+          pv = { x: cx, y: cy };
+        } else pv = null;
+        if (isBad(t)) { ctx.globalAlpha = 1; ctx.fillStyle = C.red; ctx.fillRect(i * colW, 0, colW, 3); ctx.fillStyle = C[TRACK_COLOUR[ch]]; ctx.globalAlpha = .4; }
+      }
+      ctx.globalAlpha = 1;
+    }
+    // lanes of the selected track
     const bw = Math.max(1, colW - (colW > 3 ? 1 : 0));
+    const mine = tr();
     let prev = null;
-    for (let i = 0; i < n; i++) {
-      const t = sfx.ticks[i], x = i * colW;
-      const bad = t.vol === 15 && t.tone >= M.UNSTORABLE_TONE_FROM && t.tone <= 4095 || hostMarks.has(i);
+    for (let i = 0; i < mine.length; i++) {
+      const t = mine[i], x = i * colW;
+      const bad = isBad(t) || hostMarks.has(i);
       if (bad) { ctx.fillStyle = C.red; ctx.globalAlpha = .22; ctx.fillRect(x, LANES.vol.y, colW, LANES_H - LANES.vol.y); ctx.globalAlpha = 1; ctx.fillStyle = C.red; ctx.fillRect(x, 0, colW, 3); }
       const tOn = M.toneOn(t.mix), nOn = M.noiseOn(t.mix);
       // volume bar
@@ -674,8 +736,9 @@ export function createSoundEditor(container, host) {
       ctx.fillStyle = C.blue; ctx.globalAlpha = nOn ? 1 : .18; ctx.fillRect(x, LANES.nmix.y + 1, bw, LANES.nmix.h - 2); ctx.globalAlpha = 1;
       // tone curve
       const cx = x + colW / 2, cy = LANES.tone.y + toneToF(t.tone) * LANES.tone.h;
+      const tc = C[TRACK_COLOUR[track]];
       if (tOn) {
-        ctx.strokeStyle = C.ok; ctx.fillStyle = C.ok; ctx.lineWidth = 1.5;
+        ctx.strokeStyle = tc; ctx.fillStyle = tc; ctx.lineWidth = 1.5;
         if (prev) { ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(cx, cy); ctx.stroke(); }
         ctx.fillRect(Math.round(cx - 1.5), Math.round(cy - 1.5), 3, 3);
         prev = { x: cx, y: cy };
@@ -683,6 +746,16 @@ export function createSoundEditor(container, host) {
         prev = null;
         ctx.strokeStyle = C.muted; ctx.lineWidth = 1;
         ctx.strokeRect(Math.round(cx - 1.5) + .5, Math.round(cy - 1.5) + .5, 3, 3);
+      }
+    }
+    // where the selected track has no ticks: shaded, and a note when it is empty
+    if (mine.length < n) {
+      ctx.fillStyle = C.bg; ctx.globalAlpha = .55;
+      ctx.fillRect(mine.length * colW, LANES.vol.y, W - mine.length * colW, LANES_H - LANES.vol.y);
+      ctx.globalAlpha = 1;
+      if (mine.length === 0) {
+        ctx.fillStyle = C.muted; ctx.font = '12px sans-serif'; ctx.textBaseline = 'middle';
+        ctx.fillText(`channel ${trackName()} is empty (not stored): draw here to add ticks`, 8, LANES.vol.y + LANES.vol.h / 2);
       }
     }
     // the tick under the cursor and under the pointer
@@ -700,7 +773,7 @@ export function createSoundEditor(container, host) {
     const col = (v, fb) => cs.getPropertyValue(v).trim() || fb;
     ctx.fillStyle = col('--bg', '#0d1117'); ctx.fillRect(0, 0, wave.width, wave.height);
     ctx.fillStyle = col('--border', '#2d333b'); ctx.fillRect(0, wave.height / 2, wave.width, 1);
-    if (!sfx || !sfx.ticks.length) return;
+    if (!sfx || !tickCount()) return;
     const data = M.renderSfx(sfx, { rate: 8000 });
     const per = data.length / wave.width;
     ctx.fillStyle = col('--amber-fg', '#e3b341');
@@ -716,10 +789,15 @@ export function createSoundEditor(container, host) {
   // ── controls ──
   function syncRow() {
     if (!sfx) return;
-    const t = sfx.ticks[cur];
+    const t = tr()[cur];
     tickIn.value = String(cur);
     tickIn.max = String(Math.max(0, tickCount() - 1));
-    if (!t) return;
+    if (!t) {                                                   // past the end of this track: nothing to show (an edit grows the track to here)
+      for (const f of M.FIELD_NAMES) fIn[f].value = '';
+      noteOut.textContent = `no tick in channel ${trackName()}`;
+      mixOut.textContent = '';
+      return;
+    }
     for (const f of M.FIELD_NAMES) fIn[f].value = String(t[f]);
     const nt = M.noteOfTone(t.tone);
     noteOut.textContent = M.toneOn(t.mix) ? `${nt.name} ${centsText(nt.cents)}` : 'tone off';
@@ -729,11 +807,11 @@ export function createSoundEditor(container, host) {
     if (!sfx) return;
     const n = rng[1] - rng[0] + 1;
     rangeLabel.textContent = n === 1 ? `tick ${rng[0]}` : `ticks ${rng[0]}..${rng[1]} (${n})`;
-    const key = `${name}:${rng[0]}-${rng[1]}`;
+    const key = `${name}:${track}:${rng[0]}-${rng[1]}`;
     if (key !== prefillKey) {                                   // the sweep starts and ends where the range does
       prefillKey = key;
-      swFrom.value = String(sfx.ticks[rng[0]]?.tone ?? 0);
-      swTo.value = String(sfx.ticks[rng[1]]?.tone ?? 0);
+      swFrom.value = String(tr()[rng[0]]?.tone ?? 0);
+      swTo.value = String(tr()[rng[1]]?.tone ?? 0);
     }
   }
   function syncControls() {
@@ -743,6 +821,16 @@ export function createSoundEditor(container, host) {
     btnDup.disabled = btnRen.disabled = btnDel.disabled = !has && !name;
     btnPlay.disabled = btnPlayR.disabled = !has;
     btnStop.disabled = !playing;
+    const lens = sfx ? M.trackLengths(sfx) : [0, 0, 0];
+    trackBtns.forEach((b, ch) => {
+      b.classList.toggle('on', has && ch === track);
+      b.classList.toggle('empty', ch > 0 && lens[ch] === 0);
+      b.setAttribute('aria-pressed', String(has && ch === track));
+      b.textContent = ch > 0 && lens[ch] === 0 ? `${TRACK_NAMES[ch]} (empty)` : TRACK_NAMES[ch];
+      b.disabled = !has;
+    });
+    btnClearTrack.disabled = !has || track === 0 || lens[track] === 0;
+    trackNote.textContent = has ? `ticks: A ${lens[0]}, B ${lens[1]}, C ${lens[2]}; the effect lasts ${Math.max(...lens)}` : '';
     btnPlay.textContent = playing ? '▶ Again' : '▶ Play';
     const names = H.list();
     nameSel.replaceChildren();
@@ -753,7 +841,8 @@ export function createSoundEditor(container, host) {
     if (!sfx) { infoEl.textContent = ''; return; }
     const i = M.sfxInfo(sfx);
     infoEl.replaceChildren();
-    infoEl.append(document.createTextNode(`${i.ticks} tick${i.ticks === 1 ? '' : 's'}, ${i.seconds.toFixed(2)} s\n${i.bytes} bytes on the cartridge ((ticks + 1) × 4)\n`));
+    const sizeRule = i.channels === 3 ? '(ticks × 12 + 4: three channels)' : '((ticks + 1) × 4)';
+    infoEl.append(document.createTextNode(`${i.ticks} tick${i.ticks === 1 ? '' : 's'}, ${i.seconds.toFixed(2)} s\n${i.bytes} bytes on the cartridge ${sizeRule}\n`));
     const c = H.count();
     if (c !== null) {
       const line = el('span', c > M.MAX_SFX ? 'over' : '', `effects in this project: ${c} of ${M.MAX_SFX}`);
@@ -768,28 +857,34 @@ export function createSoundEditor(container, host) {
     const items = [];
     const hw = H.warnings(name);
     const v = M.validateSfx(sfx);
+    const multi = M.isMulti(sfx);
+    const chIndex = (c) => Math.max(0, TRACK_NAMES.indexOf(c));
     if (hw) {
       for (const w of hw) {
         if (w.kind && w.kind !== 'sfx') continue;
-        items.push({ sev: w.severity === 'error' ? 'err' : 'warn', text: w.message, ticks: Array.isArray(w.ticks) ? w.ticks : [], id: w.id });
-        if (Array.isArray(w.ticks)) for (const t of w.ticks) hostMarks.add(t);
+        const ch = chIndex(w.channel ?? 'A');                      // a finding without a channel is channel A's
+        items.push({ sev: w.severity === 'error' ? 'err' : 'warn', text: w.message, ticks: Array.isArray(w.ticks) ? w.ticks : [], id: w.id, ch });
+        if (Array.isArray(w.ticks) && ch === track) for (const t of w.ticks) hostMarks.add(t);
       }
     }
-    if (v.unstorable.length && !items.some((x) => x.id === 'sfx-unstorable')) {
-      items.push({ sev: 'err', text: v.errors.find((e) => /\$FF/.test(e)) ?? 'a tick cannot be stored', ticks: v.unstorable, id: 'sfx-unstorable' });
+    for (const [k, nm] of TRACK_NAMES.entries()) {
+      const bad = v.byChannel[nm];
+      if (!bad.length || items.some((x) => x.id === 'sfx-unstorable' && x.ch === k)) continue;
+      const first = `${multi ? `channel ${nm} ` : ''}tick ${bad[0]}:`;
+      items.push({ sev: 'err', text: v.errors.find((e) => /\$FF/.test(e) && e.startsWith(first)) ?? 'a tick cannot be stored', ticks: bad, id: 'sfx-unstorable', ch: k });
     }
-    if (!hw) for (const e of v.errors) if (!/\$FF/.test(e)) items.push({ sev: 'err', text: e, ticks: [], id: 'local' });
-    for (const w of v.warnings) items.push({ sev: 'warn', text: w, ticks: [], id: 'local' });
+    if (!hw) for (const e of v.errors) if (!/\$FF/.test(e)) items.push({ sev: 'err', text: e, ticks: [], id: 'local', ch: 0 });
+    for (const w of v.warnings) items.push({ sev: 'warn', text: w, ticks: [], id: 'local', ch: 0 });
     for (const it of items) {
       const li = el('li', it.sev, it.text);
       li.dataset.id = it.id ?? '';
       if (it.ticks.length) {
         li.title = 'Click to go to the first marked tick';
-        li.addEventListener('click', () => selectTick(it.ticks[0]));
+        li.addEventListener('click', () => { if (it.ch !== undefined && it.ch !== track) setTrack(it.ch); selectTick(it.ticks[0]); });
       }
       warnList.append(li);
     }
-    for (const t of v.unstorable) hostMarks.add(t);
+    for (const t of v.byChannel[trackName()]) hostMarks.add(t);
   }
   function renderAll() {
     if (destroyed) return;
@@ -816,7 +911,7 @@ export function createSoundEditor(container, host) {
     const AC = window.AudioContext ?? window.webkitAudioContext;
     if (!AC) { say('This browser has no Web Audio: the preview cannot play', 'err'); return; }
     try { if (!actx) actx = new AC(); } catch (e) { say(`Could not start audio: ${e.message}`, 'err'); return; }
-    const asset = rangeOnly ? { ...sfx, ticks: sfx.ticks.slice(rng[0], rng[1] + 1) } : sfx;
+    const asset = rangeOnly ? M.sliceRange(sfx, rng[0], rng[1]) : sfx;
     const rate = actx.sampleRate || 44100;
     const data = M.renderSfx(asset, { rate });
     if (!data.length) { say('Nothing to play'); return; }
@@ -936,7 +1031,7 @@ export function createSoundEditor(container, host) {
     refresh, render: refresh, destroy, select: select_,
     /** For tests and debugging: a copy of what is being edited. */
     getState: () => ({
-      name, cur, range: [...rng], zoom: sfx ? colW : 0, colW, playing, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
+      name, track, trackLengths: sfx ? M.trackLengths(sfx) : [0, 0, 0], cur, range: [...rng], zoom: sfx ? colW : 0, colW, playing, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
       asset: sfx ? M.toAsset(sfx) : null, lanes: LANES, toneTop: TONE_TOP, labelWidth: LABEL_W, marks: [...hostMarks],
     }),
   };

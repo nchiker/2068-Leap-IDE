@@ -9,7 +9,7 @@ Programs that use none of the new words compile to the same bytes as before (the
 
 ## `TIMER`
 ```
-TIMER cooldown, flash, wait        top level or directly inside a SCENE, like DIM; scalars only
+TIMER cooldown, blink, wait        top level or directly inside a SCENE, like DIM; scalars only
 ```
 1. A timer **is** an ordinary numeric variable (read it, assign it: `cooldown = 30`; it can be passed, compared, printed) that the game also **counts down by itself**: at the start of every tick, before `PROC FRAME`
    runs, every timer in scope that is greater than 0 is decremented by 1. A value of 0 or below is left alone (a timer never counts below 0 by itself; a negative value assigned by the game stays).
@@ -34,7 +34,7 @@ TIMER cooldown, flash, wait        top level or directly inside a SCENE, like DI
 ## Code generation (A)
 8. A program that uses `TIMER`, `KEYPRESS` or `JOYPRESS` gets a **tick prologue**: the header's frame entry is a generated stub `frame$entry` that runs the prologue, then jumps to the scene's `FRAME` (with the scene driver of
    batch 4 the prologue is inserted into its `frame$entry` after the stack pointer is saved). Order inside the prologue: game-level timers, the key / stick snapshots, then (per scene, only when the scene has
-   timers) the scene's timers just before its `FRAME`. A timer step is `LD HL,(slot) / LD A,H / OR L / JR Z / DEC HL / LD (slot),HL`. Each snapshot is `LD A,code / CALL RT_KEYDOWN` (or `LD A,n / CALL RT_STICK`),
+   timers) the scene's timers just before its `FRAME`. A timer step is `LD HL,(slot)`, a skip when the value is 0 or negative (`BIT 7,H` / `LD A,H / OR L`), `DEC HL`, `LD (slot),HL` (about 15 bytes). Each snapshot is `LD A,code / CALL RT_KEYDOWN` (or `LD A,n / CALL RT_STICK`),
    then `edge = now AND (NOT before)` and `before = now` in two hidden word slots per key / stick (the high bytes stay 0 for a key, 0 for a stick: values are 0..31). `KEYPRESS(c)` is `LD HL,(edge)`.
    `symbols.keys = {press: {CODE: {before, edge}}, joy: {N: {before, edge}}}` (addresses) for tests.
 9. Programs without these words are unchanged (`entries.frame` stays `P$FRAME`).
@@ -51,11 +51,11 @@ TIMER cooldown, flash, wait        top level or directly inside a SCENE, like DI
     PRINT AT 0, 6; score USING "00000"; "  LV "; lv USING "##"
     ```
 12. **The field.** Let s be the number as signed decimal digits d (`-5` -> d = `5`, negative). Let z = the number of pattern positions from the leftmost `0` to the right end (0 when the pattern has no `0`), w = the pattern's
-    length. Digits are padded on the left with zeros up to length max(len(d), z); a `-` is put in front when the value is negative; the result is padded on the left with spaces to w characters.
+    length. Digits are padded on the left with zeros up to length max(len(d), min(z, w - n)), n = 1 for a negative value (the sign takes a position of the field), else 0; a `-` is put in front when the value is negative; the result is padded on the left with spaces to w characters.
     If it is longer than w the field prints `w` asterisks (`*`) instead (the layout never moves). Examples: `"0000"`: 7 -> `0007`, -5 -> `-005`, 12345 -> `****`; `"####"`: 7 -> `   7`, -5 -> `  -5`; `"##00"`: 7 -> `  07`,
-    -7 -> ` -07`; `"#"`: 0 -> `0`, 10 -> `*`; `-32768` needs 6 characters. Printing goes through the cursor as any text (eager wrap, no scrolling).
+    -7 -> ` -07`; `"00"`: -5 -> `-5`; `"#"`: 0 -> `0`, 10 -> `*`; `-32768` needs 6 characters. Printing goes through the cursor as any text (eager wrap, no scrolling).
 13. A compile-time constant item (a literal, a CONST, ...) is formatted at build time and joins the neighbouring text; a run-time value calls a library routine `lib$fmt` of the game image (HL = value, B = w, C = z; it prints
-    with `RT_PRINTC`), about 60 bytes, present only when used. No runtime change. `USING` with `,` / `;` separators and a trailing `;` behaves like any other item.
+    with `RT_PRINTC`), about 180 bytes (a general formatter for any value and pattern), present only when used (a further use costs 3 to 19 bytes). No runtime change. `USING` with `,` / `;` separators and a trailing `;` behaves like any other item.
 14. Interpreter: `fmtUsing(value, pattern)` (exported from `arcade-interp.js`) is the reference; the code generator's folding and `lib$fmt` must equal it for every 16-bit value (tests: all 65,536 values for 8 patterns, folded and on the machine).
 
 # Part C. PLAY by index and three-channel effects (item 9)
@@ -76,6 +76,7 @@ TIMER cooldown, flash, wait        top level or directly inside a SCENE, like DI
     order, same costs +about 25 T). With `V_SFX_CH = 3` a second routine plays one group per refresh: for channel c = A, B, C it writes tone low / high to R(2c) / R(2c+1) and the volume to R(8+c), each only when
     different from `AY_SHADOW`, then R6 and R7 (R7 = bits 0-2 the tone-off bits of A, B, C, bits 3-5 the noise-off bits, bits 6 and 7 zero: the joystick port stays an input). `RT_SILENCE` clears the volumes of all three
     channels (R8-R10, only those not already 0) and `V_SFX_ACTIVE`. The v4 runtime has 385 bytes free (v3 735, v2 about 7,000): the budget for this part is **at most 200 bytes**; the engineer reports the real number.
+    **As built:** writes go in ascending register order R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 (skipping unchanged ones); `SND_TICK3` (142 bytes) lives in the unused gap `$0068-$00FF` of chunk 0 and the sound module grew by 66 bytes (208 in all; free bytes after: v2 6,905, v3 593, v4 237); an interrupt with a three-channel effect costs about 2,160 T (a one-channel effect 758 T, +27 T from the entry test; idle 151 T); `RT_PLAY` switching from three channels to one writes zero volume to B and C once. Details in the V2 / V3 / V4 API notes.
     A one-channel game (every game so far) behaves the same: the existing sound tests pass unchanged.
 19. **Interpreter**: the record's `sfx` state is unchanged for one channel; a multi-channel effect has `channels` and `played` counts as one effect (same length rule: active while `played <= records of the longest channel`).
 20. **Studio**: the sound editor edits three tracks (tabs A / B / C; B and C empty by default; the effect's length is the longest track), the sound preview mixes the channels, `validateAsset` accepts `ticksB` / `ticksC`

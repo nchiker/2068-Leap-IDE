@@ -85,6 +85,13 @@
  *      - `VIEW x, y, a` (node View {x, y, a}) and `SETWALL x, y = t` (node SetWall {x, y, value}; y at the additive level like TILE's). COSA SINA FXMUL WALL SEEN DEPTH
  *        are ordinary built-in functions (arcade-words.js); SEEN and DEPTH take an instance reference like HIT.
  *      - The BATCH3_WORDS (reserved for variables) are read as names where an ASSET name is expected: SFX wall = "wall", PLAY wall, SHOW wall AT ..., HIT(wall, x).
+ *  18. (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md)
+ *      - `TIMER a, b, c` is parsed by the same code as DIM (top level, in a SCENE, or in a PROC for the checker to refuse) and gives a Dim node with `timer: true`: a timer is an ordinary
+ *        scalar variable, so every walker that knows Dim / variables handles it; the checker refuses a size, an initialiser and a $ name.
+ *      - `PRINT item USING "pattern"`: after an item the contextual word USING (an ident) takes a string literal; the Print node then has `usings` (parallel to `items`: null, or
+ *        {pattern, line, col, endCol}); without any USING the node has no `usings` at all. A USING that is not followed by a string literal is an error.
+ *      - `PLAY expr`: a bare Ident (not in brackets) stays `Play {sfx: Ident}`; the checker, the interpreter and the code generator read it as an effect NAME when an SFX of that name
+ *        is declared, else as a variable (`PLAY n`). Any other expression, and `PLAY (name)`, is `Play {sfx: null, index: expr}`.
  */
 
 "use strict";
@@ -365,8 +372,8 @@ class Parser {
         (scene ? scene : prog).items.push(p);
         return;
       }
-      if (v === 'DIM' || v === 'DEF' || v === 'CONST') {
-        const d = v === 'DIM' ? this.dim() : v === 'CONST' ? this.constDecl() : this.defFn();
+      if (v === 'DIM' || v === 'DEF' || v === 'CONST' || v === 'TIMER') {
+        const d = v === 'DIM' ? this.dim() : v === 'TIMER' ? this.dim(true) : v === 'CONST' ? this.constDecl() : this.defFn();
         (scene ? scene : prog).decls.push(d);
         (scene ? scene : prog).items.push(d);
         return;
@@ -489,11 +496,11 @@ class Parser {
     return proc;
   }
 
-  dim() {
+  dim(timer = false) {
     const st = this.next();
     const items = [];
     for (;;) {
-      const n = this.expectName('a variable name');
+      const n = this.expectName(timer ? 'a timer name' : 'a variable name');
       const item = { name: n.text, line: n.line, col: n.col, endCol: n.end, size: null, dims: null, init: null };
       if (isSym(this.peek(), '(')) {
         this.next();
@@ -531,7 +538,7 @@ class Parser {
       if (isSym(this.peek(), ',')) { this.next(); continue; }
       break;
     }
-    return this.close(this.mk('Dim', st, { items }));
+    return this.close(this.mk('Dim', st, timer ? { items, timer: true } : { items }));
   }
 
   constDecl() {
@@ -616,6 +623,7 @@ class Parser {
       case 'SELECT': return this.selectStmt();
       case 'CALL': return this.callStmt();
       case 'DIM': return this.dim();
+      case 'TIMER': return this.dim(true);
       case 'CONST': return this.constDecl();
       case 'DEF': return this.defFn();
       case 'LOCAL': return this.localStmt();
@@ -672,7 +680,14 @@ class Parser {
       case 'WINDOW': this.fail(t, 'WINDOW must be at the top level, outside any PROC');
       // falls through (fail throws)
       case 'HIDE': { this.next(); return this.close(this.mk('Hide', t, { sprite: this.spriteRef() })); }
-      case 'PLAY': { this.next(); return this.close(this.mk('Play', t, { sfx: this.nameRef('a sound effect name') })); }
+      case 'PLAY': {
+        this.next();
+        const a = this.peek();
+        if (isEnd(a) || isBlockWord(a)) this.fail(a, `expected a sound effect name or number but found ${describe(a)}`);
+        const arg = this.expr();
+        if (arg.type === 'Ident' && !arg.parens) return this.close(this.mk('Play', t, { sfx: arg }));      // a bare name: an SFX (or, if none has that name, a variable: the checker decides)
+        return this.close(this.mk('Play', t, { sfx: null, index: arg }));
+      }
       case 'ENTER': { this.next(); return this.close(this.mk('Enter', t, { scene: this.nameRef('a scene name', true) })); }
       case 'SILENCE': this.next(); return this.mk('Silence', t, {});
       case 'CLS': this.next(); return this.mk('Cls', t, {});
@@ -785,6 +800,15 @@ class Parser {
     if (!ends(this.peek())) {
       for (;;) {
         node.items.push(this.expr());
+        const u = this.peek();
+        if (u.type === 'ident' && u.value === 'USING') {      // batch 5: item USING "pattern" (contextual word)
+          this.next();
+          const pt = this.peek();
+          if (pt.type !== 'string') this.fail(pt.type === 'newline' || pt.type === 'eof' ? u : pt, 'USING needs a pattern of # and 0 written out, up to 8 characters');
+          this.next();
+          node.usings ??= [];
+          node.usings[node.items.length - 1] = { pattern: pt.value, line: pt.line, col: pt.col, endCol: pt.end };
+        }
         const s = this.peek();
         if (isSym(s, ';') || isSym(s, ',')) {
           this.next();
@@ -795,6 +819,7 @@ class Parser {
         break;
       }
     } else if (prefixSepSeen && (node.at || node.tab)) node.trailing = ';';     // PRINT AT r, c;  with no items only positions the cursor
+    if (node.usings) node.usings = Array.from({ length: node.items.length }, (_, i) => node.usings[i] ?? null);
     return this.close(node);
   }
 

@@ -26,8 +26,8 @@ const CG = 'src/lang/arcade/arcade-codegen.js', IN = 'src/lang/arcade/arcade-int
 const E = (file, from, to) => ({ file, from, to });
 const MUTANTS = [
   // ---- the driver: frame dispatch, ENTER, scene start ----
-  ['frame dispatch: the first test is DEC A instead of OR A (scene 0 is entered at index 1)', [E(CG, "for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', labelOf('P', 'FRAME', k)); }", "for (let k = 0; k < n - 1; k++) { e.dec('a'); e.jp('z', labelOf('P', 'FRAME', k)); }")]],
-  ['frame dispatch: the last scene is the fall-through of scene 0', [E(CG, "    e.jp(labelOf('P', 'FRAME', n - 1));\n    e.label('scn$enter');", "    e.jp(labelOf('P', 'FRAME', 0));\n    e.label('scn$enter');")]],
+  ['frame dispatch: the first test is DEC A instead of OR A (scene 0 is entered at index 1)', [E(CG, "for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', target(k)); }", "for (let k = 0; k < n - 1; k++) { e.dec('a'); e.jp('z', target(k)); }")]],
+  ['frame dispatch: the last scene is the fall-through of scene 0', [E(CG, "    e.jp(target(n - 1));", "    e.jp(target(0));")]],
   ['frame dispatch: the stack pointer is not saved at the frame entry (ENTER from FRAME returns to a stale SP)', [E(CG, "    e.label('frame$entry');\n    e.ld(M(spAddr), 'sp');", "    e.label('frame$entry');")]],
   ['entry$init: the stack pointer is not saved (ENTER from the first INIT)', [E(CG, "else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }", "else { e.jp(labelOf('P', 'INIT', 0)); }")]],
   ['scn$enter: the stack is not cut back (the abandoned PROCs stay on it)', [E(CG, "e.ld('sp', M(spAddr)); e.push('af'); e.call('scn$reset');", "e.push('af'); e.call('scn$reset');")]],

@@ -19,7 +19,7 @@ import { parse, tokenize } from './arcade-parse.js';
  *   scenes: {name: string, line: number, col: number}[],
  *   procs:  {name: string, param: string|null, params: string[], locals: string[], scene: string|null, line: number, col: number}[],
  *   fns:    {name: string, param: string, line: number, col: number}[],
- *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number}[],
+ *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number, timer?: true}[],     (language batch 5: a TIMER is listed here, with `timer: true`)
  *   consts: {name: string, scene: string|null, line: number, col: number}[],     (language batch 1: CONST name = expr)
  *   enters: {from: string|null, to: string, line: number, col: number}[],        (language batch 4: every ENTER statement in source order; `from` is the enclosing scene's name, null in a top-level PROC;
  *                                                                                  line / col are the target name's position)
@@ -35,7 +35,7 @@ export function scanArcade(text) {
       if (d.type === 'Dim') {
         for (const it of d.items ?? []) {
           const num = (e) => (e && e.type === 'Number' ? e.value : null);
-          out.vars.push({ name: it.name, size: it.size ?? num(it.dims?.[0]), size2: num(it.dims?.[1]), dims: it.dims ? it.dims.length : 0, scene, line: it.line, col: it.col });
+          out.vars.push({ name: it.name, size: it.size ?? num(it.dims?.[0]), size2: num(it.dims?.[1]), dims: it.dims ? it.dims.length : 0, scene, line: it.line, col: it.col, ...(d.timer ? { timer: true } : {}) });
         }
       } else if (d.type === 'Const') {
         const p = d.namePos ?? d;
@@ -213,9 +213,9 @@ export function indentLevel(structure, n) {
 /** What the program reads from the player: ["Joystick 1 (arrow keys + Space here)", "Keys: Q A O P Space"]. */
 export function inputHints(text) {
   const hints = [];
-  if (/\bSTICK\s*\(\s*1\s*\)/i.test(text) || /\bSTICK\s*\(/i.test(text)) hints.push('Joystick: arrow keys, Space = fire');
+  if (/\b(?:STICK|JOYPRESS)\s*\(/i.test(text)) hints.push('Joystick: arrow keys, Space = fire');
   const keys = [];
-  for (const m of text.matchAll(/\bKEYDOWN\s*\(\s*(?:"(.)"|(\d+))\s*\)/gi)) {
+  for (const m of text.matchAll(/\b(?:KEYDOWN|KEYPRESS)\s*\(\s*(?:"(.)"|(\d+))\s*\)/gi)) {
     const k = m[1] !== undefined ? m[1].toUpperCase() : (Number(m[2]) === 32 ? ' ' : Number(m[2]) === 13 ? 'ENTER' : String.fromCharCode(Number(m[2])));
     const label = k === ' ' ? 'Space' : k;
     if (!keys.includes(label)) keys.push(label);

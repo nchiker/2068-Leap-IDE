@@ -298,3 +298,27 @@ and the collision model takes one representative of each kind of row / column ou
 stick input changes, because it sets the joystick at frame boundaries for "the tick about to run", while a window tick starts in the middle of a frame
 (STICK then reads the previous tick's value). Setting the joystick when `PROC FRAME` is entered (a scratch copy of the test), all five programs agree
 with the interpreter: the miniature platformer (600 ticks), the two short programs, and `platformer.arc` (863 and 375 ticks).
+
+## As built: three-channel effects (language batch 5 Part C, 2026-11-10)
+
+`sound.asm` is the same file in v2, v3 and v4; contract: `docs/ARCADE_LANGUAGE_BATCH5.md` Part C items 16-19. **New variable `V_SFX_CH` = `VARS+$80` (`$E080`; boot zeroes it, 0 = one channel)**, in
+`runtime.json` `symbols`. An effect is as before (4-byte records, terminator = a record whose byte 1 is `$FF`) except that when **byte 3 of its first record is 3** it is a run of 12-byte GROUPS (the
+records of AY channels A, B, C of one refresh; the terminator is one 4-byte record in place of a group, tested on the first record of the group). `RT_PLAY` reads that byte into `V_SFX_CH` (3 = three
+channels, anything else = 1) after clearing `V_SFX_ACTIVE`, then writes `V_SFX_CH`, `V_SFX_PTR` and sets `V_SFX_ACTIVE` (so the interrupt never sees a new pointer with the old mode). **When a one-channel
+effect replaces a three-channel one (`V_SFX_CH` was 3), `RT_PLAY` writes volume 0 to B and C once (R9, R10, each only if its `AY_SHADOW` is not 0)**; a one-channel effect never touches R2-R5, R9, R10.
+`SND_TICK` with `V_SFX_CH` <> 3 is the one-channel code of before with ONE added test at its start (`LD A,(V_SFX_CH) / CP 3 / JR Z`, 27 T); with 3, `SND_TICK3` plays one group per refresh and
+writes, **in this order** and each only when different from `AY_SHADOW`: R0 R1 (A tone), R2 R3 (B), R4 R5 (C), R6, R7, R8 R9 R10 (volumes). (The contract lists the registers per channel, tone low / high
+then volume; the AY cannot tell the order within one interrupt; this order is the ascending one, as the one-channel code's.) R6 = the `noise` AND 31 of the lowest channel whose record has noise on
+(mix bit 1 = 0), none: channel A's; R7 = bits 0-2 tone off (mix bit 0) of A, B, C, bits 3-5 noise off (mix bit 1), bits 6-7 zero (the joystick port stays an input). Bytes 3 of the records and the
+mix bit 2 are ignored; a B or C record with byte 1 = `$FF` (tone 3840..4095 with volume 15) is a normal record. The terminator of a three-channel effect: `V_SFX_ACTIVE` = 0 and R8, R9, R10 = 0 (those not
+already 0). `RT_SILENCE` clears `V_SFX_ACTIVE` first, then writes R8 = R9 = R10 = 0 (only those not already 0); it still clobbers only AF.
+**Where it lives (a surprise): `SND_TICK3` (142 bytes) is in the unused gap `$0068-$00FF` of DOCK chunk 0** (`ORG $0068` inside `sound.asm`, `ASSERT` it ends by `$0100`), because the v4 runtime has only
+`$4000 - RT_END` bytes after its last module (104 now), less than the code needs; the same place in all three builds. `SND_W` and the entry test are in the module as before (`SND_S`..`SND_E`);
+`SND_TICK3` is the interrupt's code but outside that range (tests that classify the interrupt by `SND_S..SND_E` see its first instruction only).
+**Size** (bytes free by `build-runtime-vN.mjs`, modules summed): v2 7,047 -> 6,905, v3 735 -> 593, v4 385 -> 237; the module `sound` went from 201 to 267 bytes (+66, of which v4's `sprite` module's
+alignment padding absorbs 60: `RT_END` $3F92 -> $3F98) and `SND_TICK3` is 142; 208 bytes of code in all. **Stack:** the three-channel tick pushes BC, DE, HL and calls `SND_W` (up to 6 bytes deeper than
+the one-channel tick at the terminator, where it calls `RT_SILENCE`: 16 bytes below the interrupted SP, PC and AF of the interrupt included, against 10).
+**Costs** (TSRun, whole interrupt from acceptance to RET, T-states): no effect 151 (unchanged); one channel 758 median / 760 worst (before: 731 / 733: **+27 T exactly**, every refresh, the writes
+identical); three channels 2,162 median / 2,188 worst over random effects, 2,175 when all eleven registers change, 1,691 when nothing changes (3.7 % of a refresh of 58,688 T at worst). The flip and the frame counter still run first, but the 800 T bound of the 2026-11-09 sound-tick decision (`ARCADE_RUNTIME_API_V1.md`) was set for one channel and a three-channel refresh is about 2.7 times over it (decision for the owner; a faster tick needs more code than the gap holds). `RT_PLAY` 269 T
+(539 T when it silences B and C), `RT_SILENCE` 270 T (234 T when already silent). Tests: `arcade/tests/m10-runtime-sound.mjs` (model of every refresh's writes on v2, v3 and v4, RT_PLAY over RT_PLAY in
+every 1 / 3-channel combination, an interrupt at every instruction of RT_PLAY / RT_SILENCE, register discipline, costs, one-channel code identical).

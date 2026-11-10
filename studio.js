@@ -284,7 +284,10 @@ function assetMeta(kind, a) {
   if (kind === 'sprites') return `${a.w}×${a.h}${(a.frames?.length ?? 1) > 1 ? ` ×${a.frames.length}` : ''}`;
   if (kind === 'tilesets') return `${(a.tiles ?? a.frames ?? []).length} tiles`;
   if (kind === 'maps') return `${a.w}×${a.h}`;
-  if (kind === 'sfx') return `${a.ticks?.length ?? 0} ticks`;
+  if (kind === 'sfx') {                          // the effect lasts as long as its longest channel; B / C (batch 5) are listed when used
+    const n = (k) => (Array.isArray(a[k]) ? a[k].length : 0);
+    return `${Math.max(n('ticks'), n('ticksB'), n('ticksC'))} ticks${n('ticksB') || n('ticksC') ? ', 3 channels' : ''}`;
+  }
   return '';
 }
 

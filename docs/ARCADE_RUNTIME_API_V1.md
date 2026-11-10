@@ -110,6 +110,8 @@ so even the ideal per-register-compare design cannot be under 120 T for two chan
 What would meet it: `RT_PLAY` expands the effect (up to ~96 records in the free 384 bytes at `$D680`) into a delta list "n, n x (register, value)" in RAM, the interrupt then costs
 about 110 T for a refresh with no change and +48 T per register write; the price is a copy cost in `RT_PLAY` (~120 T per record) and the cap. Not done; decision for the owner.
 
+**Three-channel effects (batch 5, v2/v3/v4 only; v1 is unchanged):** byte 3 of an effect's first record = 3 makes it groups of three records for AY channels A, B, C, with a new variable `V_SFX_CH`; the one-channel code above is unchanged except for one added test (+27 T). See "As built: three-channel effects" in `ARCADE_RUNTIME_API_V2.md`, `_V3.md` and `_V4.md`. The 800 T bound above is not kept by a three-channel refresh (about 2,160 T): see the V2 note.
+
 **T-states** (TSRun, `m3-runtime-perf.mjs`; a refresh is 58,688 T): `draw_cell` 333 T; erase of a cell 209 T (bitmap only); `redraw_dirty` clean 1,339 T, 460 T per cell for contiguous cells
 (716 T scattered one per dirty byte); `RT_PRINTC` 466 T changed / 298 T unchanged; `RT_PRINTS` 553 / 385 T per character; `RT_PRINTN(12345)` 3,508 T; `RT_TILE` 402 / 234 T; `RT_CLS` 69,254 T
 (58,454 T on a clear screen: 1 refresh); `RT_HIT` 1,770-1,890 T for two visible sprites (128 T for a bad index); `RT_TILEAT` 182 T. A character costs its call (466 T) plus one redraw in each file (2 x ~430 T), in two consecutive ticks. Tick overhead with a full

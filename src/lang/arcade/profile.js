@@ -61,7 +61,7 @@ const help = {
   },
   tips: [
     'Run (F5) compiles the whole project with its assets and starts the cartridge on a stock TS2068 in the display. Errors are underlined about half a second after you stop typing; the size panel shows how much of the game\'s 16 KB is used.',
-    'Click the TS2068 screen to give it the keyboard: the arrow keys and Space are joystick 1; letter keys reach KEYDOWN("Q") and the like.',
+    'Click the TS2068 screen to give it the keyboard: the arrow keys and Space are joystick 1; letter keys reach KEYDOWN("Q"), KEYPRESS("Q") and the like.',
     'A project is several source files and its assets (sprites, tiles, maps, sound). main.arc comes first, the other files follow in alphabetical order; Save downloads the whole project as a .leapgame file.',
   ],
 };
@@ -81,7 +81,7 @@ function symbolGroups(text) {
     ['Procedures', s.procs.map((p) => [`${p.name}(${(p.params ?? (p.param !== null ? [p.param] : [])).join(', ')})`, p.line])],
     ['Functions', s.fns.map((f) => [`FN ${f.name}(${f.param})`, f.line])],
     ['Assets', s.assets.map((a) => [`${a.kind.toLowerCase()} ${a.name}${a.count ? `(${a.count})` : ''}`, a.line])],
-    ['Variables', s.vars.map((v) => [v.dims === 2 ? `${v.name}(${v.size ?? '?'}, ${v.size2 ?? '?'})` : v.dims === 1 ? `${v.name}(${v.size ?? '?'})` : v.name, v.line])],
+    ['Variables', s.vars.map((v) => [v.dims === 2 ? `${v.name}(${v.size ?? '?'}, ${v.size2 ?? '?'})` : v.dims === 1 ? `${v.name}(${v.size ?? '?'})` : v.timer ? `${v.name} (timer)` : v.name, v.line])],
   ];
 }
 

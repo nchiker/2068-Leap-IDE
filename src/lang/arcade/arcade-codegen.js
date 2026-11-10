@@ -123,6 +123,20 @@
  *  B4-2. Name scopes: the game level and one per scene (useCtx swaps consts / varSlots / arrays / procs / fns); a callable is scanned, followed and generated in its home scope. A scene's slots are one block
  *        after the game-level slots; labels are P$s<k>$NAME for scene PROCs of a multi-scene game; symbols / procs / fns / vars / arrays are keyed SCENE.NAME for a scene's own names (plain with one scene).
  *
+ * ── Language batch 5 (docs/ARCADE_LANGUAGE_BATCH5.md; v2 runtime or later) ─────────────────────────────────────────────────────────────────────
+ *  B5-1. TIMER a, b: a Dim node with `timer: true`, so a timer is an ordinary slot in the variable block (a scene's timers inside that scene's slot block: zeroed at every entry). A program with a
+ *        timer, KEYPRESS or JOYPRESS has a TICK PROLOGUE: the header's frame entry is `frame$entry` (a stub that falls into `JP P$FRAME`, or, with the scene driver, the driver's own frame$entry
+ *        after the stack pointer is saved). In this order: every game-level timer, the key and stick snapshots, then the current scene's timers (the driver dispatches on the scene first and a
+ *        scene with timers goes through `frame$tm$k`). A timer step is LD HL,(slot) / BIT 7,H / JR NZ / LD A,H / OR L / JR Z / DEC HL / LD (slot),HL (15 bytes): a timer is decremented only while it
+ *        is above 0 (a negative value stays; the contract's first sentence, item 1, wins over the LD A,H / OR L shorthand of item 8, which would count a negative value towards 32767).
+ *  B5-2. KEYPRESS(c) / JOYPRESS(n): for every key / stick the reachable code names, the prologue calls RT_KEYDOWN (A = code) or RT_STICK (A = n), and keeps two hidden word slots, `before` and `edge`
+ *        (only the low byte is ever written, the high byte stays 0): edge = now AND NOT before, before = now (17 bytes a key, the same for a stick). The slots are game-level hidden slots allocated after
+ *        every scene's block, so ENTER neither clears nor copies them. KEYPRESS(c) / JOYPRESS(n) = LD HL,(edge). symbols.keys = {press: {CODE: {before, edge}}, joy: {N: {before, edge}}}.
+ *  B5-3. PRINT item USING "pattern": a constant item is formatted here (usingText, written apart from the interpreter's fmtUsing) and joins the neighbouring text; a run-time value is
+ *        `gen(value); LD BC,w << 8 | z; CALL lib$fmt` (HL = value, B = w, C = z; prints with RT_PRINTC; AF BC DE HL clobbered, 6 bytes of stack of its own, present only when used).
+ *  B5-4. PLAY expr: a bare name that is a declared SFX is the old `LD A,index / CALL RT_PLAY`; any other expression is evaluated, then LD A,H / OR A / JR NZ,skip / LD A,L / CALL RT_PLAY (RT_PLAY
+ *        ignores an index past its table and leaves the effect that is playing alone); a constant index makes the call when it is 0..255 and none otherwise (the interpreter agrees).
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -211,6 +225,24 @@ const RT_OF = { CAMX: null, WORLDTILE: 'RT_WORLDTILE', TILEFLAGS: 'RT_TILEFLAGS'
 const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name === 'STR$') || (e.type === 'Binary' && e.op === '+' && isStrExpr(e.left) && isStrExpr(e.right));
 
 /**
+ * PRINT item USING "pattern" folded at build time (language batch 5, contract item 12). Written apart from the interpreter's fmtUsing (no padStart, the digits taken one by one): the two
+ * must agree for every 16-bit value. `v` is a signed 16-bit number, `pattern` 1 to 8 of # and 0. The minus takes a column, so zeros that fill the whole field give way to it.
+ */
+export function usingText(v, pattern) {
+  const w = pattern.length, firstZero = pattern.indexOf('0'), z = firstZero < 0 ? 0 : w - firstZero;
+  const digits = [];
+  for (let m = Math.abs(v); m > 0; m = Math.floor(m / 10)) digits.unshift(String(m % 10));
+  if (digits.length === 0) digits.push('0');
+  const neg = v < 0;
+  if (digits.length + (neg ? 1 : 0) > w) return '*'.repeat(w);
+  let body = digits.join('');
+  while (body.length < z && body.length + (neg ? 1 : 0) < w) body = '0' + body;
+  if (neg) body = '-' + body;
+  while (body.length < w) body = ' ' + body;
+  return body;
+}
+
+/**
  * @param {object} ast
  * @param {{symbols: Object<string, number>, constants: Object<string, number>}} runtime
  * @param {object} [assets]
@@ -257,6 +289,9 @@ export function generate(ast, runtime, assets = {}) {
     for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object' && containsType(n[k], t)) return true;
     return false;
   };
+  // language batch 5: TIMER needs the v2 runtime like every v2 feature (the refusal text of ENTER)
+  const timersOf = (holder) => (holder.decls ?? []).filter((d) => d.type === 'Dim' && d.timer);
+  if (!v2) for (const d of [...timersOf(ast), ...scenes.flatMap(timersOf)]) err(d, `TIMER is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
   const driver = v2 && (multi || containsType(scenes, 'Enter'));      // the scene driver (contract section 5): several scenes, or an ENTER (of itself)
 
   const sprites = [];                               // v0/v1: {name, key, asset, node, w, h, data, hot} per sprite; v2: per distinct ASSET
@@ -615,6 +650,12 @@ export function generate(ast, runtime, assets = {}) {
       case 'Binary': scanExpr(e.left); scanExpr(e.right); return;
       case 'FnCall': scanExpr(e.arg); return;
       case 'Func':
+        if (e.name === 'KEYPRESS' || e.name === 'JOYPRESS') {            // language batch 5: the edges need RT_KEYDOWN / RT_STICK (v2); the key / stick is written out (checked by the checker)
+          const rt = e.name === 'KEYPRESS' ? 'RT_KEYDOWN' : 'RT_STICK';
+          if (!v2) err(e, `${e.name}(...) is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
+          else if (sym[rt] === undefined) err(e, `${e.name}(...) needs ${rt}, which this runtime does not provide`);
+          return;
+        }
         if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name)) && !(v3 && V3_FUNCS.has(e.name)) && !(v4 && V4_FUNCS.has(e.name))) {
           if (V4_FUNCS.has(e.name)) err(e, `${e.name}() needs the v4 runtime (build with --runtime v4)`); else notYet(e, `${e.name}(...)`);
           return;
@@ -743,7 +784,8 @@ export function generate(ast, runtime, assets = {}) {
             scanExpr(s.x); scanExpr(s.y); scanExpr(s.value);
             break;
           case 'Color': scanExpr(s.value); break;
-          default: break;                     // Play, Silence, Cls
+          case 'Play': if (s.index || (s.sfx && !sfxIndex.has(up(s.sfx.name)))) scanExpr(s.index ?? s.sfx); break;      // batch 5: an effect index is an expression
+          default: break;                     // Silence, Cls
         }
         continue;
       }
@@ -826,6 +868,7 @@ export function generate(ast, runtime, assets = {}) {
           case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
           case 'Color': ex(s.value); break;
+          case 'Play': if (s.index || (s.sfx && !sfxIndex.has(up(s.sfx.name)))) ex(s.index ?? s.sfx); break;
           default: break;
         }
       }
@@ -896,6 +939,7 @@ export function generate(ast, runtime, assets = {}) {
           case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } s.items.forEach((x) => ex(x, active)); break;
           case 'Tile': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
           case 'Color': case 'Border': case 'Randomise': ex(s.value, active); break;
+          case 'Play': if (s.index || (s.sfx && !sfxIndex.has(up(s.sfx.name)))) ex(s.index ?? s.sfx, active); break;
           case 'Fill': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.value, active); break;
           case 'Copy': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.dx, active); ex(s.dy, active); break;
           case 'LoadMap': ex(s.x, active); ex(s.y, active); break;
@@ -927,6 +971,36 @@ export function generate(ast, runtime, assets = {}) {
   }
   useCtx(globalCtx);
 
+  // ── 4b. language batch 5: the tick prologue's data (timers, the keys and sticks the reachable code names, their hidden slots) ──
+  const pressKeyInfo = new Map(), pressJoyInfo = new Map();      // key code / stick number -> {before, edge}: addresses of the two hidden slots
+  const gameTimerAddrs = [], sceneTimerAddrs = scenes.map(() => []);
+  {
+    const found = [];                                            // [{kind: 'key' | 'joy', code, node}] in order of first use
+    const walk = (n) => {
+      if (Array.isArray(n)) { n.forEach(walk); return; }
+      if (!n || typeof n !== 'object') return;
+      if (n.type === 'Func' && (n.name === 'KEYPRESS' || n.name === 'JOYPRESS')) {
+        const a = n.args?.[0];
+        const code = !a ? undefined : n.name === 'KEYPRESS' && a.type === 'String' ? a.value.toUpperCase().charCodeAt(0) : fold(a);
+        if (a && n.name === 'KEYPRESS' && (!Number.isInteger(code) || code < 0 || code > 255)) err(a, 'KEYPRESS needs a key written out as a number 0..255 or a one-character string');
+        else if (a && n.name === 'JOYPRESS' && code !== 1 && code !== 2) err(a, 'JOYPRESS needs the joystick number written out: 1 or 2');
+        else if (a) found.push({ kind: n.name === 'KEYPRESS' ? 'key' : 'joy', code });
+      }
+      for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
+    };
+    for (const c of reach) { useCtx(c.ctx); curC = c; walk(c.node.body); }
+    curC = null; useCtx(globalCtx);
+    for (const f of found) {
+      const table = f.kind === 'key' ? pressKeyInfo : pressJoyInfo;
+      if (table.has(f.code)) continue;
+      table.set(f.code, { before: allocSlot(`press.${f.kind}${f.code}.before`), edge: allocSlot(`press.${f.kind}${f.code}.edge`) });
+    }
+    for (const d of timersOf(ast)) for (const it of d.items) { const a = globalCtx.varSlots.get(up(it.name)); if (a !== undefined && !gameTimerAddrs.includes(a)) gameTimerAddrs.push(a); }
+    scenes.forEach((sc, si) => { for (const d of timersOf(sc)) for (const it of d.items) { const a = sceneCtx[si].varSlots.get(up(it.name)); if (a !== undefined && !sceneTimerAddrs[si].includes(a)) sceneTimerAddrs[si].push(a); } });
+  }
+  const hasPrologue = gameTimerAddrs.length > 0 || sceneTimerAddrs.some((l) => l.length > 0) || pressKeyInfo.size > 0 || pressJoyInfo.size > 0;
+  if (errors.length) return fail();
+
   // ── 5. code ──
   const nSprites = sprites.length;
   const base = GAME_BASE + HEADER_BYTES + DESC_LEN * nSprites;
@@ -941,7 +1015,7 @@ export function generate(ast, runtime, assets = {}) {
 
   let params = new Map();                           // KEY -> slot address, for the callable being generated
   let loops = [];                                   // {kind, end}
-  const used = { bit: false, stick: false, nl: false, clamp: false, tile: false, tileat: false, shl: false, shr: false };
+  const used = { bit: false, stick: false, nl: false, clamp: false, tile: false, tileat: false, shl: false, shr: false, fmt: false };
   const pool = new Map();                           // text -> label of its length-prefixed string
   const strLabel = (text) => { if (!pool.has(text)) pool.set(text, `str$${pool.size}`); return pool.get(text); };
   let tileSlots = null;                             // {x, y}: hidden slots TILE parks its column and row in
@@ -1314,6 +1388,13 @@ export function generate(ast, runtime, assets = {}) {
         e.ld('a', code); e.call(need('RT_KEYDOWN'));
         return;
       }
+      case 'KEYPRESS': case 'JOYPRESS': {                        // batch 5: the edge the tick prologue left in the key's / stick's hidden slot
+        const code = x.name === 'KEYPRESS' ? (a[0].type === 'String' ? a[0].value.toUpperCase().charCodeAt(0) : fold(a[0])) : fold(a[0]);
+        const info = (x.name === 'KEYPRESS' ? pressKeyInfo : pressJoyInfo).get(code);
+        if (!info) { e.ld('hl', 0); return; }
+        e.ld('hl', M(info.edge));
+        return;
+      }
       case 'TILEAT': {
         operands(a[0], a[1]);                // HL = x, DE = y
         used.tileat = true; e.call('lib$tileat');
@@ -1471,15 +1552,16 @@ export function generate(ast, runtime, assets = {}) {
   function printPieces(s) {
     const pieces = [];
     const text = (t) => { const l = pieces[pieces.length - 1]; if (l && l.text !== undefined) l.text += t; else pieces.push({ text: t }); };
-    const item = (it) => {
+    const item = (it, u = null) => {
       if (it.type === 'String') { text(it.value); return; }
       if (it.type === 'Binary' && isStrExpr(it)) { item(it.left); item(it.right); return; }
       const arg = it.type === 'Func' && it.name === 'STR$' ? it.args[0] : it;
       const c = fold(arg);
-      if (c !== undefined) text(String(c)); else pieces.push({ expr: arg });
+      if (c !== undefined) text(u ? usingText(c, u.pattern) : String(c));
+      else pieces.push(u ? { expr: arg, using: { w: u.pattern.length, z: u.pattern.indexOf('0') < 0 ? 0 : u.pattern.length - u.pattern.indexOf('0') } } : { expr: arg });
     };
     s.items.forEach((it, i) => {
-      item(it);
+      item(it, s.usings?.[i] ?? null);
       if (i < s.seps.length && s.seps[i] === ',') text(' ');
     });
     if (s.trailing === ',') text(' ');
@@ -1503,6 +1585,7 @@ export function generate(ast, runtime, assets = {}) {
   function printStmt(s) {
     if (s.at) setCursor(s.at.row, s.at.col);
     for (const p of printPieces(s)) {
+      if (p.expr && p.using) { need('RT_PRINTC'); gen(p.expr); used.fmt = true; e.ld('bc', (p.using.w << 8) | p.using.z); e.call('lib$fmt'); continue; }
       if (p.expr) { gen(p.expr); e.call(need('RT_PRINTN')); continue; }
       for (let i = 0; i < p.text.length; i += LIMIT_STR) {
         e.ld('hl', L(strLabel(p.text.slice(i, i + LIMIT_STR)))); e.call(need('RT_PRINTS'));
@@ -1685,7 +1768,17 @@ export function generate(ast, runtime, assets = {}) {
       case 'Cls': e.call(need('RT_CLS')); return;
       case 'Silence': e.call(need('RT_SILENCE')); return;
       case 'Enter': e.ld('a', scenes.findIndex((sc) => up(sc.name) === up(s.scene.name))); e.jp('scn$enter'); return;
-      case 'Play': e.ld('a', sfxIndex.get(up(s.sfx.name))); e.call(need('RT_PLAY')); return;
+      case 'Play': {
+        if (s.sfx && sfxIndex.has(up(s.sfx.name))) { e.ld('a', sfxIndex.get(up(s.sfx.name))); e.call(need('RT_PLAY')); return; }
+        const rt = need('RT_PLAY');                              // batch 5: an effect index (an expression; a bare variable name too)
+        const x = s.index ?? s.sfx, k = fold(x);
+        if (k !== undefined) { if (k >= 0 && k <= 255) { e.ld('a', k); e.call(rt); } return; }
+        gen(x);
+        const SKIP = e.newLabel('plskip');
+        e.ld('a', 'h'); e.or('a'); e.jr('nz', SKIP); e.ld('a', 'l'); e.call(rt);
+        e.label(SKIP);
+        return;
+      }
       case 'Color': {
         const k = fold(s.value);
         const mask = s.which === 'BRIGHT' ? 1 : 7;
@@ -1896,16 +1989,36 @@ export function generate(ast, runtime, assets = {}) {
     }
   }
 
+  /** Language batch 5: one timer step (counts a timer down while it is above 0; a value of 0 or less is left alone). 15 bytes. */
+  function timerStep(addr) {
+    const skip = e.newLabel('tm');
+    e.ld('hl', M(addr)); e.bit(7, 'h'); e.jr('nz', skip); e.ld('a', 'h'); e.or('l'); e.jr('z', skip); e.dec('hl'); e.ld(M(addr), 'hl');
+    e.label(skip);
+  }
+  /** The tick prologue up to the scene's own timers: every game-level timer, then the key and stick snapshots (edge = now AND NOT before; before = now). */
+  let prologueBytes = 0, fmtBytes = 0;                           // sizes reported in `usage` (only when the program has them)
+  function emitTickPrologue() {
+    const m = e.size;
+    for (const a of gameTimerAddrs) timerStep(a);
+    const snap = (info) => { e.ld('a', M(info.before)); e.cpl(); e.and('l'); e.ld(M(info.edge), 'a'); e.ld('a', 'l'); e.ld(M(info.before), 'a'); };
+    for (const [code, info] of pressKeyInfo) { e.ld('a', code); e.call(need('RT_KEYDOWN')); snap(info); }
+    for (const [n, info] of pressJoyInfo) { e.ld('a', n); e.call(need('RT_STICK')); snap(info); }
+    prologueBytes += e.size - m;
+  }
+
   /** Language batch 4, contract section 5: the frame entry that dispatches on the current scene, scn$enter (the switch) and scn$reset (the machine back to the game start state). */
   function emitDriver() {
     const n = scenes.length, curAddr = sceneCurSlot, spAddr = sceneSpSlot;
     e.label('frame$entry');
     e.ld(M(spAddr), 'sp');
+    if (hasPrologue) emitTickPrologue();                          // batch 5: after the stack pointer is saved, before the dispatch
+    const target = (k) => (sceneTimerAddrs[k].length ? `frame$tm$${k}` : labelOf('P', 'FRAME', k));       // a scene with timers counts them just before its FRAME
     if (n > 1) {
       e.ld('a', M(curAddr));
-      for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', labelOf('P', 'FRAME', k)); }
+      for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', target(k)); }
     }
-    e.jp(labelOf('P', 'FRAME', n - 1));
+    e.jp(target(n - 1));
+    for (let k = 0; k < n; k++) if (sceneTimerAddrs[k].length) { const m = e.size; e.label(`frame$tm$${k}`); for (const a of sceneTimerAddrs[k]) timerStep(a); e.jp(labelOf('P', 'FRAME', k)); prologueBytes += e.size - m; }
     e.label('scn$enter');                                         // A = the scene's index
     e.ld('sp', M(spAddr)); e.push('af'); e.call('scn$reset'); e.pop('af');
     e.ld(M(curAddr), 'a');
@@ -1945,6 +2058,14 @@ export function generate(ast, runtime, assets = {}) {
     if (!driver) e.jp('P$INIT');
     else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }          // the stack pointer the runtime called us with: ENTER cuts the stack back to it
     if (driver) emitDriver();
+    else if (hasPrologue) {                                                      // batch 5: the frame entry is a stub that runs the prologue, then PROC FRAME
+      e.label('frame$entry');
+      emitTickPrologue();
+      const m5 = e.size;
+      for (const a of sceneTimerAddrs[0] ?? []) timerStep(a);
+      e.jp('P$FRAME');
+      prologueBytes += e.size - m5;
+    }
     for (const c of reach) {
       useCtx(c.ctx);
       params = new Map(c.slots);
@@ -2048,6 +2169,38 @@ export function generate(ast, runtime, assets = {}) {
       e.ld('c', 'l'); e.ld('b', 'e'); e.jp(need('RT_TILEAT'));
       e.label('lib$tileat$bad'); e.ld('hl', -1); e.ret();
     }
+    if (used.fmt) {
+      // PRINT item USING (batch 5): HL = value, B = w (1..8), C = z (0..8) -> the field printed with RT_PRINTC (contract item 12). The sign takes a column of the field: avail = w - neg,
+      // D = max(nd, min(z, avail)) digits (zero-padded on the left), avail - D spaces in front, '-' next; nd > avail prints w asterisks. Clobbers AF BC DE HL; its own stack is 6 bytes (fmt$put).
+      const m6 = e.size;
+      e.label('lib$fmt');
+      e.ld('e', 0); e.bit(7, 'h'); e.jr('z', 'fmt$p'); e.inc('e');
+      e.xor('a'); e.sub('l'); e.ld('l', 'a'); e.sbc('a', 'a'); e.sub('h'); e.ld('h', 'a');          // HL = |value| (32768 stays $8000, read as unsigned)
+      e.label('fmt$p');
+      e.ld('d', 5);                                                                                   // D = the number of digits of HL
+      for (const k of [10000, 1000, 100, 10]) { e.ld('a', 'l'); e.sub(k & 255); e.ld('a', 'h'); e.sbc('a', k >> 8); e.jr('nc', 'fmt$n'); e.dec('d'); }
+      e.label('fmt$n');
+      e.ld('a', 'b'); e.sub('e'); e.cp('d'); e.jp('c', 'fmt$star');                                    // A = avail = w - neg; fewer than the digits: asterisks
+      e.ld('b', 'a'); e.ld('a', 'c'); e.cp('b'); e.jr('c', 'fmt$m'); e.ld('a', 'b');                  // B = avail, A = min(z, avail)
+      e.label('fmt$m'); e.cp('d'); e.jr('nc', 'fmt$d'); e.ld('a', 'd');                               // A = max(A, nd) = the digits printed, zero padding included
+      e.label('fmt$d'); e.ld('c', 'a'); e.ld('a', 'b'); e.sub('c'); e.ld('b', 'a'); e.ld('a', 'c'); e.sub('d'); e.ld('c', 'a');   // B = spaces, C = zeros
+      e.ld('a', 'b'); e.or('a'); e.jr('z', 'fmt$sg');
+      e.label('fmt$s1'); e.ld('a', 32); e.call('fmt$put'); e.djnz('fmt$s1');
+      e.label('fmt$sg'); e.ld('a', 'e'); e.or('a'); e.jr('z', 'fmt$z0'); e.ld('a', 45); e.call('fmt$put');
+      e.label('fmt$z0'); e.ld('a', 'c'); e.or('a'); e.jr('z', 'fmt$g'); e.ld('b', 'c');
+      e.label('fmt$z1'); e.ld('a', 48); e.call('fmt$put'); e.djnz('fmt$z1');
+      e.label('fmt$g'); e.ld('a', 5); e.sub('d'); e.ld('c', 'a');                                     // C = the positions to skip: 5 - nd
+      for (const k of [10000, 1000, 100, 10]) { e.ld('de', k); e.call('fmt$dig'); }
+      e.ld('a', 'l'); e.add('a', 48); e.jp('fmt$put');                                                // the units digit (HL < 10)
+      e.label('fmt$star'); e.ld('a', 42); e.call('fmt$put'); e.djnz('fmt$star'); e.ret();             // B = w still
+      e.label('fmt$put'); e.push('hl'); e.push('de'); e.push('bc'); e.call(need('RT_PRINTC')); e.pop('bc'); e.pop('de'); e.pop('hl'); e.ret();
+      // HL = rest, DE = the place value, C = positions still to skip: print the digit of this place unless it is a skipped leading zero; HL = HL MOD DE
+      e.label('fmt$dig'); e.ld('b', 48);
+      e.label('fmt$d1'); e.or('a'); e.sbc('hl', 'de'); e.jr('c', 'fmt$d2'); e.inc('b'); e.jr('fmt$d1');
+      e.label('fmt$d2'); e.add('hl', 'de'); e.ld('a', 'c'); e.or('a'); e.jr('z', 'fmt$d3'); e.dec('c'); e.ret();
+      e.label('fmt$d3'); e.ld('a', 'b'); e.jp('fmt$put');
+      fmtBytes = e.size - m6;
+    }
     // ── data (v1): hot boxes, string pool, tileset, sound effects, map ──
     if (v1) {
       const mark0 = e.size;
@@ -2117,6 +2270,7 @@ export function generate(ast, runtime, assets = {}) {
     procs: Object.fromEntries(reach.filter((r) => r.kind === 'P').map((r) => [qual(r.scene, r.key), e.addressOf(r.label)])),
     fns: Object.fromEntries(reach.filter((r) => r.kind === 'F').map((r) => [qual(r.scene, r.key), e.addressOf(r.label)])),
     ...(driver ? { scene: { cur: sceneCurSlot, sp: sceneSpSlot, count: scenes.length, names: scenes.map((sc) => sc.name) } } : {}),
+    ...(pressKeyInfo.size || pressJoyInfo.size ? { keys: { press: Object.fromEntries([...pressKeyInfo].map(([c, i]) => [c, { ...i }])), joy: Object.fromEntries([...pressJoyInfo].map(([n, i]) => [n, { ...i }])) } } : {}),
     sprites: v2 ? Object.fromEntries([...instRefs].map(([k, r]) => [k, r.first])) : Object.fromEntries(sprites.map((s, i) => [s.key, i])),
     sfx: Object.fromEntries(sfxList.map((s, i) => [up(s.name), i])),
   };
@@ -2134,7 +2288,7 @@ export function generate(ast, runtime, assets = {}) {
   return {
     errors, warnings,
     code, base,
-    entries: { init: entry('entry$init'), frame: entry(driver ? 'frame$entry' : 'P$FRAME') },
+    entries: { init: entry('entry$init'), frame: entry(driver || hasPrologue ? 'frame$entry' : 'P$FRAME') },
     frameDiv: 60 / rate,
     mapFlag: (extMaps || win || view ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0) | (view ? (cst.DIV_VIEW ?? 0x40) : 0),
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,
@@ -2148,6 +2302,6 @@ export function generate(ast, runtime, assets = {}) {
     v1: v1Info,
     v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length, mapTable: extMaps ? v1Info.mapTable : 0 } : null,
     phase: v3 ? phasePlan : null,
-    usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver },
+    usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
   };
 }

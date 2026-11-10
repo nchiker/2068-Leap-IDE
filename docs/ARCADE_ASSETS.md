@@ -50,6 +50,18 @@ The Studio's editors enforce the two-colours-per-row rule while drawing and prev
   `{ "ticks": [ { "tone": 0..4095, "vol": 0..15, "noise": 0..31, "mix": 0..7, "env": null }, ... ] }`: one record
   per refresh on one AY channel; compiled as 4-byte records with run-length for steady stretches. Played by the
   frame-interrupt tick, independent of `FRAME`.
+* **Three-channel effects** (language batch 5, `docs/ARCADE_LANGUAGE_BATCH5.md` Part C items 16 to 20): `{ "ticks": [...], "ticksB": [...], "ticksC": [...] }`.
+  `ticks` is AY channel A (as above, unchanged); `ticksB` and `ticksC` are optional arrays of the same records for channels B and C
+  (absent, `null` or `[]` = none, and the Studio writes them only when they hold ticks). The channels play in lockstep, one record each per refresh;
+  a shorter channel is padded with the silent record `tone 0, vol 0, noise 0, mix 7`, and the effect lasts as long as the longest channel.
+  The same limits apply to every channel (1,800 ticks per channel in the Studio; tone 3840..4095 with vol 15 is unstorable in any channel; the
+  sound check `sfx-unstorable` names the channel). The AY has **one noise generator**: R6 takes the `noise` of the lowest channel (A, then B,
+  then C) whose record has noise on at that refresh, else channel A's.
+* **Image** (`convertSfx(asset)` -> `{records, channels, bytes}`): one channel (no `ticksB` / `ticksC`, or both empty) is exactly the old form, `channels: 1`:
+  4-byte records (`tone_lo`, `tone_hi | vol << 4`, `noise | mix << 5`, `0`) and the terminator record `0, $FF, 0, 0`. With channel B or C the image is
+  a run of **groups of 12 bytes**, records A, B, C of one refresh, byte 3 of the first record of the effect = **3** (the channel count; 0 or 1 = one
+  channel), then the terminator record `0, $FF, 0, 0` in place of a group: `records * 12 + 4` bytes. `records` is the length of the longest channel,
+  which is what the interpreter's sound-length model uses. The size panel counts these bytes.
 * `music`: *later* (pattern/instrument format when game B needs it; the player runs in the interrupt).
 
 ## Size accounting

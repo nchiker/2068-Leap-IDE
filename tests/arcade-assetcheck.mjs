@@ -214,6 +214,32 @@ const plain = (extra = {}) => tile({ paper: 6, ink: 1, bits: 'AA', ...extra }); 
     return true;
   })());
 
+  // sfx-unstorable on channels B and C (language batch 5): one finding per channel, the message names it, `ticks` are that channel's
+  const sx3 = (extra) => checkAssets(mkProject({ sfx: { s: { ticks: [{ tone: 100, vol: 15, noise: 0, mix: 6 }], ...extra } } }), null).filter((x) => x.id === 'sfx-unstorable');
+  const BAD = { tone: 3900, vol: 15, noise: 0, mix: 6 }, OK = { tone: 100, vol: 10, noise: 0, mix: 6 };
+  f = sx3({ ticksB: [OK, OK, OK, OK, BAD] });
+  check('sfx-unstorable: a bad tick in channel B is an error naming channel B (ticks = [4], channel "B", compilerAlso)', f.length === 1 && f[0].channel === 'B' && eq(f[0].ticks, [4]) && f[0].severity === 'error' && f[0].compilerAlso === true && /channel B tick 4 has a tone of 3840\.\.4095 with volume 15/.test(f[0].message), JSON.stringify(f));
+  f = sx3({ ticksB: [BAD, OK, BAD], ticksC: [OK, BAD] });
+  check('sfx-unstorable: bad ticks in B and C give one finding each, with their own tick lists and messages', f.length === 2 && f[0].channel === 'B' && eq(f[0].ticks, [0, 2]) && /channel B ticks 0, 2 have/.test(f[0].message) && f[1].channel === 'C' && eq(f[1].ticks, [1]) && /channel C tick 1 has/.test(f[1].message), JSON.stringify(f));
+  f = [{ tone: 3840, vol: 15 }, { tone: 4095, vol: 15 }];
+  const fa = checkAssets(mkProject({ sfx: { s: { ticks: [OK, ...f], ticksB: [BAD] } } }), null).filter((x) => x.id === 'sfx-unstorable');
+  check('sfx-unstorable: channel A of a multi-channel effect is named too ("channel A ticks 1, 2"); `channel` is absent on a one-channel effect',
+    fa.length === 2 && fa[0].channel === 'A' && eq(fa[0].ticks, [1, 2]) && /channel A ticks 1, 2 have/.test(fa[0].message) && fa[1].channel === 'B'
+    && !('channel' in sx([{ tone: 3840, vol: 15 }])[0]) && !/channel/.test(sx([{ tone: 3840, vol: 15 }])[0].message));
+  check('sfx-unstorable: B and C with ticks that are fine, empty, null or absent: no finding', sx3({ ticksB: [OK], ticksC: [] }).length === 0 && sx3({ ticksB: null, ticksC: null }).length === 0 && sx3({ ticksB: [], ticksC: [] }).length === 0);
+  const mal = checkAssets(mkProject({ sfx: { s: { ticks: [OK], ticksB: 'x', ticksC: [BAD] } } }), null);
+  check('a ticksB that is not an array: asset-malformed naming channel B; channel C is still checked', mal.some((x) => x.id === 'asset-malformed' && x.channel === 'B' && /ticksB/.test(x.message)) && mal.some((x) => x.id === 'sfx-unstorable' && x.channel === 'C'), JSON.stringify(mal));
+  check('sfx-unstorable agrees with convertSfx for channels B and C over every tone / vol boundary', (() => {
+    for (const ch of ['ticksB', 'ticksC']) for (const tone of [0, 255, 3583, 3839, 3840, 4094, 4095]) for (const vol of [0, 14, 15]) {
+      const t = { tone, vol, noise: 0, mix: 6 };
+      const mine = sx3({ [ch]: [t] }).length === 1;
+      let theirs = false; try { convertSfx({ ticks: [OK], [ch]: [t] }); } catch { theirs = true; }
+      if (mine !== theirs) return false;
+    }
+    return true;
+  })());
+  check('the unstorable tick of channel B is also marked unstorable by the compiler path (convertSfx message names channel B)', (() => { try { convertSfx({ ticks: [OK], ticksB: [OK, BAD] }); return false; } catch (e) { return /^channel B tick 1: tone 3900 with volume 15/.test(e.message); } })());
+
   // tileset-size
   const sz = (n, rl) => checkAssets(mkProject({ tilesets: { ts: { tiles: Array(n).fill(0).map(() => plain()) } }, maps: { w: { w: 24, h: 1, cells: grid(24, 1, () => 0) } } }), rl).filter((x) => x.id === 'tileset-size');
   check('tileset-size: 33 tiles with a WINDOW is a warning (tiles above 31 cannot be used in the world)', (() => { const r = sz(33, R0); return r.length === 1 && r[0].severity === 'warning' && r[0].count === 33 && /32\.\.32|tiles 32/.test(r[0].message) && r[0].compilerAlso === false; })());

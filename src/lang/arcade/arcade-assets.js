@@ -2,7 +2,7 @@
  * src/lang/arcade/arcade-assets.js — Leap Arcade asset converters for milestone M3 (pure; no DOM, no node: imports).
  *
  *   convertTileset(asset)   -> {count, bytes, tiles}   bytes = count x (8 bitmap bytes + 1 attribute byte), the runtime v1 format
- *   convertSfx(asset)       -> {records, bytes}        bytes = 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF)
+ *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: 12 per tick (batch 5)
  *   convertMap(asset, n)    -> {w, h, cells, bytes}    bytes = the 768 CELL_TILE bytes (tile = 128 + index, blank = 32)
  *   lookupAsset(table, ...names) -> asset | undefined  exact name first, then case-insensitive
  *   assetTables(assets)     -> {sprites, tilesets, sfx, maps}   see below
@@ -11,7 +11,7 @@
  *   tileset {tiles: [{rows: [8 x {bits, ink, paper, bright}], flags}]}   bits = 8-bit number or 1..2 hex digits, MSB = left pixel;
  *           the tile's attribute byte is taken from its FIRST row: bright<<6 | paper<<3 | ink (defaults ink 0, paper 7, bright 0).
  *           At most 128 tiles (the runtime's cell value has 7 bits for the index).
- *   sfx     {ticks: [{tone 0..4095, vol 0..15, noise 0..31, mix 0..7}]}   record = tone_lo, tone_hi | vol << 4, noise | mix << 5, 0.
+ *   sfx     {ticks: [{tone 0..4095, vol 0..15, noise 0..31, mix 0..7}], ticksB?, ticksC?}   (ticksB / ticksC: channels B and C, batch 5)   record = tone_lo, tone_hi | vol << 4, noise | mix << 5, 0.
  *           A tone of 3840..4095 with volume 15 would make the second byte $FF, the terminator: it is refused.
  *           At most 255 ticks are not enforced; the table holds at most 8 effects (checked by the code generator).
  *   map     {w, h, cells}  w <= 32, h <= 24; cells = array (or hex string, 2 digits per cell) of w*h values, each a tile index
@@ -87,21 +87,54 @@ export function convertTileset(asset) {
   return { count: tiles.length, bytes, tiles, flags, flagsProblem };
 }
 
+/** The silent record that pads a shorter channel of a multi-channel effect: tone 0, vol 0, noise 0, mix 7 (both off). */
+export const SFX_SILENT_RECORD = Object.freeze([0, 0, 7 << 5, 0]);
+export const SFX_CHANNEL_NAMES = Object.freeze(['A', 'B', 'C']);
+
+/** One record's four bytes, validated; `where` prefixes the error ("tick 3" for the one-channel form, "channel B tick 3" for the other). */
+function sfxRecord(t, where) {
+  const tone = int(t?.tone, 0, 4095, `${where} tone`);
+  const vol = int(t?.vol, 0, 15, `${where} vol`, 0);
+  const noise = int(t?.noise, 0, 31, `${where} noise`, 0);
+  const mix = int(t?.mix, 0, 7, `${where} mix`, 0);
+  const hi = (tone >> 8) | (vol << 4);
+  if (hi === 0xFF) throw new Error(`${where}: tone ${tone} with volume 15 cannot be stored (the byte $FF ends an effect); lower the volume or the tone`);
+  return [tone & 0xFF, hi, noise | (mix << 5), 0];
+}
+
+/**
+ * Sound effect asset -> image.  `asset` = {ticks, ticksB?, ticksC?} (channel A, B, C; B and C are optional arrays of the same records, null / absent / empty = none).
+ *   one channel  (no ticksB / ticksC, or both empty): 4 bytes per record + the terminator record `0, $FF, 0, 0`  -> {records, channels: 1, bytes}
+ *   three channels: groups of 12 bytes (records A, B, C of one refresh; a shorter channel is padded with the silent record), byte 3 of the FIRST record
+ *     = 3 (the channel count), then the terminator record in place of a group  -> {records: the longest channel, channels: 3, bytes}
+ * Every record of every channel has the field ranges and the unstorable rule (tone 3840..4095 with volume 15) of the one-channel form.
+ */
 export function convertSfx(asset) {
   const ticks = asset?.ticks;
   if (!Array.isArray(ticks)) throw new Error('the sound effect has no "ticks" array');
-  const bytes = new Uint8Array((ticks.length + 1) * 4);
-  ticks.forEach((t, i) => {
-    const tone = int(t?.tone, 0, 4095, `tick ${i} tone`);
-    const vol = int(t?.vol, 0, 15, `tick ${i} vol`, 0);
-    const noise = int(t?.noise, 0, 31, `tick ${i} noise`, 0);
-    const mix = int(t?.mix, 0, 7, `tick ${i} mix`, 0);
-    const hi = (tone >> 8) | (vol << 4);
-    if (hi === 0xFF) throw new Error(`tick ${i}: tone ${tone} with volume 15 cannot be stored (the byte $FF ends an effect); lower the volume or the tone`);
-    bytes.set([tone & 0xFF, hi, noise | (mix << 5), 0], i * 4);
+  const extra = [asset?.ticksB, asset?.ticksC].map((v, k) => {
+    if (v === undefined || v === null) return [];
+    if (!Array.isArray(v)) throw new Error(`the sound effect's "ticks${SFX_CHANNEL_NAMES[k + 1]}" (channel ${SFX_CHANNEL_NAMES[k + 1]}) must be an array of ticks`);
+    return v;
   });
-  bytes.set([0, 0xFF, 0, 0], ticks.length * 4);       // terminator record
-  return { records: ticks.length, bytes };
+  if (extra[0].length === 0 && extra[1].length === 0) {
+    const bytes = new Uint8Array((ticks.length + 1) * 4);
+    ticks.forEach((t, i) => bytes.set(sfxRecord(t, `tick ${i}`), i * 4));
+    bytes.set([0, 0xFF, 0, 0], ticks.length * 4);       // terminator record
+    return { records: ticks.length, channels: 1, bytes };
+  }
+  const chans = [ticks, ...extra];
+  const records = Math.max(...chans.map((c) => c.length));
+  const bytes = new Uint8Array(records * 12 + 4);
+  for (let r = 0; r < records; r++) {
+    chans.forEach((c, k) => {
+      const rec = r < c.length ? sfxRecord(c[r], `channel ${SFX_CHANNEL_NAMES[k]} tick ${r}`) : SFX_SILENT_RECORD;
+      bytes.set(rec, r * 12 + k * 4);
+    });
+  }
+  if (records) bytes[3] = 3;                              // the channel count rides in the reserved byte of the first record
+  bytes.set([0, 0xFF, 0, 0], records * 12);               // terminator record in place of a group
+  return { records, channels: 3, bytes };
 }
 
 export function convertMap(asset, tileCount = MAX_TILES) {

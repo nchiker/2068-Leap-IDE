@@ -221,6 +221,7 @@ V_ANYSKIP       EQU VARS+$60    ; byte: 1 when the skip analysis marked an insta
 V_FTE           EQU VARS+$55    ; word: draw_all: the FTAB entry of the frame being built (a cache miss)
 V_HBASE         EQU VARS+$5A    ; byte: draw_all: $40 + the hidden file's offset (the high byte of its first row)
 AY_SHADOW       EQU VARS+$70    ; 16 bytes: what the sound code last wrote to AY registers 0..15 (boot zeroes the AY and this)
+V_SFX_CH        EQU VARS+$80    ; byte: channels of the playing effect, set by RT_PLAY from byte 3 of its first record (3 = groups of three records, else 1; boot 0 = 1)
 ; Scratch of the cell renderer, the text routines and RT_HIT (all in chunk 7; none is used by the ISR)
 E_NR            EQU VARS+$82    ; byte: erase: rows left
 E_NC            EQU VARS+$83    ; byte: erase: columns per row

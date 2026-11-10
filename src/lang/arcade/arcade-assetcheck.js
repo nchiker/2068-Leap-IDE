@@ -15,7 +15,8 @@
  * Finding ids: black-bright-mix, background-attr-mix, tile0-not-blank, world-shape, floorplan-shape, map-tileset-mismatch, map-undefined-tile,
  * sfx-unstorable, tileset-size (the contract's), plus map-shape (a cell map the compiler cannot take) and asset-malformed (an asset that cannot be read).
  * Extra fields by id: tiles / bright0 / bright1 / view (black-bright-mix), groups / tiles / cells / majorityAttr (background-attr-mix),
- * tile (tile0-not-blank), cells (map-undefined-tile, world-shape, floorplan-shape), ticks (sfx-unstorable), count (tileset-size).
+ * tile (tile0-not-blank), cells (map-undefined-tile, world-shape, floorplan-shape), ticks (sfx-unstorable: the indices of ONE channel; `channel` 'A' | 'B' | 'C' is
+ * present when the effect has channels B or C, one finding per channel with a bad tick), count (tileset-size).
  */
 
 "use strict";
@@ -273,21 +274,41 @@ function checkMap(name, asset, role, roles, project, out) {
   }
 }
 
-function checkSfx(name, asset, out) {
-  const ticks = isObj(asset) ? asset.ticks : null;
-  if (!Array.isArray(ticks)) {
-    out.push({ id: 'asset-malformed', severity: 'error', kind: 'sfx', asset: name, message: `sound effect "${name}" has no "ticks" array`, compilerAlso: false });
-    return;
-  }
+/** The unstorable ticks of one channel's list (a tone of 3840..4095 with volume 15). */
+function unstorableTicks(ticks) {
   const bad = [];
   ticks.forEach((t, i) => {
     if (!isObj(t) || !Number.isInteger(t.tone)) return;
     const vol = t.vol === undefined || t.vol === null ? 0 : t.vol;
     if (Number.isInteger(vol) && t.tone >= 0 && t.tone <= 4095 && vol >= 0 && vol <= 15 && ((t.tone >> 8) | (vol << 4)) === 0xFF) bad.push(i);
   });
-  if (bad.length) {
-    out.push({ id: 'sfx-unstorable', severity: 'error', kind: 'sfx', asset: name, ticks: bad, compilerAlso: true,
-      message: `sound effect "${name}": tick${bad.length > 1 ? 's' : ''} ${list(bad)} ${bad.length > 1 ? 'have' : 'has'} a tone of 3840..4095 with volume 15, which cannot be stored (the byte $FF ends an effect); lower the volume or the tone` });
+  return bad;
+}
+
+function checkSfx(name, asset, out) {
+  const ticks = isObj(asset) ? asset.ticks : null;
+  if (!Array.isArray(ticks)) {
+    out.push({ id: 'asset-malformed', severity: 'error', kind: 'sfx', asset: name, message: `sound effect "${name}" has no "ticks" array`, compilerAlso: false });
+    return;
+  }
+  // channels B and C (language batch 5): ticksB / ticksC, null or absent = none
+  const chans = [['A', ticks]];
+  for (const [key, ch] of [['ticksB', 'B'], ['ticksC', 'C']]) {
+    const v = asset[key];
+    if (v === undefined || v === null) continue;
+    if (!Array.isArray(v)) {
+      out.push({ id: 'asset-malformed', severity: 'error', kind: 'sfx', asset: name, channel: ch, message: `sound effect "${name}": "${key}" (channel ${ch}) must be an array of ticks`, compilerAlso: false });
+      continue;
+    }
+    chans.push([ch, v]);
+  }
+  const multi = chans.some(([ch, v]) => ch !== 'A' && v.length > 0);
+  for (const [ch, arr] of chans) {
+    const bad = unstorableTicks(arr);
+    if (!bad.length) continue;
+    const plural = bad.length > 1;
+    out.push({ id: 'sfx-unstorable', severity: 'error', kind: 'sfx', asset: name, ticks: bad, ...(multi || ch !== 'A' ? { channel: ch } : {}), compilerAlso: true,
+      message: `sound effect "${name}": ${multi ? `channel ${ch} ` : ''}tick${plural ? 's' : ''} ${list(bad)} ${plural ? 'have' : 'has'} a tone of 3840..4095 with volume 15, which cannot be stored (the byte $FF ends an effect); lower the volume or the tone` });
   }
 }
 

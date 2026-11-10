@@ -47,6 +47,9 @@
  *     are RESERVED (a variable called `wall` or `depth` must be renamed; BATCH3_WORDS below lists them: they may still NAME AN ASSET, since assets have their own name
  *     space, so `SFX wall = "wall"` and `PLAY wall` keep working). The clause words of VIEW3D (COLW CEIL FLOOR PATTERNS) are contextual like FRAME; its INK and BRIGHT clauses
  *     are the existing words.
+ *   - (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md) TIMER KEYPRESS JOYPRESS are RESERVED (a variable called `timer` must be renamed). `TIMER a, b` declares variables the game counts
+ *     down by itself (top level or directly in a SCENE, like DIM); KEYPRESS(c) / JOYPRESS(n) are the edge versions of KEYDOWN / STICK: 1 / the bits that went down in this tick. USING is
+ *     contextual (`PRINT score USING "00000"`; an ordinary name elsewhere). PLAY takes an expression: a bare name of a declared SFX plays that effect, anything else is the effect's index.
  */
 
 "use strict";
@@ -131,7 +134,7 @@ const WORD_LIST = [
   W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f] [FLIP]  /  SHOW pool(i) AT x, y', 'Place a sprite (or the instance i of a pool) at a pixel position (y from the top). FRAME f picks the animation frame (0 is the first frame of the sprite asset; without FRAME the instance keeps the frame it had, 0 at the start); FLIP draws the frame mirrored left to right. FRAME, FLIP, sprites wider or taller than 16 pixels, and a WINDOW need the v3 runtime. In a WINDOW game x and y are world pixels (x from the left of the world, y from the top of the window) and are not clamped; a sprite that is not wholly inside the window is not drawn. An instance number outside the pool is ignored.'),
   W('AT', 'structure', 'AT row, col  (after PRINT) / AT x, y  (after SHOW)', 'A position: character row and column after PRINT, pixels after SHOW.'),
   W('HIDE', 'game', 'HIDE sprite  /  HIDE pool(i)', 'Remove a sprite (or the instance i of a pool) from the screen. An instance number outside the pool is ignored.'),
-  W('PLAY', 'game', 'PLAY sfx', 'Start a sound effect by its SFX name (it replaces the one playing).'),
+  W('PLAY', 'game', 'PLAY sfx  /  PLAY index', 'Start a sound effect (it replaces the one playing): by its SFX name, or by a number, the effect\'s place in the SFX declarations (0 is the first). The number may be any expression and is checked when it runs: a value outside 0 .. number of effects - 1 does nothing. A bare name that is an SFX plays that effect; to use a variable that has the name of an effect, write PLAY (name).'),
   W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing.'),
   W('WINDOW', 'game', 'WINDOW map [AT cx, cy]', 'Top level, once: use the declared MAP as a scrolling world shown in a window of 24 x 16 cells (192 x 128 pixels) at screen cell (cx, cy) (default 4, 4; both constants 0..8). The map is 24..128 cells wide and 1..16 tall and uses the tiles 0..31 of the TILESET (tile 0 should be blank: the sky). The cells of the screen outside the window stay yours (HUD text and tiles); cells inside it are repainted from the world every tick. SHOW uses world pixel coordinates. Needs the v3 runtime.'),
   W('CAMERA', 'game', 'CAMERA x', 'Set the camera: the world x (in pixels) at the left edge of the window. The value is clamped to 0..the largest value the world allows (the world width x 8 - 192, halved when a BAND scrolls at 2/1). CAMX() reads the clamped value. Needs a WINDOW.'),
@@ -160,6 +163,7 @@ const WORD_LIST = [
   W('CALL', 'structure', 'CALL name(expr, ...)', 'Call a procedure, giving one expression for each of its parameters.'),
   W('DEF', 'structure', 'DEF FN f(x) = expr', 'Define a numeric function of one parameter; use it as FN f(expr).'),
   W('FN', 'structure', 'FN f(expr)', 'Call a function made with DEF FN.'),
+  W('TIMER', 'game', 'TIMER a, b, c', 'Declare timers: ordinary number variables (read them, assign them, compare them) that the game also counts down by itself. At the start of every tick, before PROC FRAME runs, every timer greater than 0 goes down by 1; 0 or less is left alone. So after cooldown = 30 in one tick, cooldown reads 29 in the next FRAME and 0 from 30 ticks on: IF cooldown = 0 THEN means it has run out. A timer at the top level counts in every scene and keeps its value across ENTER; a timer inside a SCENE belongs to that scene (it starts at 0 at every entry and counts only while that scene runs). PROC INIT never counts a timer down. Top level or directly inside a SCENE, like DIM; numbers only (no $ name, no array). Needs a v2 runtime.'),
   W('DIM', 'statement', 'DIM a, b, c(n), d(w, h), e(n) = v0, v1, ...', 'Declare variables (every variable must be declared) and arrays. At the top level a DIM is global; inside a SCENE it belongs to the scene. An array c(n) has the elements c(0)..c(n) (16 bit, all 0 at the start); with a v2 runtime n is 1..1000. d(w, h) is a two-dimensional array of (w + 1) * (h + 1) elements, at most 1000, stored row by row (d(i, j) follows d(i, j - 1)). Sizes are constant expressions (numbers or CONSTs). "= v0, v1, ..." gives the first elements their values (constant expressions, at most one per element; the rest stay 0); the values are kept in the game and copied in when it starts. An index outside its range reads 0 and a write to it is ignored.'),
   W('IF', 'structure', 'IF cond THEN ... [ELSE ...] ENDIF', 'A block; there is no one-line form.'),
   W('THEN', 'structure', 'IF cond THEN', 'Part of IF.'),
@@ -179,7 +183,7 @@ const WORD_LIST = [
   W('REM', 'statement', 'REM text', 'A comment to the end of the line (an apostrophe is not a comment).'),
 
   // ── Statements kept from V2 ──
-  W('PRINT', 'statement', 'PRINT [AT row, col;] item {; or , item} [; or ,]', 'Print text (string literals, STR$(n)) and numbers (decimal, a leading - when negative, no padding) at the cursor in the current INK, PAPER and BRIGHT. AT row, col (0..23, 0..31) first moves the cursor. A comma prints one space. Without a trailing ; or , the cursor then moves to the start of the next row. Text wraps at column 32; the row after 23 is row 0 (no scrolling). TAB is not available yet.'),
+  W('PRINT', 'statement', 'PRINT [AT row, col;] item [USING "pattern"] {; or , item [USING "pattern"]} [; or ,]', 'Print text (string literals, STR$(n)) and numbers (decimal, a leading - when negative, no padding unless the number has USING) at the cursor in the current INK, PAPER and BRIGHT. A number may be followed by USING and a pattern of # and 0, 1 to 8 characters, written out: the field is as wide as the pattern, padded on the left with spaces (#) or zeros (from the first 0 on), and prints asterisks when the number does not fit (PRINT 7 USING "0000" gives 0007, -5 USING "####" gives   -5, 12345 USING "0000" gives ****). AT row, col (0..23, 0..31) first moves the cursor. A comma prints one space. Without a trailing ; or , the cursor then moves to the start of the next row. Text wraps at column 32; the row after 23 is row 0 (no scrolling). TAB is not available yet.'),
   W('TAB', 'structure', 'TAB col', 'Move the PRINT position to a column (after PRINT).'),
   W('CLS', 'statement', 'CLS', 'Clear every screen cell to a space on the current PAPER (ink 0) and put the cursor at row 0, column 0. Tiles go too; sprites stay.'),
   W('INK', 'statement', 'INK n', 'Ink colour 0..7 for the text printed after it (the value is taken AND 7).'),
@@ -216,6 +220,8 @@ const WORD_LIST = [
   W('BIT', 'function', 'BIT(v, n)', '1 if bit n (0..15) of v is set, else 0.', { args: ['v:num', 'n:num'], ret: 'num' }),
   W('STICK', 'function', 'STICK(n)', 'Joystick 1 or 2 as bits 0..4 (directions, fire = 16).', { args: ['n:num'], ret: 'num' }),
   W('KEYDOWN', 'function', 'KEYDOWN("Q")  /  KEYDOWN(code)', '1 while that key is held, else 0. The key is a one-character string or an ASCII code written as a number (not an expression): A-Z (upper case), 0-9, space (32), enter (13); 1 is CAPS SHIFT and 2 is SYMBOL SHIFT. It is looked up when the game is built. Needs a v2 runtime.', { args: ['code:key'], ret: 'num' }),
+  W('KEYPRESS', 'function', 'KEYPRESS("Q")  /  KEYPRESS(code)', '1 during the tick in which that key went down (it is held now and was not held at the previous tick), else 0; the same value everywhere in a tick, however often it is read. The key is written as for KEYDOWN. A key already held when the game starts counts as a press in the first tick. ENTER does not change it: a key held through a scene change is not a new press. Needs a v2 runtime.', { args: ['code:key'], ret: 'num' }),
+  W('JOYPRESS', 'function', 'JOYPRESS(1)  /  JOYPRESS(2)', 'The STICK bits that went down in this tick (STICK(n) AND NOT the previous tick\'s value, 0..31): BIT(JOYPRESS(1), 4) is a fresh fire press. The joystick number must be written out: 1 or 2. Same timing as KEYPRESS. Needs a v2 runtime.', { args: ['n:num'], ret: 'num' }),
   W('TILEAT', 'function', 'TILEAT(x, y)', 'The tile index (0..127) shown in the screen cell at column x, row y, or -1 when the cell holds text or is outside the screen.', { args: ['x:num', 'y:num'], ret: 'num' }),
   W('STR$', 'function', 'STR$(n)', 'A number as text; in M3 only as a PRINT item (or joined to other text with +).', { args: ['n:num'], ret: 'str' }),
   W('LEN', 'function', 'LEN(s$)', 'The length of a string.', { args: ['s:str'], ret: 'num' }),
@@ -234,6 +240,7 @@ const WORD_LIST = [
   W('CEIL', 'game', 'VIEW3D map CEIL 0..7', 'The paper colour above the horizon of a VIEW3D (default 0, black).', { reserved: false }),
   W('FLOOR', 'game', 'VIEW3D map FLOOR 0..7', 'The paper colour below the horizon of a VIEW3D (default 1, blue).', { reserved: false }),
   W('PATTERNS', 'game', 'VIEW3D map PATTERNS b0, b1, ..., b15', 'Your own wall patterns for a VIEW3D: 16 constant bytes, for the pattern index (type - 1) x 2 + side the even-row byte at 2 x index and the odd-row byte after it (side 0 is a wall facing east or west, 1 one facing north or south). Without it the runtime\'s patterns are used.', { reserved: false }),
+  W('USING', 'game', 'PRINT n USING "0000"', 'Number format clause of PRINT: a pattern of # and 0 written out, 1 to 8 characters, is the width of the field; # pads with spaces, 0 (and everything to its right) with zeros; a number that does not fit prints asterisks.', { reserved: false }),
   W('INIT', 'game', 'PROC INIT()', 'The scene procedure that runs once when the scene starts.', { reserved: false }),
 ];
 
