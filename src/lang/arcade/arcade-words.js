@@ -32,6 +32,11 @@
  *     Decisions where the contract is silent: a bare pool name means instance 0; a single `SPRITE name = ...` accepts `name(0)`
  *     (and `name(i)` is bounds-checked against 1); KEYDOWN's code is folded at compile time, a one-character string is
  *     upper-cased (so "q" is Q); the code must be 0..255 and a number the runtime does not know as a key only gets a warning.
+ *   - (language batch 1, docs/ARCADE_LANGUAGE_BATCH1.md) CONST, LOCAL, the bit functions BAND BOR BXOR BNOT SHL SHR, FILL FILLC COPY
+ *     LOADMAP, 2-D arrays and array initialisers, RANDOMISE with no argument, several MAPs. CONST, LOCAL, FILL, FILLC, COPY, LOADMAP
+ *     and the six bit functions are RESERVED now: a program that used one of them as a variable name must rename it. FILL was in
+ *     NOT_IN_ARCADE; it is a real word now. Asset names (SPRITE, SFX, TILESET, MAP) live in their own namespaces, apart from variables,
+ *     PROCs and DEF FNs (arcade-check.js).
  */
 
 "use strict";
@@ -45,6 +50,9 @@ export const LIMITS = Object.freeze({
   maxLiteral: 65535,  // a positive literal may be written up to 65535 (addresses for POKE/PEEK/USR); 32768..65535 wrap to the signed 16-bit value
   maxDim: 16383,      // DIM a(n): n a literal 1 .. 16383 (V2); with a v2 runtime the checker is given maxDimV2 instead
   maxDimV2: 1000,     // M4a: DIM a(n) with n 1..1000, elements a(0)..a(n) are 16-bit slots in GAME_VARS
+  maxSlots2D: 1000,   // batch 1: DIM b(w, h) has (w + 1) * (h + 1) slots, at most 1000
+  maxParams: 4,       // batch 1: PROC name(a, b, c, d)
+  maxMaps: 8,         // batch 1: MAP declarations (the header's map table)
   maxPool: 16,        // M4a: SPRITE name(n): n 1..16 (the runtime has 16 instances in all)
   maxInstances: 16,   // M4a: instances (things on screen) in all
   maxAssets: 8,       // M4a: distinct sprite assets (pre-shifted tables)
@@ -99,15 +107,21 @@ const WORD_LIST = [
   W('HIDE', 'game', 'HIDE sprite  /  HIDE pool(i)', 'Remove a sprite (or the instance i of a pool) from the screen. An instance number outside the pool is ignored.'),
   W('PLAY', 'game', 'PLAY sfx', 'Start a sound effect by its SFX name (it replaces the one playing).'),
   W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing.'),
+  W('LOADMAP', 'game', 'LOADMAP map  /  LOADMAP map AT x, y', 'Copy the whole of a declared MAP (its w x h cells) onto the screen cells, at the top-left or at cell (x, y); the part that falls outside the 32 x 24 screen is clipped, cells outside the map are left alone. Each tile cell takes its tile\'s colours. A game may declare up to 8 maps; the first one is loaded when the game starts.'),
+  W('FILL', 'game', 'FILL x, y, w, h = t', 'Set the w x h screen cells from column x, row y to tile t (0..127 of the TILESET), each with the tile\'s colours. The rectangle is clipped to the 32 x 24 screen; a w or h of 0 or less does nothing. Much cheaper than a TILE loop.'),
+  W('FILLC', 'game', 'FILLC x, y, w, h = c', 'Like FILL with the font character c (32..127) and the current text colours (INK, PAPER, BRIGHT). FILLC 0, 0, 32, 24 = 32 blanks the screen cells (CLS also resets the cursor).'),
+  W('COPY', 'game', 'COPY x, y, w, h TO dx, dy', 'Copy the rectangle of screen cells (tile or character and colours) at column x, row y to column dx, row dy. Source and destination may overlap (as memmove: the result is as if the whole rectangle were read first); only cells whose source and destination are both on the screen are copied.'),
   W('TILE', 'game', 'TILE x, y = t', 'Set the screen cell at column x (0..31), row y (0..23) to tile t (0..127) of the TILESET; it takes the tile\'s colours. A cell outside the screen is ignored.'),
 
   // ── Structure ──
-  W('PROC', 'structure', 'PROC name(p): ... ENDP', 'A procedure with one by-value parameter, or none. PROC INIT() and PROC FRAME() are the scene entry points.'),
+  W('CONST', 'structure', 'CONST name = expression', 'A named constant, worked out when the game is built. The expression may use numbers, other CONSTs, + - * DIV MOD, unary minus, brackets and the bit functions (BAND BOR BXOR BNOT SHL SHR). At the top level or directly inside a SCENE. A CONST can be used wherever a number can, in a DIM size, a CASE value or an array initialiser too; it cannot be assigned to.'),
+  W('LOCAL', 'structure', 'LOCAL a, b, c', 'Declare variables that belong to the PROC they are in (the first lines of the PROC, or anywhere at its top level). A local hides a global of the same name and starts at 0 on every call. Locals take fixed memory slots, so a PROC still cannot call itself. FOR i = ... inside a PROC makes i a local of that PROC when no variable i exists.'),
+  W('PROC', 'structure', 'PROC name(a, b, c, d): ... ENDP', 'A procedure with 0 to 4 by-value parameters. CALL name(x, y) evaluates the arguments from left to right. PROC INIT() and PROC FRAME() are the scene entry points and take none.'),
   W('ENDP', 'structure', 'ENDP', 'Ends a PROC.'),
-  W('CALL', 'structure', 'CALL name(expr)', 'Call a procedure.'),
+  W('CALL', 'structure', 'CALL name(expr, ...)', 'Call a procedure, giving one expression for each of its parameters.'),
   W('DEF', 'structure', 'DEF FN f(x) = expr', 'Define a numeric function of one parameter; use it as FN f(expr).'),
   W('FN', 'structure', 'FN f(expr)', 'Call a function made with DEF FN.'),
-  W('DIM', 'statement', 'DIM a, b, c(n), d$(n)', 'Declare variables (every variable must be declared) and arrays (n a literal, one dimension). At the top level a DIM is global; inside a SCENE it belongs to the scene. An array c(n) has the elements c(0)..c(n) (16 bit, all 0 at the start); with a v2 runtime n is 1..1000. An index outside 0..n reads 0 and a write to it is ignored.'),
+  W('DIM', 'statement', 'DIM a, b, c(n), d(w, h), e(n) = v0, v1, ...', 'Declare variables (every variable must be declared) and arrays. At the top level a DIM is global; inside a SCENE it belongs to the scene. An array c(n) has the elements c(0)..c(n) (16 bit, all 0 at the start); with a v2 runtime n is 1..1000. d(w, h) is a two-dimensional array of (w + 1) * (h + 1) elements, at most 1000, stored row by row (d(i, j) follows d(i, j - 1)). Sizes are constant expressions (numbers or CONSTs). "= v0, v1, ..." gives the first elements their values (constant expressions, at most one per element; the rest stay 0); the values are kept in the game and copied in when it starts. An index outside its range reads 0 and a write to it is ignored.'),
   W('IF', 'structure', 'IF cond THEN ... [ELSE ...] ENDIF', 'A block; there is no one-line form.'),
   W('THEN', 'structure', 'IF cond THEN', 'Part of IF.'),
   W('ELSE', 'structure', 'ELSE', 'Part of IF (and CASE ELSE).'),
@@ -133,12 +147,12 @@ const WORD_LIST = [
   W('PAPER', 'statement', 'PAPER n', 'Paper colour 0..7 for the text printed after it (the value is taken AND 7).'),
   W('BRIGHT', 'statement', 'BRIGHT n', 'Bright 0 or 1 for the text printed after it (the value is taken AND 1).'),
   W('FLASH', 'statement', 'FLASH n', 'Flash 0 or 1.'),
-  W('BORDER', 'statement', 'BORDER n', 'Border colour 0..7.'),
+  W('BORDER', 'statement', 'BORDER n', 'Border colour 0..7 (the value is taken AND 7). Needs a v2 runtime.'),
   W('PLOT', 'statement', 'PLOT x, y', 'Set a pixel (y from the top).'),
   W('LINE', 'statement', 'LINE x0, y0 TO x1, y1', 'Draw a line.'),
   W('POKE', 'statement', 'POKE addr, value', 'Write a byte.'),
   W('OUT', 'statement', 'OUT port, value', 'Write to a port.'),
-  W('RANDOMISE', 'statement', 'RANDOMISE n', 'Seed RND.'),
+  W('RANDOMISE', 'statement', 'RANDOMISE  /  RANDOMISE n', 'Seed RND: RANDOMISE n starts the sequence at n (0 is taken as 1, so the same n always gives the same numbers); RANDOMISE alone seeds it from the frame counter, so it differs from run to run when called after the player has waited, e.g. on the title screen. Needs a v2 runtime.'),
 
   // ── Operators ──
   W('AND', 'operator', 'a AND b', 'Logical and, giving 0 or 1 (not bitwise; use BIT for bit tests).'),
@@ -149,6 +163,12 @@ const WORD_LIST = [
 
   // ── Functions (always written with brackets) ──
   W('HIT', 'function', 'HIT(a, b)', '1 if both sprites (names, or pool(i) instances) are shown and their collision boxes (the sprite\'s hot box, else its whole size) overlap, else 0. Boxes that only touch do not overlap. An instance number outside its pool gives 0.', { args: ['a:sprite', 'b:sprite'], ret: 'num' }),
+  W('BAND', 'function', 'BAND(a, b)', 'The bits set in both a and b (16 bit). AND is logical (0 or 1); BAND is bitwise.', { args: ['a:num', 'b:num'], ret: 'num' }),
+  W('BOR', 'function', 'BOR(a, b)', 'The bits set in a or b (16 bit). OR is logical (0 or 1); BOR is bitwise.', { args: ['a:num', 'b:num'], ret: 'num' }),
+  W('BXOR', 'function', 'BXOR(a, b)', 'The bits set in exactly one of a and b (16 bit).', { args: ['a:num', 'b:num'], ret: 'num' }),
+  W('BNOT', 'function', 'BNOT(a)', 'Every bit of a flipped (16 bit): BNOT(0) is -1. NOT is logical (0 or 1); BNOT is bitwise.', { args: ['a:num'], ret: 'num' }),
+  W('SHL', 'function', 'SHL(a, n)', 'a shifted left by n bits (16 bit); 0 when n is outside 0..15. A constant n is a few inline instructions; a run-time n costs about 50 + 24 x n T-states.', { args: ['a:num', 'n:num'], ret: 'num' }),
+  W('SHR', 'function', 'SHR(a, n)', 'a shifted right by n bits, keeping the sign (arithmetic shift): SHR(-8, 1) is -4. When n is outside 0..15 the result is 0 for a non-negative a and -1 for a negative one. A run-time n costs about 50 + 29 x n T-states.', { args: ['a:num', 'n:num'], ret: 'num' }),
   W('BIT', 'function', 'BIT(v, n)', '1 if bit n (0..15) of v is set, else 0.', { args: ['v:num', 'n:num'], ret: 'num' }),
   W('STICK', 'function', 'STICK(n)', 'Joystick 1 or 2 as bits 0..4 (directions, fire = 16).', { args: ['n:num'], ret: 'num' }),
   W('KEYDOWN', 'function', 'KEYDOWN("Q")  /  KEYDOWN(code)', '1 while that key is held, else 0. The key is a one-character string or an ASCII code written as a number (not an expression): A-Z (upper case), 0-9, space (32), enter (13); 1 is CAPS SHIFT and 2 is SYMBOL SHIFT. It is looked up when the game is built. Needs a v2 runtime.', { args: ['code:key'], ret: 'num' }),
@@ -219,7 +239,6 @@ export const NOT_IN_ARCADE = new Map(Object.entries({
   MODE: 'there is no MODE: the build chooses the display setup per scene',
   DRAW: 'there is no DRAW: use LINE',
   CIRCLE: 'not in v0',
-  FILL: 'not in v0',
   BEEP: 'sound is PLAY with a SFX asset',
   SOUND: 'sound is PLAY with a SFX asset',
   PAUSE: 'the runtime owns the loop: use FRAMERATE',

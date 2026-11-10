@@ -8,6 +8,11 @@ REM   A cleared line flashes (a bright tile), then the rows above fall one sourc
 REM   Scoring: 40 / 100 / 300 / 1200 for 1 / 2 / 3 / 4 lines times (level + 1, at most 20); 1 point a row of soft drop, 2 a row of hard drop.
 REM   States: 0 title, 1 clearing the well for a new game, 2 waiting for the next piece, 3 falling, 4 flashing lines, 5 collapsing, 6 game over, 7 paused.
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/blockfall.arc --assets arcade/examples/blockfall.assets.json --runtime v2
+REM
+REM   Written with language batch 1 (docs/ARCADE_LANGUAGE_BATCH1.md): CONST for the geometry, PROCs with parameters and LOCALs, bit functions to
+REM   decode the piece masks, array initialisers for the tables, a 2-D board, FILL and COPY for the wipe and the collapse, RANDOMISE for the piece
+REM   order and BORDER. The version before the batch is kept in arcade/tests/fixtures/blockfall-v0.arc; tests/arcade-blockfall.mjs proves that
+REM   the cell maps, the attributes and the score of the two are identical on the same 3,595-tick script (with FREESEED = 0, see below).
 GAME "Blockfall"
 FRAMERATE 30
 
@@ -21,101 +26,101 @@ SFX clear4 = "clear4"
 SFX lvlup = "lvlup"
 SFX over = "over"
 
+REM The well: BW x BH cells, its first cell at screen column WX, row WY.  The board has a 2-cell wall each side and a floor of 4 rows (BX0 = the wall).
+CONST BW = 10
+CONST BH = 20
+CONST WX = 11
+CONST WY = 2
+CONST BX0 = 2
+REM The frame around the well, and the box that shows the next piece.
+CONST FRL = WX - 1
+CONST FRR = WX + BW
+CONST FRT = WY - 1
+CONST FRB = WY + BH
+CONST NXC = 24
+CONST NXR = 5
+REM 1: the piece order is seeded from the frame counter when SPACE starts the game (a different game every time).  0: one random number is burnt for
+REM every tick of the title, so the order depends only on how long the title waited (what tests/arcade-blockfall.mjs plays against the old version).
+CONST FREESEED = 1
+
 SCENE play
-  DIM st, tt, js, kl, kr, ku, kd, kf, kh, pu, pf, ph, ef, er, eh, dir, hdir, hcnt, scnt
-  DIM pc, nx, rot, px, py, tx, ty, tr, fit, bi, si, dv, gcnt, ldly, lres, wt, g
-  DIM shi, slo, hhi, hlo, ph1, pl1, pr, pcl, lv, lns, nlin, mult, lvup, low, fr0, fr1, ft, cr, cw, wr, gor, hud, bagpos
-  DIM a, m, n, c, j, t, i, x, rc, k, pk, kk, lk, lr, lc, fr, fc
-  REM sh: the 7 pieces (I O T S Z J L) x 4 turns as masks of a 4 x 4 box, bit (y * 4 + x); sdx, sdy, sdo: the 4 cells of each (x, y, y * 14 + x)
-  REM bd: the well with a 2-cell wall each side and a floor, 14 x 24; 0 = empty, 1..7 = a block of that piece, 9 = wall.  Well row r, column c is bd(r * 14 + c + 2)
-  DIM sh(27), sdx(111), sdy(111), sdo(111), bd(335), bag(6), cl(19), gt(14), ls(4), kc(4)
+  DIM st, tt, kl, kr, ku, kd, kf, kh, pu, pf, ph, ef, er, eh, hdir, hcnt, scnt
+  DIM pc, nx, rot, px, py, fit, gcnt, ldly, lres, wt
+  DIM shi, slo, hhi, hlo, lv, lns, nlin, mult, lvup, low, fr0, fr1, ft, cr, cw, wr, gor, hud, bagpos
+  REM sh: the 7 pieces (I O T S Z J L) x 4 turns as masks of a 4 x 4 box, bit (y * 4 + x); sdx, sdy: the 4 cells of each, decoded at the start (sdx already
+  REM includes the board's wall, BX0, so that a board index is x + sdx(...) with no addition; on the screen it is WX - BX0 + x + sdx(...))
+  REM I: 240 17476 3840 8738      O: 102 x 4      T: 114 610 624 562      S: 54 1122 864 561      Z: 99 612 1584 306      J: 113 550 1136 802      L: 116 1570 368 547
+  DIM sh(27) = 240, 17476, 3840, 8738, 102, 102, 102, 102, 114, 610, 624, 562, 54, 1122, 864, 561, 99, 612, 1584, 306, 113, 550, 1136, 802, 116, 1570, 368, 547
+  REM gravity: ticks a row at each level (30 ticks a second), the line scores, the wall kicks tried after a turn
+  DIM gt(14) = 24, 21, 18, 15, 12, 10, 8, 6, 5, 4, 3, 3, 2, 2, 1
+  DIM ls(4) = 0, 40, 100, 300, 1200
+  DIM kc(4) = 0, -1, 1, -2, 2
+  REM the well with a 2-cell wall each side and a floor: bd(column, row), 14 x 24; 0 = empty, 1..7 = a block of that piece, 9 = wall
+  DIM sdx(111), sdy(111), bd(13, 23), bag(6), cl(19)
 
   REM ---- the pieces ----
   PROC SETSHAPES():
-    REM I: 240 17476 3840 8738      O: 102 x 4      T: 114 610 624 562      S: 54 1122 864 561
-    REM Z: 99 612 1584 306          J: 113 550 1136 802      L: 116 1570 368 547      (a shape is a row of 4 bits a row; see blockfall.assets.gen.mjs --masks)
-    sh(0) = 240 : sh(1) = 17476 : sh(2) = 3840 : sh(3) = 8738
-    sh(4) = 102 : sh(5) = 102 : sh(6) = 102 : sh(7) = 102
-    sh(8) = 114 : sh(9) = 610 : sh(10) = 624 : sh(11) = 562
-    sh(12) = 54 : sh(13) = 1122 : sh(14) = 864 : sh(15) = 561
-    sh(16) = 99 : sh(17) = 612 : sh(18) = 1584 : sh(19) = 306
-    sh(20) = 113 : sh(21) = 550 : sh(22) = 1136 : sh(23) = 802
-    sh(24) = 116 : sh(25) = 1570 : sh(26) = 368 : sh(27) = 547
+    LOCAL m, n
     FOR a = 0 TO 27
       m = sh(a) : n = a * 4
       FOR c = 0 TO 15
-        IF BIT(m, c) THEN
-          sdx(n) = c MOD 4 : sdy(n) = c DIV 4 : sdo(n) = (c DIV 4) * 14 + c MOD 4
+        IF BAND(m, 1) THEN
+          sdx(n) = BAND(c, 3) + BX0 : sdy(n) = SHR(c, 2)
           n = n + 1
         ENDIF
+        m = SHR(m, 1)
       NEXT c
     NEXT a
-    REM gravity: ticks a row at each level (30 ticks a second), the line scores, the wall kicks tried after a turn
-    gt(0) = 24 : gt(1) = 21 : gt(2) = 18 : gt(3) = 15 : gt(4) = 12 : gt(5) = 10 : gt(6) = 8 : gt(7) = 6
-    gt(8) = 5 : gt(9) = 4 : gt(10) = 3 : gt(11) = 3 : gt(12) = 2 : gt(13) = 2 : gt(14) = 1
-    ls(0) = 0 : ls(1) = 40 : ls(2) = 100 : ls(3) = 300 : ls(4) = 1200
-    kc(0) = 0 : kc(1) = -1 : kc(2) = 1 : kc(3) = -2 : kc(4) = 2
   ENDP
 
-  REM Walls and floor; the inside empty.
+  REM Walls and floor; the inside is empty (every variable starts at 0).
   PROC CLEARBOARD():
-    FOR i = 0 TO 335
-      bd(i) = 0
-    NEXT i
-    FOR i = 0 TO 23
-      bd(i * 14) = 9 : bd(i * 14 + 1) = 9 : bd(i * 14 + 12) = 9 : bd(i * 14 + 13) = 9
-    NEXT i
-    FOR i = 280 TO 335
-      bd(i) = 9
-    NEXT i
-    FOR i = 0 TO 19
-      cl(i) = 0
-    NEXT i
+    FOR r = 0 TO 23
+      bd(0, r) = 9 : bd(1, r) = 9 : bd(BX0 + BW, r) = 9 : bd(BX0 + BW + 1, r) = 9
+    NEXT r
+    FOR c = 2 TO BX0 + BW - 1
+      FOR r = BH TO 23
+        bd(c, r) = 9
+      NEXT r
+    NEXT c
   ENDP
 
   REM ---- drawing ----
-  REM Well row r from the board (also puts a tile over any text there).
-  PROC REDRAWROW(r):
-    FOR rc = 0 TO 9
-      TILE 11 + rc, 2 + r = bd(r * 14 + rc + 2)
-    NEXT rc
+  REM Rows r .. r + n - 1 of the well are emptied, on the board and on the screen (this also wipes any text there).
+  PROC CLEARROWS(r, n):
+    IF n > 0 THEN
+      FOR i = r TO r + n - 1
+        FOR c = 0 TO BW - 1
+          bd(BX0 + c, i) = 0
+        NEXT c
+      NEXT i
+    ENDIF
+    FILL WX, WY + r, BW, n = 0
   ENDP
 
-  PROC CLEARROW(r):
-    FOR rc = 0 TO 9
-      bd(r * 14 + rc + 2) = 0
-      TILE 11 + rc, 2 + r = 0
-    NEXT rc
-  ENDP
-
-  REM The current piece (pc, rot, px, py) in tile dv (pc + 1 draws it, 0 erases it).
-  PROC DRAWP():
+  REM The current piece (pc, rot, px, py) in tile tl (pc + 1 draws it, 0 erases it).
+  PROC DRAWP(tl):
+    LOCAL si
     si = (pc * 4 + rot) * 4
     FOR k = 0 TO 3
-      TILE 11 + px + sdx(si + k), 2 + py + sdy(si + k) = dv
+      TILE WX - BX0 + px + sdx(si + k), WY + py + sdy(si + k) = tl
     NEXT k
   ENDP
 
-  REM The preview of piece p in the next box (tile dv).
-  PROC PREVIEW(p):
-    FOR pk = 0 TO 3
-      TILE 24 + sdx(p * 16 + pk), 5 + sdy(p * 16 + pk) = dv
-    NEXT pk
+  REM The preview of piece p in the next box (tile tl).
+  PROC PREVIEW(p, tl):
+    FOR k = 0 TO 3
+      TILE NXC - BX0 + sdx(p * 16 + k), NXR + sdy(p * 16 + k) = tl
+    NEXT k
   ENDP
 
   REM The frame, the labels, the key help: drawn once.
   PROC DRAWSTATIC():
-    FOR i = 1 TO 22
-      TILE 10, i = 9
-      TILE 21, i = 9
-    NEXT i
-    FOR i = 11 TO 20
-      TILE i, 1 = 9
-      TILE i, 22 = 9
-    NEXT i
-    FOR i = 0 TO 19
-      CALL REDRAWROW(i)
-    NEXT i
+    FILL FRL, FRT, 1, BH + 2 = 9
+    FILL FRR, FRT, 1, BH + 2 = 9
+    FILL WX, FRT, BW, 1 = 9
+    FILL WX, FRB, BW, 1 = 9
+    FILL WX, WY, BW, BH = 0
     BRIGHT 1 : PAPER 0
     INK 6 : PRINT AT 0, 11; "BLOCKFALL";
     INK 5 : PRINT AT 3, 24; "NEXT";
@@ -161,32 +166,31 @@ SCENE play
     hud = 1
   ENDP
 
-  REM Print the score (ph1 * 10000 + pl1) at row pr, column 23 (or 1), followed by 3 spaces.
-  PROC PSCORE():
-    PRINT AT pr, pcl; "";
-    IF ph1 > 0 THEN
-      PRINT ph1;
-      IF pl1 < 1000 THEN PRINT "0"; ENDIF
-      IF pl1 < 100 THEN PRINT "0"; ENDIF
-      IF pl1 < 10 THEN PRINT "0"; ENDIF
+  REM Print the score (hi * 10000 + lo) at row r, column c, followed by 3 spaces.
+  PROC PSCORE(r, c, hi, lo):
+    PRINT AT r, c;
+    IF hi > 0 THEN
+      PRINT hi;
+      IF lo < 1000 THEN PRINT "0"; ENDIF
+      IF lo < 100 THEN PRINT "0"; ENDIF
+      IF lo < 10 THEN PRINT "0"; ENDIF
     ENDIF
-    PRINT pl1; "   ";
+    PRINT lo; "   ";
   ENDP
 
   PROC SHOWHUD():
     BRIGHT 1 : PAPER 0 : INK 7
-    ph1 = shi : pl1 = slo : pr = 11 : pcl = 23
-    CALL PSCORE()
+    CALL PSCORE(11, 23, shi, slo)
     PRINT AT 14, 23; lv + 1; "   ";
     PRINT AT 17, 23; lns; "   ";
     INK 6
-    ph1 = hhi : pl1 = hlo : pr = 4 : pcl = 1
-    CALL PSCORE()
+    CALL PSCORE(4, 1, hhi, hlo)
     hud = 0
   ENDP
 
   REM ---- the bag ----
   PROC SHUFFLE():
+    LOCAL j, t
     FOR a = 0 TO 6
       bag(a) = a
     NEXT a
@@ -204,11 +208,11 @@ SCENE play
   ENDP
 
   REM ---- the piece ----
-  REM Does piece pc in turn tr at column tx, row ty fit?  fit = 1 or 0.
-  PROC FITS():
-    bi = ty * 14 + tx + 2
-    si = (pc * 4 + tr) * 4
-    fit = (bd(bi + sdo(si)) = 0) AND (bd(bi + sdo(si + 1)) = 0) AND (bd(bi + sdo(si + 2)) = 0) AND (bd(bi + sdo(si + 3)) = 0)
+  REM Does piece p in turn r at column x, row y fit?  fit = 1 or 0.
+  PROC FITS(p, r, x, y):
+    LOCAL si
+    si = (p * 4 + r) * 4
+    fit = (bd(x + sdx(si), y + sdy(si)) = 0) AND (bd(x + sdx(si + 1), y + sdy(si + 1)) = 0) AND (bd(x + sdx(si + 2), y + sdy(si + 2)) = 0) AND (bd(x + sdx(si + 3), y + sdy(si + 3)) = 0)
   ENDP
 
   PROC RESETLOCK():
@@ -216,12 +220,11 @@ SCENE play
   ENDP
 
   PROC TRYMOVE(d):
-    tx = px + d : ty = py : tr = rot
-    CALL FITS()
+    CALL FITS(pc, rot, px + d, py)
     IF fit THEN
-      dv = 0 : CALL DRAWP()
-      px = tx
-      dv = pc + 1 : CALL DRAWP()
+      CALL DRAWP(0)
+      px = px + d
+      CALL DRAWP(pc + 1)
       CALL RESETLOCK()
       PLAY tick
     ENDIF
@@ -229,59 +232,64 @@ SCENE play
 
   REM Turn clockwise; if it does not fit, try one column left, one right (and two for the I piece).
   PROC TRYROT():
-    tr = (rot + 1) MOD 4 : ty = py
+    LOCAL tr, tx, m
+    tr = (rot + 1) MOD 4
     m = 2 : IF pc = 0 THEN m = 4 ENDIF
-    FOR kk = 0 TO m
-      tx = px + kc(kk)
-      CALL FITS()
+    FOR k = 0 TO m
+      tx = px + kc(k)
+      CALL FITS(pc, tr, tx, py)
       IF fit THEN
-        dv = 0 : CALL DRAWP()
+        CALL DRAWP(0)
         px = tx : rot = tr
-        dv = pc + 1 : CALL DRAWP()
+        CALL DRAWP(pc + 1)
         CALL RESETLOCK()
         PLAY tick
         EXIT FOR
       ENDIF
-    NEXT kk
+    NEXT k
   ENDP
 
   REM One row down if it fits (fit tells).
   PROC STEPDOWN():
-    tx = px : ty = py + 1 : tr = rot
-    CALL FITS()
+    CALL FITS(pc, rot, px, py + 1)
     IF fit THEN
-      dv = 0 : CALL DRAWP()
-      py = ty
-      dv = pc + 1 : CALL DRAWP()
+      CALL DRAWP(0)
+      py = py + 1
+      CALL DRAWP(pc + 1)
       ldly = 0 : lres = 0
     ENDIF
   ENDP
 
+  REM The piece falls to the floor: FITS at one row lower until it does not.  The four cells (board column and row offset) are looked up once,
+  REM not at every row, which is what keeps a hard drop from the top of the well inside the tick.
   PROC HARDDROP():
-    dv = 0 : CALL DRAWP()
-    tx = px : tr = rot : ty = py
+    LOCAL ty, si, x0, x1, x2, x3, y0, y1, y2, y3
+    CALL DRAWP(0)
+    si = (pc * 4 + rot) * 4
+    x0 = px + sdx(si) : x1 = px + sdx(si + 1) : x2 = px + sdx(si + 2) : x3 = px + sdx(si + 3)
+    y0 = sdy(si) : y1 = sdy(si + 1) : y2 = sdy(si + 2) : y3 = sdy(si + 3)
+    ty = py
     fit = 1
     WHILE fit
       ty = ty + 1
-      CALL FITS()
+      fit = (bd(x0, ty + y0) = 0) AND (bd(x1, ty + y1) = 0) AND (bd(x2, ty + y2) = 0) AND (bd(x3, ty + y3) = 0)
     WEND
     ty = ty - 1
     CALL ADDSCORE((ty - py) * 2)
     py = ty
-    dv = pc + 1 : CALL DRAWP()
+    CALL DRAWP(pc + 1)
     CALL LOCK()
   ENDP
 
   REM The next piece comes: nx becomes the piece, a new nx is drawn.  A piece that does not fit ends the game.
   PROC SPAWN():
-    dv = 11 : CALL PREVIEW(nx)
+    CALL PREVIEW(nx, 11)
     pc = nx : CALL TAKEPIECE()
-    dv = nx + 1 : CALL PREVIEW(nx)
+    CALL PREVIEW(nx, nx + 1)
     rot = 0 : px = 3 : py = 0
-    tx = px : ty = py : tr = rot
-    CALL FITS()
+    CALL FITS(pc, rot, px, py)
     IF fit THEN
-      dv = pc + 1 : CALL DRAWP()
+      CALL DRAWP(pc + 1)
       st = 3 : gcnt = 0 : ldly = 0 : lres = 0
     ELSE
       CALL GAMEOVER()
@@ -290,11 +298,11 @@ SCENE play
 
   REM ---- locking and the lines ----
   PROC LOCK():
+    LOCAL si
     si = (pc * 4 + rot) * 4
-    bi = py * 14 + px + 2
-    FOR lk = 0 TO 3
-      bd(bi + sdo(si + lk)) = pc + 1
-    NEXT lk
+    FOR k = 0 TO 3
+      bd(px + sdx(si + k), py + sdy(si + k)) = pc + 1
+    NEXT k
     CALL CHECKLINES()
     IF nlin > 0 THEN
       CALL SCORELINES()
@@ -307,18 +315,20 @@ SCENE play
 
   REM Which of the four rows the piece touched are full: cl(row) = 1, nlin of them, low = the lowest.
   PROC CHECKLINES():
+    LOCAL m
     nlin = 0 : low = -1
-    fr0 = py : fr1 = py + 3 : IF fr1 > 19 THEN fr1 = 19 ENDIF
-    FOR lr = fr0 TO fr1
-      m = 1 : n = lr * 14 + 2
-      FOR lc = 0 TO 9
-        IF bd(n + lc) = 0 THEN m = 0 : EXIT FOR ENDIF
-      NEXT lc
-      IF m THEN cl(lr) = 1 : nlin = nlin + 1 : low = lr ENDIF
-    NEXT lr
+    fr0 = py : fr1 = py + 3 : IF fr1 > BH - 1 THEN fr1 = BH - 1 ENDIF
+    FOR r = fr0 TO fr1
+      m = 1
+      FOR c = 0 TO BW - 1
+        IF bd(BX0 + c, r) = 0 THEN m = 0 : EXIT FOR ENDIF
+      NEXT c
+      IF m THEN cl(r) = 1 : nlin = nlin + 1 : low = r ENDIF
+    NEXT r
   ENDP
 
   PROC SCORELINES():
+    LOCAL c
     mult = lv + 1 : IF mult > 20 THEN mult = 20 ENDIF
     CALL ADDSCORE(ls(nlin) * mult)
     lns = lns + nlin
@@ -337,34 +347,34 @@ SCENE play
     ENDSEL
   ENDP
 
-  REM The full rows in tile dv (dv < 0: back to what the board holds).
-  PROC FLASHROWS():
-    FOR fr = fr0 TO fr1
-      IF cl(fr) THEN
-        FOR fc = 0 TO 9
-          IF dv >= 0 THEN
-            TILE 11 + fc, 2 + fr = dv
-          ELSE
-            TILE 11 + fc, 2 + fr = bd(fr * 14 + fc + 2)
-          ENDIF
-        NEXT fc
+  REM The full rows in tile tl (tl < 0: back to what the board holds).
+  PROC FLASHROWS(tl):
+    FOR r = fr0 TO fr1
+      IF cl(r) THEN
+        IF tl >= 0 THEN
+          FILL WX, WY + r, BW, 1 = tl
+        ELSE
+          FOR c = 0 TO BW - 1
+            TILE WX + c, WY + r = bd(BX0 + c, r)
+          NEXT c
+        ENDIF
       ENDIF
-    NEXT fr
+    NEXT r
   ENDP
 
   REM Row cr moves down to row cw (board and screen).
   PROC COPYROW():
-    FOR rc = 0 TO 9
-      m = bd(cr * 14 + rc + 2)
-      bd(cw * 14 + rc + 2) = m
-      TILE 11 + rc, 2 + cw = m
-    NEXT rc
+    FOR c = 0 TO BW - 1
+      bd(BX0 + c, cw) = bd(BX0 + c, cr)
+    NEXT c
+    COPY WX, WY + cr, BW, 1 TO WX, WY + cw
   ENDP
 
   REM ---- game over ----
   PROC GAMEOVER():
-    st = 6 : gor = 19
+    st = 6 : gor = BH - 1
     PLAY over
+    BORDER 2
     IF shi > hhi OR (shi = hhi AND slo > hlo) THEN hhi = shi : hlo = slo : hud = 1 ENDIF
   ENDP
 
@@ -373,12 +383,14 @@ SCENE play
     bagpos = 7
     hdir = 0 : hcnt = 0 : scnt = 0
     st = 1 : wr = 0
+    BORDER 0
   ENDP
 
   REM ---- the states ----
   PROC TITLETICK():
+    LOCAL x
     tt = tt + 1
-    x = RND(2)
+    IF FREESEED = 0 THEN x = RND(2) ENDIF
     IF tt MOD 30 = 0 THEN
       INK 7 : PRINT AT 12, 13; "PRESS";
       INK 7 : PRINT AT 13, 13; "SPACE";
@@ -387,20 +399,22 @@ SCENE play
       PRINT AT 12, 13; "     ";
       PRINT AT 13, 13; "     ";
     ENDIF
-    IF ef THEN CALL STARTGAME() ENDIF
+    IF ef THEN
+      IF FREESEED THEN RANDOMISE ENDIF
+      CALL STARTGAME()
+    ENDIF
   ENDP
 
   REM Two rows a tick of the well are emptied (this wipes the title text or the old stack), then the game begins.
   PROC WIPETICK():
-    CALL CLEARROW(wr)
-    CALL CLEARROW(wr + 1)
+    CALL CLEARROWS(wr, 2)
     wr = wr + 2
-    IF wr >= 20 THEN
+    IF wr >= BH THEN
       INK 7
       PRINT AT 3, 1; "HI SCORE";
-      dv = 11 : CALL PREVIEW(nx)
+      CALL PREVIEW(nx, 11)
       CALL TAKEPIECE()
-      dv = nx + 1 : CALL PREVIEW(nx)
+      CALL PREVIEW(nx, nx + 1)
       hud = 1
       st = 2 : wt = 10
     ENDIF
@@ -412,6 +426,7 @@ SCENE play
   ENDP
 
   PROC HANDLEINPUT():
+    LOCAL dir
     IF er THEN CALL TRYROT() ENDIF
     dir = kr - kl
     IF dir <> 0 THEN
@@ -446,14 +461,14 @@ SCENE play
   ENDP
 
   PROC GRAVITY():
+    LOCAL g
     gcnt = gcnt + 1
     g = lv : IF g > 14 THEN g = 14 ENDIF
     IF gcnt >= gt(g) THEN
       gcnt = 0
       CALL STEPDOWN()
     ENDIF
-    tx = px : ty = py + 1 : tr = rot
-    CALL FITS()
+    CALL FITS(pc, rot, px, py + 1)
     IF fit = 0 THEN
       ldly = ldly + 1
       IF ldly >= 15 THEN CALL LOCK() ENDIF
@@ -479,8 +494,8 @@ SCENE play
 
   REM The full rows flash (a bright tile for 3 ticks, the blocks for 3, twice), then they go.
   PROC FLASHTICK():
-    IF ft MOD 6 = 0 THEN dv = 8 : CALL FLASHROWS() ENDIF
-    IF ft MOD 6 = 3 THEN dv = -1 : CALL FLASHROWS() ENDIF
+    IF ft MOD 6 = 0 THEN CALL FLASHROWS(8) ENDIF
+    IF ft MOD 6 = 3 THEN CALL FLASHROWS(-1) ENDIF
     ft = ft + 1
     IF ft >= 12 THEN
       cr = low : cw = low
@@ -502,9 +517,7 @@ SCENE play
       ENDIF
     NEXT i
     IF cr < 0 THEN
-      FOR i = 0 TO cw
-        CALL CLEARROW(i)
-      NEXT i
+      CALL CLEARROWS(0, cw + 1)
       IF lvup THEN PLAY lvlup : lvup = 0 ENDIF
       st = 2 : wt = 4
     ENDIF
@@ -513,8 +526,8 @@ SCENE play
   REM The stack turns grey from the bottom, one row a tick; then the text, and fire starts again.
   PROC OVERTICK():
     IF gor >= 0 THEN
-      FOR i = 0 TO 9
-        IF bd(gor * 14 + i + 2) <> 0 THEN TILE 11 + i, 2 + gor = 10 ENDIF
+      FOR i = 0 TO BW - 1
+        IF bd(BX0 + i, gor) <> 0 THEN TILE WX + i, WY + gor = 10 ENDIF
       NEXT i
       gor = gor - 1
       IF gor < 0 THEN
@@ -538,9 +551,11 @@ SCENE play
     CALL SHOWTITLE()
     hud = 1
     st = 0
+    BORDER 0
   ENDP
 
   PROC FRAME():
+    LOCAL js
     js = STICK(1)
     kl = KEYDOWN("O") OR BIT(js, 2)
     kr = KEYDOWN("P") OR BIT(js, 3)

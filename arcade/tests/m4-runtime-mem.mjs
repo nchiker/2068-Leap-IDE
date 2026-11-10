@@ -23,7 +23,7 @@ const REGIONS = [
   ['ROW_TAB', S.ROW_TAB, 384, 'ro'], ['PHASE_PTR', S.PHASE_PTR, 128, 'ro'], ['POOL_A', S.POOL_A, 32 * 96, 'ro'], ['CELL_TILE', S.CELL_TILE, 768, 'rw'],
   ['CELL_ATTR', S.CELL_ATTR, 768, 'rw'], ['DIRTY0', S.DIRTY0, 96, 'rw'], ['SPR_TAB', S.SPR_TAB, 96, 'rw'], ['AST', S.AST, 64, 'ro'], ['DIRTY1', S.DIRTY1, 96, 'rw'],
   ['SPR_DRAWN', S.SPR_DRAWN, 128, 'rw'], ['T2_FREE', S.T2_FREE, S.T2_FREE_LEN, 'free'], ['TILE_ATTR', S.TILE_ATTR, 128, 'ro'], ['POOL_C', S.POOL_C, 4 * 96, 'ro'],
-  ['GLYPH_TAB', S.GLYPH_TAB, 2048, 'ro'], ['VARS', S.VARS, 0xF8, 'rw'], ['VARS_FREE', S.VARS + 0xF8, 0x08, 'free'], ['GAME_VARS', S.GAME_VARS_BASE, S.GAME_VARS_LIMIT + 1 - S.GAME_VARS_BASE, 'rw'],
+  ['GLYPH_TAB', S.GLYPH_TAB, 2048, 'ro'], ['VARS', S.VARS, 0xFC, 'rw'], ['VARS_FREE', S.VARS + 0xFC, 0x04, 'free'], ['GAME_VARS', S.GAME_VARS_BASE, S.GAME_VARS_LIMIT + 1 - S.GAME_VARS_BASE, 'rw'],
   ['POOL_B', S.POOL_B, 28 * 96, 'ro'], ['T3', S.T3, S.T3_LEN, 'free'], ['STACK', S.STACK_CANARY, S.STACK_TOP - S.STACK_CANARY, 'stack'], ['HANDOFF', 0xFF00, 0x100, 'rw'],
 ];
 {
@@ -84,7 +84,7 @@ console.log('\n2. The worst-case game, free areas poisoned, writes tracked');
   for (const a of playWrites) { const n = name(a); touched[n] = (touched[n] ?? 0) + 1; }
   console.log('  regions written during play (bytes): ' + Object.entries(touched).map(([n, c]) => `${n} ${c}`).join(', '));
   check('the worst-case picture (8 assets x 8 phases = 64 slots, 16 instances, text, 12 tiles) equals the model in 100 % of the 200 refreshes', st.pictureOk === 200 && st.pictureBad === 0 && st.pixelBad === 0, JSON.stringify(st.firstBad));
-  check('no free area is ever written (T2_FREE, T3, $E0F8-$E0FF stay filled with the pattern)', freeAreas.every(([, a, l]) => Array.from({ length: l }, (_, k) => m.ram[a + k]).every((v, k) => v === (0xA5 ^ (k & 0x3F)))));
+  check('no free area is ever written (T2_FREE, T3 = the RAM of the tile operations, which this game does not call, and $E0FC-$E0FF stay filled with the pattern)', freeAreas.every(([, a, l]) => Array.from({ length: l }, (_, k) => m.ram[a + k]).every((v, k) => v === (0xA5 ^ (k & 0x3F)))));
   check('during play nothing is written to a read-only table (ROW_TAB, PHASE_PTR, AST, the pools, TILE_ATTR, GLYPH_TAB) nor to a gap', ro.every(([n]) => !touched[n]) && !touched.gap, JSON.stringify(touched));
   check('...and those tables are byte for byte what the boot built', ro.every(([, a, l], i) => Array.from({ length: l }, (_, k) => m.ram[a + k]).every((v, k) => v === snap[i][k])));
   check('play writes only: cell map, dirty maps, SPR_TAB, SPR_DRAWN, variables, game variables, the stack (and the hand-off record is not touched)', Object.keys(touched).every((n) => ['CELL_TILE', 'CELL_ATTR', 'DIRTY0', 'DIRTY1', 'SPR_TAB', 'SPR_DRAWN', 'VARS', 'GAME_VARS', 'STACK'].includes(n)) && !touched.HANDOFF);

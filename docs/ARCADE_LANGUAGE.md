@@ -91,3 +91,13 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
 
 ## Changelog
 * 0.0 (2026-11-09): first draft from the game A target.
+* 0.1 (2026-11-09, language batch 1; contract `docs/ARCADE_LANGUAGE_BATCH1.md`, tests `tests/arcade-m5.mjs`): `CONST`; `PROC` with 0 to 4 parameters and
+  `LOCAL` (an undeclared `FOR` variable inside a PROC becomes a local); `BAND` `BOR` `BXOR` `BNOT` `SHL` `SHR`; `DIM a(n) = v0, v1, ...` and two-dimensional
+  `DIM b(w, h)`; `RANDOMISE [n]` and `BORDER n`; `PRINT AT r, c;` with no items only positions the cursor; asset names (SPRITE, SFX, TILESET, MAP) live
+  apart from variables, PROCs and DEF FNs; `FILL` `FILLC` `COPY` `LOADMAP [AT]`; up to 8 `MAP`s. Decisions where the contract was silent (also at the top
+  of `tests/arcade-m5.mjs`): a CONST may also use `BIT()`, DIV or MOD by zero in a CONST is an error, a CONST is visible below its declaration only, and
+  no parameter, LOCAL or FOR variable may take a CONST's name; locals (and implicit FOR variables) are 0 at the start of every call; `LOCAL` may stand
+  anywhere at the top level of a PROC but not after its first use; an initialiser must be the last item of its `DIM`; a 2-D array has index i (slow)
+  0..w and j 0..h, flat slot i * (h + 1) + j, each index checked on its own, w and h at least 1, at most 1000 slots; `FILL` ignores a tile outside the
+  tileset and `FILLC` a character outside 32..127; `RANDOMISE n` seeds n AND $FFFF (0 becomes 1); `LOADMAP` gives a font cell the attribute $38. Slots of
+  different PROCs are not shared. New reserved words: CONST LOCAL FILL FILLC COPY LOADMAP BAND BOR BXOR BNOT SHL SHR.

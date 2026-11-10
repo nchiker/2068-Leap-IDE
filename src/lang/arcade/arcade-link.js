@@ -14,6 +14,9 @@
  * The rest of $8000-$BFFF is cleared to 0. `memory` is the full 64 KB image; `dck` is a TS2068 DCK with one bank-0
  * block, kinds 0 and 2 only, chunks 0, 1, 4 and 5 shipped (a port of arcade/tools/mkdck.mjs's buildDck).
  *
+ * Language batch 1 (gen.headerLen 18, docs/ARCADE_RUNTIME_API_V2.md "As built: language batch 1"): when a program has a LOADMAP or several maps, frame_div gets bit 7 ($80)
+ * and the header continues +16 DW map_table; the map_ptr word +12 is 0 and the sprite descriptors start at +18.
+ *
  * Runtime API v2 (gen.headerLen 16, gen.descLen 8, docs/ARCADE_RUNTIME_API_V2.md): the header continues +14 DW inst_table (inside the code
  * area: `DB ninst`, then one asset index per instance); `sprite_count` is the number of ASSETS; each descriptor is
  * `DB w, DB h, DW data, DW hot, DB phases, DB 0`.
@@ -84,7 +87,7 @@ export function link(gen, runtime, image) {
   const w16 = (a, v) => { memory[a] = v & 0xFF; memory[a + 1] = (v >> 8) & 0xFF; };
   w16(GAME_BASE, gen.entries.init);
   w16(GAME_BASE + 2, gen.entries.frame);
-  memory[GAME_BASE + 4] = gen.frameDiv;
+  memory[GAME_BASE + 4] = gen.frameDiv | (gen.mapFlag ?? 0);                 // language batch 1: bit 7 says the header is extended (the map table)
   memory[GAME_BASE + 5] = n;
   w16(GAME_BASE + 6, GAME_BASE + headerLen);
   if (headerLen >= 14) {
@@ -93,6 +96,7 @@ export function link(gen, runtime, image) {
     w16(GAME_BASE + 12, gen.v1?.map ?? 0);
   }
   if (headerLen >= 16) w16(GAME_BASE + 14, gen.v2?.instTable ?? 0);      // v2: inst_table -> DB ninst, ninst x DB asset
+  if (headerLen >= 18) w16(GAME_BASE + (gen.mapTableAt ? gen.mapTableAt - GAME_BASE : 16), gen.v2?.mapTable ?? 0);   // batch 1: map_table -> DB count, count x DW map (DB w, DB h, cells)
   let dataAt = codeEnd;
   gen.sprites.forEach((s, i) => {
     const d = GAME_BASE + headerLen + (gen.descLen ?? 6) * i;

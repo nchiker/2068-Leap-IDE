@@ -249,7 +249,8 @@ const BREAKOUT = bm ? bm[1] : '';
   const loc = 'SCENE a\n  DIM mine\n  PROC INIT()\n    mine = 0\n  ENDP\n  PROC FRAME()\n  ENDP\nENDSCENE\nSCENE b\n  PROC INIT()\n    mine = 1\n  ENDP\n  PROC FRAME()\n  ENDP\nENDSCENE';
   check('names: a scene DIM is local to its scene', (e => e.length === 1 && e[0].line === 11)(run(loc).errors), json(run(loc).errors));
   check('names: a PROC parameter is local to its PROC', hasMsg(run(wrap('    CALL p(1)\n    k = 1', 'PROC p(k)\n  v2 = k\nENDP')).errors, /'k' is not declared/));
-  check('names: a FOR variable must be declared', hasMsg(errorsOf('    FOR q = 1 TO 2\n    NEXT'), /'q' is not declared/));
+  // language batch 1: a FOR variable that no one declared becomes a local of its PROC (tests/arcade-m5.mjs has the details)
+  check('names: an undeclared FOR variable is a local of the PROC (batch 1); one declared by a later DIM is an error', errorsOf('    FOR q = 1 TO 2\n    NEXT').length === 0 && hasMsg(run('PROC p()\n  FOR q = 1 TO 2\n  NEXT\nENDP\nDIM q').errors, /declared later/));
   check('names: reserved names need no DIM and cannot be variables', hasMsg(errorsOf('    ABS = 1'), /built-in function/));
 
   // assets
@@ -262,7 +263,7 @@ const BREAKOUT = bm ? bm[1] : '';
   check('assets: HIT of two declared sprites', errorsOf('    IF HIT(ball, bat) THEN\n    ENDIF').length === 0);
   check('assets: HIT with an SFX or an unknown name is wrong', errorsOf('    IF HIT(ball, snd) THEN\n    ENDIF').length === 1 && errorsOf('    IF HIT(ball, nope) THEN\n    ENDIF').length === 1);
   check('assets: an asset is not a value', hasMsg(errorsOf('    v = ball'), /SPRITE, not a variable/));
-  check('assets: a variable cannot reuse an asset name', hasMsg(run('SPRITE ball = "b"\nDIM ball').errors, /already declared/));
+  check('assets: asset names live apart from variables (batch 1): a variable may reuse one', run('SPRITE ball = "b"\nDIM ball').errors.length === 0);
   check('assets: assets may be declared after the scene that uses them', run('SCENE s\n  PROC INIT()\n    SHOW ball AT 1, 2\n  ENDP\n  PROC FRAME()\n  ENDP\nENDSCENE\nSPRITE ball = "ball"').errors.length === 0);
 
   // scenes
@@ -289,7 +290,7 @@ const BREAKOUT = bm ? bm[1] : '';
   // duplicates
   check('dup: DIM twice in a scene', hasMsg(run('SCENE a\n DIM x, X\nENDSCENE').errors, /already declared/));
   check('dup: a scene DIM over a global', hasMsg(run('DIM x\nSCENE a\n DIM x\nENDSCENE').errors, /already declared/));
-  check('dup: two assets with one name', hasMsg(run('SPRITE a = "x"\nSFX A = "y"').errors, /already declared/));
+  check('dup: two assets of one kind with one name; different kinds may share a name (batch 1)', hasMsg(run('SPRITE a = "x"\nSPRITE A = "y"').errors, /already declared/) && run('SPRITE a = "x"\nSFX A = "y"').errors.length === 0);
   check('dup: two top-level PROCs', hasMsg(run('PROC p()\nENDP\nPROC P()\nENDP').errors, /already defined/));
   check('dup: two DEF FNs', hasMsg(run('DEF FN f(x) = x\nDEF FN f(x) = x + 1').errors, /already defined/));
   check('dup: a variable named like a PROC', hasMsg(run('PROC p()\nENDP\nDIM p').errors, /PROC or DEF FN/));
@@ -348,8 +349,9 @@ const BREAKOUT = bm ? bm[1] : '';
   check('arrays: an array needs an index', hasMsg(errorsOf('    v = a'), /is an array/));
   check('arrays: a scalar cannot be indexed', hasMsg(errorsOf('    v(1) = 2'), /not an array/));
   check('arrays: DIM size range', hasMsg(run('DIM x(0)').errors, /out of range/) && hasMsg(run('DIM x(16384)').errors, /out of range/) && run('DIM x(16383)').errors.length === 0);
-  check('arrays: DIM with two dimensions is a parse error', parse('DIM x(2, 3)').errors.some(e => /one dimension/.test(e.message)));
-  check('arrays: DIM size must be a literal', parse('DIM x(n)').errors.length === 1);
+  // language batch 1 (docs/ARCADE_LANGUAGE_BATCH1.md): two dimensions and constant-expression sizes are valid DIMs now (tests/arcade-m5.mjs has the details)
+  check('arrays: DIM with two dimensions parses (language batch 1)', (d => d.errors.length === 0 && d.ast.decls[0].items[0].dims.length === 2)(parse('DIM x(2, 3)')) && parse('DIM x(2, 3, 4)').errors.some(e => /two dimensions/.test(e.message)));
+  check('arrays: DIM size must be a constant expression (checked, not parsed)', parse('DIM x(n)').errors.length === 0 && hasMsg(run('DIM q\nDIM x(q)').errors, /constant/));
   check('DIM inside a PROC is an error', hasMsg(errorsOf('    DIM zz'), /not inside a PROC/));
   check('DEF FN inside a PROC is an error', hasMsg(errorsOf('    DEF FN q(x) = x'), /not inside a PROC/));
 

@@ -143,3 +143,63 @@ bytes of each phase copy at boot (art dependent), (3) serpentine rows to drop th
 **Deviations / decisions.** `inst_table` 0 means no instances (not "one per asset"). `RT_SHOW` clamps are not per asset. Frame loop order (above). The contract asked for
 `INST_ASSET`: it is `SPR_TAB` byte 1 of each entry (`SPR_ASSET_OFF`, stride `SPR_ENT` = 6). `MAX_SPRITES` = 16 and `MAX_ASSETS` = 8 are in `constants`. The v1
 statement "sprite descriptors keep the v0 format" no longer holds: v2 descriptors are 8 bytes and v1 games do not run on v2.
+
+## As built: language batch 1, tile operations (M5, 2026-11-09)
+Contract: `docs/ARCADE_LANGUAGE_BATCH1.md` ("Tile operations", "Maps"). **Additive to v2**: `"version": 2` stays; no routine, table or tick cost of v2 changed. The new code is one
+module, `arcade/runtime/v2/tileops.asm` (labels `M_TILEOPS_S/E`, 2,104 bytes), placed after the font. Three tiny edits elsewhere: `boot.asm` (reads `frame_div AND $7F`; sets `V_BORDER`),
+`video.asm` (`cells_init` calls `maps_boot`), `runtime.asm` (the include). Runtime size 9,337 of 16,384 bytes in DOCK chunks 0-1 (was 7,227). Entry points and constants are in
+`arcade/build/v2/runtime.json` (`RT_FILL`, `RT_FILLC`, `RT_COPY`, `RT_LOADMAP`, `RT_LOADMAPAT`, `RT_LOADMAPPTR`, `RT_BORDER`, `RT_RANDOMISE`; constants `RT_ARGS`, `RA_X` `RA_Y` `RA_W` `RA_H` `RA_V`
+`RA_DX` `RA_DY`, `GAME_MAPTAB`, `GAME_HEADER_EXT_LEN`, `DIV_EXT`, `MAX_MAPS`, `V_BORDER`, `V_NMAP`, `V_MAPTAB`, `TO_BUFT`, `TO_BUFA`, `RT_SEED`, `V_FRAMES`).
+
+**Register convention.** All coordinates are signed 16-bit and clipped by the runtime (the compiler does no clamping). FILL / FILLC / COPY take their arguments in the
+**argument block `RT_ARGS`** (12 bytes of RAM at `$FAC0`, little-endian words; the compiler evaluates each argument to HL and stores it with `LD (RA_x),HL`, in any order, then CALLs):
+`RA_X` +0, `RA_Y` +2, `RA_W` +4, `RA_H` +6, `RA_V` +8 (= `RA_DX`), `RA_DY` +10. The routines never change the block (unchanged words may be reused by the next call).
+| Routine | In | Meaning |
+|---|---|---|
+| `RT_FILL` | `RA_X, RA_Y, RA_W, RA_H`, `RA_V` = tile (AND `$7F`) | `FILL x, y, w, h = t`: the cells of the clipped rectangle become game tile t (cell byte 128+t, attribute `TILE_ATTR[t]`, exactly as `RT_TILE`) |
+| `RT_FILLC` | same, `RA_V` = character code (AND `$7F`) | `FILLC`: cell byte = code, attribute = `V_TEXT_ATTR` (as `RT_PRINTC`; codes 0..31 and 127 are blank glyphs); the text attribute and cursor are not changed |
+| `RT_COPY` | `RA_X, RA_Y, RA_W, RA_H` (source), `RA_DX, RA_DY` (destination top left) | `COPY x, y, w, h TO dx, dy`: cell byte and attribute of each source cell go to the destination cell, as a **memmove** (all reads before the writes: any overlap, all 8 directions). **Clipping:** cell (i, j) of the w x h rectangle is copied only if BOTH (x+i, y+j) and (dx+i, dy+j) are on the 32 x 24 screen (the intersection of the visible parts; a source cell off screen leaves its destination untouched) |
+| `RT_LOADMAP` | A = map index (0..count-1) | `LOADMAP name`, at cell (0, 0) |
+| `RT_LOADMAPAT` | A = map index, BC = x, DE = y (signed; the `RT_SHOW` convention) | `LOADMAP name AT x, y` |
+| `RT_LOADMAPPTR` | HL = address of a map record (`DB w, DB h`, w*h cell bytes), BC = x, DE = y | the same for a map the compiler addresses directly (any address, also RAM) |
+| `RT_BORDER` | A = colour (AND 7) | `OUT ($FE),A` (beeper and MIC bits 0); the colour is kept in `V_BORDER` (`$E0F8`; boot sets `BORDER_COLOUR` = 1: the boot border is unchanged) |
+| `RT_RANDOMISE` | HL = seed | `RT_SEED = HL`; **HL = 0 seeds from the low 16 bits of `V_FRAMES`**, and `RT_SEED` is never left 0 (a zero frame counter gives 1). `RANDOMISE` = `LD HL,0`; `RANDOMISE n` = `LD HL,n` (the compiler turns a constant n = 0 into 1; an `n` that is 0 at run time seeds from the frame counter) |
+Degenerate cases do nothing (no cell, no dirty bit): w <= 0 or h <= 0, a rectangle entirely off screen, a destination that cannot overlap (|dx - x| >= 32, |dy - y| >= 24), `COPY` onto itself, an index >= the map count, no map table, a zero map pointer, a map with w = 0 or h = 0. w, h up to 32767; x + w never wraps (the clip works on the true sum).
+**LOADMAP**: the map's cells (`cell < 128` a font code, `>= 128` a tile) go to the cell map at (x, y), cut to the screen on all four sides (the source offset follows the cut); cells outside the map and outside the screen are untouched. Attribute: `TILE_ATTR` of the tile for a tile cell, `BG_ATTR` for a font cell (as the boot's map copy). Maps may be larger than the screen (up to 255 x 255).
+**Dirty marking** is `RT_TILE`'s: a cell is marked dirty (both dirty maps) iff its cell byte OR its attribute changed; an unchanged cell marks nothing, so a repeated FILL costs no redraw. (Marked 8 cells at a time: a mask per dirty-map byte.)
+**Clobbers** AF BC DE HL; IX, IY and the alternate registers are preserved (the loops use the alternate set and put it back: 6 bytes of stack); no `DI`/`EI`; stack beyond the CALL: 10 (FILL, LOADMAP) to 12 bytes (COPY) measured, 20 allowed, plus 10 for an interrupt. RAM: `$FA80-$FAF5` (formerly the free area "T3") and `$E0F8-$E0FB` (formerly free):
+`TO_BUFT $FA80` (32) / `TO_BUFA $FAA0` (32) COPY's row buffer, `RT_ARGS $FAC0`, scratch `TO_VARS $FACC-$FAF5`; `V_BORDER $E0F8`, `V_NMAP $E0F9`, `V_MAPTAB $E0FA` (word); `$E0FC-$E0FF` stay free. `m4-runtime-mem.mjs` and `m5-runtime-mem.mjs` know the new map.
+Only the operations write these; a game that never calls them leaves them untouched (the poisoned-memory test of the worst-case game passes unchanged).
+
+**Header: the map table (backward compatible).** Bit 7 of `frame_div` (`DIV_EXT` = `$80`, header byte `$8004`) says the header is 18 bytes (`GAME_HEADER_EXT_LEN`): `$8010 DW map_table` (`GAME_MAPTAB`).
+Games compiled before this change have `frame_div` <= 60 (bit 7 clear), keep the 16-byte header and boot exactly as before (the runtime reads `frame_div AND $7F`; a hand-made image with `frame_div` >= 128 would now be read as extended).
+`map_table` -> `DB count` (0..8; more is read as 8), then `count` x `DW map_ptr`; each map: `DB w, DB h`, then w*h cell bytes row-major (cell = 128 + tile index, or a font code; `docs/ARCADE_ASSETS.md`). A zero `map_ptr` is an empty map.
+With the table present and `count` >= 1 the boot loads **map 0 as `LOADMAP` would at (0, 0)** (its own w x h, clipped; the rest of the screen blank) and the old `map_ptr` (`$800C`, 768 raw cells) is ignored (the compiler may still fill it in for old tools, e.g. with map 0's cells when map 0 is 32 x 24); a zero pointer for map 0 falls back to `map_ptr`.
+Without the table (no `DIV_EXT`, a null table pointer, or `count` = 0) `map_ptr` means what it always did. The sprite descriptors follow the header wherever `sprite_table` says (the linker places them at `$8012` for an extended header).
+
+**Cost** (TSRun, `m5-runtime-perf.mjs`; a refresh is 58,688 T; CALL and RET included; "nothing to mark" = the cost beyond the dirty marking):
+| case | T | T per cell |
+|---|---|---|
+| FILL 32x24, every cell changed | 80,200 (1.37 refreshes) | 104 |
+| FILL 32x24, nothing changed | 71,848 | **94** |
+| FILLC 32x24, every cell changed | 77,868 | 101 |
+| FILL 8x8 byte aligned / 32x1 / 10x10 unaligned / 1x1 | 9,846 / 4,115 / 22,154 / 1,850 | 154 / 129 / 222 / (fixed cost) |
+| COPY 32x23 down one row, changed (630 dirty) / nothing changes | 98,161 / 90,749 | 133 / **123** |
+| COPY 31x24 right one cell (same rows, through the row buffer) | 144,450 | 194 |
+| COPY 8x8 to a distant place / 1x1 | 21,121 / 2,652 | 330 / (fixed) |
+| LOADMAP 32x24 into a blank screen / again, nothing changes | 147,880 (2.52 refreshes) / 139,528 | 193 / **182** |
+| LOADMAPAT (10, 5), cut to 22x19 | 91,833 | 220 |
+| 768 x `RT_TILE`, changed / unchanged (the calls only, no loop, no argument code) | 308,736 / 179,712 | 402 / 234 |
+A call that does nothing costs 207 T. Whole bytes (8 cells aligned to the dirty map) run in unrolled loops (FILL slot 34..37 T per cell and plane, COPY 41..44, LOADMAP tile 43..46); the first and last groups of a row
+(and rectangles narrower than a byte) use a slower loop (about 60 T per cell and plane) and carry about 500 T of overhead per group, which is why narrow rectangles cost 130-220 T per cell. **The "under 100 T per cell beyond the dirty marking"
+target is met for FILL on whole bytes (94 T); not for COPY (123 T) and LOADMAP (182 T; its attribute pass looks every tile up) and not for narrow rectangles.** Against a compiled loop (RT_TILE alone is 402 T changed, plus about 100-250 T of loop and
+argument code per cell) FILL is 5-6 times, COPY 4-5 times and LOADMAP about 3 times cheaper; a whole-screen FILL is 1.4 refreshes (a whole-screen redraw of 768 cells costs another 6 refreshes in the two display files, which is the real cost of changing the whole screen).
+Ideas if more is needed: keep the dirty mask of a whole row in registers (saves ~80 T per group), a translate-then-compare attribute pass for LOADMAP (saves ~25 T per cell), position-specific unrolled entries for partial groups.
+
+**Tests** (all on TSRun with the stock ROMs, `node arcade/tests/run-all.mjs`): `m5-runtime.mjs` (every routine against the JS model of `m5-common.mjs`: 4,000 FILL, 3,000 FILLC, 6,000 COPY incl. all 8 overlap directions, same-row and
+far-away destinations, 2,980 random maps of every size 0..255 at random positions through `RT_LOADMAPPTR` and 2,400 by index through six map tables, the clip sweep around 255/256/288/512; cells, attributes, DIRTY0 = DIRTY1 = exactly the changed cells,
+registers, argument block, memory written, stack; the header cases: table at boot, count clamp, zero pointers, old 16-byte header, `frame_div` bit 7; BORDER over all 256 values; RANDOMISE), `m5-runtime-pic.mjs` (the frame loop: the picture
+equals cells + sprites after EVERY refresh at frame_div 1, 2, 3 with random operations over moving instances, the boot map, the overrun with whole-screen operations every tick, RNG/BORDER in a running game), `m5-runtime-regs.mjs` (a real interrupt
+injected at every instruction boundary of tileops.asm, up to 10 times per address and every 25th time after: all registers incl. alternates, IX, IY, SP, flags unchanged; chaos run with extra interrupts at random boundaries incl. inside the operations;
+FILL of the whole screen every tick), `m5-runtime-mem.mjs` (writes confined to the cell map, dirty maps and the operations' own RAM; poisoned free areas untouched; the new map is disjoint), `m5-runtime-perf.mjs`,
+`m5-mutations.mjs` (58 deliberate bugs in tileops.asm / boot.asm / video.asm, run in a scratch copy: 55 killed, 3 equivalent mutants survive by construction: redundant early exits). Test game: `arcade/runtime/v2/test_ops.asm` (the v2 script game with the 18-byte header, a map table and ops 21..29).

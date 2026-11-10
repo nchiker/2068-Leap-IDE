@@ -32,6 +32,26 @@
  *     defined as "ignored" and the same holds for a literal). The same rule for a literal array index outside 0..n.
  *     KEYDOWN's argument must be a literal number 0..255 or a one-character string (an error otherwise); a number that is not a
  *     key the runtime scans (A-Z, 0-9, 32, 13, 1, 2) is a warning.
+ *   - (language batch 1, docs/ARCADE_LANGUAGE_BATCH1.md)
+ *     CONST: `CONST name = expr` at the top level or directly in a SCENE, declared in source order like a DIM (so it is visible below its
+ *       declaration, and a PROC sees the CONSTs above it). The expression is folded here with the 16-bit rules (literals, other CONSTs,
+ *       + - * DIV MOD, unary minus, brackets, BAND BOR BXOR BNOT SHL SHR and BIT); comparisons, AND / OR / NOT, variables and other
+ *       functions are "not a constant expression"; DIV or MOD by zero is an error in a CONST (it is 0 at run time). A CONST shares the
+ *       name space of variables, PROCs and DEF FNs; assigning to it, indexing it, using it as a FOR variable and declaring a parameter or
+ *       LOCAL with its name are errors. A literal check (TILE x, PRINT AT, FILL tile, ...) also looks through CONSTs.
+ *     Locals and parameters: a PROC takes 0..4 parameters; CALL gives exactly that many arguments. LOCAL a, b is allowed at the top level of
+ *       a PROC (not nested in IF / loops) and the name must not have been used earlier in that PROC; a local hides a global of the same
+ *       name without a warning (a parameter that hides a global still warns); LOCAL / parameter names may not equal a CONST, may not
+ *       repeat, and unused ones give a warning. `FOR v = ...` inside a PROC where no v is visible declares v as a local of the PROC;
+ *       if a DIM v appears LATER in the scene (so the FOR would hide nothing now but something later) it is an error: move the DIM up.
+ *     Arrays: DIM a(n) / DIM b(w, h) with constant-expression sizes (1-D 1..1000 with a v2 runtime, 2-D each >= 1 and (w+1)(h+1) <= 1000)
+ *       and an optional initialiser (constant expressions, at most one per slot, the last item of the DIM). Element references need as
+ *       many indices as dimensions.
+ *     Asset names (SPRITE, SFX, TILESET, MAP) are in their own name spaces, apart from variables, PROCs and DEF FNs, and each kind is
+ *       apart from the others: every place that names an asset says which kind it wants (SHOW / HIDE / HIT a sprite, PLAY an SFX,
+ *       LOADMAP a MAP, and TILESET has no use), so no statement can be ambiguous and a SFX `lock` may coexist with a PROC `lock` and a
+ *       variable `lock`. Two assets of the SAME kind may not share a name. At most 8 MAPs. Messages that mention a name that is the wrong
+ *       kind are kept ("'x' is a SFX, not a SPRITE", "'x' is a variable, not a SPRITE", "'ball' is a SPRITE, not a variable").
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
@@ -43,6 +63,19 @@ import { FUNCTIONS, RESERVED, VALID_FRAMERATES, LIMITS, notInArcadeMessage } fro
 
 /** Value of a literal operand (`5` or `-5`), else undefined. */
 const literal = (e) => (e?.type === 'Number' ? e.value : e?.type === 'Unary' && e.op === '-' && e.operand?.type === 'Number' ? -e.operand.value : undefined);
+
+const w16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
+class NotConst extends Error { constructor(node, message) { super(message); this.node = node; } }
+const CONST_FUNCS = new Set(['BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR', 'BIT']);
+/** Does the expression mention a CONST name (so that a literal check should look through it)? */
+const mentions = (e, f) => {
+  if (!e) return false;
+  if (e.type === 'Ident') return f(e);
+  if (e.type === 'Unary') return mentions(e.operand, f);
+  if (e.type === 'Binary') return mentions(e.left, f) || mentions(e.right, f);
+  if (e.type === 'Func') return (e.args ?? []).some((a) => mentions(a, f));
+  return false;
+};
 
 class Scope {
   constructor(parent) {
@@ -72,6 +105,9 @@ class Checker {
     this.scopes = [];
     this.scenes = new Map();
     this.reported = new Set();
+    this.assets = new Map();          // 'kind:KEY' -> {name, kind, pos, used, ...}: the asset name spaces (global)
+    this.cur = null;                  // the ctx of the statement being checked (for the const-aware literal checks)
+    this.laterVars = new Map();       // KEY -> pos: every DIM / CONST name of the global level and of the scenes, wherever declared
   }
 
   err(pos, message, severity = 'error') {
@@ -100,15 +136,28 @@ class Checker {
     const global = this.global = this.newScope(null);
 
     // Hoisted: assets, scenes, top-level PROCs and DEF FNs.
+    const mapCount = (ast.assets ?? []).filter((a) => a.kind === 'MAP').length;
+    let mapNo = 0;
     for (const a of ast.assets ?? []) {
-      const key = up(a.name);
-      const prev = global.vars.get(key);
+      const kind = a.kind.toLowerCase();
+      const key = `${kind}:${up(a.name)}`;
+      const prev = this.assets.get(key);
+      if (kind === 'map' && ++mapNo > LIMITS.maxMaps) this.err(a.namePos ?? a, `at most ${LIMITS.maxMaps} MAPs per game (this is the ${mapNo}th of ${mapCount})`);
       if (prev) { this.err(a.namePos, `'${a.name}' is already declared (line ${prev.pos.line})`); continue; }
       if (a.count !== null && a.count !== undefined && (a.count < 1 || a.count > LIMITS.maxPool)) {
         this.err(a.countPos ?? a, `a pool of ${a.count} sprites is out of range (1..${LIMITS.maxPool})`);
       }
-      global.vars.set(key, { name: a.name, type: 'num', kind: 'asset', assetKind: a.kind.toLowerCase(), pos: a.namePos, used: false, poolSize: a.count ?? null });
+      this.assets.set(key, { name: a.name, kind, pos: a.namePos, used: false, poolSize: a.count ?? null, index: kind === 'map' ? mapNo - 1 : 0 });
     }
+    // every variable name of the global level and of each scene, for the "declared after a FOR made it a local" check
+    const addLater = (decls) => {
+      for (const d of decls ?? []) {
+        if (d.type === 'Dim') for (const it of d.items ?? []) { if (it.name && !this.laterVars.has(up(it.name))) this.laterVars.set(up(it.name), { line: it.line }); }
+        else if (d.type === 'Const' && d.name && !this.laterVars.has(up(d.name))) this.laterVars.set(up(d.name), { line: d.line });
+      }
+    };
+    addLater(ast.decls);
+    for (const sc of ast.scenes ?? []) addLater(sc.decls);
     for (const s of ast.scenes ?? []) {
       const key = up(s.name);
       if (this.scenes.has(key)) this.err(s.namePos, `SCENE '${s.name}' is already defined (line ${this.scenes.get(key).line})`);
@@ -120,6 +169,7 @@ class Checker {
     for (const item of items) {
       switch (item.type) {
         case 'Dim': this.declareDim(global, item, false); break;
+        case 'Const': this.declareConst(global, item); break;
         case 'DefFn': this.checkFn(global, item); break;
         case 'Proc': this.checkProc(global, item); break;
         case 'Scene': this.checkScene(item); break;
@@ -128,13 +178,16 @@ class Checker {
     }
 
     // Warnings
+    for (const a of this.assets.values()) {
+      if (a.used) continue;
+      if (a.kind === 'sprite' || a.kind === 'sfx') this.warn(a.pos, `${a.kind.toUpperCase()} '${a.name}' is never used`);
+      else if (a.kind === 'map' && a.index > 0) this.warn(a.pos, `MAP '${a.name}' is never used (only the first MAP is loaded at the start; use LOADMAP ${a.name})`);
+    }
     for (const sc of this.scopes) {
       for (const v of sc.vars.values()) {
         if (v.used) continue;
         if (v.kind === 'var' || v.kind === 'array') this.warn(v.pos, `variable '${v.name}' is never used`);
-        else if (v.kind === 'asset' && (v.assetKind === 'sprite' || v.assetKind === 'sfx')) {
-          this.warn(v.pos, `${v.assetKind.toUpperCase()} '${v.name}' is never used`);
-        }
+        else if (v.kind === 'local') this.warn(v.pos, `local '${v.name}' is never used`);
       }
       for (const [key, p] of sc.procs) {
         if (!p.used && key !== 'INIT' && key !== 'FRAME') this.warn(p.node.namePos, `PROC '${p.name}' is never called`);
@@ -150,8 +203,8 @@ class Checker {
       const prev = scope.lookup('procs', key);
       if (prev) { this.err(p.namePos, `PROC '${p.name}' is already defined (line ${prev.node.line})`); continue; }
       const v = scope.lookup('vars', key);
-      if (v) { this.err(p.namePos, `'${p.name}' is already a ${v.kind === 'asset' ? v.assetKind : 'variable'} (line ${v.pos.line})`); continue; }
-      scope.procs.set(key, { name: p.name, param: p.param, node: p, used: false });
+      if (v) { this.err(p.namePos, `'${p.name}' is already a ${v.kind === 'const' ? 'CONST' : 'variable'} (line ${v.pos.line})`); continue; }
+      scope.procs.set(key, { name: p.name, param: p.param, params: p.params ?? (p.param ? [{ name: p.param }] : []), node: p, used: false });
     }
     for (const d of decls) {
       if (d.type !== 'DefFn' || !d.name) continue;
@@ -159,7 +212,7 @@ class Checker {
       const prev = scope.lookup('fns', key);
       if (prev) { this.err(d.namePos, `DEF FN '${d.name}' is already defined (line ${prev.node.line})`); continue; }
       const v = scope.lookup('vars', key);
-      if (v) { this.err(d.namePos, `'${d.name}' is already a ${v.kind === 'asset' ? v.assetKind : 'variable'} (line ${v.pos.line})`); continue; }
+      if (v) { this.err(d.namePos, `'${d.name}' is already a ${v.kind === 'const' ? 'CONST' : 'variable'} (line ${v.pos.line})`); continue; }
       scope.fns.set(key, { name: d.name, node: d });
     }
   }
@@ -171,12 +224,13 @@ class Checker {
       const found = (sc.procs ?? []).filter(p => up(p.name) === word);
       if (found.length === 0) this.err(sc.namePos?.line ? sc.namePos : sc, `SCENE '${sc.name}' has no PROC ${word}()`);
       for (const p of found) {
-        if (p.param) this.err(p.paramPos ?? p, `PROC ${word} takes no parameter`);
+        if ((p.params ?? []).length) this.err(p.paramPos ?? p, `PROC ${word} takes no parameter`);
       }
     }
     for (const item of sc.items ?? []) {
       switch (item.type) {
         case 'Dim': this.declareDim(scope, item, false); break;
+        case 'Const': this.declareConst(scope, item); break;
         case 'DefFn': this.checkFn(scope, item); break;
         case 'Proc': this.checkProc(scope, item); break;
         default: break;
@@ -184,13 +238,121 @@ class Checker {
     }
   }
 
+  // ── constants ──
+  /** A throwaway ctx for checking an expression outside any PROC (CONST values, DIM sizes and initialisers). */
+  topCtx(scope) { return { scope, forDepth: 0, whileDepth: 0, reported: new Set(), proc: null, touched: new Set(), nest: 0 }; }
+
+  /**
+   * Fold a constant expression with the 16-bit rules. Throws NotConst(node, why). `scope` resolves CONST names.
+   * Used for CONST values, DIM sizes, initialisers (strict: DIV or MOD by zero is an error) and, quietly, by the literal range checks.
+   */
+  cfold(e, scope) {
+    switch (e?.type) {
+      case 'Number': return w16(e.value);
+      case 'Ident': {
+        const sym = scope.lookup('vars', up(e.name));
+        if (sym && sym.kind === 'const') { sym.used = true; return sym.value; }
+        throw new NotConst(e, sym ? `'${e.name}' is a variable: only a literal number or a CONST is allowed here` : `'${e.name}' is not a constant`);
+      }
+      case 'Unary':
+        if (e.op === '-') return w16(-this.cfold(e.operand, scope));
+        throw new NotConst(e, 'NOT is not allowed in a constant expression');
+      case 'Binary': {
+        const op = e.op;
+        if (!['+', '-', '*', 'DIV', 'MOD'].includes(op)) throw new NotConst(e, `${op} is not allowed in a constant expression (use + - * DIV MOD and the bit functions)`);
+        const a = this.cfold(e.left, scope), b = this.cfold(e.right, scope);
+        switch (op) {
+          case '+': return w16(a + b);
+          case '-': return w16(a - b);
+          case '*': return w16(Math.imul(a, b));
+          case 'DIV': if (b === 0) throw new NotConst(e.right, 'division by zero in a constant'); return w16(Math.trunc(a / b));
+          default: if (b === 0) throw new NotConst(e.right, 'MOD by zero in a constant'); return (a % b) | 0;
+        }
+      }
+      case 'Func': {
+        if (!CONST_FUNCS.has(e.name)) throw new NotConst(e, `${e.name}() is not allowed in a constant expression`);
+        const v = (e.args ?? []).map((x) => this.cfold(x, scope));
+        const [a, b] = v;
+        switch (e.name) {
+          case 'BAND': return w16(a & b);
+          case 'BOR': return w16(a | b);
+          case 'BXOR': return w16(a ^ b);
+          case 'BNOT': return w16(~a);
+          case 'SHL': return b >= 0 && b <= 15 ? w16(a << b) : 0;
+          case 'SHR': return b >= 0 && b <= 15 ? a >> b : (a < 0 ? -1 : 0);
+          default: return b >= 0 && b <= 15 ? ((a & 0xFFFF) >> b) & 1 : 0;      // BIT
+        }
+      }
+      default: throw new NotConst(e, 'not a constant expression (use numbers, CONSTs, + - * DIV MOD and the bit functions)');
+    }
+  }
+
+  /**
+   * Check `e` as an expression and fold it. Returns the value, or undefined after reporting why not (`what` names the use).
+   * No second report when the ordinary check already found an error in `e`.
+   */
+  constOf(e, scope, what) {
+    const before = this.errors.length;
+    const t = this.ex(e, this.topCtx(scope));
+    if (this.errors.length > before) return undefined;
+    if (t === 'str') { this.err(e, `${what} must be a number, not a string`); return undefined; }
+    try { return this.cfold(e, scope); } catch (x) {
+      if (!(x instanceof NotConst)) throw x;
+      this.err(x.node ?? e, `${what} must be a constant expression: ${x.message}`);
+      return undefined;
+    }
+  }
+
+  declareConst(scope, c) {
+    if (!c.name) return;
+    const key = up(c.name);
+    if (c.name.endsWith('$')) this.err(c.namePos ?? c, `a CONST is a number: '${c.name}' cannot end with $`);
+    const prev = scope.lookup('vars', key);
+    if (prev) { this.err(c.namePos ?? c, `'${c.name}' is already declared (line ${prev.pos.line})`); return; }
+    if (scope.lookup('procs', key) || scope.lookup('fns', key)) { this.err(c.namePos ?? c, `'${c.name}' is already the name of a PROC or DEF FN`); return; }
+    const value = this.constOf(c.value, scope, `CONST ${c.name}`);
+    scope.vars.set(key, { name: c.name, type: 'num', kind: 'const', value: value ?? 0, bad: value === undefined, pos: c.namePos ?? c, used: false });
+  }
+
+  /** The value of `e` if it is a literal, or (when it mentions a CONST) a constant expression; else undefined. Never reports. */
+  lit(e) {
+    const v = literal(e);
+    if (v !== undefined || !this.cur) return v;
+    if (!mentions(e, (id) => this.cur.scope.lookup('vars', up(id.name))?.kind === 'const')) return undefined;
+    try { return this.cfold(e, this.cur.scope); } catch (x) { if (x instanceof NotConst) return undefined; throw x; }
+  }
+
   declareDim(scope, dim, inProc) {
     if (inProc) this.err(dim, 'DIM must be at the top level or directly inside a SCENE, not inside a PROC');
     for (const it of dim.items ?? []) {
       if (!it.name) continue;
       const key = up(it.name);
-      if (it.size !== null && it.size !== undefined && (it.size < 1 || it.size > this.maxDim)) {
-        this.err(it.sizePos ?? it, `DIM size ${it.size} is out of range (1..${this.maxDim})`);
+      const isArr = !!it.dims;
+      // sizes: constant expressions
+      let sizes = null;
+      if (isArr) {
+        sizes = it.dims.map((d, i) => {
+          const where = it.dimPos?.[i] ?? it.sizePos ?? it;
+          const v = this.constOf(d, scope, 'a DIM size');
+          if (v === undefined) return undefined;
+          if (it.dims.length === 1) {
+            if (v < 1 || v > this.maxDim) { this.err(where, `DIM size ${v} is out of range (1..${this.maxDim})`); return undefined; }
+          } else if (v < 1) { this.err(where, `DIM size ${v} is out of range (each dimension of a 2-D array is 1 or more)`); return undefined; }
+          return v;
+        });
+        if (sizes.length === 2 && sizes.every((v) => v !== undefined) && (sizes[0] + 1) * (sizes[1] + 1) > LIMITS.maxSlots2D) {
+          this.err(it, `DIM ${it.name}(${sizes[0]}, ${sizes[1]}) has ${(sizes[0] + 1) * (sizes[1] + 1)} elements: at most ${LIMITS.maxSlots2D} in a 2-D array`);
+          sizes = sizes.map(() => undefined);
+        }
+        if (sizes.some((v) => v === undefined)) sizes = null;
+      }
+      if (it.init) {
+        if (!isArr) this.err(it, `only an array can have initial values: write DIM ${it.name}(n) = v0, v1, ...`);
+        const total = sizes ? sizes.reduce((p, n) => p * (n + 1), 1) : null;
+        if (isArr && total !== null && it.init.length > total) {
+          this.err(it.init[total] ?? it, `${it.init.length} initial values for ${it.name}, which has only ${total} elements`);
+        }
+        for (const v of it.init) this.constOf(v, scope, 'an initial value');
       }
       const prev = scope.lookup('vars', key);
       if (prev) {
@@ -202,29 +364,37 @@ class Checker {
         continue;
       }
       scope.vars.set(key, {
-        name: it.name, type: typeOfName(it.name), kind: it.size === null || it.size === undefined ? 'var' : 'array',
-        pos: { line: it.line, col: it.col, endCol: it.endCol }, used: false, size: it.size ?? null,
+        name: it.name, type: typeOfName(it.name), kind: isArr ? 'array' : 'var',
+        pos: { line: it.line, col: it.col, endCol: it.endCol }, used: false, size: sizes ? sizes[0] : null, sizes,
       });
     }
   }
 
   checkFn(scope, d) {
     const fs = this.newScope(scope);
-    if (d.param) fs.vars.set(up(d.param), { name: d.param, type: typeOfName(d.param), kind: 'param', pos: d.paramPos ?? d, used: true });
-    const ctx = { scope: fs, forDepth: 0, whileDepth: 0, reported: new Set() };
+    if (d.param) {
+      if (scope.lookup('vars', up(d.param))?.kind === 'const') this.err(d.paramPos ?? d, `parameter '${d.param}' has the name of a CONST`);
+      fs.vars.set(up(d.param), { name: d.param, type: typeOfName(d.param), kind: 'param', pos: d.paramPos ?? d, used: true });
+    }
+    const ctx = this.topCtx(fs);
+    this.cur = ctx;
     const t = this.ex(d.body, ctx);
     if (t === 'str') this.err(d.body, `DEF FN ${d.name} must give a number`);
   }
 
   checkProc(scope, proc) {
     const ps = this.newScope(scope);
-    if (proc.param) {
-      const key = up(proc.param);
+    const params = proc.params ?? (proc.param ? [{ name: proc.param, ...(proc.paramPos ?? proc) }] : []);
+    if (params.length > LIMITS.maxParams) this.err(params[LIMITS.maxParams], `a PROC takes at most ${LIMITS.maxParams} parameters (this one has ${params.length})`);
+    for (const p of params) {
+      const key = up(p.name);
+      if (ps.vars.has(key)) { this.err(p, `parameter '${p.name}' is declared twice`); continue; }
       const hidden = scope.lookup('vars', key);
-      if (hidden) this.warn(proc.paramPos ?? proc, `parameter '${proc.param}' hides the variable of the same name (line ${hidden.pos.line})`);
-      ps.vars.set(key, { name: proc.param, type: typeOfName(proc.param), kind: 'param', pos: proc.paramPos ?? proc, used: true });
+      if (hidden && hidden.kind === 'const') this.err(p, `parameter '${p.name}' has the name of a CONST (line ${hidden.pos.line})`);
+      else if (hidden) this.warn(p, `parameter '${p.name}' hides the variable of the same name (line ${hidden.pos.line})`);
+      ps.vars.set(key, { name: p.name, type: typeOfName(p.name), kind: 'param', pos: p, used: true });
     }
-    const ctx = { scope: ps, forDepth: 0, whileDepth: 0, reported: new Set() };
+    const ctx = { scope: ps, forDepth: 0, whileDepth: 0, reported: new Set(), proc, touched: new Set(), nest: 0 };
     this.stmts(proc.body ?? [], ctx);
   }
 
@@ -245,23 +415,43 @@ class Checker {
   }
 
   stmt(s, ctx) {
+    this.cur = ctx;
     switch (s.type) {
       case 'Assign': return this.assign(s, ctx);
       case 'If':
         this.numArg(s.cond, ctx, 'the IF condition');
+        ctx.nest++;
         this.stmts(s.then ?? [], ctx);
         if (s.else) this.stmts(s.else, ctx);
+        ctx.nest--;
         return;
       case 'While':
         this.numArg(s.cond, ctx, 'the WHILE condition');
-        ctx.whileDepth++;
+        ctx.whileDepth++; ctx.nest++;
         this.stmts(s.body ?? [], ctx);
-        ctx.whileDepth--;
+        ctx.whileDepth--; ctx.nest--;
         return;
       case 'For': {
         const v = s.variable;
         if (v && v.type === 'Ident') {
-          const t = this.ex(v, ctx);
+          const key = up(v.name);
+          let sym = ctx.scope.lookup('vars', key);
+          if (!sym && ctx.proc && !ctx.scope.lookup('procs', key) && !ctx.scope.lookup('fns', key) && !notInArcadeMessage(v.name) && !RESERVED.has(key)) {
+            if (this.laterVars.has(key)) {
+              this.err(v, `'${v.name}' is declared later (line ${this.laterVars.get(key).line}) than this PROC: put that DIM above the PROC, or use another name for the FOR variable`);
+              sym = { kind: 'var', type: 'num', used: true };
+            } else if (v.name.endsWith('$')) {
+              this.err(v, 'a FOR variable must be a number');
+              sym = { kind: 'var', type: 'str', used: true };
+              ctx.scope.vars.set(key, { name: v.name, type: 'str', kind: 'var', pos: { line: v.line, col: v.col, endCol: v.endCol }, used: true });
+            } else {
+              ctx.scope.vars.set(key, { name: v.name, type: 'num', kind: 'local', implicit: true, pos: { line: v.line, col: v.col, endCol: v.endCol }, used: true });
+            }
+          }
+          ctx.touched.add(key);
+          const cur = ctx.scope.lookup('vars', key);
+          if (cur && cur.kind === 'const') this.err(v, `'${v.name}' is a CONST: it cannot be a FOR variable`);
+          const t = cur && cur.kind === 'const' ? 'num' : this.ex(v, ctx);
           if (t === 'str') this.err(v, 'a FOR variable must be a number');
         }
         this.numArg(s.from, ctx, 'the FOR start'); this.numArg(s.to, ctx, 'the FOR limit');
@@ -269,38 +459,59 @@ class Checker {
         if (s.nextVar && v && up(s.nextVar.name) !== up(v.name ?? '')) {
           this.err(s.nextVar, `NEXT ${s.nextVar.name} does not match FOR ${v.name}`);
         }
-        ctx.forDepth++;
+        ctx.forDepth++; ctx.nest++;
         this.stmts(s.body ?? [], ctx);
-        ctx.forDepth--;
+        ctx.forDepth--; ctx.nest--;
         return;
       }
       case 'Select':
         this.numArg(s.expr, ctx, 'the SELECT value');
+        ctx.nest++;
         for (const c of s.cases ?? []) {
           for (const v of c.values ?? []) this.numArg(v, ctx, 'a CASE value');
           this.stmts(c.body ?? [], ctx);
         }
         if (s.else) this.stmts(s.else.body ?? [], ctx);
+        ctx.nest--;
         return;
       case 'Call': {
         const p = ctx.scope.lookup('procs', up(s.name));
+        const args = s.args ?? (s.arg ? [s.arg] : []);
         if (!p) {
           const v = ctx.scope.lookup('vars', up(s.name));
-          this.err(s.namePos ?? s, v ? `'${s.name}' is a variable, not a PROC` : `unknown PROC '${s.name}'`);
-          if (s.arg) this.ex(s.arg, ctx);
+          this.err(s.namePos ?? s, v ? `'${s.name}' is a ${v.kind === 'const' ? 'CONST' : 'variable'}, not a PROC` : `unknown PROC '${s.name}'`);
+          for (const a of args) this.ex(a, ctx);
           return;
         }
         p.used = true;
-        const want = p.param ? 1 : 0, got = s.arg ? 1 : 0;
+        const want = p.params.length, got = args.length;
         if (want !== got) {
-          this.err(s, want ? `PROC ${p.name} takes one parameter` : `PROC ${p.name} takes no parameter`);
+          this.err(s, want === 0 ? `PROC ${p.name} takes no parameter` : want === 1 ? `PROC ${p.name} takes one parameter` : `PROC ${p.name} takes ${want} parameters`);
         }
-        if (s.arg) {
-          const t = this.ex(s.arg, ctx);
-          if (want && t !== '?' && t !== typeOfName(p.param)) this.err(s.arg, `PROC ${p.name} wants ${typeWord(typeOfName(p.param))}, got ${typeWord(t)}`);
-        }
+        args.forEach((a, i) => {
+          const t = this.ex(a, ctx);
+          const pn = p.params[i]?.name;
+          if (pn && t !== '?' && t !== typeOfName(pn)) this.err(a, `PROC ${p.name} wants ${typeWord(typeOfName(pn))} for ${pn}, got ${typeWord(t)}`);
+        });
         return;
       }
+      case 'Local': return this.localStmt(s, ctx);
+      case 'Const':
+        this.err(s, 'CONST must be at the top level or directly inside a SCENE, not inside a PROC');
+        return;
+      case 'Fill':
+        this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.w, ctx, 'the width'); this.numArg(s.h, ctx, 'the height');
+        this.numArg(s.value, ctx, s.which === 'FILL' ? 'the tile' : 'the character');
+        if (s.which === 'FILL') this.range(s.value, 0, LIMITS.maxTile, 'the tile index');
+        else this.range(s.value, 32, LIMITS.maxPrintChar, 'the character code (the font has 32..127)');
+        return;
+      case 'Copy':
+        for (const [k, w] of [['x', 'x'], ['y', 'y'], ['w', 'the width'], ['h', 'the height'], ['dx', 'dx'], ['dy', 'dy']]) this.numArg(s[k], ctx, w);
+        return;
+      case 'LoadMap':
+        this.assetRef(s.map, 'map', ctx);
+        if (s.x) { this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); }
+        return;
       case 'Print':
         if (s.at) {
           this.numArg(s.at.row, ctx, 'the AT row'); this.numArg(s.at.col, ctx, 'the AT column');
@@ -333,7 +544,7 @@ class Checker {
         return;
       }
       case 'Border': this.numArg(s.value, ctx, 'the value'); this.range(s.value, 0, 7, 'BORDER (0..7)'); return;
-      case 'Randomise': this.numArg(s.value, ctx, 'the value'); return;
+      case 'Randomise': if (s.value) this.numArg(s.value, ctx, 'the value'); return;
       case 'Plot': this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); return;
       case 'Line':
         this.numArg(s.x0, ctx, 'x0'); this.numArg(s.y0, ctx, 'y0'); this.numArg(s.x1, ctx, 'x1'); this.numArg(s.y1, ctx, 'y1');
@@ -356,6 +567,25 @@ class Checker {
     }
   }
 
+  /** `LOCAL a, b`: declares locals of the PROC, at its top level, before the name is used. */
+  localStmt(s, ctx) {
+    if (!ctx.proc) { this.err(s, 'LOCAL belongs inside a PROC'); return; }
+    if (ctx.nest > 0) this.err(s, 'LOCAL must be at the top level of a PROC, not inside an IF, FOR, WHILE or SELECT');
+    for (const n of s.names ?? []) {
+      const key = up(n.name);
+      if (ctx.scope.vars.has(key)) {
+        const prev = ctx.scope.vars.get(key);
+        this.err(n, `'${n.name}' is already ${prev.kind === 'param' ? 'a parameter' : 'a local'} of this PROC`);
+        continue;
+      }
+      const outer = ctx.scope.lookup('vars', key);
+      if (outer && outer.kind === 'const') { this.err(n, `'${n.name}' is a CONST (line ${outer.pos.line}): a local cannot have its name`); continue; }
+      if (ctx.scope.lookup('procs', key) || ctx.scope.lookup('fns', key)) { this.err(n, `'${n.name}' is already the name of a PROC or DEF FN`); continue; }
+      if (ctx.touched.has(key)) { this.err(n, `'${n.name}' is used earlier in this PROC: declare the LOCAL before its first use`); continue; }
+      ctx.scope.vars.set(key, { name: n.name, type: typeOfName(n.name), kind: 'local', pos: { line: n.line, col: n.col, endCol: n.endCol }, used: false });
+    }
+  }
+
   assign(s, ctx) {
     const t = s.target;
     if (!t) return;
@@ -366,6 +596,13 @@ class Checker {
       this.ex(s.value, ctx);
       return;
     }
+    const sym0 = t.type === 'Ident' ? ctx.scope.lookup('vars', key) : null;
+    if (sym0 && sym0.kind === 'const') {
+      sym0.used = true; ctx.touched.add(key);
+      this.err(t, `'${t.name}' is a CONST (line ${sym0.pos.line}) and cannot be assigned to`);
+      this.ex(s.value, ctx);
+      return;
+    }
     const tt = t.type === 'Index' ? this.ex(t, ctx) : this.ex(t, ctx);
     const vt = this.ex(s.value, ctx);
     if (tt !== '?' && vt !== '?' && tt !== vt) this.err(s.value, `cannot assign ${typeWord(vt)} to ${t.name}, which holds ${typeWord(tt)}`);
@@ -373,7 +610,7 @@ class Checker {
 
   /** A literal operand must lie in lo..hi (anything else is not checked: the value is only known when it runs). */
   range(e, lo, hi, what) {
-    const v = literal(e);
+    const v = this.lit(e);
     if (v !== undefined && (v < lo || v > hi)) this.err(e, `${what} is ${v}: it must be ${lo}..${hi}`);
   }
 
@@ -389,29 +626,39 @@ class Checker {
   }
 
   /**
-   * SHOW / HIDE / PLAY / HIT operand: an Ident naming a declared asset of `kind`; for a sprite also `name(expr)`, an instance
-   * of a pool (M4a). A literal index outside 0..count-1 is a warning (the instruction is ignored at run time, HIT gives 0).
+   * SHOW / HIDE / PLAY / HIT / LOADMAP operand: an Ident naming a declared asset of `kind` (looked up in that kind's own name space); for a
+   * sprite also `name(expr)`, an instance of a pool (M4a). A literal index outside 0..count-1 is a warning (the instruction is ignored at
+   * run time, HIT gives 0).
    */
   assetRef(node, kind, ctx) {
     if (!node) return;
     const indexed = kind === 'sprite' && node.type === 'Index';
     if (node.type !== 'Ident' && !indexed) { this.err(node, `expected a ${kind} name`); return; }
-    if (indexed) this.numArg(node.index, ctx, 'an instance index');
-    const sym = ctx.scope.lookup('vars', up(node.name));
+    if (indexed) {
+      this.numArg(node.index, ctx, 'an instance index');
+      if (node.index2) { this.err(node, `'${node.name}' is a pool: arrays have one dimension, write ${node.name}(i)`); this.ex(node.index2, ctx); }
+    }
+    const key = up(node.name);
+    const sym = this.assets.get(`${kind}:${key}`);
     if (!sym) {
-      this.err(node, `'${node.name}' is not a declared ${kind.toUpperCase()}: add ${kind.toUpperCase()} ${node.name} = "..."`);
+      const v = ctx.scope.lookup('vars', key);
+      const other = ['sprite', 'sfx', 'tileset', 'map'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean);
+      if (v) this.err(node, `'${node.name}' is a ${v.kind === 'const' ? 'CONST' : 'variable'}, not a ${kind.toUpperCase()}`);
+      else if (other) this.err(node, `'${node.name}' is a ${other.kind.toUpperCase()}, not a ${kind.toUpperCase()}`);
+      else this.err(node, `'${node.name}' is not a declared ${kind.toUpperCase()}: add ${kind.toUpperCase()} ${node.name} = "..."`);
       return;
     }
     sym.used = true;
-    if (sym.kind !== 'asset') { this.err(node, `'${node.name}' is a variable, not a ${kind.toUpperCase()}`); return; }
-    if (sym.assetKind !== kind) { this.err(node, `'${node.name}' is a ${sym.assetKind.toUpperCase()}, not a ${kind.toUpperCase()}`); return; }
     if (indexed) {
-      const count = sym.poolSize ?? 1, k = literal(node.index);
+      const count = sym.poolSize ?? 1, k = this.lit(node.index);
       if (k !== undefined && (k < 0 || k >= count)) {
         this.warn(node.index, `instance ${k} is outside ${node.name}${sym.poolSize ? `(0..${count - 1})` : ' (a single sprite: only 0)'}: ${ctx.hitCtx ? 'HIT gives 0' : 'the instruction is ignored'}`);
       }
     }
   }
+
+  /** An asset of any kind with this (upper-case) name, or undefined. */
+  anyAsset(key) { return ['sprite', 'sfx', 'tileset', 'map'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean); }
 
   // ── expressions: return 'num' | 'str' | '?' ──
   undeclared(node, ctx, what = 'variable') {
@@ -435,26 +682,47 @@ class Checker {
         if (e.value.length > LIMITS.maxString) this.err(e, `string literal is ${e.value.length} characters: the limit is ${LIMITS.maxString}`);
         return 'str';
       case 'Ident': {
-        const sym = ctx.scope.lookup('vars', up(e.name));
-        if (!sym) { this.undeclared(e, ctx); return '?'; }
+        const key = up(e.name);
+        const sym = ctx.scope.lookup('vars', key);
+        ctx.touched?.add(key);
+        if (!sym) {
+          const a = this.anyAsset(key);
+          if (a) { if (!ctx.reported.has(key)) { ctx.reported.add(key); this.err(e, `'${e.name}' is a ${a.kind.toUpperCase()}, not a variable`); } return '?'; }
+          this.undeclared(e, ctx); return '?';
+        }
         sym.used = true;
-        if (sym.kind === 'asset') { this.err(e, `'${e.name}' is a ${sym.assetKind.toUpperCase()}, not a variable`); return '?'; }
-        if (sym.kind === 'array') { this.err(e, `'${e.name}' is an array: write ${e.name}(index)`); return sym.type; }
+        if (sym.kind === 'array') { this.err(e, `'${e.name}' is an array: write ${e.name}(${sym.sizes?.length === 2 ? 'i, j' : 'index'})`); return sym.type; }
         return sym.type;
       }
       case 'Index': {
-        const sym = ctx.scope.lookup('vars', up(e.name));
+        const key = up(e.name);
+        const sym = ctx.scope.lookup('vars', key);
+        ctx.touched?.add(key);
         this.numArg(e.index, ctx, 'an array index');
-        if (!sym) { this.undeclared(e, ctx, 'array'); return '?'; }
-        sym.used = true;
-        if (sym.kind !== 'array') {
-          this.err(e, sym.kind === 'asset' ? `'${e.name}' is a ${sym.assetKind.toUpperCase()}, not an array` : `'${e.name}' is not an array: declare it as DIM ${e.name}(n)`);
+        if (e.index2) this.numArg(e.index2, ctx, 'an array index');
+        if (!sym) {
+          const a = this.anyAsset(key);
+          if (a) this.err(e, `'${e.name}' is a ${a.kind.toUpperCase()}, not an array`);
+          else this.undeclared(e, ctx, 'array');
           return '?';
         }
-        const k = literal(e.index);
-        if (k !== undefined && sym.size !== null && sym.size !== undefined && (k < 0 || k > sym.size)) {
-          this.warn(e.index, `index ${k} is outside ${e.name}(0..${sym.size}): a read gives 0 and a write is ignored`);
+        sym.used = true;
+        if (sym.kind !== 'array') {
+          this.err(e, sym.kind === 'const' ? `'${e.name}' is a CONST, not an array` : `'${e.name}' is not an array: declare it as DIM ${e.name}(n)`);
+          return '?';
         }
+        const two = !!(sym.sizes && sym.sizes.length === 2) || (sym.sizes === null && false);
+        if (e.index2 && sym.sizes && sym.sizes.length === 1) { this.err(e, `'${e.name}' has one dimension: write ${e.name}(i)`); return sym.type; }
+        if (!e.index2 && sym.sizes && sym.sizes.length === 2) { this.err(e, `'${e.name}' has two dimensions: write ${e.name}(i, j)`); return sym.type; }
+        void two;
+        const dimsOf = sym.sizes ?? [];
+        [e.index, e.index2].forEach((ix, d) => {
+          if (!ix || dimsOf[d] === undefined) return;
+          const k = this.lit(ix);
+          if (k !== undefined && (k < 0 || k > dimsOf[d])) {
+            this.warn(ix, `index ${k} is outside ${e.name}(${dimsOf.length === 2 ? (d === 0 ? `0..${dimsOf[0]}, j` : `i, 0..${dimsOf[1]}`) : `0..${dimsOf[0]}`}): a read gives 0 and a write is ignored`);
+          }
+        });
         return sym.type;
       }
       case 'Unary': {
@@ -511,7 +779,7 @@ class Checker {
       else if (!isKnownKey(a.value.toUpperCase().charCodeAt(0))) this.warn(a, `KEYDOWN("${a.value}"): the runtime scans only A-Z, 0-9, space and enter; this key is never held`);
       return;
     }
-    const k = literal(a);
+    const k = this.lit(a);
     if (k === undefined) {
       this.ex(a, ctx);
       this.err(a, 'KEYDOWN needs a number or a one-character string written out, e.g. KEYDOWN("Q") or KEYDOWN(81): the key is chosen when the game is built, not at run time');

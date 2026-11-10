@@ -1,0 +1,54 @@
+{
+ "about": "SHA-256 of the game area ($8000-$BFFF) that the compiler BEFORE language batch 1 (git 335a383) produced for these programs against a stand-in runtime (runtime.version as given, every symbol at 0xC000 + FNV-1a(name) % 0x2000, see tests/arcade-m5.mjs fakeRuntime); tests/arcade-m5.mjs checks that the compiler still produces the same bytes: a program that uses none of the new words compiles to identical code.",
+ "programs": [
+  {
+   "src": "arcade/examples/breakout.arc",
+   "assets": "arcade/examples/breakout.assets.json",
+   "runtime": 2,
+   "bytes": 1505,
+   "sha256": "df8a7bb066862e9ccfe4b31bb676a1e707448df5a6a530f086ca05e584f675c7"
+  },
+  {
+   "src": "arcade/examples/bounce.arc",
+   "assets": "arcade/examples/bounce.assets.json",
+   "runtime": 2,
+   "bytes": 465,
+   "sha256": "f044d34d7423747b353e98c70511a501c9567175a63620e7e20d946f135e451f"
+  },
+  {
+   "src": "arcade/examples/shooter.arc",
+   "assets": "arcade/examples/shooter.assets.json",
+   "runtime": 2,
+   "bytes": 8986,
+   "sha256": "c4b1234a4684fa1310745a6c824fbfbf87e04cfa51f1c1d3c24a0998a72572b7"
+  },
+  {
+   "src": "arcade/tests/fixtures/blockfall-v0.arc",
+   "assets": "arcade/tests/fixtures/blockfall-v0.assets.json",
+   "runtime": 2,
+   "bytes": 7848,
+   "sha256": "9673cb245ef89303eb167419f9157b0fd4a2316c00ef7515f6370d2e0746ad7d"
+  },
+  {
+   "src": "arcade/tests/fixtures/breakout-v1.arc",
+   "assets": "arcade/tests/fixtures/breakout-v1.assets.json",
+   "runtime": 2,
+   "bytes": 1475,
+   "sha256": "289af7be77ecc015f6b7993aca298f8cad313aa70b8465dc258e0a73c2156b99"
+  },
+  {
+   "src": "arcade/tests/fixtures/breakout-v1.arc",
+   "assets": "arcade/tests/fixtures/breakout-v1.assets.json",
+   "runtime": 1,
+   "bytes": 1472,
+   "sha256": "3e0860f7b3f0b0249c2ca6676e26cd1d040ba3e36c7d184ed205f90a2cae781b"
+  },
+  {
+   "src": "arcade/examples/bounce-static.arc",
+   "assets": "arcade/examples/bounce.assets.json",
+   "runtime": 0,
+   "bytes": 44,
+   "sha256": "2f07adebd905bbe2051e86cdc8b62325505b108a7feb5eed54308e81bfdbafc0"
+  }
+ ]
+}

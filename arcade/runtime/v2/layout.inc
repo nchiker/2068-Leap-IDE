@@ -166,7 +166,7 @@ HO_MARK_VALUE   EQU $5AA5
 ;   $D800-$DFFF  GLYPH_TAB: the glyphs of the 256 cell values as 8 "planes": pixel row k (0..7) of the glyph of value v is at
 ;                + 256 k + v (so a renderer walks the rows with INC B): v 0..31 blank, 32..127 the font (copied from the
 ;                runtime's FONT_GLYPHS at boot), 128..255 the game tiles (copied from tileset_ptr)
-;   free: T2 $D5E0-$D5FF (32), T3 $FA80-$FAFF (128), vars $E0F8-$E0FF (8)
+;   free: T2 $D5E0-$D5FF (32), T3 $FA80-$FAFF (128; language batch 1 uses $FA80-$FAF5), vars $E0FC-$E0FF (4; $E0F8-$E0FB are V_BORDER, V_NMAP, V_MAPTAB)
 ; Phase slots: the pre-shifted copies of the assets' art.  A slot is PHASE_LEN = 96 bytes (16 rows x 6, the largest a copy can be: 16 rows
 ; of a 16 wide sprite shifted into a 3-byte window), 64 slots in three pieces (POOL_A 32 + POOL_B 28 + POOL_C 4), so 8 assets x 8 phases
 ; always fit.  The address of slot n is SLOT_TAB + 2 n (a table in the runtime, built by the assembler).
@@ -197,7 +197,7 @@ GLYPH_TAB       EQU $D800
 GLYPH_LEN       EQU $0800
 POOL_B          EQU $F000
 POOL_B_SLOTS    EQU 28
-T3              EQU $FA80
+T3              EQU $FA80       ; (language batch 1: the tile operations' RAM, see the end of this file; free for a game that does not call them)
 T3_LEN          EQU $0080
 T2_FREE         EQU $D5E0
 T2_FREE_LEN     EQU $0020
@@ -236,3 +236,30 @@ SPR_YMAX        EQU 176
 
 ; Keyboard (keys.asm)
 KEY_TAB_LAST    EQU 'Z'         ; the key table covers codes 0..'Z'
+
+; ---------------------------------------------------------------------------------------------------------------
+; Language batch 1 (docs/ARCADE_LANGUAGE_BATCH1.md, docs/ARCADE_RUNTIME_API_V2.md "As built: language batch 1"): the tile operations
+; RT_FILL / RT_FILLC / RT_COPY / RT_LOADMAP*, RT_BORDER, RT_RANDOMISE (tileops.asm).  ADDITIVE: nothing above changed.
+; ---------------------------------------------------------------------------------------------------------------
+; Header extension: bit 7 of frame_div (DIV_EXT) says the header is 18 bytes long and $8010 is the map table pointer.
+DIV_EXT         EQU $80
+GAME_MAPTAB     EQU GAME_BASE+16        ; DW map_table: DB count (0..MAX_MAPS), count x DW map_ptr; a map: DB w, DB h, w*h cell bytes (row-major)
+GAME_HEADER_EXT_LEN EQU 18
+MAX_MAPS        EQU 8
+; Variables in the formerly free $E0F8-$E0FF (boot sets V_BORDER; V_NMAP / V_MAPTAB are 0 without a map table)
+V_BORDER        EQU VARS+$F8    ; byte: the last border colour written (0..7); boot value BORDER_COLOUR
+V_NMAP          EQU VARS+$F9    ; byte: number of maps in the map table (0..MAX_MAPS)
+V_MAPTAB        EQU VARS+$FA    ; word: address of the first DW map_ptr of the table
+V_FREE2         EQU VARS+$FC    ; 4 bytes free
+; The tile operations' RAM: the former T3 area ($FA80-$FAFF, 128 bytes).  Only the tile operations write it.
+TO_BUFT         EQU T3          ; 32 bytes: RT_COPY's row buffer (cell bytes), used when source and destination are in the same rows
+TO_BUFA         EQU T3+$20      ; 32 bytes: the same for the attributes
+RT_ARGS         EQU T3+$40      ; 12 bytes: the argument block of RT_FILL / RT_FILLC / RT_COPY (signed 16-bit words, little-endian)
+RA_X            EQU RT_ARGS+0   ; x (column of the first cell)
+RA_Y            EQU RT_ARGS+2   ; y (row)
+RA_W            EQU RT_ARGS+4   ; width in cells
+RA_H            EQU RT_ARGS+6   ; height in cells
+RA_V            EQU RT_ARGS+8   ; RT_FILL: tile; RT_FILLC: character code
+RA_DX           EQU RT_ARGS+8   ; RT_COPY: destination x
+RA_DY           EQU RT_ARGS+10  ; RT_COPY: destination y
+TO_VARS         EQU RT_ARGS+12  ; $FACC.. scratch of the tile operations (tileops.asm)

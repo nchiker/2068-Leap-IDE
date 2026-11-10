@@ -66,6 +66,30 @@
  *     drawing (which may span refreshes), a PLAY can run in the middle of a long PROC FRAME, and a tick that overruns its frame_div
  *     is followed by a later one. Only the sound state depends on it: `played` = sample - play, active while played <= records.
  *
+ * ── Language batch 1 (docs/ARCADE_LANGUAGE_BATCH1.md) ───────────────────────────────────────────────────────────────────────
+ *   - CONST: evaluated in source order with the ordinary expression rules (the checker guarantees they are constant); a CONST is a
+ *     scope entry nobody can assign to. Its value is used by DIM sizes, initialisers, CASE values, ... like any variable.
+ *   - PROC with 0..4 parameters: CALL evaluates every argument left to right in the caller's scope, then binds them. LOCALs and the
+ *     implicit FOR variables (a FOR whose variable is neither a parameter, a LOCAL nor a visible variable) are fresh cells holding 0 at
+ *     EVERY entry. A PROC runs in the scope of its home (a top-level PROC sees the global names only, a SCENE's PROC the scene's too).
+ *   - Bit functions on 16-bit values; SHL / SHR by a count outside 0..15: 0 (SHR: -1 for a negative operand); SHR is arithmetic.
+ *   - Arrays: `DIM a(n) = v0, v1, ...` starts with the values (rest 0); `DIM b(w, h)` is (w+1)*(h+1) cells, flat index i*(h+1)+j, each
+ *     index range-checked separately (outside: read 0, write ignored; the order is index i, index j, then the value). The record's
+ *     `arrays` holds the flat values.
+ *   - FILL x, y, w, h = t / FILLC: x, y, w, h, value evaluated in that order. Cells of the w x h rectangle that lie on the 32 x 24 screen
+ *     get cell byte 128 + t and the tile's attribute (FILL; ignored altogether unless 0 <= t < the tileset's count, as TILE) or the character
+ *     code and the current text attribute (FILLC; ignored unless 32 <= c <= 127). w or h <= 0: nothing.
+ *   - COPY x, y, w, h TO dx, dy: a memmove of cell byte + attribute for the cells whose source AND destination are on the screen.
+ *   - LOADMAP map [AT x, y]: the map's w x h cells (a map keeps its own size; cell byte 128 + tile, or 32 for a blank) go to (x, y) (default
+ *     0, 0); cells outside the screen are dropped, cells outside the map untouched; a tile cell gets its tile's attribute, a font cell BG_ATTR.
+ *     The FIRST declared map is loaded at (0, 0) at the start. Up to 8 maps.
+ *   - BORDER n: the record's `border` = n AND 7 (initially opts.border0, default 1, the runtime's boot colour).
+ *   - RANDOMISE n seeds with n AND $FFFF, 0 becoming 1; RANDOMISE alone seeds with the frame counter's low 16 bits (0 becoming 1) taken from
+ *     `opts.frames(tick, k)` (k = 1, 2.. counts the bare RANDOMISEs of that tick, tick 0 = INIT; default tick * frame_div). The generator
+ *     is restarted through `opts.reseed(seed)` (returns the new generator function, or nothing if it re-seeds its own state); without
+ *     opts.rnd the built-in generator is reseeded; with opts.rnd but no opts.reseed a RANDOMISE is "unsupported".
+ *   - PRINT AT r, c; with no items only positions the cursor (the parser records the ';' as the trailing separator).
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -103,11 +127,14 @@ class Scope {
   find(key) { for (let s = this; s; s = s.parent) { const c = s.vars.get(key); if (c) return c; } return null; }
 }
 
+const BITF = new Set(['BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
+
 export function interpret(ast, opts = {}) {
   const nTicks = opts.ticks ?? 0;
   const stickOpt = opts.stick ?? (() => 0);
   let seed = 12345;
-  const rnd = opts.rnd ?? (() => { seed = (seed * 25173 + 13849) & 0xFFFF; return seed & 0x7FFF; });
+  let rnd = opts.rnd ?? (() => { seed = (seed * 25173 + 13849) & 0xFFFF; return seed & 0x7FFF; });
+  let border = opts.border0 ?? 1;
   const maxSteps = opts.maxSteps ?? 5_000_000;
   let steps = 0;
   let tick = 0;
@@ -126,7 +153,8 @@ export function interpret(ast, opts = {}) {
   const boxes = [];                         // collision box [hx, hy, hw, hh] per instance
   const instAsset = [], assetObjs = [], assetPhases = [];
   const sfxNames = [], sfxIndex = new Map(), sfxLen = [];
-  let tileset = null, mapDecl = null;
+  let tileset = null;
+  const mapDecls = [];
   const tabs = assetTables(opts.assets);
   for (const a of ast.assets ?? []) {
     if (a.kind === 'SPRITE') {
@@ -152,8 +180,8 @@ export function interpret(ast, opts = {}) {
       const as = lookupAsset(tabs.tilesets, a.asset, a.name);
       tileset = as ? convertTileset(as) : { count: 128, bytes: new Uint8Array(128 * 9).map((_, i) => (i % 9 === 8 ? BG_ATTR : 0)) };
     } else if (a.kind === 'MAP') {
-      if (mapDecl) throw new Unsupported('a second MAP', a);
-      mapDecl = a;
+      if (mapDecls.length >= 8) throw new Unsupported('more than 8 MAPs', a);
+      mapDecls.push(a);
     } else throw new Unsupported(`${a.kind} declaration`, a);
   }
   const nSprSlots = V2 ? (opts.maxInstances ?? MAX_INSTANCES) : MAX_SPRITES;      // opts.maxInstances: tests with a mock runtime that has more than 16
@@ -173,16 +201,27 @@ export function interpret(ast, opts = {}) {
   const cells = new Uint8Array(768).fill(BLANK_CELL), attrs = new Uint8Array(768).fill(BG_ATTR);
   let textAttr = BG_ATTR, curRow = 0, curCol = 0;
   const tileAttrOf = (t) => (tileset ? tileset.bytes[t * 9 + 8] : BG_ATTR);
-  if (mapDecl) {
-    const as = lookupAsset(tabs.maps, mapDecl.asset, mapDecl.name);
-    if (as) {
-      const mp = convertMap(as, tileset ? tileset.count : 128);
-      for (let i = 0; i < 768; i++) {
-        cells[i] = mp.bytes[i];
-        if (mp.bytes[i] >= TILE_CELL) attrs[i] = tileAttrOf(mp.bytes[i] - TILE_CELL);
-      }
+  // maps: {name, w, h, rec: Uint8Array(w * h)}; the first is loaded at (0, 0) at the start
+  const maps = [], mapIndex = new Map();
+  mapDecls.forEach((d, i) => {
+    const as = lookupAsset(tabs.maps, d.asset, d.name);
+    mapIndex.set(up(d.name), i);
+    if (!as) { maps.push({ name: d.name, w: 0, h: 0, rec: new Uint8Array(0) }); return; }
+    const mp = convertMap(as, tileset ? tileset.count : 128);
+    const rec = new Uint8Array(mp.w * mp.h);
+    for (let r = 0; r < mp.h; r++) for (let c = 0; c < mp.w; c++) rec[r * mp.w + c] = mp.bytes[r * 32 + c];
+    maps.push({ name: d.name, w: mp.w, h: mp.h, rec });
+  });
+  const loadMap = (m, x0, y0) => {
+    for (let r = 0; r < m.h; r++) for (let c = 0; c < m.w; c++) {
+      const x = x0 + c, y = y0 + r;
+      if (x < 0 || x > 31 || y < 0 || y > 23) continue;
+      const b = m.rec[r * m.w + c];
+      cells[y * 32 + x] = b;
+      attrs[y * 32 + x] = b >= TILE_CELL ? tileAttrOf(b - TILE_CELL) : BG_ATTR;
     }
-  }
+  };
+  if (maps.length) loadMap(maps[0], 0, 0);
   const sfx = { active: false, index: -1, played: 0 };
   const putChar = (code) => {
     const i = curRow * 32 + curCol;
@@ -201,37 +240,11 @@ export function interpret(ast, opts = {}) {
 
   const globalScope = new Scope(null);
   const varNames = [], arrNames = [];
-  const declare = (scope, dim) => {
-    for (const it of dim.items) {
-      if (it.size !== null && it.size !== undefined) {
-        if (!V2) throw new Unsupported('arrays', it);
-        if (it.name.endsWith('$')) throw new Unsupported('string arrays', it);
-        scope.vars.set(up(it.name), { arr: new Array(it.size + 1).fill(0), n: it.size });
-        arrNames.push(up(it.name));
-        continue;
-      }
-      if (it.name.endsWith('$')) throw new Unsupported('string variables', it);
-      scope.vars.set(up(it.name), { v: 0 });
-      varNames.push(up(it.name));
-    }
-  };
   const fnTable = new Map(), procTable = new Map();
-  const collect = (scope, holder, fns, procs) => {
-    for (const d of holder.decls ?? []) {
-      if (d.type === 'Dim') declare(scope, d);
-      else if (d.type === 'DefFn') fns.set(up(d.name), d);
-    }
-    for (const p of holder.procs ?? []) procs.set(up(p.name), p);
-  };
-  collect(globalScope, ast, fnTable, procTable);
-  if ((ast.scenes ?? []).length !== 1) throw new Unsupported('anything but exactly one SCENE', ast);
-  const scene = ast.scenes[0];
-  const sceneScope = new Scope(globalScope);
-  const sceneFns = new Map(fnTable), sceneProcs = new Map(procTable);
-  collect(sceneScope, scene, sceneFns, sceneProcs);
-
   const clock = opts.clock ?? null;
   let playN = 0;
+  let rndN = 0;
+  // (the declarations are processed below, once ev() and the helpers it needs exist)
   const snapshot = (events) => {
     const st = { active: sfx.active, index: sfx.index, played: sfx.played };
     if (clock && sfx.index >= 0) { st.played = Math.max(0, clock.sample(tick) - sfx.t0); st.active = sfx.active && st.played <= sfxLen[sfx.index]; }
@@ -240,7 +253,7 @@ export function interpret(ast, opts = {}) {
     const arrays = {};
     for (const k of arrNames) arrays[k] = sceneScope.find(k).arr.slice();
     return {
-      tick, vars, arrays, sprites: spr.map((s) => ({ ...s })), events,
+      tick, vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
       sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
     };
@@ -249,6 +262,72 @@ export function interpret(ast, opts = {}) {
   // ── expressions ──
   let events = [];
   const tickStep = () => { if (++steps > maxSteps) throw new Error('interp: step limit exceeded'); };
+
+  // ── declarations (CONST, DIM with sizes / initialisers, PROCs, DEF FNs) ──
+  const declare = (scope, dim) => {
+    for (const it of dim.items) {
+      const dims = it.dims ?? (it.size !== null && it.size !== undefined ? [{ type: 'Number', value: it.size }] : null);
+      if (dims) {
+        if (!V2) throw new Unsupported('arrays', it);
+        if (it.name.endsWith('$')) throw new Unsupported('string arrays', it);
+        const sizes = dims.map((d) => ev(d, scope));
+        const total = sizes.reduce((p, n) => p * (n + 1), 1);
+        const arr = new Array(total).fill(0);
+        (it.init ?? []).forEach((v, k) => { const val = ev(v, scope); if (k < total) arr[k] = val; });
+        scope.vars.set(up(it.name), sizes.length === 2 ? { arr, n: total - 1, w: sizes[0], h: sizes[1] } : { arr, n: sizes[0] });
+        arrNames.push(up(it.name));
+        continue;
+      }
+      if (it.name.endsWith('$')) throw new Unsupported('string variables', it);
+      scope.vars.set(up(it.name), { v: 0 });
+      varNames.push(up(it.name));
+    }
+  };
+  const collect = (scope, holder, fns, procs, home) => {
+    for (const d of holder.decls ?? []) {
+      if (d.type === 'Dim') declare(scope, d);
+      else if (d.type === 'Const') scope.vars.set(up(d.name), { v: ev(d.value, scope), isConst: true });
+      else if (d.type === 'DefFn') fns.set(up(d.name), Object.assign(Object.create(d), { home }));
+    }
+    for (const p of holder.procs ?? []) procs.set(up(p.name), Object.assign(Object.create(p), { home }));
+  };
+  // The scope chain of a PROC is its home scope (global, or the SCENE's on top of it); its parameters, LOCALs and implicit FOR variables
+  // are cells of its own, so a local hides a global of the same name.
+  const localsCache = new Map();
+  const localNames = (p, home) => {
+    if (localsCache.has(p)) return localsCache.get(p);
+    const names = [];
+    const params = new Set((p.params ?? (p.param ? [{ name: p.param }] : [])).map((x) => up(x.name)));
+    const seen = new Set(params);
+    const add = (n) => { const k = up(n); if (!seen.has(k)) { seen.add(k); names.push(k); } };
+    const walk = (list) => {
+      for (const st of list ?? []) {
+        if (!st) continue;
+        if (st.type === 'Local') for (const n of st.names) add(n.name);
+        else if (st.type === 'For') { if (!home.find(up(st.variable.name)) && !seen.has(up(st.variable.name))) add(st.variable.name); walk(st.body); }
+        else if (st.type === 'If') { walk(st.then); walk(st.else); }
+        else if (st.type === 'While') walk(st.body);
+        else if (st.type === 'Select') { for (const c of st.cases) walk(c.body); if (st.else) walk(st.else.body); }
+      }
+    };
+    walk(p.body);
+    localsCache.set(p, names);
+    return names;
+  };
+  function procScope(p, args) {
+    const home = p.home === 'global' ? globalScope : sceneScope;
+    const ps = new Scope(home);
+    const params = p.params ?? (p.param ? [{ name: p.param }] : []);
+    params.forEach((q, i) => ps.vars.set(up(q.name), { v: args[i] ?? 0 }));
+    for (const n of localNames(p, home)) ps.vars.set(n, { v: 0 });
+    return ps;
+  }
+  collect(globalScope, ast, fnTable, procTable, 'global');
+  if ((ast.scenes ?? []).length !== 1) throw new Unsupported('anything but exactly one SCENE', ast);
+  const scene = ast.scenes[0];
+  const sceneScope = new Scope(globalScope);
+  const sceneFns = new Map(fnTable), sceneProcs = new Map(procTable);
+  collect(sceneScope, scene, sceneFns, sceneProcs, 'scene');
 
   /** The absolute instance a SHOW / HIDE / HIT operand names (index evaluated now), or -1 when its index is outside the pool. */
   function instOf(node, sc) {
@@ -262,11 +341,23 @@ export function interpret(ast, opts = {}) {
     return r.first;
   }
   /** KEYDOWN's key, fixed when the game is built: a literal number, or a one-character string (upper-cased). */
-  function keyCodeOf(a, at) {
+  function keyCodeOf(a, at, sc) {
     if (a.type === 'String' && a.value.length === 1) return a.value.toUpperCase().charCodeAt(0);
     if (a.type === 'Number') return a.value;
     if (a.type === 'Unary' && a.op === '-' && a.operand.type === 'Number') return -a.operand.value;
+    if (sc && isConstExpr(a, sc)) return ev(a, sc);       // a CONST (or an expression of CONSTs) is written out too
     throw new Unsupported('KEYDOWN with a key that is not written out', at);
+  }
+  /** Is `e` made of numbers, CONSTs and operators only (so its value is fixed when the game is built)? */
+  function isConstExpr(e, sc) {
+    switch (e.type) {
+      case 'Number': return true;
+      case 'Ident': return !!sc.find(up(e.name))?.isConst;
+      case 'Unary': return e.op === '-' && isConstExpr(e.operand, sc);
+      case 'Binary': return ['+', '-', '*', 'DIV', 'MOD'].includes(e.op) && isConstExpr(e.left, sc) && isConstExpr(e.right, sc);
+      case 'Func': return (BITF.has(e.name) || e.name === 'BIT') && e.args.every((x) => isConstExpr(x, sc));
+      default: return false;
+    }
   }
 
   function ev(e, sc) {
@@ -283,6 +374,10 @@ export function interpret(ast, opts = {}) {
         const c = sc.find(up(e.name));
         if (!c || !c.arr) throw new Error(`interp: ${e.name} is not an array`);
         const i = ev(e.index, sc);
+        if (c.h !== undefined) {                      // 2-D: i in 0..w, j in 0..h, flat i * (h + 1) + j
+          const j = ev(e.index2, sc);
+          return i >= 0 && i <= c.w && j >= 0 && j <= c.h ? c.arr[i * (c.h + 1) + j] : 0;
+        }
         return i >= 0 && i <= c.n ? c.arr[i] : 0;
       }
       case 'Unary': {
@@ -319,6 +414,12 @@ export function interpret(ast, opts = {}) {
             const v = ev(args[0], sc), n = ev(args[1], sc);
             return n >= 0 && n <= 15 ? ((v & 0xFFFF) >> n) & 1 : 0;
           }
+          case 'BAND': { const a = ev(args[0], sc), b = ev(args[1], sc); return wrap16(a & b); }
+          case 'BOR': { const a = ev(args[0], sc), b = ev(args[1], sc); return wrap16(a | b); }
+          case 'BXOR': { const a = ev(args[0], sc), b = ev(args[1], sc); return wrap16(a ^ b); }
+          case 'BNOT': return wrap16(~ev(args[0], sc));
+          case 'SHL': { const a = ev(args[0], sc), n = ev(args[1], sc); return n >= 0 && n <= 15 ? wrap16(a << n) : 0; }
+          case 'SHR': { const a = ev(args[0], sc), n = ev(args[1], sc); return n >= 0 && n <= 15 ? a >> n : (a < 0 ? -1 : 0); }
           case 'STICK': { const n = ev(args[0], sc); if (n !== 1 && n !== 2) return 0; const v = stickValue(tick, n) & 31; return V2 && (v & 15) === 15 ? 0 : v; }
           case 'HIT': {
             const a = instOf(args[0], sc), b = instOf(args[1], sc);
@@ -330,7 +431,7 @@ export function interpret(ast, opts = {}) {
           }
           case 'KEYDOWN': {
             if (!V2) throw new Unsupported('function KEYDOWN', e);
-            return keyHeld(tick, keyCodeOf(args[0], e)) ? 1 : 0;
+            return keyHeld(tick, keyCodeOf(args[0], e, sc)) ? 1 : 0;
           }
           case 'TILEAT': {
             const x = ev(args[0], sc), y = ev(args[1], sc);
@@ -345,7 +446,7 @@ export function interpret(ast, opts = {}) {
         const f = sceneFns.get(up(e.name));
         if (!f) throw new Error(`interp: unknown function ${e.name}`);
         const arg = ev(e.arg, sc);
-        const fs = new Scope(sceneScope);
+        const fs = new Scope(f.home === 'global' ? globalScope : sceneScope);
         fs.vars.set(up(f.param), { v: arg });
         return ev(f.body, fs);
       }
@@ -380,6 +481,12 @@ export function interpret(ast, opts = {}) {
           if (!V2) throw new Unsupported('arrays', s);
           const c = sc.find(up(s.target.name));
           const i = ev(s.target.index, sc);
+          if (c.h !== undefined) {
+            const j = ev(s.target.index2, sc);
+            const v = ev(s.value, sc);
+            if (i >= 0 && i <= c.w && j >= 0 && j <= c.h) c.arr[i * (c.h + 1) + j] = v;
+            return null;
+          }
           const v = ev(s.value, sc);
           if (i >= 0 && i <= c.n) c.arr[i] = v;
           return null;
@@ -426,9 +533,8 @@ export function interpret(ast, opts = {}) {
       case 'Call': {
         const p = sceneProcs.get(up(s.name));
         if (!p) throw new Error(`interp: unknown PROC ${s.name}`);
-        const ps = new Scope(sceneScope);
-        if (p.param) ps.vars.set(up(p.param), { v: s.arg ? ev(s.arg, sc) : 0 });
-        run(p.body, ps);
+        const args = (s.args ?? (s.arg ? [s.arg] : [])).map((a) => ev(a, sc));       // left to right, all before any is bound
+        run(p.body, procScope(p, args));
         return null;
       }
       case 'Show': {
@@ -483,6 +589,46 @@ export function interpret(ast, opts = {}) {
         }
         return null;
       }
+      case 'Local': case 'Const': return null;
+      case 'Border': border = ev(s.value, sc) & 7; return null;
+      case 'Randomise': {
+        let sd;
+        if (s.value) sd = ev(s.value, sc) & 0xFFFF;
+        else { const f = opts.frames ? opts.frames(tick, ++rndN) : tick * frameDiv; sd = f & 0xFFFF; }
+        sd = sd || 1;
+        if (opts.reseed) { const g = opts.reseed(sd); if (typeof g === 'function') rnd = g; }
+        else if (!opts.rnd) { seed = sd; }
+        else throw new Unsupported('RANDOMISE with opts.rnd and no opts.reseed', s);
+        return null;
+      }
+      case 'Fill': {
+        const x = ev(s.x, sc), y = ev(s.y, sc), w = ev(s.w, sc), h = ev(s.h, sc), v = ev(s.value, sc);
+        if (s.which === 'FILL' ? !(v >= 0 && tileset && v < tileset.count) : !(v >= 32 && v <= 127)) return null;
+        const cell = s.which === 'FILL' ? TILE_CELL + v : v, at = s.which === 'FILL' ? tileAttrOf(v) : textAttr;
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+          const cx = x + i, cy = y + j;
+          if (cx >= 0 && cx <= 31 && cy >= 0 && cy <= 23) { cells[cy * 32 + cx] = cell; attrs[cy * 32 + cx] = at; }
+        }
+        return null;
+      }
+      case 'Copy': {
+        const x = ev(s.x, sc), y = ev(s.y, sc), w = ev(s.w, sc), h = ev(s.h, sc), dx = ev(s.dx, sc), dy = ev(s.dy, sc);
+        const moves = [];
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+          const sx = x + i, sy = y + j, tx = dx + i, ty = dy + j;
+          if (sx < 0 || sx > 31 || sy < 0 || sy > 23 || tx < 0 || tx > 31 || ty < 0 || ty > 23) continue;
+          moves.push([ty * 32 + tx, cells[sy * 32 + sx], attrs[sy * 32 + sx]]);
+        }
+        for (const [d, c, a] of moves) { cells[d] = c; attrs[d] = a; }
+        return null;
+      }
+      case 'LoadMap': {
+        const m = maps[mapIndex.get(up(s.map.name))];
+        if (!m) throw new Error(`interp: unknown map ${s.map.name}`);
+        const x = s.x ? ev(s.x, sc) : 0, y = s.y ? ev(s.y, sc) : 0;
+        loadMap(m, x, y);
+        return null;
+      }
       case 'Play': {
         const i = sfxIndex.get(up(s.sfx.name));
         sfx.active = true; sfx.index = i; sfx.played = 0;
@@ -497,19 +643,19 @@ export function interpret(ast, opts = {}) {
   const callProc = (name) => {
     const p = sceneProcs.get(name);
     if (!p) throw new Error(`interp: scene has no PROC ${name}`);
-    run(p.body, new Scope(sceneScope));
+    run(p.body, procScope(p, []));
   };
 
   tick = 0;
   events = [];
-  playN = 0;
+  playN = 0; rndN = 0;
   callProc('INIT');
   const init = snapshot(events);
   const ticks = [];
   for (let t = 1; t <= nTicks; t++) {
     tick = t;
     events = [];
-    playN = 0;
+    playN = 0; rndN = 0;
     if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
     callProc('FRAME');
     ticks.push(snapshot(events));

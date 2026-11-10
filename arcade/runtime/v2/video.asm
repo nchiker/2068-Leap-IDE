@@ -101,6 +101,9 @@ cells_init:
     inc e
     djnz .tile
 .notiles:
+    ; ---- a map table (extended header, tileops.asm): map 0 is loaded as LOADMAP would, and the old map_ptr is ignored ----
+    call maps_boot
+    ret c
     ; ---- the initial map: 768 cell bytes; the attribute of a tile cell is the tile's, of a font cell BG_ATTR ----
     ld hl,(GAME_MAP)
     ld a,h

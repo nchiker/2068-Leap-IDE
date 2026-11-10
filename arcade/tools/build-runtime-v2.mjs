@@ -64,7 +64,10 @@ const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITE
   // v2
   'MAX_ASSETS', 'SPR_ENT', 'SPR_ASSET_OFF', 'SPR_DRAWN_FILE', 'GAME_INSTTAB', 'STACK_LIMIT', 'PHASE_PTR', 'PHASE_PTR_LEN', 'POOL_A', 'POOL_A_SLOTS',
   'POOL_B', 'POOL_B_SLOTS', 'POOL_C', 'POOL_C_SLOTS', 'SLOT_COUNT', 'AST', 'AST_LEN', 'AST_H', 'AST_WB', 'AST_XMASK', 'AST_PHASES', 'AST_HOT',
-  'SPR_TAB', 'INST_ASSET', 'SPR_DRAWN', 'T2_FREE', 'T2_FREE_LEN', 'T3', 'T3_LEN', 'SD_W', 'SD_H', 'SD_PHASES', 'VBUF'];
+  'SPR_TAB', 'INST_ASSET', 'SPR_DRAWN', 'T2_FREE', 'T2_FREE_LEN', 'T3', 'T3_LEN', 'SD_W', 'SD_H', 'SD_PHASES', 'VBUF',
+  // language batch 1 (tile operations)
+  'RT_ARGS', 'RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V', 'RA_DX', 'RA_DY', 'GAME_MAPTAB', 'GAME_HEADER_EXT_LEN', 'DIV_EXT', 'MAX_MAPS', 'V_BORDER', 'V_NMAP', 'V_MAPTAB',
+  'TO_BUFT', 'TO_BUFA', 'TO_VARS', 'RT_SEED', 'V_FRAMES'];
 
 export function buildRuntime({ quiet = true } = {}) {
   mkdirSync(WORK, { recursive: true });

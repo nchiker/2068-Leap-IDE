@@ -56,6 +56,21 @@
  *      sprite). SHOW and HIDE take an instance reference: a bare name (an Ident) or `name(expr)` (an Index node, like an array
  *      element); HIT's arguments are ordinary expressions so they already parse that way. The checker and the code generator
  *      decide what a reference means.
+ *  15. (language batch 1, docs/ARCADE_LANGUAGE_BATCH1.md)
+ *      - `CONST name = expr` (top level, in a SCENE, or - for the checker to refuse - in a PROC): node Const {name, namePos, value}.
+ *      - `PROC name(a, b, c, d)`: node.params = [{name, ...pos}] (any number parses; the checker allows 0..4); node.param / paramPos
+ *        stay the FIRST parameter (or null). `CALL name(x, y)`: node.args = [expr], node.arg = args[0] ?? null.
+ *      - `LOCAL a, b`: node Local {names: [{name, line, col, endCol}]}. The checker decides where it may stand.
+ *      - `DIM a(n)`, `DIM b(w, h)`, `DIM a(n) = v0, v1, ...`: each DIM item has dims = [expr] or [expr, expr] (null for a scalar), init =
+ *        [expr] or null, and size = the first dimension when it is a plain number literal (else null). The sizes are constant
+ *        expressions evaluated by the checker, the code generator and the interpreter. An initialiser runs to the end of the
+ *        statement, so it must be the LAST item of the DIM (`DIM x, a(3) = 1, 2, 3`).
+ *      - An element reference may have two indices: Index {name, index, index2}; three are refused.
+ *      - `RANDOMISE` alone (value null) and `RANDOMISE n`; `BORDER n`.
+ *      - `PRINT AT r, c;` (and `PRINT TAB c;`) with no items: the ';' after the prefix is recorded as `trailing` (the cursor stays),
+ *        so `PRINT AT r, c` with no ';' (trailing null) still goes to the next row. A ',' there counts as ';' (no space is printed).
+ *      - `FILL x, y, w, h = t` / `FILLC ...` (node Fill {which, x, y, w, h, value}; h is parsed at the additive level like TILE's y),
+ *        `COPY x, y, w, h TO dx, dy` (node Copy), `LOADMAP name [AT x, y]` (node LoadMap {map: Ident, x, y}; x, y null without AT).
  */
 
 "use strict";
@@ -318,8 +333,8 @@ class Parser {
         (scene ? scene : prog).items.push(p);
         return;
       }
-      if (v === 'DIM' || v === 'DEF') {
-        const d = v === 'DIM' ? this.dim() : this.defFn();
+      if (v === 'DIM' || v === 'DEF' || v === 'CONST') {
+        const d = v === 'DIM' ? this.dim() : v === 'CONST' ? this.constDecl() : this.defFn();
         (scene ? scene : prog).decls.push(d);
         (scene ? scene : prog).items.push(d);
         return;
@@ -369,19 +384,23 @@ class Parser {
 
   proc() {
     const st = this.next();
-    const proc = this.mk('Proc', st, { name: '', namePos: pos(st), param: null, paramPos: null, body: [], endLine: st.line });
+    const proc = this.mk('Proc', st, { name: '', namePos: pos(st), param: null, paramPos: null, params: [], body: [], endLine: st.line });
     this.hdr(() => {
       const name = this.expectName('a procedure name');
       proc.name = name.text; proc.namePos = pos(name);
       this.expectSym('(', `expected '(' after the PROC name: PROC ${name.text}()`);
-      if (this.peek().type === 'ident') {
-        const p = this.next();
-        proc.param = p.text; proc.paramPos = pos(p);
-      } else if (this.peek().type === 'keyword') {
-        const p = this.peek();
-        this.fail(p, `'${p.text}' is a reserved word and cannot be a parameter name`);
+      while (!isSym(this.peek(), ')')) {
+        if (this.peek().type === 'ident') {
+          const p = this.next();
+          proc.params.push({ name: p.text, ...pos(p) });
+          if (proc.params.length === 1) { proc.param = p.text; proc.paramPos = pos(p); }
+        } else if (this.peek().type === 'keyword') {
+          const p = this.peek();
+          this.fail(p, `'${p.text}' is a reserved word and cannot be a parameter name`);
+        } else break;
+        if (isSym(this.peek(), ',')) { this.next(); continue; }
+        break;
       }
-      if (isSym(this.peek(), ',')) this.fail(this.peek(), 'a PROC takes one parameter (or none)');
       this.expectSym(')', `expected ')' but found ${describe(this.peek())}`);
       this.close(proc);
       this.endStmt();
@@ -397,22 +416,52 @@ class Parser {
     const items = [];
     for (;;) {
       const n = this.expectName('a variable name');
-      const item = { name: n.text, line: n.line, col: n.col, endCol: n.end, size: null };
+      const item = { name: n.text, line: n.line, col: n.col, endCol: n.end, size: null, dims: null, init: null };
       if (isSym(this.peek(), '(')) {
         this.next();
-        const s = this.peek();
-        if (s.type !== 'number') this.fail(s, 'a DIM size must be a literal number, e.g. DIM a(10)');
-        this.next();
-        item.size = s.value; item.sizePos = pos(s);
-        if (isSym(this.peek(), ',')) this.fail(this.peek(), 'only one dimension is allowed');
+        item.dims = [];
+        item.dimPos = [];
+        for (;;) {
+          const s = this.peek();
+          if (isSym(s, ')')) this.fail(s, 'a DIM size is missing: DIM a(10)');
+          const e = this.expr();
+          item.dims.push(e); item.dimPos.push({ line: e.line, col: e.col, endCol: e.endCol });
+          if (isSym(this.peek(), ',')) {
+            if (item.dims.length === 2) this.fail(this.peek(), 'arrays have at most two dimensions');
+            this.next(); continue;
+          }
+          break;
+        }
+        // the plain-literal 1-D case keeps the old fields
+        const d0 = item.dims[0];
+        if (item.dims.length === 1 && d0.type === 'Number') { item.size = d0.value; item.sizePos = pos2(d0); }
         this.expectSym(')');
         item.endCol = this.last.end;
       }
       items.push(item);
+      if (isSym(this.peek(), '=')) {                 // an initialiser runs to the end of the statement
+        this.next();
+        item.init = [];
+        for (;;) {
+          item.init.push(this.expr());
+          if (isSym(this.peek(), ',')) { this.next(); continue; }
+          break;
+        }
+        item.endCol = this.last.end;
+        break;
+      }
       if (isSym(this.peek(), ',')) { this.next(); continue; }
       break;
     }
     return this.close(this.mk('Dim', st, { items }));
+  }
+
+  constDecl() {
+    const st = this.next();
+    const name = this.expectName('a constant name');
+    this.expectSym('=', `expected '=' and the value: CONST ${name.text} = 10`);
+    const value = this.expr();
+    return this.close(this.mk('Const', st, { name: name.text, namePos: pos(name), value }));
   }
 
   defFn() {
@@ -489,7 +538,32 @@ class Parser {
       case 'SELECT': return this.selectStmt();
       case 'CALL': return this.callStmt();
       case 'DIM': return this.dim();
+      case 'CONST': return this.constDecl();
       case 'DEF': return this.defFn();
+      case 'LOCAL': return this.localStmt();
+      case 'FILL': case 'FILLC': {
+        this.next();
+        const x = this.expr(); this.expectSym(','); const y = this.expr(); this.expectSym(','); const w = this.expr(); this.expectSym(',');
+        const h = this.addExpr();   // like TILE's y: a comparison would swallow the '='
+        this.expectSym('=', `expected '=' and the ${t.value === 'FILL' ? 'tile' : 'character'}: ${t.value} x, y, w, h = ${t.value === 'FILL' ? 't' : 'c'}`);
+        const value = this.expr();
+        return this.close(this.mk('Fill', t, { which: t.value, x, y, w, h, value }));
+      }
+      case 'COPY': {
+        this.next();
+        const x = this.expr(); this.expectSym(','); const y = this.expr(); this.expectSym(','); const w = this.expr(); this.expectSym(',');
+        const h = this.expr();
+        this.expectKw('TO', 'expected TO: COPY x, y, w, h TO dx, dy');
+        const dx = this.expr(); this.expectSym(',', "expected ',' : COPY x, y, w, h TO dx, dy"); const dy = this.expr();
+        return this.close(this.mk('Copy', t, { x, y, w, h, dx, dy }));
+      }
+      case 'LOADMAP': {
+        this.next();
+        const map = this.nameRef('a map name');
+        let x = null, y = null;
+        if (isKw(this.peek(), 'AT')) { this.next(); x = this.expr(); this.expectSym(',', "expected ',' : LOADMAP map AT x, y"); y = this.expr(); }
+        return this.close(this.mk('LoadMap', t, { map, x, y }));
+      }
       case 'SHOW': return this.show();
       case 'HIDE': { this.next(); return this.close(this.mk('Hide', t, { sprite: this.spriteRef() })); }
       case 'PLAY': { this.next(); return this.close(this.mk('Play', t, { sfx: this.nameRef('a sound effect name') })); }
@@ -515,7 +589,11 @@ class Parser {
       case 'INK': case 'PAPER': case 'BRIGHT': case 'FLASH':
         this.next(); return this.close(this.mk('Color', t, { which: t.value, value: this.expr() }));
       case 'BORDER': this.next(); return this.close(this.mk('Border', t, { value: this.expr() }));
-      case 'RANDOMISE': this.next(); return this.close(this.mk('Randomise', t, { value: this.expr() }));
+      case 'RANDOMISE': {
+        this.next();
+        const nx = this.peek();
+        return this.close(this.mk('Randomise', t, { value: isEnd(nx) || isBlockWord(nx) ? null : this.expr() }));
+      }
       case 'PLOT': { this.next(); const x = this.expr(); this.expectSym(','); const y = this.expr(); return this.close(this.mk('Plot', t, { x, y })); }
       case 'POKE': { this.next(); const addr = this.expr(); this.expectSym(','); const value = this.expr(); return this.close(this.mk('Poke', t, { addr, value })); }
       case 'OUT': { this.next(); const port = this.expr(); this.expectSym(','); const value = this.expr(); return this.close(this.mk('Out', t, { port, value })); }
@@ -541,6 +619,19 @@ class Parser {
     return this.mk('Ident', t, { name: t.text });
   }
 
+  /** `LOCAL a, b, c` */
+  localStmt() {
+    const t = this.next();
+    const names = [];
+    for (;;) {
+      const n = this.expectName('a variable name');
+      names.push({ name: n.text, ...pos(n) });
+      if (isSym(this.peek(), ',')) { this.next(); continue; }
+      break;
+    }
+    return this.close(this.mk('Local', t, { names }));
+  }
+
   /** An instance reference after SHOW / HIDE: `name` (an Ident) or `name(expr)` (an Index node). */
   spriteRef() {
     const t = this.peek();
@@ -564,10 +655,12 @@ class Parser {
   print() {
     const t = this.next();
     const node = this.mk('Print', t, { at: null, tab: null, items: [], seps: [], trailing: null });
+    let prefixSepSeen = false;
     const prefixSep = what => {
       const s = this.peek();
-      if (isSym(s, ';') || isSym(s, ',')) this.next();
+      if (isSym(s, ';') || isSym(s, ',')) { this.next(); prefixSepSeen = true; }
       else if (!(isEnd(s) || isBlockWord(s))) this.fail(s, `expected ';' or ',' after ${what}`);
+      else prefixSepSeen = false;
     };
     if (isKw(this.peek(), 'AT')) {
       this.next();
@@ -594,7 +687,7 @@ class Parser {
         }
         break;
       }
-    }
+    } else if (prefixSepSeen && (node.at || node.tab)) node.trailing = ';';     // PRINT AT r, c;  with no items only positions the cursor
     return this.close(node);
   }
 
@@ -616,13 +709,16 @@ class Parser {
     if (n.type !== 'ident') this.fail(n, `expected a procedure name but found ${describe(n)}`);
     this.next();
     this.expectSym('(', `expected '(' : CALL ${n.text}(expression)`);
-    let arg = null;
+    const args = [];
     if (!isSym(this.peek(), ')')) {
-      arg = this.expr();
-      if (isSym(this.peek(), ',')) this.fail(this.peek(), 'a PROC takes one parameter (or none)');
+      for (;;) {
+        args.push(this.expr());
+        if (isSym(this.peek(), ',')) { this.next(); continue; }
+        break;
+      }
     }
     this.expectSym(')');
-    return this.close(this.mk('Call', t, { name: n.text, namePos: pos(n), arg }));
+    return this.close(this.mk('Call', t, { name: n.text, namePos: pos(n), args, arg: args[0] ?? null }));
   }
 
   ifStmt() {
@@ -866,13 +962,19 @@ class Parser {
   indexRest(t) {
     this.expectSym('(');
     const index = this.expr();
-    if (isSym(this.peek(), ',')) this.fail(this.peek(), 'arrays have one dimension');
+    let index2 = null;
+    if (isSym(this.peek(), ',')) {
+      this.next();
+      index2 = this.expr();
+      if (isSym(this.peek(), ',')) this.fail(this.peek(), 'arrays have at most two dimensions');
+    }
     this.expectSym(')', `expected ')' but found ${describe(this.peek())}`);
-    return this.close(this.mk('Index', t, { name: t.text, index }));
+    return this.close(this.mk('Index', t, { name: t.text, index, index2 }));
   }
 }
 
 const pos = t => ({ line: t.line, col: t.col, endCol: t.end });
+const pos2 = n => ({ line: n.line, col: n.col, endCol: n.endCol });
 
 /**
  * Parse Arcade source. Never throws: problems come back in `errors`.

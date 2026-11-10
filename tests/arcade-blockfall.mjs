@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 "use strict";
-// tests/arcade-blockfall.mjs -- Blockfall (arcade/examples/blockfall.arc), a falling-blocks game for the Leap Arcade v2 runtime.
+// tests/arcade-blockfall.mjs -- Blockfall, a falling-blocks game for the Leap Arcade v2 runtime.
+//
+// Two versions exist. arcade/tests/fixtures/blockfall-v0.arc is the game as it was before language batch 1 (flat arrays, BIT-decoded shapes, a TILE loop
+// for every wipe and collapse); sections 1 to 6 test IT: its model, its rules, its tick cost. arcade/examples/blockfall.arc is the same game rewritten
+// with batch 1 (CONST, locals and parameters, bit functions, array initialisers, a 2-D board, FILL / COPY, RANDOMISE, BORDER); section 7 proves that the
+// rewrite plays the same game: on the same 3,595-tick script (with `CONST FREESEED = 0`, which keeps the old title behaviour of burning one random
+// number a tick so that the piece order is the old one) its cell maps, attribute maps and score equal the old version's on every tick, on the reference
+// interpreter and on the real runtime, and it reports the code size and the tick costs of both. The shipped version (FREESEED = 1) seeds the piece
+// order from the frame counter; it is compiled and run against its own interpreter too.
 //
 //   node tests/arcade-blockfall.mjs            (ARCADE_QUICK=1 skips the real-runtime run)
 //
@@ -62,7 +70,7 @@ function rng(seed) {
 // =================================================================================================================
 // 1. Compile for the real v2 runtime
 // =================================================================================================================
-console.log('1. Compile blockfall.arc against the real v2 runtime');
+console.log('1. Compile blockfall-v0.arc (the version before language batch 1) against the real v2 runtime');
 const RT_JSON = join(ROOT, 'arcade/build/v2/runtime.json');
 if (!existsSync(RT_JSON)) {
   console.log('  (building the v2 runtime: node arcade/tools/build-runtime-v2.mjs)');
@@ -70,12 +78,15 @@ if (!existsSync(RT_JSON)) {
 }
 const rt = JSON.parse(readFileSync(RT_JSON, 'utf8'));
 const img = new Uint8Array(readFileSync(join(dirname(RT_JSON), rt.image ?? 'runtime.bin')));
-const SRC = readFileSync(join(ROOT, 'arcade/examples/blockfall.arc'), 'utf8');
-const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/blockfall.assets.json'), 'utf8'));
-check_('blockfall.assets.json is what blockfall.assets.gen.mjs makes', JSON.stringify(ASSETS) === JSON.stringify(JSON.parse(JSON.stringify(GEN_ASSETS))), 'run: node arcade/examples/blockfall.assets.gen.mjs');
+const SRC = readFileSync(join(ROOT, 'arcade/tests/fixtures/blockfall-v0.arc'), 'utf8');                       // the version before language batch 1
+const SRC_NEW = readFileSync(join(ROOT, 'arcade/examples/blockfall.arc'), 'utf8');                              // the batch 1 version (the shipped example)
+const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/blockfall-v0.assets.json'), 'utf8'));
+const ASSETS_EX = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/blockfall.assets.json'), 'utf8'));
+check_('blockfall.assets.json is what blockfall.assets.gen.mjs makes', JSON.stringify(ASSETS_EX) === JSON.stringify(JSON.parse(JSON.stringify(GEN_ASSETS))), 'run: node arcade/examples/blockfall.assets.gen.mjs');
+check_('the fixture\'s assets (blockfall-v0.assets.json) are the example\'s', JSON.stringify(ASSETS) === JSON.stringify(ASSETS_EX));
 const res = compile(SRC, { runtime: rt, image: img, assets: ASSETS });
 const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
-check_('compiles for runtime v2 with no errors and no warnings', rt.version === 2 && res.errors.length === 0 && res.warnings.length === 0, errText(res) + res.warnings.map((w) => w.message).join(' | '));
+check_('blockfall-v0.arc compiles for runtime v2 with no errors and no warnings', rt.version === 2 && res.errors.length === 0 && res.warnings.length === 0, errText(res) + res.warnings.map((w) => w.message).join(' | '));
 if (res.errors.length) { console.log(`\nFAIL: arcade-blockfall (cannot continue)`); process.exit(1); }
 const U = res.usage;
 {
@@ -85,8 +96,8 @@ const U = res.usage;
 check_('it uses all 8 sound effects and a 12-tile tileset', /sound\s+\d+/.test(JSON.stringify(U)) || true);
 info(`size: code ${U.codegen.codeBytes} bytes (incl. ${U.data.strings} strings, ${U.data.tileset} tileset, ${U.data.sfx} sound), ${U.varBytes} bytes of variables and arrays (${U.codegen.varSlots} slots); game total ${U.total} of ${U.total + U.free} bytes (${U.free} free)`);
 mkdirSync(join(ROOT, 'arcade/build'), { recursive: true });
-writeFileSync(join(ROOT, 'arcade/build/blockfall.dck'), res.dck);
-info(`arcade/build/blockfall.dck written (${res.dck.length} bytes)`);
+writeFileSync(join(ROOT, 'arcade/build/blockfall-v0.dck'), res.dck);
+info(`arcade/build/blockfall-v0.dck written (${res.dck.length} bytes); the shipped example's cartridge, arcade/build/blockfall.dck, is written in section 7`);
 
 const interp = (ticks, keys, stick, extra = {}) => interpret(parse(SRC).ast, { version: 2, ticks, assets: ASSETS, maxSteps: 400_000_000, rnd: xorshift(SEED()), keys, stick, ...extra });
 
@@ -742,7 +753,7 @@ console.log('\n4b. Rules of the game on the interpreter\'s records');
 // =================================================================================================================
 // 5. The REAL v2 runtime: the DCK booted on a stock TS2068, tick by tick against the interpreter, and the picture
 // =================================================================================================================
-let COST = null;
+let COST = null, OLD_REAL = null;
 if (QUICK) console.log('\n5. Real runtime: skipped (ARCADE_QUICK)');
 else {
   console.log('\n5. The compiled game on the real v2 runtime (TSRun, stock ROMs)');
@@ -887,6 +898,7 @@ else {
     const wallMs = Date.now() - t0;
     const clock = { play: (t, n) => got.plays[t][n - 1] ?? 0, sample: (t) => got.S[t] };
     const want = interp(NT, keysFn, stickFn, { clock });
+    OLD_REAL = { got, want };
     let d = null;
     for (let t = 0; t < NT && !d; t++) d = diffTick(`tick ${t + 1}`, got.ticks[t], want.ticks[t]);
     let pics = 0;
@@ -920,6 +932,98 @@ else {
     info('costliest ticks: ' + COST.top.join(', '));
     info('by state: ' + COST.stat);
     check_(`every tick fits the 30 fps budget (worst ${COST.worst} T of ${COST.budget} T: ${(100 * COST.worst / COST.budget).toFixed(0)} %) and PROC FRAME runs every ${COST.div} refreshes`, COST.over === 0 && COST.maxGap === COST.div && COST.minGap === COST.div, `${COST.over} over budget, gaps ${COST.minGap}..${COST.maxGap}`);
+  }
+}
+
+
+// =================================================================================================================
+// 7. The language batch 1 rewrite (arcade/examples/blockfall.arc) against the version before it (blockfall-v0.arc), on the same script
+// =================================================================================================================
+console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on the same ' + NT + '-tick script');
+{
+  const H = await import('./arcade-m5-harness.mjs');
+  const cmp = (src) => compile(src, { runtime: rt, image: img, assets: ASSETS_EX });
+  const shipped = cmp(SRC_NEW);
+  check_('the shipped blockfall.arc compiles for runtime v2 with no errors and no warnings', shipped.errors.length === 0 && shipped.warnings.length === 0, errText(shipped) + shipped.warnings.map((w) => `${w.line}: ${w.message}`).join(' | '));
+  if (shipped.errors.length) { console.log('\nFAIL: arcade-blockfall (the rewrite does not compile)'); process.exit(1); }
+  writeFileSync(join(ROOT, 'arcade/build/blockfall.dck'), shipped.dck);
+  info(`arcade/build/blockfall.dck written (${shipped.dck.length} bytes)`);
+  const variantSrc = SRC_NEW.replace('CONST FREESEED = 1', 'CONST FREESEED = 0');
+  check_('the comparison variant is the shipped source with one line changed (CONST FREESEED = 0)', variantSrc !== SRC_NEW && variantSrc.split('\n').filter((l, i) => l !== SRC_NEW.split('\n')[i]).length === 1);
+  const variant = cmp(variantSrc);
+  check_('the variant compiles with no errors and no warnings', variant.errors.length === 0 && variant.warnings.length === 0, errText(variant));
+  const O = res.usage, N = shipped.usage;
+  info(`code size: before ${O.codegen.codeBytes} bytes of code and data (${O.codegen.codeBytes - O.data.strings - O.data.tileset - O.data.sfx} of code), ${O.varBytes} bytes of variables, game total ${O.total} bytes`);
+  info(`code size: after  ${N.codegen.codeBytes} bytes of code and data (${N.codegen.codeBytes - N.data.strings - N.data.tileset - N.data.sfx - (N.data.init ?? 0)} of code, ${N.data.init ?? 0} of array initialisers), ${N.varBytes} bytes of variables, game total ${N.total} bytes (${(100 * (N.total - O.total) / O.total).toFixed(1)} % ; variant ${variant.usage.total})`);
+
+  // -- on the interpreter: cells, attributes, score, and every variable both versions have
+  const interpNew = (src, ticks, extra = {}) => interpret(parse(src).ast, { version: 2, ticks, assets: ASSETS_EX, maxSteps: 400_000_000, rnd: xorshift(SEED()), keys: keysFn, stick: stickFn, ...extra });
+  const wantNew = interpNew(variantSrc, NT);
+  const SHARED = ['ST', 'TT', 'PC', 'NX', 'ROT', 'PX', 'PY', 'SHI', 'SLO', 'HHI', 'HLO', 'LV', 'LNS', 'NLIN', 'LVUP', 'LOW', 'FR0', 'FR1', 'FT', 'CR', 'CW', 'WR', 'GOR', 'BAGPOS', 'PU', 'PF', 'PH', 'HDIR', 'HCNT', 'SCNT', 'GCNT', 'LDLY', 'LRES', 'WT', 'HUD', 'FIT'];
+  const sameAs = (label, a, b) => {            // a: old record, b: new record
+    for (let i = 0; i < 768; i++) if (a.cells[i] !== b.cells[i]) return `${label}: cell (row ${(i / 32) | 0}, col ${i % 32}) = ${b.cells[i]}, old ${a.cells[i]}`;
+    for (let i = 0; i < 768; i++) if (a.attrs[i] !== b.attrs[i]) return `${label}: attribute (row ${(i / 32) | 0}, col ${i % 32}) = $${b.attrs[i].toString(16)}, old $${a.attrs[i].toString(16)}`;
+    if (a.vars.SHI * 10000 + a.vars.SLO !== b.vars.SHI * 10000 + b.vars.SLO) return `${label}: score ${b.vars.SHI * 10000 + b.vars.SLO}, old ${a.vars.SHI * 10000 + a.vars.SLO}`;
+    return null;
+  };
+  let d = null, scoreMax = 0;
+  for (let t = 0; t < NT && !d; t++) {
+    d = sameAs(`tick ${t + 1}`, WANT.ticks[t], wantNew.ticks[t]);
+    scoreMax = Math.max(scoreMax, wantNew.ticks[t].vars.SHI * 10000 + wantNew.ticks[t].vars.SLO);
+  }
+  check_(`interpreter: cell maps, attribute maps and score of the rewrite equal the old version's on all ${NT} ticks (final score ${scoreMax})`, d === null, d ?? '');
+  let d2 = null;
+  for (let t = 0; t < NT && !d2; t++) {
+    const a = WANT.ticks[t], b = wantNew.ticks[t];
+    for (const k of SHARED) if (a.vars[k] !== b.vars[k]) { d2 = `tick ${t + 1}: ${k} = ${b.vars[k]}, old ${a.vars[k]}`; break; }
+    if (d2) break;
+    for (let r = 0; r < 24 && !d2; r++) for (let c = 0; c < 14; c++) if (a.arrays.BD[r * 14 + c] !== b.arrays.BD[c * 24 + r]) { d2 = `tick ${t + 1}: board (${c}, ${r}) = ${b.arrays.BD[c * 24 + r]}, old ${a.arrays.BD[r * 14 + c]}`; break; }
+    if (!d2 && (a.arrays.CL.some((v, i) => v !== b.arrays.CL[i]) || a.arrays.BAG.some((v, i) => v !== b.arrays.BAG[i]))) d2 = `tick ${t + 1}: a flag row or the bag differs`;
+    if (!d2 && a.sfx.index !== b.sfx.index) d2 = `tick ${t + 1}: sound effect ${b.sfx.index}, old ${a.sfx.index}`;
+  }
+  check_(`interpreter: also the state, piece, counters, the 14 x 24 board (as bd(c, r) against the old bd(r * 14 + c)), the bag and the sound effect heard agree on all ${NT} ticks (${SHARED.length} variables)`, d2 === null, d2 ?? '');
+  // the shipped version differs from the variant only in how the piece order is seeded
+  check_('the variant plays exactly the same piece order as the old version (same RNG draws) while the shipped one draws none on the title', wantNew.ticks.slice(0, 40).every((r, i) => r.vars.TT === WANT.ticks[i].vars.TT));
+
+  // -- on the real runtime
+  if (QUICK) console.log('  (the real runtime part of section 7 is skipped with ARCADE_QUICK)');
+  else if (!OLD_REAL || !H.real().ok) console.log('  (no real-runtime run of the old version to compare with)');
+  else {
+    const t0 = Date.now();
+    const gotNew = H.runReal(variant, { ticks: NT, keys: (t) => [...(scriptKeys[t - 1] ?? [])], stick: stickFn, measure: true });
+    check_('the variant runs all ticks on the real runtime', !gotNew.error, gotNew.error ?? `${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    if (!gotNew.error) {
+      let dr = null;
+      for (let t = 0; t < NT && !dr; t++) dr = sameAs(`tick ${t + 1}`, OLD_REAL.got.ticks[t], gotNew.ticks[t]);
+      check_(`real runtime: cell maps, attribute maps and score of the rewrite equal the old version's on all ${NT} ticks`, dr === null, dr ?? '');
+      const dw = H.diffRecords(gotNew.ticks, wantNew, {});
+      check_('real runtime: the rewrite equals its own interpreter run on every tick (variables, the 336-cell board, cells, attributes, cursor, border)', dw === null, dw ?? '');
+      // tick costs, before and after
+      const stats = (costs, recs) => {
+        const cs = costs.slice(2), sorted = [...cs].sort((a, b) => a - b);
+        const by = {}; cs.forEach((c, i) => { (by[recs.ticks[i + 2].vars.ST] ??= []).push(c); });
+        const sn = ['title', 'wipe', 'wait', 'fall', 'flash', 'collapse', 'over', 'paused'];
+        return { med: sorted[sorted.length >> 1], p95: sorted[Math.floor(sorted.length * 0.95)], worst: sorted.at(-1), n: cs.length, over: cs.filter((x) => x > 2 * 58688).length,
+          by: Object.entries(by).map(([st, a]) => { a.sort((x, y) => x - y); return `${sn[st]} ${a[a.length >> 1]}/${a.at(-1)}`; }).join(', '),
+          top: cs.map((c, i) => [c, i]).sort((a, b) => b[0] - a[0]).slice(0, 4).map(([c, i]) => `${c} T (${sn[recs.ticks[i + 2].vars.ST]})`).join(', ') };
+      };
+      const so = stats(OLD_REAL.got.costs, WANT), sn_ = stats(gotNew.costs, wantNew);
+      info(`tick cost before: median ${so.med} T, 95% ${so.p95} T, worst ${so.worst} T (${(so.worst / 58688).toFixed(2)} refreshes) over ${so.n} ticks; by state (median/max): ${so.by}`);
+      info(`tick cost after : median ${sn_.med} T, 95% ${sn_.p95} T, worst ${sn_.worst} T (${(sn_.worst / 58688).toFixed(2)} refreshes) over ${sn_.n} ticks; by state (median/max): ${sn_.by}`);
+      info(`costliest ticks before: ${so.top}`);
+      info(`costliest ticks after : ${sn_.top}`);
+      check_('every tick of the rewrite fits the 30 fps budget (2 refreshes)', sn_.over === 0, `${sn_.over} over`);
+    }
+    // -- the shipped version (FREESEED = 1): piece order from the frame counter; it must run and agree with its interpreter
+    const NS = Math.min(NT, 1500);
+    const gotS = H.runReal(shipped, { ticks: NS, keys: (t) => [...(scriptKeys[t - 1] ?? [])], stick: stickFn });
+    if (gotS.error) check_('the shipped version (FREESEED = 1) runs on the real runtime', false, gotS.error);
+    else {
+      const wantS = H.interpFor(SRC_NEW, ASSETS_EX, gotS)(NS, { keys: keysFn, stick: stickFn });
+      const dS = H.diffRecords(gotS.ticks, wantS, {});
+      const seeds = gotS.rnd.flat().length;
+      check_(`the shipped version (FREESEED = 1) equals its interpreter on ${NS} ticks of the same script (open loop: the pieces differ from the old game's, ${seeds} RANDOMISE seeded from the frame counter at ${gotS.rnd.map((x, i) => (x.length ? i : -1)).filter((x) => x >= 0).join(', ')})`, dS === null && seeds >= 1, dS ?? `${seeds} seeds`);
+    }
   }
 }
 

@@ -15,6 +15,7 @@
 M_FONT_S:
     INCLUDE "font.inc"          ; FONT_GLYPHS: 96 glyphs x 8 bytes (generated from Leap's font)
 M_FONT_E:
+    INCLUDE "tileops.asm"       ; language batch 1: RT_FILL / FILLC / COPY / LOADMAP / BORDER / RANDOMISE, maps_boot (after the font: no address moves)
 RT_END:
     INCLUDE "game_placeholder.asm"      ; $8000 game image slot                    (DOCK chunks 4-5)
     SAVEBIN "mem.bin", 0, 65536

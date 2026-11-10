@@ -164,7 +164,8 @@ function definitionOf(text, name) {
   d = s.fns.find((f) => same(f.name)); if (d) return { kind: 'function', ...d };
   d = s.scenes.find((x) => same(x.name)); if (d) return { kind: 'scene', ...d };
   d = s.assets.find((a) => same(a.name)); if (d) return { kind: a.kind.toLowerCase(), ...d };
-  d = s.vars.find((v) => same(v.name)); if (d) return { kind: v.size !== null ? 'array' : 'variable', ...d };
+  d = (s.consts ?? []).find((c) => same(c.name)); if (d) return { kind: 'constant', ...d };
+  d = s.vars.find((v) => same(v.name)); if (d) return { kind: d.dims ? 'array' : 'variable', ...d };
   return undefined;
 }
 
@@ -203,6 +204,7 @@ const snippets = [
   snippetCompletion('FOR ${i} = ${1} TO ${10}\n\t${}\nNEXT ${i}', { label: 'FOR', detail: 'FOR … NEXT', type: 'keyword', boost: 1 }),
   snippetCompletion('WHILE ${condition}\n\t${}\nWEND', { label: 'WHILE', detail: 'WHILE … WEND', type: 'keyword', boost: 1 }),
   snippetCompletion('SELECT CASE ${expr}\n\tCASE ${1}\n\t\t${}\n\tCASE ELSE\n\t\t\nENDSEL', { label: 'SELECT', detail: 'SELECT CASE … ENDSEL', type: 'keyword', boost: 1 }),
+  snippetCompletion('PROC ${name}(${a}, ${b}):\n\tLOCAL ${i}\n\t${}\nENDP', { label: 'PROC', detail: 'PROC … LOCAL … ENDP', type: 'keyword', boost: 1 }),
   snippetCompletion('PROC ${name}(${p}):\n\t${}\nENDP', { label: 'PROC', detail: 'PROC … ENDP', type: 'keyword', boost: 1 }),
   snippetCompletion('SCENE ${name}\n\tPROC INIT():\n\t\t${}\n\tENDP\n\n\tPROC FRAME():\n\t\t\n\tENDP\nENDSCENE', { label: 'SCENE', detail: 'SCENE … ENDSCENE', type: 'keyword', boost: 1 }),
 ];
@@ -234,9 +236,11 @@ function arcadeComplete(context) {
   if (prevWord === 'FN') return only(s.fns.map((f) => ({ label: f.name, type: 'function', detail: `DEF FN · line ${f.line}`, apply: f.name + '(' })));
   if (prevWord === 'SHOW' || prevWord === 'HIDE') return only(s.assets.filter((a) => a.kind === 'SPRITE').map((a) => ({ label: a.name, type: 'constant', detail: a.count ? `sprite pool (${a.count})` : 'sprite' })));
   if (prevWord === 'PLAY') return only(s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })));
+  if (prevWord === 'LOADMAP') return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
 
   const own = [
-    ...s.vars.map((v) => ({ label: v.name, type: 'variable', detail: v.size !== null ? `array(${v.size}) · line ${v.line}` : `variable · line ${v.line}` })),
+    ...s.vars.map((v) => ({ label: v.name, type: 'variable', detail: v.dims === 2 ? `array(${v.size ?? '?'}, ${v.size2 ?? '?'}) · line ${v.line}` : v.dims === 1 ? `array(${v.size ?? '?'}) · line ${v.line}` : `variable · line ${v.line}` })),
+    ...(s.consts ?? []).map((c) => ({ label: c.name, type: 'constant', detail: `CONST · line ${c.line}` })),
     ...s.procs.map((p) => ({ label: p.name, type: 'function', detail: `PROC · line ${p.line}` })),
     ...s.scenes.map((x) => ({ label: x.name, type: 'class', detail: `scene · line ${x.line}` })),
     ...s.assets.map((a) => ({ label: a.name, type: 'constant', detail: `${a.kind.toLowerCase()} · line ${a.line}` })),

@@ -1,7 +1,7 @@
 // run-all.mjs -- rebuild every Leap Arcade runtime and run every Arcade test suite, then print one summary.
 //
 //   node arcade/tests/run-all.mjs            all suites except the slow mutation runs
-//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3-mutations, m4-mutations; several minutes)
+//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3-mutations, m4-mutations, m5-mutations; several minutes)
 //   node arcade/tests/run-all.mjs --quick    sets ARCADE_QUICK=1 (shorter fuzz runs in the compiler suites)
 //
 // Needs Node 20+ and sjasmplus (/usr/local/bin/sjasmplus). Exit code 1 if any step fails.
@@ -25,6 +25,8 @@ const suites = [
   'tests/arcade-compile.mjs',
   'tests/arcade-m3.mjs',
   'tests/arcade-m4.mjs',
+  'tests/arcade-m5.mjs',
+  'tests/arcade-blockfall.mjs',
   'arcade/tests/m1.mjs',
   'arcade/tests/m1-overrun.mjs',
   'arcade/tests/extra-regs.mjs',
@@ -43,7 +45,12 @@ const suites = [
   'arcade/tests/m4-runtime-skip.mjs',
   'arcade/tests/m4-runtime-perf.mjs',
   'arcade/tests/m4-runtime-stick.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs'] : []),
+  'arcade/tests/m5-runtime.mjs',
+  'arcade/tests/m5-runtime-pic.mjs',
+  'arcade/tests/m5-runtime-mem.mjs',
+  'arcade/tests/m5-runtime-regs.mjs',
+  'arcade/tests/m5-runtime-perf.mjs',
+  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs'] : []),
 ];
 
 function run(file, isBuild) {

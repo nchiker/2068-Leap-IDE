@@ -59,6 +59,8 @@ ENTRY:
     ld bc,VARS_CLEAR_LEN-1
     ld (hl),0
     ldir
+    ld a,BORDER_COLOUR
+    ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour written above
     ld hl,CANARY_VALUE
     ld (STACK_CANARY),hl        ; guards the bottom of the 1 KB stack area (checked every tick)
 
@@ -93,7 +95,7 @@ ENTRY:
 
     ; ---- header values the main loop uses ----
     ld a,(GAME_DIV)
-    or a
+    and $7F                     ; bit 7 (DIV_EXT) says the header has a map table; it is not part of the divisor
     jr nz,.divok
     inc a                       ; a header with frame_div 0 is read as 1
 .divok:

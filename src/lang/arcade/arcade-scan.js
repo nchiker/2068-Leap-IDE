@@ -1,7 +1,7 @@
 /**
  * src/lang/arcade/arcade-scan.js — what an Arcade program defines, and block structure (pure; no DOM, no CodeMirror).
  *
- *   scanArcade(text)      -> {assets, scenes, procs, fns, vars}  from the parser's AST (never throws)
+ *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts}  from the parser's AST (never throws)
  *   blockLines(lines)     -> {depth, dedent, blocks}  indentation and fold ranges by the block words
  *   inputHints(text)      -> string[]  the keys / joysticks a program reads, for the Studio's hint line
  *
@@ -16,19 +16,27 @@ import { parse, tokenize } from './arcade-parse.js';
  * @returns {{
  *   assets: {kind: string, name: string, asset: string, count: number|null, line: number, col: number}[],
  *   scenes: {name: string, line: number, col: number}[],
- *   procs:  {name: string, param: string|null, scene: string|null, line: number, col: number}[],
+ *   procs:  {name: string, param: string|null, params: string[], locals: string[], scene: string|null, line: number, col: number}[],
  *   fns:    {name: string, param: string, line: number, col: number}[],
- *   vars:   {name: string, size: number|null, scene: string|null, line: number, col: number}[],
+ *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number}[],
+ *   consts: {name: string, scene: string|null, line: number, col: number}[],     (language batch 1: CONST name = expr)
  * }}
+ * `size` is the first dimension when it is a plain number (null for a scalar or a size written as an expression), `dims` 0 (a scalar), 1 or 2.
  */
 export function scanArcade(text) {
-  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [] };
+  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [] };
   let ast;
   try { ast = parse(text).ast; } catch { return out; }
   const addDecls = (decls, scene) => {
     for (const d of decls ?? []) {
       if (d.type === 'Dim') {
-        for (const it of d.items ?? []) out.vars.push({ name: it.name, size: it.size ?? null, scene, line: it.line, col: it.col });
+        for (const it of d.items ?? []) {
+          const num = (e) => (e && e.type === 'Number' ? e.value : null);
+          out.vars.push({ name: it.name, size: it.size ?? num(it.dims?.[0]), size2: num(it.dims?.[1]), dims: it.dims ? it.dims.length : 0, scene, line: it.line, col: it.col });
+        }
+      } else if (d.type === 'Const') {
+        const p = d.namePos ?? d;
+        out.consts.push({ name: d.name, scene, line: p.line, col: p.col });
       } else if (d.type === 'DefFn') {
         const p = d.namePos ?? d;
         out.fns.push({ name: d.name, param: d.param ?? '', line: p.line, col: p.col });
@@ -38,7 +46,9 @@ export function scanArcade(text) {
   const addProcs = (procs, scene) => {
     for (const p of procs ?? []) {
       const at = p.namePos ?? p;
-      out.procs.push({ name: p.name, param: p.param ?? null, scene, line: at.line, col: at.col });
+      const locals = [];
+      for (const st of p.body ?? []) if (st && st.type === 'Local') for (const n of st.names ?? []) locals.push(n.name);
+      out.procs.push({ name: p.name, param: p.param ?? null, params: (p.params ?? (p.param ? [{ name: p.param }] : [])).map((q) => q.name), locals, scene, line: at.line, col: at.col });
     }
   };
   for (const a of ast.assets ?? []) {

@@ -63,10 +63,11 @@ function symbolGroups(text) {
   const s = scanArcade(text);
   return [
     ['Scenes', s.scenes.map((x) => [x.name, x.line])],
-    ['Procedures', s.procs.map((p) => [p.param !== null ? `${p.name}(${p.param})` : `${p.name}()`, p.line])],
+    ['Constants', s.consts.map((c) => [c.name, c.line])],
+    ['Procedures', s.procs.map((p) => [`${p.name}(${(p.params ?? (p.param !== null ? [p.param] : [])).join(', ')})`, p.line])],
     ['Functions', s.fns.map((f) => [`FN ${f.name}(${f.param})`, f.line])],
     ['Assets', s.assets.map((a) => [`${a.kind.toLowerCase()} ${a.name}${a.count ? `(${a.count})` : ''}`, a.line])],
-    ['Variables', s.vars.map((v) => [v.size !== null ? `${v.name}(${v.size})` : v.name, v.line])],
+    ['Variables', s.vars.map((v) => [v.dims === 2 ? `${v.name}(${v.size ?? '?'}, ${v.size2 ?? '?'})` : v.dims === 1 ? `${v.name}(${v.size ?? '?'})` : v.name, v.line])],
   ];
 }
 
