@@ -33,6 +33,10 @@
  * min(nframes, instances) frame slots per asset, first fit over POOL_A / B / C of runtime.json) does not fit: exactly when the runtime would stop at boot with
  * the magenta border. The code generator warns for each asset whose frames do not all stay cached.
  *
+ * Language batch 3 (gen.view set; docs/ARCADE_RAYCASTER_CONTRACT.md section 2): the header is 20 bytes (frame_div | DIV_EXT | DIV_VIEW, map_table at +16, view_desc at +18) and the image gets,
+ * after the sprite data, map_src (the w x h map, row stride w, byte-RLE encoded as world_src), the 16 wall pattern bytes when the program has a PATTERNS clause, and view_desc (10 bytes).
+ * There are no scroll tables and no phase pool in ray mode; the ray tables are the runtime's own memory.
+ *
  * `map` (for the debugger and the Studio): {lines: [{addr, line, col}] sorted by address, vars: {NAME: addr},
  * slots: [{name, addr}], procs, fns, sprites, entries}; findSource(map, addr) returns the last line entry at or
  * before an address.
@@ -41,6 +45,7 @@
 "use strict";
 
 import { buildWindowDesc, rleEncode } from './arcade-window.js';
+import { buildViewDesc, VIEW_DESC_BYTES, VIEW_RAM_BYTES } from './arcade-view.js';
 
 export const CHUNK = 8192;
 export const SHIPPED_CHUNKS = [0, 1, 4, 5];
@@ -94,9 +99,14 @@ export function link(gen, runtime, image) {
   const worldRle = win ? rleEncode(win.worldSrc) : null;
   const winData = win ? worldRle.length + win.tileFlags.length + win.tileRows.length + descBytes : 0;
   const tablesBytes = win ? win.tables.length : 0;
-  const end = codeEnd + spriteBytes + winData;
+  // language batch 3: the 3D view's data
+  const view = gen.view ?? null;
+  const viewRle = view ? rleEncode(view.cells) : null;
+  const viewPatterns = view?.patterns ? view.patterns.length : 0;
+  const viewData = view ? viewRle.length + viewPatterns + VIEW_DESC_BYTES : 0;
+  const end = codeEnd + spriteBytes + winData + viewData;
   if (end + tablesBytes > GAME_END) {
-    return fail(`the game does not fit: ${end + tablesBytes - GAME_BASE} bytes (code ${gen.code.length}, sprites ${spriteBytes}${win ? `, window data ${winData} and scroll tables ${tablesBytes}` : ''}) in the ${GAME_END - GAME_BASE}-byte game area, ${end + tablesBytes - GAME_END} too many`);
+    return fail(`the game does not fit: ${end + tablesBytes - GAME_BASE} bytes (code ${gen.code.length}, sprites ${spriteBytes}${win ? `, window data ${winData} and scroll tables ${tablesBytes}` : ''}${view ? `, 3D view data ${viewData}` : ''}) in the ${GAME_END - GAME_BASE}-byte game area, ${end + tablesBytes - GAME_END} too many`);
   }
   const warnings = [];
   if (gen.phase && !gen.phase.ok) {
@@ -140,6 +150,18 @@ export function link(gen, runtime, image) {
     winLayout = { worldSrc, tileFlags, tileRows, windowDesc, tables, descBytes };
   }
 
+  let viewLayout = null;
+  if (view) {
+    let at = codeEnd + spriteBytes;
+    const mapSrc = at; memory.set(viewRle, at); at += viewRle.length;
+    const patterns = viewPatterns ? at : 0;
+    if (viewPatterns) { memory.set(view.patterns, at); at += viewPatterns; }
+    const viewDesc = at;
+    memory.set(buildViewDesc({ colw: view.colw, mapW: view.mapW, mapH: view.mapH, attrTop: view.attrTop, attrBottom: view.attrBottom, mapSrc, patterns }), at);
+    w16(GAME_BASE + 18, viewDesc);
+    viewLayout = { mapSrc, patterns, viewDesc };
+  }
+
   const chunks = {};
   for (const c of SHIPPED_CHUNKS) chunks[c] = memory.slice(c * CHUNK, (c + 1) * CHUNK);
   const dck = buildDck(chunks);
@@ -169,6 +191,16 @@ export function link(gen, runtime, image) {
     dckBytes: dck.length,
     // the whole 16 KB game area: everything above plus the scroll tables (`total` and `free` leave the tables out, as they were first reported)
     gameArea: { used: end + tablesBytes - GAME_BASE, available: GAME_END - GAME_BASE, free: GAME_END - end - tablesBytes },
+    ...(view ? {
+      // language batch 3: the 3D view (the ray tables and buffers are the runtime's own memory, built at scene start: nothing of them is in the image)
+      frames: gen.sprites.reduce((n, sp) => n + sp.data.length, 0),
+      view: {
+        mapSource: viewRle.length, mapExpanded: VIEW_RAM_BYTES, mapW: view.mapW, mapH: view.mapH, descriptor: VIEW_DESC_BYTES, patterns: viewPatterns, colw: view.colw,
+        attrTop: view.attrTop, attrBottom: view.attrBottom, at: viewLayout,
+        note: 'the ray tables, buffers and the 32 x 32 map array are in memory the runtime owns (built at scene start); they are not part of the game image',
+      },
+      gameVars: { used: gen.usage.varBytes, available: (cst.GAME_VARS_LIMIT ?? 0) - (cst.GAME_VARS_BASE ?? 0) + 1 },
+    } : {}),
     ...(gen.phase ? {
       // language batch 2: bytes per category and the two capacity figures the Studio shows
       frames: gen.sprites.reduce((n, sp) => n + sp.data.length, 0),

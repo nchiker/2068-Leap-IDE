@@ -31,6 +31,8 @@ const suites = [
   'tests/arcade-m6-compiler.mjs',
   'tests/arcade-m6-platformer.mjs',
   'tests/arcade-m6-differential.mjs',
+  'tests/arcade-m8-compiler.mjs',
+  'tests/arcade-m8-differential.mjs',
   'arcade/tests/m1.mjs',
   'arcade/tests/m1-overrun.mjs',
   'arcade/tests/extra-regs.mjs',

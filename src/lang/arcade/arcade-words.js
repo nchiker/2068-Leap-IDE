@@ -43,6 +43,10 @@
  *     functions CAMX WORLDTILE TILEFLAGS TILEHIT SOLID are RESERVED; BAND was reserved by batch 1 as a bit function and is now also the top-level
  *     statement `BAND rows, num, den` (the position tells them apart: a statement starts a line, the function is always followed by a bracket).
  *     FLIP is contextual like FRAME (`SHOW s AT x, y FRAME f FLIP`), so a variable called `flip` keeps working.
+ *   - (language batch 3, docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md) VIEW3D VIEW SETWALL and the functions COSA SINA FXMUL WALL SEEN DEPTH
+ *     are RESERVED (a variable called `wall` or `depth` must be renamed; BATCH3_WORDS below lists them: they may still NAME AN ASSET, since assets have their own name
+ *     space, so `SFX wall = "wall"` and `PLAY wall` keep working). The clause words of VIEW3D (COLW CEIL FLOOR PATTERNS) are contextual like FRAME; its INK and BRIGHT clauses
+ *     are the existing words.
  */
 
 "use strict";
@@ -78,6 +82,11 @@ export const LIMITS = Object.freeze({
   maxWorldTile: 31,
   maxBands: 4,
   maxFrames: 32,      // frames of a sprite asset after the mirrored copies of FLIP
+  // language batch 3 (the 3D view, docs/ARCADE_RAYCASTER_CONTRACT.md)
+  minViewMap: 4,      // the view's map: 4..32 cells on each side, wall types 0..4
+  maxViewMap: 32,
+  maxWallType: 4,
+  viewPatterns: 16,   // PATTERNS b0 .. b15: the 8 wall patterns (even-row byte, odd-row byte)
 });
 
 /** FRAMERATE values: 60 / n must be a whole number of refreshes. */
@@ -132,6 +141,16 @@ const WORD_LIST = [
   W('FILLC', 'game', 'FILLC x, y, w, h = c', 'Like FILL with the font character c (32..127) and the current text colours (INK, PAPER, BRIGHT). FILLC 0, 0, 32, 24 = 32 blanks the screen cells (CLS also resets the cursor).'),
   W('COPY', 'game', 'COPY x, y, w, h TO dx, dy', 'Copy the rectangle of screen cells (tile or character and colours) at column x, row y to column dx, row dy. Source and destination may overlap (as memmove: the result is as if the whole rectangle were read first); only cells whose source and destination are both on the screen are copied.'),
   W('TILE', 'game', 'TILE x, y = t', 'Set the screen cell at column x (0..31), row y (0..23) to tile t (0..127) of the TILESET; it takes the tile\'s colours. A cell outside the screen is ignored.'),
+
+  W('VIEW3D', 'game', 'VIEW3D map [COLW 2|4] [INK 0..7] [CEIL 0..7] [FLOOR 0..7] [BRIGHT 0|1] [PATTERNS b0, ..., b15]', 'Top level, once: use the declared MAP as the floor plan of a first-person 3D view (a raycaster) in a window of 128 x 96 pixels (16 x 12 cells) in the middle of the screen. The MAP is 4..32 cells on each side; each cell is a wall type 0 (empty) .. 4, and the outer ring must not be empty. COLW is the width of a screen column in pixels, 4 (32 rays, the default) or 2 (64 rays, sharper and slower); INK is the colour of the walls, CEIL and FLOOR the paper above and below the horizon, BRIGHT 0 or 1 (defaults: INK 7, CEIL 0, FLOOR 1, BRIGHT 1). PATTERNS gives your own 8 wall patterns (16 bytes: for wall type t and side s the even-row byte then the odd-row byte at 2 x ((t - 1) x 2 + s)). The cells of the screen around the window stay yours (HUD text and tiles). A game with a VIEW3D cannot have a WINDOW. Needs the v4 runtime.'),
+  W('VIEW', 'game', 'VIEW x, y, a', 'Set the viewer for the next picture: x and y are positions on the map in 8.8 fixed point (1/256 of a cell: the high byte is the cell), a is the angle 0..255 (256 to a turn; 0 looks east, 64 south, 128 west, 192 north; the value is taken AND 255). A position outside the map is moved to its nearest edge. Call it once a tick from PROC FRAME. Needs a VIEW3D.'),
+  W('SETWALL', 'game', 'SETWALL x, y = t', 'Change one cell of the map of the VIEW3D: the cell that holds the 8.8 position (x, y) becomes wall type t (0 empty .. 4). A position outside the map, or a t other than 0..4, is ignored. WALL sees the new value at once and the next picture shows it. Needs a VIEW3D.'),
+  W('COSA', 'function', 'COSA(a)', 'The cosine of the angle a (0..255, 256 to a turn; the value is taken AND 255) in 8.8 fixed point: -256 .. 256. Needs the v4 runtime.', { args: ['a:num'], ret: 'num' }),
+  W('SINA', 'function', 'SINA(a)', 'The sine of the angle a (0..255, 256 to a turn; 64 gives 256) in 8.8 fixed point: -256 .. 256. Needs the v4 runtime.', { args: ['a:num'], ret: 'num' }),
+  W('FXMUL', 'function', 'FXMUL(a, b)', 'a x b / 256 rounded down (the product is worked out exactly in 32 bits), the way 8.8 numbers multiply; the result wraps to 16 bits. Needs the v4 runtime.', { args: ['a:num', 'b:num'], ret: 'num' }),
+  W('WALL', 'function', 'WALL(x, y)', 'The wall type 0..4 of the map cell that holds the 8.8 position (x, y); 1 for a position outside the map (negative, or beyond the 32 x 32 cells the runtime keeps). Needs a VIEW3D.', { args: ['x:num', 'y:num'], ret: 'num' }),
+  W('SEEN', 'function', 'SEEN(s)', 'Where the sprite s (or an instance of a pool) was drawn in the 3D view by the last picture: the screen column 0..127 of its centre, or -1 when it was not drawn (hidden, behind a wall, behind the viewer or out of sight). The value is the previous tick\'s. Needs a VIEW3D.', { args: ['s:sprite'], ret: 'num' }),
+  W('DEPTH', 'function', 'DEPTH(s)', 'How far from the viewer the sprite s (or an instance of a pool) was drawn in the 3D view by the last picture, in 8.8 fixed point (256 = one cell); 0 when it was not drawn. The value is the previous tick\'s. Needs a VIEW3D.', { args: ['s:sprite'], ret: 'num' }),
 
   // ── Structure ──
   W('CONST', 'structure', 'CONST name = expression', 'A named constant, worked out when the game is built. The expression may use numbers, other CONSTs, + - * DIV MOD, unary minus, brackets and the bit functions (BAND BOR BXOR BNOT SHL SHR). At the top level or directly inside a SCENE. A CONST can be used wherever a number can, in a DIM size, a CASE value or an array initialiser too; it cannot be assigned to.'),
@@ -211,6 +230,10 @@ const WORD_LIST = [
   // ── Contextual words (not reserved) ──
   W('FRAME', 'game', 'SHOW s AT x, y FRAME f   /   PROC FRAME()', 'Animation frame clause of SHOW; also the name of the per-tick scene procedure.', { reserved: false }),
   W('FLIP', 'game', 'SHOW s AT x, y [FRAME f] FLIP', 'Draw the frame mirrored left to right. The compiler adds a mirrored copy of every frame of the sprite asset (so the asset may have at most 16 frames); the collision box of the asset is not mirrored.', { reserved: false }),
+  W('COLW', 'game', 'VIEW3D map COLW 2|4', 'Column width of a VIEW3D in pixels: 4 (32 rays, the default) or 2 (64 rays: sharper, about 1.7 times the cost).', { reserved: false }),
+  W('CEIL', 'game', 'VIEW3D map CEIL 0..7', 'The paper colour above the horizon of a VIEW3D (default 0, black).', { reserved: false }),
+  W('FLOOR', 'game', 'VIEW3D map FLOOR 0..7', 'The paper colour below the horizon of a VIEW3D (default 1, blue).', { reserved: false }),
+  W('PATTERNS', 'game', 'VIEW3D map PATTERNS b0, b1, ..., b15', 'Your own wall patterns for a VIEW3D: 16 constant bytes, for the pattern index (type - 1) x 2 + side the even-row byte at 2 x index and the odd-row byte after it (side 0 is a wall facing east or west, 1 one facing north or south). Without it the runtime\'s patterns are used.', { reserved: false }),
   W('INIT', 'game', 'PROC INIT()', 'The scene procedure that runs once when the scene starts.', { reserved: false }),
 ];
 
@@ -225,6 +248,12 @@ export const FUNCTIONS = new Map(WORD_LIST.filter(e => e.cls === 'function').map
 
 /** Words that open or close a block; see arcade-parse.js for how they recover. */
 export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'ENDSEL', 'ENDP', 'ENDSCENE', 'PROC', 'SCENE']);
+
+/**
+ * The words language batch 3 reserved. A variable, PROC or DEF FN cannot have one of these names, but an ASSET may (SFX wall = "wall", PLAY wall): assets live in their own
+ * name space, and the first project that used one of them (breakout.arc) named a sound `wall`. arcade-parse.js reads them as names in asset declarations and references.
+ */
+export const BATCH3_WORDS = Object.freeze(new Set(['VIEW3D', 'VIEW', 'SETWALL', 'COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']));
 
 /** Entry for a word (any case), or null. */
 export function wordEntry(word) {

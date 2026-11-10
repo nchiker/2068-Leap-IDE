@@ -50,6 +50,13 @@ The runtime must stay within DOCK chunks 0-1 (16,384 bytes); report the size.
   `RT_SETWALL` (`RA_X`, `RA_Y` 8.8, `RA_V` = type; writes only a cell inside the game's `map_w x map_h` and only types 0..4; otherwise ignored).
   `RT_SHOW` / `RT_SHOWF` / `RT_HIDE` / `RT_HIT` as v3 with the ray-mode rules of section 3. `RT_ARGS` / `RA_*` as v2.
 * **Billboard info.** Per instance, `BB_TAB[i]` = `DW depth, DW col`, written by the draw of every tick: for an instance that was drawn with at least one visible column, `depth` = its perpendicular distance in 8.8 and `col` = the screen column (0..127) of its centre; otherwise `depth` = 0 and `col` = `$FFFF`. Compiler words `SEEN(s)` (col as a signed value: -1 when not drawn) and `DEPTH(s)` read it (a compiler-emitted table read, like `CAMX()`; the runtime exports `BB_TAB` and its entry size in `runtime.json`). The value is that of the **previous tick's draw** (the game's `PROC FRAME` runs before this tick's draw).
+* **Clarifications fixed by language batch 3 (2026-11-10; the compiler, the interpreter and the tests rely on them; details in `ARCADE_LANGUAGE_BATCH3.md`).**
+  (1) Positions in `RT_VIEW` (HL, DE) and `RT_WALL` (HL, DE) are **signed** 16-bit values: a negative value is clamped to 0 by `RT_VIEW` and gives wall type 1 from `RT_WALL`; 32768..65535 are negative. `RT_SETWALL`'s `RA_X`, `RA_Y` are read the same way (negative: ignored).
+  (2) `RT_COSA` / `RT_SINA` use the **low byte** of HL only (the angle AND 255), whatever H holds.
+  (3) `RT_SETWALL`'s `RA_V` is the **whole 16-bit word**: the write happens only for 0..4 as a signed word (256 and -1 are ignored); the compiler does not guard the value.
+  (4) `RT_HIT` in ray mode takes the stored positions as **unsigned** 16-bit values: `|dx|` and `|dy|` are the absolute differences of those, compared with `Ra + Rb` (`R = 4 h`).
+  (5) Until the first `RT_VIEW` the pose is x = y = a = 0; at boot every `BB_TAB` entry is `depth` 0, `col` $FFFF (so `SEEN` is -1 before the first draw). `SEEN` / `DEPTH` of an instance outside the pool are -1 and 0 (the compiler decides that without reading `BB_TAB`).
+  (6) `BB_ENT` (bytes per instance) is read from `runtime.json`; absent, the compiler assumes the 4 bytes above. `BB_TAB` has no fallback address (the compiler refuses `SEEN` / `DEPTH` without it).
 * `runtime.json` of v4 lists the routines above and `DIV_VIEW`, `WORLD_RAM`, `BB_TAB`, `BB_ENT`, `GAME_VARS_BASE`, `GAME_VARS_LIMIT`, `MAX_FRAMES`, `SPR_ENT`, `SPR_FRAME_OFF`, `VIEW_W` (128), `VIEW_H` (96).
 
 ## 3. Billboards in ray mode

@@ -56,6 +56,11 @@
  *     runtime (check(ast, {version: 3})): with an older one each use is an error that says so. WINDOW: once, at the top level, naming a declared MAP; its
  *     AT cx, cy are constants 0..8. BAND rows, num, den: constants, rows 1..16, the ratio one of 0/1 1/4 1/2 1/1 2/1, at most 4, the rows add up to 16,
  *     and a WINDOW must exist. A MAP used by WINDOW cannot be LOADMAPped. check(ast) with no version option does not complain about the runtime.
+ *   - (language batch 3, docs/ARCADE_LANGUAGE_BATCH3.md) VIEW3D VIEW SETWALL and the functions COSA SINA FXMUL WALL SEEN DEPTH need a v4 runtime (check(ast, {version: 4})); with an
+ *     older one each use is an error that says so. In a program with VIEW3D (or, with a known version of 4 or more, anywhere) the window words WINDOW BAND CAMERA SETWORLD CAMX
+ *     WORLDTILE TILEFLAGS TILEHIT SOLID are one error ("they need the v3 runtime"), reported once at the first of them. VIEW3D: once, at the top level, naming a declared MAP, the
+ *     clauses COLW 2|4, INK / CEIL / FLOOR 0..7, BRIGHT 0|1, PATTERNS 16 bytes; a FRAMERATE below the view's minimum is a warning. VIEW / WALL / SETWALL / SEEN / DEPTH without a
+ *     VIEW3D, and the map's size and cells, are reported by the code generator.
  *     (The code generator reports what needs more than the syntax tree: CAMERA, SETWORLD, CAMX, WORLDTILE, TILEFLAGS, TILEHIT and SOLID without a
  *     WINDOW, the map size and tile numbers, a FRAME against the frame count.)
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
@@ -65,11 +70,13 @@
 
 "use strict";
 
-import { FUNCTIONS, RESERVED, VALID_FRAMERATES, LIMITS, notInArcadeMessage } from './arcade-words.js';
+import { FUNCTIONS, RESERVED, VALID_FRAMERATES, LIMITS, BATCH3_WORDS, notInArcadeMessage } from './arcade-words.js';
 import { ratioCode, RATIO_TEXT } from './arcade-window.js';
 
 /** Functions of language batch 2 that need a WINDOW (and the v3 runtime). */
 const WINDOW_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);
+/** Functions of language batch 3 (the v4 runtime); WALL SEEN DEPTH also need a VIEW3D (the code generator checks that, like the WINDOW functions). */
+const V4_FUNCS = new Set(['COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']);
 
 /** Value of a literal operand (`5` or `-5`), else undefined. */
 const literal = (e) => (e?.type === 'Number' ? e.value : e?.type === 'Unary' && e.op === '-' && e.operand?.type === 'Number' ? -e.operand.value : undefined);
@@ -115,6 +122,9 @@ class Checker {
     this.versionKnown = opts.version !== undefined;         // check(ast) alone assumes nothing about the runtime
     this.windows = (ast?.windows ?? []);
     this.hasWindow = this.windows.length > 0;
+    this.views = (ast?.views ?? []);
+    this.hasView = this.views.length > 0;
+    this.windowWordSeen = false;      // batch 3: the window words in a VIEW3D / v4 program are ONE message
     this.ast = ast;
     this.errors = errors;
     this.scopes = [];
@@ -169,6 +179,10 @@ class Checker {
       const sym = w.map ? this.assets.get(`map:${up(w.map.name)}`) : null;
       if (sym) sym.world = true;
     }
+    for (const v of this.views) {      // batch 3: the MAP a VIEW3D uses is the floor plan (it is not loaded into the cell map)
+      const sym = v.map ? this.assets.get(`map:${up(v.map.name)}`) : null;
+      if (sym) sym.view = true;
+    }
     // every variable name of the global level and of each scene, for the "declared after a FOR made it a local" check
     const addLater = (decls) => {
       for (const d of decls ?? []) {
@@ -194,6 +208,7 @@ class Checker {
         case 'Proc': this.checkProc(global, item); break;
         case 'Scene': this.checkScene(item); break;
         case 'Window': this.checkWindow(item); break;
+        case 'View3d': this.checkView3d(item); break;
         case 'Band': this.checkBand(item); break;
         default: break;
       }
@@ -265,7 +280,59 @@ class Checker {
   needV3(node, what) {
     if (this.versionKnown && this.version < 3) this.err(node, `${what} needs the v3 runtime (the scrolling platformer runtime): build with --runtime v3`);
   }
+  /**
+   * The words of the scrolling window (WINDOW BAND CAMERA SETWORLD and the five functions): v3 only. On a runtime older than v3, or (batch 3) in a program with a VIEW3D, or
+   * on a v4 runtime, which has a 3D view in place of the scroll engine, each is an error; in the last two cases ONE message at the first of them.
+   */
+  windowWord(node, what) {
+    if (!(this.hasView || (this.versionKnown && this.version >= 4))) return false;
+    if (this.windowWordSeen) return true;
+    this.windowWordSeen = true;
+    if (this.hasView) this.err(node, `${what} cannot be used in a program with a VIEW3D (line ${this.views[0].line}): the scrolling-window words need the v3 runtime, the 3D view the v4 runtime, and no runtime has both`);
+    else this.err(node, `${what} needs the v3 runtime (the v4 runtime has the 3D view in place of the scrolling window): build with --runtime v3`);
+    return true;
+  }
+  /** The words of language batch 3: the v4 runtime (the raycaster). */
+  needV4(node, what) {
+    if (this.versionKnown && this.version < 4) this.err(node, `${what} needs the v4 runtime (the raycaster runtime): build with --runtime v4`);
+  }
+  checkView3d(v) {
+    this.needV4(v, 'VIEW3D');
+    const k = this.views.indexOf(v);
+    if (k > 0) this.err(v, `VIEW3D may appear only once (the first is on line ${this.views[0].line})`);
+    const ctx = this.topCtx(this.global);
+    if (v.map) this.assetRef(v.map, 'map', ctx);
+    const c = v.clauses ?? {};
+    const val = (key, e, what, lo, hi, allowed) => {
+      if (!e) return undefined;
+      const x = this.constOf(e, this.global, what);
+      if (x !== undefined && (allowed ? !allowed.includes(x) : (x < lo || x > hi))) { this.err(e, allowed ? `${what} is ${x}: it must be ${allowed.join(' or ')}` : `${what} is ${x}: it must be ${lo}..${hi}`); return undefined; }
+      return x;
+    };
+    const vals = {
+      colw: val('colw', c.colw, 'COLW', 0, 0, [2, 4]),
+      ink: val('ink', c.ink, 'the VIEW3D INK', 0, 7),
+      ceil: val('ceil', c.ceil, 'CEIL', 0, 7),
+      floor: val('floor', c.floor, 'FLOOR', 0, 7),
+      bright: val('bright', c.bright, 'the VIEW3D BRIGHT', 0, 1),
+      patterns: null,
+    };
+    if (c.patterns) {
+      const list = c.patterns.map((e, i) => val('patterns', e, `PATTERNS byte ${i}`, 0, 255));
+      if (c.patterns.length !== LIMITS.viewPatterns) this.err(c.patterns[Math.min(c.patterns.length, LIMITS.viewPatterns) - 1] ?? c.patterns[0], `PATTERNS needs ${LIMITS.viewPatterns} bytes (the even-row and odd-row byte of 8 patterns), got ${c.patterns.length}`);
+      else if (list.every((x) => x !== undefined)) vals.patterns = list;
+    }
+    v.vals = vals;
+    // the refresh budget of the picture (contract R3): colw 4 needs a divisor of 3 or more, colw 2 of 5
+    const rate = (this.ast.items ?? []).find((i) => i.type === 'Framerate');
+    const fps = rate ? rate.value : 30;
+    if (VALID_FRAMERATES.includes(fps) && (vals.colw !== undefined || !c.colw)) {
+      const colw = vals.colw ?? 4, min = colw === 2 ? 5 : 3, div = 60 / fps;
+      if (div < min) this.warn(rate?.arg ?? v, `${rate ? `FRAMERATE ${fps}` : 'without a FRAMERATE the game runs at 30 a second'} is ${div} refresh${div === 1 ? '' : 'es'} a tick; the 3D view with ${colw}-pixel columns takes about ${min - 1} to ${min} refreshes a picture, so ticks will overrun: use FRAMERATE ${60 / min} or lower`);
+    }
+  }
   checkWindow(w) {
+    if (this.windowWord(w, 'WINDOW')) return;       // refused with one message: the rest of a WINDOW is not worth another
     this.needV3(w, 'WINDOW');
     const prev = this.windows.indexOf(w);
     if (prev > 0) this.err(w, `WINDOW may appear only once (the first is on line ${this.windows[0].line})`);
@@ -278,6 +345,7 @@ class Checker {
     }
   }
   checkBand(b) {
+    if (this.windowWord(b, 'BAND')) return;
     this.needV3(b, 'BAND');
     if (!this.hasWindow) this.err(b, 'BAND needs a WINDOW: declare the scrolling world first, e.g. WINDOW level');
     const k = (ast_bands(this.ast)).indexOf(b);
@@ -291,6 +359,7 @@ class Checker {
   }
   /** The rows of the BANDs must add up to 16 (when there are any). */
   checkBands() {
+    if (this.windowWordSeen) return;
     const bands = (this.ast?.bands ?? []).filter((b) => b.vals && b.vals.rows !== undefined && b.vals.rows >= 1 && b.vals.rows <= LIMITS.winRows);
     if (!this.hasWindow || bands.length === 0 || bands.length !== (this.ast.bands ?? []).length) return;
     let total = 0;
@@ -575,6 +644,7 @@ class Checker {
       case 'LoadMap':
         this.assetRef(s.map, 'map', ctx);
         if (s.map?.type === 'Ident' && this.assets.get(`map:${up(s.map.name)}`)?.world) this.err(s.map, `LOADMAP: '${s.map.name}' is the world of the WINDOW; it is not a map of the screen cells`);
+        if (s.map?.type === 'Ident' && this.assets.get(`map:${up(s.map.name)}`)?.view) this.err(s.map, `LOADMAP: '${s.map.name}' is the floor plan of the VIEW3D; it is not a map of the screen cells`);
         if (s.x) { this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); }
         return;
       case 'Print':
@@ -593,11 +663,20 @@ class Checker {
         if (s.flip) this.needV3(s, 'FLIP');
         return;
       case 'Camera':
-        this.needV3(s, 'CAMERA');
+        if (!this.windowWord(s, 'CAMERA')) this.needV3(s, 'CAMERA');
         this.numArg(s.value, ctx, 'the camera');
         return;
+      case 'View':
+        this.needV4(s, 'VIEW');
+        this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.a, ctx, 'the angle');
+        return;
+      case 'SetWall':
+        this.needV4(s, 'SETWALL');
+        this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the wall type');
+        this.range(s.value, 0, LIMITS.maxWallType, 'the wall type');
+        return;
       case 'SetWorld':
-        this.needV3(s, 'SETWORLD');
+        if (!this.windowWord(s, 'SETWORLD')) this.needV3(s, 'SETWORLD');
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the tile');
         this.range(s.value, 0, LIMITS.maxWorldTile, 'the world tile index');
         return;
@@ -745,6 +824,7 @@ class Checker {
     if (ctx.scope.lookup('procs', key)) msg = `'${node.name}' is a PROC, not a variable: call it with CALL ${node.name}(...)`;
     else if (ctx.scope.lookup('fns', key)) msg = `'${node.name}' is a DEF FN function, not a variable: use FN ${node.name}(...)`;
     else if (nia) msg = nia;
+    else if (BATCH3_WORDS.has(key) && FUNCTIONS.has(key)) msg = `${node.name} is a function: write ${FUNCTIONS.get(key).syntax}`;
     else msg = `${what} '${node.name}' is not declared: add DIM ${node.name}${what === 'array' ? '(n)' : ''}`;
     this.err(node, msg);
   }
@@ -873,7 +953,8 @@ class Checker {
       const want = entry.min === max ? `${max}` : `${entry.min} to ${max}`;
       this.err(e, `${entry.name} takes ${want} argument${max === 1 ? '' : 's'}, got ${args.length}`);
     }
-    if (WINDOW_FUNCS.has(entry.name)) this.needV3(e, `${entry.name}()`);
+    if (WINDOW_FUNCS.has(entry.name) && !this.windowWord(e, `${entry.name}()`)) this.needV3(e, `${entry.name}()`);
+    if (V4_FUNCS.has(entry.name)) this.needV4(e, `${entry.name}()`);
     if (entry.name === 'KEYDOWN') {
       if (args.length === 1) this.keyArg(args[0], ctx);
       return 'num';

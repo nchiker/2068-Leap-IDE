@@ -80,6 +80,8 @@ function classify(toks, i, atStart) {
     if (atStart && (t.value === 'FRAME' || t.value === 'INIT')) return 'procUse';
     // the clauses of SHOW (FRAME f, FLIP) are words there, ordinary names elsewhere (language batch 2)
     if ((t.value === 'FRAME' || t.value === 'FLIP') && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'SHOW')) return 'packageKeyword';
+    // the clauses of VIEW3D (COLW CEIL FLOOR PATTERNS) are words there, ordinary names elsewhere (language batch 3)
+    if (['COLW', 'CEIL', 'FLOOR', 'PATTERNS'].includes(t.value) && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'VIEW3D')) return 'packageKeyword';
     return 'variableName';
   }
   default: return null;

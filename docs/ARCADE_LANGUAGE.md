@@ -107,3 +107,8 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
   per-tile `flags` from the tileset, a world map of 24..128 x 1..16 cells with tiles 0..31. Needs the v3 runtime; a pre-v3 runtime refuses the new words with a clear error. New reserved words: WINDOW CAMERA
   SETWORLD CAMX WORLDTILE TILEFLAGS TILEHIT SOLID. Decisions where the contract was silent are in the batch 2 file (for example the corner rule of TILEFLAGS, `TILEHIT` with w or h <= 0, SETWORLD in pixels with the tile checked by
   the compiler, which frames are compiled, the phase-memory estimate and `PHASE_POOL_BYTES`).
+* 0.3 (2026-11-10, language batch 3, the raycaster slice; contract `docs/ARCADE_RAYCASTER_CONTRACT.md` section 6, decisions `docs/ARCADE_LANGUAGE_BATCH3.md`, tests `tests/arcade-m8-compiler.mjs`):
+  `VIEW3D map [COLW 2|4] [INK n] [CEIL n] [FLOOR n] [BRIGHT n] [PATTERNS b0, ..., b15]` (top level, once: the MAP is the floor plan of a first-person 3D view in a 128 x 96 window, 4..32 cells a side, wall types 0..4,
+  outer ring walls), `VIEW x, y, a` (the viewer: 8.8 positions, angle 0..255), `SETWALL x, y = t`, `WALL(x, y)`, `COSA(a)`, `SINA(a)`, `FXMUL(a, b)` (8.8 maths), `SEEN(s)` and `DEPTH(s)` (where the last picture drew a
+  billboard sprite), and `SHOW` / `HIT` in ray mode (8.8 world coordinates, unclamped; `HIT` by the sprites' sizes). Needs the v4 runtime; `requiredRuntime` returns 4 for any of these words. A program cannot have both a
+  `WINDOW` and a `VIEW3D`. New reserved words: VIEW3D VIEW SETWALL COSA SINA FXMUL WALL SEEN DEPTH (they may still name an asset: `SFX wall = "wall"` keeps working); COLW CEIL FLOOR PATTERNS are contextual.

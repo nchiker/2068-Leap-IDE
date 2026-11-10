@@ -104,6 +104,16 @@
  *     right and above, 0 below, below winning at a corner; a rectangle with w or h <= 0 touches nothing; SETWORLD ignores a cell outside the world and a
  *     tile outside 0..min(31, tile count - 1)).
  *
+ * ── Language batch 3 (docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md) ─────────────────────────────────────────────────────
+ *   With a VIEW3D the interpreter keeps a model of the runtime's 32 x 32 map array (row stride 32, 1,024 bytes; cells outside the game's map_w x map_h are wall type 1) and the pose
+ *   of the last VIEW (x, y clamped into the map as signed 16-bit values, a AND 255); the record gets `view` {x, y, a} and `wallRam` (a copy of the array).
+ *   - COSA / SINA / FXMUL are plain functions (arcade-view.js; the contract's sine table). WALL(x, y): the cell's type, 1 outside the 32 x 32 array or for a negative position.
+ *     SETWALL x, y = t: x, y, t evaluated in that order; writes only inside map_w x map_h with 0 <= t <= 4.
+ *   - SHOW in a VIEW3D game stores x, y as signed 16-bit values, NOT clamped (8.8 world coordinates; the runtime keeps the raw 16 bits).
+ *   - HIT in a VIEW3D game: both instances shown and |dx| < Ra + Rb and |dy| < Ra + Rb, R = 4 * the asset's height in pixels, the positions as UNSIGNED 16-bit values (the `hot` box is ignored).
+ *   - SEEN(s) / DEPTH(s) read what the harness injects: opts.billboard(tick, instance) -> {depth, col} (col -1 = not drawn), the values of the PREVIOUS tick's draw as the
+ *     runtime leaves them in BB_TAB when PROC FRAME of `tick` starts; default: not drawn (depth 0, col -1). An instance outside the pool: SEEN -1, DEPTH 0.
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -115,6 +125,7 @@
 "use strict";
 
 import { assetTables, lookupAsset, convertTileset, convertSfx, convertMap, compiledFrameCount, BLANK_CELL, TILE_CELL } from './arcade-assets.js';
+import { convertViewMap, cosa as viewCosa, sina as viewSina, fxmul as viewFxmul, wallAt, setWallAt, clampPose, billboardRadius } from './arcade-view.js';
 import { convertWorldMap, scanSpriteUse, ratioCode, camMax as camMaxOf, buildTileFlags, worldTile as winWorldTile, tileFlags as winTileFlags, tileHit as winTileHit } from './arcade-window.js';
 
 export const wrap16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -172,8 +183,9 @@ export function interpret(ast, opts = {}) {
   const mapDecls = [];
   const tabs = assetTables(opts.assets);
   const winMapKey = (ast.windows ?? [])[0]?.map ? up(ast.windows[0].map.name) : null;
-  let worldMapDecl = null;
-  const V3 = (opts.version ?? 0) >= 3 || winMapKey !== null;                // 8-byte SPR_TAB entries (asset, frame), the batch 2 words
+  const viewMapKey = (ast.views ?? [])[0]?.map ? up(ast.views[0].map.name) : null;
+  let worldMapDecl = null, viewMapDecl = null;
+  const V3 = (opts.version ?? 0) >= 3 || winMapKey !== null || viewMapKey !== null;                // 8-byte SPR_TAB entries (asset, frame), the batch 2 words
   const spriteUse = V3 ? scanSpriteUse(ast, (d) => lookupAsset(tabs.sprites, d.asset, d.name)) : new Map();
   for (const a of ast.assets ?? []) {
     if (a.kind === 'SPRITE') {
@@ -204,6 +216,7 @@ export function interpret(ast, opts = {}) {
       tileset = as ? convertTileset(as) : { count: 128, bytes: new Uint8Array(128 * 9).map((_, i) => (i % 9 === 8 ? BG_ATTR : 0)) };
     } else if (a.kind === 'MAP') {
       if (winMapKey !== null && up(a.name) === winMapKey && !worldMapDecl) { worldMapDecl = a; continue; }      // the window's world is not a screen map
+      if (viewMapKey !== null && up(a.name) === viewMapKey && !viewMapDecl) { viewMapDecl = a; continue; }      // nor is the view's floor plan
       if (mapDecls.length >= 8) throw new Unsupported('more than 8 MAPs', a);
       mapDecls.push(a);
     } else throw new Unsupported(`${a.kind} declaration`, a);
@@ -248,6 +261,7 @@ export function interpret(ast, opts = {}) {
   if (maps.length) loadMap(maps[0], 0, 0);
   // language batch 2: the window's world (filled in once the CONSTs are known, below)
   let win = null;
+  let view = null;                          // language batch 3: {mapW, mapH, ram: Uint8Array(1024), pose: {x, y, a}}
   const sfx = { active: false, index: -1, played: 0 };
   const putChar = (code) => {
     const i = curRow * 32 + curCol;
@@ -281,6 +295,7 @@ export function interpret(ast, opts = {}) {
     return {
       tick, vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
+      ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
       sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
     };
@@ -371,6 +386,17 @@ export function interpret(ast, opts = {}) {
         worldW: world.w, ram: world.src.slice(), flags: buildTileFlags(tileset?.flags ?? []), camMax: camMaxOf(world.w, bandCodes), cam: 0, bandCodes, bandRows, tileCount: tileset ? tileset.count : 0,
         cx: wd.cx ? evConst(wd.cx) : 4, cy: wd.cy ? evConst(wd.cy) : 4,
       };
+    }
+  }
+
+  // language batch 3: the 3D view's map
+  {
+    const vd = (ast.views ?? [])[0];
+    if (vd && vd.map) {
+      const as = viewMapDecl ? lookupAsset(tabs.maps, viewMapDecl.asset, viewMapDecl.name) : undefined;
+      if (!viewMapDecl || !as) throw new Unsupported('a VIEW3D whose map is not in the project', vd);
+      const m = convertViewMap(as);
+      view = { mapW: m.w, mapH: m.h, ram: m.ram.slice(), pose: { x: 0, y: 0, a: 0 } };
     }
   }
 
@@ -466,10 +492,25 @@ export function interpret(ast, opts = {}) {
           case 'SHL': { const a = ev(args[0], sc), n = ev(args[1], sc); return n >= 0 && n <= 15 ? wrap16(a << n) : 0; }
           case 'SHR': { const a = ev(args[0], sc), n = ev(args[1], sc); return n >= 0 && n <= 15 ? a >> n : (a < 0 ? -1 : 0); }
           case 'STICK': { const n = ev(args[0], sc); if (n !== 1 && n !== 2) return 0; const v = stickValue(tick, n) & 31; return V2 && (v & 15) === 15 ? 0 : v; }
+          case 'COSA': return viewCosa(ev(args[0], sc));
+          case 'SINA': return viewSina(ev(args[0], sc));
+          case 'FXMUL': { const a = ev(args[0], sc), b = ev(args[1], sc); return viewFxmul(a, b); }
+          case 'WALL': { if (!view) throw new Unsupported('WALL without a VIEW3D', e); const x = ev(args[0], sc), y = ev(args[1], sc); return wallAt(view.ram, x, y); }
+          case 'SEEN': case 'DEPTH': {
+            if (!view) throw new Unsupported(`${e.name} without a VIEW3D`, e);
+            const i = instOf(args[0], sc);
+            const t = i < 0 || !opts.billboard ? undefined : opts.billboard(tick, i);
+            const depth = t?.depth ?? 0, col = t?.col ?? -1;
+            return e.name === 'SEEN' ? (i < 0 ? -1 : wrap16(col)) : (i < 0 ? 0 : wrap16(depth));
+          }
           case 'HIT': {
             const a = instOf(args[0], sc), b = instOf(args[1], sc);
             if (a < 0 || b < 0) return 0;
             if (!spr[a].visible || !spr[b].visible) return 0;
+            if (view) {                                    // ray mode: R = 4 * h, the unsigned 8.8 positions, the hot box is ignored
+              const R = billboardRadius(assetDims[instAsset[a]][1]) + billboardRadius(assetDims[instAsset[b]][1]);
+              return Math.abs((spr[a].x & 0xFFFF) - (spr[b].x & 0xFFFF)) < R && Math.abs((spr[a].y & 0xFFFF) - (spr[b].y & 0xFFFF)) < R ? 1 : 0;
+            }
             const [ahx, ahy, ahw, ahh] = boxes[a], [bhx, bhy, bhw, bhh] = boxes[b];
             const al = spr[a].x + ahx, at = spr[a].y + ahy, bl = spr[b].x + bhx, bt = spr[b].y + bhy;
             return al < bl + bhw && bl < al + ahw && at < bt + bhh && bt < at + ahh ? 1 : 0;
@@ -607,7 +648,7 @@ export function interpret(ast, opts = {}) {
             if (opts.clampFrame) frame = Math.min(frame, n * (spriteUse.get(assetObjs[instAsset[idx]])?.flip ? 2 : 1) - 1);
           }
           let px = x, py = y;
-          if (!win) { const [aw, ah] = assetDims[instAsset[idx]] ?? [16, 16]; px = Math.min(Math.max(x, 0), 256 - aw); py = Math.min(Math.max(y, 0), 192 - ah); }
+          if (!win && !view) { const [aw, ah] = assetDims[instAsset[idx]] ?? [16, 16]; px = Math.min(Math.max(x, 0), 256 - aw); py = Math.min(Math.max(y, 0), 192 - ah); }
           spr[idx] = { visible: 1, asset: instAsset[idx], x: px, y: py, frame };
         }
         events.push({ op: 'show', sprite: idx, x, y });
@@ -624,6 +665,18 @@ export function interpret(ast, opts = {}) {
         const x = ev(s.x, sc), y = ev(s.y, sc), t = ev(s.value, sc);
         const c = x >> 3, r = y >> 3;
         if (t >= 0 && t < Math.min(32, win.tileCount) && c >= 0 && c < win.worldW && r >= 0 && r < 16) win.ram[r * 128 + c] = t * 8;
+        return null;
+      }
+      case 'View': {
+        if (!view) throw new Unsupported('VIEW without a VIEW3D', s);
+        const x = ev(s.x, sc), y = ev(s.y, sc), a = ev(s.a, sc);
+        view.pose = clampPose(view.mapW, view.mapH, x, y, a);
+        return null;
+      }
+      case 'SetWall': {
+        if (!view) throw new Unsupported('SETWALL without a VIEW3D', s);
+        const x = ev(s.x, sc), y = ev(s.y, sc), t = ev(s.value, sc);
+        setWallAt(view.ram, view.mapW, view.mapH, x, y, t);
         return null;
       }
       case 'Hide': {

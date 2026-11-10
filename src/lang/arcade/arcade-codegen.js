@@ -110,6 +110,11 @@
  * init_entry zero-fills every slot, then runs PROC INIT; frame_entry is PROC FRAME itself.
  * Runtime routines are CALLed with their registers as in the contract (RT_MUL/DIV/MOD: HL op DE -> HL).
  *
+ * ── Language batch 3 (docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md; `runtime.version >= 4`) ──────────────────────
+ *  B3-1. VIEW3D: header frame_div | DIV_EXT | DIV_VIEW, 20 bytes, `view_desc` at +18 (10 bytes after the sprite data; map_src byte-RLE of the w x h map). No phase pool in ray mode.
+ *  B3-2. VIEW x, y, a: HL = x, DE = y, BC = a, CALL RT_VIEW (evaluation order x, y, a); SETWALL x, y = t: RA_X, RA_Y, RA_V, CALL RT_SETWALL (no guard: the runtime ignores t outside 0..4);
+ *        COSA / SINA: HL = angle, CALL RT_COSA / RT_SINA; FXMUL / WALL: HL, DE, CALL RT_FXMUL / RT_WALL; SEEN / DEPTH: a read of BB_TAB (+2 / +0 of the instance's BB_ENT bytes).
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -134,6 +139,7 @@
 import { Emitter, L, M } from './z80-emit.js';
 import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, convertSpriteV3, MAX_SFX } from './arcade-assets.js';
 import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, buildFrameT } from './arcade-window.js';
+import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
 
 const up = (s) => String(s).toUpperCase();
 const w16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -189,6 +195,9 @@ const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK', 'BAND', 'B
 const V1_FUNCS = new Set(['HIT', 'TILEAT']);
 const V2_FUNCS = new Set(['KEYDOWN']);
 const V3_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);        // language batch 2 (v3 runtime, need a WINDOW)
+const V4_FUNCS = new Set(['COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']);             // language batch 3 (v4 runtime; WALL SEEN DEPTH need a VIEW3D)
+const V4_VIEW_FUNCS = new Set(['WALL', 'SEEN', 'DEPTH']);
+const RT_OF_V4 = { COSA: 'RT_COSA', SINA: 'RT_SINA', FXMUL: 'RT_FXMUL', WALL: 'RT_WALL', SEEN: null, DEPTH: null };
 const RT_OF = { CAMX: null, WORLDTILE: 'RT_WORLDTILE', TILEFLAGS: 'RT_TILEFLAGS', TILEHIT: 'RT_TILEHIT', SOLID: 'RT_TILEHIT' };
 /** A string-valued PRINT item: a literal, STR$(n), or those joined with +. */
 const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name === 'STR$') || (e.type === 'Binary' && e.op === '+' && isStrExpr(e.left) && isStrExpr(e.right));
@@ -200,6 +209,7 @@ const isStrExpr = (e) => e.type === 'String' || (e.type === 'Func' && e.name ===
  */
 export function generate(ast, runtime, assets = {}) {
   const errors = [], warnings = [];
+  const v4 = (runtime.version ?? 0) >= 4;
   const v3 = (runtime.version ?? 0) >= 3;
   const v2 = (runtime.version ?? 0) >= 2;
   const v1 = (runtime.version ?? 0) >= 1;
@@ -241,6 +251,9 @@ export function generate(ast, runtime, assets = {}) {
   const spriteUse = v3 ? scanSpriteUse(ast, (d) => lookupIn(tabs.sprites, d.asset, d.name)) : new Map();    // asset object -> {frames, flip} (batch 2)
   const winDecl = v3 ? (ast.windows ?? [])[0] ?? null : null;               // WINDOW: the first one (the checker refuses a second)
   const worldKey = winDecl?.map ? up(winDecl.map.name) : null;
+  const viewDecl = v4 ? (ast.views ?? [])[0] ?? null : null;                // VIEW3D: the first one (the checker refuses a second)
+  const viewKey = viewDecl?.map ? up(viewDecl.map.name) : null;
+  let viewMapDecl = null;                           // the MAP node the VIEW3D uses as its floor plan (not part of mapList)
   let worldDecl = null;                             // the MAP node the window uses as its world (not part of mapList)
   const sfxList = [], sfxIndex = new Map();         // {name, node, bytes, records}
   let tileset = null;                               // {node, count, bytes}
@@ -263,6 +276,7 @@ export function generate(ast, runtime, assets = {}) {
             const okHot = Array.isArray(hot) && hot.length === 4 && hot.every(Number.isInteger) && hot[0] >= 0 && hot[1] >= 0 && hot[2] >= 1 && hot[3] >= 1 && hot[0] + hot[2] <= (v3 ? c.w : 16) && hot[1] + hot[3] <= c.h;
             if (!okHot) throw new Error(`"hot" must be [x, y, w, h] inside the sprite, got ${JSON.stringify(hot)}`);
           }
+          if (viewDecl && v3 && c.srcW !== c.h) warnings.push({ ...pos(a), severity: 'warning', message: `sprite "${a.asset}" is ${c.srcW} x ${c.h} pixels: a billboard in the 3D view is a square of side ${c.h} / 32 cells, so this art is stretched to ${c.h} x ${c.h} (draw it square, or use ${c.h} x ${c.h})` });
           const phases = asset.phases ?? 8;
           if (![1, 2, 4, 8].includes(phases)) throw new Error(`"phases" must be 1, 2, 4 or 8, got ${JSON.stringify(phases)}`);
           ai = sprites.length;
@@ -304,6 +318,7 @@ export function generate(ast, runtime, assets = {}) {
       try { tileset = { node: a, ...convertTileset(asset) }; } catch (e) { err(a, `tileset "${a.asset}": ${e.message}`); }
     } else if (v1 && a.kind === 'MAP') {
       if (worldKey !== null && up(a.name) === worldKey && !worldDecl) { worldDecl = a; continue; }       // the window's world: kept apart
+      if (viewKey !== null && up(a.name) === viewKey && !viewMapDecl) { viewMapDecl = a; continue; }     // the view's floor plan: kept apart
       if (mapList.length >= 8) { err(a, 'at most 8 MAPs per game'); continue; }
       mapList.push({ node: a });
     } else { notYet(a, `${a.kind} (${a.name})`); }
@@ -500,6 +515,37 @@ export function generate(ast, runtime, assets = {}) {
       }
     }
   }
+  // ── 2c. the 3D view (batch 3) ──
+  let view = null;                                  // {colw, mapW, mapH, cells, attrTop, attrBottom, patterns: number[16] | null, ink, ceil, floor, bright}
+  if (viewDecl) {
+    const at = viewDecl.map ?? viewDecl;
+    if (!viewMapDecl) err(at, `VIEW3D: '${viewDecl.map?.name}' is not a declared MAP`);
+    else {
+      const asset = lookupIn(tabs.maps, viewMapDecl.asset, viewMapDecl.name);
+      if (asset === undefined) err(at, `map asset "${viewMapDecl.asset}" is not in the project`);
+      else {
+        try {
+          const m = convertViewMap(asset);
+          const c = viewDecl.clauses ?? {};
+          const pick = (node, dflt, what, lo, hi, allowed) => {
+            if (!node) return dflt;
+            const v = fold(node);
+            if (v === undefined || (allowed ? !allowed.includes(v) : v < lo || v > hi)) throw new Error(`${what} must be a constant ${allowed ? allowed.join(' or ') : `${lo}..${hi}`}`);
+            return v;
+          };
+          const colw = pick(c.colw, VIEW_DEFAULTS.colw, 'COLW', 0, 0, [2, 4]);
+          const ink = pick(c.ink, VIEW_DEFAULTS.ink, 'INK', 0, 7), ceil = pick(c.ceil, VIEW_DEFAULTS.ceil, 'CEIL', 0, 7), floor = pick(c.floor, VIEW_DEFAULTS.floor, 'FLOOR', 0, 7);
+          const bright = pick(c.bright, VIEW_DEFAULTS.bright, 'BRIGHT', 0, 1);
+          let patterns = null;
+          if (c.patterns) {
+            patterns = c.patterns.map((n, i) => pick(n, 0, `PATTERNS byte ${i}`, 0, 255));
+            if (patterns.length !== VIEW_PATTERN_BYTES) throw new Error(`PATTERNS needs ${VIEW_PATTERN_BYTES} bytes`);
+          }
+          view = { colw, mapW: m.w, mapH: m.h, cells: m.cells, ink, ceil, floor, bright, attrTop: viewAttr(bright, ceil, ink), attrBottom: viewAttr(bright, floor, ink), patterns };
+        } catch (ex) { err(at, `view map "${viewMapDecl.asset}": ${ex.message}`); }
+      }
+    }
+  }
   /** Does evaluating the expression use the runtime's argument block (TILEHIT / SOLID, also through DEF FN)? */
   const raMemo = new Map();
   const usesRA = (x) => {
@@ -535,7 +581,17 @@ export function generate(ast, runtime, assets = {}) {
       case 'Binary': scanExpr(e.left); scanExpr(e.right); return;
       case 'FnCall': scanExpr(e.arg); return;
       case 'Func':
-        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name)) && !(v3 && V3_FUNCS.has(e.name))) { notYet(e, `${e.name}(...)`); return; }
+        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name)) && !(v3 && V3_FUNCS.has(e.name)) && !(v4 && V4_FUNCS.has(e.name))) {
+          if (V4_FUNCS.has(e.name)) err(e, `${e.name}() needs the v4 runtime (build with --runtime v4)`); else notYet(e, `${e.name}(...)`);
+          return;
+        }
+        if (V4_FUNCS.has(e.name)) {
+          if (V4_VIEW_FUNCS.has(e.name) && !viewDecl) { err(e, `${e.name}() needs a VIEW3D: declare the 3D view at the top, e.g. VIEW3D level`); return; }
+          const rt = RT_OF_V4[e.name];
+          if (rt && sym[rt] === undefined) { err(e, `${e.name}(...) needs ${rt}, which this runtime does not provide`); return; }
+          if ((e.name === 'SEEN' || e.name === 'DEPTH') && rtAddrOf('BB_TAB') === undefined) { err(e, `${e.name}() needs BB_TAB, which this runtime does not provide`); return; }
+          if (e.name === 'SEEN' || e.name === 'DEPTH') { scanSpriteRef(e.args[0]); return; }
+        }
         if (V3_FUNCS.has(e.name)) {
           if (!winDecl) { err(e, `${e.name}() needs a WINDOW: declare the scrolling world at the top, e.g. WINDOW level`); return; }
           const rt = RT_OF[e.name];
@@ -605,6 +661,16 @@ export function generate(ast, runtime, assets = {}) {
           if (!tileset) err(s, 'SETWORLD needs a TILESET');
           for (const k of ['x', 'y', 'value']) { scanExpr(s[k]); if (usesRA(s[k])) err(s[k], 'SETWORLD cannot have TILEHIT or SOLID (or a DEF FN that uses one) inside its arguments: they share the runtime\'s argument block; put it in a variable first'); }
         }
+        continue;
+      }
+      if (s.type === 'View' || s.type === 'SetWall') {
+        const what = s.type === 'View' ? 'VIEW' : 'SETWALL', rt = s.type === 'View' ? 'RT_VIEW' : 'RT_SETWALL';
+        if (!v4) err(s, `${what} needs the v4 runtime (build with --runtime v4)`);
+        else if (!viewDecl) err(s, `${what} needs a VIEW3D: declare the 3D view at the top, e.g. VIEW3D level`);
+        else if (sym[rt] === undefined) err(s, `${what} needs ${rt}, which this runtime does not provide`);
+        else if (s.type === 'SetWall' && !raReady) err(s, 'SETWALL needs the runtime argument block (RT_ARGS)');
+        else if (!view) { /* the VIEW3D itself failed: already reported */ }
+        else for (const k of s.type === 'View' ? ['x', 'y', 'a'] : ['x', 'y', 'value']) scanExpr(s[k]);
         continue;
       }
       if (s.type === 'Border' || s.type === 'Randomise') {
@@ -678,6 +744,7 @@ export function generate(ast, runtime, assets = {}) {
     HEADER_BYTES = cst.GAME_HEADER_EXT_LEN ?? 18;
   }
   if (win) HEADER_BYTES = 20;                       // B2-1: DIV_WIN says the header continues +18 DW window_desc (it requires DIV_EXT)
+  if (view) HEADER_BYTES = 20;                      // B3-1: DIV_VIEW (the same bit) says the header continues +18 DW view_desc
   if (errors.length) return fail();
 
   function fail() { return { errors, warnings, code: null }; }
@@ -709,6 +776,8 @@ export function generate(ast, runtime, assets = {}) {
           case 'Show': ex(s.sprite); ex(s.x); ex(s.y); ex(s.frame); break;
           case 'Camera': ex(s.value); break;
           case 'SetWorld': ex(s.x); ex(s.y); ex(s.value); break;
+          case 'View': ex(s.x); ex(s.y); ex(s.a); break;
+          case 'SetWall': ex(s.x); ex(s.y); ex(s.value); break;
           case 'Hide': ex(s.sprite); break;
           case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
@@ -779,6 +848,8 @@ export function generate(ast, runtime, assets = {}) {
           case 'Show': ex(s.sprite, active); ex(s.x, active); ex(s.y, active); ex(s.frame, active); break;
           case 'Camera': ex(s.value, active); break;
           case 'SetWorld': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
+          case 'View': ex(s.x, active); ex(s.y, active); ex(s.a, active); break;
+          case 'SetWall': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
           case 'Hide': ex(s.sprite, active); break;
           case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } s.items.forEach((x) => ex(x, active)); break;
           case 'Tile': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
@@ -1203,6 +1274,25 @@ export function generate(ast, runtime, assets = {}) {
         used.tileat = true; e.call('lib$tileat');
         return;
       }
+      case 'COSA': case 'SINA': gen(a[0]); e.call(need(x.name === 'COSA' ? 'RT_COSA' : 'RT_SINA')); return;
+      case 'FXMUL': case 'WALL': operands(a[0], a[1]); e.call(need(x.name === 'FXMUL' ? 'RT_FXMUL' : 'RT_WALL')); return;      // HL = a / x, DE = b / y -> HL
+      case 'SEEN': case 'DEPTH': {
+        // BB_TAB[i] = DW depth, DW col (BB_ENT bytes an instance): DEPTH is the word at +0, SEEN the word at +2 (-1 = not drawn). An index outside the pool: not drawn (SEEN -1, DEPTH 0).
+        const base = need2('BB_TAB'), ent = cst.BB_ENT ?? sym.BB_ENT ?? 4, off = x.name === 'SEEN' ? 2 : 0, none = x.name === 'SEEN' ? -1 : 0;
+        const ref = instRef(a[0]), k = instConst(ref);
+        if (k === null) {
+          const BAD = e.newLabel('sbad'), END = e.newLabel('send');
+          gen(ref.idx); instToA(ref, BAD);
+          e.ld('l', 'a'); e.ld('h', 0); mulConst(ent);
+          e.ld('de', base + off); e.add('hl', 'de');
+          e.ld('a', '(hl)'); e.inc('hl'); e.ld('h', '(hl)'); e.ld('l', 'a');
+          e.jr(END);
+          e.label(BAD); e.ld('hl', none);
+          e.label(END);
+        } else if (k < 0) e.ld('hl', none);
+        else e.ld('hl', M(base + off + ent * k));
+        return;
+      }
       case 'CAMX': e.ld('hl', M(need2('V_CAM'))); return;
       case 'WORLDTILE': case 'TILEFLAGS': {
         const rt = need(x.name === 'WORLDTILE' ? 'RT_WORLDTILE' : 'RT_TILEFLAGS');
@@ -1476,6 +1566,24 @@ export function generate(ast, runtime, assets = {}) {
     e.label(skip);
   }
 
+  /** VIEW x, y, a: HL = x, DE = y, BC = a (batch 3, B3-2). x, y, a are evaluated in that order; plain variables and constants are loaded last. */
+  function viewStmt(s) {
+    const rt = need('RT_VIEW');
+    const args = [s.x, s.y, s.a], regs = ['hl', 'de', 'bc'];
+    const complex = args.map((a, i) => (isSimple(a) ? -1 : i)).filter((i) => i >= 0);
+    const last = complex.length ? complex[complex.length - 1] : -1;
+    const pushed = [];
+    for (const i of complex) {
+      gen(args[i]);
+      if (i === last) {                              // the value in HL goes to its register (the pushed ones are popped below, in reverse order)
+        if (regs[i] === 'de') e.ex('de', 'hl'); else if (regs[i] === 'bc') { e.ld('b', 'h'); e.ld('c', 'l'); }
+      } else { e.push('hl'); pushed.push(i); }
+    }
+    for (let k = pushed.length - 1; k >= 0; k--) e.pop(regs[pushed[k]]);
+    args.forEach((a, i) => { if (isSimple(a)) loadSimple(regs[i], a); });
+    e.call(rt);
+  }
+
   let showIdxSlot = null;                           // hidden slot a run-time SHOW index waits in while x, y, frame are evaluated
   /** SHOW ... FRAME f / FLIP through RT_SHOWF (A instance, BC x, DE y, HL frame). Evaluation order: index, x, y, frame. */
   function showFrameStmt(s) {
@@ -1599,6 +1707,13 @@ export function generate(ast, runtime, assets = {}) {
       case 'LoadMap': loadMapStmt(s); return;
       case 'Camera': gen(s.value); e.call(need('RT_CAMERA')); return;
       case 'SetWorld': setWorldStmt(s); return;
+      case 'View': viewStmt(s); return;
+      case 'SetWall': {
+        const rt = need('RT_SETWALL');
+        setArg('RA_X', s.x); setArg('RA_Y', s.y); setArg('RA_V', s.value);        // x, y, t in source order; the runtime ignores a t outside 0..4 and a cell outside the map
+        e.call(rt);
+        return;
+      }
       case 'Show': {
         if (s.flip || (s.frame && !(frameIsZero(s.frame) && !v3))) { showFrameStmt(s); return; }
         const rShow = need('RT_SHOW');
@@ -1910,7 +2025,7 @@ export function generate(ast, runtime, assets = {}) {
   };
   // runtime v3: the phase pool plan the boot will make (a miss stops the runtime at boot: the linker fails), and a warning for each asset whose frames do not all stay cached
   let phasePlan = null;
-  if (v3) {
+  if (v3 && !view) {                                // ray mode has no phase pool (contract R9): its sprites are drawn from the frame data
     phasePlan = planPhasePool(sprites.map((sp, i) => ({ w: sp.w, h: sp.h, phases: sp.phases ?? 8, nframes: sp.nframes ?? 1, instances: instAssets.filter((a) => a === i).length })), poolPieces(cst));
     phasePlan.pieces = poolPieces(cst);
     if (phasePlan.ok) sprites.forEach((sp, i) => {
@@ -1924,9 +2039,10 @@ export function generate(ast, runtime, assets = {}) {
     code, base,
     entries: { init: entry('entry$init'), frame: entry('P$FRAME') },
     frameDiv: 60 / rate,
-    mapFlag: (extMaps || win ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0),
+    mapFlag: (extMaps || win || view ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0) | (view ? (cst.DIV_VIEW ?? 0x40) : 0),
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,
     window: win,
+    view,
     sprites,
     symbols,
     srcMap,

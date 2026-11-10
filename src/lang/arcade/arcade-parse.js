@@ -78,11 +78,18 @@
  *      - `CAMERA x` (node Camera {value}) and `SETWORLD x, y = t` (node SetWorld {x, y, value}; y at the additive level like TILE's).
  *      - SHOW gains `flip` (boolean) beside `frame`: `SHOW s AT x, y [FRAME f] [FLIP]`, the two clauses in either order. FRAME and FLIP are contextual words.
  *      - WORLDTILE TILEFLAGS TILEHIT SOLID CAMX are ordinary built-in functions (arcade-words.js).
+ *  17. (language batch 3, docs/ARCADE_LANGUAGE_BATCH3.md)
+ *      - `VIEW3D map [COLW n] [INK n] [CEIL n] [FLOOR n] [BRIGHT n] [PATTERNS b0, ..., b15]` is a top-level item: node View3d {map: Ident, clauses: {colw, ink, ceil,
+ *        floor, bright: expr | null, patterns: [expr] | null}, clausePos: {name: token position}}; also listed in program.views. The clauses come in any order, each once
+ *        (a repeat is an error); COLW CEIL FLOOR PATTERNS are contextual words (idents), INK and BRIGHT the existing keywords. Inside a SCENE the item is reported but recorded.
+ *      - `VIEW x, y, a` (node View {x, y, a}) and `SETWALL x, y = t` (node SetWall {x, y, value}; y at the additive level like TILE's). COSA SINA FXMUL WALL SEEN DEPTH
+ *        are ordinary built-in functions (arcade-words.js); SEEN and DEPTH take an instance reference like HIT.
+ *      - The BATCH3_WORDS (reserved for variables) are read as names where an ASSET name is expected: SFX wall = "wall", PLAY wall, SHOW wall AT ..., HIT(wall, x).
  */
 
 "use strict";
 
-import { RESERVED, BLOCK_WORDS, FUNCTIONS, ASSET_KINDS, NOT_IN_ARCADE, LIMITS, notInArcadeMessage } from './arcade-words.js';
+import { RESERVED, BLOCK_WORDS, FUNCTIONS, ASSET_KINDS, NOT_IN_ARCADE, LIMITS, BATCH3_WORDS, notInArcadeMessage } from './arcade-words.js';
 
 // ── Tokenizer ─────────────────────────────────────────────────────
 const WORD_RE = /[A-Za-z][A-Za-z0-9_]*\$?/y;
@@ -238,6 +245,12 @@ class Parser {
     if (!isSym(t, s)) this.fail(t, why ?? `expected '${s}' but found ${describe(t)}`);
     return this.next();
   }
+  /** The name in an ASSET declaration: like expectName, but a word of language batch 3 (WALL, SEEN, ...) is allowed: assets have a name space of their own. */
+  expectAssetName(what) {
+    const t = this.peek();
+    if (t.type === 'keyword' && BATCH3_WORDS.has(t.value)) return this.next();
+    return this.expectName(what);
+  }
   /** A declared name: an identifier; a reserved word is reported but still returned so the parse goes on. */
   expectName(what) {
     const t = this.peek();
@@ -270,7 +283,7 @@ class Parser {
   program() {
     const prog = this.prog = {
       type: 'Program', line: 1, col: 0, endCol: 0,
-      game: null, framerate: null, assets: [], scenes: [], procs: [], decls: [], items: [], windows: [], bands: [],
+      game: null, framerate: null, assets: [], scenes: [], procs: [], decls: [], items: [], windows: [], bands: [], views: [],
     };
     this.expects.push(new Set(['PROC', 'SCENE']));
     for (;;) {
@@ -312,7 +325,7 @@ class Parser {
           prog.framerate ??= node; prog.items.push(node);
         } else {
           this.next();
-          const name = this.expectName(`a ${v.toLowerCase()} name`);
+          const name = this.expectAssetName(`a ${v.toLowerCase()} name`);
           let count = null, countPos = null;
           if (isSym(this.peek(), '(')) {
             if (v !== 'SPRITE') this.fail(this.peek(), `only a SPRITE can have a pool size: ${v} ${name.text} = "..."`);
@@ -337,6 +350,12 @@ class Parser {
         if (scene) this.record(t, `${v} must be at the top level, outside any SCENE`);
         const node = v === 'WINDOW' ? this.windowDecl() : this.bandDecl();
         (v === 'WINDOW' ? prog.windows : prog.bands).push(node); prog.items.push(node);
+        return;
+      }
+      if (v === 'VIEW3D') {
+        if (scene) this.record(t, 'VIEW3D must be at the top level, outside any SCENE');
+        const node = this.view3dDecl();
+        prog.views.push(node); prog.items.push(node);
         return;
       }
       if (v === 'SCENE') { this.scene(); return; }
@@ -369,6 +388,31 @@ class Parser {
       cx = this.expr(); this.expectSym(',', "expected ',' : WINDOW map AT cx, cy"); cy = this.expr();
     }
     return this.close(this.mk('Window', t, { map, cx, cy }));
+  }
+
+  /**
+   * `VIEW3D map [COLW n] [INK n] [CEIL n] [FLOOR n] [BRIGHT n] [PATTERNS b0, ..., b15]` (language batch 3): node View3d {map: Ident, clauses, clausePos}.
+   * `clauses` holds an expression node per clause (null when absent), `patterns` a list of expression nodes (or null); `clausePos` the position of each clause word.
+   */
+  view3dDecl() {
+    const t = this.next();
+    const map = this.nameRef('a map name: VIEW3D level');
+    const clauses = { colw: null, ink: null, ceil: null, floor: null, bright: null, patterns: null }, clausePos = {};
+    for (;;) {
+      const c = this.peek();
+      const key = c.type === 'ident' && ['COLW', 'CEIL', 'FLOOR', 'PATTERNS'].includes(c.value) ? c.value.toLowerCase()
+        : isKw(c, 'INK') ? 'ink' : isKw(c, 'BRIGHT') ? 'bright' : null;
+      if (key === null) break;
+      if (clauses[key] !== null) this.fail(c, `a VIEW3D has at most one ${c.value} clause`);
+      this.next();
+      clausePos[key] = pos(c);
+      if (key === 'patterns') {
+        const list = [this.expr()];
+        while (isSym(this.peek(), ',')) { this.next(); list.push(this.expr()); }
+        clauses.patterns = list;
+      } else clauses[key] = this.expr();
+    }
+    return this.close(this.mk('View3d', t, { map, clauses, clausePos }));
   }
 
   /** `BAND rows, num, den` (language batch 2): node Band {rows, num, den}. */
@@ -608,6 +652,23 @@ class Parser {
         const value = this.expr();
         return this.close(this.mk('SetWorld', t, { x, y, value }));
       }
+      case 'VIEW': {
+        this.next();
+        const x = this.expr(); this.expectSym(',', "expected ',' : VIEW x, y, a");
+        const y = this.expr(); this.expectSym(',', "expected ',' : VIEW x, y, a");
+        const a = this.expr();
+        return this.close(this.mk('View', t, { x, y, a }));
+      }
+      case 'SETWALL': {
+        this.next();
+        const x = this.expr(); this.expectSym(',', "expected ',' : SETWALL x, y = t");
+        const y = this.addExpr();   // like TILE's y: a comparison would swallow the '='
+        this.expectSym('=', "expected '=' and the wall type: SETWALL x, y = t");
+        const value = this.expr();
+        return this.close(this.mk('SetWall', t, { x, y, value }));
+      }
+      case 'VIEW3D': this.fail(t, 'VIEW3D must be at the top level, outside any PROC');
+      // falls through (fail throws)
       case 'WINDOW': this.fail(t, 'WINDOW must be at the top level, outside any PROC');
       // falls through (fail throws)
       case 'HIDE': { this.next(); return this.close(this.mk('Hide', t, { sprite: this.spriteRef() })); }
@@ -660,7 +721,7 @@ class Parser {
 
   nameRef(what, allowWord = false) {
     const t = this.peek();
-    if (t.type !== 'ident' && !(allowWord && t.type === 'keyword' && !BLOCK_WORDS.has(t.value))) this.fail(t, `expected ${what} but found ${describe(t)}`);
+    if (t.type !== 'ident' && !(allowWord && t.type === 'keyword' && !BLOCK_WORDS.has(t.value)) && !(t.type === 'keyword' && BATCH3_WORDS.has(t.value))) this.fail(t, `expected ${what} but found ${describe(t)}`);
     this.next();
     return this.mk('Ident', t, { name: t.text });
   }
@@ -989,6 +1050,10 @@ class Parser {
           return this.close(this.mk('FnCall', t, { name: n.text, namePos: pos(n), arg }));
         }
         const f = FUNCTIONS.get(t.value);
+        if (f && BATCH3_WORDS.has(t.value) && !isSym(this.peek(1), '(')) {          // `HIT(wall, x)` with a sprite called wall: a name, the checker says what it is
+          this.next();
+          return this.mk('Ident', t, { name: t.text });
+        }
         if (f) {
           this.next();
           if (!isSym(this.peek(), '(')) this.fail(this.peek(), `${t.text} needs brackets: ${f.callSyntax ?? f.syntax}`);
