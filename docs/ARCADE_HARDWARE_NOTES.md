@@ -171,3 +171,27 @@ do not have). So they agree with our emulator facts but add no hardware proof.
 * **DCK files with several blocks:** TSRun applies HOME (255), DOCK (0) and EXROM (254) blocks in order, so a DCK can
   exceed 65,545 bytes (a 163,867-byte demo has three). That is an emulator container feature, not extra
   cartridge capacity. Arcade uses one bank-0 block.
+
+## 10. Platformer (runtime v3) cross-emulator check, 2026-11-09
+
+`arcade/build/platformer.dck` (Leap Runner, runtime v3, 32,777 bytes) on TSRun, ZEsarUX 13.0 and Fuse 1.9.1, compared at equal game ticks
+(`arcade/tools/xemu/platformer-*`; order of the commands is in the header of `platformer-compare.mjs`). Method: the state is sampled at the runtime's
+`WORK_END` (V_TICKS just incremented, the tick's work done), the same instruction on every emulator (TSRun by single-stepping each frame, ZEsarUX by a
+PC breakpoint), and the hidden display file (V_HIDDEN) is the tick's finished picture. Compared: that 6,912-byte screen at 170 ticks (md5) and, at 21 ticks,
+the screen byte by byte plus 5,248 bytes of state (V3VARS, game variables, SPR_TAB, cell map, WORLD_RAM). Scenario (`platformer-scenario.json`): the title
+at ticks 5 and 12 with no input; SPACE at ticks 14-15 starts the game; P (right) from tick 22, Q and SPACE jumps, O (left) 106-120, P again; the camera
+passes every phase 0-7 (cam 5, 20, 37, 55, 77, 95, 110, 119, 135, 150, 157), the camera falls back to 0 between ticks 153 and 158 (a respawn, inferred from the camera; the game logic is not instrumented).
+
+* Input: identical per tick on every emulator. TSRun presses the keys on its keyboard matrix; ZEsarUX gets ZRCP `send-keys-event` while stopped at
+  `WORK_END` (it sets the matrix at once, FRAME(N) reads it later; the game's own key reads, V_KEYS, match TSRun's on all 170 ticks once the unused bits
+  5-7 are masked: ZEsarUX returns bit 6 low, TSRun high). Fuse cannot be fed keys per tick headless, so a **test copy** of the cartridge
+  (`platformer-patch.mjs`, `arcade/build/platformer-script.dck`, not the committed game) replaces `IN A,(C) / LD B,A` in RT_KEYDOWN by a call to a 79-byte
+  stub in the free tail of chunk 1 that returns the row byte from a per-tick table (V_TICKS); the rest of KEYDOWN still runs. The test copy is validated:
+  on TSRun and on ZEsarUX the script run and the real-key run are identical on all 170 ticks (camera, keys read, screen md5) and at the 21 sampled ticks
+  (0 bitmap, 0 attribute, 0 state bytes).
+* Results: TSRun vs ZEsarUX (real keys, and again script-driven): camera, keys read and finished screen identical on all 170 ticks; 0 bitmap bytes,
+  0 attribute bytes, 0 state bytes differ at the 21 sampled ticks (title ticks 5 and 12 included). Fuse (script cartridge, 2,703 movie frames): all 170 tick
+  screens (1..170) appear byte-identical to TSRun's, in order, 0 unmatched frames inside the span, about 2.99 refreshes a tick (2: 9, 3: 141, 4: 7 times).
+* BRIGHT black: the compared bytes are display-file and attribute RAM, so the renderers' difference (TSRun #333, Fuse/ZEsarUX black) cannot appear; the
+  cells that use it are the 128 text cells of cell rows 1, 2, 21, 22 (PAPER 0 BRIGHT 1, the title and HUD lines) from tick 12 on. No difference to explain.
+* Not covered: Fuse state (only screens), real keys on Fuse, joystick (ZEsarUX reads AY R14 as 0 = no stick; not exercised), sound, real hardware.
