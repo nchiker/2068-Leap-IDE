@@ -1,0 +1,179 @@
+[
+ {
+  "label": "V1 naive",
+  "mean": 715402,
+  "max": 804106,
+  "attr": 0,
+  "size": 202,
+  "ok": true
+ },
+ {
+  "label": "V2 32x24 (full)",
+  "mean": 216236,
+  "max": 224966,
+  "attr": 29104,
+  "size": 3236,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V2 +blank, mixed world",
+  "mean": 167848.390625,
+  "max": 173482,
+  "attr": 29104,
+  "size": 4708,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V2 +blank, level world",
+  "mean": 155773.21875,
+  "max": 160890,
+  "attr": 29104,
+  "size": 4708,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V2 +blank, solid world",
+  "mean": 234092,
+  "max": 243014,
+  "attr": 29104,
+  "size": 4708,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V2 plain, level world",
+  "mean": 216236,
+  "max": 224966,
+  "attr": 29104,
+  "size": 3236,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 32x16 +blank, level",
+  "mean": 95711.671875,
+  "max": 99002,
+  "attr": 19449,
+  "size": 4708,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 28x20 +blank, level",
+  "mean": 110238.15625,
+  "max": 114662,
+  "attr": 21637,
+  "size": 4150,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 24x16 +blank, level",
+  "mean": 72319.296875,
+  "max": 76057,
+  "attr": 15225,
+  "size": 3592,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 20x14 +blank, level",
+  "mean": 53160.734375,
+  "max": 56168,
+  "attr": 11491,
+  "size": 3034,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 16x12 +blank, level",
+  "mean": 36824.265625,
+  "max": 38324,
+  "attr": 8285,
+  "size": 2476,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 32x16",
+  "mean": 144239,
+  "max": 150060,
+  "attr": 19449,
+  "size": 3236,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 28x20",
+  "mean": 158212.5,
+  "max": 164588,
+  "attr": 21637,
+  "size": 2862,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 24x16",
+  "mean": 109007,
+  "max": 113388,
+  "attr": 15225,
+  "size": 2488,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 20x14",
+  "mean": 80000.25,
+  "max": 83204,
+  "attr": 11491,
+  "size": 2114,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V3 16x12",
+  "mean": 55397.5,
+  "max": 57604,
+  "attr": 8285,
+  "size": 1740,
+  "ok": true,
+  "init": 370814
+ },
+ {
+  "label": "V4 shift, 2 files (copy)",
+  "mean": 192563,
+  "max": 207025,
+  "bmean": 188182,
+  "attr": 0,
+  "size": 640,
+  "ok": true
+ },
+ {
+  "label": "V4 shift, in place (1 file)",
+  "mean": 146428.375,
+  "max": 162916,
+  "bmean": 144073,
+  "attr": 0,
+  "size": 640,
+  "ok": true
+ },
+ {
+  "label": "V5 full redraw",
+  "mean": 153481,
+  "max": 153481,
+  "attr": 29125,
+  "size": 2410,
+  "ok": true
+ },
+ {
+  "label": "V4 2 px/tick",
+  "mean": 341017,
+  "max": 351098,
+  "attr": 0,
+  "size": 640,
+  "ok": true
+ }
+]

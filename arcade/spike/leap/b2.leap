@@ -1,0 +1,25 @@
+REM B2 tile map: 16 UDG tiles (codes 144..159), 64x24 map, 32 scroll steps
+REM Row 23 is the status line: a PRINT there scrolls the screen, so its tiles are poked
+REM straight into the bitmap (screen address 20704 + line * 256 + column), same bytes.
+CLS
+FOR k = 0 TO 15
+  FOR r = 0 TO 7
+    POKE 61824 + k * 8 + r, MOD(k * 37 + r * 11 + 3, 256)
+  NEXT r
+NEXT k
+FOR t = 0 TO 31
+  FOR row = 0 TO 22
+    FOR c = 0 TO 31
+      mc = MOD(c + t, 64)
+      AT row, c
+      PRINT CHR$(144 + MOD(mc * 7 + row * 13 + mc * row, 16));
+    NEXT c
+  NEXT row
+  FOR c = 0 TO 31
+    mc = MOD(c + t, 64)
+    kk = MOD(mc * 7 + 23 * 13 + mc * 23, 16)
+    FOR r = 0 TO 7
+      POKE 20704 + r * 256 + c, MOD(kk * 37 + r * 11 + 3, 256)
+    NEXT r
+  NEXT c
+NEXT t

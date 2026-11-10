@@ -25,6 +25,11 @@
  * run's output stays up when it ends. A profile can let keys pass all the
  * time (keyboard.always).
  *
+ * Cartridge-only profile (Leap Arcade Studio, src/lang/arcade/profile.js: `cartridgeOnly: true`): the language has no
+ * ROM pair of its own. The "profile ROMs" are the stock TS2068 pair, nothing is injected and no key wait is looked
+ * for; its Run is runCartridge(dck), which is testCartridge() restarting a cartridge that may already be in.
+ * Existing profiles are untouched by this.
+ *
  * Cartridge test (testCartridge): the same machine with the stock TS2068 ROMs
  * and a .dck in the dock, as a real TS2068 with a cartridge. The stock ROM
  * starts the cartridge by itself; keys always reach the machine (the cartridge
@@ -58,6 +63,9 @@ const SEEK_FRAMES  = 2;     // frames to wait for the key wait before pressing B
 const BREAK_FRAMES = 60;    // frames to hold BREAK before resetting instead
 const BOOT_FRAMES  = 300;   // reset to editor takes 66 frames on 2.0.2-emu.1
 
+// A cartridge-only profile has no Leap ROM and so no key wait or key latch: these never match / are never written.
+const STOCK_ROM_ENTRY = Object.freeze({ version: 'stock', keyWait: -1, keyWaitEnd: -1, kbdKeyHit: null });
+
 // Matrix rows/bits for BREAK (CAPS SHIFT + SPACE); the matrix is active low.
 const CAPS_SHIFT = { row: 0, bit: 0 };
 const SPACE      = { row: 7, bit: 0 };
@@ -74,7 +82,7 @@ const SPACE      = { row: 7, bit: 0 };
  */
 export async function createEmulator(opts) {
   const keyMatrix = new Uint8Array(8).fill(0x1F);
-  const joystick  = new Uint8Array(2).fill(0xFF);   // no gamepads in the IDE
+  const joystick  = new Uint8Array(2).fill(0xFF);   // no gamepads in the IDE (active low: bit 0 up, 1 down, 2 left, 3 right, 7 fire)
 
   const emu = {
     machine:  createMachine(keyMatrix, joystick),
@@ -110,7 +118,7 @@ export async function createEmulator(opts) {
   resetMachine(emu.machine);
   requestAnimationFrame(now => onFrame(emu, now));
 
-  return {
+  const api = {
     /**
      * Queue a run. The job is the profile's (attach().startRun()); its driver
      * writes it into RAM at the next safe point.
@@ -138,16 +146,17 @@ export async function createEmulator(opts) {
       emu.rom = loaded.rom;
       emu.romImages = loaded.images;
       emu.kbd.setSymbols(profile.keyboard.symbols);
+      if (profile.cartridgeOnly) emu.stockImages = loaded.images;
       restoreRoms(emu);
       hardReset(emu);
       emu.paused = false;
-      setState(emu, 'booting');
+      setState(emu, idleState(emu));
     },
     get profile() { return emu.profile; },
     /** Stop the running program: BREAK if busy, back to the editor if waiting. A cartridge test ends. */
     stop() {
       unpause(emu);
-      if (emu.cart) { leaveCartridge(emu); setState(emu, 'booting'); return; }
+      if (emu.cart) { leaveCartridge(emu); setState(emu, idleState(emu)); return; }
       if (emu.runActive) emu.pending = { kind: 'stop', stage: 'seek', frames: 0 };
     },
     /** Hard reset; the ROM boots to its editor. A cartridge test ends. */
@@ -155,7 +164,7 @@ export async function createEmulator(opts) {
       if (emu.cart) leaveCartridge(emu);
       else hardReset(emu);
       emu.paused = false;
-      setState(emu, 'booting');
+      setState(emu, idleState(emu));
     },
     /**
      * Cartridge test: the stock TS2068 ROMs with this .dck in the dock, then a
@@ -182,7 +191,7 @@ export async function createEmulator(opts) {
       if (err !== null) {
         restoreRoms(emu);
         resetMachine(m);
-        setState(emu, 'booting');
+        setState(emu, idleState(emu));
         throw new Error(`Not a cartridge the TS2068 can take: ${err}`);
       }
       emu.cart = true;
@@ -190,8 +199,18 @@ export async function createEmulator(opts) {
       resetMachine(m);
       setState(emu, 'cartridge');
     },
+    /**
+     * Run a cartridge (the Studio's Run, for a cartridge-only profile): like testCartridge(), but a cartridge
+     * that is already running is ejected first, so the new one starts from a cold reset.
+     */
+    async runCartridge(dck, symbols = null) {
+      if (emu.cart) { unpause(emu); ejectDock(emu.machine); emu.cart = false; }
+      return api.testCartridge(dck, symbols);
+    },
     /** True during a cartridge test. */
     get cartridge() { return emu.cart; },
+    /** The two joystick contact bytes (active low); a host may set bits for a keyboard stick. */
+    get joystick() { return joystick; },
 
     // ── Debugger ──
     /**
@@ -215,6 +234,12 @@ export async function createEmulator(opts) {
     get romImages() { return emu.romImages; },
     get machine() { return emu.machine; },
   };
+  return api;
+}
+
+/** The state after a cartridge ends or a reset: a cartridge-only profile has nothing to boot into. */
+function idleState(emu) {
+  return emu.profile.cartridgeOnly ? 'ready' : 'booting';
 }
 
 // ── Setup ──────────────────────────────────────────────────────────
@@ -248,6 +273,8 @@ async function fetchProfileRoms(profile) {
     fetchBytes(profile.romFiles.home, homeRomSize),
     fetchBytes(profile.romFiles.exrom, exRomSize),
   ]);
+  // A cartridge-only profile's ROMs are the stock pair: no table to look them up in.
+  if (profile.cartridgeOnly) return { rom: STOCK_ROM_ENTRY, images: { home, exrom } };
   const hash = await romPairHash(home, exrom);
   const rom = profile.knownRoms[hash];
   if (!rom) throw new Error(`Unknown ${profile.name} ROM pair (SHA-256 ${hash}). ${profile.romHint}`);
@@ -258,6 +285,7 @@ async function loadRoms(emu) {
   const loaded = await fetchProfileRoms(emu.profile);
   emu.rom = loaded.rom;
   emu.romImages = loaded.images;
+  if (emu.profile.cartridgeOnly) { emu.stockImages = loaded.images; emu.state = 'ready'; }
   restoreRoms(emu);
 }
 
@@ -347,9 +375,9 @@ function stepMachine(emu) {
   const m = emu.machine;
   // A cartridge test has no key wait to look for; it single-steps only for
   // the debugger (Z80 breakpoints, Pause).
-  const seen = emu.cart && !emu.watch && !emu.oneShot ? 'busy' : runWatched(emu);
+  const seen = (emu.cart || emu.profile.cartridgeOnly) && !emu.watch && !emu.oneShot ? 'busy' : runWatched(emu);
   if (seen === 'paused') return;     // stopped part way through the frame
-  if (seen !== 'wait' && !emu.cart) {
+  if (seen !== 'wait' && !emu.cart && !emu.profile.cartridgeOnly) {
     if (emu.pending) advancePending(emu);
     else if (emu.runActive) setState(emu, 'running');
   }
@@ -510,7 +538,7 @@ function releaseBreak(emu) {
   emu.kbd.sync();   // rebuild the matrix from the keys the user actually holds
   // The ROM latched BREAK as a keypress; drop it, or it would dismiss the
   // BREAK message the moment it appears.
-  emu.machine.bus.write(emu.rom.kbdKeyHit, 0);
+  if (emu.rom.kbdKeyHit !== null) emu.machine.bus.write(emu.rom.kbdKeyHit, 0);
 }
 
 function hardReset(emu) {
@@ -547,7 +575,7 @@ function leaveCartridge(emu) {
  */
 function endRun(emu) {
   releaseKeys(emu);
-  emu.machine.bus.write(emu.rom.kbdKeyHit, 0);
+  if (emu.rom.kbdKeyHit !== null) emu.machine.bus.write(emu.rom.kbdKeyHit, 0);
 }
 
 function setState(emu, state, detail) {

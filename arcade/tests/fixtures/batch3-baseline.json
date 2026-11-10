@@ -1,0 +1,104 @@
+{
+ "about": "SHA-256 of the DCK and of the game area ($8000-$BFFF) that the compiler BEFORE language batch 3 (git b259485) produced for these programs against the real runtimes v2 and v3 (arcade/build/v2, arcade/build/v3); tests/arcade-m8-compiler.mjs checks that programs that use none of the batch 3 words compile to identical bytes.",
+ "programs": [
+  {
+   "src": "arcade/examples/shooter.arc",
+   "assets": "arcade/examples/shooter.assets.json",
+   "runtime": 2,
+   "bytes": 8986,
+   "dckBytes": 32777,
+   "dckSha256": "6a4a472d0e72d636f7042b16c1507eeaf9eb9dd6808472f5dda825ff4676bc1f",
+   "areaSha256": "7479e6fd6e55da4bb7162610cfcb142024fb5e793094301eb6518e913dc2f72c"
+  },
+  {
+   "src": "arcade/examples/breakout.arc",
+   "assets": "arcade/examples/breakout.assets.json",
+   "runtime": 2,
+   "bytes": 1505,
+   "dckBytes": 32777,
+   "dckSha256": "b4e6bc0313b95668e58b1ba4640a44551c00812f1d50a040f2cfb4089206b8ba",
+   "areaSha256": "458d572a86bf6ac5568a08b2e926e2e8f4f9e2d9212b3ba5437aac3708b79b46"
+  },
+  {
+   "src": "arcade/examples/blockfall.arc",
+   "assets": "arcade/examples/blockfall.assets.json",
+   "runtime": 2,
+   "bytes": 7809,
+   "dckBytes": 32777,
+   "dckSha256": "ed72cc8453f9b16cc837b70e71626300553eb58064ca006f022a01adb78d2304",
+   "areaSha256": "4a790091bf900d948abc5c750337c745440eaa96fb482509c5584207ba922df8"
+  },
+  {
+   "src": "arcade/examples/bounce.arc",
+   "assets": "arcade/examples/bounce.assets.json",
+   "runtime": 2,
+   "bytes": 465,
+   "dckBytes": 32777,
+   "dckSha256": "a33a60436fb7f84a83bc7572d33e11ce14a798cffb4c28ac8cf62dbf90fbc3b5",
+   "areaSha256": "a6814209d6d164b305bb3a6509691e65f7933597f5177f83ea922f4ccaa16b63"
+  },
+  {
+   "src": "arcade/tests/fixtures/blockfall-v0.arc",
+   "assets": "arcade/tests/fixtures/blockfall-v0.assets.json",
+   "runtime": 2,
+   "bytes": 7848,
+   "dckBytes": 32777,
+   "dckSha256": "c3df5736eb0330217c186c8746bb2f25dd46060914fa41b8b8fc1a934d560c6c",
+   "areaSha256": "a712eb93f54f2136b3a0904571945d57b8543dc73c53c64e8f853a50f8535a95"
+  },
+  {
+   "src": "arcade/examples/shooter.arc",
+   "assets": "arcade/examples/shooter.assets.json",
+   "runtime": 3,
+   "bytes": 8986,
+   "dckBytes": 32777,
+   "dckSha256": "a2128fc6c8ca63b3dbab744ea9894b5922e2b22d3b53e8878b74dc4c04d6d5ec",
+   "areaSha256": "f957f3bff6f4ede99b3c5e23d1a2a3f57a562c5c4d4f14dce2763f6c71976013"
+  },
+  {
+   "src": "arcade/examples/breakout.arc",
+   "assets": "arcade/examples/breakout.assets.json",
+   "runtime": 3,
+   "bytes": 1505,
+   "dckBytes": 32777,
+   "dckSha256": "2a0355b90418091c39769f10de200e74dce3cb964f81a79ed207c2f143354918",
+   "areaSha256": "82b3cfe617ce3cf2dd760d93b2a2bde41fecc1f1b7d55fe345adf486d5434e9e"
+  },
+  {
+   "src": "arcade/examples/blockfall.arc",
+   "assets": "arcade/examples/blockfall.assets.json",
+   "runtime": 3,
+   "bytes": 7809,
+   "dckBytes": 32777,
+   "dckSha256": "ebc004da44e3d4cd5f6d8890e90a26cc3c71a3a64fb8b99e8bb134baa0d8ab92",
+   "areaSha256": "706310312300337201866b6bbcb841e038fd84cc84634cc0267087ac8d55f5e3"
+  },
+  {
+   "src": "arcade/examples/bounce.arc",
+   "assets": "arcade/examples/bounce.assets.json",
+   "runtime": 3,
+   "bytes": 465,
+   "dckBytes": 32777,
+   "dckSha256": "6e6050407778e03f504dd628c553dd09f9851c223dfbcda91ded6fee1c4049ed",
+   "areaSha256": "bcda8d940d842c0f1559f37cccf8264246c9da9355c703de36af801c77a4386c"
+  },
+  {
+   "src": "arcade/tests/fixtures/blockfall-v0.arc",
+   "assets": "arcade/tests/fixtures/blockfall-v0.assets.json",
+   "runtime": 3,
+   "bytes": 7848,
+   "dckBytes": 32777,
+   "dckSha256": "2e09a2170419e247e6071a991b4a0a2e8398bd7bb81f2618ad8216f0c8980eee",
+   "areaSha256": "b013f501b186408560c98b56f725265e0e5ecd7bded6d4cae601ed410bcdb4c9"
+  },
+  {
+   "src": "arcade/examples/platformer.arc",
+   "assets": "arcade/examples/platformer.assets.json",
+   "runtime": 3,
+   "bytes": 9059,
+   "dckBytes": 32777,
+   "dckSha256": "1aeac80503153ea28f7a4c61b89a278205d04a3bbca6355473118148d189e25c",
+   "areaSha256": "5539ad064d42f6450163ab12d4bb1135e935ba6e825cbc75e4c3783760699521"
+  }
+ ]
+}

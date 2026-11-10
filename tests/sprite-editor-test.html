@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- tests/sprite-editor-test.html: a blank page that mounts the Studio's sprite editor on a fake host. Driven by tests/sprite-editor-smoke.mjs.
+     ?theme=light|dark picks the ide.css palette. window.t exposes the host, the editor and a log of what the editor did. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sprite editor test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } #mount { width: 1000px; } </style>
+</head>
+<body>
+<div id="mount"></div>
+<script type="module">
+import { createSpriteEditor } from '../src/tools/sprite-editor.js';
+import * as S from '../src/tools/sprite-model.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+
+// a 16 x 16 starter: a disc with a two-colour pattern, so ink and paper are both used
+const ball = S.newSprite(16, 16, { ink: 7, paper: 1, bright: 1 });
+for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+  if ((x - 7.5) ** 2 + (y - 7.5) ** 2 <= 56) { S.paintRole(ball, 0, x, y, (x + y) % 3 === 0 ? 'paper' : 'ink'); }
+}
+const project = { format: 1, name: 'test', framerate: 30, files: { 'main.arc': '' }, assets: { sprites: { ball: S.toAsset(ball) }, tilesets: {}, maps: {}, sfx: {}, music: {} }, scenes: {} };
+const copy = (v) => JSON.parse(JSON.stringify(v));
+const listeners = new Set(), selListeners = new Set();
+const log = { sets: [], deletes: [], renames: [], status: [], selects: [] };
+const ID = 'sprite-editor';
+const fire = (ev) => { for (const fn of [...listeners]) fn(ev); };
+const host = {
+  id: ID,
+  getProject: () => project,
+  listAssets: (kind) => Object.keys(project.assets[kind] ?? {}).sort(),
+  getAsset: (kind, name) => (project.assets[kind]?.[name] ? copy(project.assets[kind][name]) : null),
+  setAsset(kind, name, value) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,30}$/.test(name)) return { ok: false, error: 'bad name' };
+    if (kind === 'sprites') { const v = S.validateAsset(value); if (!v.ok) return { ok: false, error: v.errors.join('; ') }; }
+    project.assets[kind][name] = copy(value);
+    log.sets.push(name);
+    fire({ type: 'asset', kind, name, source: ID });
+    return { ok: true };
+  },
+  deleteAsset(kind, name) { if (!project.assets[kind][name]) return false; delete project.assets[kind][name]; log.deletes.push(name); fire({ type: 'asset', kind, name, source: ID }); return true; },
+  renameAsset(kind, a, b) {
+    if (project.assets[kind][b]) return { ok: false, error: 'clash' };
+    project.assets[kind][b] = project.assets[kind][a]; delete project.assets[kind][a]; log.renames.push([a, b]);
+    fire({ type: 'asset', kind, name: b, oldName: a, source: ID }); return { ok: true };
+  },
+  onProjectChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+  onSelectAsset: (fn) => { selListeners.add(fn); return () => selListeners.delete(fn); },
+  selectAsset: (kind, name) => { log.selects.push(name); for (const fn of selListeners) fn({ kind, name }); },
+  getUsage: () => null,
+  status: (t) => log.status.push(t),
+  palette: S.PALETTE,
+};
+const editor = createSpriteEditor(document.getElementById('mount'), host);
+window.t = {
+  host, editor, project, log, S,
+  /** An asset change made by somebody else (another editor, an example, Open). */
+  externalSet(name, asset) { project.assets.sprites[name] = copy(asset); fire({ type: 'asset', kind: 'sprites', name, source: 'other' }); },
+  replaceProject(p) { project.assets = copy(p.assets); fire({ type: 'project', source: 'studio' }); },
+};
+window.testReady = true;
+</script>
+</body>
+</html>

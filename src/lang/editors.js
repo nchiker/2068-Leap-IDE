@@ -13,9 +13,19 @@
 import { basicEditor } from './basic/editor.js';
 import { leapcEditor } from './c/editor.js';
 import { forthEditor } from './forth/editor.js';
+import { arcadeEditor } from './arcade/editor.js';
 
 export const LANGUAGE_EDITORS = {
   basic: basicEditor,
   c: leapcEditor,
   forth: forthEditor,
+};
+
+/**
+ * Editors only the Leap Arcade Studio uses (see STUDIO_PROFILES in profiles.js). Kept apart from LANGUAGE_EDITORS
+ * so that ide.html (`?lang=`, the saved language) can never start in a language its orchestrator does not know.
+ * src/editor.js looks a language up in both; the Studio selects it with window.LEAP_EDITOR_LANGUAGE.
+ */
+export const STUDIO_EDITORS = {
+  arcade: arcadeEditor,
 };

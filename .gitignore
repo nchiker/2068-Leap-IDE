@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Leap Arcade: generated output (rebuild with arcade/tools/build-runtime*.mjs and arcadec.mjs)
+arcade/build/
+arcade/spike/**/build/

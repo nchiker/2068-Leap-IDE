@@ -1,0 +1,16 @@
+; runtime.asm -- Leap Arcade runtime v1, top file.  Assembled with sjasmplus by arcade/tools/build-runtime-v1.mjs.
+    DEVICE NOSLOT64K
+    INCLUDE "layout.inc"
+    INCLUDE "boot.asm"          ; $0000 header, $0066 NMI, $0100 entry         (DOCK chunk 0)
+    INCLUDE "isr.asm"           ; $0038 frame interrupt                          (DOCK chunk 0)
+    INCLUDE "video.asm"         ; $0200 display, cell renderer, blitters         (DOCK chunks 0-1)
+    INCLUDE "main.asm"          ; frame loop                                     (DOCK chunks 0-1)
+    INCLUDE "api.asm"           ; v0 RT_* routines                               (DOCK chunks 0-1)
+    INCLUDE "text.asm"          ; cell setters, text, tiles, RT_HIT              (DOCK chunks 0-1)
+    INCLUDE "sound.asm"         ; RT_PLAY, RT_SILENCE, the interrupt's sound tick (DOCK chunks 0-1)
+M_FONT_S:
+    INCLUDE "font.inc"          ; FONT_GLYPHS: 96 glyphs x 8 bytes (generated from Leap's font)
+M_FONT_E:
+RT_END:
+    INCLUDE "game_placeholder.asm"      ; $8000 game image slot                    (DOCK chunks 4-5)
+    SAVEBIN "mem.bin", 0, 65536

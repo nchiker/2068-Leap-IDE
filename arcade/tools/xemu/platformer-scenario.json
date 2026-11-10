@@ -1,0 +1,87 @@
+{
+ "comment": "Scenario for platformer-tsrun.mjs / platformer-zesarux.py / platformer-fuse.sh / platformer-compare.mjs. Ticks are V_TICKS (ticks completed): the key state for tick N is the one the game's FRAME(N) reads, i.e. it is set when V_TICKS becomes N and held until it becomes N+1. Keys: keyboard rows as the runtime reads them (row index = half-row, bit 0..4); 'key' names are the game's KEYDOWN letters.",
+ "keys": [
+  {
+   "name": "SPACE",
+   "row": 7,
+   "bit": 0,
+   "from": 14,
+   "to": 15,
+   "why": "start the game from the title (fire edge)"
+  },
+  {
+   "name": "P",
+   "row": 5,
+   "bit": 0,
+   "from": 22,
+   "to": 105,
+   "why": "walk right; the camera scrolls once the hero passes x=72"
+  },
+  {
+   "name": "Q",
+   "row": 2,
+   "bit": 0,
+   "from": 60,
+   "to": 63,
+   "why": "jump (Q is read every other tick)"
+  },
+  {
+   "name": "SPACE",
+   "row": 7,
+   "bit": 0,
+   "from": 90,
+   "to": 92,
+   "why": "jump (SPACE read every tick)"
+  },
+  {
+   "name": "O",
+   "row": 5,
+   "bit": 1,
+   "from": 106,
+   "to": 120,
+   "why": "walk back left"
+  },
+  {
+   "name": "P",
+   "row": 5,
+   "bit": 0,
+   "from": 121,
+   "to": 170,
+   "why": "right again"
+  },
+  {
+   "name": "Q",
+   "row": 2,
+   "bit": 0,
+   "from": 130,
+   "to": 133,
+   "why": "jump"
+  }
+ ],
+ "title_ticks": [
+  5,
+  12
+ ],
+ "play_ticks": [
+  15,
+  22,
+  30,
+  45,
+  62,
+  68,
+  75,
+  82,
+  91,
+  98,
+  104,
+  113,
+  128,
+  136,
+  144,
+  150,
+  153,
+  158,
+  170
+ ],
+ "last_tick": 170
+}

@@ -33,7 +33,7 @@ import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
 import { completionKeymap } from '@codemirror/autocomplete';
 import { linter, lintKeymap, forceLinting, setDiagnostics as cmSetDiagnostics } from '@codemirror/lint';
 import { indentUnit, indentOnInput, foldGutter, codeFolding, foldKeymap } from '@codemirror/language';
-import { LANGUAGE_EDITORS } from './lang/editors.js';
+import { LANGUAGE_EDITORS, STUDIO_EDITORS } from './lang/editors.js';
 import { loadAutosave, initialLanguageId } from './files.js';
 
 // ── Breakpoint gutter marker ──────────────────────────────────────
@@ -164,8 +164,12 @@ function lineLimit(max) {
 // ── The language ──────────────────────────────────────────────────
 // The active language's editor profile; ide.js switches it with setLanguage().
 const langCompartment = new Compartment();
-let langId = initialLanguageId(Object.keys(LANGUAGE_EDITORS));
-let lang = LANGUAGE_EDITORS[langId];
+// The Leap Arcade Studio (studio.html) sets window.LEAP_EDITOR_LANGUAGE = 'arcade' before this module loads; ide.html
+// does not, and then only the IDE's own languages (LANGUAGE_EDITORS) can be chosen, as before.
+const ALL_EDITORS = { ...LANGUAGE_EDITORS, ...STUDIO_EDITORS };
+let langId = window.LEAP_EDITOR_LANGUAGE in STUDIO_EDITORS ? window.LEAP_EDITOR_LANGUAGE
+  : initialLanguageId(Object.keys(LANGUAGE_EDITORS));
+let lang = ALL_EDITORS[langId];
 const langExtensions = l => [
   l.extensions,
   lineLimit(l.lineLimit),
@@ -395,7 +399,7 @@ const extensions = () => [
 
 // The program kept in this browser (src/files.js) if there is one.
 const startState = EditorState.create({
-  doc: loadAutosave(langId)?.text ?? lang.starter,
+  doc: (langId in STUDIO_EDITORS ? null : loadAutosave(langId)?.text) ?? lang.starter,   // the Studio supplies its own text
   extensions: extensions(),
 });
 
@@ -517,9 +521,9 @@ window.leapEditor = {
    * caller replaces the text afterwards (setSource with fresh: true).
    */
   setLanguage(id) {
-    if (!LANGUAGE_EDITORS[id] || id === langId) return;
+    if (!ALL_EDITORS[id] || id === langId) return;
     langId = id;
-    lang = LANGUAGE_EDITORS[id];
+    lang = ALL_EDITORS[id];
     view.dispatch({ effects: langCompartment.reconfigure(langExtensions(lang)) });
   },
 

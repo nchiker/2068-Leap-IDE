@@ -1,0 +1,1506 @@
+{
+ "format": 1,
+ "name": "Blockfall",
+ "framerate": 30,
+ "files": {
+  "main.arc": "REM Blockfall: a falling-blocks puzzle game for the v2 runtime (an original game; no sprites, the whole game is tiles and text).\nREM Assets (12 tiles, 8 sound effects) are in blockfall.assets.json, drawn by blockfall.assets.gen.mjs.\nREM   Keys: O left, P right, Q turn, A soft drop, SPACE hard drop, H pause.   Joystick 1: left, right, up = turn, down = soft drop, fire = hard drop.\nREM   Holding left or right moves at once, then after 8 ticks repeats every 2 ticks; holding A drops a row every 2 ticks.\nREM   Ten columns by twenty rows, seven pieces in four turns each, dealt from a 7-bag; the next piece is shown; every 10 lines make a level\nREM   and the piece falls faster; a piece that has landed waits 15 ticks (a lock delay) and moving it in that time restarts the wait (12 times at most).\nREM   A cleared line flashes (a bright tile), then the rows above fall one source row at a time; one to four lines have their own sound.\nREM   Scoring: 40 / 100 / 300 / 1200 for 1 / 2 / 3 / 4 lines times (level + 1, at most 20); 1 point a row of soft drop, 2 a row of hard drop.\nREM   States: 0 title, 1 clearing the well for a new game, 2 waiting for the next piece, 3 falling, 4 flashing lines, 5 collapsing, 6 game over, 7 paused.\nREM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/blockfall.arc --assets arcade/examples/blockfall.assets.json --runtime v2\nREM\nREM   Written with language batch 1 (docs/ARCADE_LANGUAGE_BATCH1.md): CONST for the geometry, PROCs with parameters and LOCALs, bit functions to\nREM   decode the piece masks, array initialisers for the tables, a 2-D board, FILL and COPY for the wipe and the collapse, RANDOMISE for the piece\nREM   order and BORDER. The version before the batch is kept in arcade/tests/fixtures/blockfall-v0.arc; tests/arcade-blockfall.mjs proves that\nREM   the cell maps, the attributes and the score of the two are identical on the same 3,595-tick script (with FREESEED = 0, see below).\nGAME \"Blockfall\"\nFRAMERATE 30\n\nTILESET gfx = \"gfx\"\nSFX tick = \"tick\"\nSFX thud = \"lock\"\nSFX clear1 = \"clear1\"\nSFX clear2 = \"clear2\"\nSFX clear3 = \"clear3\"\nSFX clear4 = \"clear4\"\nSFX lvlup = \"lvlup\"\nSFX over = \"over\"\n\nREM The well: BW x BH cells, its first cell at screen column WX, row WY.  The board has a 2-cell wall each side and a floor of 4 rows (BX0 = the wall).\nCONST BW = 10\nCONST BH = 20\nCONST WX = 11\nCONST WY = 2\nCONST BX0 = 2\nREM The frame around the well, and the box that shows the next piece.\nCONST FRL = WX - 1\nCONST FRR = WX + BW\nCONST FRT = WY - 1\nCONST FRB = WY + BH\nCONST NXC = 24\nCONST NXR = 5\nREM 1: the piece order is seeded from the frame counter when SPACE starts the game (a different game every time).  0: one random number is burnt for\nREM every tick of the title, so the order depends only on how long the title waited (what tests/arcade-blockfall.mjs plays against the old version).\nCONST FREESEED = 1\n\nSCENE play\n  DIM st, tt, kl, kr, ku, kd, kf, kh, pu, pf, ph, ef, er, eh, hdir, hcnt, scnt\n  DIM pc, nx, rot, px, py, fit, gcnt, ldly, lres, wt\n  DIM shi, slo, hhi, hlo, lv, lns, nlin, mult, lvup, low, fr0, fr1, ft, cr, cw, wr, gor, hud, bagpos\n  REM sh: the 7 pieces (I O T S Z J L) x 4 turns as masks of a 4 x 4 box, bit (y * 4 + x); sdx, sdy: the 4 cells of each, decoded at the start (sdx already\n  REM includes the board's wall, BX0, so that a board index is x + sdx(...) with no addition; on the screen it is WX - BX0 + x + sdx(...))\n  REM I: 240 17476 3840 8738      O: 102 x 4      T: 114 610 624 562      S: 54 1122 864 561      Z: 99 612 1584 306      J: 113 550 1136 802      L: 116 1570 368 547\n  DIM sh(27) = 240, 17476, 3840, 8738, 102, 102, 102, 102, 114, 610, 624, 562, 54, 1122, 864, 561, 99, 612, 1584, 306, 113, 550, 1136, 802, 116, 1570, 368, 547\n  REM gravity: ticks a row at each level (30 ticks a second), the line scores, the wall kicks tried after a turn\n  DIM gt(14) = 24, 21, 18, 15, 12, 10, 8, 6, 5, 4, 3, 3, 2, 2, 1\n  DIM ls(4) = 0, 40, 100, 300, 1200\n  DIM kc(4) = 0, -1, 1, -2, 2\n  REM the well with a 2-cell wall each side and a floor: bd(column, row), 14 x 24; 0 = empty, 1..7 = a block of that piece, 9 = wall\n  DIM sdx(111), sdy(111), bd(13, 23), bag(6), cl(19)\n\n  REM ---- the pieces ----\n  PROC SETSHAPES():\n    LOCAL m, n\n    FOR a = 0 TO 27\n      m = sh(a) : n = a * 4\n      FOR c = 0 TO 15\n        IF BAND(m, 1) THEN\n          sdx(n) = BAND(c, 3) + BX0 : sdy(n) = SHR(c, 2)\n          n = n + 1\n        ENDIF\n        m = SHR(m, 1)\n      NEXT c\n    NEXT a\n  ENDP\n\n  REM Walls and floor; the inside is empty (every variable starts at 0).\n  PROC CLEARBOARD():\n    FOR r = 0 TO 23\n      bd(0, r) = 9 : bd(1, r) = 9 : bd(BX0 + BW, r) = 9 : bd(BX0 + BW + 1, r) = 9\n    NEXT r\n    FOR c = 2 TO BX0 + BW - 1\n      FOR r = BH TO 23\n        bd(c, r) = 9\n      NEXT r\n    NEXT c\n  ENDP\n\n  REM ---- drawing ----\n  REM Rows r .. r + n - 1 of the well are emptied, on the board and on the screen (this also wipes any text there).\n  PROC CLEARROWS(r, n):\n    IF n > 0 THEN\n      FOR i = r TO r + n - 1\n        FOR c = 0 TO BW - 1\n          bd(BX0 + c, i) = 0\n        NEXT c\n      NEXT i\n    ENDIF\n    FILL WX, WY + r, BW, n = 0\n  ENDP\n\n  REM The current piece (pc, rot, px, py) in tile tl (pc + 1 draws it, 0 erases it).\n  PROC DRAWP(tl):\n    LOCAL si\n    si = (pc * 4 + rot) * 4\n    FOR k = 0 TO 3\n      TILE WX - BX0 + px + sdx(si + k), WY + py + sdy(si + k) = tl\n    NEXT k\n  ENDP\n\n  REM The preview of piece p in the next box (tile tl).\n  PROC PREVIEW(p, tl):\n    FOR k = 0 TO 3\n      TILE NXC - BX0 + sdx(p * 16 + k), NXR + sdy(p * 16 + k) = tl\n    NEXT k\n  ENDP\n\n  REM The frame, the labels, the key help: drawn once.\n  PROC DRAWSTATIC():\n    FILL FRL, FRT, 1, BH + 2 = 9\n    FILL FRR, FRT, 1, BH + 2 = 9\n    FILL WX, FRT, BW, 1 = 9\n    FILL WX, FRB, BW, 1 = 9\n    FILL WX, WY, BW, BH = 0\n    BRIGHT 1 : PAPER 0\n    INK 6 : PRINT AT 0, 11; \"BLOCKFALL\";\n    INK 5 : PRINT AT 3, 24; \"NEXT\";\n    INK 5 : PRINT AT 10, 23; \"SCORE\";\n    INK 5 : PRINT AT 13, 23; \"LEVEL\";\n    INK 5 : PRINT AT 16, 23; \"LINES\";\n    INK 5 : PRINT AT 3, 1; \"HI SCORE\";\n    INK 4 : PRINT AT 8, 0; \"O P  MOVE\";\n    INK 4 : PRINT AT 9, 0; \"Q    TURN\";\n    INK 4 : PRINT AT 10, 0; \"A    DOWN\";\n    INK 4 : PRINT AT 11, 0; \"SPC  DROP\";\n    INK 4 : PRINT AT 12, 0; \"H   PAUSE\";\n    INK 3 : PRINT AT 14, 0; \"OR JOY 1\";\n  ENDP\n\n  PROC SHOWTITLE():\n    BRIGHT 1 : PAPER 0\n    INK 2 : PRINT AT 6, 13; \"B\";\n    INK 6 : PRINT \"L\";\n    INK 4 : PRINT \"O\";\n    INK 5 : PRINT \"C\";\n    INK 3 : PRINT \"K\";\n    INK 3 : PRINT AT 7, 14; \"F\";\n    INK 5 : PRINT \"A\";\n    INK 4 : PRINT \"L\";\n    INK 6 : PRINT \"L\";\n    INK 7 : PRINT AT 12, 13; \"PRESS\";\n    INK 7 : PRINT AT 13, 13; \"SPACE\";\n    FOR i = 0 TO 6\n      TILE 12 + i, 15 = i + 1\n    NEXT i\n  ENDP\n\n  REM ---- score, level, lines ----\n  PROC ADDSCORE(pts):\n    REM the score is shi * 10000 + slo (16-bit integers cannot hold a score): whole ten-thousands first, so that slo + pts cannot overflow\n    WHILE pts >= 10000\n      pts = pts - 10000 : shi = shi + 1\n    WEND\n    slo = slo + pts\n    IF slo >= 10000 THEN slo = slo - 10000 : shi = shi + 1 ENDIF\n    IF shi > 99 THEN shi = 99 : slo = 9999 ENDIF\n    hud = 1\n  ENDP\n\n  REM Print the score (hi * 10000 + lo) at row r, column c, followed by 3 spaces.\n  PROC PSCORE(r, c, hi, lo):\n    PRINT AT r, c;\n    IF hi > 0 THEN\n      PRINT hi;\n      IF lo < 1000 THEN PRINT \"0\"; ENDIF\n      IF lo < 100 THEN PRINT \"0\"; ENDIF\n      IF lo < 10 THEN PRINT \"0\"; ENDIF\n    ENDIF\n    PRINT lo; \"   \";\n  ENDP\n\n  PROC SHOWHUD():\n    BRIGHT 1 : PAPER 0 : INK 7\n    CALL PSCORE(11, 23, shi, slo)\n    PRINT AT 14, 23; lv + 1; \"   \";\n    PRINT AT 17, 23; lns; \"   \";\n    INK 6\n    CALL PSCORE(4, 1, hhi, hlo)\n    hud = 0\n  ENDP\n\n  REM ---- the bag ----\n  PROC SHUFFLE():\n    LOCAL j, t\n    FOR a = 0 TO 6\n      bag(a) = a\n    NEXT a\n    FOR a = 6 TO 1 STEP -1\n      j = RND(a + 1)\n      t = bag(a) : bag(a) = bag(j) : bag(j) = t\n    NEXT a\n    bagpos = 0\n  ENDP\n\n  REM nx = the next piece of the bag\n  PROC TAKEPIECE():\n    IF bagpos >= 7 THEN CALL SHUFFLE() ENDIF\n    nx = bag(bagpos) : bagpos = bagpos + 1\n  ENDP\n\n  REM ---- the piece ----\n  REM Does piece p in turn r at column x, row y fit?  fit = 1 or 0.\n  PROC FITS(p, r, x, y):\n    LOCAL si\n    si = (p * 4 + r) * 4\n    fit = (bd(x + sdx(si), y + sdy(si)) = 0) AND (bd(x + sdx(si + 1), y + sdy(si + 1)) = 0) AND (bd(x + sdx(si + 2), y + sdy(si + 2)) = 0) AND (bd(x + sdx(si + 3), y + sdy(si + 3)) = 0)\n  ENDP\n\n  PROC RESETLOCK():\n    IF ldly > 0 AND lres < 12 THEN ldly = 0 : lres = lres + 1 ENDIF\n  ENDP\n\n  PROC TRYMOVE(d):\n    CALL FITS(pc, rot, px + d, py)\n    IF fit THEN\n      CALL DRAWP(0)\n      px = px + d\n      CALL DRAWP(pc + 1)\n      CALL RESETLOCK()\n      PLAY tick\n    ENDIF\n  ENDP\n\n  REM Turn clockwise; if it does not fit, try one column left, one right (and two for the I piece).\n  PROC TRYROT():\n    LOCAL tr, tx, m\n    tr = (rot + 1) MOD 4\n    m = 2 : IF pc = 0 THEN m = 4 ENDIF\n    FOR k = 0 TO m\n      tx = px + kc(k)\n      CALL FITS(pc, tr, tx, py)\n      IF fit THEN\n        CALL DRAWP(0)\n        px = tx : rot = tr\n        CALL DRAWP(pc + 1)\n        CALL RESETLOCK()\n        PLAY tick\n        EXIT FOR\n      ENDIF\n    NEXT k\n  ENDP\n\n  REM One row down if it fits (fit tells).\n  PROC STEPDOWN():\n    CALL FITS(pc, rot, px, py + 1)\n    IF fit THEN\n      CALL DRAWP(0)\n      py = py + 1\n      CALL DRAWP(pc + 1)\n      ldly = 0 : lres = 0\n    ENDIF\n  ENDP\n\n  REM The piece falls to the floor: FITS at one row lower until it does not.  The four cells (board column and row offset) are looked up once,\n  REM not at every row, which is what keeps a hard drop from the top of the well inside the tick.\n  PROC HARDDROP():\n    LOCAL ty, si, x0, x1, x2, x3, y0, y1, y2, y3\n    CALL DRAWP(0)\n    si = (pc * 4 + rot) * 4\n    x0 = px + sdx(si) : x1 = px + sdx(si + 1) : x2 = px + sdx(si + 2) : x3 = px + sdx(si + 3)\n    y0 = sdy(si) : y1 = sdy(si + 1) : y2 = sdy(si + 2) : y3 = sdy(si + 3)\n    ty = py\n    fit = 1\n    WHILE fit\n      ty = ty + 1\n      fit = (bd(x0, ty + y0) = 0) AND (bd(x1, ty + y1) = 0) AND (bd(x2, ty + y2) = 0) AND (bd(x3, ty + y3) = 0)\n    WEND\n    ty = ty - 1\n    CALL ADDSCORE((ty - py) * 2)\n    py = ty\n    CALL DRAWP(pc + 1)\n    CALL LOCK()\n  ENDP\n\n  REM The next piece comes: nx becomes the piece, a new nx is drawn.  A piece that does not fit ends the game.\n  PROC SPAWN():\n    CALL PREVIEW(nx, 11)\n    pc = nx : CALL TAKEPIECE()\n    CALL PREVIEW(nx, nx + 1)\n    rot = 0 : px = 3 : py = 0\n    CALL FITS(pc, rot, px, py)\n    IF fit THEN\n      CALL DRAWP(pc + 1)\n      st = 3 : gcnt = 0 : ldly = 0 : lres = 0\n    ELSE\n      CALL GAMEOVER()\n    ENDIF\n  ENDP\n\n  REM ---- locking and the lines ----\n  PROC LOCK():\n    LOCAL si\n    si = (pc * 4 + rot) * 4\n    FOR k = 0 TO 3\n      bd(px + sdx(si + k), py + sdy(si + k)) = pc + 1\n    NEXT k\n    CALL CHECKLINES()\n    IF nlin > 0 THEN\n      CALL SCORELINES()\n      st = 4 : ft = 0\n    ELSE\n      PLAY thud\n      st = 2 : wt = 4\n    ENDIF\n  ENDP\n\n  REM Which of the four rows the piece touched are full: cl(row) = 1, nlin of them, low = the lowest.\n  PROC CHECKLINES():\n    LOCAL m\n    nlin = 0 : low = -1\n    fr0 = py : fr1 = py + 3 : IF fr1 > BH - 1 THEN fr1 = BH - 1 ENDIF\n    FOR r = fr0 TO fr1\n      m = 1\n      FOR c = 0 TO BW - 1\n        IF bd(BX0 + c, r) = 0 THEN m = 0 : EXIT FOR ENDIF\n      NEXT c\n      IF m THEN cl(r) = 1 : nlin = nlin + 1 : low = r ENDIF\n    NEXT r\n  ENDP\n\n  PROC SCORELINES():\n    LOCAL c\n    mult = lv + 1 : IF mult > 20 THEN mult = 20 ENDIF\n    CALL ADDSCORE(ls(nlin) * mult)\n    lns = lns + nlin\n    c = lns DIV 10 : IF c > 99 THEN c = 99 ENDIF\n    IF c > lv THEN lv = c : lvup = 1 ENDIF\n    hud = 1\n    SELECT CASE nlin\n      CASE 1\n        PLAY clear1\n      CASE 2\n        PLAY clear2\n      CASE 3\n        PLAY clear3\n      CASE ELSE\n        PLAY clear4\n    ENDSEL\n  ENDP\n\n  REM The full rows in tile tl (tl < 0: back to what the board holds).\n  PROC FLASHROWS(tl):\n    FOR r = fr0 TO fr1\n      IF cl(r) THEN\n        IF tl >= 0 THEN\n          FILL WX, WY + r, BW, 1 = tl\n        ELSE\n          FOR c = 0 TO BW - 1\n            TILE WX + c, WY + r = bd(BX0 + c, r)\n          NEXT c\n        ENDIF\n      ENDIF\n    NEXT r\n  ENDP\n\n  REM Row cr moves down to row cw (board and screen).\n  PROC COPYROW():\n    FOR c = 0 TO BW - 1\n      bd(BX0 + c, cw) = bd(BX0 + c, cr)\n    NEXT c\n    COPY WX, WY + cr, BW, 1 TO WX, WY + cw\n  ENDP\n\n  REM ---- game over ----\n  PROC GAMEOVER():\n    st = 6 : gor = BH - 1\n    PLAY over\n    BORDER 2\n    IF shi > hhi OR (shi = hhi AND slo > hlo) THEN hhi = shi : hlo = slo : hud = 1 ENDIF\n  ENDP\n\n  PROC STARTGAME():\n    shi = 0 : slo = 0 : lv = 0 : lns = 0 : lvup = 0\n    bagpos = 7\n    hdir = 0 : hcnt = 0 : scnt = 0\n    st = 1 : wr = 0\n    BORDER 0\n  ENDP\n\n  REM ---- the states ----\n  PROC TITLETICK():\n    LOCAL x\n    tt = tt + 1\n    IF FREESEED = 0 THEN x = RND(2) ENDIF\n    IF tt MOD 30 = 0 THEN\n      INK 7 : PRINT AT 12, 13; \"PRESS\";\n      INK 7 : PRINT AT 13, 13; \"SPACE\";\n    ENDIF\n    IF tt MOD 30 = 20 THEN\n      PRINT AT 12, 13; \"     \";\n      PRINT AT 13, 13; \"     \";\n    ENDIF\n    IF ef THEN\n      IF FREESEED THEN RANDOMISE ENDIF\n      CALL STARTGAME()\n    ENDIF\n  ENDP\n\n  REM Two rows a tick of the well are emptied (this wipes the title text or the old stack), then the game begins.\n  PROC WIPETICK():\n    CALL CLEARROWS(wr, 2)\n    wr = wr + 2\n    IF wr >= BH THEN\n      INK 7\n      PRINT AT 3, 1; \"HI SCORE\";\n      CALL PREVIEW(nx, 11)\n      CALL TAKEPIECE()\n      CALL PREVIEW(nx, nx + 1)\n      hud = 1\n      st = 2 : wt = 10\n    ENDIF\n  ENDP\n\n  PROC WAITTICK():\n    wt = wt - 1\n    IF wt <= 0 THEN CALL SPAWN() ENDIF\n  ENDP\n\n  PROC HANDLEINPUT():\n    LOCAL dir\n    IF er THEN CALL TRYROT() ENDIF\n    dir = kr - kl\n    IF dir <> 0 THEN\n      IF dir = hdir THEN\n        hcnt = hcnt + 1\n      ELSE\n        hdir = dir : hcnt = 0\n      ENDIF\n      IF hcnt = 0 THEN\n        CALL TRYMOVE(dir)\n      ELSE\n        IF hcnt >= 8 THEN\n          IF (hcnt - 8) MOD 2 = 0 THEN CALL TRYMOVE(dir) ENDIF\n        ENDIF\n      ENDIF\n    ELSE\n      hdir = 0 : hcnt = 0\n    ENDIF\n    IF ef THEN\n      CALL HARDDROP()\n    ELSE\n      IF kd THEN\n        IF scnt = 0 THEN\n          CALL STEPDOWN()\n          IF fit THEN CALL ADDSCORE(1) : gcnt = 0 ENDIF\n        ENDIF\n        scnt = 1 - scnt\n      ELSE\n        scnt = 0\n      ENDIF\n    ENDIF\n  ENDP\n\n  PROC GRAVITY():\n    LOCAL g\n    gcnt = gcnt + 1\n    g = lv : IF g > 14 THEN g = 14 ENDIF\n    IF gcnt >= gt(g) THEN\n      gcnt = 0\n      CALL STEPDOWN()\n    ENDIF\n    CALL FITS(pc, rot, px, py + 1)\n    IF fit = 0 THEN\n      ldly = ldly + 1\n      IF ldly >= 15 THEN CALL LOCK() ENDIF\n    ENDIF\n  ENDP\n\n  PROC FALLTICK():\n    IF eh THEN\n      st = 7\n      INK 2 : BRIGHT 1 : PAPER 0 : PRINT AT 16, 0; \"PAUSED\";\n    ELSE\n      CALL HANDLEINPUT()\n      IF st = 3 THEN CALL GRAVITY() ENDIF\n    ENDIF\n  ENDP\n\n  PROC PAUSETICK():\n    IF eh THEN\n      PRINT AT 16, 0; \"      \";\n      st = 3\n    ENDIF\n  ENDP\n\n  REM The full rows flash (a bright tile for 3 ticks, the blocks for 3, twice), then they go.\n  PROC FLASHTICK():\n    IF ft MOD 6 = 0 THEN CALL FLASHROWS(8) ENDIF\n    IF ft MOD 6 = 3 THEN CALL FLASHROWS(-1) ENDIF\n    ft = ft + 1\n    IF ft >= 12 THEN\n      cr = low : cw = low\n      st = 5\n    ENDIF\n  ENDP\n\n  REM Three source rows a tick, from the lowest full row up: a row that is not full moves down to the next free place.\n  PROC COLLAPSETICK():\n    FOR i = 1 TO 3\n      IF cr >= 0 THEN\n        IF cl(cr) = 0 THEN\n          IF cr <> cw THEN CALL COPYROW() ENDIF\n          cw = cw - 1\n        ELSE\n          cl(cr) = 0\n        ENDIF\n        cr = cr - 1\n      ENDIF\n    NEXT i\n    IF cr < 0 THEN\n      CALL CLEARROWS(0, cw + 1)\n      IF lvup THEN PLAY lvlup : lvup = 0 ENDIF\n      st = 2 : wt = 4\n    ENDIF\n  ENDP\n\n  REM The stack turns grey from the bottom, one row a tick; then the text, and fire starts again.\n  PROC OVERTICK():\n    IF gor >= 0 THEN\n      FOR i = 0 TO BW - 1\n        IF bd(BX0 + i, gor) <> 0 THEN TILE WX + i, WY + gor = 10 ENDIF\n      NEXT i\n      gor = gor - 1\n      IF gor < 0 THEN\n        BRIGHT 1 : PAPER 0\n        INK 2 : PRINT AT 10, 11; \"GAME OVER\";\n        INK 7 : PRINT AT 12, 13; \"PRESS\";\n        INK 7 : PRINT AT 13, 13; \"SPACE\";\n      ENDIF\n    ELSE\n      IF ef THEN CALL STARTGAME() ENDIF\n    ENDIF\n  ENDP\n\n  PROC INIT():\n    CALL SETSHAPES()\n    CALL CLEARBOARD()\n    hhi = 0 : hlo = 0 : bagpos = 7\n    PAPER 0 : INK 7 : BRIGHT 1\n    CLS\n    CALL DRAWSTATIC()\n    CALL SHOWTITLE()\n    hud = 1\n    st = 0\n    BORDER 0\n  ENDP\n\n  PROC FRAME():\n    LOCAL js\n    js = STICK(1)\n    kl = KEYDOWN(\"O\") OR BIT(js, 2)\n    kr = KEYDOWN(\"P\") OR BIT(js, 3)\n    ku = KEYDOWN(\"Q\") OR BIT(js, 0)\n    kd = KEYDOWN(\"A\") OR BIT(js, 1)\n    kf = KEYDOWN(\" \") OR BIT(js, 4)\n    kh = KEYDOWN(\"H\")\n    ef = kf AND pf = 0\n    er = ku AND pu = 0\n    eh = kh AND ph = 0\n    SELECT CASE st\n      CASE 0\n        CALL TITLETICK()\n      CASE 1\n        CALL WIPETICK()\n      CASE 2\n        CALL WAITTICK()\n      CASE 3\n        CALL FALLTICK()\n      CASE 4\n        CALL FLASHTICK()\n      CASE 5\n        CALL COLLAPSETICK()\n      CASE 6\n        CALL OVERTICK()\n      CASE ELSE\n        CALL PAUSETICK()\n    ENDSEL\n    IF hud THEN CALL SHOWHUD() ENDIF\n    pu = ku : pf = kf : ph = kh\n  ENDP\nENDSCENE\n"
+ },
+ "assets": {
+  "sprites": {},
+  "tilesets": {
+   "gfx": {
+    "tiles": [
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "10",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 5,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 6,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 3,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 2,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 1,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "FE",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "FE",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "EF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "EF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "EF",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 1,
+        "bright": 1
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "55",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 7,
+        "paper": 0,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     }
+    ]
+   }
+  },
+  "maps": {},
+  "sfx": {
+   "tick": {
+    "ticks": [
+     {
+      "tone": 300,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 300,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 300,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "lock": {
+    "ticks": [
+     {
+      "tone": 700,
+      "vol": 12,
+      "noise": 12,
+      "mix": 4
+     },
+     {
+      "tone": 820,
+      "vol": 10,
+      "noise": 15,
+      "mix": 4
+     },
+     {
+      "tone": 940,
+      "vol": 8,
+      "noise": 18,
+      "mix": 4
+     },
+     {
+      "tone": 1060,
+      "vol": 6,
+      "noise": 21,
+      "mix": 4
+     },
+     {
+      "tone": 1180,
+      "vol": 4,
+      "noise": 24,
+      "mix": 4
+     }
+    ]
+   },
+   "clear1": {
+    "ticks": [
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "clear2": {
+    "ticks": [
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "clear3": {
+    "ticks": [
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "clear4": {
+    "ticks": [
+     {
+      "tone": 250,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 250,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 188,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 125,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 94,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 0,
+      "vol": 12,
+      "noise": 4,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 11,
+      "noise": 7,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 10,
+      "noise": 10,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 9,
+      "noise": 13,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 8,
+      "noise": 16,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 7,
+      "noise": 19,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 6,
+      "noise": 22,
+      "mix": 5
+     },
+     {
+      "tone": 0,
+      "vol": 5,
+      "noise": 25,
+      "mix": 5
+     }
+    ]
+   },
+   "lvlup": {
+    "ticks": [
+     {
+      "tone": 200,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 200,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 160,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 133,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 133,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 133,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 133,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 100,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "over": {
+    "ticks": [
+     {
+      "tone": 150,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 164,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 178,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 192,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 206,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 220,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 234,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 248,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 262,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 276,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 290,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 304,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 318,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 332,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 346,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 360,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 374,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 388,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 402,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 416,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 430,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 444,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 458,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 472,
+      "vol": 8,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 486,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 500,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 514,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 528,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 542,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 556,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 570,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 584,
+      "vol": 6,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 598,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 612,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 626,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 640,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   }
+  },
+  "music": {}
+ },
+ "scenes": {}
+}

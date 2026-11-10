@@ -43,9 +43,17 @@
 import { basicProfile } from './basic/profile.js';
 import { leapcProfile } from './c/profile.js';
 import { forthProfile } from './forth/profile.js';
+import { arcadeProfile } from './arcade/profile.js';
 
 /** Every language, in the selector's order. The first is the default. */
 export const PROFILES = [basicProfile, leapcProfile, forthProfile];
+
+/**
+ * Profiles only the Leap Arcade Studio (studio.html) uses. Leap Arcade is deliberately NOT in PROFILES: it has no
+ * ROM pair or key wait (it runs a compiled cartridge on the stock ROMs, `cartridgeOnly`) and works on a project, so
+ * ide.html's selector, Open-by-extension and share links stay as they are. See docs/ARCADE_STUDIO.md.
+ */
+export const STUDIO_PROFILES = [arcadeProfile];
 
 /** The profile with this id, or the default. */
 export function profileById(id) {

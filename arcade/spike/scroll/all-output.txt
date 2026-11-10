@@ -1,0 +1,23 @@
+V1 naive                   bitmap mean  715,402 worst  804,106  (8 sweep positions)  code+data 202 B  MATCH (20 positions)
+V2 32x24 (full)            bitmap mean  216,236 worst  224,966  (p0 155,126, p1-7 224,966)  attr  29,104  code+data 3236 B  init 370,814 T  MATCH (83 positions)
+blank cell pairs in the 'level' world: 70-76 % of the 768 cells; mixed world: 60 %
+V2 +blank, mixed world     bitmap mean  167,848 worst  173,482  (p0 132,600, p1-7 172,884)  attr  29,104  code+data 4708 B  init 370,814 T  MATCH (83 positions)
+V2 +blank, level world     bitmap mean  155,773 worst  160,890  (p0 129,341, p1-7 159,549)  attr  29,104  code+data 4708 B  init 370,814 T  MATCH (83 positions)
+V2 +blank, solid world     bitmap mean  234,092 worst  243,014  (p0 171,638, p1-7 243,014)  attr  29,104  code+data 4708 B  init 370,814 T  MATCH (83 positions)
+V2 plain, level world      bitmap mean  216,236 worst  224,966  (p0 155,126, p1-7 224,966)  attr  29,104  code+data 3236 B  init 370,814 T  MATCH (83 positions)
+V3 32x16 +blank, level     bitmap mean   95,712 worst   99,002  (p0 81,662, p1-7 97,719)  attr  19,449  code+data 4708 B  init 370,814 T  MATCH (83 positions)
+V3 28x20 +blank, level     bitmap mean  110,238 worst  114,662  (p0 92,712, p1-7 112,742)  attr  21,637  code+data 4150 B  init 370,814 T  MATCH (83 positions)
+V3 24x16 +blank, level     bitmap mean   72,319 worst   76,057  (p0 61,877, p1-7 73,811)  attr  15,225  code+data 3592 B  init 370,814 T  MATCH (83 positions)
+V3 20x14 +blank, level     bitmap mean   53,161 worst   56,168  (p0 45,540, p1-7 54,249)  attr  11,491  code+data 3034 B  init 370,814 T  MATCH (83 positions)
+V3 16x12 +blank, level     bitmap mean   36,824 worst   38,324  (p0 31,566, p1-7 37,576)  attr   8,285  code+data 2476 B  init 370,814 T  MATCH (83 positions)
+V3 32x16                   bitmap mean  144,239 worst  150,060  (p0 103,492, p1-7 150,060)  attr  19,449  code+data 3236 B  init 370,814 T  MATCH (83 positions)
+V3 28x20                   bitmap mean  158,213 worst  164,588  (p0 113,584, p1-7 164,588)  attr  21,637  code+data 2862 B  init 370,814 T  MATCH (83 positions)
+V3 24x16                   bitmap mean  109,007 worst  113,388  (p0 78,340, p1-7 113,388)  attr  15,225  code+data 2488 B  init 370,814 T  MATCH (83 positions)
+V3 20x14                   bitmap mean   80,000 worst   83,204  (p0 57,574, p1-7 83,204)  attr  11,491  code+data 2114 B  init 370,814 T  MATCH (83 positions)
+V3 16x12                   bitmap mean   55,398 worst   57,604  (p0 39,952, p1-7 57,604)  attr   8,285  code+data 1740 B  init 370,814 T  MATCH (83 positions)
+V4 shift, 2 files (copy)   bitmap mean  188,182 worst  188,182  tick incl. attributes: mean 192,563 worst 207,025  (attr shift 18,843, attr copy 16,205)  code 640 B  MATCH (64 ticks, whole screen each)
+V4 shift, in place (1 file) bitmap mean  144,073 worst  144,073  tick incl. attributes: mean 146,428 worst 162,916  (attr shift 18,843)  code 640 B  MATCH (64 ticks, whole screen each)
+V5 full redraw (bitmap)      153,481 T  + attributes 29,125 T   code 2410 B
+V5 shift8 LDI    (bitmap)    108,318 T    shift8 LDIR 139,038 T   strip (24 cells) 7,082 T   attr shift+column 19,410 T
+V5 step per file (LDI)       134,810 T   (two files per step: 269,620 T)   MATCH (every step, both files, whole screen)
+V4 2 px/tick, 2 files      tick mean  341,017 worst  351,098  MATCH (32 ticks of 2 px, whole screen each)

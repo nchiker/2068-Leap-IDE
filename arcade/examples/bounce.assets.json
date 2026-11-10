@@ -1,0 +1,30 @@
+{
+  "sprites": {
+    "ball": {
+      "w": 8, "h": 8,
+      "frames": [ { "rows": [
+        { "bits": "3C", "mask": "3C" },
+        { "bits": "7E", "mask": "7E" },
+        { "bits": "FF", "mask": "FF" },
+        { "bits": "FF", "mask": "FF" },
+        { "bits": "FF", "mask": "FF" },
+        { "bits": "FF", "mask": "FF" },
+        { "bits": "7E", "mask": "7E" },
+        { "bits": "3C", "mask": "3C" }
+      ] } ]
+    },
+    "paddle": {
+      "w": 16, "h": 8,
+      "frames": [ { "rows": [
+        { "bits": "FFFF", "mask": "FFFF" },
+        { "bits": "C003", "mask": "C003" },
+        { "bits": "C003", "mask": "C003" },
+        { "bits": "C003", "mask": "C003" },
+        { "bits": "C003", "mask": "C003" },
+        { "bits": "C003", "mask": "C003" },
+        { "bits": "C003", "mask": "C003" },
+        { "bits": "FFFF", "mask": "FFFF" }
+      ] } ]
+    }
+  }
+}

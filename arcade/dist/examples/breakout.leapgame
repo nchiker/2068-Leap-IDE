@@ -1,0 +1,487 @@
+{
+ "format": 1,
+ "name": "Breakout",
+ "framerate": 30,
+ "files": {
+  "main.arc": "REM Breakout: acceptance game A (docs/ARCADE_LANGUAGE.md), for the v2 runtime.\nREM Assets (bat, ball, bricks, wall, brick, lose) are in breakout.assets.json.\nREM   Keys O / P (left / right) or joystick 1 move the bat; SPACE or fire restarts after GAME OVER or YOU WIN.\nREM   Six rows of 30 bricks are TILEs (three colours, the upper rows score more); the ball finds a brick with TILEAT.\nREM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v2\nGAME \"Breakout\"\nFRAMERATE 30\n\nSPRITE bat = \"bat\"\nSPRITE ball = \"ball\"\nTILESET bricks = \"bricks\"\nSFX wall = \"wall\"\nSFX brick = \"brick\"\nSFX lose = \"lose\"\n\nSCENE play\n  REM state: 0 = playing, 1 = game over / won (waiting for fire)\n  DIM bx, by, dx, dy, px, score, lives, left, state, cx, cy, t, i, j, hb\n\n  REM Start (or restart) a game: clear the screen, print the HUD, lay the bricks, put the ball on the bat.\n  PROC NEWGAME():\n    CLS\n    INK 1\n    PRINT AT 0, 1; \"SCORE\";\n    PRINT AT 0, 22; \"LIVES\";\n    score = 0\n    lives = 3\n    left = 180\n    PRINT AT 0, 7; score;\n    PRINT AT 0, 28; lives;\n    FOR j = 3 TO 8\n      FOR i = 1 TO 30\n        TILE i, j = (j - 3) DIV 2\n      NEXT i\n    NEXT j\n    px = 120\n    CALL SERVE()\n    state = 0\n  ENDP\n\n  REM Ball on the bat, going up and to the right.\n  PROC SERVE():\n    bx = px + 4\n    by = 160\n    dx = 2\n    dy = -2\n  ENDP\n\n  PROC INIT():\n    CALL NEWGAME()\n    SHOW bat AT px, 176\n    SHOW ball AT bx, by\n  ENDP\n\n  REM Is the cell (cx, cy) in pixels a brick?  Remove it, score it and set hb = 1.\n  PROC HITBRICK():\n    hb = 0\n    cx = cx DIV 8\n    cy = cy DIV 8\n    t = TILEAT(cx, cy)\n    IF t >= 0 AND t < 3 THEN\n      TILE cx, cy = 3\n      PLAY brick\n      score = score + 10 + (2 - t) * 10\n      left = left - 1\n      INK 1\n      PRINT AT 0, 7; score;\n      hb = 1\n      IF left = 0 THEN\n        state = 1\n        INK 2\n        PRINT AT 11, 12; \"YOU WIN\";\n        PRINT AT 13, 7; \"PRESS FIRE TO PLAY\";\n      ENDIF\n    ENDIF\n  ENDP\n\n  PROC GAMEOVER():\n    state = 1\n    INK 2\n    PRINT AT 11, 11; \"GAME OVER\";\n    PRINT AT 13, 7; \"PRESS FIRE TO PLAY\";\n  ENDP\n\n  PROC PLAYTICK():\n    IF KEYDOWN(\"O\") OR BIT(STICK(1), 2) THEN\n      px = px - 4\n    ENDIF\n    IF KEYDOWN(\"P\") OR BIT(STICK(1), 3) THEN\n      px = px + 4\n    ENDIF\n    IF px < 0 THEN\n      px = 0\n    ENDIF\n    IF px > 240 THEN\n      px = 240\n    ENDIF\n\n    REM horizontal step: walls, then the brick in front of the ball's middle\n    bx = bx + dx\n    IF bx < 0 THEN\n      bx = 0\n      dx = -dx\n      PLAY wall\n    ENDIF\n    IF bx > 248 THEN\n      bx = 248\n      dx = -dx\n      PLAY wall\n    ENDIF\n    IF dx > 0 THEN\n      cx = bx + 7\n    ELSE\n      cx = bx\n    ENDIF\n    cy = by + 4\n    CALL HITBRICK()\n    IF hb = 1 THEN\n      dx = -dx\n    ENDIF\n\n    REM vertical step: ceiling (below the HUD row), then the brick above or below\n    by = by + dy\n    IF by < 8 THEN\n      by = 8\n      dy = -dy\n      PLAY wall\n    ENDIF\n    cx = bx + 4\n    IF dy > 0 THEN\n      cy = by + 7\n    ELSE\n      cy = by\n    ENDIF\n    CALL HITBRICK()\n    IF hb = 1 THEN\n      dy = -dy\n    ENDIF\n\n    REM the bat: the ball bounces up, sideways by where it landed\n    SHOW bat AT px, 176\n    SHOW ball AT bx, by\n    IF dy > 0 AND HIT(ball, bat) THEN\n      by = 168\n      dy = -2\n      dx = (bx + 4 - px - 8) DIV 4\n      IF dx = 0 THEN\n        dx = 1\n      ENDIF\n      PLAY wall\n    ENDIF\n\n    REM below the bat: a life is lost\n    IF by > 184 THEN\n      lives = lives - 1\n      PLAY lose\n      INK 1\n      PRINT AT 0, 28; lives;\n      IF lives = 0 THEN\n        CALL GAMEOVER()\n      ELSE\n        CALL SERVE()\n      ENDIF\n    ENDIF\n  ENDP\n\n  PROC FRAME():\n    IF state = 1 THEN\n      IF KEYDOWN(\" \") OR BIT(STICK(1), 4) THEN\n        CALL NEWGAME()\n      ENDIF\n    ELSE\n      CALL PLAYTICK()\n    ENDIF\n    SHOW bat AT px, 176\n    SHOW ball AT bx, by\n  ENDP\nENDSCENE\n"
+ },
+ "assets": {
+  "sprites": {
+   "bat": {
+    "w": 16,
+    "h": 8,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "3FFC",
+        "mask": "3FFC"
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE"
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF"
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF"
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF"
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF"
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE"
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC"
+       }
+      ]
+     }
+    ]
+   },
+   "ball": {
+    "w": 8,
+    "h": 8,
+    "frames": [
+     {
+      "rows": [
+       {
+        "bits": "3C",
+        "mask": "3C"
+       },
+       {
+        "bits": "7E",
+        "mask": "7E"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "FF",
+        "mask": "FF"
+       },
+       {
+        "bits": "7E",
+        "mask": "7E"
+       },
+       {
+        "bits": "3C",
+        "mask": "3C"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "tilesets": {
+   "bricks": {
+    "tiles": [
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 2,
+        "bright": 0
+       }
+      ],
+      "flags": 1
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 6,
+        "bright": 0
+       }
+      ],
+      "flags": 1
+     },
+     {
+      "rows": [
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 4,
+        "bright": 1
+       }
+      ],
+      "flags": 1
+     },
+     {
+      "rows": [
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 7,
+        "bright": 0
+       }
+      ],
+      "flags": 0
+     }
+    ]
+   }
+  },
+  "maps": {},
+  "sfx": {
+   "wall": {
+    "ticks": [
+     {
+      "tone": 300,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 280,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 260,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 240,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "brick": {
+    "ticks": [
+     {
+      "tone": 180,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 165,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 150,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 135,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 120,
+      "vol": 7,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 105,
+      "vol": 5,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "lose": {
+    "ticks": [
+     {
+      "tone": 400,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 440,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 480,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 520,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 560,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 600,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 640,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 680,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 720,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 760,
+      "vol": 15,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 800,
+      "vol": 14,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 840,
+      "vol": 13,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 880,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 920,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 960,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 1000,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   }
+  },
+  "music": {}
+ },
+ "scenes": {}
+}
