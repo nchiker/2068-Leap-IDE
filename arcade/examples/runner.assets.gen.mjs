@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 "use strict";
-// runner.assets.gen.mjs -- the three NEW levels and the level tables (TABLE lv1 .. lv4) of runner.arc ("Leap Runner", four levels), and runner.assets.json.
+// runner.assets.gen.mjs -- the three NEW levels, the title picture (rn_title, the 32 x 24 screen MAP of the game's `title` scene) and the level tables (TABLE lv1 .. lv4) of runner.arc ("Leap Runner", four levels), and runner.assets.json.
 //   node arcade/examples/runner.assets.gen.mjs            writes runner.assets.json next to this file (deterministic)
 //   node arcade/examples/runner.assets.gen.mjs --check            asserts the game's limits (see "the limits of runner.arc"); every other mode refuses to run when one is broken
-//   node arcade/examples/runner.assets.gen.mjs --ascii    prints every level (rows 5..15) with its coins, enemies and checkpoints
+//   node arcade/examples/runner.assets.gen.mjs --ascii    prints the title picture, then every level (rows 5..15) with its coins, enemies and checkpoints
 //   node arcade/examples/runner.assets.gen.mjs --data     prints the DIM and TABLE lv1 .. lv4 lines of the level data that runner.arc carries (level-relative lists)
 //   node arcade/examples/runner.assets.gen.mjs --splice   writes those lines into runner.arc between its @@DATA-BEGIN@@ and @@DATA-END@@ markers
 //
@@ -343,9 +343,43 @@ export function dataLines() {
   return out.join('\n') + '\n';
 }
 
+// ── the title picture (SCENE title NOWINDOW of runner.arc): a 32 x 24 screen MAP made of the game's own tiles ───────────────────────────────────────────────────
+// "LEAP" and "RUNNER" in block letters of brick tiles (5 rows high, 3 cells wide, the N 4), a sky with clouds under the far band's mountains, the flag and the sign, ground (grass on row 19, dirt below) and
+// two coins over each of the four hops the hero makes across the picture (the coins are at TITLE_COINS: the game's title scene takes them from that list, it spins them with TILE and the hero eats them).
+// Rows 21 and 22 are the high score and PRESS SPACE OR FIRE, printed by the game over black bars.
+export const TITLE_COLS = 32, TITLE_ROWS = 24;
+export const TITLE_COINS = [[2, 14], [3, 14], [9, 14], [10, 14], [17, 14], [18, 14], [25, 14], [26, 14]];       // [column, row]
+const GLYPHS = {
+  L: ['X..', 'X..', 'X..', 'X..', 'XXX'], E: ['XXX', 'X..', 'XXX', 'X..', 'XXX'], A: ['.X.', 'X.X', 'XXX', 'X.X', 'X.X'], P: ['XXX', 'X.X', 'XXX', 'X..', 'X..'],
+  R: ['XX.', 'X.X', 'XX.', 'X.X', 'X.X'], U: ['X.X', 'X.X', 'X.X', 'X.X', 'XXX'], N: ['X..X', 'XX.X', 'X.XX', 'X..X', 'X..X'],
+};
+export function titleMap() {
+  const g = Array.from({ length: TITLE_ROWS }, () => new Array(TITLE_COLS).fill(T.SKY));
+  const put = (c, r, t) => { if (c >= 0 && c < TITLE_COLS && r >= 0 && r < TITLE_ROWS) g[r][c] = t; };
+  for (let c = 0; c < TITLE_COLS; c++) { put(c, 0, T.F_BLANK); put(c, 1, T.F_BLANK); }          // the far band, with its mountains (as the levels' rows 0 and 1)
+  for (const [c, plateau] of [[0, 1], [7, 0], [13, 1], [21, 0], [26, 1]]) {
+    const w = plateau ? 6 : 4;
+    put(c, 1, T.F_UP); put(c + w - 1, 1, T.F_DOWN); for (let k = 1; k < w - 1; k++) put(c + k, 1, T.F_FILL);
+    put(c + 1, 0, T.F_UP); put(c + w - 2, 0, T.F_DOWN); for (let k = 2; k < w - 2; k++) put(c + k, 0, T.F_FILL);
+  }
+  const word = (text, row) => {
+    const width = [...text].reduce((w, ch) => w + GLYPHS[ch][0].length + 1, -1);
+    let c0 = (TITLE_COLS - width) >> 1;
+    for (const ch of text) { const gl = GLYPHS[ch]; gl.forEach((line, r) => [...line].forEach((x, k) => { if (x === 'X') put(c0 + k, row + r, T.BRICK); })); c0 += gl[0].length + 1; }
+  };
+  word('LEAP', 2); word('RUNNER', 8);
+  for (const [c, r, w] of [[0, 3, 3], [29, 5, 3], [0, 7, 2], [29, 7, 3]]) { put(c, r, T.CLOUD_L); for (let k = 1; k < w - 1; k++) put(c + k, r, T.CLOUD_M); put(c + w - 1, r, T.CLOUD_R); }
+  for (let c = 0; c < TITLE_COLS; c++) { put(c, 19, T.GRASS); for (let r = 20; r < TITLE_ROWS; r++) put(c, r, T.DIRT); }
+  put(30, 14, T.FLAG); for (let r = 15; r <= 18; r++) put(30, r, T.POLE);
+  put(1, 18, T.SIGN);
+  for (const [c, r] of TITLE_COINS) put(c, r, T.COIN);
+  return g;
+}
+
 export function buildRunnerAssets() {
   const a = JSON.parse(JSON.stringify(BASE));
   a.maps = {};
+  a.maps.rn_title = { w: TITLE_COLS, h: TITLE_ROWS, cells: titleMap().flat() };
   LEVELS.forEach((L, i) => {
     const cells = [];
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) cells.push(L.g[r][c]);
@@ -357,12 +391,21 @@ export function buildRunnerAssets() {
 if (MAIN) {
   const lim = checkLimits();
   if (process.argv.includes('--check')) {
+    // the title picture: no cloud touches a letter (8 neighbours), every letter is drawn whole, and the two R of RUNNER are the same cells
+    { const g = titleMap(); let touch = 0, ok = true;
+      for (let r = 0; r < TITLE_ROWS; r++) for (let c = 0; c < TITLE_COLS; c++) if (g[r][c] >= T.CLOUD_L && g[r][c] <= T.CLOUD_R) for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (g[r + dr]?.[c + dc] === T.BRICK) touch++;
+      for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) if (g[8 + r][3 + c] !== g[8 + r][25 + c]) ok = false;
+      for (const [ch, c0, r0] of [['L', 8, 2], ['E', 12, 2], ['A', 16, 2], ['P', 20, 2], ['R', 3, 8], ['U', 7, 8], ['N', 11, 8], ['N', 16, 8], ['E', 21, 8], ['R', 25, 8]])
+        GLYPHS[ch].forEach((line, r) => [...line].forEach((x, k) => { if ((g[r0 + r][c0 + k] === T.BRICK) !== (x === 'X')) ok = false; }));
+      console.log(touch === 0 && ok ? 'title picture: no cloud touches a letter, every letter whole, the two R equal' : `title picture BROKEN: ${touch} cloud cells touch a letter, letters ${ok ? 'whole' : 'damaged or the two R differ'}`);
+      if (touch || !ok) process.exit(1); }
     lim.stats.forEach((x, i) => console.log(`level ${i + 1}: ${x.coins} coins (${x.view} at most in view, PICKUP walk ${x.scan}), ${x.enemies} enemies (${x.walkersAlive} walkers alive at most, pop-in up to ${x.popIn} px)`));
     console.log(lim.problems.length ? lim.problems.join('\n') : 'all limits hold');
     process.exit(lim.problems.length ? 1 : 0);
   }
   if (lim.problems.length) { console.error('runner levels break the game\'s limits:\n  ' + lim.problems.join('\n  ')); process.exit(1); }
   if (process.argv.includes('--ascii')) {
+    { const ch = { [T.SKY]: ' ', [T.GRASS]: 'G', [T.DIRT]: 'd', [T.BRICK]: 'B', [T.COIN]: 'o', [T.POLE]: '|', [T.FLAG]: 'F', [T.SIGN]: 'S' }; console.log('-- the title picture (rn_title, 32 x 24)'); titleMap().forEach((r, i) => console.log(String(i).padStart(2) + ' ' + r.map((t) => ch[t] ?? (t >= 15 && t <= 17 ? '~' : '.')).join(''))); }
     const ch = { [T.SKY]: ' ', [T.GRASS]: 'G', [T.DIRT]: 'd', [T.BRICK]: 'B', [T.PLANK]: '=', [T.SPIKES]: '^', [T.COIN]: 'o', [T.POLE]: '|', [T.FLAG]: 'F', [T.SIGN]: 'S' };
     LEVELS.forEach((L, i) => {
       console.log(`-- level ${i + 1} ${NAMES[i]}: ${L.coins.length} coins, ${L.spawns.length} enemies (${L.spawns.filter((s) => s[2] === 0).length} walkers, ${L.spawns.filter((s) => s[2] === 1).length} bats)`);
@@ -388,5 +431,5 @@ if (MAIN) {
   }
   const assets = buildRunnerAssets();
   writeFileSync(join(HERE, 'runner.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-  console.log(`runner.assets.json: ${Object.keys(assets.sprites).length} sprites, ${Object.keys(assets.sfx).length} sound effects, ${Object.keys(assets.maps).length} worlds (${LEVELS.map((L) => `${L.coins.length} coins ${L.spawns.length} enemies`).join('; ')})`);
+  console.log(`runner.assets.json: ${Object.keys(assets.sprites).length} sprites, ${Object.keys(assets.sfx).length} sound effects, ${Object.keys(assets.maps).length - 1} worlds and the title picture (${LEVELS.map((L) => `${L.coins.length} coins ${L.spawns.length} enemies`).join('; ')})`);
 }

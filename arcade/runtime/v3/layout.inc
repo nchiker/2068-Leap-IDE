@@ -101,6 +101,9 @@ V_CAM           EQU V3VARS+0    ; word: the clamped camera in pixels (window mod
 ; window's part only when the header has DIV_EXT | DIV_WIN and a valid window_desc.
 ; ---------------------------------------------------------------------------------------------------------------
 V_WIN           EQU VARS+$61    ; byte: 1 = window mode (a formerly free byte of the variables, NOT in V3VARS: see the As built notes)
+V_WINOFF        EQU VARS+$62    ; byte (language batch 7, mode.asm): 1 = the game has a window and RT_WINMODE switched it off (V_WIN is then 0); 0 otherwise.
+                                ;   "The game has a window" = V_WIN OR V_WINOFF (win_has).  A free byte of the variables ($E062-$E06F), NOT in V3VARS
+                                ;   (tests poison the window state W_CX..W3_END to prove a call outside window mode touches nothing).  Boot: 0.
 W_CX            EQU V3VARS+$02  ; byte: the window's screen cell column (0..8)
 W_CY            EQU V3VARS+$03  ; byte: its screen cell row (0..8)
 W_NB            EQU V3VARS+$04  ; byte: bands (1..4)

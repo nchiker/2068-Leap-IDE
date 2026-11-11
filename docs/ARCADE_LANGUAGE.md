@@ -73,6 +73,7 @@ ENDSCENE
 | `GAME "t"`, `FRAMERATE n` | title; target updates per second (60, 30, 20, 15, 12, 10...) | frame rate is a design input |
 | `SPRITE n = "a"`, `SFX n = "a"`, `TILESET n = "a"`, `MAP n = "a"` | declare named assets from the project | assets are authored in the Studio |
 | `SCENE n` ... `ENDSCENE`, `ENTER n` | a game part with its own `INIT` and `FRAME`; `ENTER` switches scene | the build plans display and memory per scene |
+| `SCENE n NOWINDOW` / `SCENE n NOVIEW` | a scene of a `WINDOW` / `VIEW3D` game that shows no window / 3D view: the whole cell screen and sprites at screen positions (title, menu, score table); the window / view comes back when a scene without the clause is entered | a full-screen title in a game whose play scenes scroll or ray-cast |
 | `PROC INIT()`, `PROC FRAME()` | entry points inside a scene | the runtime owns the loop |
 | `SHOW s AT x, y [FRAME f]`, `HIDE s` | place / remove a sprite (pixel position, y from the top) | sprites |
 | `HIT(a, b)` | 1 if two sprites overlap (pixel-exact test is *later*; bounding boxes first) | collision |
@@ -122,3 +123,11 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
   `TIMER a, b` (variables the game counts down by itself, once a tick before FRAME, to 0), `KEYPRESS(c)` and `JOYPRESS(n)` (1 / the mask of STICK bits during the tick a key went down; the state is taken at the start of every FRAME and survives `ENTER`),
   `PRINT item USING "##00"` (right-aligned fixed field, zero fill from the first `0`, `*` fill on overflow; a ~180-byte `lib$fmt` only when a run-time value is used), `PLAY expr` (an effect index; a bare SFX name still plays by name; out of range does nothing)
   and three-channel sound effects (`ticksB` / `ticksC` in the SFX asset: groups of 12 bytes, one shared noise generator; the runtimes v2, v3, v4 got a three-channel interrupt tick). New reserved words TIMER KEYPRESS JOYPRESS; USING is contextual.
+* 0.7 (2026-11-11, language batch 7, scenes without the window or the 3D view; contract and decisions `docs/ARCADE_LANGUAGE_BATCH7.md`, tests `tests/arcade-m14-compiler.mjs`, `tests/arcade-m14-differential.mjs`):
+  `SCENE name NOWINDOW` (a `WINDOW` game) and `SCENE name NOVIEW` (a `VIEW3D` game): the scene's display mode. A scene without the clause shows the window / view as before; a scene with it runs as a game without one would (the whole
+  32 x 24 cell screen: text, `TILE`, `LOADMAP`, `CLS`; sprites at screen positions drawn by the 2D sprite machinery, `SHOW` clamped to the screen, `HIT` on the hot boxes), while the world words (`CAMERA`, `SETWORLD`, `WORLD`,
+  `WORLDTILE`, `TILEFLAGS`, `TILEHIT`, `SOLID`, `CAMX`, `VIEW`, `SETWALL`, `WALL`, `SEEN`, `DEPTH`) keep working on the stored world / camera / pose / walls. The mode is set by `ENTER` (after the machine reset, before the target's
+  `INIT`) and, for the first scene, at the start; switching on draws the window / view again from the state as it is. Errors: `NOWINDOW` without a `WINDOW`, `NOVIEW` without a `VIEW3D`, the wrong one of the two, anything else after the
+  scene name. The words are contextual (`nowindow` stays a legal variable name). In a program with at least one clause every `ENTER` sequence and the boot call the runtime's mode routine (`RT_WINMODE` v3, `RT_VIEWMODE` v4) with A = 0
+  or 1; a program without the clause compiles to the same bytes as before. A `VIEW3D` game with a `NOVIEW` scene also gets a second phase-pool plan (3,712 bytes against 5,888); sprite art that does not fit is a build error (use fewer
+  phases). Needs a runtime that has the routines (a build of language batch 7); a runtime without them is a compile error that names the routine.

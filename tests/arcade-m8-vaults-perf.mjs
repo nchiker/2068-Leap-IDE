@@ -113,17 +113,11 @@ export function summarise(ticks, key = 't') {
 }
 const fmt = (v) => Math.round(v).toLocaleString('en-US');
 
-/** The sweep program: the header, assets and declarations of vaults.arc, a scene that shows every instance at its post and moves the viewer one pose a tick over every empty cell and 8 angles. */
+/** The sweep program: the header, assets and game-level declarations of vaults.arc (everything before its first scene), a scene that shows every instance at its post and moves the viewer one pose a tick over every empty cell and 8 angles. */
 export function sweepSource(billboards = true) {
-  const head = VAULTS_SRC.slice(0, VAULTS_SRC.indexOf('SCENE play'));
+  const head = VAULTS_SRC.slice(0, VAULTS_SRC.indexOf('\nSCENE ') + 1);        // everything before the first scene: the game-level declarations (the post arrays among them), the assets, the shared PROCs
   return head + `SCENE sweep
   DIM n, x, y, a, i
-  DIM exs(4) = 1920, 7040, 4224, 6528, 6528
-  DIM eys(4) = 640, 1920, 2176, 4992, 7808
-  DIM gxs(4) = 6528, 7552, 896, 4224, 2176
-  DIM gys(4) = 1152, 1152, 2176, 3968, 4736
-  DIM pxs(2) = 896, 6272, 4224
-  DIM pys(2) = 3200, 7296, 7808
   PROC INIT()
 ${billboards ? `    FOR i = 0 TO 4
       SHOW wr(i) AT exs(i), eys(i) FRAME BAND(i, 1)

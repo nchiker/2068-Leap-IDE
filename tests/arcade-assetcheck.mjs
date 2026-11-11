@@ -63,8 +63,8 @@ for (const id of EX) {
   const r = (id) => scanRoles(examples[id].text);
   check('scanRoles shooter: a cell map "sky", tile set gfx, no world, no floor plan, no view', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky' }, world: null, worlds: [], floorplans: [], view: null }), JSON.stringify(r('shooter')));
   check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', worlds: ['pf_world'], floorplans: [], view: null }), JSON.stringify(r('platformer')));
-  check('scanRoles vaults: floor plan vl_maze, cell map vl_panel, view BRIGHT 1 (default) CEIL 0 FLOOR 1',
-    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 1, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
+  check('scanRoles vaults: floor plan vl_maze, cell maps vl_panel and vl_title (the NOVIEW title picture), view BRIGHT 1 (default) CEIL 0 FLOOR 1',
+    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze', splash: 'vl_title' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 1, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
   check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null }));
   const src = [
     'CONST dark = 0', 'CONST lite = 5 + 1', 'TILESET t = "ts"', 'MAP m = "m1"', 'MAP Maze = "mz"', 'MAP other = "o"',
@@ -305,6 +305,7 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   const EXPECTED = [
     'platformer: background-attr-mix pf_world',
     'vaults: background-attr-mix vl_panel',
+    'vaults: background-attr-mix vl_title',
   ];
   check('the examples produce exactly the expected warnings (no errors, no tile0-not-blank, no shape or undefined-tile findings)', eq(summary, EXPECTED), JSON.stringify(summary));
   check('no example finding is an error or a compilerAlso finding', EX.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
@@ -341,6 +342,10 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   const gv = groupsOf('vaults', 'vl_tiles', 'vl_panel', false);
   const fvp = out.vaults.find((f) => f.id === 'background-attr-mix');
   check('vaults vl_panel: background attribute groups recomputed from the JSON', eq(gv, fvp.groups.map((g) => ({ attr: g.attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells }))) && gv.length === 4, JSON.stringify(gv));
+  const gt = groupsOf('vaults', 'vl_tiles', 'vl_title', false);
+  const fvt = out.vaults.filter((f) => f.id === 'background-attr-mix').find((f) => f.asset === 'vl_title');
+  check('vaults vl_title (the title picture: black, cyan wall textures, brass door and goblet; the title\'s sprites only move over its black corridor): background attribute groups recomputed from the JSON',
+    eq(gt, fvt.groups.map((g) => ({ attr: g.attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells }))) && gt.length === 3, JSON.stringify(gt));
   check('shooter sky: no warning, and the JSON agrees (at most one background attribute, no mixed black)', groupsOf('shooter', 'gfx', 'sky', false).length <= 1 && (() => { const bb = black('shooter', 'gfx'); return !(bb[0].length && bb[1].length); })());
   check('vaults vl_maze (the floor plan) has a wall ring in the JSON and gets no map finding; platformer pf_world is 128 x 16 with tiles <= 31',
     (() => { const m = examples.vaults.assets.maps.vl_maze, c = cellsRaw(m); return c.every((v, i) => { const x = i % m.w, y = Math.floor(i / m.w); return !(x === 0 || y === 0 || x === m.w - 1 || y === m.h - 1) || (v >= 1 && v <= 4); }); })() &&

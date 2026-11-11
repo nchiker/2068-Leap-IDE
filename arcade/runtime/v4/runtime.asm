@@ -17,6 +17,7 @@ M_FONT_S:
 M_FONT_E:
     INCLUDE "tileops.asm"       ; language batch 1: RT_FILL / FILLC / COPY / LOADMAP / BORDER / RANDOMISE, maps_boot (after the font: no address moves)
     INCLUDE "ray.asm"           ; v4: the raycaster (ray mode), billboards, RT_VIEW / COSA / SINA / FXMUL / WALL / SETWALL
+    INCLUDE "mode.asm"          ; language batch 7: RT_VIEWMODE (the view off / on per scene), appended so that no address moves
 RT_END:
     ASSERT RT_END <= $4000      ; the runtime fits DOCK chunks 0-1
     INCLUDE "game_placeholder.asm"      ; $8000 game image slot                    (DOCK chunks 4-5)

@@ -1,0 +1,151 @@
+ideal clip (JS): 36000 clipped lines, reference = brute-force unclipped line inside the rectangle: 0 mismatches
+A plain OR       2664 lines, all match; code 1192 B (setup+clip 970 B)
+A plain XOR      2664 lines, all match; code 1192 B (setup+clip 970 B)
+A plain ERASE    2664 lines, all match; code 1192 B (setup+clip 970 B)
+B octant OR      3921 lines, all match; code 1640 B (setup+clip 970 B)
+B octant XOR     3921 lines, all match; code 1640 B (setup+clip 970 B)
+B octant ERASE   3921 lines, all match; code 1640 B (setup+clip 970 B)
+C runs OR        3921 lines, all match; code 2424 B (setup+clip 970 B)
+C runs XOR       3921 lines, all match; code 2616 B (setup+clip 970 B)
+C runs ERASE     3921 lines, all match; code 2424 B (setup+clip 970 B)
+
+T per line, 8 px (mean of 4 directions x 4 positions), /px in brackets
+variant                       0°           15°           30°           45°           60°           75°           90°
+A plain OR           3,613 (452)   3,728 (466)   3,896 (487)   4,064 (508)   3,915 (489)   3,747 (468)   3,632 (454)
+A plain XOR          3,613 (452)   3,728 (466)   3,896 (487)   4,064 (508)   3,915 (489)   3,747 (468)   3,632 (454)
+A plain ERASE        3,613 (452)   3,728 (466)   3,896 (487)   4,064 (508)   3,915 (489)   3,747 (468)   3,632 (454)
+B octant OR          1,616 (202)   1,720 (215)   1,868 (233)   2,008 (251)   1,921 (240)   1,810 (226)   1,729 (216)
+  draw_fast            988 (124)   1,081 (135)   1,229 (154)   1,369 (171)   1,241 (155)   1,130 (141)   1,060 (133)
+B octant XOR         1,616 (202)   1,720 (215)   1,868 (233)   2,008 (251)   1,921 (240)   1,810 (226)   1,729 (216)
+  draw_fast            988 (124)   1,081 (135)   1,229 (154)   1,369 (171)   1,241 (155)   1,130 (141)   1,060 (133)
+B octant ERASE       1,616 (202)   1,720 (215)   1,868 (233)   2,008 (251)   1,921 (240)   1,810 (226)   1,729 (216)
+  draw_fast            988 (124)   1,081 (135)   1,229 (154)   1,369 (171)   1,241 (155)   1,130 (141)   1,060 (133)
+C runs OR            1,223 (153)   1,681 (210)   1,844 (231)   2,011 (251)   1,988 (249)   1,877 (235)   1,483 (185)
+  draw_fast             585 (73)     923 (115)   1,086 (136)   1,253 (157)   1,255 (157)   1,144 (143)     842 (105)
+C runs XOR           1,223 (153)   1,776 (222)   1,985 (248)   2,125 (266)   1,988 (249)   1,877 (235)   1,483 (185)
+  draw_fast             585 (73)   1,000 (125)   1,302 (163)   1,442 (180)   1,255 (157)   1,144 (143)     842 (105)
+C runs ERASE         1,230 (154)   1,681 (210)   1,844 (231)   2,011 (251)   1,988 (249)   1,877 (235)   1,483 (185)
+  draw_fast             592 (74)     923 (115)   1,086 (136)   1,253 (157)   1,255 (157)   1,144 (143)     842 (105)
+
+T per line, 40 px (mean of 4 directions x 4 positions), /px in brackets
+variant                       0°           15°           30°           45°           60°           75°           90°
+A plain OR          14,045 (351)  14,608 (365)  15,392 (385)  16,288 (407)  15,411 (385)  14,627 (366)  14,064 (352)
+A plain XOR         14,045 (351)  14,608 (365)  15,392 (385)  16,288 (407)  15,411 (385)  14,627 (366)  14,064 (352)
+A plain ERASE       14,045 (351)  14,608 (365)  15,392 (385)  16,288 (407)  15,411 (385)  14,627 (366)  14,064 (352)
+B octant OR           3,852 (96)   4,332 (108)   5,012 (125)   5,780 (144)   5,214 (130)   4,697 (117)   4,321 (108)
+  draw_fast           3,224 (81)    3,693 (92)   4,373 (109)   5,141 (129)   4,534 (113)   4,017 (100)    3,652 (91)
+B octant XOR          3,852 (96)   4,332 (108)   5,012 (125)   5,780 (144)   5,214 (130)   4,697 (117)   4,321 (108)
+  draw_fast           3,224 (81)    3,693 (92)   4,373 (109)   5,141 (129)   4,534 (113)   4,017 (100)    3,652 (91)
+B octant ERASE        3,852 (96)   4,332 (108)   5,012 (125)   5,780 (144)   5,214 (130)   4,697 (117)   4,321 (108)
+  draw_fast           3,224 (81)    3,693 (92)   4,373 (109)   5,141 (129)   4,534 (113)   4,017 (100)    3,652 (91)
+C runs OR             1,324 (33)    3,321 (83)   4,099 (102)   5,003 (125)   5,281 (132)   4,764 (119)    3,467 (87)
+  draw_fast             686 (17)    2,563 (64)    3,341 (84)   4,245 (106)   4,548 (114)   4,031 (101)    2,826 (71)
+C runs XOR            1,354 (34)    3,541 (89)   5,129 (128)   5,897 (147)   5,281 (132)   4,764 (119)    3,467 (87)
+  draw_fast             716 (18)    2,764 (69)   4,446 (111)   5,214 (130)   4,548 (114)   4,031 (101)    2,826 (71)
+C runs ERASE          1,332 (33)    3,321 (83)   4,099 (102)   5,003 (125)   5,281 (132)   4,764 (119)    3,467 (87)
+  draw_fast             694 (17)    2,563 (64)    3,341 (84)   4,245 (106)   4,548 (114)   4,031 (101)    2,826 (71)
+
+T per line, 180 px (mean of 4 directions x 4 positions), /px in brackets
+variant                       0°           15°           30°           45°           60°           75°           90°
+A plain OR          59,685 (332)  62,376 (347)  65,512 (364)  69,768 (388)  65,531 (364)  62,395 (347)  59,704 (332)
+A plain XOR         59,685 (332)  62,376 (347)  65,512 (364)  69,768 (388)  65,531 (364)  62,395 (347)  59,704 (332)
+A plain ERASE       59,685 (332)  62,376 (347)  65,512 (364)  69,768 (388)  65,531 (364)  62,395 (347)  59,704 (332)
+B octant OR          13,635 (76)   15,946 (89)  18,614 (103)  22,260 (124)  19,478 (108)   17,413 (97)   15,636 (87)
+  draw_fast          13,007 (72)   15,307 (85)  17,975 (100)  21,621 (120)  18,798 (104)   16,733 (93)   14,967 (83)
+B octant XOR         13,635 (76)   15,946 (89)  18,614 (103)  22,260 (124)  19,478 (108)   17,413 (97)   15,636 (87)
+  draw_fast          13,007 (72)   15,307 (85)  17,975 (100)  21,621 (120)  18,798 (104)   16,733 (93)   14,967 (83)
+B octant ERASE       13,635 (76)   15,946 (89)  18,614 (103)  22,260 (124)  19,478 (108)   17,413 (97)   15,636 (87)
+  draw_fast          13,007 (72)   15,307 (85)  17,975 (100)  21,621 (120)  18,798 (104)   16,733 (93)   14,967 (83)
+C runs OR             1,804 (10)   10,642 (59)   13,782 (77)  18,071 (100)  19,545 (109)   17,480 (97)   12,122 (67)
+  draw_fast            1,166 (6)    9,884 (55)   13,024 (72)   17,313 (96)  18,812 (105)   16,747 (93)   11,481 (64)
+C runs XOR            1,976 (11)   11,257 (63)  18,731 (104)  22,351 (124)  19,545 (109)   17,480 (97)   12,122 (67)
+  draw_fast            1,338 (7)   10,480 (58)  18,048 (100)  21,676 (120)  18,812 (105)   16,747 (93)   11,481 (64)
+C runs ERASE          1,812 (10)   10,642 (59)   13,782 (77)  18,071 (100)  19,545 (109)   17,480 (97)   12,122 (67)
+  draw_fast            1,174 (7)    9,884 (55)   13,024 (72)   17,313 (96)  18,812 (105)   16,747 (93)   11,481 (64)
+
+T per line, 200 px (mean of 4 directions x 4 positions), /px in brackets
+variant                       0°           15°           30°
+A plain OR          66,205 (331)  69,176 (346)  72,704 (364)
+A plain XOR         66,205 (331)  69,176 (346)  72,704 (364)
+A plain ERASE       66,205 (331)  69,176 (346)  72,704 (364)
+B octant OR          15,032 (75)   17,584 (88)  20,590 (103)
+  draw_fast          14,404 (72)   16,945 (85)  19,951 (100)
+B octant XOR         15,032 (75)   17,584 (88)  20,590 (103)
+  draw_fast          14,404 (72)   16,945 (85)  19,951 (100)
+B octant ERASE       15,032 (75)   17,584 (88)  20,590 (103)
+  draw_fast          14,404 (72)   16,945 (85)  19,951 (100)
+C runs OR              1,864 (9)   11,668 (58)   15,199 (76)
+  draw_fast            1,226 (6)   10,910 (55)   14,441 (72)
+C runs XOR            2,054 (10)   12,353 (62)  20,707 (104)
+  draw_fast            1,416 (7)   11,576 (58)  20,024 (100)
+C runs ERASE           1,872 (9)   11,668 (58)   15,199 (76)
+  draw_fast            1,234 (6)   10,910 (55)   14,441 (72)
+
+clip (variant C, OR, full rectangle): line_setup alone, and draw_line in total
+  inside (fast path)                   setup mean    645 max    668   draw_line mean  8,684 for 107 px
+  one end off screen (< 300 px)        setup mean  5,436 max  7,756   draw_line mean 17,266 for 112 px
+  both ends off, crossing              setup mean  8,385 max 10,423   draw_line mean 27,800 for 178 px
+  one end far (|c| up to 16383)        setup mean  6,074 max  7,907   draw_line mean 14,973 for 80 px
+  both ends far, crossing              setup mean 10,147 max 10,631   draw_line mean 24,591 for 129 px
+  rejected (all outside one side)      setup mean  1,294 max  1,649   draw_line mean  1,322 for 0 px
+  rejected after the k tests (corner)  setup mean  4,850 max  4,931   draw_line mean  4,878 for 0 px
+
+clear the play area of the hidden file (character rows r0..r1, 32 columns); T per call
+  256x192        LDIR 131,168   LD (HL),A  71,756   PUSH  36,113
+  256x160        LDIR 109,664   LD (HL),A  60,076   PUSH  30,481
+  256x128        LDIR  88,160   LD (HL),A  48,396   PUSH  24,849
+  256x144 (odd)  LDIR  98,912   LD (HL),A  54,236   PUSH  27,665
+  code: LDIR 43 B, LD 91 B, PUSH 209 B (+ clr_third 34 B shared)
+
+3D: build_matrix and the projectors (T per point = (T for 64 points - T for 1 point) / 63)
+  P1 yaw only (4 mul) : centre, Z 400 4,891 | near, Z 120 4,907 | off-centre, Z 900 4,883 | far, Z 8000 4,891 | mostly off screen 4,105 (12 flagged) | crossing the near plane 4,038 (14 flagged)   build_matrix 1,078 T
+  P1 yaw+pitch (9 mul): centre, Z 400 5,631 | near, Z 120 5,629 | off-centre, Z 900 5,624 | far, Z 8000 5,627 | mostly off screen 5,247 (5 flagged) | crossing the near plane 4,183 (24 flagged)   build_matrix 1,078 T
+  P1 one point (Xc 50, Yc -30, Zc 400): proj_point 3,891 T = 2 x q (1626 for Xc) + records, outcode, calls 639
+  P1 code: build_matrix 131 B, project_yaw 210 B, project_full 368 B, proj_point_and_q 203 B, draw_edges 101 B
+  P2 yaw only (4 mul) : centre, Z 400 2,902 | near, Z 120 2,887 | off-centre, Z 900 2,988 | far, Z 8000 3,249 | mostly off screen 2,584 (11 flagged) | crossing the near plane 2,511 (16 flagged)   build_matrix 1,078 T
+  P2 yaw+pitch (9 mul): centre, Z 400 3,644 | near, Z 120 3,652 | off-centre, Z 900 3,719 | far, Z 8000 3,996 | mostly off screen 3,318 (11 flagged) | crossing the near plane 3,151 (20 flagged)   build_matrix 1,078 T
+  P2 one point (Xc 50, Yc -30, Zc 400): proj_point 1,901 T = rcp_setup 127 + 2 x q (535 for Xc) + records, outcode, calls 704
+  P2 code: build_matrix 131 B, project_yaw 210 B, project_full 368 B, proj_point_and_q 341 B, draw_edges 101 B
+  P3 yaw only (4 mul) : centre, Z 400 2,394 | near, Z 120 2,359 | off-centre, Z 900 2,493 | far, Z 8000 2,768 | mostly off screen 2,508 (9 flagged) | crossing the near plane 2,076 (21 flagged)   build_matrix 1,078 T
+  P3 yaw+pitch (9 mul): centre, Z 400 3,140 | near, Z 120 3,120 | off-centre, Z 900 3,234 | far, Z 8000 3,526 | mostly off screen 3,186 (10 flagged) | crossing the near plane 3,003 (14 flagged)   build_matrix 1,078 T
+  P3 one point (Xc 50, Yc -30, Zc 400): proj_point 1,409 T = rcp_setup 127 + 2 x q (289 for Xc) + records, outcode, calls 704
+  P3 code: build_matrix 131 B, project_yaw 210 B, project_full 368 B, proj_point_and_q 426 B, draw_edges 101 B
+  error vs exact perspective (px, 19036 on-screen points, JS model of the Z80 arithmetic): P1 mean 0.66 99% 0.99 max 1.00; P2 mean 0.67 99% 1.09 max 1.70; P3 mean 0.68 99% 1.30 max 1.70
+
+scenes: 256x160 play area (rows 2..21, clip y 16..175), 8 frames each, double-buffered ($6000 / $4000 alternate), PUSH clear, lines variant C; T per frame (mean)
+  ships 1 compiled P3       12 pts  18 edges (fast 18, clip 0, rej 0, skip 0; 184 px): clear 30,481 + mat 1,078 + proj 29,333 + lines 24,525 = 85,416 (worst 89,019, +25k logic: 30 fps); redraw-erase AND 24,538 XOR 25,805
+  ships 1 P3                12 pts  18 edges (fast 18, clip 0, rej 0, skip 0; 184 px): clear 30,481 + mat 1,078 + proj 39,781 + lines 24,525 = 95,864 (worst 99,467, +25k logic: 20 fps); redraw-erase AND 24,538 XOR 25,805
+  ships 2 compiled P3       24 pts  36 edges (fast 36, clip 0, rej 0, skip 0; 324 px): clear 30,481 + mat 2,156 + proj 56,239 + lines 46,131 = 135,008 (worst 139,310, +25k logic: 20 fps); redraw-erase AND 46,157 XOR 48,530
+  ships 2 P3                24 pts  36 edges (fast 36, clip 0, rej 0, skip 0; 324 px): clear 30,481 + mat 2,156 + proj 77,135 + lines 46,131 = 155,904 (worst 160,206, +25k logic: 4 refr.); redraw-erase AND 46,157 XOR 48,530
+  ships 3 compiled P3       36 pts  54 edges (fast 54, clip 0, rej 0, skip 0; 571 px): clear 30,481 + mat 3,234 + proj 83,560 + lines 74,593 = 191,868 (worst 194,957, +25k logic: 4 refr.); redraw-erase AND 74,634 XOR 78,231
+  ships 3 P3                36 pts  54 edges (fast 54, clip 0, rej 0, skip 0; 571 px): clear 30,481 + mat 3,234 + proj 114,904 + lines 74,593 = 223,212 (worst 226,301, +25k logic: 5 refr.); redraw-erase AND 74,634 XOR 78,231
+  ships 4 compiled P3       48 pts  72 edges (fast 72, clip 0, rej 0, skip 0; 666 px): clear 30,481 + mat 4,312 + proj 112,257 + lines 92,815 = 239,866 (worst 243,684, +25k logic: 5 refr.); redraw-erase AND 92,870 XOR 97,266
+  ships 4 P3                48 pts  72 edges (fast 72, clip 0, rej 0, skip 0; 666 px): clear 30,481 + mat 4,312 + proj 154,049 + lines 92,815 = 281,658 (worst 285,476, +25k logic: 6 refr.); redraw-erase AND 92,870 XOR 97,266
+  ships 4 P1                48 pts  72 edges (fast 72, clip 0, rej 0, skip 0; 664 px): clear 30,481 + mat 4,312 + proj 270,220 + lines 92,926 = 397,939 (worst 402,287, +25k logic: 8 refr.); redraw-erase AND 92,984 XOR 97,371
+  ships 4 P2                48 pts  72 edges (fast 72, clip 0, rej 0, skip 0; 663 px): clear 30,481 + mat 4,312 + proj 178,418 + lines 92,648 = 305,860 (worst 310,055, +25k logic: 6 refr.); redraw-erase AND 92,710 XOR 97,071
+  landscape 5 P3            25 pts  40 edges (fast 40, clip 0, rej 0, skip 0; 564 px): clear 30,481 + mat 1,078 + proj 61,162 + lines 60,060 = 152,781 (worst 154,982, +25k logic: 4 refr.); redraw-erase AND 60,081 XOR 65,067
+  landscape 7 P3            49 pts  84 edges (fast 84, clip 0, rej 0, skip 0; 1272 px): clear 30,481 + mat 1,078 + proj 119,970 + lines 130,642 = 282,172 (worst 284,339, +25k logic: 6 refr.); redraw-erase AND 130,685 XOR 141,164
+  landscape 9 P3            81 pts 144 edges (fast 133, clip 8, rej 3, skip 0; 2167 px): clear 30,481 + mat 1,078 + proj 198,976 + lines 255,825 = 486,360 (worst 498,706, +25k logic: 9 refr.); redraw-erase AND 255,890 XOR 272,352
+  landscape 9 P1            81 pts 144 edges (fast 133, clip 8, rej 4, skip 0; 2167 px): clear 30,481 + mat 1,078 + proj 400,343 + lines 255,434 = 687,335 (worst 697,054, +25k logic: 13 refr.); redraw-erase AND 255,499 XOR 271,980
+  landscape 9 P2            81 pts 144 edges (fast 133, clip 8, rej 3, skip 0; 2167 px): clear 30,481 + mat 1,078 + proj 241,893 + lines 255,825 = 529,277 (worst 542,191, +25k logic: 10 refr.); redraw-erase AND 255,890 XOR 272,352
+  tunnel 3 P3               24 pts  40 edges (fast 24, clip 9, rej 4, skip 4; 1214 px): clear 30,481 + mat 3,234 + proj 56,105 + lines 157,437 = 247,257 (worst 273,152, +25k logic: 6 refr.); redraw-erase AND 157,437 XOR 162,475
+  tunnel 4 P3               32 pts  56 edges (fast 40, clip 9, rej 4, skip 4; 1503 px): clear 30,481 + mat 4,312 + proj 75,054 + lines 190,265 = 300,112 (worst 325,471, +25k logic: 6 refr.); redraw-erase AND 190,268 XOR 196,641
+  tunnel 6 P3               48 pts  88 edges (fast 72, clip 9, rej 4, skip 4; 1877 px): clear 30,481 + mat 6,468 + proj 114,084 + lines 240,603 = 391,636 (worst 417,711, +25k logic: 8 refr.); redraw-erase AND 240,611 XOR 249,032
+  tunnel 8 P3               64 pts 120 edges (fast 104, clip 9, rej 4, skip 4; 2135 px): clear 30,481 + mat 8,624 + proj 153,517 + lines 281,789 = 474,411 (worst 501,630, +25k logic: 9 refr.); redraw-erase AND 281,815 XOR 291,838
+  tunnel 8 P1               64 pts 120 edges (fast 104, clip 9, rej 4, skip 4; 2132 px): clear 30,481 + mat 8,624 + proj 306,012 + lines 281,710 = 626,828 (worst 655,122, +25k logic: 12 refr.); redraw-erase AND 281,734 XOR 291,583
+  tunnel 8 P2               64 pts 120 edges (fast 104, clip 9, rej 4, skip 4; 2128 px): clear 30,481 + mat 8,624 + proj 184,240 + lines 281,527 = 504,871 (worst 531,177, +25k logic: 10 refr.); redraw-erase AND 281,550 XOR 291,470
+draw_edges overhead per edge, short (9 px): 209 T on top of draw_fast (1,092 T); a skipped edge 148 T, a rejected one 163 T
+draw_edges overhead per edge, long (161 px): 209 T on top of draw_fast (13,200 T); a skipped edge 148 T, a rejected one 163 T
+code bytes, C OR P3: line_setup + clip (mul16, div32) 970; drawing (loops, draw_state, draw_fast, tables) 1447; draw_fast entry 251; clear_push (+ clr_third) 243; build_matrix 131; project_yaw 210; project_full 368; proj_point + q 426; draw_edges 101; whole program 4037
+code bytes, C XOR P2: line_setup + clip (mul16, div32) 970; drawing (loops, draw_state, draw_fast, tables) 1639; draw_fast entry 258; clear_push (+ clr_third) 243; build_matrix 131; project_yaw 210; project_full 368; proj_point + q 341; draw_edges 101; whole program 4144
+code bytes, C ERASE P2: line_setup + clip (mul16, div32) 970; drawing (loops, draw_state, draw_fast, tables) 1447; draw_fast entry 251; clear_push (+ clr_third) 243; build_matrix 131; project_yaw 210; project_full 368; proj_point + q 341; draw_edges 101; whole program 3952
+code bytes, B OR P2: line_setup + clip (mul16, div32) 970; drawing (loops, draw_state, draw_fast, tables) 663; draw_fast entry 206; clear_push (+ clr_third) 243; build_matrix 131; project_yaw 210; project_full 368; proj_point + q 341; draw_edges 101; whole program 3168
+code bytes, A OR P1: line_setup + clip (mul16, div32) 970; drawing (loops, draw_state, draw_fast, tables) 215; clear_push (+ clr_third) 243; build_matrix 131; project_yaw 210; project_full 368; proj_point + q 203; draw_edges 133; whole program 2614
+code bytes, C OR P3 + ship model: line_setup + clip (mul16, div32) 970; drawing (loops, draw_state, draw_fast, tables) 1447; draw_fast entry 251; clear_push (+ clr_third) 243; build_matrix 131; project_yaw 210; project_full 368; proj_point + q 426; draw_edges 101; compiled ship model 1989; whole program 6026
+tables: QS 512 B (signed quarter squares), SIN 256 B, RCPT 128 B (P2/P3), SQU 1,024 B (P3 only)
+
+budget (derived from the measured costs above): tick - 25,000 logic - 30,481 PUSH clear (256x160); a line = draw_fast (mean of 15-75°, or of 0°/90°) + 209 draw_edges
+  3 refreshes (20 fps): 120,583 T left -> lines only: 89 of 8 px diagonal (130 horizontal/vertical), 30 of 40 px diagonal (61 horizontal/vertical), 7 of 180 px diagonal (18 horizontal/vertical); points only: 50 yaw-only, 38 yaw+pitch (P3)
+  2 refreshes (30 fps): 61,895 T left -> lines only: 46 of 8 px diagonal (67 horizontal/vertical), 15 of 40 px diagonal (31 horizontal/vertical), 4 of 180 px diagonal (9 horizontal/vertical); points only: 25 yaw-only, 19 yaw+pitch (P3)
+
+33892 pictures/results compared, 0 mismatches

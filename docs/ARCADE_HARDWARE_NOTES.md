@@ -323,3 +323,21 @@ one nibble a tick for 1,024 ticks (was a byte a tick for 1,536 at $3A00); Q and 
 * The world-load ticks now take 7 (tick 20) and 8 (450, 873) refreshes on TSRun (5 before): the class pass, about 2.5 frames, as the contract says.
 * Not covered: the joystick run (not made this time), the ZEsarUX DOCK-contents read (not part of `runner-zesarux.py`; it was a manual step in
   sections 12-14), pause / high score, sound, real hardware.
+
+## 16. Leap Runner and Vaults with title scenes (NOWINDOW / NOVIEW), cross-emulator check, 2026-11-11 (`ARCADE_LANGUAGE_BATCH7.md`)
+
+Both games now start in a title scene with the window / 3D view switched off (2D sprites at screen positions), alternate with a demo scene, and
+the scenarios press fire on the title. Methods and scripts of sections 14-15 (and Vaults' own); `runner-patch.mjs` packs its key script to 2 bits
+a tick (the v3 runtime ends at $3E0D), `vaults-patch.mjs` moved its stub to $BA00 (the game is 13,961 bytes).
+* **Leap Runner** (`runner.dck` 40,969 bytes, chunks 0 1 2 4 5; game 12,683): scenario 905 ticks (the title until tick 13, ENTER play at 14, play
+  from 21; level changes at 413 and 836; 62 sampled ticks). TSRun vs ZEsarUX, real keys and script-driven: 905 of 905 tick screens identical (0
+  bitmap, 0 attribute bytes differ), state identical at the 62 sampled ticks; TSRun keys vs script identical; Fuse (6,008 frames,
+  `fuse-runner-6`): ticks 1..905 in order, 0 absent, the sampled screens identical; tick 1 to 905 takes 2,743 refreshes on Fuse and on TSRun.
+* **Vaults** (`vaults.dck` 32,777 bytes; game 13,961): scenario 250 ticks (the title for ticks 1-16, play from 17; 27 sampled ticks). TSRun vs
+  ZEsarUX, real keys and script-driven: 250 of 250 screens identical, state identical at the sampled ticks; keys vs joystick identical (the
+  game's JS variable aside, as expected); Fuse (2,401 frames, `fuse-vaults-new`): ticks 1..250 in order, 0 absent, sampled screens identical;
+  tick 1 to 250 takes 1,017 refreshes on Fuse, 1,015 on TSRun.
+* Re-checked by the main session with `runner-compare.mjs --fuse arcade/build/xemu/fuse-runner-6` and `vaults-compare.mjs --fuse
+  arcade/build/xemu/fuse-vaults-new`: ALL COMPARED BYTES AND TICKS MATCH (both).
+* Not covered: Leap Runner's joystick run (not made), the demo -> title alternation on the other emulators (the scenarios leave the title at once),
+  sound, real hardware.

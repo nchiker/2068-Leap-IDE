@@ -17,6 +17,7 @@ M_FONT_S:
 M_FONT_E:
     INCLUDE "tileops.asm"       ; language batch 1: RT_FILL / FILLC / COPY / LOADMAP / BORDER / RANDOMISE, maps_boot (after the font: no address moves)
     INCLUDE "scroll.asm"        ; v3 part 2: the scrolling window, sprites in window mode, RT_CAMERA, the collision routines
+    INCLUDE "mode.asm"          ; language batch 7: RT_WINMODE (the window off / on per scene), appended so that no address moves
 RT_END:
     ASSERT RT_END <= $4000      ; the runtime fits DOCK chunks 0-1
     INCLUDE "game_placeholder.asm"      ; $8000 game image slot                    (DOCK chunks 4-5)

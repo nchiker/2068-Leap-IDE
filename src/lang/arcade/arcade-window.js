@@ -11,6 +11,7 @@
  *   buildWindowDesc(w)           -> Uint8Array          the window_desc record of section 3b (bands included)
  *   rleEncode(src) / rleDecode(bytes)  world_src as byte-RLE pairs (count 1..255, value), 0 ends; the expansion is exactly 2,048 bytes
  *   scanSpriteUse(ast, resolve)  -> Map(asset -> {frames, flip})   which assets a SHOW gives FRAME (other than the literal 0) or FLIP
+ *   noviewPoolPieces(sym, cst)   -> pieces              the pool pieces of a NOVIEW scene (batch 7)
  *   planPhasePool(...)           -> plan                the runtime's phase-pool plan (FTABs, frame slots, first fit); buildFrameT(...) the cost of one cache miss
  *   collision model              -> worldTile / tileFlags / tileHit on a 2,048-byte WORLD_RAM (the reference interpreter's)
  */
@@ -186,6 +187,18 @@ export const DEFAULT_POOL_PIECES = Object.freeze([[0xC080, 3456], [0xF200, 2176]
 export function poolPieces(constants = {}) {
   const c = constants, p = (n, d) => [c[`POOL_${n}`] ?? d[0], c[`POOL_${n}_LEN`] ?? d[1]];
   return [p('A', DEFAULT_POOL_PIECES[0]), p('B', DEFAULT_POOL_PIECES[1]), p('C', DEFAULT_POOL_PIECES[2])];
+}
+
+/**
+ * Language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md section 3): the pool of a VIEW3D game's NOVIEW scenes, built when such a scene is entered, in RAM ray mode only uses within a tick:
+ * runtime.json's NV_POOL_A / B / C (addresses) and NV_POOL_A_LEN / B_LEN / C_LEN, with the designed values ($CD00 256, $EE00 3,200, $D700 256 = 3,712 bytes) as the default for a missing one.
+ */
+export const NOVIEW_POOL_PIECES = Object.freeze([[0xCD00, 256], [0xEE00, 3200], [0xD700, 256]]);
+/** The NOVIEW pool pieces exported by the runtime (symbols, then constants), or null when the runtime does not export all six values: the
+ *  compiler then refuses the program instead of guessing addresses (NOVIEW_POOL_PIECES is the design's value, used by tests only). */
+export function noviewPoolPieces(symbols = {}, constants = {}) {
+  const pieces = ['A', 'B', 'C'].map((n) => [symbols[`NV_POOL_${n}`] ?? constants[`NV_POOL_${n}`], constants[`NV_POOL_${n}_LEN`] ?? symbols[`NV_POOL_${n}_LEN`]]);
+  return pieces.every(([a, l]) => Number.isInteger(a) && Number.isInteger(l)) ? pieces : null;
 }
 
 /**

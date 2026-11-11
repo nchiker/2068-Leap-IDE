@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 // arcade-runner.mjs -- slice B5 of the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 10): arcade/examples/runner.arc, "Leap Runner" with four levels, a game that does not
-// fit the 16 KB of the game area unless its three extra worlds are banked.
+// fit the 16 KB of the game area unless its three extra worlds are banked.  Since language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md part C) the game has three scenes: `title` (NOWINDOW: a full-screen picture and
+// sprites at screen positions), `demo` (the attract mode, the window) and `play`; the play scene's variables are named PLAY.X by the compiler, and the tests below read them as X (stripPlay), as before.
 //
 //   node tests/arcade-runner.mjs                  (ARCADE_QUICK=1: the real-runtime runs stop a few ticks after the first level change)
 //   node tests/arcade-runner.mjs --record         search a play-through of each level on the reference interpreter (four processes, minutes), chain them, and write arcade/examples/runner.script.json
@@ -21,11 +22,15 @@
 //   6  negative control: a changed byte in a banked world (level3) is seen by the comparison of section 4
 //   7  pause (H, language batch 6 Part B): on the interpreter and tick by tick on TSRun, the paused ticks stand still (state, text cells, both display files but for the PAUSED cells, sound silent) and the game goes
 //      on as the unpaused run shifted by the paused ticks (state and both display files)
-//   8  high score (HI): one session on the interpreter and on TSRun: game over, retry, win, title (shows HI n), new game, game over; HI keeps the higher score
+//   8  high score (HI): one session on the interpreter and on TSRun: game over (back to the title, HI kept), new game, win, title (shows HI n), new game, game over; HI keeps the higher score
+//   9  the scenes (batch 7 part C): the title shows no window (V_WIN = 0) and draws its sprites, title -> demo -> title alternate by themselves, fire in the title and in the demo starts the game, the whole flow
+//      on TSRun tick by tick against the interpreter (state, sprites, text cells), and the play itself unchanged: the play-through from the first playing tick on is the pre-scenes game's, tick for tick
+//      (a digest of the variables, arrays, sprites and camera of every tick, and of the world from tick 26 on, taken from the game as it was before the title and demo scenes were made)
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
@@ -51,10 +56,14 @@ const TITLE = [...new Array(13).fill(0), FIRE, ...new Array(6).fill(0)];        
 const rle = (a) => { const o = []; for (const v of a) { if (o.length && o.at(-1)[0] === v) o.at(-1)[1]++; else o.push([v, 1]); } return o; };
 const unrle = (r) => { const a = []; for (const [v, n] of r) for (let i = 0; i < n; i++) a.push(v); return a; };
 
+// the compiler keys a scene's variables SCENE.NAME in a game with several scenes (PLAY.ST); the play scene's are read here under their plain names, as the game had them before it had scenes
+const stripPlay = (o) => (o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/^PLAY\./, ''), v])) : o);
+const normRec = (r) => { if (r) { r.vars = stripPlay(r.vars); if (r.arrays) r.arrays = stripPlay(r.arrays); } return r; };
+const normRun = (run) => { normRec(run.init); run.ticks.forEach(normRec); return run; };
 const astOf = new Map();
 const astFor = (src) => { if (!astOf.has(src)) astOf.set(src, parse(src).ast); return astOf.get(src); };
 /** the interpreter's records for a stick script (index t-1 = FRAME call t) */
-const playInterp = (src, ticks, stickFn) => interpret(astFor(src), { version: 3, ticks, assets: ASSETS, stick: stickFn, maxSteps: 4_000_000_000 });
+const playInterp = (src, ticks, stickFn, keys) => normRun(interpret(astFor(src), { version: 3, ticks, assets: ASSETS, stick: stickFn, keys, maxSteps: 4_000_000_000 }));
 
 // =================================================================================================================
 // --record: a greedy search over macro actions on the reference interpreter (the method of tests/arcade-m6-platformer-bot.mjs), one level at a time
@@ -74,7 +83,7 @@ const scoreOf = (v, start) => v.PX * 4 + v.COINS * 6 + (v.SCORE - start.SCORE) /
 
 function searchLevel(level, { width = 6, log = () => {} } = {}) {
   const ast = astFor(variant({ level }));
-  const run = (script, ticks, tail) => interpret(ast, { version: 3, ticks, assets: ASSETS, stick: (t) => (t <= script.length ? script[t - 1] : tail ? tail(t - script.length) : 0), maxSteps: 4_000_000_000 }).ticks;
+  const run = (script, ticks, tail) => normRun(interpret(ast, { version: 3, ticks, assets: ASSETS, stick: (t) => (t <= script.length ? script[t - 1] : tail ? tail(t - script.length) : 0), maxSteps: 4_000_000_000 })).ticks;
   const expand = (script, sv) => {
     const n = script.length, out = [];
     for (const c of CANDS) {
@@ -255,12 +264,14 @@ else {
   check_(`usage.mapped ${u.mapped.used} of ${u.mapped.available} bytes (fits)`, u.mapped.used <= u.mapped.available);
   const names = u.banked.assets.map((x) => x.name).sort().join(',');
   const worlds = u.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
-  check_(`usage.banked: the four worlds, and nothing but tables besides (${names}), ${u.banked.used} bytes, in the window`, worlds === 'level,level2,level3,level4' && u.banked.assets.every((x) => x.kind === 'world' || x.kind === 'table'));
+  check_(`usage.banked: the four worlds, and nothing but tables and the title picture besides (${names}), ${u.banked.used} bytes, in the window`, worlds === 'level,level2,level3,level4' && u.banked.assets.every((x) => x.kind === 'world' || x.kind === 'table' || (x.kind === 'map' && x.name === 'titlepic')));
+  check_('the three scenes are there: title (the first), demo and play, with the title picture as the game\'s first screen MAP', JSON.stringify(normal.gen.symbols.scene.names) === '["title","demo","play"]' && u.banked.assets.some((x) => x.name === 'titlepic'));
   check_(`the cartridge ships chunks ${normal.shipped.join(' ')} (0 1 runtime, 2 the banked worlds, 4 5 the mapped part)`, JSON.stringify(normal.shipped) === '[0,1,2,4,5]');
   const forced = JSON.parse(ASSETS_TEXT); for (const k of Object.keys(forced.maps)) forced.maps[k].bank = 'mapped';
   const f = compile(SRC, { runtime: R3.rt, image: R3.img, assets: forced });
   check_(`with every map forced mapped the build fails: ${f.errors.length ? f.errors[0].message : 'it compiled'}`, f.errors.length > 0 && f.errors.every((e) => /does not fit/.test(e.message)));
   const m2 = f.errors.length ? (f.errors[0].message.match(/\(([\d,]+) of 16,384/) ?? [])[1] : null;
+  info(`the compile: mapped part ${u.mapped.used} of ${u.mapped.available} bytes, banked part ${u.banked.used} bytes (${u.banked.assets.map((x) => `${x.name} ${x.bytes}`).join(', ')})`);
   info(`all four worlds mapped would need ${m2 ?? '?'} of 16,384 bytes; banked, the mapped part is ${u.mapped.used} (${u.mapped.available - u.mapped.used} bytes to spare)`);
 }
 
@@ -282,10 +293,12 @@ function runFramed(R, res, { ticks, stick, keys }) {
   M_.resetMachine(m);
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const ent = SYM.SPR_ENT ?? 6, hasFrame = ent >= 8;
+  const sceneCur = res.gen?.symbols?.scene?.cur ?? null;
   const nInst = Math.max(res.gen.v2 ? res.gen.v2.ninst : 4, 4);
   const snap = (picture) => ({
-    vars: Object.fromEntries(Object.entries(res.map.vars).map(([k, a]) => [k, s16(rd16(a))])),
-    arrays: Object.fromEntries(Object.entries(res.map.arrays ?? {}).map(([k, { addr, n }]) => [k, Array.from({ length: n + 1 }, (_, i) => s16(rd16(addr + 2 * i)))])),
+    vars: stripPlay(Object.fromEntries(Object.entries(res.map.vars).map(([k, a]) => [k, s16(rd16(a))]))),
+    arrays: stripPlay(Object.fromEntries(Object.entries(res.map.arrays ?? {}).map(([k, { addr, n }]) => [k, Array.from({ length: n + 1 }, (_, i) => s16(rd16(addr + 2 * i)))]))),
+    scene: sceneCur !== null ? m.ram[sceneCur] : 0, vwin: SYM.V_WIN !== undefined ? m.ram[SYM.V_WIN] : null,
     sprites: Array.from({ length: nInst }, (_, i) => { const e = SYM.SPR_TAB + ent * i; return hasFrame ? { visible: m.ram[e], asset: m.ram[e + 1], x: s16(rd16(e + 2)), y: s16(rd16(e + 4)), frame: m.ram[e + 6] } : { visible: m.ram[e], x: rd16(e + 2), y: rd16(e + 4) }; }),
     // WORLD_RAM: bits 0-2 of every byte are the runtime's class bits (docs/ARCADE_WINDOW_FASTPATH.md section 2); the interpreter has none, so compare byte AND $F8
     worldRam: m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 2048).map((b) => b & 0xF8), cam: rd16(SYM.V_CAM),
@@ -328,6 +341,7 @@ let script = null, scriptInfo = null;
 if (existsSync(SCRIPT_FILE)) { scriptInfo = JSON.parse(readFileSync(SCRIPT_FILE, 'utf8')); script = unrle(scriptInfo.runs); }
 const PLAY_SRC = scriptInfo && scriptInfo.lives !== 3 ? variant({ lives: scriptInfo.lives }) : SRC;       // the game as it is, unless the recorded route needs more than its three lives
 const stickOf = (arr) => (t) => arr[t - 1] ?? 0;
+const PLAY_DIGEST = { state: 'f21d5e0511bcb3044d5b70ca55be93be694b0afbecd6fdeaa74895a648312ba5', world: '9f6305a5ce042a3895b42c7b56dff9af7ff42a2c8c3c2fbca6de95f2a417d745' };
 
 // =================================================================================================================
 console.log('\n3. The play-through on the reference interpreter');
@@ -348,17 +362,32 @@ else {
   let worldsOk = true;
   for (let l = 0; l < 4; l++) { const w = full.ticks[lvAt[l] - 1].worldRam; const m = ASSETS.maps[['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'][l]]; for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const x = w[r * 128 + c] >> 3, y = m.cells[r * COLS + c], coin = (t) => t === 6 || t === 18 || t === 19; if (x !== y && !(coin(x) && coin(y))) worldsOk = false; } }     // WORLD_RAM holds the tile in its high five bits; a coin may be in any frame of its spin
   check_('at the start of every level WORLD_RAM holds that level\'s map (the coins in any frame of their spin)', worldsOk);
+  // the play itself is unchanged: from the first playing tick (21: the fire was tick 14) on, the game is tick for tick the one that had its title as a state of its own scene.  PLAY_DIGEST was taken from that game (the
+  // source before the title and demo scenes, run on this interpreter over this recorded play-through): a SHA-256 of [variables, arrays, sprites, camera] of ticks 21..end (the variables as they were named then: TI, the
+  // start's stage counter, is left out, and the scenes' own TITLE.* / DEMO.* variables did not exist), and one of the world (WORLD_RAM) of ticks 26..end: the coin that the old title's last tick left half turned
+  // (tile 19 instead of 6, at column 14, row 10) is back to the spin's own phase from tick 26 on, so ticks 22..25 differ in that one cell only, the one visible difference of the new start.
+  if (PLAY_SRC !== SRC) skip_('the play is the pre-scenes game\'s', 'the recorded route needed a variant of the game (more lives)');
+  else {
+    const keep = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !/^(TITLE|DEMO)\./.test(k) && k !== 'TI' && k !== 'SC0').sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+    const hs = createHash('sha256'), hw = createHash('sha256');
+    for (let t = 21; t <= script.length; t++) { const r = full.ticks[t - 1]; hs.update(JSON.stringify([keep(r.vars), keep(r.arrays), r.sprites, r.cam])); if (t >= 26) hw.update(Buffer.from(r.worldRam)); }
+    const state = hs.digest('hex'), world = hw.digest('hex');
+    check_(`the play from tick 21 to ${script.length} (variables, arrays, sprites, camera of ${script.length - 20} ticks) is the pre-scenes game's, tick for tick (digest ${state.slice(0, 12)}...)`, state === PLAY_DIGEST.state);
+    check_(`... and so is the world (WORLD_RAM of ${script.length - 25} ticks, from tick 26: digest ${world.slice(0, 12)}...)`, world === PLAY_DIGEST.world);
+  }
   info(`recorded script: ${scriptInfo.levels.map((x) => `level ${x.level}: ${x.searchTicks} ticks, ${x.livesLeft} of 3 lives left in its own search`).join('; ')}; interpreter ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
-// game over and the retry of the same level: a variant with one life; the hero stands still until a walker reaches him
+// game over goes back to the title (batch 7): a variant with one life; the hero stands still until a walker reaches him, fire (a fresh edge, once the end text is up) leaves for the title
 const RETRY_SRC = variant({ level: 0, lives: 1 });
-const retryStick = (t) => (t === 14 ? FIRE : t > 150 && t % 2 === 0 ? FIRE : 0);
-const RETRY_TICKS = 260;
+const retryOver = playInterp(RETRY_SRC, 260, (t) => (t === 14 ? FIRE : 0)).ticks.findIndex((x) => x.vars.ST === 3) + 1;
+const retryStick = (t) => (t === 14 || t === retryOver + 16 ? FIRE : 0);
+const RETRY_TICKS = retryOver + 60;
 {
-  const r = playInterp(RETRY_SRC, RETRY_TICKS, retryStick).ticks.map((x) => x.vars);
-  const over = r.findIndex((v) => v.ST === 3) + 1, retry = r.findIndex((v, k) => k > over && v.ST === 4) + 1, again = r.findIndex((v, k) => k > retry && v.ST === 1) + 1;
-  check_(`one life: the hero is hit (game over at tick ${over}), fire starts "LEVEL 1" again (tick ${retry}) and the same level is played again with 3 lives (tick ${again}: LV ${r[again - 1]?.LV}, LIVES ${r[again - 1]?.LIVES}, COINS ${r[again - 1]?.COINS})`,
-    over > 0 && retry > over && again > retry && r[again - 1].LV === 0 && r[again - 1].LIVES === 3 && r[again - 1].COINS === 0);
+  const r = playInterp(RETRY_SRC, RETRY_TICKS, retryStick).ticks;
+  const over = retryOver, back = r.findIndex((x, k) => k >= over && x.scene === 0) + 1;
+  check_(`one life: the hero is hit (game over at tick ${over}: ST ${r[over - 1]?.vars.ST}, END text up by tick ${over + 5}), fire at tick ${over + 16} goes back to the title (scene 0 from tick ${back}, the window off: ${r[back - 1]?.show}), HI kept (${r[back - 1]?.vars.HI} = the game's score ${r[over - 1]?.vars.SCORE})`,
+    over > 0 && r[over - 1].vars.ST === 3 && back === over + 16 && r[back - 1].show === 'screen' && r[back - 1].vars.HI === r[over - 1].vars.SCORE && r.slice(over, back - 1).every((x) => x.scene === 2));
+  check_(`the title that game over returns to waits for a new press of fire (the fire still down is let go first): the ${RETRY_TICKS - retryOver - 16} ticks after it are all the title`, r.slice(back - 1).every((x) => x.scene === 0));
 }
 
 // =================================================================================================================
@@ -382,7 +411,7 @@ else {
   const rt = RETRY_TICKS;
   const rr = runFramed(R3, compile(RETRY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS }), { ticks: rt, stick: retryStick });
   const wantR = playInterp(RETRY_SRC, rt, retryStick);
-  check_(`game over and the retry of the level (a variant with one life): ${rt} ticks equal to the interpreter`, !rr.error && vsInterp(rr, wantR, rt) === null, rr.error ?? vsInterp(rr, wantR, rt) ?? '');
+  check_(`game over and back to the title (a variant with one life): ${rt} ticks equal to the interpreter`, !rr.error && vsInterp(rr, wantR, rt) === null, rr.error ?? vsInterp(rr, wantR, rt) ?? '');
 }
 
 // =================================================================================================================
@@ -429,7 +458,7 @@ console.log('\n7. Pause (H): the paused game stands still, and goes on exactly w
 // so that the silencing can be seen (a sound that goes on for the two ticks after it). D is even: the runtime draws into the two display files in turn, so a game shifted by an odd number of ticks
 // would have the files' roles swapped, and the picture comparison needs the same parity.
 const H_CODE = 72, JUNK = RIGHT | FIRE;
-const interpWith = (src, ticks, stick, keys) => interpret(astFor(src), { version: 3, ticks, assets: ASSETS, stick, keys, maxSteps: 4_000_000_000 });
+const interpWith = (src, ticks, stick, keys) => playInterp(src, ticks, stick, keys);
 const rowCells = (rec, row, c0, c1) => Array.from(rec.cells.slice(row * 32 + c0, row * 32 + c1));
 const PAUSED_CELLS = [...'PAUSED'].map((c) => c.charCodeAt(0));
 // the interpreter's record of a tick compared with another: variables, arrays, sprites, world, camera, text cells and attributes; `mask` = [row, c0, c1] cells left out
@@ -518,15 +547,16 @@ else {
 // =================================================================================================================
 console.log('\n8. High score (HI): kept across games, the higher wins, the title shows it');
 // =================================================================================================================
-// One session with a one-life variant: game over on a short play (score s0 > 0, so HI = s0), fire retries the level with three lives, the recorded route wins (HI = the final score, higher), fire goes to
-// the title ("HI n"), a new game left standing is over at once (a lower score: HI stays) -- on the interpreter, then on the cartridge tick by tick.
+// One session with a one-life variant: game over on a short play (score s0 > 0, so HI = s0), fire goes back to the title (which shows "HI s0"), fire starts a new game, the recorded route wins (HI = the final
+// score, higher), fire goes to the title ("HI n"), a new game left standing is over at once (a lower score: HI stays) -- on the interpreter, then on the cartridge tick by tick.
 let hiCase = null;
 if (!full) skip_('high score', 'no recorded play-through');
 else {
   const HI_SRC = variant({ lives: 1 });
-  const lvStart = 21;                                                     // the record after which level 1 plays (the recorded run's first with ST 1)
-  const hiRow = (r) => String.fromCharCode(...rowCells(r, 2, 12, 19)).trimEnd();
-  // seg A: the recorded start, then standing still: the first K (46..140) after which the hero is hit with a score above 0
+  const lvStart = 21;                                                     // the record after which level 1 plays (the recorded run's first with ST 1): the fire that starts the game is tick 14
+  // the title's high score text: row 21, from column 13 ("HI n", on the black bar above PRESS SPACE OR FIRE)
+  const hiRow = (r) => String.fromCharCode(...rowCells(r, 21, 13, 21)).trimEnd();
+  // seg A: the recorded start, then standing still: the first K (60..140) after which the hero is hit with a score above 0
   let seg = null;
   for (let K = 60; K <= 140 && !seg; K += 4) {
     const stickA = (t) => (t <= K ? script[t - 1] : 0);
@@ -536,22 +566,25 @@ else {
   }
   if (!seg) check_('a short play with a score above 0 ends in game over (one life)', false, 'none of K = 60..140 did');
   else {
-    // seg B: fire (a fresh edge) once game over has been up a while, the retry begins level 1; the recorded route from that level start on
+    // seg B: fire (a fresh edge) once game over has been up a while: the title; 14 ticks later fire starts a new game, 7 ticks after which level 1 plays; the recorded route from that level start on
     // then: win, wait, fire (title), fire (new game), stand still until game over
     const plan = [];                                                   // stick value by tick
     for (let t = 1; t <= seg.K; t++) plan.push(script[t - 1]);
     while (plan.length < seg.over + 20) plan.push(0);
-    plan.push(FIRE);                                                   // the retry
-    // run to find when the retry's level starts playing, then append the route with the recorded offsets
-    const startA = (r) => r.findIndex((x, k) => k >= seg.over && x.vars.ST === 1) + 1;
+    plan.push(FIRE);                                                   // game over to the title
+    const toTitle1 = plan.length;
+    while (plan.length < toTitle1 + 14) plan.push(0);
+    plan.push(FIRE);                                                   // the title to a new game
+    const start2 = plan.length;
+    // run to find when the new game's level starts playing, then append the route with the recorded offsets
     let r = interpWith(HI_SRC, plan.length + 120, (t) => plan[t - 1] ?? 0).ticks;
-    const t1 = startA(r);                                              // first tick with the retry's level playing
-    const off = t1 - lvStart;                                          // retry tick t plays what the recorded run played at tick t - off
+    const t1 = r.findIndex((x, k) => k >= start2 && x.vars.ST === 1) + 1;     // first tick with the new game's level playing
+    const off = t1 - lvStart;                                          // new-game tick t plays what the recorded run played at tick t - off
     while (plan.length < t1) plan.push(0);
     for (let t = t1 + 1; t - off <= script.length; t++) plan.push(script[t - off - 1]);
     r = interpWith(HI_SRC, plan.length + 40, (t) => plan[t - 1] ?? 0).ticks;
     const win = r.findIndex((x, k) => k >= t1 && x.vars.ST === 2) + 1;
-    check_(`after the game over (tick ${seg.over}, score ${seg.score}) fire retries level 1 (playing again from tick ${t1}) and the recorded route wins from there (win screen at tick ${win}; ${win > 0 ? 'score ' + r[win - 1].vars.SCORE : ''})`, win > 0);
+    check_(`after the game over (tick ${seg.over}, score ${seg.score}) fire goes to the title (tick ${toTitle1}), fire again starts a new game (tick ${start2}: level 1 playing from tick ${t1}) and the recorded route wins from there (win screen at tick ${win}; ${win > 0 ? 'score ' + r[win - 1].vars.SCORE : ''})`, win > 0 && t1 === start2 + 7 && r[toTitle1 - 1].scene === 0);
     if (win > 0) {
       while (plan.length < win + 30) plan.push(0);
       plan.push(FIRE);                                                 // the win screen to the title
@@ -563,11 +596,12 @@ else {
       const ticks = plan.length;
       const sess = interpWith(HI_SRC, ticks, (t) => plan[t - 1] ?? 0).ticks;
       const V = (t) => sess[t - 1].vars;
-      const titleAt = sess.findIndex((x, k) => k >= win && x.vars.ST === 0) + 1;
+      const titleAt = sess.findIndex((x, k) => k >= win && x.scene === 0) + 1;
       const over2 = sess.findIndex((x, k) => k >= newGame && x.vars.ST === 3) + 1;
       const hiAtOver0 = V(seg.over).HI, hiAtWin = V(win).HI, finalScore = V(win).SCORE;
       check_(`HI is 0 until a game ends and the first title (tick 12) shows "${hiRow(sess[11])}"`, V(seg.over - 1).HI === 0 && hiRow(sess[11]) === 'HI 0' && sess.slice(0, seg.over - 1).every((x) => x.vars.HI === 0));
       check_(`the first game over (score ${seg.score}) makes HI ${hiAtOver0}`, hiAtOver0 === seg.score);
+      check_(`game over returns to the title with HI kept: the title from tick ${toTitle1} (scene ${sess[toTitle1 - 1].scene}, window ${sess[toTitle1 - 1].show === 'screen' ? 'off' : 'ON'}) shows "${hiRow(sess[toTitle1 + 11])}" (HI ${V(toTitle1 + 11).HI}) and a new game from it starts with SCORE ${V(start2 + 8).SCORE}, HI ${V(start2 + 8).HI}`, sess[toTitle1 - 1].scene === 0 && sess[toTitle1 - 1].show === 'screen' && hiRow(sess[toTitle1 + 11]) === `HI ${seg.score}` && V(start2 + 8).SCORE === 0 && V(start2 + 8).HI === seg.score);
       check_(`the win (score ${finalScore}) is higher and makes HI ${hiAtWin}`, finalScore > seg.score && hiAtWin === finalScore);
       check_(`the title after the win shows "${hiRow(sess[titleAt + 11])}" (HI ${V(titleAt + 11).HI}) and a new game starts from it with a score of 0 (tick ${newGame + 9}: SCORE ${V(newGame + 9).SCORE}, HI ${V(newGame + 9).HI}; the new game is not clearing it)`, titleAt > 0 && hiRow(sess[titleAt + 11]) === `HI ${finalScore}` && V(newGame + 9).SCORE === 0 && V(newGame + 9).HI === finalScore);
       check_(`a lower score does not take it: the new game is over at tick ${over2} with score ${over2 > 0 ? V(over2).SCORE : '?'} and HI stays ${over2 > 0 ? V(over2).HI : '?'}`, over2 > 0 && V(over2).SCORE < finalScore && V(over2).HI === finalScore && V(ticks).HI === finalScore);
@@ -583,8 +617,71 @@ else {
   const g = runFramed(R3, hiRes, { ticks, stick: (t) => plan[t - 1] ?? 0 });
   let d = g.error ?? vsInterp(g, { init: full.init, ticks: sess }, ticks);
   for (let t = 1; t <= ticks && !d; t++) if (!sameBuf(g.snaps[t].cells, Uint8Array.from(sess[t - 1].cells))) d = `tick ${t}: the text cells differ from the interpreter's`;
-  check_(`the whole session on the cartridge (${ticks} ticks: game over, retry, win, title with HI ${finalScore}, new game, game over; one-life variant): variables (HI among them), arrays, sprites, world, camera and text cells equal to the interpreter at every tick  (${((Date.now() - t0) / 1000).toFixed(0)} s)`, d === null, d ?? '');
+  check_(`the whole session on the cartridge (${ticks} ticks: game over, title, new game, win, title with HI ${finalScore}, new game, game over; one-life variant): variables (HI among them), arrays, sprites, world, camera and text cells equal to the interpreter at every tick  (${((Date.now() - t0) / 1000).toFixed(0)} s)`, d === null, d ?? '');
   check_(`on the machine HI is ${g.snaps[ticks]?.vars.HI} at the end (the interpreter ${sess.at(-1).vars.HI})`, g.snaps[ticks]?.vars.HI === finalScore);
+}
+
+// =================================================================================================================
+console.log('\n9. The scenes: the title shows no window, the title and the demo take turns, fire starts the game from either');
+// =================================================================================================================
+// The title (scene 0, NOWINDOW) lasts 170 ticks, then the demo (scene 1) 170 ticks, then the title again: 8.5 seconds each at the game's 20 ticks a second. The record of the tick that executes ENTER is the new scene's.
+const SCENE_AT = (t) => (t <= 170 ? 0 : t <= 341 ? 1 : 0);
+{
+  const N9 = 350;
+  const flow = playInterp(SRC, N9, () => 0).ticks;
+  const bad = flow.findIndex((x, k) => x.scene !== SCENE_AT(k + 1) || x.show !== (x.scene === 0 ? 'screen' : 'window'));
+  check_(`no input: the title (window off: "screen") for ticks 1..170, the demo (window) for 171..341, the title again from tick 342, every record says which${bad >= 0 ? `: first wrong record ${bad + 1}` : ''}`, bad < 0);
+  // the sprites of the title are at screen positions: hero x = 4 + 1.5 t, hopping every 40 ticks, a walker 56 behind (y 136), a bat from the right (x = 250 - 2 t, y 104 + the sine)
+  const sp = (t, i) => flow[t - 1].sprites[i];
+  const SN = [0, 5, 9, 11, 12, 11, 9, 5, 0, -5, -9, -11, -12, -11, -9, -5];
+  const hero = sp(40, 6), walker = sp(60, 0), bat = sp(40, 4);
+  check_(`title tick 40: the hero (instance 6) is at (${hero.x}, ${hero.y}), tick 60 the walker (instance 0) at (${walker.x}, ${walker.y}) and tick 40 the bat (instance 4) at (${bat.x}, ${bat.y}): the screen positions of the title`,
+    hero.visible && hero.x === 4 + ((40 * 3) >> 1) && hero.y === 128 && walker.visible && walker.x === 4 + ((60 * 3) >> 1) - 56 && walker.y === 136 && bat.visible && bat.x === 250 - 80 && bat.y === 104 + SN[(40 >> 1) & 15]);
+  check_('the hero hops (y 128 - (p (16 - p)) div 3 for p = tick mod 40 below 16: 107 at p = 8), is hidden past the right edge (tick 160), and the walker is not there yet at tick 10', sp(48, 6).y === 128 - 21 && sp(160, 6).visible === 0 && sp(10, 0).visible === 0);
+  const cell = (t, c, r) => flow[t - 1].cells[r * 32 + c];
+  check_(`the hero eats the coins over his hops: the cell (2, 14) holds a coin at tick 1 (${cell(1, 2, 14)}) and sky at tick 100 (${cell(100, 2, 14)} = the cell (5, 14): ${cell(100, 5, 14)}), the pair under the last hop (25, 14) is still there at tick 100 (${cell(100, 25, 14)}) and gone at tick 160 (${cell(160, 25, 14)})`,
+    cell(1, 2, 14) !== cell(100, 5, 14) && cell(100, 2, 14) === cell(100, 5, 14) && cell(100, 25, 14) !== cell(100, 5, 14) && cell(160, 25, 14) === cell(100, 5, 14));
+  // fire in the demo starts the game; the game starts playing 7 ticks after the fire, as it did from the old title
+  const fd = playInterp(SRC, 260, (t) => (t === 200 ? FIRE : 0)).ticks;
+  const playAt = fd.findIndex((x) => x.vars.ST === 1) + 1;
+  check_(`fire in the demo (tick 200) starts the game: the demo runs to tick 199, scene 2 (window) from tick 200, level 1 playing at tick ${playAt} (LV ${fd[playAt - 1]?.vars.LV}, LIVES ${fd[playAt - 1]?.vars.LIVES})`, fd.slice(170, 199).every((x) => x.scene === 1) && fd.slice(199).every((x) => x.scene === 2 && x.show === 'window') && playAt === 207 && fd[playAt - 1].vars.LIVES === 3);
+  const ft = playInterp(SRC, 60, (t) => (t === 14 ? FIRE : 0)).ticks;
+  check_('fire in the title (tick 14) starts the game: the title for ticks 1..13, scene 2 from tick 14, level 1 playing at tick 21', ft.slice(0, 13).every((x) => x.scene === 0) && ft.slice(13).every((x) => x.scene === 2) && ft.findIndex((x) => x.vars.ST === 1) + 1 === 21);
+  // a fire still held when a game ends does not start the next one: game over -> the title with fire held for 8 ticks, then a new press
+  const held = (t) => (t === 14 || (t >= retryOver + 16 && t <= retryOver + 23) || t === retryOver + 30 ? FIRE : 0);
+  const hh = playInterp(RETRY_SRC, retryOver + 60, held).ticks;
+  const over8 = retryOver + 16, press = retryOver + 30;
+  check_(`fire held through game over (ticks ${over8}..${over8 + 7}) leaves for the title and does not start a game: the title for ticks ${over8}..${press - 1}, a new press at tick ${press} starts one (scene 2 from tick ${press})`,
+    hh.slice(over8 - 1, press - 1).every((x) => x.scene === 0) && hh.slice(press - 1).every((x) => x.scene === 2));
+}
+{
+  const R9 = { ...R3, picture: true };
+  if (!realOk) skip_('the scenes on the real runtime', 'the banked build is missing');
+  else {
+    // the real runtime, tick by tick against the interpreter: variables, arrays, SPR_TAB, WORLD_RAM, camera, and the text cells; the scene index and V_WIN (0 in the title, 1 in the demo and the game)
+    const runScene = (label, ticks, stickFn) => {
+      const t0 = Date.now();
+      const g = runFramed(R9, normal, { ticks, stick: stickFn });
+      const want = playInterp(SRC, ticks, stickFn);
+      let d = g.error ?? vsInterp(g, want, ticks);
+      for (let t = 0; t <= ticks && !d; t++) {
+        const w = t === 0 ? want.init : want.ticks[t - 1], sn = g.snaps[t];
+        if (sn.scene !== w.scene) d = `sample ${t}: scene ${sn.scene}, interpreter ${w.scene}`;
+        else if (sn.vwin !== (w.show === 'screen' ? 0 : 1)) d = `sample ${t}: V_WIN = ${sn.vwin}, the interpreter says the scene shows ${w.show}`;
+        else if (!sameBuf(sn.cells, Uint8Array.from(w.cells)) || !sameBuf(sn.attrs, Uint8Array.from(w.attrs))) d = `sample ${t}: the text cells / attributes differ`;
+      }
+      check_(`${label}: ${ticks} ticks equal to the interpreter (variables, arrays, SPR_TAB, WORLD_RAM, camera, text cells, scene index, V_WIN)  (${((Date.now() - t0) / 1000).toFixed(0)} s)`, d === null, d ?? '');
+      return { g, want };
+    };
+    const a = runScene('no input: title, demo, title', 350, () => 0);
+    // the title draws its sprites: ink in the box of the hero (tick 21), the walker (tick 61) and the bat (tick 41) over the sky of the picture, in both display files; and the window is off there
+    const inkBox = (img, base, x, y, w, h) => { let n = 0; for (let yy = y; yy < y + h; yy++) for (let c = x >> 3; c <= (x + w - 1) >> 3; c++) { const bits = img[base + (((yy & 0xC0) << 5) | ((yy & 7) << 8) | ((yy & 0x38) << 2)) + c]; for (let b = 0; b < 8; b++) if (bits & (1 << b) && c * 8 + (7 - b) >= x && c * 8 + (7 - b) < x + w) n++; } return n; };
+    const boxes = [['hero', 21, 6], ['walker', 61, 0], ['bat', 41, 4]].map(([name, k, i]) => { const sp0 = a.want.ticks[k - 2].sprites[i]; const r = (base) => inkBox(a.g.snaps[k].ram4000, base, sp0.x + 2, sp0.y + 4, 12, 8); return [name, k, r(0x0000), r(0x2000)]; });
+    check_(`the title's sprites are drawn: ink in a 12 x 8 pixel box of the hero, walker and bat over the blank sky, in the two display files (${boxes.map(([n, k, x, y]) => `${n} at sample ${k}: ${x} / ${y}`).join('; ')})`, boxes.every(([, , x, y]) => x > 15 && y > 15));
+    check_(`the window is off in the title (V_WIN = ${a.g.snaps[20].vwin} at sample 20), on in the demo (${a.g.snaps[250].vwin}) and in the title again (${a.g.snaps[345].vwin})`, a.g.snaps[20].vwin === 0 && a.g.snaps[250].vwin === 1 && a.g.snaps[345].vwin === 0);
+    runScene('fire in the demo (tick 200): the game starts from it', 330, (t) => (t === 200 ? FIRE : 0));
+    runScene('fire in the title (tick 14), then the game to tick 120', 120, (t) => (t === 14 ? FIRE : 0));
+  }
 }
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}: arcade-runner (${passed} checks passed, ${failed} failed, ${skipped} skipped)`);

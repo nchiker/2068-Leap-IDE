@@ -180,7 +180,7 @@
 
 import { Emitter, L, M } from './z80-emit.js';
 import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, convertSpriteV3, MAX_SFX } from './arcade-assets.js';
-import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, buildFrameT } from './arcade-window.js';
+import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, noviewPoolPieces, buildFrameT } from './arcade-window.js';
 import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
 import { LIMITS } from './arcade-words.js';
 import { layoutOf, bankOrder, assignAt, rleOf, n3, BANK_BYTES, GAME_AREA_BYTES } from './arcade-bank.js';
@@ -943,6 +943,22 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const needed = ['RT_SILENCE', 'RT_HIDE', 'RT_INK', 'RT_BRIGHT', 'RT_PAPER', 'RT_BORDER', 'RT_CLS', ...(mapList.length ? ['RT_LOADMAP'] : [])];
     for (const n of needed) if (sym[n] === undefined) err(scenes[0], `scenes need ${n}, which this runtime does not provide`);
     if (sym.BORDER_COLOUR === undefined && cst.BORDER_COLOUR === undefined) err(scenes[0], 'scenes need BORDER_COLOUR, which this runtime does not provide');
+  }
+  // language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md sections 1.6, 2): `SCENE x NOWINDOW` / `NOVIEW`. In a program with at least one such scene every ENTER sequence (after the reset, before the target's INIT) and
+  // the boot entry (before the first scene's INIT) call the runtime's mode routine with A = 0 (the target has the clause) or 1; a program without the clause emits nothing of it.
+  const sceneModes = scenes.map((sc) => sc.mode ?? null);
+  const hasModes = sceneModes.some(Boolean);
+  const modeRoutine = (m) => (m === 'nowindow' ? 'RT_WINMODE' : 'RT_VIEWMODE');
+  const modeRt = hasModes ? modeRoutine(sceneModes.find(Boolean)) : null;       // (the checker keeps the clause to the kind of the game: one routine serves every scene)
+  if (hasModes) {
+    const asked = new Set();
+    scenes.forEach((sc, k) => {
+      if (!sceneModes[k]) return;
+      const rt = modeRoutine(sceneModes[k]);
+      if (sym[rt] !== undefined || asked.has(rt)) return;
+      asked.add(rt);
+      err(sc.modePos ?? sc, `SCENE '${sc.name}' ${sceneModes[k] === 'nowindow' ? 'NOWINDOW' : 'NOVIEW'} needs ${rt}, which this runtime does not provide (build with a runtime of language batch 7)`);
+    });
   }
   if (cst.MAX_MAPS !== undefined && mapList.length > cst.MAX_MAPS) err(mapList[cst.MAX_MAPS].node, `this runtime build holds at most ${cst.MAX_MAPS} maps in its map table (MAX_MAPS); the game has ${mapList.length}`);
   const bankedMaps = plan ? mapList.filter((m) => plan.at.has(up(m.node.name))).length : 0;
@@ -2192,6 +2208,13 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     prologueBytes += e.size - m;
   }
 
+  /** Language batch 7: A = 0 (the scene has NOWINDOW / NOVIEW) or 1, then the runtime's mode routine. Nothing at all in a program without the clause. */
+  function emitSceneMode(k) {
+    if (!hasModes) return;
+    e.ld('a', sceneModes[k] ? 0 : 1);
+    e.call(need(modeRt));
+  }
+
   /** Language batch 4, contract section 5: the frame entry that dispatches on the current scene, scn$enter (the switch) and scn$reset (the machine back to the game start state). */
   function emitDriver() {
     const n = scenes.length, curAddr = sceneCurSlot, spAddr = sceneSpSlot;
@@ -2214,6 +2237,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       const { first, end } = sceneSlots[k];
       if (end > first) { e.ld('hl', slotAddr(first)); e.ld('de', slotAddr(first) + 1); e.ld('bc', 2 * (end - first) - 1); e.ld('(hl)', 0); e.ldir(); }
       for (const seg of initSegments) if (seg.scene === k) { e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
+      emitSceneMode(k);                                                          // batch 7: the target's display mode, after the reset, before its INIT
       e.jp(labelOf('P', 'INIT', k));
     }
     e.label('scn$reset');
@@ -2241,6 +2265,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.ld('hl', L('vars$base')); e.ld('de', L('vars$base', 1)); e.ld('bc', L('vars$len1'));
     e.ld('(hl)', 0); e.ldir();
     for (const seg of initSegments) { if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
+    emitSceneMode(0);                                                            // batch 7: the first scene's display mode, before its INIT
     if (!driver) e.jp('P$INIT');
     else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }          // the stack pointer the runtime called us with: ENTER cuts the stack back to it
     if (driver) emitDriver();
@@ -2509,6 +2534,19 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       if (ph > 1 && k < n) warnings.push({ ...pos(sp.node), severity: 'warning', message: `asset ${sp.name}: only ${k} of ${n} frames stay cached; a frame that is not cached is built when first drawn (about ${buildFrameT(sp.w, sp.h, ph)} cycles for this size) which can overrun the tick; use fewer phases (phases 2 or 1) or fewer frames` });
     });
   }
+  // language batch 7: a VIEW3D game with a NOVIEW scene draws its sprites there as a game without the view would (2D), so the runtime builds a phase pool when the scene is entered, in the smaller RAM
+  // that ray mode only uses within a tick (docs/ARCADE_LANGUAGE_BATCH7.md section 1.4); art that does not fit is a build error (the linker), so it can never fail at run time
+  let noviewPlan = null;
+  if (v3 && view && sceneModes.includes('noview')) {
+    const pieces = noviewPoolPieces(sym, cst);
+    if (!pieces) err(ast, 'this runtime does not export the NOVIEW pool (NV_POOL_A / B / C and their lengths): a NOVIEW scene needs runtime v4 with batch 7');
+    else noviewPlan = planPhasePool(sprites.map((sp, i) => ({ w: sp.w, h: sp.h, phases: sp.phases ?? 8, nframes: sp.nframes ?? 1, instances: instAssets.filter((a) => a === i).length })), pieces);
+    if (noviewPlan) noviewPlan.pieces = pieces;
+    if (noviewPlan?.ok) sprites.forEach((sp, i) => {
+      const ph = sp.phases ?? 8, n = sp.nframes ?? 1, k = noviewPlan.K[i];
+      if (ph > 1 && k < n) warnings.push({ ...pos(sp.node), severity: 'warning', message: `asset ${sp.name}: in a NOVIEW scene only ${k} of ${n} frames stay cached; a frame that is not cached is built when first drawn (about ${buildFrameT(sp.w, sp.h, ph)} cycles for this size) which can overrun the tick; use fewer phases (phases 2 or 1) or fewer frames` });
+    });
+  }
   // the banked cartridge map: every MAP that converted is a bankable asset (declaration order), with the bytes it occupies (docs/ARCADE_BANKING_CONTRACT.md section 5)
   const bankables = [];
   for (const a of ast.assets ?? []) {
@@ -2555,6 +2593,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     v1: v1Info,
     v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length, mapTable: extMaps ? v1Info.mapTable : 0 } : null,
     phase: v3 ? phasePlan : null,
+    ...(noviewPlan ? { noviewPhase: noviewPlan } : {}),
+    ...(hasModes ? { sceneModes } : {}),
     usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(allTabs.length ? { tables: allTabs.length, tableBytes: allTabs.reduce((n, t) => n + (t.data?.length ?? 0), 0) } : {}), ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
   };
 }

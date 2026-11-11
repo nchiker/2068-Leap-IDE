@@ -11,6 +11,9 @@
 // runtime's main loop, given with the interrupt handler's time ("t", what decides whether the tick is late) and without it ("tx"). The joystick of tick k is put on the machine when
 // PROC FRAME is entered for tick k. A tick is marked as a LOAD when, inside it, the runtime enters RT_WORLDLOAD (the WORLD statement: the new world is decoded and the whole window is
 // redrawn, so it is one long tick over its refreshes) or window_boot (a scene starts); loads are reported on their own and are not in the distribution or in the bound.
+// Since language batch 7 part C the game has three scenes (title without the window, demo, play), so the recorded play-through starts in the title: the first two ticks of the first scene and the tick that
+// executes an ENTER with the two after it are loads too ("scene start"): a scene starts from a screen of freshly loaded cells (the title's picture is all 768 cells, drawn in both display files by the first
+// two ticks, about 360,000 T each; the game's first two ticks after ENTER repaint the window in both files). They are not gameplay ticks; what the bound is about, gameplay, starts after them.
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -48,6 +51,7 @@ const json = join(ROOT, 'arcade/build/v3/runtime.json');
 const rt = JSON.parse(readFileSync(json, 'utf8'));
 const img = new Uint8Array(readFileSync(join(dirname(json), rt.image ?? 'runtime.bin')));
 const res = compile(PLAY_SRC, { runtime: rt, image: img, assets: ASSETS });
+const SCENE_CUR = res.gen?.symbols?.scene?.cur ?? null;
 if (res.errors.length) throw new Error('compile: ' + res.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
 const S = { ...rt.symbols, ...(rt.constants ?? {}) };
 for (const k of ['RT_WORLDLOAD', 'window_boot', 'window_repaint', 'WORK_START', 'WORK_END', 'AFTER_FRAME', 'ISR', 'ISR_END', 'SND_S', 'SND_E']) if (S[k] === undefined) throw new Error(`the runtime has no symbol ${k}`);
@@ -66,6 +70,7 @@ const fe = res.map.entries.frame;
 const div = res.memory[0x8004] & 0x3F;
 const ticks = [];
 let inIsr = false, isrT0 = 0, isrAcc = 0, w0 = null, entries = 0, load = null, rep = null, repT = 0;
+let prevScene = SCENE_CUR !== null ? 0 : -1, grace = SCENE_CUR !== null ? 2 : 0;          // scene start: the first scene's first two ticks, and the tick that ENTERs a scene with the two after it
 const nframes = (TICKS + 3) * Math.max(div, 3) * 4 + 400;
 for (let f = 0; f < nframes && ticks.length < TICKS; f++) {
   const end = m.frameStart + FRAME_T;
@@ -83,6 +88,8 @@ for (let f = 0; f < nframes && ticks.length < TICKS; f++) {
         else if (rep && pc === rep.ret && cpu.sp === rep.sp + 2) { repT += m.tstates - rep.t0 - (isrAcc - rep.i0); rep = null; }
       }
       if (pc === S.WORK_END && w0) {
+        if (SCENE_CUR !== null && m.ram[SCENE_CUR] !== prevScene) { prevScene = m.ram[SCENE_CUR]; grace = 3; }
+        if (grace > 0) { if (!load) load = 'scene start'; grace--; }
         ticks.push({ n: entries, load, t: m.tstates - w0.t0, tx: m.tstates - w0.t0 - (isrAcc - w0.i0), repaint: repT });
         w0 = null;
       }
@@ -100,7 +107,7 @@ const over = ticks.filter((x) => x.t > BUDGET), overPlay = play.filter((x) => x.
 console.log(`Leap Runner, the recorded play-through: ${ticks.length} ticks (${TICKS < script.length ? `first ${TICKS} of ${script.length}` : 'all'}), frame_div ${div}, runtime ${rt.version}; budget ${fmt(BUDGET)} T (3 refreshes), interrupt time included`);
 console.log(`  ticks that are not a world load: ${play.length}: median ${fmt(pct(sorted, 0.5))}, 95th ${fmt(pct(sorted, 0.95))}, 99th ${fmt(pct(sorted, 0.99))}, worst ${fmt(worst.t)} (tick ${worst.n}; ${fmt(worst.tx)} without the interrupt), mean ${fmt(mean(play.map((x) => x.t)))}`);
 console.log(`  window_repaint: mean ${fmt(mean(ticks.map((x) => x.repaint)))} T a tick over all ticks, ${fmt(mean(play.map((x) => x.repaint)))} over the ticks that are not loads (max ${fmt(Math.max(...ticks.map((x) => x.repaint)))})`);
-console.log(`  loads (ticks that call RT_WORLDLOAD or start a scene): ${loads.length}: ${loads.map((x) => `tick ${x.n} ${x.load} ${fmt(x.t)}`).join(', ') || 'none'}`);
+console.log(`  loads (ticks that call RT_WORLDLOAD or are a scene start): ${loads.length}: ${loads.map((x) => `tick ${x.n} ${x.load} ${fmt(x.t)}`).join(', ') || 'none'}`);
 console.log(`  ticks over ${fmt(BUDGET)}: ${over.length} in all (${overPlay.length} that are not loads${overPlay.length ? ': ' + overPlay.map((x) => `tick ${x.n} ${fmt(x.t)}`).join(', ') : ''})`);
 console.log(`  the 5 costliest ticks that are not loads: ${play.slice().sort((a, b) => b.t - a.t).slice(0, 5).map((x) => `tick ${x.n} ${fmt(x.t)} (repaint ${fmt(x.repaint)})`).join(', ')}`);
 const ok = worst.t < WORST_BEFORE && overPlay.length === 0;

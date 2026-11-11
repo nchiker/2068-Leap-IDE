@@ -8,8 +8,8 @@ five gems, three health potions, a treasure to find.
 
 | File | What |
 |---|---|
-| `vaults.arc` | the game (one `SCENE`, a `SELECT CASE` state machine: title / playing / treasure found / dead) |
-| `vaults.assets.gen.mjs` | the hand-drawn ASCII maze, the art, the HUD panel and the sounds; writes `vaults.assets.json`; `--ascii` prints the maze and the sprite frames, `--data` prints the `CONST` / `DIM` lines of the level data that the source carries |
+| `vaults.arc` | the game: three scenes, `title` (`SCENE title NOVIEW`, no 3D view), `demo` (the view turning) and `play` (a `SELECT CASE` state machine: playing / treasure found / dead) |
+| `vaults.assets.gen.mjs` | the hand-drawn ASCII maze, the art, the HUD panel, the title picture and the sounds; writes `vaults.assets.json`; `--ascii` prints the maze and the sprite frames, `--data` prints the `CONST` / `DIM` lines of the level data that the source carries |
 | `vaults.assets.json` | generated, committed (the generator is deterministic; a test checks the file is what it makes) |
 
 ## Build
@@ -19,6 +19,17 @@ node arcade/tools/arcadec.mjs arcade/examples/vaults.arc --assets arcade/example
 ```
 
 The cartridge is `arcade/build/vaults.dck` (or `-o file.dck`). It needs the v4 runtime build (`arcade/build/v4/`, `node arcade/tools/build-runtime-v4.mjs`).
+
+## The scenes (language batch 7)
+
+* **`SCENE title NOVIEW`** is the first scene, so the game starts in it, and it shows **no 3D view**: the whole 32 x 24 cell screen is a picture, the map `vl_title` (generated: `VAULTS` in
+  brick-wall tiles, a vault room of stone, the goblet on its pedestal, gems, the locked door). On it the game prints the tagline, the prompt and the best score of the session and animates it:
+  gems sparkle by `TILE` swaps (one a tick, and the goblet's top), and **sprites at screen positions** (the same instances the maze uses): a wraith patrols the corridor 2 pixels a tick (the wraith
+  asset has 4 phases for that; ray mode ignores phases), the key, two gems and a potion bob. The NOVIEW sprite pool the linker plans for it: 1,196 of 3,712 bytes (the wraith's 4 frames cached).
+* **`SCENE demo`** has the view back on: the colonnade turning slowly with the HUD panel (what the title used to be). Title and demo take turns every 135 ticks (9 seconds); fire in either enters play.
+* **`SCENE play`** is the game. Its `INIT` loads the floor plan again (`WORLD level`), puts every thing back, draws the HUD and shows the start pose; the treasure or death `ENTER title`.
+  The best score is a game-level variable. The play is tick for tick what it was when the title was a state of it (`tests/arcade-m8-vaults.mjs` compares digests of every tick).
+* A scene switch is a long tick (about 1,000,000 T-states: the machine reset's `CLS` and first-map load, the floor plan, the pool build when the view goes off): about 0.3 s at the switch.
 
 ## How to play
 

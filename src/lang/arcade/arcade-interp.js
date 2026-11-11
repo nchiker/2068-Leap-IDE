@@ -120,6 +120,12 @@
  *   - SEEN(s) / DEPTH(s) read what the harness injects: opts.billboard(tick, instance) -> {depth, col} (col -1 = not drawn), the values of the PREVIOUS tick's draw as the
  *     runtime leaves them in BB_TAB when PROC FRAME of `tick` starts; default: not drawn (depth 0, col -1). An instance outside the pool: SEEN -1, DEPTH 0.
  *
+ * ── Language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md): SCENE name NOWINDOW / NOVIEW ────────────────────────────────────────────────────────────────────
+ *   A scene with the clause shows neither the window nor the 3D view: it runs as a game without one would. SHOW clamps to the screen (0..256 - w, 0..192 - h, the 2D sprite rule of a v3 game without
+ *   a WINDOW) and HIT uses the hot boxes, not the billboard radius; the world words (CAMERA, SETWORLD, WORLD, WORLDTILE, TILEFLAGS, TILEHIT, CAMX, SOLID, VIEW, SETWALL, WALL, SEEN, DEPTH) act on the
+ *   kept world / camera / pose / walls exactly as in any scene. The mode is set by every scene entry after the machine reset (so after the sprites are hidden) and before INIT, and for the first scene at
+ *   the start. A program with at least one clause gets `show` ('window' | 'view' | 'screen') in every record: what the scene shows; programs without the clause have no such key.
+ *
  * ── Language batch 4: scenes (docs/ARCADE_LANGUAGE_BATCH4.md) ──────────────────────────────────────────────────────────────────────────────
  *   Any number of SCENEs. The first starts the game: its variables are 0 and its array initialisers applied (the game-level ones too); the other
  *   scenes' variables are 0 until entered. `ENTER name` abandons the running PROCs at once (an exception caught where INIT / FRAME was called) and
@@ -360,6 +366,10 @@ export function interpret(ast, opts = {}) {
   const sceneList = ast.scenes ?? [];
   const multi = sceneList.length > 1;
   let curScene = 0;
+  // language batch 7: does the current scene show the window / 3D view? A scene with NOWINDOW / NOVIEW does not: it runs as a game without the window / view would (positions clamped to the screen by the 2D
+  // sprite rule, HIT on the hot boxes); the world / view state (camera, world, pose, walls) is kept and used by the world words as ever. Set by every scene entry, the first one at the start.
+  const hasModes = sceneList.some((sc) => sc && sc.mode);
+  let screenOnly = !!sceneList[0]?.mode;
   const fnTable = new Map(), procTable = new Map();
   const clock = opts.clock ?? null;
   let playN = 0;
@@ -373,7 +383,7 @@ export function interpret(ast, opts = {}) {
     const arrays = {};
     for (const r of nameRecs) if (r.kind === 'a') arrays[r.key] = cellOf(r).arr.slice();
     return {
-      tick, scene: curScene, vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
+      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : 'screen' } : {}), vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
@@ -618,7 +628,7 @@ export function interpret(ast, opts = {}) {
             const a = instOf(args[0], sc), b = instOf(args[1], sc);
             if (a < 0 || b < 0) return 0;
             if (!spr[a].visible || !spr[b].visible) return 0;
-            if (view) {                                    // ray mode: R = 4 * h, the unsigned 8.8 positions, the hot box is ignored
+            if (view && !screenOnly) {                     // ray mode: R = 4 * h, the unsigned 8.8 positions, the hot box is ignored
               const R = billboardRadius(assetDims[instAsset[a]][1]) + billboardRadius(assetDims[instAsset[b]][1]);
               return Math.abs((spr[a].x & 0xFFFF) - (spr[b].x & 0xFFFF)) < R && Math.abs((spr[a].y & 0xFFFF) - (spr[b].y & 0xFFFF)) < R ? 1 : 0;
             }
@@ -759,7 +769,7 @@ export function interpret(ast, opts = {}) {
             if (opts.clampFrame) frame = Math.min(frame, n * (spriteUse.get(assetObjs[instAsset[idx]])?.flip ? 2 : 1) - 1);
           }
           let px = x, py = y;
-          if (!win && !view) { const [aw, ah] = assetDims[instAsset[idx]] ?? [16, 16]; px = Math.min(Math.max(x, 0), 256 - aw); py = Math.min(Math.max(y, 0), 192 - ah); }
+          if ((!win && !view) || screenOnly) { const [aw, ah] = assetDims[instAsset[idx]] ?? [16, 16]; px = Math.min(Math.max(x, 0), 256 - aw); py = Math.min(Math.max(y, 0), 192 - ah); }
           spr[idx] = { visible: 1, asset: instAsset[idx], x: px, y: py, frame };
         }
         events.push({ op: 'show', sprite: idx, x, y });
@@ -959,6 +969,7 @@ export function interpret(ast, opts = {}) {
     const info = sceneInfo[k];
     info.scope = new Scope(globalScope);
     collect(info.scope, info.node, info.fns, info.procs, 'scene', k);
+    screenOnly = !!info.node.mode;                                                            // batch 7: the target's display mode (after the reset, before its INIT)
     curScene = k; sceneScope = info.scope; sceneFns = info.fns; sceneProcs = info.procs;
   };
   let pending = null;

@@ -102,6 +102,11 @@ V_CAM           EQU V3VARS+0    ; (v4: no camera; the v3 name is kept for the v3
 ; DIV_EXT | DIV_VIEW and view_desc passes ray_check; otherwise the game runs exactly as v3 part 1 (non-window mode).
 ; ---------------------------------------------------------------------------------------------------------------
 V_RAY           EQU VARS+$61    ; byte: 1 = ray mode (v3's V_WIN byte)
+V_RAYOFF        EQU VARS+$62    ; byte (language batch 7, mode.asm): 1 = the game has a view and RT_VIEWMODE switched it off (V_RAY is then 0); 0 otherwise.
+                                ;   "The game has a view" = V_RAY OR V_RAYOFF (view_has).  A free byte of the variables ($E062-$E06F), NOT in V4VARS
+                                ;   (tests poison VD_COLW.. to prove a call outside ray mode touches nothing).  Boot: 0.
+V_RAYATTR       EQU VARS+$63    ; byte (mode.asm): 0, or 1 + the display file that still owes the view's attributes after RT_VIEWMODE on (it wrote the hidden
+                                ;   file's only, not the one on screen); vm_pre (the ray tick's first call) writes them when that file is next drawn.  Boot: 0.
 V4VARS          EQU V3VARS      ; $E100-$E1BF in ray mode ($E1C0-$E1FF: the frame cache's scratch in non-ray mode, unused in ray mode)
 BB_TAB          EQU V4VARS+$00  ; 16 x BB_ENT: DW depth (8.8, 0 = not drawn), DW col (0..127, $FFFF = not drawn): the previous tick's draw
 BB_ENT          EQU 4
@@ -308,6 +313,17 @@ GLYPH_LEN       EQU $0800
 POOL_B          EQU $F200
 POOL_B_LEN      EQU $0880
 PHASE_POOL_BYTES EQU POOL_A_LEN+POOL_B_LEN+POOL_C_LEN
+; The NOVIEW phase pool (language batch 7, mode.asm RT_VIEWMODE): the pieces a VIEW3D game's NOVIEW scene draws its sprites from (the pool plan
+; above, first fit in this order, with these starts; each piece ends where the normal one does).  RAM that ray mode uses only within a tick
+; (RAY_HHR / RAY_PIR, RAY_BREC, RAY_BCODE, RAY_DISTL / H) or not at all; the ray tables $C080-$CCFF, the map, RAY_RAM and V4VARS are outside.
+NV_POOL_A       EQU $CD00       ; 256 bytes: $CD00-$CDFF (the tail of POOL_A: RAY_HHR, RAY_PIR, free)
+NV_POOL_A_LEN   EQU $0100
+NV_POOL_B       EQU $EE00       ; 3,200 bytes: $EE00-$FA7F (WORLD_RAM above the 32 x 32 map, then POOL_B: RAY_BREC, RAY_BCODE, RAY_DISTL / H, free)
+NV_POOL_B_LEN   EQU $0C80
+NV_POOL_C       EQU $D700       ; 256 bytes: POOL_C (free in ray mode)
+NV_POOL_C_LEN   EQU $0100
+NV_POOL_BYTES   EQU NV_POOL_A_LEN+NV_POOL_B_LEN+NV_POOL_C_LEN
+    ASSERT NV_POOL_A+NV_POOL_A_LEN == POOL_A+POOL_A_LEN && NV_POOL_B+NV_POOL_B_LEN == POOL_B+POOL_B_LEN && NV_POOL_C == POOL_C && NV_POOL_C_LEN == POOL_C_LEN
 T3              EQU $FA80       ; (language batch 1: the tile operations' RAM, see the end of this file; free for a game that does not call them)
 T3_LEN          EQU $0080
 T2_FREE         EQU $D4E0

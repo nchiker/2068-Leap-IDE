@@ -103,6 +103,20 @@ const WEDGE = {
   leftT: mirror(transpose(TRI_DOWN_L2)), leftB: [...mirror(transpose(TRI_DOWN_L2))].reverse(),
 };
 void TRI_DOWN_L;
+// the title's art. Wall textures after the renderer's four wall types (1 grey stone, 2 brick, 3 vault lining, 4 the locked door), as 8 x 8 tiles.
+const BRICK = ['########', '#...#...', '#...#...', '#...#...', '########', '..#...#.', '..#...#.', '..#...#.'];
+const STONE = ['#.#.#.#.', '.#.#.#.#', '#.#.#.#.', '.#.#.#.#', '#.#.#.#.', '.#.#.#.#', '#.#.#.#.', '.#.#.#.#'];
+const LINING = ['########', '........', '########', '........', '########', '........', '########', '........'];
+const DOOR_BARS = ['##..##..', '##..##..', '##..##..', '##..##..', '##..##..', '##..##..', '##..##..', '##..##..'];
+const GEM_GLINT = ['...##...', '#..##..#', '.######.', '########', '.######.', '#..##..#', '...##...', '........'];
+// The goblet is the treasure sprite's art (16 x 16, both frames) cut into four tiles; only the top left tile differs between the two frames (the glint).
+const ctr = (r) => { const l = Math.floor((16 - r.length) / 2); return '.'.repeat(l) + r + '.'.repeat(16 - r.length - l); };
+const GOB_ROWS = ['', '', '##############', '#-############', '#-###########-', '#-##########-#', '##--------####', '############', '########', '####', '####', '####', '######', '##########', '############', ''].map(ctr);
+const GOB_GLINT_ROWS = GOB_ROWS.map((r, y) => (y === 0 ? '.....#..........' : y === 1 ? '....###.........' : r));
+const GOBLET_TILES = {
+  tl0: GOB_ROWS.slice(0, 8).map((r) => r.slice(0, 8)), tl1: GOB_GLINT_ROWS.slice(0, 8).map((r) => r.slice(0, 8)),
+  tr: GOB_ROWS.slice(0, 8).map((r) => r.slice(8)), bl: GOB_ROWS.slice(8).map((r) => r.slice(0, 8)), br: GOB_ROWS.slice(8).map((r) => r.slice(8)),
+};
 export const TILES = [
   /*  0 blank black */ tile(BLANK, 7, 0, 1),
   /*  1 panel: a sparse dark-blue dot pattern, the stone of the walls around the window */ tile(['........', '..#.....', '........', '......#.', '........', '.#......', '........', '....#...'], 1, 0, 1),
@@ -119,8 +133,19 @@ export const TILES = [
   /* 12 */ tile(WEDGE.upL, 7, 0, 1), /* 13 */ tile(WEDGE.upR, 7, 0, 1),
   /* 14 */ tile(WEDGE.rightT, 7, 0, 1), /* 15 */ tile(WEDGE.rightB, 7, 0, 1),
   /* 16 */ tile(WEDGE.leftT, 7, 0, 1), /* 17 */ tile(WEDGE.leftB, 7, 0, 1),
+  // 18..: the title screen (the SCENE title NOVIEW picture): the maze's four wall textures as tiles, the glinting gem and the goblet (the treasure's art, in cells)
+  /* 18 brick: the letters of the title (the room walls of the maze) */ tile(BRICK, 5, 0, 1),
+  /* 19 stone: the outer ring (grey stone: a checker) */ tile(STONE, 5, 0, 1),
+  /* 20 lining: the vault's scanlines */ tile(LINING, 5, 0, 1),
+  /* 21 the locked door: vertical bars, in brass */ tile(DOOR_BARS, 6, 0, 1),
+  /* 22 gem with a glint (the sparkle: tile 8 and this one swap) */ tile(GEM_GLINT, 7, 0, 1),
+  /* 23 goblet, top left, plain / 24 with a glint / 25 top right / 26 bottom left / 27 bottom right */
+  tile(GOBLET_TILES.tl0, 6, 0, 1), tile(GOBLET_TILES.tl1, 6, 0, 1), tile(GOBLET_TILES.tr, 6, 0, 1), tile(GOBLET_TILES.bl, 6, 0, 1), tile(GOBLET_TILES.br, 6, 0, 1),
 ];
-export const T = { BLANK: 0, PANEL: 1, BEZEL: 2, BAR_FULL: 3, BAR_HALF: 4, BAR_EMPTY: 5, KEY: 6, KEY_SLOT: 7, GEM: 8, GEM_SLOT: 9 };
+export const T = {
+  BLANK: 0, PANEL: 1, BEZEL: 2, BAR_FULL: 3, BAR_HALF: 4, BAR_EMPTY: 5, KEY: 6, KEY_SLOT: 7, GEM: 8, GEM_SLOT: 9,
+  BRICK: 18, STONE: 19, LINING: 20, DOOR: 21, GLINT: 22, GOB_TL: 23, GOB_TL_GLINT: 24, GOB_TR: 25, GOB_BL: 26, GOB_BR: 27,
+};
 
 /** The screen cell map at boot: the panel stone everywhere, a bezel round the 16 x 12 window (cells 8..23 x 6..17), aiming marks in the middle of its four sides,
  *  a full health bar at (0..6, 8), the key slot at (3, 13) and the five gem slots at (25..29, 13). The window's own cells are never drawn from the map. */
@@ -133,6 +158,32 @@ export function buildPanel() {
   for (let x = 0; x < 7; x++) g[8][x] = T.BAR_FULL;
   g[13][3] = T.KEY_SLOT;
   for (let x = 25; x <= 29; x++) g[13][x] = T.GEM_SLOT;
+  return { w: W, h: H, cells: g.flat() };
+}
+
+// ── the title screen (SCENE title NOVIEW): a full 32 x 24 cell picture, built from the tiles above ───────────────────────────────────────────────────────
+// A vault room (stone ceiling and floor, walls from the lintel down; rows 0..19) with "VAULTS" in brick letters 4 x 5 cells, the goblet on a pedestal with gems round it (the
+// sparkle swaps tile T.GEM and T.GLINT; the goblet's top left tile swaps with its glint), and a corridor below them where the game puts sprites (the key,
+// two gems and a potion bob, a wraith patrols) in front of the locked vault door. Rows 20..23 are black for the text the game prints (the tagline is in
+// the room, row 8). The cells the game animates are exported (GEM_CELLS, GOBLET_CELL) and printed by --data.
+const LETTERS = {
+  V: ['#..#', '#..#', '#..#', '.##.', '.##.'], A: ['.##.', '#..#', '####', '#..#', '#..#'], U: ['#..#', '#..#', '#..#', '#..#', '.##.'],
+  L: ['#...', '#...', '#...', '#...', '####'], T: ['####', '.##.', '.##.', '.##.', '.##.'], S: ['.###', '#...', '.##.', '...#', '###.'],
+};
+export const GEM_CELLS = [[9, 12], [11, 11], [12, 13], [19, 13], [20, 11], [22, 12]];       // [column, row] of the six glinting gems round the goblet
+export const GOBLET_CELL = [15, 10];                                                     // top left of the goblet (2 x 2 cells)
+export function buildTitle() {
+  const W = 32, H = 24, g = Array.from({ length: H }, () => new Array(W).fill(T.BLANK));
+  for (let x = 0; x < W; x++) { g[0][x] = T.STONE; g[19][x] = T.STONE; }
+  for (let y = 7; y <= 19; y++) { g[y][0] = T.STONE; g[y][31] = T.STONE; }        // the side walls start at the lintel: the letters have the whole width
+  for (const [i, ch] of [...'VAULTS'].entries()) LETTERS[ch].forEach((row, r) => [...row].forEach((c, k) => { if (c === '#') g[2 + r][2 + 5 * i + k] = T.BRICK; }));
+  for (let x = 1; x <= 30; x++) g[7][x] = T.LINING;                                       // a lintel under the letters
+  const [gx, gy] = GOBLET_CELL;
+  g[gy][gx] = T.GOB_TL; g[gy][gx + 1] = T.GOB_TR; g[gy + 1][gx] = T.GOB_BL; g[gy + 1][gx + 1] = T.GOB_BR;
+  for (let x = 14; x <= 17; x++) g[12][x] = T.BRICK;                                     // the pedestal
+  for (let x = 13; x <= 18; x++) g[13][x] = T.BRICK;
+  for (const [x, y] of GEM_CELLS) g[y][x] = T.GEM;
+  for (let y = 13; y <= 18; y++) { g[y][30] = T.DOOR; g[y][31] = T.DOOR; }                 // the locked vault door, set in the right wall
   return { w: W, h: H, cells: g.flat() };
 }
 
@@ -178,10 +229,8 @@ const GEM = [
 const POTION = [['...##...', '...##...', '..####..', '.######.', '.#-##-#.', '.######.', '.######.', '..####..']];
 // The key: 8 x 8, upright, the ring on top and two teeth.
 const KEY = [['.####...', '.#--#...', '.#--#...', '.####...', '..##....', '..##.##.', '..##.##.', '..##....']];
-// The treasure: 16 x 16, a goblet; frame 1 adds a glint.
-const ctr = (r) => { const l = Math.floor((16 - r.length) / 2); return '.'.repeat(l) + r + '.'.repeat(16 - r.length - l); };
-const GOBLET = ['', '', '##############', '#-############', '#-###########-', '#-##########-#', '##--------####', '############', '########', '####', '####', '####', '######', '##########', '############', ''].map((r) => ctr(r));
-const TREASURE = [GOBLET, GOBLET.map((r, y) => (y === 0 ? '.....#..........' : y === 1 ? '....###.........' : r))];
+// The treasure: 16 x 16, a goblet (GOB_ROWS above, also cut into tiles for the title); frame 1 adds a glint.
+const TREASURE = [GOB_ROWS, GOB_GLINT_ROWS];
 // The marker of the player for HIT (never drawn: it stands at the viewer): 16 x 16, so that its half size (64 units) plus a pickup's (32) reaches 96.
 const MARKER = [Array.from({ length: 16 }, () => '################')];
 
@@ -204,7 +253,7 @@ export function buildAssets() {
   return {
     sprites: {
       'vl_marker': sprite(MARKER),
-      'vl_wraith': sprite(WRAITH),
+      'vl_wraith': sprite(WRAITH, { phases: 4 }),   // 4 phases: the title scene's wraith drifts in 2-pixel steps (ray mode ignores phases)
       'vl_gem': sprite(GEM),
       'vl_potion': sprite(POTION),
       'vl_key': sprite(KEY),
@@ -212,7 +261,7 @@ export function buildAssets() {
     },
     tilesets: { 'vl_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
     sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['vl_' + k, v])),
-    maps: { 'vl_maze': { w: MAP_W, h: MAP_H, cells: CELLS }, 'vl_panel': buildPanel() },
+    maps: { 'vl_maze': { w: MAP_W, h: MAP_H, cells: CELLS }, 'vl_panel': buildPanel(), 'vl_title': buildTitle() },
   };
 }
 
@@ -226,6 +275,7 @@ if (MAIN) {
     GEM.forEach((f, i) => show(`gem ${i}`, f));
     show('potion', POTION[0]); show('key', KEY[0]); show('marker', MARKER[0].slice(0, 2));
     TREASURE.forEach((f, i) => show(`treasure ${i}`, f));
+    { const tl = buildTitle(); const glyph = (v) => (v === T.BLANK ? ' ' : v === T.STONE ? '+' : v === T.BRICK ? '#' : v === T.LINING ? '=' : v === T.DOOR ? '|' : v === T.GEM ? '*' : v >= T.GOB_TL ? 'U' : '?'); show('title screen (# brick letters, + stone, = lining, | door, * gem, U goblet)', Array.from({ length: tl.h }, (_, y) => Array.from({ length: tl.w }, (_, x) => glyph(tl.cells[y * tl.w + x])).join(''))); }
     TILES.forEach((t, i) => show(`tile ${i} (ink ${t.rows[0].ink} paper ${t.rows[0].paper})`, t.art));
     process.exit(0);
   }
@@ -239,10 +289,11 @@ if (MAIN) {
     arr('exs', THINGS.E.map((p) => p[0])); arr('eys', THINGS.E.map((p) => p[1]));
     arr('gxs', THINGS.G.map((p) => p[0])); arr('gys', THINGS.G.map((p) => p[1]));
     arr('pxs', THINGS.H.map((p) => p[0])); arr('pys', THINGS.H.map((p) => p[1]));
+    arr('tgx', GEM_CELLS.map((p) => p[0])); arr('tgy', GEM_CELLS.map((p) => p[1]));
     console.log(`REM ${THINGS.E.length} wraiths, ${THINGS.G.length} gems, ${THINGS.H.length} potions, 1 key, 1 treasure`);
     process.exit(0);
   }
   const assets = buildAssets();
   writeFileSync(join(HERE, 'vaults.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-  console.log(`vaults.assets.json: ${Object.keys(assets.sprites).length} sprites (wraith ${assets.sprites['vl_wraith'].frames.length} frames), ${TILES.length} tiles, ${Object.keys(assets.sfx).length} sound effects, a ${MAP_W} x ${MAP_H} maze (${THINGS.E.length} wraiths, ${THINGS.G.length} gems, ${THINGS.H.length} potions) and the HUD panel`);
+  console.log(`vaults.assets.json: ${Object.keys(assets.sprites).length} sprites (wraith ${assets.sprites['vl_wraith'].frames.length} frames), ${TILES.length} tiles, ${Object.keys(assets.sfx).length} sound effects, a ${MAP_W} x ${MAP_H} maze (${THINGS.E.length} wraiths, ${THINGS.G.length} gems, ${THINGS.H.length} potions) the HUD panel and the title screen`);
 }

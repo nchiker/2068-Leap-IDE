@@ -6,12 +6,12 @@
 //
 // What is patched: in RT_KEYDOWN (runtime v4 keys.asm, identical to v3's) the 3 bytes `IN A,(C) / LD B,A` (ED 78 47) become `CALL KS` (CD lo hi).  KS returns
 // A = B = the byte a keyboard row would read: $FF with the bits of the scenario's pressed keys cleared, for tick V_TICKS.  A 256-byte table (one flags byte per tick,
-// aligned at $B100) holds the script: bit0 O (left), bit1 P (right), bit2 Q (up), bit3 A (down), bit4 SPACE (fire); ticks above 255 read as no key.  Where it lives:
-// the runtime's chunk 1 has only 110 bytes free in v4 (16,274 of 16,384 used), so the stub and the table go in the free tail of the GAME area (DOCK chunk 5, $AE72..$BFFF;
-// the game is 11,890 bytes from $8000, and the chunk is ROM, so nothing else writes there).  The rest of RT_KEYDOWN (row/bit decode, V_KEYS, the rotate) is the
+// aligned at $BB00) holds the script: bit0 O (left), bit1 P (right), bit2 Q (up), bit3 A (down), bit4 SPACE (fire); ticks above 255 read as no key.  Where it lives:
+// the runtime's chunk 1 has only 110 bytes free in v4 (16,274 of 16,384 used), so the stub and the table go in the free tail of the GAME area (DOCK chunk 5, above the end of the game: $BA00 and $BB00;
+// the game is 13,961 bytes from $8000, and the chunk is ROM, so nothing else writes there).  The rest of RT_KEYDOWN (row/bit decode, V_KEYS, the rotate) is the
 // runtime's own code, so KEYDOWN itself is still exercised.  STICK is not: the game reads KEYDOWN and STICK(1) and ORs them; with no joystick STICK reads 0.
 //   node arcade/tools/xemu/vaults-patch.mjs [in.dck] [out.dck]     (defaults: arcade/build/vaults.dck -> arcade/build/vaults-script.dck)
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +21,10 @@ const ARCADE = resolve(HERE, '../..');
 const rt = JSON.parse(readFileSync(join(ARCADE, 'build/v4/runtime.json'), 'utf8'));
 const S = rt.symbols;
 const scenario = JSON.parse(readFileSync(join(HERE, 'vaults-scenario.json'), 'utf8'));
-const KS = 0xB000, KTAB = 0xB100, GAME_END = 0x8000 + 11890;
+// The game is 13,961 bytes since the title and the demo became scenes (it was 11,890): the stub and the table go higher in the free tail of the game area. GAME_END is read from the build's
+// meta.json (vaults-build.mjs writes it) when it is there, and the patch refuses to run when the game reaches the stub.
+const META = join(ARCADE, 'build/xemu/vaults/meta.json');
+const KS = 0xBA00, KTAB = 0xBB00, GAME_END = 0x8000 + (existsSync(META) ? JSON.parse(readFileSync(META, 'utf8')).gameBytes : 13961);
 const STICK_TO_FLAG = [[4, 1], [8, 2], [1, 4], [2, 8], [16, 16]];   // stick bit -> table flag: left O, right P, up Q, down A, fire SPACE
 
 export function flagsTable() {
