@@ -26,8 +26,8 @@ const E = (file, from, to) => ({ file, from, to });
 const A = 'assets.asm', MA = 'main.asm', SP = 'sprite.asm', AP = 'api.asm', SK = 'skip.asm';
 const MUTANTS = [
   // ---- the plan (assets.asm) ----
-  ['plan: pool_alloc misses the carry past $FFFF (a POOL_B slot wraps)', [E(A, '        jr c,1F                 ; past $FFFF', '        nop\n        nop                     ; past $FFFF')]],
-  ['plan: pool_alloc accepts a block that ends one byte past the piece', [E(A, '        or a\n        sbc hl,de               ; carry: the new next is past the end', '        scf\n        sbc hl,de               ; carry: the new next is past the end')]],
+  ['plan: pool_alloc misses the carry past $FFFF (a POOL_B slot wraps)', [E(A, '    jr c,.no                    ; past $FFFF', '    nop\n    nop                         ; past $FFFF')]],
+  ['plan: pool_alloc accepts a block that ends one byte past the piece', [E(A, '    or a\n    sbc hl,de                   ; carry: the new next is past the end', '    scf\n    sbc hl,de                   ; carry: the new next is past the end')]],
   ['plan: the minimum slots ignore the instance count (K0 = nframes)', [E(A, '    ld a,(ix+AST_NINST)\n    cp (ix+AST_NF)\n    jr c,.mkn', '    ld a,(ix+AST_NF)\n    cp (ix+AST_NF)\n    jr c,.mkn')]],
   ['plan: no extra slots (step 3 skipped)', [E(A, '    jr nc,.exnext               ; every frame has its slot', '    jr .exnext                  ; every frame has its slot')]],
   ['plan: a failed minimum slot is not counted (FC_MISS too small, the boot goes on)', [E(A, '    jr nc,.mkok\n    call pp_miss', '    jr nc,.mkok\n    nop\n    nop\n    nop')]],
@@ -64,7 +64,7 @@ const MUTANTS = [
   ['blit: ADJUST_DE goes back 7 instead of 8', [E(SP, '        ld a,d\n        sub 8\n        ld d,a\n1:', '        ld a,d\n        sub 7\n        ld d,a\n1:')]],
   ['blit: the wide (looped) blitters run 7 rows for a whole group', [E(SP, 'blk:\n        ld a,8', 'blk:\n        ld a,7')]],
   ['blit: a pair at an even address combines mask and image with OR', [E(SP, '    MACRO BYTE_OPS\n        ld a,(de)\n        and (hl)', '    MACRO BYTE_OPS\n        ld a,(de)\n        or (hl)')]],
-  ['erase: a big erase moves on 32 - cols instead of 33 - cols', [E(SP, '        ld (E_NR),a\n        ld a,l\n        add a,33-cols', '        ld (E_NR),a\n        ld a,l\n        add a,32-cols')]],
+  ['erase: a big erase moves on 32 - cols instead of 33 - cols', [E(SP, '        ld (E_NR),a\n        ERASE_FIX cols\n        ld a,l\n        add a,33-cols', '        ld (E_NR),a\n        ERASE_FIX cols\n        ld a,l\n        add a,32-cols')]],
   ['erase: 4 and 5 columns take the small path (the column test misses bit 2)', [E(SP, '    and $24\n    jp nz,erase_big', '    and $20\n    jp nz,erase_big')]],
   ['erase: the big path erases one cell row too few', [E(SP, '    and 7\n    ld (E_NR),a                 ; cell rows, 1..7', '    and 7\n    dec a\n    ld (E_NR),a                 ; cell rows, 1..7')]],
   // ---- RT_SHOW / RT_SHOWF / RT_HIDE (api.asm), hit_box (text.asm) ----

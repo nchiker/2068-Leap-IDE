@@ -23,6 +23,22 @@
     ; (no ORG: follows keys.asm)
 M_SKIP_S:
 
+MASK_PLACED = 0
+    MACRO MASK_DATA
+MASK_TAB:
+    DUP 5, n
+    DUP 8, k
+    DW ((1<<(n+1))-1)<<k
+    EDUP
+    EDUP
+MASK_PLACED = 1
+    ENDM
+    MACRO MASK_SLOT
+    IF (MASK_PLACED == 0) && ((($ & $FF) + 80) <= 256)
+    MASK_DATA
+    ENDIF
+    ENDM
+
 SKIP_MIN        EQU 6
 SK_T            EQU VARS+$F0            ; 8 bytes of scratch
 SK_I            EQU SK_T+4              ; instance being looked at
@@ -60,16 +76,14 @@ skip_analysis:
     xor a
     ld (SK_I),a
 .ia:
-    ld a,(SK_I)
-    call sk_recptr              ; HL = the record in the hidden file
+    call sk_recptr_i            ; HL = the record in the hidden file
     ld a,(hl)
     or a
     jr z,.norec
     ld (hl),1                   ; (normalised: no stale mark)
 .norec:
     ld d,a                      ; D = record flag (0 or non-zero)
-    ld a,(SK_I)
-    call sk_entptr              ; HL = the entry
+    call sk_entptr_i            ; HL = the entry
     ld e,(hl)                   ; E = visible
     ld a,(SK_I)
     add a,V_CHG&$FF
@@ -86,17 +100,14 @@ skip_analysis:
     or a
     jr nz,.kind1                ; changed since it was drawn
     ; ---- kind 2: the exact rectangle of its record ----
-    ld a,(SK_I)
-    call sk_recptr
-    call sk_recrect             ; B = cx0, C = cx1, D = cy0, E = cy1
+    call sk_recrect_i           ; B = cx0, C = cx1, D = cy0, E = cy1
     ld a,2
     jr .store
     ; ---- kind 1: the join of the old box (if drawn: exact, from the record) and the new one (if visible: from the position and the asset) ----
 .kind1:
     ld a,d
     ld (SK_T+7),a               ; the record flag
-    ld a,(SK_I)
-    call sk_entptr
+    call sk_entptr_i
     ld a,(hl)
     or a
     jr z,.k1old                 ; not visible: the old box alone
@@ -112,9 +123,7 @@ skip_analysis:
     ld (hl),d
     inc l
     ld (hl),e
-    ld a,(SK_I)
-    call sk_recptr
-    call sk_recrect             ; B, C, D, E = the old box
+    call sk_recrect_i           ; B, C, D, E = the old box
     ld hl,SK_T                  ; the join: min cx0, max cx1, min cy0, max cy1
     ld a,(hl)
     cp b
@@ -140,17 +149,13 @@ skip_analysis:
     ld e,a
     jr .k1done
 .k1old:
-    ld a,(SK_I)
-    call sk_recptr
-    call sk_recrect
+    call sk_recrect_i
 .k1done:
     ld a,1
     jr .store
 .idle:
-    ld b,255                    ; the rectangle no other rectangle meets
-    ld c,0
-    ld d,255
-    ld e,0
+    ld bc,$FF00                 ; the rectangle no other rectangle meets (cx0 255, cx1 0, cy0 255, cy1 0)
+    ld de,$FF00
     xor a
 .store:                         ; A = class; B, C, D, E = the rectangle
     push af
@@ -243,8 +248,7 @@ skip_analysis:
     cp (SK_RECT&$FF)+4*MAX_SPRITES
     jr nz,.jloop
     pop bc
-    ld a,(SK_I)                 ; alone and clean: mark its record in the hidden file
-    call sk_recptr
+    call sk_recptr_i            ; alone and clean: mark its record in the hidden file
     set 7,(hl)
     ld a,1
     ld (V_ANYSKIP),a
@@ -264,6 +268,10 @@ skip_analysis:
     jp nz,.ib
     ret
 
+    MASK_SLOT
+; sk_recptr_i / sk_entptr_i / sk_recrect_i: the same for the instance SK_I (the helpers stand before the routine they fall into: no jump).
+sk_recptr_i:
+    ld a,(SK_I)
 ; sk_recptr: A = instance -> HL = its record in the hidden file.  Clobbers AF.
 sk_recptr:
     add a,a
@@ -278,6 +286,9 @@ sk_recptr:
     ld h,SPR_DRAWN>>8
     ret
 
+    MASK_SLOT
+sk_entptr_i:
+    ld a,(SK_I)
 ; sk_entptr: A = instance -> HL = its SPR_TAB entry.  Clobbers AF.
 sk_entptr:
     add a,a
@@ -288,6 +299,7 @@ sk_entptr:
     ld h,SPR_TAB>>8
     ret
 
+    MASK_SLOT
 ; sk_entrect: HL -> an SPR_TAB entry -> the cells the instance can cover at its position: B = cx0, C = cx1 = cx0 + wb (the extra byte of a
 ; shifted copy included), D = cy0, E = cy1 (exact).  Clobbers AF, HL.
 sk_entrect:
@@ -334,6 +346,10 @@ sk_entrect:
     ld d,a                      ; cy0
     ret
 
+    MASK_SLOT
+sk_recrect_i:
+    ld a,(SK_I)
+    call sk_recptr
 ; sk_recrect: HL -> a record (flag, E, D, N) -> the exact cell rectangle of what was drawn: B = cx0, C = cx1, D = cy0, E = cy1.
 ; N = cell rows << 3 | columns.  Clobbers AF, HL.
 sk_recrect:
@@ -350,7 +366,7 @@ sk_recrect:
     and 7
     add a,b
     dec a
-    ld (SK_T+6),a               ; cx1 = cx0 + columns - 1
+    ld h,a                      ; H = cx1 = cx0 + columns - 1
     ld a,e
     rrca
     rrca
@@ -376,10 +392,10 @@ sk_recrect:
     ld d,a                      ; D = cy0
     add a,e
     ld e,a                      ; E = cy1
-    ld a,(SK_T+6)
-    ld c,a                      ; C = cx1
+    ld c,h                      ; C = cx1
     ret
 
+    MASK_SLOT
 ; sk_dirty: A = instance (a candidate: its exact rectangle is in SK_RECT) -> carry set when a cell of it is dirty for the hidden file.
 ; The cells of one row of the rectangle (1..3, in one or two bytes of the dirty map) are tested with one mask.
 ; Clobbers AF, BC, DE, HL.
@@ -456,13 +472,10 @@ sk_dirty:
     ret
 
 ; MASK_TAB[(columns - 1) * 8 + (cx0 AND 7)] = ((1 << columns) - 1) << (cx0 AND 7), 16 bit, columns 1..5.  (Inside one page: L is the index.)
-    IF ($ & $FF) + 80 > 256
+; It is laid out in the first of the slots between the routines above (MASK_SLOT) where its 80 bytes do not straddle a page; none fitting: the next page
+; boundary after the last routine.  (Every routine ends in RET, so data may stand between them.)
+    IF MASK_PLACED == 0
     ALIGN 256
+    MASK_DATA
     ENDIF
-MASK_TAB:
-    DUP 5, n
-    DUP 8, k
-    DW ((1<<(n+1))-1)<<k
-    EDUP
-    EDUP
 M_SKIP_E:

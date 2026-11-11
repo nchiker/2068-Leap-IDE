@@ -117,6 +117,34 @@ check('validateAsset: tileset, map, sfx, unknown kind',
   P.validateAsset('sfx', { ticks: [{ tone: 5000 }] }) !== null &&
   P.validateAsset('fonts', {}) !== null && P.validateAsset('sprites', 'x') !== null);
 
+// ── Sound effects of three channels (language batch 5): validateAsset of ticksB / ticksC ──
+{
+  const tk = (tone, extra = {}) => ({ tone, vol: 5, noise: 0, mix: 6, ...extra });
+  const base = { ticks: [tk(100)] };
+  const v = (extra) => P.validateAsset('sfx', { ...base, ...extra });
+  check('validateAsset sfx: ticksB and ticksC are accepted (arrays of ticks), null / absent / [] mean none',
+    v({ ticksB: [tk(200), tk(210)], ticksC: [tk(300)] }) === null && v({ ticksB: null, ticksC: null }) === null && v({ ticksB: [] }) === null && v({}) === null);
+  check('validateAsset sfx: a ticksB that is not an array is refused with a message naming it',
+    /"ticksB" must be an array/.test(v({ ticksB: 'x' }) ?? '') && /"ticksC" must be an array/.test(v({ ticksC: { tone: 1 } }) ?? '') && /"ticksB"/.test(v({ ticksB: 5 }) ?? ''));
+  check('validateAsset sfx: the same tick checks on B and C, the message names the channel',
+    /^channel B tick 1 is not an object/.test(v({ ticksB: [tk(1), 7] }) ?? '') && /^channel C tick 0: "tone" must be 0\.\.4095/.test(v({ ticksC: [tk(5000)] }) ?? '')
+    && /^channel B tick 0: "tone"/.test(v({ ticksB: [{ vol: 1 }] }) ?? '') && /^tick 0: "tone"/.test(P.validateAsset('sfx', { ticks: [{ vol: 1 }] }) ?? ''));
+  check('validateAsset sfx: 1,800 ticks per channel, 1,801 refused naming the channel (A as before)',
+    v({ ticksB: Array(1800).fill(tk(1)) }) === null && /1800 ticks per channel \(channel B has 1801\)/.test(v({ ticksB: Array(1801).fill(tk(1)) }) ?? '') && /\(channel C has 1801\)/.test(v({ ticksC: Array(1801).fill(tk(1)) }) ?? '')
+    && P.validateAsset('sfx', { ticks: Array(1800).fill(tk(1)) }) === null && P.validateAsset('sfx', { ticks: Array(1801).fill(tk(1)) }) === 'a sound effect has at most 1800 ticks');
+  check('validateAsset sfx: the old messages are unchanged', P.validateAsset('sfx', {}) === 'a sound effect needs "ticks": [...]' && P.validateAsset('sfx', { ticks: [5] }) === 'tick 0 is not an object' && P.validateAsset('sfx', { ticks: [{ tone: 5000 }] }) === 'tick 0: "tone" must be 0..4095');
+  const pp = P.newProject('sfx3');
+  const r = P.setAsset(pp, 'sfx', 'zap', { ticks: [tk(100)], ticksB: [tk(200)] });
+  check('setAsset stores a three-channel effect and getAsset gives it back as a deep copy', (r === true || r?.ok !== false) && eq(P.getAsset(pp, 'sfx', 'zap'), { ticks: [tk(100)], ticksB: [tk(200)] }) && P.getAsset(pp, 'sfx', 'zap').ticksB !== pp.assets.sfx.zap.ticksB);
+  const bad3 = P.setAsset(pp, 'sfx', 'bad', { ticks: [tk(100)], ticksC: 'no' });
+  check('setAsset refuses a damaged ticksC', (bad3 === false || bad3?.ok === false || typeof bad3 === 'string') && P.getAsset(pp, 'sfx', 'bad') === null, JSON.stringify(bad3));
+  const doc3 = P.parseProject(P.serializeProject(pp));
+  check('a project with a three-channel effect survives serialize / parse', doc3.ok && eq(doc3.project.assets.sfx.zap, pp.assets.sfx.zap));
+  const damaged = JSON.parse(P.serializeProject(pp)); damaged.assets.sfx.zap.ticksB = 'oops';
+  const dv = P.validateProject(damaged);
+  check('validateProject of a damaged ticksB: the asset is refused or dropped with a message, never accepted silently', !dv.ok ? true : (dv.warnings.some((w) => /zap/.test(w)) && !eq(dv.project.assets.sfx.zap?.ticksB, 'oops')), JSON.stringify(dv.errors ?? dv.warnings));
+}
+
 // ── Asset operations (the host's calls) ──
 const p = P.newProject('Ops');
 const copy = P.getAsset(p, 'sprites', 'ball');
@@ -203,6 +231,20 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
   };
   const r0 = build(np);
   check('the new-project template compiles with 0 errors on the v2 runtime', r0.errors.length === 0 && !!r0.dck, r0.errors.map((e) => e.message).join('; '));
+  // a three-channel effect compiles and the size accounting follows its bytes (usage.sfx: the delta stream (batch 5 item 17) + the table)
+  {
+    const withSfx = (extra) => {
+      const q = P.newProject('s3');
+      q.files[P.MAIN_FILE] = q.files[P.MAIN_FILE].replace(/^(GAME.*)$/m, '$1\nSFX pew = "pew"');
+      q.assets.sfx.pew = { ticks: [1, 2, 3].map((k) => ({ tone: 100 + k, vol: 9, noise: 0, mix: 6 })), ...extra };
+      return build(q);
+    };
+    const one = withSfx({}), three = withSfx({ ticksB: [{ tone: 200, vol: 8, noise: 0, mix: 6 }], ticksC: [] });
+    const sfxBytes = (r) => (r.usage?.data ?? r.usage)?.sfx;
+    check('a three-channel effect compiles; the size panel (usage.sfx) counts the delta stream (4 header + 23 + 9 + 3 entry bytes + $FF = 40, worked by hand) instead of 4 * 4, plus the table', one.errors.length === 0 && three.errors.length === 0 && sfxBytes(one) === 16 + 3 && sfxBytes(three) === 40 + 3 && three.errors.length === 0, `${sfxBytes(one)} -> ${sfxBytes(three)}`);
+    const empties = withSfx({ ticksB: [], ticksC: null });
+    check('empty ticksB / ticksC compile to exactly the one-channel size and image', sfxBytes(empties) === sfxBytes(one) && Buffer.compare(Buffer.from(empties.dck), Buffer.from(one.dck)) === 0);
+  }
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
   check('the examples index lists bounce, breakout, shooter, blockfall, platformer, vaults', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'platformer', 'shooter', 'vaults']));
   for (const ex of index) {

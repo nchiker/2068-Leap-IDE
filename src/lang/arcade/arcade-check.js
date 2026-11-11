@@ -66,6 +66,11 @@
  *   - (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md) scenes: any number; ENTER does not return, so a statement after it in the same block is "unreachable statement"; a scene
  *     (not the first) that no ENTER names is a warning; the "FOR variable declared later" check looks at the game level plus the PROC's own scene only (another scene's DIM is not visible to it).
  *     (A runtime older than v2 refuses a second scene and ENTER in the code generator, which knows the runtime.)
+ *   - (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md) TIMER a, b (a Dim node with `timer: true`) declares ordinary variables like DIM, at the top level or directly in a SCENE (not in a PROC); a
+ *     `$` name, an array size and an initialiser are errors; an unused timer gets the usual "variable never used" warning. KEYPRESS(c) takes a key written out exactly as KEYDOWN does;
+ *     JOYPRESS(n) needs the literal 1 or 2 (a CONST works too). PRINT item USING "pattern": the item must be a number, the pattern is # and 0 only, 1 to 8 characters. PLAY by index: a bare name
+ *     is an SFX when one has that name (else a variable's value, else an error); any other expression, and PLAY (name), is an effect index; a literal or CONST index outside 0..count-1 is
+ *     an error ("PLAY 9: there are only 3 sound effects (0..2)"); an index that is not a literal counts as using every SFX (no "never used" warning for them).
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
@@ -472,11 +477,16 @@ class Checker {
   }
 
   declareDim(scope, dim, inProc) {
-    if (inProc) this.err(dim, 'DIM must be at the top level or directly inside a SCENE, not inside a PROC');
+    if (inProc) this.err(dim, `${dim.timer ? 'TIMER' : 'DIM'} must be at the top level or directly inside a SCENE, not inside a PROC`);
     for (const it of dim.items ?? []) {
       if (!it.name) continue;
       const key = up(it.name);
       const isArr = !!it.dims;
+      if (dim.timer) {                                          // language batch 5: a timer is a single number
+        if (it.name.endsWith('$')) this.err(it, 'a TIMER holds a number');
+        if (isArr) this.err(it, `a TIMER is a single number, not an array: write TIMER ${it.name.replace(/\$/, '')} without a size`);
+        if (it.init) this.err(it, `a TIMER cannot have initial values: assign ${it.name.replace(/\$/, '')} in PROC INIT`);
+      }
       // sizes: constant expressions
       let sizes = null;
       if (isArr) {
@@ -496,7 +506,7 @@ class Checker {
         if (sizes.some((v) => v === undefined)) sizes = null;
       }
       if (it.init) {
-        if (!isArr) this.err(it, `only an array can have initial values: write DIM ${it.name}(n) = v0, v1, ...`);
+        if (!isArr && !dim.timer) this.err(it, `only an array can have initial values: write DIM ${it.name}(n) = v0, v1, ...`);
         const total = sizes ? sizes.reduce((p, n) => p * (n + 1), 1) : null;
         if (isArr && total !== null && it.init.length > total) {
           this.err(it.init[total] ?? it, `${it.init.length} initial values for ${it.name}, which has only ${total} elements`);
@@ -671,7 +681,13 @@ class Checker {
           this.range(s.at.col, 0, LIMITS.maxCol, 'the AT column');
         }
         if (s.tab) this.numArg(s.tab, ctx, 'the TAB column');
-        for (const it of s.items ?? []) { this.ex(it, ctx); this.printable(it); }
+        (s.items ?? []).forEach((it, i) => {
+          const t = this.ex(it, ctx); this.printable(it);
+          const u = s.usings?.[i];
+          if (!u) return;
+          if (t === 'str') this.err(it, 'USING formats a number: a text item cannot take it');          // language batch 5
+          if (!/^[#0]{1,8}$/.test(u.pattern)) this.err(u, 'USING needs a pattern of # and 0 written out, up to 8 characters');
+        });
         return;
       case 'Show':
         this.assetRef(s.sprite, 'sprite', ctx);
@@ -698,7 +714,7 @@ class Checker {
         this.range(s.value, 0, LIMITS.maxWorldTile, 'the world tile index');
         return;
       case 'Hide': return this.assetRef(s.sprite, 'sprite', ctx);
-      case 'Play': return this.assetRef(s.sfx, 'sfx', ctx);
+      case 'Play': return this.playStmt(s, ctx);
       case 'Enter':
         if (s.scene && !this.scenes.has(up(s.scene.name))) this.err(s.scene, `ENTER: unknown SCENE '${s.scene.name}'`);
         else if (s.scene) this.entered.add(up(s.scene.name));
@@ -737,6 +753,26 @@ class Checker {
       }
       default: return;   // Rem, Cls, End, Silence, Error
     }
+  }
+
+  /**
+   * PLAY (language batch 5): `PLAY name` with an SFX of that name is by name, as always; a bare name that is a variable or CONST (and no SFX) is an index; `PLAY expr` and `PLAY (name)` are
+   * indexes in SFX declaration order. A literal / CONST index outside 0..count-1 is an error; any other index may reach every effect, so none of them is "never used".
+   */
+  playStmt(s, ctx) {
+    if (s.sfx) {
+      const key = up(s.sfx.name);
+      if (this.assets.has(`sfx:${key}`) || !ctx.scope.lookup('vars', key)) return this.assetRef(s.sfx, 'sfx', ctx);
+    }
+    const e = s.sfx ?? s.index;
+    if (!e) return undefined;
+    this.numArg(e, ctx, 'the effect index');
+    const sfxs = [...this.assets.values()].filter((a) => a.kind === 'sfx');
+    const k = this.lit(e);
+    if (k === undefined) { for (const a of sfxs) a.used = true; return undefined; }
+    if (k < 0 || k >= sfxs.length) this.err(e, sfxs.length ? `PLAY ${k}: there are only ${sfxs.length} sound effects (0..${sfxs.length - 1})` : `PLAY ${k}: there are no sound effects (declare one with SFX name = "asset")`);
+    else sfxs[k].used = true;
+    return undefined;
   }
 
   /** `LOCAL a, b`: declares locals of the PROC, at its top level, before the name is used. */
@@ -944,22 +980,22 @@ class Checker {
     if (!ok) this.err(n, `integer ${negated ? '-' : ''}${n.value} is out of range (${negated ? LIMITS.minInt : '-32768'}..${negated ? LIMITS.maxInt : LIMITS.maxLiteral})`);
   }
 
-  /** KEYDOWN's argument is looked up when the game is built: a literal number 0..255 or a one-character string. */
-  keyArg(a, ctx) {
+  /** KEYDOWN's (and, batch 5, KEYPRESS's) argument is looked up when the game is built: a literal number 0..255 or a one-character string. */
+  keyArg(a, ctx, fn = 'KEYDOWN') {
     if (a.type === 'String') {
-      if (a.value.length !== 1) this.err(a, `KEYDOWN needs a one-character string, e.g. KEYDOWN("Q"); this one has ${a.value.length} characters`);
-      else if (a.value.charCodeAt(0) > 255) this.err(a, 'KEYDOWN: that character has no key');
-      else if (!isKnownKey(a.value.toUpperCase().charCodeAt(0))) this.warn(a, `KEYDOWN("${a.value}"): the runtime scans only A-Z, 0-9, space and enter; this key is never held`);
+      if (a.value.length !== 1) this.err(a, `${fn} needs a one-character string, e.g. ${fn}("Q"); this one has ${a.value.length} characters`);
+      else if (a.value.charCodeAt(0) > 255) this.err(a, `${fn}: that character has no key`);
+      else if (!isKnownKey(a.value.toUpperCase().charCodeAt(0))) this.warn(a, `${fn}("${a.value}"): the runtime scans only A-Z, 0-9, space and enter; this key is never held`);
       return;
     }
     const k = this.lit(a);
     if (k === undefined) {
       this.ex(a, ctx);
-      this.err(a, 'KEYDOWN needs a number or a one-character string written out, e.g. KEYDOWN("Q") or KEYDOWN(81): the key is chosen when the game is built, not at run time');
+      this.err(a, `${fn} needs a number or a one-character string written out, e.g. ${fn}("Q") or ${fn}(81): the key is chosen when the game is built, not at run time`);
       return;
     }
-    if (k < 0 || k > 255) this.err(a, `KEYDOWN code ${k} must be 0..255`);
-    else if (!isKnownKey(k)) this.warn(a, `KEYDOWN(${k}): the runtime scans only A-Z (65..90), 0-9 (48..57), space (32), enter (13), 1 (CAPS SHIFT) and 2 (SYMBOL SHIFT); this key is never held`);
+    if (k < 0 || k > 255) this.err(a, `${fn} code ${k} must be 0..255`);
+    else if (!isKnownKey(k)) this.warn(a, `${fn}(${k}): the runtime scans only A-Z (65..90), 0-9 (48..57), space (32), enter (13), 1 (CAPS SHIFT) and 2 (SYMBOL SHIFT); this key is never held`);
   }
 
   func(e, ctx) {
@@ -973,8 +1009,18 @@ class Checker {
     }
     if (WINDOW_FUNCS.has(entry.name) && !this.windowWord(e, `${entry.name}()`)) this.needV3(e, `${entry.name}()`);
     if (V4_FUNCS.has(entry.name)) this.needV4(e, `${entry.name}()`);
-    if (entry.name === 'KEYDOWN') {
-      if (args.length === 1) this.keyArg(args[0], ctx);
+    if (entry.name === 'KEYDOWN' || entry.name === 'KEYPRESS') {
+      if (args.length === 1) this.keyArg(args[0], ctx, entry.name);
+      return 'num';
+    }
+    if (entry.name === 'JOYPRESS') {                      // batch 5: the joystick number is written out (the snapshot is taken for that stick at the start of the tick)
+      if (args.length === 1) {
+        const k = this.lit(args[0]);
+        if (k !== 1 && k !== 2) {
+          if (k === undefined) this.ex(args[0], ctx);
+          this.err(args[0], 'JOYPRESS needs the joystick number written out: 1 or 2');
+        }
+      }
       return 'num';
     }
     args.forEach((a, i) => {

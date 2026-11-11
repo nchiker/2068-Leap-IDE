@@ -91,9 +91,7 @@ mark_dirty:
     ld (hl),a
     ret
 
-    ALIGN 256
-BIT_TAB:                        ; page aligned (mark_dirty indexes it through L)
-    DB $01, $02, $04, $08, $10, $20, $40, $80
+; (BIT_TAB, the 8-byte bit table, is at $0100 in boot.asm: page aligned for mark_dirty, without the padding ALIGN 256 left here)
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; Text.  State: V_TEXT_ATTR (the attribute of the next character), V_CUR_ROW 0..23, V_CUR_COL 0..31 (always in range: the
@@ -213,7 +211,7 @@ RT_PRINTN:
     call .digit
     ld a,l                      ; the units digit is always printed (HL < 10 here)
     add a,'0'
-    jp print_char
+    jr print_char
 
 ; .digit: print HL / DE (0..9) as a decimal digit, HL = HL MOD DE; skipped while it is a leading zero.  Clobbers AF, BC, DE.
 .digit:

@@ -34,10 +34,9 @@ RT_KEYDOWN:
     rrca
     and 7
     ld d,a                      ; D = the row (0..7)
-    ld hl,KEY_ROWSEL
-    ld c,a
-    ld b,0
-    add hl,bc
+    add a,KEY_ROWSEL&$FF
+    ld l,a
+    ld h,KEY_ROWSEL>>8          ; (KEY_ROWSEL is in page 0, boot.asm: the row is added to its low byte, asserted there)
     ld b,(hl)                   ; B = the half-row select
     ld c,PORT_ULA
     in a,(c)                    ; the keys of the row
@@ -58,8 +57,7 @@ RT_KEYDOWN:
     inc l
     ret
 
-KEY_ROWSEL:
-    DB $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+; (KEY_ROWSEL, the table of half-row selects, is in boot.asm: it fills the gap before the ISR.)
 
 ; KEY_TAB[code] = row << 3 | bit for codes 0..'Z' (90), $FF for no key.
     MACRO KEYS_NONE n

@@ -82,6 +82,8 @@ function classify(toks, i, atStart) {
     if ((t.value === 'FRAME' || t.value === 'FLIP') && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'SHOW')) return 'packageKeyword';
     // the clauses of VIEW3D (COLW CEIL FLOOR PATTERNS) are words there, ordinary names elsewhere (language batch 3)
     if (['COLW', 'CEIL', 'FLOOR', 'PATTERNS'].includes(t.value) && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'VIEW3D')) return 'packageKeyword';
+    // PRINT item USING "pattern" (language batch 5): a word before a string literal inside a PRINT, an ordinary name elsewhere
+    if (t.value === 'USING' && toks[i + 1]?.type === 'string' && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'PRINT')) return 'packageKeyword';
     return 'variableName';
   }
   default: return null;
@@ -210,6 +212,8 @@ const snippets = [
   snippetCompletion('SELECT CASE ${expr}\n\tCASE ${1}\n\t\t${}\n\tCASE ELSE\n\t\t\nENDSEL', { label: 'SELECT', detail: 'SELECT CASE … ENDSEL', type: 'keyword', boost: 1 }),
   snippetCompletion('PROC ${name}(${a}, ${b}):\n\tLOCAL ${i}\n\t${}\nENDP', { label: 'PROC', detail: 'PROC … LOCAL … ENDP', type: 'keyword', boost: 1 }),
   snippetCompletion('PROC ${name}(${p}):\n\t${}\nENDP', { label: 'PROC', detail: 'PROC … ENDP', type: 'keyword', boost: 1 }),
+  snippetCompletion('TIMER ${cooldown}', { label: 'TIMER', detail: 'TIMER name (counts down by itself)', type: 'keyword' }),
+  snippetCompletion('PRINT AT ${row}, ${col}; ${value} USING "${0000}"', { label: 'USING', detail: 'PRINT n USING "0000"', type: 'keyword' }),
   snippetCompletion('SCENE ${name}\n\tPROC INIT():\n\t\t${}\n\tENDP\n\n\tPROC FRAME():\n\t\t\n\tENDP\nENDSCENE', { label: 'SCENE', detail: 'SCENE … ENDSCENE', type: 'keyword', boost: 1 }),
 ];
 
@@ -239,11 +243,11 @@ function arcadeComplete(context) {
   if (prevWord === 'ENTER') return only(s.scenes.map((x) => ({ label: x.name, type: 'class', detail: `scene · line ${x.line}` })));
   if (prevWord === 'FN') return only(s.fns.map((f) => ({ label: f.name, type: 'function', detail: `DEF FN · line ${f.line}`, apply: f.name + '(' })));
   if (prevWord === 'SHOW' || prevWord === 'HIDE') return only(s.assets.filter((a) => a.kind === 'SPRITE').map((a) => ({ label: a.name, type: 'constant', detail: a.count ? `sprite pool (${a.count})` : 'sprite' })));
-  if (prevWord === 'PLAY') return only(s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })));
+  if (prevWord === 'PLAY') return { from: word.from, options: [...s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })), ...s.vars.filter((v) => v.dims === 0).map((v) => ({ label: v.name, type: 'variable', detail: `effect index · line ${v.line}` }))], validFor: /^\w*$/ };
   if (prevWord === 'LOADMAP') return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
 
   const own = [
-    ...s.vars.map((v) => ({ label: v.name, type: 'variable', detail: v.dims === 2 ? `array(${v.size ?? '?'}, ${v.size2 ?? '?'}) · line ${v.line}` : v.dims === 1 ? `array(${v.size ?? '?'}) · line ${v.line}` : `variable · line ${v.line}` })),
+    ...s.vars.map((v) => ({ label: v.name, type: 'variable', detail: v.timer ? `timer · line ${v.line}` : v.dims === 2 ? `array(${v.size ?? '?'}, ${v.size2 ?? '?'}) · line ${v.line}` : v.dims === 1 ? `array(${v.size ?? '?'}) · line ${v.line}` : `variable · line ${v.line}` })),
     ...(s.consts ?? []).map((c) => ({ label: c.name, type: 'constant', detail: `CONST · line ${c.line}` })),
     ...s.procs.map((p) => ({ label: p.name, type: 'function', detail: `PROC · line ${p.line}` })),
     ...s.scenes.map((x) => ({ label: x.name, type: 'class', detail: `scene · line ${x.line}` })),

@@ -4,12 +4,18 @@
  *
  * One effect is edited as a plain object that has the same shape as the stored asset:
  *
- *   { ticks: [ { tone, vol, noise, mix } ... ], ...unknown keys kept }
+ *   { ticks: [ { tone, vol, noise, mix } ... ], ticksB: [...], ticksC: [...], ...unknown keys kept }
  *
  *   tone   0..4095  AY channel A period (frequency = clock / (16 * tone), a period of 0 behaves as 1)
  *   vol    0..15    channel A volume
  *   noise  0..31    noise period (0 behaves as 1)
  *   mix    0..7     bit 0 = tone OFF, bit 1 = noise OFF, bit 2 unused by the runtime (written set, as the examples do)
+ *
+ * `ticks` is AY channel A; `ticksB` and `ticksC` (language batch 5, three-channel effects) are channels B and C, the same records.  The editing form
+ * always has all three arrays (B and C are [] when the effect does not use them); the stored asset (toAsset) has ticksB / ticksC only when they hold ticks.
+ * The channels play in lockstep, one record each per refresh; a shorter channel is padded with silent records; the effect lasts as long as the
+ * longest.  The AY has ONE noise generator: R6 takes the noise period of the lowest channel (A, B, C) whose record has noise on, else A's.
+ * Every editing function below works on `sfx.ticks`: to edit channel B or C pass `trackView(sfx, 1 | 2)`, an object that shares that channel's array.
  *
  * One record is played per refresh (58,688 T at 3.528 MHz = 60.115 per second).  A record with tone 3840..4095 and vol 15
  * cannot be stored (its byte 1 would be $FF, the terminator): every setter and operation here refuses to make one.
@@ -19,18 +25,20 @@
  * clamped, a refusal).  A range is `(a, b)`, tick indices, INCLUSIVE, taken in either order and clipped to the effect.
  *
  *   fromAsset(asset) / toAsset(sfx)         stored <-> editing form (deep copies; unknown keys kept; missing vol / noise / mix read as 0)
+ *   TRACKS, trackView, trackLengths, effectLength, isMulti, padTrack, sliceRange, PAD_TICK   the three channels ("tracks")
  *   newSfx(preset), PRESETS                 beep laser blip explosion powerup hurt
  *   clampField, setTick, MIX_FORMS, mixOf, toneOn, noiseOn
  *   insertTicks, deleteTicks, duplicateRange, reverseRange, scaleVolume, fade, sweep, repeatRange, setRange
  *   noteOfTone, toneOfNote                  tone period <-> note name and cents
- *   sfxInfo, validateSfx                    duration, bytes on the cartridge, the compiler's limits
- *   renderSfx(asset, {rate, clock, refreshHz})   the AY model -> Float32Array (mono, -0.5..0.5)
+ *   sfxInfo, validateSfx                    duration, bytes on the cartridge, the compiler's limits (all channels)
+ *   renderSfx(asset, {rate, clock, refreshHz})   the AY model -> Float32Array (mono, -0.5..0.5; the channels mixed, one shared noise generator)
  *   createHistory                           undo / redo (the sprite editor's)
  */
 
 "use strict";
 
 export { createHistory } from './sprite-model.js';
+import { sfxRefreshRegisters, sfxStreamLength } from '../lang/arcade/arcade-assets.js';
 
 // ── constants ─────────────────────────────────────────────────────────────────────────────────────────────────
 export const AY_CLOCK = 1764000;                       // CPU / 2 as TSRun has it (unconfirmed on hardware, ARCADE_HARDWARE_NOTES.md section 4)
@@ -50,6 +58,10 @@ export const FIELD_NAMES = ['tone', 'vol', 'noise', 'mix'];
 /** The tone range that cannot go with vol 15 (the record's byte 1 would be $FF). */
 export const UNSTORABLE_TONE_FROM = 3840;
 export const DEFAULT_TICK = { tone: 300, vol: 12, noise: 0, mix: 6 };
+/** What a track is padded with when an edit reaches past its end (silent: volume 0, tone on). */
+export const PAD_TICK = { tone: 200, vol: 0, noise: 0, mix: 6 };
+/** The three AY channels as the editor's tracks: the asset key of each. */
+export const TRACKS = [{ name: 'A', key: 'ticks' }, { name: 'B', key: 'ticksB' }, { name: 'C', key: 'ticksC' }];
 
 /**
  * The four tone / noise combinations of the mix field.  Bit 0 of `mix` = tone OFF, bit 1 = noise OFF (AY register 7 for
@@ -75,18 +87,66 @@ const num = (v, dflt) => (typeof v === 'number' && Number.isFinite(v) ? v : dflt
 export function fromAsset(asset) {
   if (!asset || typeof asset !== 'object' || Array.isArray(asset)) throw new Error('the sound effect is not an object');
   if (!Array.isArray(asset.ticks)) throw new Error('the sound effect has no "ticks" array');
-  const sfx = { ...asset, ticks: asset.ticks.map((t, i) => {
-    if (!isTick(t)) throw new Error(`tick ${i} is not an object`);
-    if (t.tone === undefined || t.tone === null) throw new Error(`tick ${i} tone is missing`);
-    return { ...t, tone: t.tone, vol: t.vol ?? 0, noise: t.noise ?? 0, mix: t.mix ?? 0 };
-  }) };
+  const sfx = { ...asset };
+  for (const { name, key } of TRACKS) {
+    const list = asset[key];
+    if (key !== 'ticks' && (list === undefined || list === null)) { sfx[key] = []; continue; }
+    if (!Array.isArray(list)) throw new Error(`"${key}" (channel ${name}) must be an array of ticks`);
+    const where = key === 'ticks' ? 'tick' : `channel ${name} tick`;
+    sfx[key] = list.map((t, i) => {
+      if (!isTick(t)) throw new Error(`${where} ${i} is not an object`);
+      if (t.tone === undefined || t.tone === null) throw new Error(`${where} ${i} tone is missing`);
+      return { ...t, tone: t.tone, vol: t.vol ?? 0, noise: t.noise ?? 0, mix: t.mix ?? 0 };
+    });
+  }
   return sfx;
 }
-/** The editing form -> the stored asset (a deep copy, the same keys). */
+/** The editing form -> the stored asset (a deep copy, the same keys; ticksB / ticksC only when they hold ticks). */
 export function toAsset(sfx) {
-  return { ...sfx, ticks: sfx.ticks.map((t) => ({ ...t })) };
+  const out = { ...sfx, ticks: sfx.ticks.map((t) => ({ ...t })) };
+  for (const { key } of TRACKS.slice(1)) {
+    const list = sfx[key];
+    if (Array.isArray(list) && list.length) out[key] = list.map((t) => ({ ...t })); else delete out[key];
+  }
+  return out;
 }
-export const cloneSfx = toAsset;
+/** A deep copy of the editing form (empty B / C kept). */
+export function cloneSfx(sfx) {
+  const out = { ...sfx, ticks: sfx.ticks.map((t) => ({ ...t })) };
+  for (const { key } of TRACKS.slice(1)) out[key] = (Array.isArray(sfx[key]) ? sfx[key] : []).map((t) => ({ ...t }));
+  return out;
+}
+
+// ── the three tracks ─────────────────────────────────────────────────────────────────────────────────────────
+const trackList = (sfx, ch) => (ch === 0 ? sfx.ticks : (sfx[TRACKS[ch].key] ??= []));
+/**
+ * The effect as the editing functions see one track: `{ticks}` sharing that channel's array (so splice / field edits change the effect), and
+ * `allowEmpty` for B and C (an effect needs at least one tick in channel A, but a track may be emptied: that is how it is removed).
+ * Make a fresh view after anything replaces the effect (undo, a reload).
+ */
+export function trackView(sfx, ch = 0) {
+  if (!(ch === 0 || ch === 1 || ch === 2)) throw new RangeError(`no track ${ch}`);
+  return { ticks: trackList(sfx, ch), allowEmpty: ch > 0 };
+}
+/** The length of each track: [a, b, c]. */
+export const trackLengths = (sfx) => TRACKS.map(({ key }) => (Array.isArray(sfx?.[key]) ? sfx[key].length : 0));
+/** The effect's length in refreshes: the longest track. */
+export const effectLength = (sfx) => Math.max(0, ...trackLengths(sfx));
+/** True when channel B or C holds ticks (the effect is stored in the three-channel image). */
+export const isMulti = (sfx) => { const l = trackLengths(sfx); return l[1] > 0 || l[2] > 0; };
+/** Extend track `ch` with PAD_TICK copies to `length` ticks (never shortens). -> the number of ticks added. */
+export function padTrack(sfx, ch, length) {
+  const list = trackList(sfx, ch);
+  const n = Math.max(0, Math.min(MAX_TICKS, Math.round(length)) - list.length);
+  for (let i = 0; i < n; i++) list.push({ ...PAD_TICK });
+  return n;
+}
+/** A copy of the effect with every track cut to ticks a..b (inclusive; a track shorter than a is empty): what "play the range" renders. */
+export function sliceRange(sfx, a, b) {
+  const out = { ...sfx };
+  for (const { key } of TRACKS) out[key] = (Array.isArray(sfx[key]) ? sfx[key] : []).slice(a, b + 1);
+  return out;
+}
 
 // ── single fields ─────────────────────────────────────────────────────────────────────────────────────────────
 /** Clamp one value into a field's range (whole numbers; fractions are rounded).  -> {value, message} (value null if not a number). */
@@ -151,11 +211,11 @@ export function insertTicks(sfx, at, n = 1, template = null) {
   sfx.ticks.splice(at, 0, ...fresh);
   return { message, range: n ? [at, at + n - 1] : null };
 }
-/** Delete the ticks a..b.  An effect keeps at least one tick: deleting all of them is refused. */
+/** Delete the ticks a..b.  Channel A keeps at least one tick: deleting all of them is refused (a track view of B or C may be emptied). */
 export function deleteTicks(sfx, a, b) {
   const r = span(sfx, a, b);
   if (!r) return { message: 'nothing to delete', range: null };
-  if (r[1] - r[0] + 1 >= sfx.ticks.length) return { message: 'an effect needs at least one tick', range: [r[0], r[1]] };
+  if (!sfx.allowEmpty && r[1] - r[0] + 1 >= sfx.ticks.length) return { message: 'an effect needs at least one tick', range: [r[0], r[1]] };
   sfx.ticks.splice(r[0], r[1] - r[0] + 1);
   const at = Math.min(r[0], sfx.ticks.length - 1);
   return { message: null, range: [at, at] };
@@ -322,32 +382,58 @@ export function newSfx(preset = 'beep') {
 }
 
 // ── information and validation ────────────────────────────────────────────────────────────────────────────────
-/** Size of an effect: {ticks, seconds (at refreshHz), bytes on the cartridge = (ticks + 1) * 4}. */
+/** Byte length of the three-channel image of an effect (arcade-assets.js: the delta stream).  Fields convertSfx would refuse are clamped first, so a size is always shown. */
+function streamBytes(sfx) {
+  const fix = (list) => (Array.isArray(list) ? list : []).map((t) => {
+    const f = (k, d) => Math.max(FIELDS[k].min, Math.min(FIELDS[k].max, Math.round(num(t?.[k], d))));
+    const r = { tone: f('tone', 0), vol: f('vol', 0), noise: f('noise', 0), mix: f('mix', 0) };
+    if (((r.tone >> 8) | (r.vol << 4)) === 0xFF) r.vol = 14;
+    return r;
+  });
+  return sfxStreamLength(sfxRefreshRegisters({ ticks: fix(sfx?.ticks), ticksB: fix(sfx?.ticksB), ticksC: fix(sfx?.ticksC) }));
+}
+/**
+ * Size of an effect: {ticks (the longest track), seconds (at refreshHz), bytes on the cartridge, channels (1 or 3), tracks: [a, b, c] lengths}.
+ * One channel: (ticks + 1) * 4 bytes; with channel B or C: the length of the register delta stream (arcade-assets.js sfxStreamLength: 4-byte header, one
+ * entry per refresh with only the changed registers, the $FF end).  An effect convertSfx would refuse is sized as if its fields were clamped (the editor shows
+ * the problem separately through validateSfx).
+ */
 export function sfxInfo(sfx, refreshHz = REFRESH_HZ) {
-  const ticks = sfx.ticks.length;
-  return { ticks, seconds: ticks / refreshHz, bytes: (ticks + 1) * 4 };
+  const tracks = trackLengths(sfx);
+  const ticks = Math.max(...tracks);
+  const multi = tracks[1] > 0 || tracks[2] > 0;
+  return { ticks, seconds: ticks / refreshHz, bytes: multi ? streamBytes(sfx) : (ticks + 1) * 4, channels: multi ? 3 : 1, tracks };
 }
 /**
  * The compiler's rules (arcade-assets.js convertSfx) plus the editor's notes.
- * -> {ok, errors: [string], warnings: [string], unstorable: [tick indices]}.  `ok` is true exactly when convertSfx accepts it.
+ * -> {ok, errors: [string], warnings: [string], unstorable: [tick indices of channel A], byChannel: {A: [...], B: [...], C: [...]} (unstorable ticks of each)}.
+ * `ok` is true exactly when convertSfx accepts it.  An error about channel B or C names it ("channel B tick 4 ..."); channel A's are named too once the effect has B or C.
  */
 export function validateSfx(sfx) {
-  const errors = [], warnings = [], unstorable = [];
-  if (!sfx || !Array.isArray(sfx.ticks)) return { ok: false, errors: ['the sound effect has no "ticks" array'], warnings, unstorable };
+  const errors = [], warnings = [], byChannel = { A: [], B: [], C: [] };
+  const done = (extra = {}) => ({ ok: errors.length === 0, errors, warnings, unstorable: byChannel.A, byChannel, ...extra });
+  if (!sfx || !Array.isArray(sfx.ticks)) { errors.push('the sound effect has no "ticks" array'); return done(); }
   const whole = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
-  sfx.ticks.forEach((t, i) => {
-    let bad = false;
-    for (const f of FIELD_NAMES) {
-      const v = t?.[f];
-      const { min, max } = FIELDS[f];
-      if (v === undefined || v === null) { if (f === 'tone') { errors.push(`tick ${i} tone is missing`); bad = true; } continue; }
-      if (!whole(v, min, max)) { errors.push(`tick ${i} ${f} must be a whole number ${min}..${max}, got ${JSON.stringify(v)}`); bad = true; }
-    }
-    if (!bad && (((t.tone >> 8) | ((t.vol ?? 0) << 4)) === 0xFF)) { errors.push(`tick ${i}: ${COMBO_TEXT}`); unstorable.push(i); }
-  });
-  if (sfx.ticks.length === 0) warnings.push('the effect has no ticks and plays nothing');
-  if (sfx.ticks.length > MAX_TICKS) warnings.push(`the effect has more than ${MAX_TICKS} ticks`);
-  return { ok: errors.length === 0, errors, warnings, unstorable };
+  const multi = TRACKS.slice(1).some(({ key }) => Array.isArray(sfx[key]) && sfx[key].length > 0);
+  for (const { name, key } of TRACKS) {
+    const list = sfx[key];
+    if (key !== 'ticks' && (list === undefined || list === null)) continue;
+    if (!Array.isArray(list)) { errors.push(`"${key}" (channel ${name}) must be an array of ticks`); continue; }
+    const where = multi ? `channel ${name} tick` : 'tick';
+    list.forEach((t, i) => {
+      let bad = false;
+      for (const f of FIELD_NAMES) {
+        const v = t?.[f];
+        const { min, max } = FIELDS[f];
+        if (v === undefined || v === null) { if (f === 'tone') { errors.push(`${where} ${i} tone is missing`); bad = true; } continue; }
+        if (!whole(v, min, max)) { errors.push(`${where} ${i} ${f} must be a whole number ${min}..${max}, got ${JSON.stringify(v)}`); bad = true; }
+      }
+      if (!bad && (((t.tone >> 8) | ((t.vol ?? 0) << 4)) === 0xFF)) { errors.push(`${where} ${i}: ${COMBO_TEXT}`); byChannel[name].push(i); }
+    });
+    if (list.length > MAX_TICKS) warnings.push(`${multi ? `channel ${name} has` : 'the effect has'} more than ${MAX_TICKS} ticks`);
+  }
+  if (effectLength(sfx) === 0) warnings.push('the effect has no ticks and plays nothing');
+  return done();
 }
 
 // ── the AY preview ────────────────────────────────────────────────────────────────────────────────────────────
@@ -363,7 +449,14 @@ export function validateSfx(sfx) {
  *
  * No band limiting: tones above half the sample rate alias (a preview, not a reference).
  */
-export function renderSfx(asset, { rate = 44100, clock = AY_CLOCK, refreshHz = REFRESH_HZ } = {}) {
+export function renderSfx(asset, opts = {}) {
+  const tracks = TRACKS.map(({ key }) => (Array.isArray(asset?.[key]) ? asset[key] : []));
+  if (tracks[1].length === 0 && tracks[2].length === 0) return renderOne(asset, opts);
+  return renderMulti(tracks, opts);
+}
+
+/** The one-channel renderer (an effect without channels B and C): unchanged since the sound editor's first version. */
+function renderOne(asset, { rate = 44100, clock = AY_CLOCK, refreshHz = REFRESH_HZ } = {}) {
   const ticks = Array.isArray(asset?.ticks) ? asset.ticks : [];
   const total = Math.round(ticks.length * rate / refreshHz);
   const out = new Float32Array(total);
@@ -388,6 +481,56 @@ export function renderSfx(asset, { rate = 44100, clock = AY_CLOCK, refreshHz = R
       if (!tOn && !nOn) { out[n] = 0; continue; }
       const level = (tOn ? (phase < 0.5 ? 1 : 0) : 1) & (nOn ? (lfsr & 1) : 1);
       out[n] = level ? amp : -amp;
+    }
+  }
+  return out;
+}
+
+/**
+ * Three channels (language batch 5): each channel has its own tone generator and level; the AY has ONE noise generator, whose period each refresh
+ * is the noise of the lowest channel (A, B, C) whose record has noise on, else channel A's.  A channel past the end of its track is silent (the
+ * compiler pads with a record of volume 0 and both mixer bits set).  The channels are summed and scaled by 1 / (the number of tracks that hold
+ * ticks), so a full-volume effect still peaks at 0.5.  Same timing, tone and noise models as the one-channel renderer.
+ */
+function renderMulti(tracks, { rate = 44100, clock = AY_CLOCK, refreshHz = REFRESH_HZ } = {}) {
+  const n = Math.max(...tracks.map((t) => t.length));
+  const total = Math.round(n * rate / refreshHz);
+  const out = new Float32Array(total);
+  if (total === 0) return out;
+  const used = tracks.filter((t) => t.length > 0).length;
+  const scale = 1 / Math.max(1, used);
+  const cyc = clock / 16 / rate;
+  const startOf = (i) => Math.min(total, Math.ceil(i * rate / refreshHz - 1e-9));
+  const phase = [0, 0, 0];
+  let nphase = 0, lfsr = 1;
+  const SILENT = { tone: 0, vol: 0, noise: 0, mix: 7 };
+  for (let i = 0; i < n; i++) {
+    const recs = tracks.map((t) => {
+      const r = t[i] ?? SILENT;
+      const mix = Math.round(num(r.mix, 0)) & 7;
+      return {
+        tone: Math.max(1, Math.round(num(r.tone, 0)) & 4095 || 1),
+        np: Math.max(1, Math.round(num(r.noise, 0)) & 31 || 1),
+        tOn: (mix & 1) === 0, nOn: (mix & 2) === 0,
+        amp: 0.5 * AY_VOLUME[Math.max(0, Math.min(15, Math.round(num(r.vol, 0))))],
+      };
+    });
+    const src = recs.find((r) => r.nOn) ?? recs[0];     // R6: the lowest channel with noise on, else A's
+    const dNoise = cyc / src.np;
+    const dTone = recs.map((r) => cyc / r.tone);
+    const s = i === 0 ? 0 : startOf(i), e = i === n - 1 ? total : startOf(i + 1);
+    for (let k = s; k < e; k++) {
+      nphase += dNoise;
+      while (nphase >= 1) { nphase -= 1; lfsr = (lfsr >> 1) | (((lfsr ^ (lfsr >> 3)) & 1) << 16); }
+      let mix = 0;
+      for (let c = 0; c < 3; c++) {
+        const r = recs[c];
+        phase[c] += dTone[c]; phase[c] -= Math.floor(phase[c]);
+        if (!r.tOn && !r.nOn) continue;
+        const level = (r.tOn ? (phase[c] < 0.5 ? 1 : 0) : 1) & (r.nOn ? (lfsr & 1) : 1);
+        mix += level ? r.amp : -r.amp;
+      }
+      out[k] = mix * scale;
     }
   }
   return out;

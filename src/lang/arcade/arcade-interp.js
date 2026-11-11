@@ -123,6 +123,15 @@
  *   names are keyed `SCENE.NAME` in `vars` / `arrays` when the game has more than one scene (plain otherwise); the record has `scene` (the current
  *   scene's index). Entering scenes in a ring of INITs longer than 1,000 switches in one call throws "interp: scene switch loop".
  *
+ * ── Language batch 5 (docs/ARCADE_LANGUAGE_BATCH5.md) ───────────────────────────────────────────────────────────────────────────────────────
+ *   TIMER a, b: a Dim node with `timer: true`, so a timer is an ordinary variable (record `vars` as always). At the start of every tick t >= 1, before PROC FRAME, every game-level timer and
+ *   every timer of the CURRENT scene that is greater than 0 goes down by 1 (0 or less is left alone; INIT never counts; a scene's timers are rebuilt, 0, at every entry). Then the edges are taken:
+ *   for every key and both sticks, `now` = the KEYDOWN / STICK value of tick t, edge = now AND NOT before, before = now. KEYPRESS(c) / JOYPRESS(n) read the edge of the LAST tick that began
+ *   (all 0 at boot; INIT sees the edge of the tick whose FRAME executed the ENTER; ENTER touches neither edge nor before). Only done when the program uses KEYPRESS or JOYPRESS.
+ *   PRINT item USING "pattern": the number is printed as fmtUsing(value, pattern) (exported; the reference for the code generator's folding and for lib$fmt). PLAY expr: a bare name that
+ *   is a declared SFX plays it; otherwise the value (a variable's, or any expression's) is an effect index: 0 <= v < number of SFX starts that effect, anything else changes nothing; with
+ *   opts.clock a PLAY whose value is 0..255 counts as a call of RT_PLAY (the compiled code makes it and RT_PLAY ignores an index past its table), outside 0..255 no call is made.
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -169,6 +178,21 @@ class Scope {
 
 const BITF = new Set(['BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
 
+/**
+ * PRINT item USING "pattern" (language batch 5, contract item 12): `value` is a 16-bit signed number, `pattern` made of # and 0 (1 to 8 characters). w = the pattern's length, z = the number
+ * of positions from its leftmost 0 to its right end (0 without a 0). The digits are padded on the left with zeros up to z, a '-' goes in front of a negative number, the result is padded on the
+ * left with spaces to w; the minus takes a column of the field, so when the zeros already fill the whole field (z = w) they give way to it: "0000" prints -5 as -005 (contract examples). A
+ * number that does not fit prints w asterisks.
+ */
+export function fmtUsing(value, pattern) {
+  const w = pattern.length, i0 = pattern.indexOf('0'), z = i0 < 0 ? 0 : w - i0;
+  const neg = value < 0 ? 1 : 0, d = String(Math.abs(value));
+  const avail = w - neg;                                      // the columns left for digits
+  if (d.length > avail) return '*'.repeat(w);
+  const digits = d.padStart(Math.max(d.length, Math.min(z, avail)), '0');
+  return ((neg ? '-' : '') + digits).padStart(w, ' ');
+}
+
 export function interpret(ast, opts = {}) {
   const nTicks = opts.ticks ?? 0;
   const stickOpt = opts.stick ?? (() => 0);
@@ -185,6 +209,8 @@ export function interpret(ast, opts = {}) {
     if (typeof item === 'number') return n === 1 ? item : 0;
     return item[n] | 0;
   };
+  /** What STICK(n) reads in tick t (the runtime's rule: all four direction bits set is an unconnected port and gives 0, fire included). */
+  const stickNow = (t, n) => { const v = stickValue(t, n) & 31; return (opts.version ?? 0) >= 2 && (v & 15) === 15 ? 0 : v; };
 
   // ── set-up: sprites, scopes, procs, functions ──
   const V2 = (opts.version ?? 0) >= 2;
@@ -247,6 +273,24 @@ export function interpret(ast, opts = {}) {
     return item instanceof Set ? item.has(code) : item.includes(code);
   };
   const frameDiv = 60 / (ast.framerate ? ast.framerate.value : 30);
+
+  // ── language batch 5: key and stick edges ──
+  const EDGE_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].map((c) => c.charCodeAt(0)).concat([32, 13, 1, 2]);
+  const keyEdge = new Map(), keyBefore = new Map();         // code -> edge / before (0 or 1); every key the runtime knows is tracked (only the ones the program names can be seen)
+  const joyEdge = [0, 0, 0], joyBefore = [0, 0, 0];         // [_, stick 1, stick 2]
+  const usesEdges = (function has(n) {
+    if (Array.isArray(n)) return n.some(has);
+    if (!n || typeof n !== 'object') return false;
+    if (n.type === 'Func' && (n.name === 'KEYPRESS' || n.name === 'JOYPRESS')) return true;
+    for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object' && has(n[k])) return true;
+    return false;
+  })(ast.items ?? []);
+  /** Start of a tick: take the key and stick edges (edge = now AND NOT before; before = now). */
+  const takeEdges = (t) => {
+    if (!usesEdges) return;
+    for (const c of EDGE_KEYS) { const now = keyHeld(t, c) ? 1 : 0; keyEdge.set(c, now & ~(keyBefore.get(c) ?? 0)); keyBefore.set(c, now); }
+    for (const n of [1, 2]) { const now = stickNow(t, n); joyEdge[n] = now & ~joyBefore[n] & 31; joyBefore[n] = now; }
+  };
 
   // ── the cell map, the text state and the sound state ──
   const cells = new Uint8Array(768).fill(BLANK_CELL), attrs = new Uint8Array(768).fill(BG_ATTR);
@@ -398,6 +442,14 @@ export function interpret(ast, opts = {}) {
     return info;
   });
   let sceneScope = sceneInfo[0].scope, sceneFns = sceneInfo[0].fns, sceneProcs = sceneInfo[0].procs;
+  // language batch 5: the timers (variables declared with TIMER) of the game level and of each scene
+  const timerKeys = (holder) => (holder.decls ?? []).filter((d) => d.type === 'Dim' && d.timer).flatMap((d) => d.items.map((it) => up(it.name)));
+  const gameTimers = timerKeys(ast), sceneTimers = sceneList.map(timerKeys);
+  /** Start of a tick (before PROC FRAME): every game-level timer and every timer of the current scene that is above 0 goes down by 1. */
+  const countTimers = () => {
+    for (const k of gameTimers) { const c = globalScope.vars.get(k); if (c && c.v > 0) c.v--; }
+    for (const k of sceneTimers[curScene]) { const c = sceneScope.vars.get(k); if (c && c.v > 0) c.v--; }
+  };
   const cellOf = (r) => (r.scene < 0 ? globalScope : sceneInfo[r.scene].scope).vars.get(r.name);
   const evConst = (e) => ev(e, sceneScope);
   // language batch 2: the window's world
@@ -520,7 +572,16 @@ export function interpret(ast, opts = {}) {
           case 'BNOT': return wrap16(~ev(args[0], sc));
           case 'SHL': { const a = ev(args[0], sc), n = ev(args[1], sc); return n >= 0 && n <= 15 ? wrap16(a << n) : 0; }
           case 'SHR': { const a = ev(args[0], sc), n = ev(args[1], sc); return n >= 0 && n <= 15 ? a >> n : (a < 0 ? -1 : 0); }
-          case 'STICK': { const n = ev(args[0], sc); if (n !== 1 && n !== 2) return 0; const v = stickValue(tick, n) & 31; return V2 && (v & 15) === 15 ? 0 : v; }
+          case 'STICK': { const n = ev(args[0], sc); if (n !== 1 && n !== 2) return 0; return stickNow(tick, n); }
+          case 'KEYPRESS': {
+            if (!V2) throw new Unsupported('function KEYPRESS', e);
+            return keyEdge.get(keyCodeOf(args[0], e, sc)) ?? 0;
+          }
+          case 'JOYPRESS': {
+            if (!V2) throw new Unsupported('function JOYPRESS', e);
+            const n = ev(args[0], sc);
+            return n === 1 || n === 2 ? joyEdge[n] : 0;
+          }
           case 'COSA': return viewCosa(ev(args[0], sc));
           case 'SINA': return viewSina(ev(args[0], sc));
           case 'FXMUL': { const a = ev(args[0], sc), b = ev(args[1], sc); return viewFxmul(a, b); }
@@ -723,7 +784,7 @@ export function interpret(ast, opts = {}) {
           curRow = clamp(r, 23); curCol = clamp(c, 31);
         }
         s.items.forEach((it, i) => {
-          if (isStr(it)) putText(evStr(it, sc)); else putText(String(ev(it, sc)));
+          if (isStr(it)) putText(evStr(it, sc)); else if (s.usings?.[i]) putText(fmtUsing(ev(it, sc), s.usings[i].pattern)); else putText(String(ev(it, sc)));
           if (i < s.seps.length && s.seps[i] === ',') putChar(32);
         });
         if (s.trailing === ',') putChar(32);
@@ -793,7 +854,13 @@ export function interpret(ast, opts = {}) {
         return null;
       }
       case 'Play': {
-        const i = sfxIndex.get(up(s.sfx.name));
+        let i = s.sfx ? sfxIndex.get(up(s.sfx.name)) : undefined;           // a bare name that is a declared SFX
+        if (i === undefined) {                                               // batch 5: an effect index (a variable's value, or any expression)
+          const v = ev(s.index ?? s.sfx, sc);
+          if (v < 0 || v > 255) return null;                                 // no call of RT_PLAY at all
+          if (v >= sfxNames.length) { if (clock) ++playN; return null; }      // RT_PLAY is called and ignores an index past its table
+          i = v;
+        }
         sfx.active = true; sfx.index = i; sfx.played = 0;
         if (clock) sfx.t0 = clock.play(tick, ++playN);
         return null;
@@ -852,6 +919,7 @@ export function interpret(ast, opts = {}) {
     events = [];
     playN = 0; rndN = 0;
     if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
+    countTimers(); takeEdges(t);              // batch 5: the timers count down, then the key and stick edges are taken (the tick prologue of the compiled game)
     execute('FRAME'); settle();
     ticks.push(snapshot(events));
   }

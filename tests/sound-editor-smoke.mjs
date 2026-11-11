@@ -21,6 +21,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from '
 import { tmpdir, homedir } from 'node:os';
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { convertSfx } from '../src/lang/arcade/arcade-assets.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const outDir = process.argv[2] ?? mkdtempSync(join(tmpdir(), 'sound-smoke-'));
@@ -153,6 +154,11 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: base + 'tests/sound-editor-test.html?example=shooter' });
   check('the test page mounts the editor', !!(await waitFor('window.testReady === true')) && await exists('.sfxed'));
+  // the page's first layout settles over its first frames (a font swap shifts the lanes by a pixel per bar above them): measure only after it did
+  for (let stable = 0, last = null; stable < 5;) {
+    const top = await evaluate("document.querySelector('[data-role=lanes]')?.getBoundingClientRect().top");
+    stable = top === last ? stable + 1 : 0; last = top; await sleep(40);
+  }
   console.log('      (asset checks: ' + (await evaluate('t.realChecks') ? 'the real arcade-assetcheck.js' : 'a stand-in: arcade-assetcheck.js is not there') + ')');
   const st0 = await state();
   check('the first effect (boom, 14 ticks) is selected and loaded', st0.name === 'boom' && st0.asset.ticks.length === 14, st0.name);
@@ -482,6 +488,109 @@ try {
   await setField('[data-role=rep-n]', 3000); await click('[data-role=op-repeat]');
   check('a repeat past 1800 ticks is clipped to 1800 and the host accepts it', (await state()).asset.ticks.length === 1800 && (await asset()).ticks.length === 1800 && /1800/.test(await status()), await status());
   check('and the editor stays usable (Undo is not left half-way)', !(await state()).canRedo || true);
+
+  // ── three tracks (language batch 5): channels A / B / C ──
+  await resetWork();
+  const tab = (n) => `[data-role=track-${n}]`;
+  const stT = await state();
+  check('three channel tabs A, B, C; A is selected; B and C read "(empty)"; the effect is as long as A',
+    stT.track === 0 && (await exists(tab('a'))) && (await exists(tab('b'))) && (await exists(tab('c'))) && (await text(tab('a'))) === 'A' && /empty/.test(await text(tab('b'))) && /empty/.test(await text(tab('c')))
+    && same(stT.trackLengths, [8, 0, 0]) && await evaluate(`document.querySelector('${tab('a')}').getAttribute('aria-pressed') === 'true' && document.querySelector('${tab('b')}').getAttribute('aria-pressed') === 'false'`));
+  check('"Clear track" is disabled for A (and for an empty track)', await evaluate("document.querySelector('[data-role=track-clear]').disabled"));
+  const setsT = await evaluate('t.log.sets.length');
+  await click(tab('b'));
+  check('clicking B selects it, says it is empty, and writes nothing', (await state()).track === 1 && /Channel B is empty/.test(await status()) && (await evaluate('t.log.sets.length')) === setsT && await evaluate(`document.querySelector('${tab('b')}').classList.contains('on')`));
+  await shot('07-track-b-empty');
+  await drag('vol', 2, 9, 2, 9);
+  let aT = await asset();
+  check('painting on empty track B at tick 2 grows B to 3 ticks (silent padding), sets that volume, leaves A untouched and the effect length',
+    same(aT.ticks, BASE.ticks) && aT.ticksB?.length === 3 && aT.ticksB[2].vol === 9 && aT.ticksB[0].vol === 0 && aT.ticksB[1].vol === 0 && aT.ticksB[0].mix === 6 && !('ticksC' in aT) && same((await state()).trackLengths, [8, 3, 0]), JSON.stringify(aT.ticksB));
+  check('that stroke is one host write', (await evaluate('t.log.sets.length')) === setsT + 1);
+  await key('z', { ctrl: true });
+  aT = await asset();
+  check('Ctrl+Z undoes it: B is empty again and is not stored at all (no ticksB key)', same(aT, BASE) && !('ticksB' in aT) && (await state()).canRedo);
+  await key('y', { ctrl: true });
+  aT = await asset();
+  check('Ctrl+Y brings track B back', aT.ticksB?.length === 3 && aT.ticksB[2].vol === 9);
+  // the row editor on a tick past the end of B
+  await setField('[data-role=tick-index]', 6);
+  check('the row editor shows nothing for a tick past the end of the selected track', (await evaluate("document.querySelector('[data-role=f-tone]').value")) === '' && /no tick in channel B/.test(await text('[data-role=note]')));
+  await setField('[data-role=f-tone]', 500);
+  aT = await asset();
+  check('typing a tone there grows B to that tick (7 ticks), silent padding before it', aT.ticksB.length === 7 && aT.ticksB[6].tone === 500 && aT.ticksB[6].vol === 0 && aT.ticksB[3].vol === 0 && same(aT.ticks, BASE.ticks));
+  // operations act on the selected track
+  await selectRange(2, 2);
+  await setField('[data-role=set-field]', 'vol'); await setField('[data-role=set-val]', 7); await click('[data-role=op-set]');
+  aT = await asset();
+  check('Set on B changes B only', aT.ticksB[2].vol === 7 && same(aT.ticks, BASE.ticks));
+  await selectRange(0, 3);
+  await click('[data-role=op-reverse]');
+  aT = await asset();
+  check('Reverse on B reverses B ticks 0..3 and leaves A alone', aT.ticksB[1].vol === 7 && aT.ticksB[3].vol === 0 && same(aT.ticks, BASE.ticks));
+  // the info panel and the tone lane
+  const infoT = await text('[data-role=info]');
+  check('the info panel counts the delta stream: 8 ticks, the byte count convertSfx gives for the edited asset, three channels', /8 ticks/.test(infoT) && infoT.includes(`${convertSfx(aT).bytes.length} bytes on the cartridge`) && /delta stream: three channels/.test(infoT), infoT);
+  check('the track note lists the three lengths', /A 8, B 7, C 0/.test(await text('[data-role=track-note]')), await text('[data-role=track-note]'));
+  await click(tab('a'));
+  const pix = (i, tone) => evaluate(`(() => { const c = document.querySelector('[data-role=lanes]'), st = t.editor.getState(), y = Math.round(st.lanes.tone.y + Math.log(Math.max(${tone}, st.toneTop) / st.toneTop) / Math.log(4095 / st.toneTop) * st.lanes.tone.h);
+    const d = c.getContext('2d').getImageData(Math.round((${i} + .5) * st.colW), y, 1, 1).data; return Array.from(d).slice(0, 3).join(); })()`);
+  const bPix = await pix(6, 500);
+  await evaluate("(t.externalSet('work', Object.assign(JSON.parse(JSON.stringify(t.host.getAsset('sfx', 'work'))), { ticksB: [] })), true)");
+  const noBPix = await pix(6, 500);
+  check('with A selected the tone lane still draws track B\'s curve (the pixel at B\'s tone differs from the same lane without B)', bPix !== noBPix, `${bPix} / ${noBPix}`);
+  await evaluate("(t.externalSet('work', Object.assign(JSON.parse(JSON.stringify(t.host.getAsset('sfx', 'work'))), { ticksB: [{ tone: 500, vol: 6, noise: 0, mix: 6 }, { tone: 520, vol: 6, noise: 0, mix: 6 }] })), true)");
+  check('an outside change keeps the selected track (A) and shows the new B: lengths 8, 2, 0', (await state()).track === 0 && same((await state()).trackLengths, [8, 2, 0]));
+  // tools on A do not touch B
+  await drag('vol', 0, 14, 0, 14);
+  aT = await asset();
+  check('painting on A with B present changes A only', aT.ticks[0].vol === 14 && aT.ticksB.length === 2 && aT.ticksB[0].vol === 6);
+  await key('a', { ctrl: true });
+  await click('[data-role=op-delete]');
+  check('Delete of every tick on A is refused ("channel A keeps at least one tick") and changes nothing', (await asset()).ticks.length === 8 && /at least one/.test(await status()), await status());
+  await click(tab('b'));
+  check('"Clear track" is enabled on a track that has ticks', !(await evaluate("document.querySelector('[data-role=track-clear]').disabled")));
+  await key('a', { ctrl: true });
+  await click('[data-role=op-delete]');
+  aT = await asset();
+  check('Delete of every tick on B is allowed: B is empty and not stored; A is untouched', !('ticksB' in aT) && aT.ticks.length === 8 && (await state()).track === 1 && same((await state()).trackLengths, [8, 0, 0]));
+  await evaluate("(t.externalSet('work', Object.assign(JSON.parse(JSON.stringify(t.host.getAsset('sfx', 'work'))), { ticksC: [{ tone: 150, vol: 9, noise: 0, mix: 6 }, { tone: 160, vol: 9, noise: 0, mix: 6 }, { tone: 170, vol: 9, noise: 0, mix: 6 }] })), true)");
+  await click(tab('c'));
+  await click('[data-role=track-clear]');
+  aT = await asset();
+  check('"Clear track" empties C: no ticksC key afterwards', !('ticksC' in aT) && !('ticksB' in aT) && aT.ticks.length === 8);
+  // Play mixes the channels
+  await evaluate("(t.externalSet('work', Object.assign(JSON.parse(JSON.stringify(t.host.getAsset('sfx', 'work'))), { ticksB: Array.from({ length: 12 }, (_, i) => ({ tone: 400 - 10 * i, vol: 9, noise: 0, mix: 6 })) })), true)");
+  const nbuf = await evaluate('t.audio.buffers.length');
+  await click('[data-role=play]');
+  const mixed = await evaluate(`(() => { const e = t.M.fromAsset(t.host.getAsset('sfx', 'work')), want = t.M.renderSfx(e, { rate: 22050 }), got = t.audio.buffers.at(-1), a = t.M.renderSfx({ ticks: e.ticks }, { rate: 22050 });
+    let d = 0, diffA = 0; for (let i = 0; i < want.length; i++) d = Math.max(d, Math.abs(want[i] - got.data[i])); for (let i = 0; i < Math.min(a.length, want.length); i++) diffA = Math.max(diffA, Math.abs(want[i] - a[i]));
+    return { n: t.audio.buffers.length, len: got.length, want: want.length, d, diffA, ticks: Math.round(12 * 22050 / t.M.REFRESH_HZ) }; })()`);
+  check('Play renders all the channels: one buffer as long as the longest track (12 ticks), identical to renderSfx of the effect, different from A alone', mixed.n === nbuf + 1 && mixed.len === mixed.ticks && mixed.want === mixed.len && mixed.d === 0 && mixed.diffA > 0.01, JSON.stringify(mixed));
+  await click('[data-role=stop]');
+  await selectRange(9, 11);
+  await click('[data-role=play-range]');
+  check('"Range" plays the range of every track (ticks 9..11 of B: 3 ticks, B only)', (await evaluate('t.audio.buffers.at(-1).length')) === (await evaluate('Math.round(3 * 22050 / t.M.REFRESH_HZ)')) && await evaluate("t.audio.buffers.at(-1).data.some((x) => x !== 0)"));
+  await evaluate("(t.audio.sources.at(-1).onended(), true)");
+  // unstorable ticks on B: the warning names the channel, marks the tick on that track only, and a click on it goes there
+  await evaluate("(t.externalSet('work', { ticks: JSON.parse(JSON.stringify(t.host.getAsset('sfx', 'work'))).ticks, ticksB: [{ tone: 100, vol: 5, noise: 0, mix: 6 }, { tone: 3900, vol: 15, noise: 0, mix: 6 }] }), true)");
+  await click(tab('a'));
+  const wl = await evaluate("[...document.querySelectorAll('[data-role=warnings] li')].map((l) => l.textContent)");
+  check('the unstorable tick of B is reported as an error naming channel B (from the asset checks), and A shows no mark for it', wl.length === 1 && /channel B tick 1 has a tone of 3840/.test(wl[0]) && (await state()).marks.length === 0 && (await state()).track === 0, JSON.stringify(wl));
+  await click('[data-role=warnings] li');
+  const stW = await state();
+  check('clicking that warning switches to track B and selects tick 1, which is now marked', stW.track === 1 && stW.cur === 1 && same(stW.marks, [1]));
+  await shot('08-track-b-warning');
+  // a narrow page: the channel bar wraps instead of overflowing
+  await evaluate("(document.getElementById('mount').style.width = '340px', true)");
+  await sleep(100);
+  const narrow = await evaluate("(() => { const b = document.querySelector('[data-role=tracks]'); const r = document.querySelector('.sfxed'); return { bar: b.scrollWidth <= b.clientWidth + 1, root: r.scrollWidth <= r.clientWidth + 1 }; })()");
+  await shot('09-narrow');
+  await evaluate("(document.getElementById('mount').style.width = '', true)");
+  check('at 340 px the channel bar and the editor do not overflow sideways', narrow.bar && narrow.root, JSON.stringify(narrow));
+  const otherName = await evaluate("t.host.listAssets('sfx').find((n) => n !== 'work')");
+  await evaluate(`(t.editor.select(${JSON.stringify(otherName)}), true)`);
+  check('choosing another effect returns to channel A', !!otherName && (await state()).track === 0 && (await state()).name === otherName, JSON.stringify({ t: (await state()).track, n: (await state()).name, otherName }));
+  await resetWork();
 
   // ── a host with only the required members ──
   await evaluate('t.mountBare()');

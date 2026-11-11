@@ -50,18 +50,19 @@ window_boot:
     sub $80
     cp $40-13
     ret nc                      ; its 14 pages inside the game image
-    ld a,(ix+9)
+    push ix
+    pop hl
+    ld de,9
+    add hl,de
+    ld b,3
+.pv:
+    ld a,(hl)
     sub $80
     cp $40
-    ret nc                      ; tile_flags
-    ld a,(ix+11)
-    sub $80
-    cp $40
-    ret nc                      ; world_src
-    ld a,(ix+13)
-    sub $80
-    cp $40
-    ret nc                      ; tilerows
+    ret nc                      ; tile_flags (+9), world_src (+11), tilerows (+13): inside the game image
+    inc hl
+    inc hl
+    djnz .pv
     ld b,(ix+2)                 ; ---- the bands ----
     ld c,0                      ; rows so far
     push ix
@@ -114,25 +115,21 @@ window_boot:
     ex de,hl
 .c2:
     ld (W_CAMMAX),hl
-    ld a,(ix+0)
-    ld (W_CX),a
-    ld a,(ix+1)
-    ld (W_CY),a
-    ld a,(ix+2)
-    ld (W_NB),a
+    push ix
+    pop hl
+    ld de,W_CX
+    ld bc,4
+    ldir                        ; cx, cy, nbands, world_w: W_CX .. W_WW are in the descriptor's order (asserted below); HL = descriptor + 4
+    ld a,(W_NB)
     add a,a
     ld c,a
     ld b,0
     add a,W_BANDS&$FF
     ld (W_BEND),a
-    push ix
-    pop hl
-    ld de,14
-    add hl,de
+    ld de,10
+    add hl,de                   ; HL = the band records (descriptor + 14)
     ld de,W_BANDS
     ldir                        ; the band records
-    ld a,(ix+3)
-    ld (W_WW),a
     ld a,(ix+7)
     ld (W_TABHI),a
     ; ---- the world: byte-RLE pairs (count 1..255, value), count 0 ends; exactly 2,048 bytes (stop there; zero the rest if short) ----
@@ -242,12 +239,7 @@ window_boot:
     ld (W_DMASK0),a
     cpl
     ld (W_DMASK3),a
-    ld hl,W_AC                  ; no file shows any band's attributes yet
-    ld b,8
-.ac:
-    ld (hl),$FF
-    inc l
-    djnz .ac
+    call win_ac_clear           ; no file shows any band's attributes yet
     ld a,1
     ld (V_WIN),a
     ret
@@ -1186,6 +1178,8 @@ RT_SETWORLD:
     ld a,(bc)
     cp e
     ret z
+; win_ac_clear: no file shows any band's attributes (W_AC all $FF).  Also window_boot's.  Clobbers B, HL.
+win_ac_clear:
     ld hl,W_AC
     ld b,8
 .inv:
@@ -1586,5 +1580,6 @@ axis24:
 
     ASSERT (W_AC&$FF)+8 <= 256 && (W_RING&$FF)+64 <= 256 && (W_BANDS&$FF)+8 <= 256 && W3_END <= V3VARS+$C0
     ASSERT (W_SY == W_SX+1) && (W_SX1 == W_SX+2) && (W_SY1 == W_SX+3) && (W_WX1 == W_WX0+1) && (W_WY1 == W_WY0+1)
+    ASSERT (W_NB == W_CX+2) && (W_WW == W_CX+3) && (W_CY == W_CX+1)
     ASSERT (W_FLAGT == W_ATTRT+$100) && (W_TROWS&$FF) == 0
 M_SCROLL_E:

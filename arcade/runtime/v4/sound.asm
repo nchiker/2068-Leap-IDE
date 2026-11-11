@@ -5,6 +5,14 @@
 ; R7 = %00110110 | mix bit 0 (tone A off) | mix bit 1 << 3 (noise A off), R8 = vol.  The mixer keeps channels B and C
 ; off and bit 6 (port A = input, the joystick) clear.  A register is written only when the value differs from AY_SHADOW, which
 ; holds what was last written (boot zeroed the AY and AY_SHADOW).  The terminator stops the effect: V_SFX_ACTIVE = 0 and R8 = 0.
+;
+; THREE-CHANNEL EFFECTS (batch 5, docs/ARCADE_LANGUAGE_BATCH5.md Part C items 16-18, DELTA STREAM): when byte 3 of the effect's first record is 3, RT_PLAY sets V_SFX_CH = 3
+; (anything else: 1, the code above), and the effect is the 4-byte header  0, 0, 0, 3  followed by the stream: one ENTRY per refresh = a byte n (0..11) and n pairs
+; (register, value) in ascending register order, the first entry holding all 11 registers R0-R10 and each later one only the registers that changed; a single byte $FF
+; ends the stream.  RT_PLAY starts V_SFX_PTR after the header.  The tick (the `.three` code at the end of SND_TICK) reads one entry per refresh and, for every pair,
+; selects the register (OUT $F5), writes the value (OUT $F6) and stores it in AY_SHADOW + register, so the shadow stays exact for the one-channel tick, RT_SILENCE and
+; RT_PLAY.  At $FF it calls RT_SILENCE: V_SFX_ACTIVE = 0 and R8, R9, R10 = 0 (each written only when its shadow is not 0).  All the channel logic (the shared noise
+; generator, the mixer, the padding of shorter channels) is the compiler's work (convertSfx, src/lang/arcade/arcade-assets.js).
     ; (no ORG: follows text.asm)
 M_SOUND_S:
 
@@ -39,27 +47,62 @@ RT_PLAY:
     ld a,d
     or e
     ret z                       ; a null pointer is no effect
+    xor a
+    ld (V_SFX_ACTIVE),a         ; the interrupt leaves the sound alone while the mode and the pointer change (and while B / C are silenced)
+    ld hl,3
+    add hl,de
+    ld a,(hl)                   ; byte 3 of the first record: 3 = three channels
+    cp 3
+    jr z,.three                 ; A = 3
+    ld a,(V_SFX_CH)
+    cp 3
+    call z,SND_QUIET_BC         ; a three-channel effect is replaced by a one-channel one: B and C volume 0
+    ld a,1
+.mode:
+    ld (V_SFX_CH),a
     ld (V_SFX_PTR),de
     ld a,1
     ld (V_SFX_ACTIVE),a
     ret
+.three:
+    inc hl
+    ex de,hl                    ; DE -> the stream, after the 4-byte header (0, 0, 0, 3)
+    jr .mode
 
 ; ---------------------------------------------------------------------------------------------------------------
-; RT_SILENCE: stop the effect; AY channel A volume 0.  Clobbers AF.  V_SFX_ACTIVE is cleared FIRST, so the interrupt cannot
-; write the AY between the two OUTs below.
+; RT_SILENCE: stop the effect; AY channels A, B, C volume 0 (R8, R9, R10, each written only when its AY_SHADOW is not 0).  Clobbers AF.
+; V_SFX_ACTIVE is cleared FIRST, so the interrupt cannot write the AY between the two OUTs below.  SND_QUIET_BC (R9, R10 only) is
+; RT_PLAY's; both save BC and HL.  (They are not part of the interrupt's code, so the main thread's AY writes are not mistaken for it.)
 ; ---------------------------------------------------------------------------------------------------------------
 RT_SILENCE:
     xor a
     ld (V_SFX_ACTIVE),a
-    ld a,(AY_SHADOW+8)
+    push bc
+    push hl
+    ld hl,AY_SHADOW+8
+    ld bc,$0308                 ; B = 3 registers, C = the first
+    jr SND_QUIET_L
+SND_QUIET_BC:
+    push bc
+    push hl
+    ld hl,AY_SHADOW+9
+    ld bc,$0209
+SND_QUIET_L:
+    ld a,(hl)
     or a
-    ret z                       ; already silent
+    jr z,.next                  ; already silent
     xor a
-    ld (AY_SHADOW+8),a
-    ld a,8
+    ld (hl),a
+    ld a,c
     out (PORT_AY_REG),a
     xor a
     out (PORT_AY_DATA),a
+.next:
+    inc hl
+    inc c
+    djnz SND_QUIET_L
+    pop hl
+    pop bc
     ret
 
 ; ---------------------------------------------------------------------------------------------------------------
@@ -68,6 +111,9 @@ RT_SILENCE:
 ; ---------------------------------------------------------------------------------------------------------------
 SND_TICK:
 SND_S:
+    ld a,(V_SFX_CH)             ; the one test of the three-channel effects (+27 T)
+    cp 3
+    jr z,.three                 ; (the three-channel code is below, after .out)
     push bc
     push de
     push hl
@@ -157,7 +203,20 @@ SND_S:
     pop de
     pop bc
     jp ISR_DONE
-.end:
+.three:                         ; V_SFX_CH = 3: one stream entry per refresh.  Only HL is saved for an entry with no change; BC and DE for the pairs.
+    push hl
+    ld hl,(V_SFX_PTR)           ; HL -> the entry
+    ld a,(hl)                   ; n, the number of pairs (0..11), or $FF = the end of the stream
+    inc hl
+    or a                        ; (the flags stay for .some: S = $FF)
+    jr nz,.some
+.x0:                            ; the exit of every entry (the ISR's own pop af / ei / ret: the same three bytes as JP ISR_DONE, 10 T faster)
+    ld (V_SFX_PTR),hl           ; HL -> the next entry
+    pop hl
+    pop af
+    ei
+    ret
+.end:                           ; one channel: the terminator
     xor a
     ld (V_SFX_ACTIVE),a
     ld hl,AY_SHADOW+8
@@ -169,5 +228,43 @@ SND_S:
     xor a
     out (PORT_AY_DATA),a
     jr .out
+.some:
+    jp m,.stop                  ; $FF: the effect is over
+    push bc
+    push de
+    ld b,a                      ; B = pairs
+    ASSERT (AY_SHADOW&$FF) == 0 && AY_SHADOW+15 < $10000   ; AY_SHADOW is page aligned: DE = AY_SHADOW + register with no arithmetic
+    ld d,AY_SHADOW>>8           ; (E = the register)
+.pair:
+    ld a,(hl)                   ; register
+    inc hl
+    out (PORT_AY_REG),a         ; select it
+    ld e,a                      ; DE -> AY_SHADOW + register
+    ld a,(hl)                   ; value
+    inc hl
+    out (PORT_AY_DATA),a        ; write it
+    ld (de),a                   ; and keep the shadow exact
+    djnz .pair
+    pop de
+    pop bc
+    ld (V_SFX_PTR),hl           ; (.x0 again, inline: 12 T less than JR .x0)
+    pop hl
+    pop af
+    ei
+    ret
+.stop:
+    call RT_SILENCE             ; V_SFX_ACTIVE = 0 and R8-R10 = 0 where not already (saves BC and HL; leaves DE alone)
+    jr .x0                      ; (stores HL, harmless: the effect is over)
 SND_E:
 M_SOUND_E:
+
+; KEY_ROWSEL (RT_KEYDOWN's half-row selects): 8 bytes of data, put in the unused gap $0068-$00FF of DOCK chunk 0 (between the NMI vector and the boot code), where
+; they fill no space at the end of the image.  (The three-channel tick used to live in this gap; it is now the end of SND_TICK.)
+    ORG $0068
+M_KROW_S:
+KEY_ROWSEL:
+    DB $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+M_KROW_E:
+    ASSERT (KEY_ROWSEL&$FF)+7 < 256 && (KEY_ROWSEL>>8) == 0     ; RT_KEYDOWN adds the row to the low byte
+    ASSERT M_KROW_E <= $0100    ; the gap ends where the boot code starts
+    ORG M_SOUND_E

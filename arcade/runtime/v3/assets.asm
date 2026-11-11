@@ -13,12 +13,7 @@
     ; (no ORG: follows sound.asm)
 M_ASSETS_S:
 
-build_assets:
-    ld hl,PHASE_OFF             ; no shift of any asset yet (AST and SPR_TAB were cleared with the rest of chunk 6)
-    ld de,PHASE_OFF+1
-    ld bc,PHASE_OFF_LEN-1
-    ld (hl),0
-    ldir
+build_assets:                   ; (PHASE_OFF was cleared by video_init: no shift of any asset yet; AST and SPR_TAB with the rest of chunk 6)
     ld a,(GAME_NSPR)
     cp MAX_ASSETS+1
     jr c,.nok
@@ -96,10 +91,7 @@ build_assets:
 ; plan_pool: the phase pool plan (layout.inc "THE PHASE POOL"; the linker repeats it: docs/ARCADE_RUNTIME_API_V3.md).  IX = the asset record.
 ; ---------------------------------------------------------------------------------------------------------------
 plan_pool:
-    ld hl,0
-    ld (FC_MISS),hl
-    ld (FC_MISSES),hl
-    ld hl,POOL_A
+    ld hl,POOL_A                ; (FC_MISS and FC_MISSES are 0: boot cleared $E000-$F1FF)
     ld (FC_NEXT),hl
     ld hl,POOL_B
     ld (FC_NEXT+2),hl
@@ -294,9 +286,7 @@ pp_slen:
     add hl,bc
     dec a
     jr nz,.m
-    ld (FC_SLEN),hl
     or 1                        ; NZ
-    ret
 .z:
     ld (FC_SLEN),hl
     ret
@@ -333,24 +323,36 @@ pp_assign:
 
 ; pool_alloc: BC = bytes (1..3,360) -> HL = the first of BC free bytes, carry clear; or carry set when no piece has room.  First fit over
 ; POOL_A, POOL_B, POOL_C in that order (an allocation never straddles two pieces).  Clobbers AF, DE, HL.
-    MACRO TRY_PIECE nextvar, pend
-        ld hl,(nextvar)
-        add hl,bc               ; the new next
-        jr c,1F                 ; past $FFFF (POOL_B: $FA80 + 3,360 would wrap)
-        ex de,hl
-        ld hl,pend
-        or a
-        sbc hl,de               ; carry: the new next is past the end
-        jr c,1F
-        ld hl,(nextvar)         ; (LD keeps the flags: carry clear)
-        ld (nextvar),de
-        ret
-1:
-    ENDM
 pool_alloc:
-    TRY_PIECE FC_NEXT, POOL_A+POOL_A_LEN
-    TRY_PIECE FC_NEXT+2, POOL_B+POOL_B_LEN
-    TRY_PIECE FC_NEXT+4, POOL_C+POOL_C_LEN
+    ld iy,FC_NEXT
+    ld de,POOL_A+POOL_A_LEN
+    call try_piece
+    ret nc
+    ld iy,FC_NEXT+2
+    ld de,POOL_B+POOL_B_LEN
+    call try_piece
+    ret nc
+    ld iy,FC_NEXT+4
+    ld de,POOL_C+POOL_C_LEN
+    ; (falls into try_piece: its carry set is pool_alloc's "no piece has room")
+; try_piece: IY -> the piece's next-free word, DE = the piece's end (exclusive), BC = bytes -> carry clear and HL = the allocation (the word advanced), or
+; carry set.  Clobbers AF, DE, HL.  (Boot only: IY is free here.)
+try_piece:
+    ld l,(iy+0)
+    ld h,(iy+1)                 ; HL = the next free byte
+    push hl                     ; the allocation, if it fits
+    add hl,bc                   ; the new next
+    jr c,.no                    ; past $FFFF (POOL_B: $FA80 + 3,360 would wrap)
+    ex de,hl
+    or a
+    sbc hl,de                   ; carry: the new next is past the end
+    jr c,.no
+    ld (iy+0),e
+    ld (iy+1),d
+    pop hl                      ; (carry clear)
+    ret
+.no:
+    pop hl
     scf
     ret
 
@@ -365,11 +367,8 @@ read_desc:
     ld d,0
     ld ix,(GAME_SPRTAB)
     add ix,de
-    ld a,(V_ASSET)
-    add a,a
-    add a,a
-    add a,a
-    add a,a                     ; 16 * asset (AST_LEN = 16)
+    ld a,e
+    add a,a                     ; 16 * asset (AST_LEN = 16; 8 * asset <= 56, so it fits the byte); D is still 0
     ld e,a
     ld iy,AST
     add iy,de
@@ -397,20 +396,16 @@ read_desc:
 .w:
     ld (iy+AST_WB),b
     ld a,(ix+SD_PHASES)         ; phases: the largest of 1, 2, 4, 8 not above the value
-    ld b,1
-    ld c,$F8
-    cp 2
-    jr c,.pdone
-    ld b,2
-    ld c,$FC
-    cp 4
-    jr c,.pdone
-    ld b,4
-    ld c,$FE
-    cp 8
-    jr c,.pdone
-    ld b,8
+    ld b,8                      ; B = the phases, C = the x mask: 8 / $FF, 4 / $FE, 2 / $FC, 1 / $F8
     ld c,$FF
+.p:
+    cp b
+    jr nc,.pdone
+    bit 0,b
+    jr nz,.pdone                ; 1: the least (a value of 0 is read as 1)
+    srl b
+    sla c
+    jr .p
 .pdone:
     ld (iy+AST_PHASES),b
     ld (iy+AST_XMASK),c
@@ -441,17 +436,15 @@ read_desc:
     ld (iy+AST_HOT+3),a         ; height
     jr .hotdone
 .hot:
-    ld a,(hl)
-    inc hl
-    ld (iy+AST_HOT),a
-    ld a,(hl)
-    inc hl
-    ld (iy+AST_HOT+1),a
-    ld a,(hl)
-    inc hl
-    ld (iy+AST_HOT+2),a
-    ld a,(hl)
-    ld (iy+AST_HOT+3),a
+    push iy
+    pop de
+    ld a,e
+    add a,AST_HOT               ; (no carry: asserted below)
+    ld e,a                      ; DE -> the record's hot x, y, w, h
+    ldi
+    ldi
+    ldi
+    ldi                         ; the four bytes of the descriptor's box
 .hotdone:
     ld b,0                      ; CLEN = h x 2 (wb + 1)
     ld c,(iy+AST_H)
@@ -466,12 +459,10 @@ read_desc:
     ld (iy+AST_CLEN),l
     ld (iy+AST_CLEN+1),h
     ld (V_PTR),hl
-    ld a,(V_ASSET)              ; PHASE_OFF[a][q g] = (q - 1) x CLEN, q = 1..phases-1
-    add a,a
-    add a,a
-    add a,a
-    add a,a
-    add a,PHASE_OFF&$FF
+    push iy                     ; PHASE_OFF[a][q g] = (q - 1) x CLEN, q = 1..phases-1
+    pop hl                      ; IY = AST + 16 * asset: its low byte is (AST & $FF) + 16 * asset, so the row's low byte follows by a constant
+    ld a,l
+    add a,(PHASE_OFF&$FF)-(AST&$FF)
     ld l,a
     ld h,PHASE_OFF>>8           ; HL -> PHASE_OFF[a][0]
     ld a,(iy+AST_XMASK)
@@ -856,10 +847,30 @@ prot_bit:
     jr nz,.s
     ret
 
-; the ends (exclusive) of the pool pieces, in pool_alloc's order
-POOL_ENDS:
-    DW POOL_A+POOL_A_LEN, POOL_B+POOL_B_LEN, POOL_C+POOL_C_LEN
     ASSERT (FC_PROT&$FF)+3 < 256
+    ASSERT (AST&$FF)+AST_LEN*(MAX_ASSETS-1)+AST_HOT+3 < 256     ; read_desc: the hot box copy
+    ASSERT (AST&$FF)+AST_LEN*(MAX_ASSETS-1) < 256 && (PHASE_OFF&$FF)+AST_LEN*(MAX_ASSETS-1) < 256      ; read_desc: 16 * asset is added to a low byte
     ASSERT AST_XMASK == AST_WB+1 && AST_PHASES == AST_XMASK+1      ; build_frame and draw_all walk the record with INC L
     ASSERT AST_NF == AST_H+1 && AST_FTAB == AST_NF+1 && AST_WB == AST_FTAB+2
+; walk_dirty (tileops.asm WALK_ROW; placed here so that the code in front of sprite.asm ends where the blitter blocks' alignment wants it, which saves its size at
+; the end of the image): HL = a cell pointer (CELL_TILE page) -> HL' = DIRTY0 + (cell index >> 3), the dirty byte of that cell.  HL, DE kept.  Clobbers AF, B.
+walk_dirty:
+    ld a,l
+    rrca
+    rrca
+    rrca
+    and $1F
+    ld b,a                      ; L >> 3
+    ld a,h
+    sub CELL_TILE>>8
+    rrca
+    rrca
+    rrca                        ; (H - $CE) << 5
+    or b
+    exx
+    ld l,a
+    ld h,DIRTY0>>8
+    exx
+    ret
+
 M_ASSETS_E:
