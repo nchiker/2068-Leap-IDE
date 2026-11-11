@@ -150,3 +150,26 @@ B0 (v4 investigation: done, section 3) -> A (compiler side) and B (runtimes) in 
 * **Tests:** `tests/arcade-m14-compiler.mjs` (96 + 1 with `ARCADE_OLD`), `tests/arcade-m14-differential.mjs` (39: interpreter vs TSRun on v3 and v4,
   titles against games without the window / view, the window / view back against games that never left it: the switched game is an odd number of
   drawn ticks behind, so its display files are compared crosswise), `arcade/tests/m14-runtime-mode.mjs` (44). `m14-mutations.mjs` is still to do.
+
+**Part C, Leap Runner (2026-11-11).** Three scenes: `title NOWINDOW` (first; the 32 x 24 map `rn_title` made by `runner.assets.gen.mjs`: "LEAP RUNNER" in
+brick block letters, mountains, clouds kept clear of the letters (the generator's `--check` refuses a cloud touching a brick, a damaged letter or two
+different R glyphs), ground, coins spinning by tile swaps, the flag; HI and "PRESS SPACE OR FIRE"; sprites at screen positions: the hero runs and hops,
+a walker follows, a bat flies), `demo` (the former attract mode: level 1 scrolls by itself) and `play`. Title and demo alternate every 170 ticks
+(8.5 s); fire in either starts the game; game won and game over `ENTER title` (the retry is gone). `play`'s INIT does `CLS` and `WORLD level`; the
+seven-stage start is kept, so the recorded play-through presses fire at tick 14 and plays from tick 21 as before: every tick's variables, arrays,
+sprites and camera hash equal to the one-scene game's (`tests/arcade-runner.mjs`, 95 checks), the world too except one coin's spin frame in ticks
+22-25 (the spin counter now also runs on the title). Sizes: mapped 16,267 of 16,384, banked 4,008 (the title picture 770, the four worlds, the four
+tables). The title -> play switch tick costs about 1.21M T (about 0.4 s: the reset, the world load with its class pass, the window's first
+repaints); not a gameplay tick. Owner reviewed the title (asked for the first R to be cleared of a cloud: done).
+
+**Part D, Vaults (2026-11-11).** Three scenes: `title NOVIEW` (first; the map `vl_title`: "VAULTS" in wall tiles, the goblet on a pedestal, gems that
+sparkle by tile swaps, the locked door; the wraith patrols and the key, two gems and a potion bob as 2D sprites; "PRESS SPACE OR FIRE TO PLAY",
+"BEST SCORE n"), `demo` (the turning colonnade with the HUD) and `play` (its INIT does `WORLD level`, so every game starts with the maze as built).
+Title and demo alternate every 135 ticks (9 s). The play is unchanged: every tick's full state from the press of fire hashes equal to the one-scene
+game's for the win run (1,419 ticks) and the lose run (`tests/arcade-m8-vaults.mjs`, 79 checks). Game area 13,961 of 16,384; the NOVIEW pool uses
+1,196 of 3,712 bytes (all four wraith frames cached at 4 phases; ray mode ignores phases). A scene switch costs about 1.0M T (about 0.3 s).
+`arcade-m8-vaults-perf.mjs --check` still exits 1 as before batch 7 (7 over-budget ticks of the win run) and now also lists the switch ticks.
+Owner reviewed the title: fine as it is.
+
+**Test tools moved by the bigger runtimes:** `runner-patch.mjs` (the v3 runtime now ends at $3E0D: the key script is 2 bits a tick, 256 bytes at
+$3F00, stub at $3E10; a scenario that presses left is refused) and `vaults-patch.mjs` (the game grew: stub at $BA00, table at $BB00).

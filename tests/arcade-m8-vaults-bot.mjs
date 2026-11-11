@@ -8,9 +8,11 @@
 // COSA / SINA from 4096 cos, FXMUL from BigInt products) and a breadth-first search on the maze's cells. The player's walk does not depend on the wraiths, so the run is worked
 // out in advance; the interpreter then checks it (the model must end where the game does). Shots use SYNTHETIC sightings: the interpreter and the mock cannot draw, so the test
 // feeds SEEN / DEPTH from a table (a wraith "in the sights" for a while), the way tests/arcade-m8-common.mjs does.
-//   WIN run:  the title, the walk to the vault door, a bump against it without the key ("THE DOOR IS LOCKED"), the walk to the key (gems on the way), a wraith shot three
+//   WIN run:  the title (fire on tick 17), the walk to the vault door, a bump against it without the key ("THE DOOR IS LOCKED"), the walk to the key (gems on the way), a wraith shot three
 //             times (killed), the walk back, the door opens with the key, the treasure.
 //   LOSE run: the walk to the south-east room, then standing still: the wraiths come, ten touches, game over, fire (title), fire again (a new game), a few steps.
+// (Since the title became a scene of its own the title's first 17 ticks are the same ticks as before, the game starts in the tick of the fire (play's INIT) and its first tick is 18, so the
+// two runs differ from the runs of the one-scene game only in the idle ticks of the old start-up (2 ticks after each fire), which are gone: tests/arcade-m8-vaults.mjs compares them with the old game.)
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -103,11 +105,11 @@ function face(g, t, a, out) {
 }
 const idle = (g, t, n, out, s = 0) => { for (let i = 0; i < n; i++) { out.push(s); step(g, t, s); t++; } return t; };
 
-/** the title: nothing for 14 ticks, fire on tick 15; the game starts on tick 18 (checked below); returns {out, t, pa} with the title's pa at the first play tick */
+/** the title (SCENE title NOVIEW): nothing for 16 ticks, fire on tick 17, which enters play (its INIT runs in that tick); the game's first tick is 18, the tick it was before the title was
+ *  a scene of its own (the counters FC and K3 run through the title, so the walk's timing is the same); returns {out, t, pa} with the pose angle the game starts with */
 function title(out) {
-  for (let i = 0; i < 14; i++) out.push(0);
+  for (let i = 0; i < 16; i++) out.push(0);
   out.push(FIRE);
-  for (let i = 0; i < 2; i++) out.push(0);
   const T0 = out.length + 1;
   const r = interpretVaults(T0 - 1, (t) => out[t - 1] ?? 0);
   return { t: T0, pa: r.ticks[T0 - 2].vars.PA };
@@ -157,9 +159,8 @@ export function loseRun() {
   void startWait;
   for (let i = 0; i < 24; i++) out.push(0);     // the end text goes up a line a tick; fire after tt > 20
   out.push(FIRE);                                // back to the title
-  for (let i = 0; i < 14; i++) out.push(0);     // the title text (10 stages)
-  out.push(FIRE);                                // a new game
-  for (let i = 0; i < 2; i++) out.push(0);
+  for (let i = 0; i < 14; i++) out.push(0);     // the title for a second
+  out.push(FIRE);                                // a new game (play's INIT runs in this tick)
   for (let i = 0; i < 40; i++) out.push(UP | (i < 20 ? RIGHT : 0));
   return { out };
 }

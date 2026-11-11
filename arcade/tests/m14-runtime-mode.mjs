@@ -172,20 +172,20 @@ const op3 = W3.op;
 
 /** The ops of `n` ticks of a window scene (world positions, the camera walking, HUD tiles, SETWORLD, queries) or of a scene without it (screen positions). */
 function ticks3(r, n, on, st, { noWorld = false } = {}) {
-  const out = [];
+  const out = [], ins = st.insts ?? insts3;
   for (let k = 0; k < n; k++) {
     const t = [];
     if (on) {
       st.cam = Math.max(-10, Math.min(470, st.cam + r.int(-9, 14)));
       t.push(op3.camera(st.cam));
-      insts3.forEach((_, i) => {
+      ins.forEach((_, i) => {
         if (r.chance(0.08)) t.push(op3.hide(i));
         else t.push(op3.showf(i, st.cam + r.int(-40, 220), r.int(-30, 140), r.int(0, 3)));
       });
       if (r.chance(0.5)) t.push(op3.tile(r.int(0, 31), r.pick([0, 1, 2, 20, 21, 22, 23]), r.int(0, 31)));
       if (r.chance(0.4)) t.push(op3.tile(r.int(0, 31), r.int(0, 23), r.pick([0, 1, 2, 3, 28, 29, 30, 31])));
     } else {
-      insts3.forEach((_, i) => {
+      ins.forEach((_, i) => {
         if (r.chance(0.06)) t.push(op3.hide(i));
         else t.push(op3.showf(i, r.int(-5, 250), r.int(-5, 190), r.int(0, 3)));
       });
@@ -194,7 +194,7 @@ function ticks3(r, n, on, st, { noWorld = false } = {}) {
       if (noWorld) { out.push(t); continue; }
       if (r.chance(0.6)) t.push(op3.camera(r.int(-20, 500)));                            // the camera moves while the window is off
       if (r.chance(0.6)) t.push(op3.setworld(r.int(0, 640), r.int(0, 127), r.int(0, 31)));
-      if (r.chance(0.3)) t.push(op3.hit(0, r.int(1, 4)));
+      if (r.chance(0.3) && ins.length > 1) t.push(op3.hit(0, r.int(1, 4)));
     }
     t.push(op3.worldtile(r.int(-8, 650), r.int(-8, 135)));
     t.push(op3.tileflags(r.int(-8, 650), r.int(-8, 135)));
@@ -203,14 +203,14 @@ function ticks3(r, n, on, st, { noWorld = false } = {}) {
   return out;
 }
 /** A script and its switch plan from a list of segments: ['on', n] / ['off', n] / ['reset+off'] / ['reset+on'] / ['off!'] / ['on!'] (no reset) / ['worldload'] (+ ops of a scene without the window). */
-function build3(segments, r, { win = true, worldAt = 0 } = {}) {
-  const script = [], plan = new Map(), st = { cam: 0 };
+function build3(segments, r, { win = true, worldAt = 0, insts = insts3 } = {}) {
+  const script = [], plan = new Map(), st = { cam: 0, insts };
   let on = win;
   const sw = (mode) => ({ addr: S3.RT_WINMODE, a: mode, model: (md) => md.setMode(mode) });
   for (const [kind, n = 1] of segments) {
     if (kind === 'on' || kind === 'off') { script.push(...ticks3(r, n, kind === 'on' && on, st)); continue; }
     const tick = script.length;
-    if (kind === 'reset+off' || kind === 'reset+on') { script.push(resetOps(insts3.length, op3)); plan.set(tick, sw(kind === 'reset+on' ? 1 : 0)); if (win) on = kind === 'reset+on'; }
+    if (kind === 'reset+off' || kind === 'reset+on') { script.push(resetOps(insts.length, op3)); plan.set(tick, sw(kind === 'reset+on' ? 1 : 0)); if (win) on = kind === 'reset+on'; }
     else if (kind === 'off!' || kind === 'on!') { script.push(ticks3(r, 1, on, st)[0]); plan.set(tick, sw(kind === 'on!' ? 1 : 0)); }
     else if (kind === 'worldload') {
       script.push(ticks3(r, 1, false, st, { noWorld: true })[0]);     // (sprites and cells only: the call follows the tick's ops)
@@ -220,11 +220,11 @@ function build3(segments, r, { win = true, worldAt = 0 } = {}) {
   return { script, plan };
 }
 /** A game: with the window (cx 4, cy 4, 80 wide, 3 bands), with a window descriptor the boot refuses (badDesc: cx 12), or without one (win false: DIV_EXT only). */
-function game3({ win = true, badDesc = false, segs, seed, bootOff = false, div = 1 }) {
+function game3({ win = true, badDesc = false, segs, seed, bootOff = false, div = 1, assets = assets3, insts = insts3 }) {
   const r = rng(seed);
-  const spec = { div, assets: assets3, insts: insts3, tiles: tiles3, map: busyMap(r), script: [] };
+  const spec = { div, assets, insts, tiles: tiles3, map: busyMap(r), script: [] };
   const worldAt = WORLD_B_AT;
-  const { script, plan } = build3(segs, r, { win: win && !badDesc, worldAt });
+  const { script, plan } = build3(segs, r, { win: win && !badDesc, worldAt, insts });
   const winSpec = { cx: badDesc ? 12 : 4, cy: 4, worldW: 80, bands: bands3, ram: world3, flags: tiles3.map((_, k) => k & 3), expectNoWindow: badDesc || !win, noDivWin: !win };
   const g = W3.winGame({ ...spec, script, win: winSpec });
   g.img.set(rle3b, worldAt);
@@ -504,7 +504,7 @@ function ticks4(r, n, on, st, { noWorld = false } = {}) {
         else { const d = r.int(300, 900), a = (st.pose.a + r.int(-30, 30)) & 255; t.push(op4.showf(i, st.pose.x + ((W4.COS[a] * d) >> 12), st.pose.y + ((W4.COS[(a + 192) & 255] * d) >> 12), r.int(0, 3))); }
       });
       if (r.chance(0.5)) t.push(op4.tile(r.int(0, 23), r.pick([0, 1, 2, 3, 20, 21, 22, 23]), r.int(0, 31)));
-      t.push(op4.bbtab(r.int(0, st.insts.length - 1)));
+      if (st.insts.length) t.push(op4.bbtab(r.int(0, st.insts.length - 1)));
     } else {
       st.insts.forEach((_, i) => {
         if (r.chance(0.06)) t.push(op4.hide(i));
@@ -515,16 +515,16 @@ function ticks4(r, n, on, st, { noWorld = false } = {}) {
       if (noWorld) { out.push(t); continue; }
       if (r.chance(0.6)) { const [cx, cy] = r.pick(st.free); st.pose = { x: cx * 256 + r.int(30, 220), y: cy * 256 + r.int(30, 220), a: r.int(0, 255) }; t.push(op4.view(st.pose.x, st.pose.y, st.pose.a)); }
       if (r.chance(0.5)) t.push(op4.setwall(r.int(1, 14) * 256 + 128, r.int(1, 14) * 256 + 128, r.int(0, 4)));
-      if (r.chance(0.4)) t.push(op4.hit(0, r.int(1, st.insts.length - 1)));
+      if (r.chance(0.4) && st.insts.length > 1) t.push(op4.hit(0, r.int(1, st.insts.length - 1)));
     }
     t.push(op4.wall(r.int(-300, 4200), r.int(-300, 4200)));
     out.push(t);
   }
   return out;
 }
-function game4({ view = true, segs, seed, bootOff = false, div = 3, badView = false, set2 = false }) {
+function game4({ view = true, segs, seed, bootOff = false, div = 3, badView = false, set2 = false, assets: assetsOpt = null, insts: instsOpt = null }) {
   const r = rng(seed);
-  const assets = set2 ? assets4b : assets4, insts = set2 ? insts4b : insts4;
+  const assets = assetsOpt ?? (set2 ? assets4b : assets4), insts = instsOpt ?? (set2 ? insts4b : insts4);
   const script = [], plan = new Map(), st = { pose: { x: 3 * 256 + 128, y: 6 * 256 + 128, a: 0 }, free: free16, insts };
   let on = view && !badView;
   const sw = (mode) => ({ addr: S4.RT_VIEWMODE, a: mode, model: (md) => md.setMode(mode) });
@@ -639,6 +639,20 @@ pictureRun4('the first scene without the view (the switch before the first tick)
 pictureRun4('the second art set (all three NOVIEW pieces, a frame cache with misses): on -> off -> on -> off', {
   seed: 55, set2: true, segs: [['on', L(5)], ['reset+off'], ['off', L(14)], ['reset+on'], ['on', L(5)], ['reset+off'], ['off', L(8)]],
 });
+// games without sprite instances (V_NINST = 0), and without sprite art at all (V_NAST = 0): the switch's loops over the records and the assets must not run (nothing to walk)
+pictureRun3('a window game with NO sprite instance (V_NINST 0): on -> off -> on -> off -> on, the first scene without the window', {
+  seed: 36, insts: [], bootOff: true, segs: [['off', L(6)], ['reset+on'], ['on', L(6)], ['reset+off'], ['off', L(6)], ['reset+on'], ['on', 4], ['reset+off'], ['off', 3], ['off!'], ['reset+on'], ['on', 3]],
+});
+pictureRun3('a window game with NO sprite instance and NO sprite art (V_NINST 0, V_NAST 0): on -> off -> on -> off -> on', {
+  seed: 37, insts: [], assets: [], segs: [['on', L(5)], ['reset+off'], ['off', L(6)], ['reset+on'], ['on', L(5)], ['reset+off'], ['off', 4], ['reset+on'], ['on', 3]],
+});
+pictureRun4('a view game with sprite art but NO sprite instance (V_NINST 0, V_NAST 5): the first scene without the view, then on / off several times', {
+  seed: 56, insts: [], bootOff: true, segs: [['off', L(6)], ['reset+on'], ['on', L(5)], ['reset+off'], ['off', L(5)], ['reset+on'], ['on', 4], ['reset+off'], ['off', 3], ['reset+on'], ['on', 3]],
+});
+pictureRun4('a view game with NO sprite art at all (V_NAST 0, V_NINST 0): on -> off -> on -> off -> on', {
+  seed: 57, assets: [], insts: [], segs: [['on', L(5)], ['reset+off'], ['off', L(6)], ['reset+on'], ['on', L(5)], ['reset+off'], ['off', 4], ['reset+on'], ['on', 3]],
+});
+pictureRun4('a game with NO sprite art and the first scene without the view (the boot OFF)', { seed: 58, assets: [], insts: [], bootOff: true, segs: [['off', L(5)], ['reset+on'], ['on', L(5)], ['reset+off'], ['off', 3]] });
 pictureRun4('a game WITHOUT a view (no DIV_VIEW): ON / OFF are no-ops', { seed: 53, view: false, div: 1, segs: [['off', 3], ['reset+on'], ['off', 4], ['reset+off'], ['off', 3]] });
 pictureRun4('a view descriptor the boot refuses (colw 3): ON is a no-op', { seed: 54, badView: true, div: 1, segs: [['off', 3], ['reset+on'], ['off', 4]] });
 
@@ -820,7 +834,8 @@ poolCheck(true);
 // ---- Vaults (arcade/examples/vaults.arc compiled with THIS runtime): the cost of OFF (the pool build included) and ON at 1, 2 and 4 phases ----
 {
   const S = S4;
-  const src = readFileSync(join(ROOT, 'arcade/examples/vaults.arc'), 'utf8');
+  // (Vaults' title is a NOVIEW scene now, so the cartridge would boot without the view: this test wants the game in ray mode from the start, as it was, so the clause is taken off)
+  const src = readFileSync(join(ROOT, 'arcade/examples/vaults.arc'), 'utf8').replace('SCENE title NOVIEW\n', 'SCENE title\n');
   const assets = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/vaults.assets.json'), 'utf8'));
   const res = compile(src, { runtime: RT4.json, image: RT4.img, assets });
   if (res.errors.length) throw new Error('vaults: ' + res.errors.map((e) => e.message).join('; '));
@@ -855,11 +870,90 @@ poolCheck(true);
     const ok = ok1 && on.preserved && on.spOk && m.ram[S.V_RAY] === 1 && rd16(m, S.STACK_CANARY) === 0x5AA5;
     rows.push({ ph, nspr, ninst, off: off.t, plan: off.inner, on: on.t, used, nrec, ok });
   }
-  for (const r of rows) console.log(`      Vaults, ${r.ph ? r.ph + ' phases' : 'as built (1 phase)'}: ${r.nspr} assets, ${r.ninst} instances: OFF ${fmt(r.off)} T = the pool build ${fmt(r.plan)} + ${fmt(r.off - r.plan)} ` +
+  for (const r of rows) console.log(`      Vaults, ${r.ph ? r.ph + ' phases' : 'as built (the wraith 4 phases, the rest 1)'}: ${r.nspr} assets, ${r.ninst} instances: OFF ${fmt(r.off)} T = the pool build ${fmt(r.plan)} + ${fmt(r.off - r.plan)} ` +
     `(pool used ${r.used.join(' / ')}), ON ${fmt(r.on)} T (${r.nrec} records of 4 sprites)`);
-  check(`v4 Vaults (compiled with this runtime): OFF beyond the pool build ${rows.map((r) => fmt(r.off - r.plan)).join(' / ')} T at 1 (as built) / 2 / 4 phases (contract: <= 15,000; the pool build ${rows.map((r) => fmt(r.plan)).join(' / ')}), ` +
+  check(`v4 Vaults (compiled with this runtime): OFF beyond the pool build ${rows.map((r) => fmt(r.off - r.plan)).join(' / ')} T as built (the wraith 4 phases) / 2 / 4 phases (contract: <= 15,000; the pool build ${rows.map((r) => fmt(r.plan)).join(' / ')}), ` +
     `ON ${fmt(rows[0].on)} T with ${rows[0].nrec} sprite records (<= 15,000); every run back in ray mode with the canary intact`,
   rows.every((r) => r.ok && r.off - r.plan <= 15000 && r.on <= 15000));
+}
+
+// =====================================================================================================================================
+// 9. Games with no sprite instance (V_NINST = 0) and a view game with no sprite art (V_NAST = 0): the switches walk no record and no asset
+// =====================================================================================================================================
+// With nothing to walk, drawn_dirty (v3 / v4) and the asset loop of RT_VIEWMODE OFF must return at once: their counts are loop counters (a count of 0 would run 256 times), and what such a loop reads and
+// writes by mistake is the rest of page $D5 (DIRTY1's tail, the T4 gap) and the page of the asset records, which holds TILE_ATTR ($D600-$D67F).  The bytes there are planted non-zero.
+console.log('\n9. no sprite instance (V_NINST 0) / no sprite art (V_NAST 0): every switch writes only the documented state; page $D5 and TILE_ATTR are not touched');
+{
+  const plant = (m, lo, hi, seed) => { const pz = rng(seed); for (let a = lo; a < hi; a++) m.ram[a] = pz.int(1, 255); };
+  const sameRange = (a, b, lo, hi) => same(a.subarray(lo, hi), b.subarray(lo, hi));
+  // ---- v3: a window game with NO instance ----
+  for (const [how, cfg] of [['no instance (V_NINST 0, 4 assets)', { insts: [] }], ['no instance and no art (V_NINST 0, V_NAST 0)', { insts: [], assets: [] }]]) {
+    const S = S3;
+    const { g } = game3({ seed: 71, ...cfg, segs: [] });
+    const R = rig(g.dck, S);
+    if (R.m.ram[S.V_NINST] !== 0 || R.m.ram[S.V_WIN] !== 1) throw new Error('v3 no-instance game: V_NINST / V_WIN');
+    plant(R.m, S.SPR_DRAWN, 0xD600, 5);                                                         // SPR_DRAWN (no instance can have a record) and T4 above it: all must stay
+    const snapOn = takeSnap(R.m), on0 = R.m.ram.slice();
+    // OFF: V_WIN, V_WINOFF, the window's cells in the two dirty maps; nothing else (no record flag is written: there is no instance)
+    const off = callT(R, S.RT_WINMODE, { a: 0 });
+    const exp = on0.slice();
+    for (let file = 0; file < 2; file++) for (let r = 4; r < 20; r++) for (let c = 4; c < 28; c++) setBit(exp, S, file, r * 32 + c);
+    exp[S.V_WIN] = 0; exp[S.V_WINOFF] = 1;
+    const okOff = (a) => a === S.V_WIN || a === S.V_WINOFF || (a >= S.DIRTY0 && a < S.DIRTY0 + 96) || (a >= S.DIRTY1 && a < S.DIRTY1 + 96);
+    const outOff = off.writes.filter((a) => !okOff(a));
+    check(`v3 ${how}: OFF writes only V_WIN, V_WINOFF and the window's cells in DIRTY0/1 (${off.writes.length} bytes); every other byte unchanged (page $D5 from SPR_DRAWN up included: ${hex(S.SPR_DRAWN)}-$D5FF, planted)`,
+      sameButIsr(off.ram, exp, S) === '' && outOff.length === 0 && off.out.preserved && off.out.spOk, sameButIsr(off.ram, exp, S) || outOff.slice(0, 4).map((a) => hex(a)).join(' '));
+    // OFF again, ON, ON again: ON writes V_WIN, V_WINOFF, W_NRING and the caches only; the dirty maps are not touched (no record to turn into cells)
+    putSnap(R.m, { ...snapOn, ram: off.ram });
+    const off2 = callT(R, S.RT_WINMODE, { a: 0 });
+    const offRam = off.ram.slice();
+    putSnap(R.m, { ...snapOn, ram: offRam });
+    const on = callT(R, S.RT_WINMODE, { a: 1 });
+    const expOn = offRam.slice();
+    expOn[S.V_WIN] = 1; expOn[S.V_WINOFF] = 0; expOn[S.W_NRING] = 0; expOn.fill(0xFF, S.W_AC, S.W_AC + 8);
+    const okOn = (a) => a === S.V_WIN || a === S.V_WINOFF || a === S.W_NRING || (a >= S.W_AC && a < S.W_AC + 8);
+    const outOn = on.writes.filter((a) => !okOn(a));
+    putSnap(R.m, { ...snapOn, ram: on.ram });
+    const on2 = callT(R, S.RT_WINMODE, { a: 1 });
+    check(`v3 ${how}: OFF when off and ON when on write nothing (${off2.writes.length} / ${on2.writes.length}); ON writes only V_WIN, V_WINOFF, W_NRING and the attribute caches (${on.writes.length} bytes), the dirty maps and page $D5 untouched`,
+      off2.writes.length === 0 && on2.writes.length === 0 && sameButIsr(on.ram, expOn, S) === '' && outOn.length === 0 && on.out.preserved && on.out.spOk, sameButIsr(on.ram, expOn, S) || outOn.slice(0, 4).map((a) => hex(a)).join(' '));
+  }
+  // ---- v4: a view game with NO instance (art kept), and one with NO art at all ----
+  for (const [how, cfg, nast] of [['no instance (V_NINST 0, 5 assets)', { insts: [] }, 5], ['no art at all (V_NAST 0, V_NINST 0)', { assets: [], insts: [] }, 0]]) {
+    const S = S4;
+    const { g } = game4({ seed: 72, ...cfg, segs: [] });
+    const R = rig(g.dck, S, 30);
+    if (R.m.ram[S.V_NINST] !== 0 || R.m.ram[S.V_NAST] !== nast || R.m.ram[S.V_RAY] !== 1) throw new Error('v4 no-instance game: V_NINST / V_NAST / V_RAY');
+    plant(R.m, S.SPR_DRAWN, 0xD600, 7);                                                         // SPR_DRAWN (no instance can have a record) and T4 above it: all must stay
+    if (nast === 0) plant(R.m, S.AST, S.AST + 128, 8);                                          // the asset records: unused, so every byte must stay
+    const tileAttr = (m) => m.ram.slice(0xD600, 0xD680);
+    const snapOn = takeSnap(R.m), on0 = R.m.ram.slice(), ta0 = tileAttr(R.m);
+    const fcLo = S.V3VARS + 0xC0, fcHi = S.V3VARS + 0x100;                                        // the frame cache's scratch (FC_MISS, FC_NEXT, ...)
+    const off = callT(R, S.RT_VIEWMODE, { a: 0 });
+    const exp = on0.slice();
+    for (let file = 0; file < 2; file++) for (let r = 6; r < 18; r++) for (let c = 8; c < 24; c++) setBit(exp, S, file, r * 32 + c);
+    exp[S.V_RAY] = 0; exp[S.V_RAYOFF] = 1;
+    const okOff = (a) => a === S.V_RAY || a === S.V_RAYOFF || a === S.V_RAYATTR || (a >= fcLo && a < fcHi) || (a >= S.DIRTY0 && a < S.DIRTY0 + 96) || (a >= S.DIRTY1 && a < S.DIRTY1 + 96) ||
+      (nast > 0 && a >= S.AST && a < S.AST + 128);
+    const outOff = off.writes.filter((a) => !okOff(a));
+    const diffOff = (() => { for (let a = 0; a < 0x10000; a++) { if (a >= fcLo && a < fcHi) continue; if (nast > 0 && a >= S.AST && a < S.AST + 128) continue; if (a === S.V_RAYATTR || (a >= STACK_LO && a < STACK_HI) || a === S.V_FRAMES || a === S.V_FRAMES + 1 || a === S.V_SYNC || a === S.V_SHADOW_FF) continue; if (off.ram[a] !== exp[a]) return hex(a); } return ''; })();
+    check(`v4 ${how}: OFF writes only V_RAY, V_RAYOFF, V_RAYATTR, the frame cache's scratch, DIRTY0/1${nast > 0 ? ' and the asset records' : ''} (${off.writes.length} bytes); TILE_ATTR ($D600-$D67F), page $D5 from SPR_DRAWN up` +
+      `${nast === 0 ? ' and the (unused) asset records' : ''} unchanged; the view's cells dirty in both files`,
+    diffOff === '' && outOff.length === 0 && same(tileAttr({ ram: off.ram }), ta0) && off.out.preserved && off.out.spOk && rd16({ ram: off.ram }, S.FC_MISS) === 0, diffOff || outOff.slice(0, 4).map((a) => hex(a)).join(' '));
+    putSnap(R.m, { ...snapOn, ram: off.ram });
+    const off2 = callT(R, S.RT_VIEWMODE, { a: 0 });
+    putSnap(R.m, { ...snapOn, ram: off.ram });
+    const on = callT(R, S.RT_VIEWMODE, { a: 1 });
+    const hid = (on0[S.V_SHADOW_FF] & 1) ^ 1, hidBase = hid ? 0x7800 : 0x5800;
+    const okOn = (a) => a === S.V_RAY || a === S.V_RAYOFF || a === S.V_RAYATTR || (nast > 0 && a >= S.AST && a < S.AST + 128) || (a >= hidBase + 6 * 32 && a < hidBase + 18 * 32 && (a & 31) >= 8 && (a & 31) < 24);
+    const outOn = on.writes.filter((a) => !okOn(a));
+    check(`v4 ${how}: ON writes only V_RAY, V_RAYOFF, V_RAYATTR${nast > 0 ? ', the asset records' : ''} and the view's attributes in the hidden file (${on.writes.length} bytes); TILE_ATTR and page $D5 unchanged; ` +
+      `OFF when off writes nothing (${off2.writes.length})`, outOn.length === 0 && off2.writes.length === 0 && same(tileAttr({ ram: on.ram }), ta0) && sameRange(on.ram, on0, S.SPR_DRAWN, 0xD600) && on.out.preserved && on.out.spOk &&
+      on.ram[S.V_RAY] === 1 && (nast > 0 || sameRange(on.ram, off.ram, S.AST, S.AST + 128)), outOn.slice(0, 4).map((a) => hex(a)).join(' '));
+    putSnap(R.m, { ...snapOn, ram: on.ram });
+    const on2 = callT(R, S.RT_VIEWMODE, { a: 1 });
+    check(`v4 ${how}: ON when on writes nothing (${on2.writes.length})`, on2.writes.length === 0);
+  }
 }
 
 finish('M14 runtime: scene display modes');

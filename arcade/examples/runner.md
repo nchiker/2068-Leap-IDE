@@ -1,10 +1,22 @@
 # Leap Runner, four levels (`runner.arc`)
 
+**Three scenes** (language batch 7, `docs/ARCADE_LANGUAGE_BATCH7.md` part C):
+
+* **`title`** (`SCENE title NOWINDOW`, the first scene): a full-screen picture with no window at all, the whole 32 x 24 cell screen: a screen `MAP` (`titlepic`, made from the game's own tiles by
+  `runner.assets.gen.mjs`: "LEAP RUNNER" in brick-tile block letters, sky and clouds, the flag, the ground), "HI n" and "PRESS SPACE OR FIRE" on black bars over the ground, and **sprites at screen positions**
+  (the 2D sprite machinery of a game without a window): the hero runs across and hops, eating the coins under his hops (tile swaps), a walker follows him and a bat flies the other way; the other coins spin.
+  It is the picture the reset of every `ENTER` loads (the game's first screen MAP), which is why the scenes with the window clear the cells (`CLS`) first.
+* **`demo`** (the window): today's attract mode, level 1 scrolls by itself, the title text over it. The title and the demo take turns by themselves, 170 ticks (8.5 s) each.
+* **`play`**: the game below. Space or fire in the title or the demo starts it (`ENTER play`); its `INIT` clears the cells and loads a fresh level 1 with `WORLD`, then the seven start ticks (the HUD) as before.
+  **Game won and game over both go back to the title** (`ENTER title`; fire after the end text, `HI` is kept and shown). There is no retry any more.
+
+The compiler names the play scene's variables `PLAY.X`; `HI`, `FC`, `CAM`, `CF`, `LV`, the level tables and `SPINCOINS` are the game's (shared with the demo).
+
 `platformer.arc` (the one-level reference: `platformer.md`) with **three more worlds**: the example of slice B5 of the banked cartridge map
 (`docs/ARCADE_BANKING_CONTRACT.md` section 10). The game is larger than the 16 KB game area of a cartridge: the four 128 x 16 worlds are `MAP`s that
 `WORLD` loads, so the linker puts them in the **banked part** of the cartridge (DOCK chunk 2, read through the window at `$4000`), and the mapped part
 (code, data, sprites, the window's tables) is what stays in the 16 KB. The game is not a toy of the banking: with every map forced `mapped` it does
-**not build** (16,772 of 16,384 bytes); banked it builds as one DCK of chunks 0 1 2 4 5 (40,969 bytes) whose mapped part is 16,344 of 16,384 bytes (40 to spare; 253 before the pause and the high score of language batch 6 took 213 bytes). Banked part 2,209 bytes (the four worlds and `lv1`).
+**not build** (18,903 of 16,384 bytes); banked it builds as one DCK of chunks 0 1 2 4 5 (40,969 bytes) whose mapped part is 16,267 of 16,384 bytes (117 to spare; with the three scenes the linker also banks the four tables and the title picture). Banked part 4,008 bytes (the four worlds 499 / 465 / 463 / 439, `lv1` .. `lv4` 343 each and `titlepic` 770).
 Since slice T5 of the bankable tables (`docs/ARCADE_TABLES_CONTRACT.md`) the level data are four `TABLE`s, not initialisers in the code: the linker banks the
 worlds and then, as far as the mapped part needs it, the tables (here `lv1`; with `bankAll` all four), and a fifth level costs one more table record, which is bankable.
 Before T5 the mapped part was 16,342 of 16,384 (42 to spare) with only the four worlds banked (1,670 bytes), and the program's variable block held 711 slots (1,422 bytes) against 376 (752 bytes) now.
@@ -13,9 +25,9 @@ Before T5 the mapped part was 16,342 of 16,384 (42 to spare) with only the four 
 
 | File | What |
 |---|---|
-| `runner.arc` | the game: `platformer.arc`'s one `SCENE` (title / playing / level complete / game over) with the level code described below |
-| `runner.assets.gen.mjs` | level 1 is the platformer's world (`platformer.assets.gen.mjs` is imported, not copied); levels 2-4 are laid out here; writes `runner.assets.json`; `--check` asserts the game's limits (below), `--ascii` prints the four levels, `--data` the level data (the `DIM`s and `TABLE lv1` .. `lv4`), `--splice` writes them into `runner.arc` between its `@@DATA-BEGIN@@` / `@@DATA-END@@` markers |
-| `runner.assets.json` | generated, committed (art, sounds and tiles are the platformer's; four worlds `pf_world`, `rn_world2` .. `rn_world4`) |
+| `runner.arc` | the game: three `SCENE`s, `title` (no window), `demo` and `play` (`platformer.arc`'s one scene less its title: playing / level complete / game over) with the level code described below |
+| `runner.assets.gen.mjs` | level 1 is the platformer's world (`platformer.assets.gen.mjs` is imported, not copied); levels 2-4 and the title picture `rn_title` are laid out here; writes `runner.assets.json`; `--check` asserts the game's limits (below), `--ascii` prints the four levels, `--data` the level data (the `DIM`s and `TABLE lv1` .. `lv4`), `--splice` writes them into `runner.arc` between its `@@DATA-BEGIN@@` / `@@DATA-END@@` markers |
+| `runner.assets.json` | generated, committed (art, sounds and tiles are the platformer's; four worlds `pf_world`, `rn_world2` .. `rn_world4`, and the title picture `rn_title`) |
 | `runner.script.json` | generated by `node tests/arcade-runner.mjs --record`: a recorded play-through, title to win screen (1,738 ticks, no life lost on the way), as joystick-1 stick values per tick; `runner.script.<N>.json` are the four per-level searches it is chained from. Re-recorded after the pause and the high score: byte-identical to the one before (the play never presses H) |
 
 ## Build
@@ -42,10 +54,10 @@ O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plan
   Two small economies the variable space and the 16 KB asked for: the walker / bat type is no longer a list (a bat is an entry with no turning points, `WHI = 0`), and `CIX` has an entry per 128 px (it had one per 64).
 * **The flag** (`WIN`): after levels 1 to 3 the state is 4, "LEVEL n" goes up (n = the next level), about 1.8 s later `LOADLEVEL` loads that
   world (`WORLD levelN`), the message is cleared and the level starts at its own start (x 24, three checkpoints, the HUD shows the level and its coin
-  total); after level 4 the win screen ("YOU FINISHED LEAP RUNNER!"), fire goes back to the title.
+  total); after level 4 the win screen ("YOU FINISHED LEAP RUNNER!"), fire goes back to the title (`ENTER title`).
 * **Losing**: the lives (3) and the score belong to the game, not the level; a hurt or a fall goes back to the level's last checkpoint as before. When
-  the last life goes, "GAME OVER"; fire then **restarts the current level** (`WORLD` of the same level: "LEVEL n", three lives, the score it
-  started the level with).
+  the last life goes, "GAME OVER"; fire then goes **back to the title** (`ENTER title`; `HI` is kept, a new game starts at level 1 with three lives).
+  The old retry of the current level is gone.
 
 * **Pause** (`H`, `KEYPRESS` so one press is one toggle, playing state only): `PROC FRAME` is now a dispatcher (`PAUSETOGGLE` on the press, the old body `GAMETICK` otherwise, nothing while paused). Pausing runs `SILENCE`
   once and prints `PAUSED` in the HUD's message row (row 21, 6 cells; a piece of a row, not the 32 a whole row costs); going on prints 6 spaces over it. A paused tick reads no input and runs no logic, no timer and no
@@ -53,8 +65,7 @@ O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plan
   presses it again are paused ticks too). Sprites and camera stay. Cost on TSRun (real interrupt): a paused tick is 125,528 T whole (the runtime's repaint and sprite pass; `PROC FRAME` itself 480 T against 10,000 to 16,500
   for a playing tick); the toggling ticks 132,988 / 132,691 T (the 6 text cells).
 * **High score**: `HI` (a scene variable, 0 at power-on) is set to `SCORE` by `SETHI` when a game ends, at game over (`GAMEOVER`) and at the final win (`WIN`, after the 500 bonus), when the score is higher; a new game does not clear it
-  (`GSTAGE` 0 clears score, lives and level only). The title shows `HI n` (row 2, from column 12, in cyan) as its stage 7 (`TSTAGE`; the title now has 8 stages and waits for fire at `TI` = 8); `GSTAGE` 4 clears those 8 cells
-  before printing `COINS`, which shares the row. The score is the 16-bit value it is (about 5,000 for the whole game).
+  (`GSTAGE` 0 clears score, lives and level only). The title shows `HI n` (row 21, from column 13, in yellow, on the black bar over the ground); the demo shows it in its row 2 as stage 7 of `TSTAGE`, and the start of a game blacks that row out before printing `COINS`. The score is the 16-bit value it is (about 5,000 for the whole game).
 
 ## The levels
 
@@ -72,12 +83,12 @@ leaves 3 free rows under it or is a plank).
 
 ## Tests and checks
 
-`node tests/arcade-runner.mjs` (about 25 s; `ARCADE_QUICK=1` stops the runtime runs after the first level change; 78 checks): the data (assets, the `DIM` and `TABLE` lines, the maps against the lists, the walkers' turning points by a second rule), the build (mapped part,
+`node tests/arcade-runner.mjs` (about 25 s; `ARCADE_QUICK=1` stops the runtime runs after the first level change; 95 checks): the data (assets, the `DIM` and `TABLE` lines, the maps against the lists, the walkers' turning points by a second rule), the build (mapped part,
 the four banked worlds, the does-not-fit error with every map forced `mapped`), the recorded play-through of all four levels on the reference interpreter,
 the same on the real runtime in TSRun tick by tick through every level change, the normal build against `bankAll` (state and picture), and a negative control. Sections 7 and 8 test the two additions on the interpreter and on TSRun tick by tick:
 the pause (H pressed at tick 75 while a jump sound plays, the stick held at right + fire while paused, H again 11 ticks later: the state, the text cells and both display files stand still but for the PAUSED cells, the sound is
 silent, and after the unpause the run equals the unpaused one shifted by 12 ticks in state and in both display files; the shift is even, because the runtime draws into the two display files in turn; H on the title does nothing)
-and the high score (one session with a one-life variant: game over with score 40 makes HI 40, the retry and the recorded route win with 5,030 and HI 5,030, the title shows `HI 5030`, a new game is over with score 0 and HI stays).
+and the high score (one session with a one-life variant: game over with score 40 makes HI 40, game over returns to the title with HI kept, a new game from it, the recorded route wins with 5,030 and HI 5,030, the title shows `HI 5030`, a new game is over with score 0 and HI stays). Section 9 tests the scenes: the title shows no window (`V_WIN` = 0) and draws its sprites, title -> demo -> title alternate, fire in either starts the game, the whole flow on TSRun tick by tick against the interpreter, and the play itself is the pre-scenes game's from tick 21 on (a digest of its variables, arrays, sprites, camera and world).
 `arcade/tools/xemu/runner-*` compare the cartridge on TSRun, ZEsarUX 13.0 and Fuse 1.9.1 over a scenario with level changes (the order of the commands is in
 the header of `runner-compare.mjs`).
 
@@ -91,6 +102,8 @@ the header of `runner-compare.mjs`).
 
 The `KEYPRESS` prologue reads H on every tick (about 500 T); the title's HI stage and `GSTAGE` 4's clear are ordinary title / start ticks, well under the budget. The world-load tick (the exception the game comment on
 `LOADLEVEL` names) is over the budget as before.
+
+With the three scenes (`node tests/arcade-runner-perf.mjs --check`): the scene starts (the first two ticks of the title, which draw its 768 cells in both display files, and the ENTER tick with the two after it) are reported as loads; the worst tick that is not a load is 158,403 T, median 129,845 (the ENTER from the title to the game, with its `WORLD`, is 1,214,163 T).
 
 ## Limits of the game, and how the levels keep to them
 

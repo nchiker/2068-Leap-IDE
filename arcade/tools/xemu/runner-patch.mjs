@@ -5,10 +5,11 @@
 // arcade/build only.
 //
 // What is patched: in RT_KEYDOWN (runtime v3 keys.asm) the 3 bytes `IN A,(C) / LD B,A` (ED 78 47) become `CALL KS` (CD lo hi).  KS returns
-// A = B = the byte a keyboard row would read: $FF with the bits of the scenario's pressed keys cleared, for tick V_TICKS.  A table of one flags NIBBLE per tick (1,024 ticks,
-// two a byte, the even tick in the low nibble; 512 bytes aligned at $3E00) holds the script: bit0 O (left), bit1 P (right), bit2 SPACE (fire, the jump); Q and A are never
-// pressed (the scenario's up is the jump); ticks from 1,024 on read as no key.  Where it lives: the free tail of the runtime's DOCK chunk 1 (stub at $3D40, table $3E00..$3FFF;
-// the v3 runtime ends at RT_END = $3D2D since the window fast path, $3882 before, when the table was one byte a tick for 1,536 ticks at $3A00), which is not part of the game.
+// A = B = the byte a keyboard row would read: $FF with the bits of the scenario's pressed keys cleared, for tick V_TICKS.  A table of TWO BITS per tick (1,024 ticks, four a
+// byte, tick 4k + j in bits 2j..2j+1; 256 bytes aligned at $3F00) holds the script: bit0 P (right), bit1 SPACE (fire, the jump); left, Q and A are never pressed (the scenario's
+// up is the jump; a scenario that presses left is refused); ticks from 1,024 on read as no key.  Where it lives: the free tail of the runtime's DOCK chunk 1 (stub at $3E10,
+// table $3F00..$3FFF; the v3 runtime ends at RT_END = $3E0D since batch 7 (RT_WINMODE), $3D2D after the window fast path (a nibble a tick at $3E00 then), $3882 before (a
+// byte a tick for 1,536 ticks at $3A00)), which is not part of the game.
 // The game is 16,344 bytes in the mapped part, so there is no free tail in the game area as Vaults has.  The rest of RT_KEYDOWN
 // (row/bit decode, V_KEYS, the rotate) is the runtime's own code, so KEYDOWN itself is still exercised.  STICK is not: the game reads KEYDOWN and STICK(1) and ORs
 // them; with no joystick STICK reads 0.
@@ -23,13 +24,16 @@ const ARCADE = resolve(HERE, '../..');
 const rt = JSON.parse(readFileSync(join(ARCADE, 'build/v3/runtime.json'), 'utf8'));
 const S = rt.symbols;
 const scenario = JSON.parse(readFileSync(join(HERE, 'runner-scenario.json'), 'utf8'));
-const KS = 0x3D40, KTAB = 0x3E00, NTICKS = 1024;
-const STICK_TO_FLAG = [[4, 1], [8, 2], [1, 4], [16, 4]];      // stick bit -> table flag: left O, right P, up and fire SPACE (the jump; Q is read only every other tick)
+const KS = 0x3E10, KTAB = 0x3F00, NTICKS = 1024;
+const STICK_TO_FLAG = [[8, 1], [1, 2], [16, 2]];              // stick bit -> table flag: right P, up and fire SPACE (the jump; Q is read only every other tick)
 
 export function flagsTable() {
-  const t = new Uint8Array(NTICKS / 2);
+  const t = new Uint8Array(NTICKS / 4);
   let n = 0;
-  for (const [v, k] of scenario.runs) for (let i = 0; i < k; i++, n++) if (n < NTICKS) for (const [bit, flag] of STICK_TO_FLAG) if (v & bit) t[n >> 1] |= flag << (4 * (n & 1));
+  for (const [v, k] of scenario.runs) {
+    if (v & ~(8 | 1 | 16)) throw new Error(`the scenario presses stick bits ${v} (only right, up and fire fit the 2-bit table)`);
+    for (let i = 0; i < k; i++, n++) if (n < NTICKS) for (const [bit, flag] of STICK_TO_FLAG) if (v & bit) t[n >> 2] |= flag << (2 * (n & 3));
+  }
   if (n > NTICKS) throw new Error(`the scenario has ${n} ticks, the table ${NTICKS}`);
   return t;
 }
@@ -45,23 +49,25 @@ KS: ld hl,(V_TICKS)
     ld a,h
     cp ${NTICKS >> 8}
     jr nc,.have                 ; tick >= ${NTICKS}: no key pressed
+    ld a,l
+    and 3
+    ld b,a                      ; B = tick AND 3: which pair of bits
     srl h
-    rr l                        ; HL = tick / 2, carry = an odd tick
-    sbc a,a
-    ld b,a                      ; B = $FF odd, 0 even
-    ld a,h
-    add a,${KTAB >> 8}
-    ld h,a
+    rr l
+    srl h
+    rr l                        ; L = tick / 4 (H = 0: tick < ${NTICKS})
+    ld h,${KTAB >> 8}
     ld a,(hl)
-    inc b                       ; Z: odd tick, the high nibble
-    jr nz,.lo
+    inc b
+.sh:
+    dec b
+    jr z,.got
     rrca
     rrca
-    rrca
-    rrca
-.lo:
-    and 7
-    ld b,a                      ; B = the flags of this tick: bit0 O, bit1 P, bit2 SPACE
+    jr .sh
+.got:
+    and 3
+    ld b,a                      ; B = the flags of this tick: bit0 P, bit1 SPACE
 .have:
     ld a,d                      ; D = the row RT_KEYDOWN decoded
     cp 5
@@ -72,18 +78,14 @@ KS: ld hl,(V_TICKS)
     ld a,$FF
     jr .out
 .r5:
-    ld a,$FF                    ; row 5: P = bit 0, O = bit 1
-    bit 1,b
-    jr z,.noP
-    res 0,a
-.noP:
+    ld a,$FF                    ; row 5: P = bit 0 (O is never pressed)
     bit 0,b
     jr z,.out
-    res 1,a
+    res 0,a
     jr .out
 .r7:
     ld a,$FF                    ; row 7: SPACE = bit 0
-    bit 2,b
+    bit 1,b
     jr z,.out
     res 0,a
 .out:

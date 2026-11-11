@@ -2,8 +2,9 @@
 "use strict";
 // vaults-scenario-make.mjs -- (re)generate vaults-scenario.json, the input of the Vaults cross-emulator check.
 //   node arcade/tools/xemu/vaults-scenario-make.mjs
-// The first PREFIX ticks are the first PREFIX ticks of the recorded LOSE run (tests/arcade-m8-vaults-script.mjs: the title, fire on tick 15, the game from tick 18,
-// turning and walking through the maze to the south-east).  The rest is worked out CLOSED-LOOP once on TSRun: the player turns towards wraith 4 (the one that wakes and
+// The first PREFIX ticks are the first PREFIX ticks of the recorded LOSE run (tests/arcade-m8-vaults-script.mjs: the title scene, which has no 3D view (SCENE title NOVIEW), fire on tick 17,
+// which enters the play scene (the view comes on in that tick, play's INIT puts the HUD up), the game from tick 18, turning and walking through the maze to the south-east: the same inputs
+// as when the title was a state of the game, since the play did not change).  So every emulator runs the title with the view off, the switch to the view and the game.  The rest is worked out CLOSED-LOOP once on TSRun: the player turns towards wraith 4 (the one that wakes and
 // comes) and fires while it is in front of him, until it is dead, then walks on a few ticks.  What the loop chose (one stick value per tick) is written out; every
 // emulator then plays exactly that list open-loop (the game is deterministic given its input per tick), so the loop's use of TSRun's memory does not matter to the comparison.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -13,8 +14,8 @@ import { LOSE_RUNS } from '../../../tests/arcade-m8-vaults-script.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = resolve(HERE, '../..');
-// ticks whose state and screen are compared byte by byte: the title (5, 12), the fire edge and the start of the game (15-20), turning and walking (30-175), shots and the kill (183-201), after
-const SAMPLES = [5, 12, 15, 16, 17, 18, 19, 20, 30, 45, 60, 80, 100, 130, 160, 175, 183, 184, 190, 197, 198, 199, 200, 201, 205, 230, 250];
+// ticks whose state and screen are compared byte by byte: the title (5, 12, 16), the fire in tick 17 and the first ticks of the game (17-22: the view switched on), turning and walking (30-175), shots and the kill (183-201), after
+const SAMPLES = [5, 12, 16, 17, 18, 19, 20, 22, 30, 45, 60, 80, 100, 130, 160, 175, 183, 184, 190, 197, 198, 199, 200, 201, 205, 230, 250];
 const PREFIX = Number(process.argv[2] ?? 178), MAXT = 250;
 const rle = (a) => { const r = []; for (const v of a) { if (r.length && r.at(-1)[0] === v) r.at(-1)[1]++; else r.push([v, 1]); } return r; };
 const prefix = []; for (const [v, n] of LOSE_RUNS) for (let i = 0; i < n && prefix.length < PREFIX; i++) prefix.push(v);

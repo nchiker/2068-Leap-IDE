@@ -279,7 +279,7 @@ const compileWith = (text, assets) => {
     compiled++;
     ok(`${name}: compiles, and the cartridge from the round-tripped assets is byte-identical`, a.errors.length === 0 && b.errors.length === 0 && !!a.dck && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0, `${a.dck?.length} bytes`);
   }
-  ok('all eight maps of the examples were seen (pf_world, sky, vl_maze, vl_panel; runner: pf_world, rn_world2, rn_world3, rn_world4)', maps === 8, String(maps));
+  ok('all ten maps of the examples were seen (pf_world, sky, vl_maze, vl_panel, vl_title; runner: pf_world, rn_world2, rn_world3, rn_world4, rn_title: the title pictures of batch 7)', maps === 10, String(maps));
 
   // the blank forms: the compiler treats -1, null, 255 and 'ff' alike, so the normalisation cannot change a cartridge
   const sh = JSON.parse(readFileSync(join(dir, 'shooter.assets.json'), 'utf8')), shText = readFileSync(join(dir, 'shooter.arc'), 'utf8');
