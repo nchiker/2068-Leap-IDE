@@ -71,7 +71,8 @@ function audit(st, src, { f4 = null } = {}) {
   }
   for (const [a, port] of st.reads) {
     const mapped = (port & 0x0C) === 0x0C;
-    if (!mapped) bad.push(`read of ${hex(a)} with the window unmapped (port $F4 = ${hex(port, 2)})`);
+    // the class pass after a decode reads the tile pages $5C00-$5EFF (attributes, flags, blank flags) with the window unmapped again: allowed (docs/ARCADE_WINDOW_FASTPATH.md section 2; reads only, no write is)
+    if (!mapped) { if (!(a >= 0x5C00 && a < 0x5F00)) bad.push(`read of ${hex(a)} with the window unmapped (port $F4 = ${hex(port, 2)})`); }
     else if (!src || a < src[0] || a >= src[1]) bad.push(`read of ${hex(a)} with the window mapped, outside the source ${src ? hex(src[0]) + '-' + hex(src[1]) : 'none'}`);
     if (bad.length > 5) break;
   }
@@ -105,14 +106,17 @@ function runTicks(m, S, n) {
 /** Write bytes into the cartridge image of a RUNNING machine (the DOCK chunks are ROM to the program): for the page $80xx, which holds the game's header and code in the image. */
 function plantDock(rg, at, bytes) { rg.m.dock[at >> 13].set(bytes, at & 0x1FFF); }
 const poisonSeed = rng(777);
-function poison(m, lo = 0x4000, hi = 0x8000) { for (let a = lo; a < hi; a++) m.ram[a] = poisonSeed.int(0, 255); }
+function poison(m, lo = 0x4000, hi = 0x8000, keep = null) { for (let a = lo; a < hi; a++) if (!keep || a < keep[0] || a >= keep[1]) m.ram[a] = poisonSeed.int(0, 255); }
+/** In a window game (v3, V_WIN = 1) the pages $5B00-$5EFF (tile rows, attributes, flags, blank flags) are runtime state written by window_boot, read by the class
+ *  pass of RT_WORLDLOAD (docs/ARCADE_WINDOW_FASTPATH.md section 2): they are not poisoned.  Everything else of $4000-$7FFF is. */
+const keepPages = (rig) => (rig.S.V_WIN !== undefined && rig.m.ram[rig.S.V_WIN] ? [0x5B00, 0x5F00] : null);
 
 // ---- calls ---------------------------------------------------------------------------------------------------------------------------
 /** Restore the snapshot, optionally poison the display files, call a routine (interrupts off) and return what is needed to judge it. */
 function call(rig, name, regs, { src = null, poisonRam = true, expectF4 = undefined } = {}) {
   const { m, S, st } = rig;
   putSnap(m, rig.snap);
-  if (poisonRam) poison(m);
+  if (poisonRam) poison(m, 0x4000, 0x8000, keepPages(rig));
   const before4k = m.ram.slice(0x4000, 0x8000);
   st.reset();
   st.on = true;
@@ -129,7 +133,7 @@ function callIrq(rig, name, regs, { src = null } = {}) {
   const { m, S, st } = rig;
   const cpu = m.cpu;
   putSnap(m, rig.snap);
-  poison(m);
+  poison(m, 0x4000, 0x8000, keepPages(rig));
   const SENT = 0x0060;
   cpu.a = regs.a ?? 0; cpu.h = ((regs.hl ?? 0) >> 8) & 255; cpu.l = (regs.hl ?? 0) & 255; cpu.d = ((regs.de ?? 0) >> 8) & 255; cpu.e = (regs.de ?? 0) & 255;
   cpu.b = ((regs.bc ?? 0) >> 8) & 255; cpu.c = (regs.bc ?? 0) & 255;
@@ -363,6 +367,10 @@ function worldTests(vv) {
   console.log(`--- runtime v${v}: banked worlds (window_boot, RT_WORLDLOAD) ---`);
   const R = rng(1300);
   const tiles = W3.randomWinTiles(R, 32);
+  // WORLD_RAM after a decode: the contract's expansion of the stream with the class bits of docs/ARCADE_WINDOW_FASTPATH.md section 2 (kept exact after window_boot and RT_WORLDLOAD, for a banked
+  // stream after the window is unmapped again); M7_OPTION=1 expects the old runtime's plain bytes
+  const rowsT = W3.tileRowsOf(tiles), attrT = tiles.map((t) => t.attr);
+  const decoded = (rle, w) => W3.expectWorld(W3.rleDecode(rle), w, rowsT, attrT);
   const bands = [{ rows: 3, code: 0 }, { rows: 5, code: 1 }, { rows: 8, code: 3 }];
   const mkRam = (w, sky) => { const ram = W3.randomWorld(R, w, 32, { sky }); for (let y = 0; y < 16; y++) for (let x = 0; x < w; x++) ram[y * 128 + x] = ram[y * 128 + (x & ~3)]; return ram; };
   const A = { w: 40, ram: mkRam(40, 0.5) }, B = { w: 100, ram: mkRam(100, 0.4) }, C = { w: 24, ram: mkRam(24, 0.7) }, D = { w: 128, ram: mkRam(128, 0.3) };
@@ -388,8 +396,8 @@ function worldTests(vv) {
     runTicks(ref.m, S, 3);
     const rb = rigOf(vv, mk(B, { src: BANKB, plant: plantAll }).img);
     runTicks(rb.m, S, 3);
-    const ok1 = same(worldRam(rb.m), worldRam(ref.m)) && same(Array.from(worldRam(rb.m)), Array.from(W3.rleDecode(B.rle))) && same(winState(rb.m), winState(ref.m)) && rd8(rb.m, S.V_WIN) === 1;
-    const ok2 = same(rb.m.ram.subarray(S.W_TROWS, S.W_TROWS + 0x300), ref.m.ram.subarray(S.W_TROWS, S.W_TROWS + 0x300));
+    const ok1 = same(worldRam(rb.m), worldRam(ref.m)) && same(Array.from(worldRam(rb.m)), Array.from(decoded(B.rle, B.w))) && same(winState(rb.m), winState(ref.m)) && rd8(rb.m, S.V_WIN) === 1;
+    const ok2 = same(rb.m.ram.subarray(S.W_TROWS, S.W_TROWS + 0x400), ref.m.ram.subarray(S.W_TROWS, S.W_TROWS + 0x400));
     const ok3 = same(rb.bootLog.f4, [0x33, 0x3F, 0x33]) && rb.m.portF4 === 0x33 && rd8(rb.m, S.V_SHADOW_F4) === 0x33 && !rb.bootLog.writes.some(([a, p]) => (p & 0x0C) === 0x0C && a >= 0x4000 && a < 0x8000);
     const reads = rb.bootLog.reads.filter(([, p]) => (p & 0x0C) === 0x0C);
     const ok4 = reads.length > 0 && reads.every(([a]) => a >= BANKB && a < BANKB + B.rle.length);
@@ -438,7 +446,7 @@ function worldTests(vv) {
         for (const b of r.bad) fail(b);
         const ram = r.ram;
         const wram = ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048);
-        if (!same(Array.from(wram), Array.from(W3.rleDecode(x.rle)))) fail('WORLD_RAM differs from the decode');
+        if (!same(Array.from(wram), Array.from(decoded(x.rle, x.w)))) fail('WORLD_RAM differs from the decode (class bits included)');
         const st = { www: ram[S.W_WW], wxr: ram[S.W_WXR] | (ram[S.W_WXR + 1] << 8), cam: ram[S.W_CAMMAX] | (ram[S.W_CAMMAX + 1] << 8), vcam: ram[S.V_CAM] | (ram[S.V_CAM + 1] << 8) };
         const want = rtWin(ref.m);
         if (st.www !== want.www || st.wxr !== want.wxr || st.cam !== want.cam || st.vcam !== 0 || want.vcam !== 0) fail(`state ${JSON.stringify(st)} / ${JSON.stringify(want)}`);
@@ -461,7 +469,7 @@ function worldTests(vv) {
   // RT_WORLDLOAD at the edges of the window: a stream at $4000, one ending at $7FFF, one in chunk 1 ($3F00, not banked), one at $8040 (H = $80, mapped)
   {
     const T = [...Array.from({ length: 8 }, () => [255, 0x08]).flat(), 8, 0x10, 0];            // 2,048 cells
-    const want = W3.rleDecode(T);
+    const want = decoded(T, 60);
     const out = [];
     for (const [at, banked] of [[0x4000, true], [0x8000 - T.length, true], [0x3F00, false], [0x8040, false]]) {
       const g = mk(C, { plant: at === 0x8040 ? [] : [[at, T]] });
@@ -482,7 +490,7 @@ function worldTests(vv) {
       const plain = call(rg, 'RT_WORLDLOAD', { a: x.w, de: x.camMax, hl: at }, { src: [at, at + x.rle.length], poisonRam: true });
       const irq = callIrq(rg, 'RT_WORLDLOAD', { a: x.w, de: x.camMax, hl: at }, { src: [at, at + x.rle.length] });
       total += irq.n; tm += irq.mapped;
-      const eq = same(irq.ram.subarray(S.WORLD_RAM, S.WORLD_RAM + 2048), plain.ram.subarray(S.WORLD_RAM, S.WORLD_RAM + 2048)) && same(irq.ram.subarray(S.W_CX, S.W3_END), plain.ram.subarray(S.W_CX, S.W3_END)) && same(Array.from(irq.ram.subarray(S.WORLD_RAM, S.WORLD_RAM + 2048)), Array.from(W3.rleDecode(x.rle)));
+      const eq = same(irq.ram.subarray(S.WORLD_RAM, S.WORLD_RAM + 2048), plain.ram.subarray(S.WORLD_RAM, S.WORLD_RAM + 2048)) && same(irq.ram.subarray(S.W_CX, S.W3_END), plain.ram.subarray(S.W_CX, S.W3_END)) && same(Array.from(irq.ram.subarray(S.WORLD_RAM, S.WORLD_RAM + 2048)), Array.from(decoded(x.rle, x.w)));
       if (!(eq && irq.bad.length === 0 && irq.f4port === 0x33 && irq.shadow === 0x33 && irq.preserved && irq.f4writes.length === 2 && irq.mism)) { ok = false; why ||= `${x.w} wide: ${irq.bad[0] ?? (eq ? 'registers / $F4' : 'result differs from the uninterrupted call')}`; }
     }
     check(`v${v}: an interrupt at every instruction boundary of the banked RT_WORLDLOAD (${total} interrupts, ${tm} with the window mapped): interrupted address in chunks 0-1, SP in chunk 7, the handler touches only chunk 7, the result = the uninterrupted call`, ok && tm > 1000, why || `${total} / ${tm}`);

@@ -5,10 +5,11 @@
 // arcade/build only.
 //
 // What is patched: in RT_KEYDOWN (runtime v3 keys.asm) the 3 bytes `IN A,(C) / LD B,A` (ED 78 47) become `CALL KS` (CD lo hi).  KS returns
-// A = B = the byte a keyboard row would read: $FF with the bits of the scenario's pressed keys cleared, for tick V_TICKS.  A table of one flags byte per tick (1,536 ticks,
-// aligned at $3A00) holds the script: bit0 O (left), bit1 P (right), bit2 Q (up), bit3 A (down), bit4 SPACE (fire); ticks from 1,536 on read as no key.  Where it lives: the free
-// tail of the runtime's DOCK chunk 1 ($3900..$3FFF: the v3 runtime ends at RT_END = $3882), which is not part of the game.  The game is 16,336 bytes in the mapped part, so there
-// is no free tail in the game area as Vaults has; the platformer's table (256 ticks at $3F00) is too short for a whole level change, hence 1,536.  The rest of RT_KEYDOWN
+// A = B = the byte a keyboard row would read: $FF with the bits of the scenario's pressed keys cleared, for tick V_TICKS.  A table of one flags NIBBLE per tick (1,024 ticks,
+// two a byte, the even tick in the low nibble; 512 bytes aligned at $3E00) holds the script: bit0 O (left), bit1 P (right), bit2 SPACE (fire, the jump); Q and A are never
+// pressed (the scenario's up is the jump); ticks from 1,024 on read as no key.  Where it lives: the free tail of the runtime's DOCK chunk 1 (stub at $3D40, table $3E00..$3FFF;
+// the v3 runtime ends at RT_END = $3D2D since the window fast path, $3882 before, when the table was one byte a tick for 1,536 ticks at $3A00), which is not part of the game.
+// The game is 16,344 bytes in the mapped part, so there is no free tail in the game area as Vaults has.  The rest of RT_KEYDOWN
 // (row/bit decode, V_KEYS, the rotate) is the runtime's own code, so KEYDOWN itself is still exercised.  STICK is not: the game reads KEYDOWN and STICK(1) and ORs
 // them; with no joystick STICK reads 0.
 //   node arcade/tools/xemu/runner-patch.mjs [in.dck] [out.dck]     (defaults: arcade/build/runner.dck -> arcade/build/runner-script.dck)
@@ -22,13 +23,14 @@ const ARCADE = resolve(HERE, '../..');
 const rt = JSON.parse(readFileSync(join(ARCADE, 'build/v3/runtime.json'), 'utf8'));
 const S = rt.symbols;
 const scenario = JSON.parse(readFileSync(join(HERE, 'runner-scenario.json'), 'utf8'));
-const KS = 0x3900, KTAB = 0x3A00, NTICKS = 1536;
-const STICK_TO_FLAG = [[4, 1], [8, 2], [1, 16], [16, 16]];   // stick bit -> table flag: left O, right P, up and fire SPACE (the jump; Q is read only every other tick)
+const KS = 0x3D40, KTAB = 0x3E00, NTICKS = 1024;
+const STICK_TO_FLAG = [[4, 1], [8, 2], [1, 4], [16, 4]];      // stick bit -> table flag: left O, right P, up and fire SPACE (the jump; Q is read only every other tick)
 
 export function flagsTable() {
-  const t = new Uint8Array(NTICKS);
+  const t = new Uint8Array(NTICKS / 2);
   let n = 0;
-  for (const [v, k] of scenario.runs) for (let i = 0; i < k; i++, n++) if (n < NTICKS) for (const [bit, flag] of STICK_TO_FLAG) if (v & bit) t[n] |= flag;
+  for (const [v, k] of scenario.runs) for (let i = 0; i < k; i++, n++) if (n < NTICKS) for (const [bit, flag] of STICK_TO_FLAG) if (v & bit) t[n >> 1] |= flag << (4 * (n & 1));
+  if (n > NTICKS) throw new Error(`the scenario has ${n} ticks, the table ${NTICKS}`);
   return t;
 }
 
@@ -43,17 +45,27 @@ KS: ld hl,(V_TICKS)
     ld a,h
     cp ${NTICKS >> 8}
     jr nc,.have                 ; tick >= ${NTICKS}: no key pressed
+    srl h
+    rr l                        ; HL = tick / 2, carry = an odd tick
+    sbc a,a
+    ld b,a                      ; B = $FF odd, 0 even
+    ld a,h
     add a,${KTAB >> 8}
     ld h,a
-    ld b,(hl)                   ; B = the flags of this tick
+    ld a,(hl)
+    inc b                       ; Z: odd tick, the high nibble
+    jr nz,.lo
+    rrca
+    rrca
+    rrca
+    rrca
+.lo:
+    and 7
+    ld b,a                      ; B = the flags of this tick: bit0 O, bit1 P, bit2 SPACE
 .have:
     ld a,d                      ; D = the row RT_KEYDOWN decoded
     cp 5
     jr z,.r5
-    cp 2
-    jr z,.r2
-    cp 1
-    jr z,.r1
     cp 7
     jr z,.r7
 .none:
@@ -69,21 +81,9 @@ KS: ld hl,(V_TICKS)
     jr z,.out
     res 1,a
     jr .out
-.r2:
-    ld a,$FF                    ; row 2: Q = bit 0
-    bit 2,b
-    jr z,.out
-    res 0,a
-    jr .out
-.r1:
-    ld a,$FF                    ; row 1: A = bit 0
-    bit 3,b
-    jr z,.out
-    res 0,a
-    jr .out
 .r7:
     ld a,$FF                    ; row 7: SPACE = bit 0
-    bit 4,b
+    bit 2,b
     jr z,.out
     res 0,a
 .out:

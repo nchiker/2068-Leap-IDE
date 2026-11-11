@@ -6,6 +6,9 @@
 //   2. RT_CAMERA: the signed clamp to 0..cam_max;
 //   3. RT_SHOW / RT_SHOWF in window mode store x, y signed and unclamped (and the frame), RT_HIT on the stored world positions, exact (no 16-bit wrap);
 //   4. every routine keeps IX, IY and the alternate set (sentinels), and its cost (T-states, CALL and RET included).
+// Window fast path (docs/ARCADE_WINDOW_FASTPATH.md section 2 and 6): WORLD_RAM now carries class bits in bits 0-2 of every byte, kept exact by SETWORLD (the bytes
+// x - 1, x, x + 1 of its row), so every WORLD_RAM comparison here is with the class-bit model (m7-common: classifyWorld); the collision routines must give the same results
+// with the class bits present.  M7_OPTION=1 compares with the old runtime's plain bytes; the checks marked "new" then fail on it.
 //   node arcade/tests/m7-runtime-api.mjs        (M7_QUICK=1: shorter)
 import * as W from './m7-common.mjs';
 import { rng } from './m3-scenes.mjs';
@@ -69,7 +72,8 @@ for (const [worldW, seed] of [[128, 101], [24, 102], [61, 103], [100, 104]]) {
       const g = call(m, S.RT_SETWORLD);
       costs.setworld.push(g.t);
       model.apply({ op: 'setworld', x: sx, y: sy, t });
-      if (!m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048).every((v, i) => v === model.ram[i])) { setBad++; first ??= { op: 'SETWORLD', sx, sy, t }; }
+      const want = model.worldRam();
+      if (!m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048).every((v, i) => v === want[i])) { setBad++; first ??= { op: 'SETWORLD', sx, sy, t }; }
       // attribute caches: invalidated (all $FF) exactly when the new tile's attribute differs from the old one's
       const attrDiffers = inside && tiles[old >> 3].attr !== tiles[t].attr;
       const inv = Array.from({ length: 8 }, (_, i) => m.ram[S.W_AC + i]);
@@ -92,7 +96,7 @@ for (const [worldW, seed] of [[128, 101], [24, 102], [61, 103], [100, 104]]) {
       if (call(m, S.RT_WORLDTILE, { hl: u16(x), de: u16(y) }).hl !== W.colTile(model.ram, worldW, x, y)) edgeBad++;
     }
   }
-  check(`world ${worldW} wide: ${n} random queries (WORLDTILE / TILEFLAGS / TILEHIT incl. extreme values, w or h <= 0, every mask) with SETWORLD between them equal the model; WORLD_RAM equal after every SETWORLD`,
+  check(`world ${worldW} wide: ${n} random queries (WORLDTILE / TILEFLAGS / TILEHIT incl. extreme values, w or h <= 0, every mask) with SETWORLD between them equal the model; WORLD_RAM equal after every SETWORLD${W.CLASS_BITS ? ' (class bits included)' : ''}`,
     bad === 0 && setBad === 0, first ? JSON.stringify(first) : '');
   check(`world ${worldW} wide: SETWORLD invalidates every band's attribute cache (both files) exactly when the tile's attribute changes`, invBad === 0, `${invBad} wrong`);
   check(`world ${worldW} wide: ${edgeN} queries at every corner and edge (x, y in -32768, -9 .. 8 w + 7, 32767; rectangles 1x1 .. 32767x32767, empty) equal the model`, edgeBad === 0, `${edgeBad} wrong`);
@@ -101,6 +105,51 @@ check('the collision routines keep IX, IY and the alternate set, and the stack b
 const mx = (a) => Math.max(...a), mn = (a) => Math.min(...a);
 console.log(`  costs (T, CALL + RET): WORLDTILE ${mn(costs.worldtile)}..${mx(costs.worldtile)}, TILEFLAGS ${mn(costs.tileflags)}..${mx(costs.tileflags)}, TILEHIT of a 16x24 box ${mn(costs.tilehit16x24)}..${mx(costs.tilehit16x24)}, SETWORLD ${mn(costs.setworld)}..${mx(costs.setworld)}`);
 check('RT_TILEHIT of a 16 x 24 box costs <= 1,500 T (contract section 4)', mx(costs.tilehit16x24) <= 1500, `max ${mx(costs.tilehit16x24)} T`);
+
+// ---- new: the class bits after RT_SETWORLD at the edges of the world and inside, on worlds with blank tiles other than 0 ------------------------------------------
+console.log('\n1b. RT_SETWORLD keeps the class bits exact (docs/ARCADE_WINDOW_FASTPATH.md sections 2 and 6): columns 0, 1, W - 2, W - 1 and inside; worlds 24, 25, 61, 128 wide');
+{
+  const CW = W.caseWorld(1802);
+  const nEdge = [];
+  let total = 0, bad = 0, incrBad = 0, first = null;
+  for (const worldW of [24, 25, 61, 128]) {
+    const win = { cx: 4, cy: 4, worldW, bands: [{ rows: 16, code: 3 }], ram: CW.ram, flags: [] };
+    const m = W.bootIdle(W.winGame({ tiles: CW.tiles, win, script: [] }));
+    const model = new W.Model7({ tiles: CW.tiles, win });
+    let cls = W.classifyWorld(model.ram, worldW, CW.rows, CW.attr);                     // the model's incremental copy (setWorldClassed), kept next to the full re-classification
+    const apply = (c, rr, t) => {
+      const sx = c * 8 + (c & 7), sy = rr * 8 + ((c + rr) & 7);
+      setArgs(m, [sx, sy, 0, 0, t]);
+      const g = call(m, S.RT_SETWORLD);
+      costs.setworld.push(g.t);
+      model.apply({ op: 'setworld', x: sx, y: sy, t });
+      cls = W.setWorldClassed(cls, worldW, CW.rows, CW.attr, sx, sy, t);
+      const want = W.classifyWorld(model.ram, worldW, CW.rows, CW.attr), got = m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048);
+      total++;
+      if (!cls.every((v, i) => v === want[i])) incrBad++;
+      if (!got.every((v, i) => v === want[i])) { bad++; first ??= { worldW, c, rr, t, at: got.findIndex((v, i) => v !== want[i]) }; }
+    };
+    // 1. every tile kind at the edge columns and inside, three rows
+    for (const c of [0, 1, 2, worldW - 3, worldW - 2, worldW - 1, worldW >> 1, (worldW >> 1) + 1]) for (const t of [0, 1, 2, 3, 4, 5, 6, 7, 9, 31]) for (const rr of [0, 8, 15]) apply(c, rr, t);
+    // 2. a blank tile set next to blank and to non-blank tiles: row 5 all blank (tile 0), then tile 1 (blank, other colours), tile 2 (blank twin), tile 3 (ordinary) and back, at several columns
+    for (let c = 0; c < worldW; c++) apply(c, 5, 0);
+    for (const c of [0, 1, worldW >> 1, worldW - 2, worldW - 1]) for (const t of [1, 2, 3, 0, 7, 6, 2, 0]) apply(c, 5, t);
+    // 3. neighbours: blank 1 between two blanks, then the right one made ordinary, then the left one
+    { const c = Math.max(2, Math.min(worldW - 3, worldW >> 1)); apply(c - 1, 6, 0); apply(c, 6, 1); apply(c + 1, 6, 0); apply(c + 1, 6, 3); apply(c - 1, 6, 3); apply(c, 6, 0); apply(c, 6, 5); }
+    // 4. random cells and tiles
+    const q = rng(1900 + worldW);
+    for (let k = 0; k < (QUICK ? 150 : 600); k++) apply(q.chance(0.3) ? q.pick([0, 1, worldW - 2, worldW - 1]) : q.int(0, worldW - 1), q.int(0, 15), q.chance(0.5) ? q.pick([0, 1, 2, 3, 7]) : q.int(0, 31));
+    // outside the world: nothing changes
+    for (const [sx, sy] of [[-1, 0], [worldW * 8, 0], [0, -1], [0, 128], [-32768, 5], [32767, 5]]) { setArgs(m, [sx, sy, 0, 0, 3]); call(m, S.RT_SETWORLD); }
+    const want = W.classifyWorld(model.ram, worldW, CW.rows, CW.attr);
+    nEdge.push(m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048).every((v, i) => v === want[i]));
+  }
+  check(`new: after ${total} RT_SETWORLD calls (columns 0, 1, 2, W - 3 .. W - 1 and inside, every kind of tile, blank tiles next to blank and non-blank ones, random cells; worlds 24, 25, 61, 128 wide) WORLD_RAM equals the class-bit model byte for byte after each call; out-of-world calls change nothing (${nEdge.filter(Boolean).length} of 4 worlds)`,
+    bad === 0 && incrBad === 0 && nEdge.every(Boolean), `${first ? JSON.stringify(first) + '; ' : ''}${bad} wrong, ${incrBad} model mismatches`);
+}
+
+console.log(`  costs (T, CALL + RET), RT_SETWORLD over every call above and in 1b: ${mn(costs.setworld)}..${mx(costs.setworld)}`);
+check('RT_SETWORLD costs <= 1,000 T with the class update (window fast-path contract section 4; before it 113..596)', mx(costs.setworld) <= 1000, `max ${mx(costs.setworld)} T`);
 
 // ==================================================================================================================
 console.log('\n2. RT_CAMERA: signed clamp to 0..cam_max');

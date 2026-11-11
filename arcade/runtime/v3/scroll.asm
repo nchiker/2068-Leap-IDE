@@ -140,23 +140,59 @@ window_boot:
     ld de,W_TROWS
     ld bc,256
     ldir
-    ld l,(ix+8)                 ; ---- attribute and flags of tile t at + 8 t ----
+    ld l,(ix+8)                 ; ---- attribute, flags and blank flag of tile t at 8 t .. 8 t + 7 (W_ATTRT, W_FLAGT, W_BLANKT) ----
     ld h,(ix+9)
     ld de,W_ATTRT
     ld bc,TILE_ATTR
 .tf:
+    push hl                     ; blank: the OR of the tile's 8 rows is 0
+    ld l,e
+    ld h,W_TROWS>>8
+    xor a
+    DUP 8
+    or (hl)
+    inc l
+    EDUP
+    pop hl
+    sub 1
+    sbc a,a
+    and 1                       ; 1 = blank
+    push af
+.t8:
+    ld a,(bc)
+    ld (de),a                   ; W_ATTRT
+    inc d
+    ld a,(hl)
+    ld (de),a                   ; W_FLAGT = W_ATTRT + $100
+    dec d
+    inc e
+    ld a,e
+    and 7
+    jr nz,.t8
+    ld a,e                      ; W_BLANKT (W_ATTRT + $200): attr(t) at 8 t, blank(t) at 8 t + 1, 0 at 8 t + 2 .. 8 t + 7
+    sub 8
+    ld e,a
+    inc d
+    inc d
     ld a,(bc)
     ld (de),a
-    inc d                       ; W_FLAGT = W_ATTRT + $100
-    ld a,(hl)
+    inc e
+    pop af
     ld (de),a
+    xor a
+    DUP 6
+    inc e
+    ld (de),a
+    EDUP
+    inc e
+    dec d
     dec d
     inc hl
     inc c
     ld a,e
-    add a,8
-    ld e,a
+    or a
     jr nz,.tf                   ; tiles 0..31
+    call cls_world              ; the class bits of the decoded world (they need the three pages)
     ; ---- geometry ----
     ld a,(W_CX)
     add a,a
@@ -286,7 +322,149 @@ RT_WORLDLOAD:
     ld (V_CAM),hl               ; camera 0
     call win_ac_clear
     pop hl
-    jr world_load
+    call world_load             ; (a banked stream: the window is unmapped again when it returns, so the pages at $5C00-$5EFF are visible)
+    ; falls into cls_world
+
+; ---------------------------------------------------------------------------------------------------------------
+; cls_world: the class bits (docs/ARCADE_WINDOW_FASTPATH.md section 2) of every row of WORLD_RAM, columns 0..world_w - 1 (columns beyond are not
+; touched).  Byte y of a row becomes tile * 8 + S + 2 D + 4 P:  D_y = attr(t(y-1)) <> attr(t(y)), S_y = D_y OR (t(y-1) and t(y) both blank), both 0
+; for y = 0;  P_y = S_y OR S_(y+1) (S_(world_w) = 0).  The bytes must have bits 0-2 clear (a fresh decode: world_src holds tile * 8).
+; Clobbers AF, BC, DE, HL.
+; ---------------------------------------------------------------------------------------------------------------
+cls_world:
+    ld hl,WORLD_RAM
+.row:
+    ld a,(W_WW)
+    dec a
+    ld b,a                      ; iterations: columns world_w - 1 .. 1, then column 0
+    or l
+    ld l,a                      ; HL -> column world_w - 1 (rows start at $x00 / $x80, world_w <= 128)
+    push hl
+    call cls_run0
+    pop hl
+    ld a,l                      ; the next row: column world_w - 1 + 128
+    add a,128
+    ld l,a
+    jr nc,.r1
+    inc h
+.r1:
+    ld a,h
+    cp (WORLD_RAM+WORLD_RAM_LEN)>>8
+    jr nz,.row
+    ret
+
+; The classification state machine.  In: HL -> byte y1 of a row, B = iterations (y1 down to y1 - B + 1 >= 1), D = W_BLANKT page (attr(t) at 8t,
+; blank(t) at 8t + 1), C = attr(t(y1)); the bytes y1 - B .. y1 have bits 0-2 clear.  The code position carries S_(y + 1): cls_g0 (0), cls_g1 (1),
+; cls_zr (1, and t(y) is the blank tile E).  Each iteration classifies byte y from bytes y - 1, y and leaves HL at y - 1; after the last one
+; byte y1 - B gets its P bit if S_(y1 - B + 1) = 1 (for column 0 that is its whole class; for a byte inside the row it is already there).
+; cls_run0: enter with S_(y1 + 1) = 0 (C and D set here); cls_g1 is the same state machine's S = 1 half.  Clobbers AF, B, C, E, L.
+cls_run0:
+    ld d,W_BLANKT>>8
+    ld e,(hl)
+    ld a,(de)
+    ld c,a
+cls_g0:
+    dec l
+    ld e,(hl)                   ; t(y - 1) * 8
+    ld a,(de)                   ; attr(t(y - 1))
+    cp c
+    ld c,a
+    jr z,.same
+    inc l                       ; D = 1: S = D = P = 1
+    ld a,(hl)
+    or 7
+    ld (hl),a
+    dec l
+    djnz cls_g1
+    set 2,(hl)
+    ret
+.same:
+    inc e
+    ld a,(de)                   ; blank(t(y - 1))
+    or a
+    jr nz,.b
+    djnz cls_g0                 ; ordinary, P = S_(y + 1) = 0: the byte stays
+    ret
+.b:
+    inc l
+    ld e,(hl)
+    inc e
+    ld a,(de)                   ; blank(t(y))
+    or a
+    jr z,.o
+    ld a,(hl)                   ; both blank: S = P = 1, D = 0
+    or 5
+    ld (hl),a
+    dec l
+    ld e,(hl)                   ; the blank tile, for cls_zr
+    djnz cls_zr
+    set 2,(hl)
+    ret
+.o:
+    dec l
+    djnz cls_g0
+    ret
+cls_g1:
+    dec l
+    ld e,(hl)
+cls_g1e:
+    ld a,(de)
+    cp c
+    ld c,a
+    jr z,.same
+    inc l
+    ld a,(hl)
+    or 7
+    ld (hl),a
+    dec l
+    djnz cls_g1
+    set 2,(hl)
+    ret
+.same:
+    inc e
+    ld a,(de)
+    or a
+    jr nz,.b
+    inc l                       ; ordinary, P = S_(y + 1) = 1
+    set 2,(hl)
+    dec l
+    djnz cls_g0
+    ret
+.b:
+    inc l
+    ld e,(hl)
+    inc e
+    ld a,(de)
+    or a
+    jr z,.o
+    ld a,(hl)
+    or 5
+    ld (hl),a
+    dec l
+    ld e,(hl)
+    djnz cls_zr
+    set 2,(hl)
+    ret
+.o:
+    set 2,(hl)
+    dec l
+    djnz cls_g0
+    ret
+cls_zr:                         ; t(y) is the blank tile E, S_(y + 1) = 1
+    dec l
+    ld a,(hl)
+    cp e
+    jr nz,.d
+    or 5                        ; the same blank tile: S = P = 1, D = 0
+    inc l
+    ld (hl),a
+    dec l
+    djnz cls_zr
+    set 2,(hl)
+    ret
+.d:
+    ld e,a
+    jp cls_g1e
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; win_tick: the tick work in window mode (main.asm jumps here after frame_entry; it goes back to TICK_COUNT).  Everything into the hidden file.
@@ -344,6 +522,9 @@ win_mask_dirty:
 ; ---------------------------------------------------------------------------------------------------------------
 window_repaint:
     push ix
+    ex af,af'                   ; AF' carries the band's phase half for the special cells' handlers (rows_pn): kept for the caller
+    push af
+    ex af,af'
     ld hl,(V_CAM)
     ld (W_CAMC),hl
     ld a,(V_HOFF)
@@ -393,6 +574,10 @@ window_repaint:
     ld a,(W_P)
     or a
     jr z,.p0
+    cp 4
+    ccf
+    ex af,af'                   ; F' carry: p >= 4 (a cell whose tiles' colours differ shows B's pixels, else A's)
+    ld a,(W_P)
     dec a
     add a,a
     ld h,a
@@ -450,6 +635,9 @@ window_repaint:
     ld a,(W_BEND)
     cp l
     jp nz,.band
+    ex af,af'
+    pop af
+    ex af,af'
     pop ix
     ret
 
@@ -535,22 +723,41 @@ band_pos:
 1:
     ENDM
 
-; rows_pn: H = LTAB[p] page.  Cells alternate down / up, so the next cell's left pointer is the previous right one (L = E), and only the
-; right pointer is loaded from the world row (OR 7 for a downward cell).
+; rows_pn: H = LTAB[p] page, F' carry = p >= 4.  Cells alternate down / up, so the next cell's left pointer is the previous right one (L = E), and
+; only the right pointer is loaded from the world row (OR 7 for a downward cell).  docs/ARCADE_WINDOW_FASTPATH.md section 3: at every upward cell
+; (2j) the world byte A + 1 (loaded into E) carries P (bit 2) = "cell 2j or cell 2j + 1 is special" (S); P = 0 means both cells are ordinary
+; and the byte is a clean index (P = 0 implies S = D = 0).  P = 1 goes to that pair's stub (rpn_stub0 + 38 j), which does the pair through the
+; shared handlers and comes back at the inline down cell (rpn_dn0 + RPN_PAIR j) or after it (+ 45).  Column col0's byte (the first cell's A)
+; is masked.
+RPN_PAIR        EQU 108         ; bytes from one pair's P test to the next (asserted)
+RPN_STUB        EQU 38          ; bytes of a stub (asserted)
 rows_pn:
     ld d,h
     inc d                       ; D = RTAB[p]
 rpn_row:
-    ld l,(ix+0)
+    ld a,(ix+0)
+    and $F8
+    ld l,a
     ld e,(ix+1)
 SCK DEFL 0
     DUP 12
+    IF SCK == 0
+rpn_t0:
+    ENDIF
+    IF SCK == 1
+rpn_t1:
+    ENDIF
+    bit 2,e
+    jp nz,rpn_stub0+SCK*RPN_STUB
     SC_UP
     ld l,e
     ld a,(ix+SCK*2+2)
     or 7
     ld e,a
     inc c
+    IF SCK == 0
+rpn_dn0:
+    ENDIF
     SC_DN
     IF SCK < 11
     ld l,e
@@ -559,6 +766,7 @@ SCK DEFL 0
     ENDIF
 SCK DEFL SCK+1
     EDUP
+rpn_end:
     SC_NEXTROW
     ld a,d
     ld de,128
@@ -569,11 +777,148 @@ SCK DEFL SCK+1
     ld (W_CR),a
     jp nz,rpn_row
     ret
+    ASSERT rpn_t1 - rpn_t0 == RPN_PAIR && rpn_end == rpn_dn0 + 11*RPN_PAIR + 45
 
-; rows_p0: H = the tile-row page (phase 0: the right table would be all zero, so this is a copy)
+; The stubs: pair j (cells 2j up, 2j + 1 down).  In: E = byte A + 1 with P = 1, L = 8 A (clean), BC = row 0 of cell 2j.
+;   up cell ordinary (S = 0): then the down cell is special: H_UP_OR, H_DN_S, back after the inline down cell;
+;   up cell special: H_UP_S; the down cell special: H_DN_S and back after the inline down cell; ordinary: back to the inline down cell.
+SCK DEFL 0
+    DUP 12
+    IF SCK == 0
+rpn_stub0:
+    ENDIF
+    IF SCK == 1
+rpn_stub1:
+    ENDIF
+    bit 0,e
+    jr nz,2F
+    res 2,e                     ; S = D = 0, P = 1: the clean index
+    call H_UP_OR
+    ld l,e
+    ld a,(ix+SCK*2+2)
+    inc c
+1:
+    call H_DN_S
+    jp rpn_dn0+SCK*RPN_PAIR+45
+2:
+    call H_UP_S
+    ld l,e
+    ld a,(ix+SCK*2+2)
+    inc c
+    bit 0,a
+    jr nz,1B
+    or 7
+    ld e,a
+    jp rpn_dn0+SCK*RPN_PAIR
+SCK DEFL SCK+1
+    EDUP
+rpn_stubs_end:
+    ASSERT rpn_stub1 - rpn_stub0 == RPN_STUB && rpn_stubs_end == rpn_stub0 + 12*RPN_STUB
+
+; The shared handlers.  Each leaves B, C, D, H and E as the inline cell would (E = 8 B + 7 after an upward cell, 8 B after a downward one: the
+; class bits never leak into the next cell's index); L is reloaded by the caller.  F' carry = p >= 4 picks the kept tile of a cell whose
+; tiles' colours differ (contract section 1): A's LTAB rows when p < 4, B's RTAB rows when p >= 4.
+; H_UP_OR: the ordinary upward cell.  E = 8 B (clean).
+H_UP_OR:
+    SC_UP
+    ret
+; H_UP_S: a special upward cell.  E = byte B (S = 1), L = 8 A.
+H_UP_S:
+    bit 1,e
+    jr z,.z
+    ex af,af'
+    jr c,.r
+    ex af,af'
+    ld a,e                      ; D = 1, p < 4: LTAB[p][A] only
+    or 7
+    ld e,a
+    DUP 7
+    ld a,(hl)
+    ld (bc),a
+    inc l
+    inc b
+    EDUP
+    ld a,(hl)
+    ld (bc),a
+    ret
+.r:
+    ex af,af'
+    ld a,e                      ; D = 1, p >= 4: RTAB[p][B] only
+    and $F8
+    ld e,a
+    DUP 7
+    ld a,(de)
+    ld (bc),a
+    inc e
+    inc b
+    EDUP
+    ld a,(de)
+    ld (bc),a
+    ret
+.z:
+    ld a,e                      ; S = 1, D = 0: A and B blank
+    or 7
+    ld e,a
+    xor a
+    DUP 7
+    ld (bc),a
+    inc b
+    EDUP
+    ld (bc),a
+    ret
+; H_DN_S: a special downward cell.  A = byte B (S = 1), L = 8 A + 7, BC = row 7 of the cell.
+H_DN_S:
+    ld e,a
+    and 2
+    jr z,.z
+    ex af,af'
+    jr c,.r
+    ex af,af'
+    ld a,e                      ; D = 1, p < 4: LTAB[p][A] only
+    and $F8
+    ld e,a
+    DUP 7
+    ld a,(hl)
+    ld (bc),a
+    dec l
+    dec b
+    EDUP
+    ld a,(hl)
+    ld (bc),a
+    ret
+.r:
+    ex af,af'
+    ld a,e                      ; D = 1, p >= 4: RTAB[p][B] only
+    or 7
+    ld e,a
+    DUP 7
+    ld a,(de)
+    ld (bc),a
+    dec e
+    dec b
+    EDUP
+    ld a,(de)
+    ld (bc),a
+    ret
+.z:
+    ld a,e                      ; both blank
+    and $F8
+    ld e,a
+    xor a
+    DUP 7
+    ld (bc),a
+    dec b
+    EDUP
+    ld (bc),a
+    ret
+H_END:
+
+; rows_p0: H = the tile-row page (phase 0: the right table would be all zero, so this is a copy).  The upward cells' bytes are masked (class bits).
 rows_p0:
 rp0_row:
-    ld l,(ix+0)
+    ld a,(ix+0)
+    and $F8
+    ld l,a
 SCK DEFL 0
     DUP 12
     SC_CUP
@@ -583,7 +928,9 @@ SCK DEFL 0
     inc c
     SC_CDN
     IF SCK < 11
-    ld l,(ix+SCK*2+2)
+    ld a,(ix+SCK*2+2)
+    and $F8
+    ld l,a
     inc c
     ENDIF
 SCK DEFL SCK+1
@@ -1208,6 +1555,8 @@ RT_TILEFLAGS:
 ; RT_SETWORLD: RA_X, RA_Y = a world pixel, RA_V = the tile -> that cell = tile * 8; outside the world nothing.  When the new tile's attribute differs
 ; from the old one's, every band's attribute cache is invalidated (both files): the repaint redraws the bitmap anyway, the attributes only when
 ; col0 changes.
+; The class bits of the bytes x - 1, x, x + 1 of the row that are inside the world are recomputed (cls_range; section 2 of
+; docs/ARCADE_WINDOW_FASTPATH.md).
 RT_SETWORLD:
     ld hl,(RA_X)
     ld de,(RA_Y)
@@ -1217,7 +1566,7 @@ RT_SETWORLD:
     add a,a
     add a,a
     add a,a
-    ld c,(hl)                   ; the old cell
+    ld c,(hl)                   ; the old cell (its class bits index the replicated attribute page as they are)
     ld (hl),a
     ld e,a
     ld b,W_ATTRT>>8
@@ -1226,15 +1575,113 @@ RT_SETWORLD:
     ld e,a
     ld a,(bc)
     cp e
-    ret z
-; win_ac_clear: no file shows any band's attributes (W_AC all $FF).  Also window_boot's.  Clobbers B, HL.
-win_ac_clear:
-    ld hl,W_AC
-    ld b,8
-.inv:
-    ld (hl),$FF
+    push af                     ; Z: the attribute did not change
+    ld d,W_BLANKT>>8            ; ---- the class bits of x - 1, x, x + 1 (those inside the world) ----
+    ld a,l
+    and $7F
+    ld c,a                      ; C = x
+    jr z,.x0
+    ld e,(hl)                   ; S_x, D_x
+    ld a,(de)                   ; attr(t(x))
+    ld b,a
+    dec l
+    ld a,(hl)
     inc l
-    djnz .inv
+    and $F8
+    ld e,a
+    ld a,(de)                   ; attr(t(x - 1))
+    cp b
+    ld a,3
+    jr nz,.d1                   ; D = 1: S = 1
+    inc e
+    ld a,(de)                   ; blank(t(x - 1))
+    or a
+    jr z,.d1
+    ld e,(hl)
+    inc e
+    ld a,(de)                   ; blank(t(x)) = S
+.d1:
+    or (hl)
+    ld (hl),a                   ; byte x: tile * 8 + S + 2 D (P below)
+    and 1
+    dec l
+    or (hl)                     ; P_(x - 1) = S_(x - 1) OR S_x
+    and 1
+    add a,a
+    add a,a
+    ld e,a
+    ld a,(hl)
+    and $FB
+    or e
+    ld (hl),a                   ; byte x - 1 done
+    inc l
+    jr .a0
+.x0:
+    ld e,(hl)                   ; x = 0: S = D = 0
+    ld a,(de)
+    ld b,a                      ; B = attr(t(0))
+.a0:
+    ld a,(W_WW)
+    dec a
+    sub c
+    jr z,.a3                    ; x = world_w - 1: no x + 1, P_x = S_x
+    ld c,a                      ; C = world_w - 1 - x
+    inc l                       ; HL -> x + 1
+    ld a,(hl)
+    and $F8
+    ld (hl),a
+    ld e,(hl)                   ; S_(x + 1), D_(x + 1)
+    ld a,(de)                   ; attr(t(x + 1))
+    cp b
+    ld a,3
+    jr nz,.d2
+    dec l
+    ld a,(hl)
+    inc l
+    and $F8
+    inc a
+    ld e,a
+    ld a,(de)                   ; blank(t(x))
+    or a
+    jr z,.d2
+    ld e,(hl)
+    inc e
+    ld a,(de)                   ; blank(t(x + 1)) = S
+.d2:
+    ld e,a
+    dec c
+    jr z,.a1                    ; x + 1 = world_w - 1: P = S_(x + 1)
+    inc l
+    or (hl)                     ; bit 0: S_(x + 2)
+    dec l
+.a1:
+    and 1
+    add a,a
+    add a,a
+    or e
+    or (hl)
+    ld (hl),a                   ; byte x + 1 done
+    and 1                       ; S_(x + 1)
+    dec l                       ; HL -> x
+    or (hl)                     ; P_x = S_x OR S_(x + 1)
+    jr .a4
+.a3:
+    ld a,(hl)                   ; P_x = S_x
+.a4:
+    and 1
+    add a,a
+    add a,a
+    or (hl)
+    ld (hl),a                   ; byte x done
+    pop af
+    ret z
+; win_ac_clear: no file shows any band's attributes (W_AC all $FF).  Also window_boot's.  Clobbers HL.
+win_ac_clear:
+    ld hl,$FFFF
+    ld (W_AC),hl
+    ld (W_AC+2),hl
+    ld (W_AC+4),hl
+    ld (W_AC+6),hl
     ret
 
 ; RT_TILEHIT: RA_X, RA_Y, RA_W, RA_H = the rectangle x..x + w - 1, y..y + h - 1 (signed; the far edges exact, 17 bits), RA_V = the mask -> HL = the OR

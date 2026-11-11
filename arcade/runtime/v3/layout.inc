@@ -165,6 +165,10 @@ W3_END          EQU V3VARS+$AF  ; first free byte ($E1AF-$E1BF free)
 W_TROWS         EQU $5B00
 W_ATTRT         EQU $5C00
 W_FLAGT         EQU $5D00
+; (docs/ARCADE_WINDOW_FASTPATH.md section 2) The attribute and flags pages hold tile t's value at every byte 8t .. 8t + 7, so a WORLD_RAM byte with its
+; class bits (bits 0-2) indexes them as it is.  A fourth page, written by window_boot in window mode only, read by the classification (cls_world,
+; RT_SETWORLD): attr(t) at 8t, blank(t) at 8t + 1 (1 when the tile's 8 rows are zero, else 0), 0 at 8t + 2 .. 8t + 7.  $5F00-$5FFF stays free.
+W_BLANKT        EQU $5E00
 
 V_FRAMES        EQU VARS+$70    ; word: refresh counter, incremented by the ISR
 V_SYNC          EQU VARS+$72    ; byte: handshake between the main loop and the ISR (the "frame ready" flag and the

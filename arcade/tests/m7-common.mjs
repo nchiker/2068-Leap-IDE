@@ -5,11 +5,13 @@
 // src/lang/arcade (the window data are built here by our own builders: tables, tile rows, flags, the byte-RLE world, the descriptor):
 //   * `winGame(spec)`: the script game (test_script.asm) with DIV_EXT | DIV_WIN and a window_desc + its data written into the image;
 //   * `rleEncode()` / `rleDecode()`: the byte-RLE of world_src (contract 3b);
-//   * `refWindow()`: the reference compositor of the window, PIXEL BY PIXEL from the tile rows (no pre-shifted tables);
+//   * `refWindow()`: the reference compositor of the window, PIXEL BY PIXEL from the tile rows (no pre-shifted tables); option 2 (default) or 1 (the old colour rule);
+//   * `classifyWorld()` / `setWorldClassed()` / `expectWorld()`: the class bits of WORLD_RAM (docs/ARCADE_WINDOW_FASTPATH.md section 2) and the SETWORLD update;
 //   * `Model7`: the cell map + window + sprites in world coordinates (culling, clipping by ring repair) + camera + WORLD_RAM + collision;
 //   * the collision model (`colTile`, `colFlags`, `colHit`) written from the contract, with the outside rules.
 import * as C from './m6-common.mjs';
 import { dckOf } from '../tools/build-runtime-v3.mjs';
+import { rng } from './m3-scenes.mjs';
 export * from './m6-common.mjs';
 const { C3, int16, rowAddr, hex } = C;
 
@@ -114,28 +116,108 @@ export function winGame(spec) {
 
 // ---- the reference compositor (pixel by pixel) ---------------------------------------------------------------------------------
 /**
+ * Which colour rule the reference compositor (and every test that compares the runtime's WORLD_RAM) follows.
+ *   option 2 (the default; docs/ARCADE_WINDOW_FASTPATH.md section 1): when the two tiles of a cell have different attributes, the pixels of the tile that does
+ *     not give the cell its colours are 0; WORLD_RAM carries the class bits of section 2.
+ *   option 1 (the runtime before that change): both tiles' pixels are drawn and the cell has one attribute; WORLD_RAM has no class bits.
+ * M7_OPTION=1 in the environment makes option 1 the default, so that the OLD runtime can be checked against the model (the checks written for the new
+ * behaviour alone, the class-bit and option-2 checks marked "new" in their texts, then fail, as they should).
+ */
+export const WINDOW_OPTION = process.env.M7_OPTION === '1' ? 1 : 2;
+export const CLASS_BITS = WINDOW_OPTION === 2;
+
+/**
  * Write the window into bitmap (6,144) / attrs (768): for every band at its position, every window cell, every pixel: world pixel X = pos + 8 col + px of
  * the band's world row; its ink bit from the tile rows; the cell's attribute = the attribute of the tile covering at least half of the cell: world column col0 + col + (phase >= 4 ? 1 : 0)
  * (Part C of docs/ARCADE_LANGUAGE_BATCH6.md; at exactly 4 pixels the right tile).
+ * Option 2 (section 1 of docs/ARCADE_WINDOW_FASTPATH.md), per pixel: at phase <> 0, when attr(A) <> attr(B) (A = the tile at col0 + col, B = the next one), a pixel
+ * that belongs to the minority tile (the one that does not give the cell its attribute: B when the phase is below 4, A from 4 on) is 0.
+ * `opts.option` (1 or 2) overrides WINDOW_OPTION.
  */
-export function refWindow(bitmap, attrs, { cx, cy, bands }, ram, rows, tileAttr, cam) {
+export function refWindow(bitmap, attrs, { cx, cy, bands }, ram, rows, tileAttr, cam, opts = {}) {
+  const option = opts.option ?? WINDOW_OPTION;
   let row0 = 0;
   for (const b of bands) {
-    const pos = bandPos(cam, b.code), col0 = pos >> 3;
+    const pos = bandPos(cam, b.code), col0 = pos >> 3, p = pos & 7;
     for (let wr = row0; wr < row0 + b.rows; wr++) for (let col = 0; col < 24; col++) {
+      const tA = (ram[wr * 128 + col0 + col] >> 3) & 31, tB = (ram[wr * 128 + col0 + col + 1] >> 3) & 31;
+      const differ = p !== 0 && tileAttr[tA] !== tileAttr[tB];
+      const major = p >= 4 ? col0 + col + 1 : col0 + col;                  // the column of the tile whose colours the cell takes
       for (let r = 0; r < 8; r++) {
         let byte = 0;
         for (let px = 0; px < 8; px++) {
-          const X = pos + 8 * col + px, t = ram[wr * 128 + (X >> 3)] >> 3;
-          byte = (byte << 1) | ((rows[t * 8 + r] >> (7 - (X & 7))) & 1);
+          const X = pos + 8 * col + px, t = (ram[wr * 128 + (X >> 3)] >> 3) & 31;
+          let bit = (rows[t * 8 + r] >> (7 - (X & 7))) & 1;
+          if (option === 2 && differ && (X >> 3) !== major) bit = 0;
+          byte = (byte << 1) | bit;
         }
         bitmap[rowAddr((cy + wr) * 8 + r) + cx + col] = byte;
       }
-      attrs[(cy + wr) * 32 + cx + col] = tileAttr[(ram[wr * 128 + col0 + col + ((pos & 7) >= 4 ? 1 : 0)] >> 3) & 31];
+      attrs[(cy + wr) * 32 + cx + col] = tileAttr[(ram[wr * 128 + col0 + col + (p >= 4 ? 1 : 0)] >> 3) & 31];
     }
     row0 += b.rows;
   }
 }
+
+// ---- the class bits of WORLD_RAM (docs/ARCADE_WINDOW_FASTPATH.md section 2), written from the contract ----------------------------
+/** A tile is blank when its 8 rows are all zero (any tile number). */
+export const isBlankTile = (rows, t) => { for (let r = 0; r < 8; r++) if (rows[t * 8 + r]) return false; return true; };
+/**
+ * The class byte (tile * 8 + S + 2 D + 4 P) of column y of a row whose tile numbers are `tiles[0 .. W-1]` (world width W).
+ *   D_y = attr(t(y - 1)) <> attr(t(y)), S_y = D_y or (blank(t(y - 1)) and blank(t(y))): both 0 for y = 0 (and for y >= W, which has no cell);
+ *   P_y = S_y or S_(y + 1) (S_W = 0, so P_(W-1) = S_(W-1)).
+ */
+export function classByte(tiles, y, W, rows, attr) {
+  const D = (k) => (k >= 1 && k < W && attr[tiles[k - 1]] !== attr[tiles[k]] ? 1 : 0);
+  const S = (k) => (k >= 1 && k < W ? (D(k) || (isBlankTile(rows, tiles[k - 1]) && isBlankTile(rows, tiles[k])) ? 1 : 0) : 0);
+  if (y >= W) return tiles[y] * 8;
+  return tiles[y] * 8 + S(y) + 2 * D(y) + 4 * (S(y) | S(y + 1));
+}
+/** The classified 2,048 bytes of a world: `ram` = WORLD_RAM contents (tile * 8, the low three bits ignored), W = world_w, rows = the 256 tile-row bytes, attr = the tile attributes (32). */
+export function classifyWorld(ram, W, rows, attr) {
+  const out = new Uint8Array(2048);
+  for (let r = 0; r < 16; r++) {
+    const tiles = Array.from({ length: 128 }, (_, y) => (ram[r * 128 + y] >> 3) & 31);
+    for (let y = 0; y < 128; y++) out[r * 128 + y] = classByte(tiles, y, W, rows, attr);
+  }
+  return out;
+}
+/** The class model of RT_SETWORLD: from a classified world, the world after tile t is set at pixel (x, y): the bytes x - 1, x, x + 1 of that row inside the world are recomputed. */
+export function setWorldClassed(cls, W, rows, attr, x, y, t) {
+  const out = cls.slice(), c = Math.floor(x / 8), r = Math.floor(y / 8);
+  if (!(c >= 0 && c < W && r >= 0 && r < 16)) return out;
+  const tiles = Array.from({ length: 128 }, (_, k) => (cls[r * 128 + k] >> 3) & 31);
+  tiles[c] = t & 31;
+  for (let k = c - 1; k <= c + 1; k++) if (k >= 0 && k < W) out[r * 128 + k] = classByte(tiles, k, W, rows, attr);
+  out[r * 128 + c] = (out[r * 128 + c] & 7) | ((t & 31) * 8);
+  return out;
+}
+/**
+ * What the runtime's WORLD_RAM must hold for a world of `ram` (tile * 8 bytes): with the class bits (option 2) or as it is (option 1, the old runtime).
+ * `attr` and `rows` as classifyWorld.
+ */
+export const expectWorld = (ram, W, rows, attr) => (CLASS_BITS ? classifyWorld(ram, W, rows, attr) : Uint8Array.from(ram, (v) => v & 0xF8));
+/**
+ * The world of the class-bit and table-case tests: tiles 0, 1, 2 blank (attributes $28, $31, $28: tile 1 differs in colour, tile 2 is the sky's twin), 3 ordinary with the
+ * sky's colours, 4 and 5 ordinary with a colour of their own, 6 and 7 ordinary with a single set pixel (one non-zero row: not blank), colours $2F and $47; the rest
+ * random.  Each row of the 128 x 16 world walks a de Bruijn sequence over tiles 0..7 (every ordered pair once in 64 columns, twice in 128), turned by the row number.
+ */
+export function caseWorld(seed = 1801) {
+  const r = rng(seed);
+  const tiles = randomWinTiles(r, 32);
+  [0x28, 0x31, 0x28, 0x28, 0x16, 0x16, 0x2F, 0x47].forEach((a, k) => { tiles[k].attr = a; });
+  for (let k = 0; k < 3; k++) tiles[k].bmp = Array(8).fill(0);
+  for (let k = 3; k < 8; k++) tiles[k].bmp = tiles[k].bmp.map((b) => b || 0xA5);
+  tiles[6].bmp = [0x80, 0, 0, 0, 0, 0, 0, 0]; tiles[7].bmp = [0, 0, 0, 0, 0, 0, 0, 1];
+  const N = 8, a = Array(N * 2).fill(0), seq = [];
+  const db = (t, p) => { if (t > 2) { if (2 % p === 0) for (let i = 1; i <= p; i++) seq.push(a[i]); } else { a[t] = a[t - p]; db(t + 1, p); for (let j = a[t - p] + 1; j < N; j++) { a[t] = j; db(t + 1, t); } } };
+  db(1, 1);
+  const ram = new Uint8Array(2048);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 128; x++) ram[y * 128 + x] = ((seq[x % seq.length] + y) % N) * 8;
+  return { tiles, ram, seqLen: seq.length, rows: tileRowsOf(tiles), attr: tiles.map((t) => t.attr) };
+}
+/** The cases of the section 1 table, for coverage: kind of A and B ('blank' / 'ord') and whether their attributes are equal. */
+export const cellCase = (rows, attr, tA, tB) => `${isBlankTile(rows, tA) ? 'blank' : 'ord'}/${isBlankTile(rows, tB) ? 'blank' : 'ord'}/${attr[tA] === attr[tB] ? 'eq' : 'ne'}`;
 
 // ---- the collision model (contract 4; batch 2 decisions 10-13), straight from the words -------------------------------------------
 const sh3 = (v) => Math.floor(v / 8);
@@ -177,6 +259,8 @@ export class Model7 extends C.Model6 {
     this.wAttr = Array.from({ length: 32 }, (_, t) => this.tileAttr[t]);
   }
   clone() { const m = super.clone(); m.ram = this.ram.slice(); return m; }
+  /** What the runtime's WORLD_RAM holds now (class bits included under option 2). */
+  worldRam() { return this.win ? expectWorld(this.ram, this.win.worldW, this.rows, this.wAttr) : this.ram.slice(); }
   show(i, x, y, f) {
     if (!this.win) return super.show(i, x, y, f);
     if (i < 0 || i >= this.insts.length) return;
@@ -212,6 +296,7 @@ export class Model7 extends C.Model6 {
     const bitmap = base.bitmap.slice(), attrs = base.attrs.slice();
     const w = this.win;
     refWindow(bitmap, attrs, w, this.ram, this.rows, this.wAttr, this.cam);
+
     const touched = new Set();
     this.insts.forEach((s, i) => {
       const p = this.placed(i);
