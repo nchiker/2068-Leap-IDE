@@ -1,6 +1,6 @@
 # Prompt for the next session (written 2026-11-11)
 
-Suggested setup: main thread on the strongest model available (Opus 5.5 or Fable 5.1) at high effort, because it writes the contracts and reviews every agent's work; agents on Sonnet 5.5 for routine implementation and Haiku 5.5 for running tests (the prompt below says so).
+Suggested setup: main thread on the strongest model available (Opus 5.5 or Fable 5.2) at high effort, because it writes the contracts and reviews every agent's work; agents on Sonnet 5.5 for routine implementation and Haiku 5.5 for running tests (the prompt below says so).
 
 ---
 
