@@ -115,7 +115,8 @@ export function winGame(spec) {
 // ---- the reference compositor (pixel by pixel) ---------------------------------------------------------------------------------
 /**
  * Write the window into bitmap (6,144) / attrs (768): for every band at its position, every window cell, every pixel: world pixel X = pos + 8 col + px of
- * the band's world row; its ink bit from the tile rows; the cell's attribute = the attribute of the tile at world column col0 + col (V2 convention).
+ * the band's world row; its ink bit from the tile rows; the cell's attribute = the attribute of the tile covering at least half of the cell: world column col0 + col + (phase >= 4 ? 1 : 0)
+ * (Part C of docs/ARCADE_LANGUAGE_BATCH6.md; at exactly 4 pixels the right tile).
  */
 export function refWindow(bitmap, attrs, { cx, cy, bands }, ram, rows, tileAttr, cam) {
   let row0 = 0;
@@ -130,7 +131,7 @@ export function refWindow(bitmap, attrs, { cx, cy, bands }, ram, rows, tileAttr,
         }
         bitmap[rowAddr((cy + wr) * 8 + r) + cx + col] = byte;
       }
-      attrs[(cy + wr) * 32 + cx + col] = tileAttr[(ram[wr * 128 + col0 + col] >> 3) & 31];
+      attrs[(cy + wr) * 32 + cx + col] = tileAttr[(ram[wr * 128 + col0 + col + ((pos & 7) >= 4 ? 1 : 0)] >> 3) & 31];
     }
     row0 += b.rows;
   }

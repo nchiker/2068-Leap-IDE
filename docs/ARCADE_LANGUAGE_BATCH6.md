@@ -83,3 +83,25 @@ wrongly black; with this change 920 and 269.
    (not colours) or runtime against runtime and should pass unchanged; the cross-emulator check is repeated once.
 5. **Not done:** option 2 of the comparison (drop the minority tile's pixels when its colours differ), to be done with the blank-cell fast
    path, whose time saving would pay for it.
+
+## As built (2026-11-11, branch `arcade-runner-content`)
+
+* **Part A** (`edd7a95`): as written. `lib$worldidx` (HL index, DE list, BC count); all listed streams are stored even for a constant index;
+  identical lists are shared. Tests `tests/arcade-m13-compiler.mjs` (125 checks with `ARCADE_OLD`; 162 of 162 compilations without the new
+  form identical to `f794c28`), `tests/arcade-m13-differential.mjs` (74).
+* **Leap Runner content** (`140bc12`, owner-approved): levels 2-4 have 46 / 44 / 50 coins and 10 / 10 / 11 enemies (were 24 / 22 / 27 and
+  8 / 9 / 10), inside the tables' padding (no cartridge or RAM bytes); `runner.assets.gen.mjs --check` asserts the game's limits (14 coins in
+  view, 4 walker and 2 bat slots, spawn pop-in at most 32 px, spacing, reachability) and every other mode refuses to write when one fails.
+* **Part B** (`ac29846`): as written. `FRAME` dispatches to `PAUSETOGGLE` / `GAMETICK`; a paused `PROC FRAME` costs 480 T. Mapped part
+  16,344 of 16,384 (levels 2-4's tables, 1,029 bytes, still mapped: they bank when room is needed). `tests/arcade-runner.mjs` 78 checks
+  (sections 7 pause and 8 high score, interpreter and TSRun). The recorded play-through is unchanged.
+* **Part C**: `scroll.asm`, the attribute-cache key and `attr_rows`' source column become `col0 + (p >= 4)` (`ld a,(W_P) / cp 4 / ccf /
+  ld a,(W_C0) / adc a,0`, +8 bytes, v3 free 2,033; 42 labels after `window_repaint` moved by +8, among them `RT_CAMERA`, `RT_SETWORLD`,
+  `RT_TILEFLAGS`, `RT_TILEHIT`, `RT_WORLDTILE`, `RT_TABLELOAD`; hash baselines regenerated, 6 hashes). **Correction to item 2:** the mean
+  cost is unchanged (+125 T) but the attribute pass now falls on a phase-4 tick (shifted bitmaps) instead of a phase-0 tick (the cheap copy
+  path), so the WORST tick grows: platformer perf win run 171,623 -> 174,919 T (budget 176,064), Leap Runner's worst non-load tick 173,074 ->
+  173,167, its 4 over-budget ticks are still only the world loads. Headroom is now thin; the blank-cell fast path (with option 2) is the
+  next step that buys it back. Tests: `refWindow` (`arcade/tests/m7-common.mjs`) has the rule; `m7-runtime.mjs` part C checks every phase
+  in both files, per-band phases and the last 10 cameras of every ratio for world widths 25, 26, 31, 128; three new mutants in
+  `m7-mutations.mjs`. Also repaired: three mutation patterns that had gone stale in earlier batches (`m5` maps_boot, `m7` RLE stop, `m9`
+  extMaps): they matched nothing, so those mutants had silently not run; each is killed again.

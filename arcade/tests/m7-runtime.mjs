@@ -5,7 +5,7 @@
 //      geometry, cam_max; descriptors that fail a check leave the game in non-window mode (nothing written);
 //   2. window_repaint equals the pixel-by-pixel reference compositor for EVERY camera 0..cam_max (sweeps up, down and random jumps, every call into the
 //      other display file, so both files get every camera), every band layout, window positions (0,0) .. (8,8), world widths 24, 25 and 128, bitmap and
-//      attributes; nothing outside the window is written; the attribute pass runs exactly when the file's col0 of the band differs;
+//      attributes; nothing outside the window is written; the attribute pass runs exactly when the file's attribute column (col0 + (phase >= 4)) of the band differs;
 //   3. whole games: sprites in world coordinates at every window edge and corner (clipped by ring repair), culled ones, HUD text and tiles around the
 //      window, the camera moving and clamped, SETWORLD, frames; the shown picture equals the model after EVERY refresh (both files), frame_div 1..3;
 //   4. non-window games: DIV_EXT only, or DIV_WIN with a bad descriptor, run exactly as part 1's model.
@@ -129,7 +129,7 @@ function sweep(label, { bands, cx, cy, worldW, seed, sky = 0.3, step = 1 }) {
   let calls = 0, bad = 0, first = null, attrWritesWrong = 0;
   const files = [new Set(), new Set()];
   const shown = [0, 1].map(() => bands.map(() => -1));
-  for (let k = 0; k < 8; k++) m.ram[S.W_AC + k] = 0xFF;          // the boot's ticks left their col0s: start from "no file shows anything"
+  for (let k = 0; k < 8; k++) m.ram[S.W_AC + k] = 0xFF;          // the boot's ticks left their attribute columns: start from "no file shows anything"
   const exp = { bitmap: new Uint8Array(6144), attrs: new Uint8Array(768) };
   const w = m.bus.write;
   let attrW = 0;
@@ -141,9 +141,9 @@ function sweep(label, { bands, cx, cy, worldW, seed, sky = 0.3, step = 1 }) {
     W.callRoutine(m, S.window_repaint);
     calls++;
     files[file].add(cam);
-    // expected attribute writes: 24 x rows for every band whose col0 differs from what this file shows
+    // expected attribute writes: 24 x rows for every band whose attribute column (col0 + (p >= 4)) differs from what this file shows
     let expW = 0;
-    bands.forEach((b, k) => { const c0 = W.bandPos(cam, b.code) >> 3; if (shown[file][k] !== c0) { expW += 24 * b.rows; shown[file][k] = c0; } });
+    bands.forEach((b, k) => { const pos = W.bandPos(cam, b.code), c0 = (pos >> 3) + ((pos & 7) >= 4 ? 1 : 0); if (shown[file][k] !== c0) { expW += 24 * b.rows; shown[file][k] = c0; } });
     if (attrW !== expW) attrWritesWrong++;
     W.refWindow(exp.bitmap, exp.attrs, win, model.ram, model.rows, model.wAttr, cam);
     const base = file ? 0x6000 : 0x4000;
@@ -155,7 +155,7 @@ function sweep(label, { bands, cx, cy, worldW, seed, sky = 0.3, step = 1 }) {
   m.bus.write = w;
   const both = cams.every((c) => files[0].has(c) && files[1].has(c));
   sweptCams += cams.length; sweptCalls += calls;
-  check(`${label}: ${calls} repaints (cameras 0..${camMax}${step > 1 ? ` step ${step}` : ''} up and down${both ? ', each in both files' : ''}, random jumps) equal the reference, bitmap and attributes; outside the window nothing written; the attribute pass exactly when the file's band col0 changed`,
+  check(`${label}: ${calls} repaints (cameras 0..${camMax}${step > 1 ? ` step ${step}` : ''} up and down${both ? ', each in both files' : ''}, random jumps) equal the reference, bitmap and attributes; outside the window nothing written; the attribute pass exactly when the file's band attribute column changed`,
     bad === 0 && outside(0x4000) && outside(0x6000) && attrWritesWrong === 0 && both, first ? JSON.stringify(first) : `${attrWritesWrong} wrong attribute-write counts`);
 }
 const ST = QUICK ? 7 : 1;
@@ -171,6 +171,56 @@ sweep('1 band, 25 wide (cam_max 8: every phase at the right edge), (0, 0)', { ba
 sweep('4 bands, 24 wide (cam_max 0)', { bands: L.four, cx: 3, cy: 5, worldW: 24, seed: 30 });
 sweep('3 bands, 26 wide, (4, 4)', { bands: L.three, cx: 4, cy: 4, worldW: 26, seed: 31 });
 console.log(`  (${sweptCalls} repaints, ${sweptCams} distinct cameras over the layouts)`);
+
+// ---- Part C (docs/ARCADE_LANGUAGE_BATCH6.md): a cell takes the attribute of the tile covering most of it; checked against the rule written out, not the reference
+{
+  // tiles: 0 = sky (attr 0x28), 1 = brick (0x16), 2 = the last column's tile (0x31), 3.. = random.  World: sky left of column B, brick from B on, the last column tile 2.
+  const r = rng(77);
+  const tiles = W.randomWinTiles(r, 32);
+  tiles[0].attr = 0x28; tiles[1].attr = 0x16; tiles[2].attr = 0x31;
+  const run = (label, { bands, worldW, B, cams, cx = 4, cy = 4 }) => {
+    const ram = new Uint8Array(2048);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < worldW; x++) ram[y * 128 + x] = (x === worldW - 1 ? 2 : x >= B ? 1 : 0) * 8;
+    const game = W.winGame({ tiles, win: { cx, cy, worldW, bands, ram }, script: [] });
+    const m = W.bootIdle(game);
+    const camMax = rd16(m, S.W_CAMMAX);
+    for (let k = 0; k < 8; k++) m.ram[S.W_AC + k] = 0xFF;
+    let n = 0, cells = 0, first = null, shown = 0, ncams = 0;
+    [...new Set(cams.map((c) => (c < 0 ? camMax + c : c)).filter((c) => c >= 0 && c <= camMax))].forEach((cam, i) => {
+      const file = i & 1;
+      ncams++;
+      wr16(m, S.V_CAM, cam); m.ram[S.V_HIDDEN] = file; m.ram[S.V_HOFF] = file ? 0x20 : 0;
+      W.callRoutine(m, S.window_repaint);
+      const base = file ? 0x6000 : 0x4000;
+      let row0 = 0;
+      for (const b of bands) {
+        const pos = W.bandPos(cam, b.code), p = pos & 7;
+        for (let wr = row0; wr < row0 + b.rows; wr++) for (let c = 0; c < 24; c++) {
+          const col = (pos >> 3) + c + (p >= 4 ? 1 : 0);                        // the rule, written out
+          const t = col === worldW - 1 ? 2 : col >= B ? 1 : 0;
+          const got = m.ram[base + 6144 + (cy + wr) * 32 + cx + c], exp = tiles[t].attr;
+          cells++;
+          if (col > worldW - 1) { n++; first ??= { cam, why: 'column past the world' }; } else if (got !== exp) { n++; first ??= { cam, pos, wr, c, got, exp }; }
+          shown++;
+        }
+        row0 += b.rows;
+      }
+    });
+    check(`Part C, ${label}: ${cells} window cells at ${ncams} cameras take the attribute of the tile covering at least half of the cell`, n === 0 && shown === cells, first ? JSON.stringify(first) : '');
+  };
+  // boundary at world column 40 = pixel 320 (band position 8 q + p, q = 20 puts the boundary in window cell 19): p = 0..7, so p = 3, 4 and 7 are in every sweep
+  const around = (q) => [0, 1, 2, 3, 4, 5, 6, 7].map((p) => 8 * q + p);
+  run('1 band at 1, the sky / brick boundary at phases 0..7 (3, 4 and 7 among them)', { bands: L.one, worldW: 128, B: 40, cams: [...around(20), ...around(21), ...around(19)] });
+  run('1 band at 1, boundary at column 24 (cell 0 on the first phase 4 .. 7)', { bands: L.one, worldW: 128, B: 24, cams: [...around(0), ...around(1)] });
+  run('3 bands 1/4, 1/2, 1: each band has its own phase', { bands: L.three, worldW: 128, B: 50, cams: [...around(40).map((c) => c * 2), ...around(30).map((c) => Math.min(c * 4 + 1, 832)), 83, 164, 327, 331, 335] });
+  run('ratio 2 + ratio 1 bands, the boundary at a ratio-2 phase 3 / 4 / 7', { bands: L.ratio2, worldW: 128, B: 60, cams: [...around(30).map((c) => c >> 1), ...around(31).map((c) => (c >> 1) + 1), 3, 4, 7] });
+  // the maximum camera of each band ratio: the last cell reads column col0 + 24 = world_w - 1 at phase >= 4 (nothing past the world is read)
+  for (const [name, bands] of [['ratio 1/4', [{ rows: 16, code: 1 }]], ['ratio 1/2', [{ rows: 16, code: 2 }]], ['ratio 1', L.one], ['ratio 2 (cam_max 8 w / 2 - 96)', [{ rows: 8, code: 3 }, { rows: 8, code: 4 }]], ['all four ratios', L.four], ['a fixed band + ratios 1/2 and 2', [{ rows: 4, code: 0 }, { rows: 6, code: 2 }, { rows: 6, code: 4 }]]])
+    for (const worldW of [25, 26, 31, 128]) run(`${name}, world ${worldW} wide, the last cameras (cam_max - 9 .. cam_max)`, { bands, worldW, B: worldW - 5, cams: [-9, -8, -7, -6, -5, -4, -3, -2, -1, 0] });
+  // 1/4 and 1/2 ratios reach p = 4+ only far from cam_max, so check them at their last pixels of band position too
+  const m0 = W.bootIdle(W.winGame({ tiles, win: { cx: 4, cy: 4, worldW: 128, bands: L.one, ram: new Uint8Array(2048) }, script: [] }));
+  check('(the maximum camera of ratio 1: band position 8 world_w - 192, phase 0; of ratio 2: cam_max = (8 world_w - 192) / 2)', rd16(m0, S.W_CAMMAX) === 832 && W.camMaxOf(128, L.ratio2) === 416);
+}
 
 // ==================================================================================================================
 console.log('\n3. Whole games: sprites in world coordinates, clipping by ring repair at every edge and corner, HUD cells, the camera, SETWORLD');
