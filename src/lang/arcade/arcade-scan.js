@@ -96,12 +96,14 @@ export function scanArcade(text) {
  *   tileset     the asset of the first TILESET declaration, or null
  *   maps        {mapDeclName: assetName} for every MAP declaration (the window's world and the view's floor plan included)
  *   world       the asset of the MAP the WINDOW names, or null
- *   floorplans  [asset of the MAP the VIEW3D names] (empty without a VIEW3D, or when it names no declared MAP)
+ *   worlds      [assets of every world map]: the WINDOW's, then each MAP a WORLD statement names (`WORLD name`, `WORLD expr OF a, b, ...`) in a game
+ *               with a WINDOW and no VIEW3D (the compiler's rule, arcade-check.js), each once; empty without a WINDOW's world
+ *   floorplans  [assets of the MAP the VIEW3D names, then each MAP a WORLD statement names] (empty without a VIEW3D)
  *   view        {bright, ceil, floor}: the VIEW3D's effective BRIGHT (default 1), CEIL paper (0) and FLOOR paper (1), a number 0..7 (BRIGHT 0..1) when the
  *               clause is a constant expression (numbers, CONSTs, unary minus, + - *), else null for that field; null without a VIEW3D
  */
 export function scanRoles(text) {
-  const out = { tileset: null, maps: {}, world: null, floorplans: [], view: null };
+  const out = { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null };
   let ast;
   try { ast = parse(String(text ?? '')).ast; } catch { return out; }
   try {
@@ -115,9 +117,27 @@ export function scanRoles(text) {
     const win = (ast.windows ?? [])[0];
     if (win?.map?.name !== undefined) out.world = decl.get(up(win.map.name)) ?? null;
     const view = (ast.views ?? [])[0];
+    const add = (list, asset) => { if (asset !== undefined && asset !== null && !list.some((x) => up(x) === up(asset))) list.push(asset); };
+    if (out.world !== null) out.worlds.push(out.world);
     if (view) {
       const fp = view.map?.name !== undefined ? decl.get(up(view.map.name)) : undefined;
       if (fp !== undefined) out.floorplans.push(fp);
+    }
+    // a MAP any WORLD statement names is a world (WINDOW) or a floor plan (VIEW3D), as in arcade-check.js (banking contract section 4, batch 6)
+    if (win || view) {
+      const seen = new Set();
+      const walk = (node, depth) => {
+        if (!node || typeof node !== 'object' || depth > 200 || seen.has(node)) return;
+        seen.add(node);
+        if (Array.isArray(node)) { for (const x of node) walk(x, depth + 1); return; }
+        if (node.type === 'World') {
+          for (const m of node.map ? [node.map] : (node.maps ?? [])) if (m?.type === 'Ident') add(view ? out.floorplans : out.worlds, decl.get(up(m.name)));
+        }
+        for (const k of Object.keys(node)) if (k !== 'type' && typeof node[k] === 'object') walk(node[k], depth + 1);
+      };
+      walk(ast, 0);
+    }
+    if (view) {
       const consts = new Map();
       for (const d of ast.decls ?? []) if (d.type === 'Const') consts.set(up(d.name), d.value);
       const fold = (e, depth = 0) => {

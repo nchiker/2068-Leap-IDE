@@ -52,25 +52,44 @@ for (const id of EX) {
   const project = P.exampleProject(id, arc, assets);
   examples[id] = { arc, assets, project, text: P.buildSource(project).text };
 }
+// Leap Runner (four worlds loaded by WORLD ... OF): its own entry, not in EX (the per-example loops below have expectations per example)
+{
+  const arc = readFileSync(ROOT + 'arcade/examples/runner.arc', 'utf8').replace(/\r\n?/g, '\n');
+  const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/runner.assets.json', 'utf8'));
+  const project = P.exampleProject('runner', arc, assets);
+  examples.runner = { arc, assets, project, text: P.buildSource(project).text };
+}
 {
   const r = (id) => scanRoles(examples[id].text);
-  check('scanRoles shooter: a cell map "sky", tile set gfx, no world, no floor plan, no view', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky' }, world: null, floorplans: [], view: null }), JSON.stringify(r('shooter')));
-  check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', floorplans: [], view: null }), JSON.stringify(r('platformer')));
+  check('scanRoles shooter: a cell map "sky", tile set gfx, no world, no floor plan, no view', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky' }, world: null, worlds: [], floorplans: [], view: null }), JSON.stringify(r('shooter')));
+  check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', worlds: ['pf_world'], floorplans: [], view: null }), JSON.stringify(r('platformer')));
   check('scanRoles vaults: floor plan vl_maze, cell map vl_panel, view BRIGHT 1 (default) CEIL 0 FLOOR 1',
-    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze' }, world: null, floorplans: ['vl_maze'], view: { bright: 1, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
-  check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, floorplans: [], view: null }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, floorplans: [], view: null }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, floorplans: [], view: null }));
+    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 1, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
+  check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null }));
   const src = [
     'CONST dark = 0', 'CONST lite = 5 + 1', 'TILESET t = "ts"', 'MAP m = "m1"', 'MAP Maze = "mz"', 'MAP other = "o"',
     'VIEW3D maze FLOOR lite CEIL dark BRIGHT 0 COLW 2', 'WINDOW OTHER',
   ].join('\n');
   check('scanRoles: names are case-insensitive, CONSTs and + fold, BRIGHT 0 is read, WINDOW and VIEW3D together are both reported',
-    eq(scanRoles(src), { tileset: 'ts', maps: { m: 'm1', Maze: 'mz', other: 'o' }, world: 'o', floorplans: ['mz'], view: { bright: 0, ceil: 0, floor: 6 } }), JSON.stringify(scanRoles(src)));
+    eq(scanRoles(src), { tileset: 'ts', maps: { m: 'm1', Maze: 'mz', other: 'o' }, world: 'o', worlds: ['o'], floorplans: ['mz'], view: { bright: 0, ceil: 0, floor: 6 } }), JSON.stringify(scanRoles(src)));
   const v2 = scanRoles('TILESET t = "ts"\nMAP m = "m1"\nVIEW3D m CEIL FLOOR2 FLOOR 9 BRIGHT 7\n');
   check('scanRoles: a clause that is not a constant 0..7 (or BRIGHT 0..1) is null for that field, the others keep their defaults', eq(v2.view, { bright: null, ceil: null, floor: null }) || (v2.view !== null && v2.view.bright === null && v2.view.floor === null), JSON.stringify(v2));
-  check('scanRoles: WINDOW / VIEW3D naming an undeclared MAP give world null / no floor plan (the view is still read)', eq(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3'), { tileset: null, maps: {}, world: null, floorplans: [], view: { bright: 1, ceil: 3, floor: 1 } }), JSON.stringify(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3')));
+  check('scanRoles: WINDOW / VIEW3D naming an undeclared MAP give world null / no floor plan (the view is still read)', eq(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: { bright: 1, ceil: 3, floor: 1 } }), JSON.stringify(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3')));
   let threw = false, junk;
   try { junk = [scanRoles(''), scanRoles(undefined), scanRoles(null), scanRoles('TILESET'), scanRoles('\u0000"""((('), scanRoles('MAP = "x"\nWINDOW\nVIEW3D'), scanRoles(5)]; } catch { threw = true; }
-  check('scanRoles never throws on empty / broken / non-string input and always has the five fields', !threw && junk.every((x) => ['tileset', 'maps', 'world', 'floorplans', 'view'].every((k) => k in x)));
+  // maps a WORLD statement loads (banking contract section 4, batch 6): worlds with a WINDOW, floor plans with a VIEW3D, as the compiler's checker says
+  const wsrc = 'MAP a = "wa"\nMAP b = "wb"\nMAP c = "wc"\nMAP d = "wd"\nWINDOW a\nPROC FRAME\n  IF 1 THEN\n    WORLD b\n  ENDIF\n  WORLD n OF c, A, d\nENDP\n';
+  check('scanRoles: the maps WORLD and WORLD ... OF load are worlds of a WINDOW game (the WINDOW\'s first, each once, nested statements found)', eq(scanRoles(wsrc).worlds, ['wa', 'wb', 'wc', 'wd']) && scanRoles(wsrc).world === 'wa', JSON.stringify(scanRoles(wsrc)));
+  const vsrc = 'MAP a = "pa"\nMAP b = "pb"\nVIEW3D a\nPROC FRAME\n  WORLD n OF a, b\nENDP\n';
+  check('scanRoles: in a VIEW3D game they are floor plans, and no world', eq(scanRoles(vsrc).floorplans, ['pa', 'pb']) && eq(scanRoles(vsrc).worlds, []), JSON.stringify(scanRoles(vsrc)));
+  check('scanRoles: without a WINDOW or VIEW3D a WORLD statement makes no world', eq(scanRoles('MAP a = "x"\nPROC FRAME\n  WORLD a\nENDP\n').worlds, []));
+  const rr = r('runner');
+  check('scanRoles runner: the four level maps are worlds (WINDOW level, WORLD lv OF level, level2, level3, level4)', eq(rr.worlds, ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4']), JSON.stringify(rr.worlds));
+  const rw = checkAssets(examples.runner.project, rr);
+  check('runner: no map-shape error for its 128 x 16 level maps (they were checked as cell maps before), each world has its background-attr-mix warning, no error at all',
+    !rw.some((w) => w.severity === 'error') && ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'].every((m) => mapRole(m, rr) === 'world' && rw.some((w) => w.id === 'background-attr-mix' && w.asset === m)), JSON.stringify(rw.map((w) => [w.id, w.asset])));
+  check('mapRole: roles without `worlds` (the older shape) still give the WINDOW\'s map the world role', mapRole('o', { world: 'o' }) === 'world' && mapRole('p', { world: 'o' }) === 'cell');
+  check('scanRoles never throws on empty / broken / non-string input and always has the five fields', !threw && junk.every((x) => ['tileset', 'maps', 'world', 'worlds', 'floorplans', 'view'].every((k) => k in x)));
 }
 
 // ═══ 2  helpers ═════════════════════════════════════════════════════════════════════════════════════════════════
