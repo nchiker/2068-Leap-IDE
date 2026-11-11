@@ -88,10 +88,13 @@ const attrText = (a) => `ink ${a & 7}, paper ${(a >> 3) & 7}, BRIGHT ${(a >> 6) 
 
 // ── roles and tile sets ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** 'world' (the map a WINDOW names), 'floorplan' (a VIEW3D's) or 'cell' (everything else, including a map the source does not use). `name` is a map asset name. */
+/** The world maps of `roles`: `roles.worlds` (the WINDOW's and those WORLD statements load), else the WINDOW's alone (roles from before `worlds`). */
+const worldsOf = (roles) => (isObj(roles) ? (Array.isArray(roles.worlds) ? roles.worlds : typeof roles.world === 'string' ? [roles.world] : []).filter((w) => typeof w === 'string') : []);
+
+/** 'world' (a map a WINDOW game scrolls: the WINDOW's or one a WORLD statement loads), 'floorplan' (a VIEW3D's) or 'cell' (everything else, including a map the source does not use). `name` is a map asset name. */
 export function mapRole(name, roles) {
   if (!isObj(roles) || typeof name !== 'string') return 'cell';
-  if (typeof roles.world === 'string' && upper(roles.world) === upper(name)) return 'world';
+  if (worldsOf(roles).some((w) => upper(w) === upper(name))) return 'world';
   if (Array.isArray(roles.floorplans) && roles.floorplans.some((f) => typeof f === 'string' && upper(f) === upper(name))) return 'floorplan';
   return 'cell';
 }
@@ -146,9 +149,10 @@ function checkTileset(name, asset, roles, project, out) {
   if (tiles.length > MAX_TILES) {
     out.push({ id: 'tileset-size', severity: 'error', kind: 'tilesets', asset: name, count: tiles.length, message: `tile set "${name}" has ${tiles.length} tiles; at most ${MAX_TILES} are supported (a map cell holds 7 bits)`, compilerAlso: true });
   }
-  if (isObj(roles) && typeof roles.world === 'string') {
-    const worldKey = findKey(table(project, 'maps'), roles.world);
-    const sets = new Set([effectiveTileset(project, worldKey === null ? null : table(project, 'maps')[worldKey], roles), findKey(tabs, roles.tileset)]);
+  if (worldsOf(roles).length) {
+    const maps = table(project, 'maps');
+    const sets = new Set([findKey(tabs, roles.tileset)]);
+    for (const w of worldsOf(roles)) { const k = findKey(maps, w); sets.add(effectiveTileset(project, k === null ? null : maps[k], roles)); }
     if (sets.has(name) && tiles.length > WORLD_TILES && tiles.length <= MAX_TILES) {
       out.push({ id: 'tileset-size', severity: 'warning', kind: 'tilesets', asset: name, count: tiles.length, message: `tile set "${name}" has ${tiles.length} tiles; the world map of a WINDOW uses tiles 0..${WORLD_TILES - 1} only, so tiles ${WORLD_TILES}..${tiles.length - 1} cannot be used there`, compilerAlso: false });
     }
@@ -326,14 +330,14 @@ export function checkAssets(project, roles) {
     const r = isObj(roles) ? roles : null;
     const tsTab = table(project, 'tilesets'), mapTab = table(project, 'maps'), sfxTab = table(project, 'sfx');
     for (const name of Object.keys(tsTab).sort()) guard('tilesets', name, () => checkTileset(name, tsTab[name], r, project, out));
-    if (r && typeof r.world === 'string') {
-      const key = findKey(mapTab, r.world);
-      if (key !== null) {
-        guard('maps', key, () => {
-          const wset = effectiveTileset(project, mapTab[key], r), pset = findKey(tsTab, r.tileset);
-          for (const n of new Set([pset, wset])) if (n !== null) checkTile0(n, tsTab[n], out);
-        });
+    if (r && worldsOf(r).length) {
+      const sets = new Set();       // the tile sets the worlds are drawn with: tile 0 must be blank in each (checked once per set)
+      for (const w of worldsOf(r)) {
+        const key = findKey(mapTab, w);
+        if (key === null) continue;
+        guard('maps', key, () => { for (const n of [findKey(tsTab, r.tileset), effectiveTileset(project, mapTab[key], r)]) if (n !== null) sets.add(n); });
       }
+      for (const n of sets) guard('tilesets', n, () => checkTile0(n, tsTab[n], out));
     }
     if (r) for (const name of Object.keys(mapTab).sort()) guard('maps', name, () => checkMap(name, mapTab[name], mapRole(name, r), r, project, out));
     for (const name of Object.keys(sfxTab).sort()) guard('sfx', name, () => checkSfx(name, sfxTab[name], out));
