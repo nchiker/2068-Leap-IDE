@@ -150,6 +150,13 @@
  *  T2-3. A table's rows resolve in the table's own scope (the game level, or the scene on top of it); a scene's table named in a game-level PROC is not visible (a PROC is generated in its home scope).
  *        A runtime older than v2, or a build without RT_TABLELOAD, refuses a LOADTABLE (the second with a message that says to rebuild the runtime).
  *
+ * ── Batch 6 (docs/ARCADE_LANGUAGE_BATCH6.md Part A) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ *  B6-1. WORLD expr OF m0, m1, ...: a constant index in 0..k is the code of `WORLD name` (same bytes); a constant outside the list compiles to nothing (the checker warns); any other index is
+ *        evaluated to HL, then `LD DE,list / LD BC,count / CALL lib$worldidx`. `list` is a table in the mapped code, after the tables' pointer lists: one entry per listed name, v3 `DW src, DB world_w,
+ *        DW cam_max` (5 bytes), v4 `DW src, DB map_w, DB map_h` (4 bytes); `src` is a fixup (gen.fixups, the key of the stream) like the operand of `WORLD name`, so a mapped or banked stream works the same.
+ *        A list with the same names in the same order, in the same program, is emitted once. lib$worldidx (present only when used) compares HL with BC as UNSIGNED numbers (a negative index fails too),
+ *        else computes the entry, loads the registers of RT_WORLDLOAD (HL, A, DE) or RT_PLANLOAD (HL, BC) and JPs to it. Every listed MAP is a world / plan as if `WORLD name` had named it.
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -326,7 +333,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   (function walk(n) {
     if (Array.isArray(n)) { n.forEach(walk); return; }
     if (!n || typeof n !== 'object') return;
-    if (n.type === 'World' && n.map?.name) worldNameKeys.add(up(n.map.name));
+    if (n.type === 'World') for (const m of n.map ? [n.map] : (n.maps ?? [])) if (m?.name) worldNameKeys.add(up(m.name));      // (batch 6: WORLD expr OF a, b, c names several)
     for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
   })(ast.items ?? []);
   const worldOnlyDecls = new Map();                 // KEY -> the MAP node (named by a WORLD, not the WINDOW's or the VIEW3D's own)
@@ -824,7 +831,10 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         if (!winDecl && !viewDecl) err(s, 'WORLD needs a WINDOW (runtime v3) or a VIEW3D (runtime v4)');
         else if (sym[rt] === undefined) err(s, `WORLD needs ${rt}, which this runtime does not provide (the runtime build predates the banked cartridge map)`);
         else if (!win && !view) { /* the WINDOW / VIEW3D itself failed: already reported */ }
-        else { const st = streamOf(s.map); if (st.error) err(s.map, `WORLD: ${st.error}`); }
+        else {
+          if (s.index) scanExpr(s.index);                                                  // batch 6: WORLD expr OF a, b, c
+          for (const m of s.map ? [s.map] : (s.maps ?? [])) { const st = streamOf(m); if (st.error) err(m, `WORLD: ${st.error}`); }
+        }
         continue;
       }
       if (s.type === 'Camera' || s.type === 'SetWorld') {
@@ -972,6 +982,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'Copy': ex(s.x); ex(s.y); ex(s.w); ex(s.h); ex(s.dx); ex(s.dy); break;
           case 'LoadMap': ex(s.x); ex(s.y); break;
           case 'LoadTable': ex(s.index ?? s.table); break;
+          case 'World': ex(s.index); break;
           case 'Border': case 'Randomise': ex(s.value); break;
           case 'Show': ex(s.sprite); ex(s.x); ex(s.y); ex(s.frame); break;
           case 'Camera': ex(s.value); break;
@@ -1058,6 +1069,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'Copy': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.dx, active); ex(s.dy, active); break;
           case 'LoadMap': ex(s.x, active); ex(s.y, active); break;
           case 'LoadTable': ex(s.index ?? s.table, active); break;
+          case 'World': ex(s.index, active); break;
           default: break;
         }
       }
@@ -1130,7 +1142,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
 
   let params = new Map();                           // KEY -> slot address, for the callable being generated
   let loops = [];                                   // {kind, end}
-  const used = { bit: false, stick: false, nl: false, clamp: false, tile: false, tileat: false, shl: false, shr: false, fmt: false, tabidx: false };
+  const used = { bit: false, stick: false, nl: false, clamp: false, tile: false, tileat: false, shl: false, shr: false, fmt: false, tabidx: false, worldidx: false };
   const pool = new Map();                           // text -> label of its length-prefixed string
   const strLabel = (text) => { if (!pool.has(text)) pool.set(text, `str$${pool.size}`); return pool.get(text); };
   let tileSlots = null;                             // {x, y}: hidden slots TILE parks its column and row in
@@ -1784,6 +1796,20 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
    * once the linker has placed it (mapped or in the window): the operand is a fixup (gen.fixups).
    */
   function worldStmt(s) {
+    if (!s.map && s.maps) {
+      // batch 6 (docs/ARCADE_LANGUAGE_BATCH6.md Part A): WORLD expr OF a, b, c. A constant index in range is `WORLD name`; outside the list nothing; else the index in HL,
+      // `LD DE,list / LD BC,count / CALL lib$worldidx` (the list: one entry per name, v3 DW src / DB world_w / DW cam_max, v4 DW src / DB map_w / DB map_h; lists that are identical are shared)
+      const k = fold(s.index);
+      if (k !== undefined) { if (k >= 0 && k < s.maps.length) worldStmt({ ...s, map: s.maps[k], maps: undefined, index: undefined }); return; }
+      need(win ? 'RT_WORLDLOAD' : 'RT_PLANLOAD');
+      gen(s.index);
+      const lk = s.maps.map((m) => up(m.name)).join(',');
+      let list = worldLists.get(lk);
+      if (!list) { list = { id: worldLists.size, streams: s.maps.map((m) => streamOf(m)) }; worldLists.set(lk, list); }
+      used.worldidx = true;
+      e.ld('de', L(`wl$list$${list.id}`)); e.ld('bc', s.maps.length); e.call('lib$worldidx');
+      return;
+    }
     const st = streamOf(s.map);
     const fix = e.newLabel('wlfix');
     if (win) {
@@ -1802,6 +1828,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
    * LOADTABLE (docs/ARCADE_TABLES_CONTRACT.md 2.3 / 5.3): a bare visible table name or a constant in range is `LD HL,record / CALL RT_TABLELOAD` (the operand is a fixup the linker fills); any other
    * expression is evaluated to HL, then `LD DE,list / LD BC,count / CALL lib$tabidx`. A constant outside the list compiles to nothing.
    */
+  const worldLists = new Map();                     // batch 6: 'A,B,C' -> {id, streams}: the entry lists WORLD expr OF ... needs
   const tabFix = [];                                // {label, key, off}: an address the linker fills (the operand of an LD HL, or a word of a pointer list)
   const tabLists = new Map();                       // scope id ('g' or the scene index) -> the visible tables of a list some LOADTABLE needs
   function loadTableStmt(s) {
@@ -2302,6 +2329,22 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       e.add('hl', 'hl'); e.add('hl', 'de'); e.ld('a', '(hl)'); e.inc('hl'); e.ld('h', '(hl)'); e.ld('l', 'a');
       e.jp(need('RT_TABLELOAD'));
     }
+    if (used.worldidx) {
+      // WORLD expr OF list (batch 6): HL = index, DE = the list, BC = its length (1..64) -> returns when HL >= BC as an unsigned number (a negative index too), else HL = the entry (DE + index x size),
+      // the registers of RT_WORLDLOAD (HL = src, A = world_w, DE = cam_max) or RT_PLANLOAD (HL = src, B = map_w, C = map_h) and a JP to it
+      e.label('lib$worldidx');
+      e.push('hl'); e.or('a'); e.sbc('hl', 'bc'); e.pop('hl'); e.ret('nc');
+      if (win) {
+        e.ld('b', 'h'); e.ld('c', 'l'); e.add('hl', 'hl'); e.add('hl', 'hl'); e.add('hl', 'bc'); e.add('hl', 'de');        // x 5
+        e.ld('e', '(hl)'); e.inc('hl'); e.ld('d', '(hl)'); e.inc('hl'); e.ld('a', '(hl)'); e.inc('hl'); e.push('de');
+        e.ld('e', '(hl)'); e.inc('hl'); e.ld('d', '(hl)'); e.pop('hl');
+        e.jp(need('RT_WORLDLOAD'));
+      } else {
+        e.add('hl', 'hl'); e.add('hl', 'hl'); e.add('hl', 'de');                                                          // x 4
+        e.ld('e', '(hl)'); e.inc('hl'); e.ld('d', '(hl)'); e.inc('hl'); e.ld('b', '(hl)'); e.inc('hl'); e.ld('c', '(hl)'); e.ex('de', 'hl');
+        e.jp(need('RT_PLANLOAD'));
+      }
+    }
     if (used.nl) {
       // end of a PRINT: cursor to column 0 of the next row (the row after 23 is row 0)
       const keep = 'lib$nl$k';
@@ -2372,6 +2415,15 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     for (const [id, vis] of tabLists) {
       e.label(`tab$list$${id}`);
       vis.forEach((t, i) => { const lab = `tab$ptr$${id}$${i}`; e.label(lab); e.dw(0); tabFix.push({ label: lab, key: t.key, off: 0 }); });
+    }
+    // WORLD expr OF list: one entry list per distinct list of names (v3 DW src (a fixup the linker fills) / DB world_w / DW cam_max; v4 DW src / DB map_w / DB map_h)
+    for (const [, list] of worldLists) {
+      e.label(`wl$list$${list.id}`);
+      list.streams.forEach((st, i) => {
+        const lab = `wl$ent$${list.id}$${i}`;
+        e.label(lab); e.dw(0); tabFix.push({ label: lab, key: st.key, off: 0 });
+        if (win) { e.db(st.w); e.dw(st.camMax); } else { e.db(st.w); e.db(st.h); }
+      });
     }
     // ── data (v1): hot boxes, string pool, tileset, sound effects, map ──
     if (v1) {

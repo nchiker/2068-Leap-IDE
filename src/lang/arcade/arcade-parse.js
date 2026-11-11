@@ -87,6 +87,9 @@
  *      - The BATCH3_WORDS (reserved for variables) are read as names where an ASSET name is expected: SFX wall = "wall", PLAY wall, SHOW wall AT ..., HIT(wall, x).
  *  17b. (the banked cartridge map, docs/ARCADE_BANKING_CONTRACT.md section 4) `WORLD map` (node World {map: Ident}): load another MAP as the world of the WINDOW or the plan of the VIEW3D.
  *      WORLD is reserved for variables, like the batch 3 words, but may name an asset (`MAP world = "w"`; BATCH11_WORDS).
+ *  17b2. (language batch 6, docs/ARCADE_LANGUAGE_BATCH6.md Part A) `WORLD expr OF m0, m1, ...` is `World {map: null, index: expr, maps: [Ident]}`: after WORLD a bare name that ends the statement is the
+ *      old form; anything else is an expression, which must be followed by OF (a contextual word, an ident: a variable called `of` stays legal) and the list of MAP names (the checker limits it to 64).
+ *      `WORLD expr` without OF is an error.
  *  17c. (bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md section 5.1) `TABLE name` rows `ENDTABLE` is a declaration like DIM (top level or directly in a SCENE; in a PROC it parses and the checker refuses it):
  *      node Table {name, namePos, rows: [TableRow {target: Ident, values: [expr]}], endLine} in the `decls` / `items` of the game or the scene. `LOADTABLE x` is `LoadTable {table: Ident | null, index?: expr}`,
  *      like Play: a bare unparenthesised name goes in `table` (the checker, interpreter and code generator read it as a table when one of that name is visible, else as an index expression).
@@ -724,7 +727,20 @@ class Parser {
         return this.close(this.mk('LoadTable', t, { table: null, index: arg }));
       }
       case 'CAMERA': { this.next(); return this.close(this.mk('Camera', t, { value: this.expr() })); }
-      case 'WORLD': { this.next(); return this.close(this.mk('World', t, { map: this.nameRef('a map name: WORLD level') })); }
+      case 'WORLD': {
+        this.next();
+        // batch 6 (docs/ARCADE_LANGUAGE_BATCH6.md Part A): a bare name that ends the statement is the old form; anything else is an index expression, then OF and 1..64 MAP names (OF is contextual)
+        const a = this.peek(), a1 = this.peek(1);
+        const nameTok = a.type === 'ident' || (a.type === 'keyword' && (BATCH3_WORDS.has(a.value) || BATCH11_WORDS.has(a.value)));
+        if (nameTok && (isEnd(a1) || isBlockWord(a1))) return this.close(this.mk('World', t, { map: this.nameRef('a map name: WORLD level') }));
+        const index = this.expr();
+        const of = this.peek();
+        if (!(of.type === 'ident' && of.value === 'OF')) this.fail(isEnd(of) ? a : of, 'WORLD by number needs OF and the list of maps: WORLD n OF a, b, c');
+        this.next();
+        const maps = [this.nameRef('a map name: WORLD n OF a, b, c')];
+        while (isSym(this.peek(), ',')) { this.next(); maps.push(this.nameRef('a map name: WORLD n OF a, b, c')); }
+        return this.close(this.mk('World', t, { map: null, index, maps }));
+      }
       case 'SETWORLD': {
         this.next();
         const x = this.expr(); this.expectSym(',', "expected ',' : SETWORLD x, y = t");

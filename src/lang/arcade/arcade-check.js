@@ -217,8 +217,10 @@ class Checker {
     // the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): a MAP any WORLD names is a world (WINDOW) or a plan (VIEW3D) too
     if (this.hasWindow || this.hasView) {
       for (const w of this.worldStmts) {
-        const sym = w.map?.type === 'Ident' ? this.assets.get(`map:${up(w.map.name)}`) : null;
-        if (sym) { if (this.hasView) sym.view = true; else sym.world = true; }
+        for (const m of w.map ? [w.map] : (w.maps ?? [])) {      // batch 6: WORLD expr OF a, b, c names several
+          const sym = m?.type === 'Ident' ? this.assets.get(`map:${up(m.name)}`) : null;
+          if (sym) { if (this.hasView) sym.view = true; else sym.world = true; }
+        }
       }
     }
     // every variable name of the global level and of each scene, for the "declared after a FOR made it a local" check
@@ -826,6 +828,18 @@ class Checker {
       case 'World': {
         // WORLD map: a WINDOW (runtime v3) or a VIEW3D (runtime v4) must exist; the map checks themselves (size, tiles, walls) are the code generator's, as for the WINDOW's and the VIEW3D's own map
         if (!this.hasWindow && !this.hasView) { this.err(s, 'WORLD needs a WINDOW (runtime v3) or a VIEW3D (runtime v4)'); return; }
+        if (!s.map && s.maps) {
+          // batch 6: WORLD expr OF a, b, c: every listed name is a MAP (a world / plan as for WORLD name); a constant index outside the list does nothing (warning); at most 64 names
+          this.numArg(s.index, ctx, 'the world index');
+          if (s.maps.length > 64) this.err(s.maps[64], `WORLD ... OF: at most 64 maps in the list (${s.maps.length} given)`);
+          for (const m of s.maps) {
+            const sym = this.assets.get(`map:${up(m.name)}`);
+            if (!sym) this.err(m, `WORLD: unknown MAP '${m.name}'`); else sym.used = true;
+          }
+          const k = this.lit(s.index);
+          if (k !== undefined && (k < 0 || k >= s.maps.length)) this.warn(s.index, `WORLD ${k} OF ...: the list has ${s.maps.length === 1 ? 'only 1 map' : `${s.maps.length} maps`} (0..${s.maps.length - 1}): this statement does nothing`);
+          return;
+        }
         const sym = s.map?.type === 'Ident' ? this.assets.get(`map:${up(s.map.name)}`) : null;
         if (!sym) { this.err(s.map ?? s, `WORLD: unknown MAP '${s.map?.name ?? ''}'`); return; }
         sym.used = true;

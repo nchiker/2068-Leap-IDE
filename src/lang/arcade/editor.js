@@ -25,7 +25,7 @@ import { StreamLanguage, HighlightStyle, syntaxHighlighting, indentService, fold
 import { tags } from '@lezer/highlight';
 import { tokenize } from './arcade-parse.js';
 import { ARCADE_WORDS, NOT_IN_ARCADE, notInArcadeMessage } from './arcade-words.js';
-import { scanArcade, blockLines, indentLevel } from './arcade-scan.js';
+import { scanArcade, blockLines, indentLevel, inWorldList } from './arcade-scan.js';
 import { arcadeProfile } from './profile.js';
 
 const STARTER = `REM A new Leap Arcade game. Run (F5) compiles it and starts it on a TS2068.
@@ -253,7 +253,9 @@ function arcadeComplete(context) {
   if (prevWord === 'LOADTABLE') return only(visibleTables(s, line.number).map((t) => ({ label: t.name, type: 'constant', detail: `table · line ${t.line}` })));
   if (prevWord === 'SHOW' || prevWord === 'HIDE') return only(s.assets.filter((a) => a.kind === 'SPRITE').map((a) => ({ label: a.name, type: 'constant', detail: a.count ? `sprite pool (${a.count})` : 'sprite' })));
   if (prevWord === 'PLAY') return { from: word.from, options: [...s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })), ...s.vars.filter((v) => v.dims === 0).map((v) => ({ label: v.name, type: 'variable', detail: `effect index · line ${v.line}` }))], validFor: /^\w*$/ };
-  if (prevWord === 'LOADMAP' || prevWord === 'WORLD') return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
+  // language batch 6: WORLD expr OF a, b, c: after OF and after each comma of the list, the MAP names (inWorldList, arcade-scan.js)
+  const worldList = inWorldList(head);
+  if (prevWord === 'LOADMAP' || prevWord === 'WORLD' || worldList) return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
 
   const own = [
     ...s.vars.map((v) => ({ label: v.name, type: 'variable', detail: v.timer ? `timer · line ${v.line}` : v.dims === 2 ? `array(${v.size ?? '?'}, ${v.size2 ?? '?'}) · line ${v.line}` : v.dims === 1 ? `array(${v.size ?? '?'}) · line ${v.line}` : `variable · line ${v.line}` })),

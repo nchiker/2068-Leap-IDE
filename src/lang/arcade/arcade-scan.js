@@ -4,6 +4,7 @@
  *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts, enters, tables}  from the parser's AST (never throws)
  *   blockLines(lines)     -> {depth, dedent, blocks}  indentation and fold ranges by the block words
  *   inputHints(text)      -> string[]  the keys / joysticks a program reads, for the Studio's hint line
+ *   inWorldList(head)     -> boolean  the cursor is in the MAP list of WORLD expr OF a, b (language batch 6; the editor's completion)
  *   scanRoles(text)       -> {tileset, maps, world, floorplans, view}  what each map / tile set is for (Studio slice S2; never throws)
  *
  * Positions: `line` is 1-based, `col` 0-based (the parser's).
@@ -211,6 +212,16 @@ export function blockLines(lines) {
 export function indentLevel(structure, n) {
   const before = n === 0 ? 0 : structure.depth[n - 1];
   return Math.max(0, before - structure.dedent[n]);
+}
+
+// ── WORLD expr OF list (language batch 6) ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Is the cursor (at the end of `head`, the line's text before the word being typed, right-trimmed) in the MAP list of `WORLD expr OF a, b, ...`: right after OF or after a comma of the list?
+ * OF is contextual, so the editor offers the MAP names here and nowhere else (the names the list holds are ordinary MAP identifiers, found by definitionOf like LOADMAP's).
+ */
+export function inWorldList(head) {
+  return /^\s*(?:[A-Za-z][A-Za-z0-9_]*\s*:\s*)?WORLD\b.*\bOF\b(?:\s*\w+\s*,)*$/i.test(head);
 }
 
 // ── Input hints ──────────────────────────────────────────────────────────────────────────────────────────────
