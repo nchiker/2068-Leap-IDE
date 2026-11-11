@@ -3,11 +3,11 @@ REM the game area: the three worlds are MAPs that a WORLD statement loads, so th
 REM (docs/ARCADE_BANKING_CONTRACT.md).  Assets are in runner.assets.json, laid out by runner.assets.gen.mjs (level 1 is the platformer's world);
 REM the level data below (TABLE lv1 .. lv4: CXS/CYS, SX/SY, WLO/WHI, CKX/CKY, CIX, RCF/RNX and the counts CE / SE, each list indexed from 0 within its level) is
 REM printed by  node arcade/examples/runner.assets.gen.mjs --data  and checked against the maps by tests/arcade-runner.mjs; LOADLEVEL does LOADTABLE lv.
-REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank.   Joystick 1: the stick and fire.
+REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank, H pause (and H again to go on).   Joystick 1: the stick and fire.
 REM   128 x 16 cell worlds, three bands (2 / 3 / 11 rows at 1/4, 1/2, 1/1).  Stomp the walkers and bats by jumping on them (HIT while
 REM   falling), touch them from the side and you lose a life (brief invulnerability); spikes and the pit send you to the last checkpoint.
 REM   Coins (pickup tiles that spin by tile swaps) and a flag at the far end of each level; the flag shows LEVEL n and loads the next world
-REM   (WORLD levelN); after the fourth the win screen.  Three lives for the whole game; losing the last one is game over.
+REM   (WORLD lv OF level, level2, level3, level4); after the fourth the win screen.  Three lives for the whole game; losing the last one is game over.
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/runner.arc --assets arcade/examples/runner.assets.json --runtime v3
 GAME "Leap Runner"
 FRAMERATE 20
@@ -53,6 +53,8 @@ SCENE play
   DIM st, tt, fc, js, lf, rg, up, dn, fire, jmp, pj, pfire
   DIM px, py, x8, vx, vy, face, gnd, cg, anim, fr, inv, dropt, fx, tc, ltc, kq, ka, pk
   DIM lives, score, coins, hud, ck, rx, ry, ti, ei
+  REM pause (1 = paused, playing state only) and the high score: HI is the game's, it is not cleared when a game starts (0 at power-on)
+  DIM paused, hi
   DIM cam, nx, cf, cnx
   REM the level: lv is 0..3 (the index of its TABLE); LOADTABLE puts the level's lists in the arrays below, indexed from 0: its coins are 0..CE-1, its enemies 0..SE-1;
   REM CC and SD (coin taken, enemy killed) are per level, indexed the same way
@@ -137,7 +139,30 @@ SCENE play
   ENDP
 
   REM ---------------------------------------------------------------------------------------------------------------- states
+  REM H toggles the pause while playing (state 1; KEYPRESS: one press is one toggle).  A paused tick does nothing else: the logic, the timers, the input reads and the
+  REM edge flags (pj, pfire) stand still, so the game goes on exactly where it was; the toggling tick itself runs no logic either.
   PROC FRAME():
+    IF KEYPRESS("H") AND st = 1 THEN
+      CALL PAUSETOGGLE()
+    ELSE
+      IF paused = 0 THEN CALL GAMETICK() ENDIF
+    ENDIF
+  ENDP
+
+  REM Pausing silences the sound once and puts PAUSED in the HUD's message row (6 cells, a piece of a row: not the 32 a whole row costs); going on clears those cells.
+  PROC PAUSETOGGLE():
+    INK 7 : PAPER 0 : BRIGHT 1
+    IF paused = 0 THEN
+      paused = 1
+      SILENCE
+      PRINT AT 21, 13; "PAUSED";
+    ELSE
+      paused = 0
+      PRINT AT 21, 13; "      ";
+    ENDIF
+  ENDP
+
+  PROC GAMETICK():
     js = STICK(1)
     lf = KEYDOWN("O") OR BIT(js, 2)
     rg = KEYDOWN("P") OR BIT(js, 3)
@@ -168,7 +193,7 @@ SCENE play
 
   REM The title: level 1 scrolls by itself (the camera ping-pongs along the world); fire starts the game.  Everything that costs
   REM much (clearing and printing the text cells) is done a piece a tick (TSTAGE for the title, GSTAGE for starting a game), so
-  REM that no tick goes over its three refreshes (loading a world is the exception: see LOADLEVEL): TI counts the stages, 7 = the title waits for fire.
+  REM that no tick goes over its three refreshes (loading a world is the exception: see LOADLEVEL): TI counts the stages, 8 = the title waits for fire.
   PROC TITLEINIT():
     st = 0 : tt = 0 : cam = 0 : ti = 0
     HIDE hero
@@ -185,11 +210,11 @@ SCENE play
     CAMERA p
     cam = CAMX()
     CALL SPINCOINS()
-    IF ti < 7 THEN
+    IF ti < 8 THEN
       CALL TSTAGE(ti)
       ti = ti + 1
     ELSE
-      IF ti = 7 THEN
+      IF ti = 8 THEN
         IF fire AND (NOT pfire) THEN ti = 20 ENDIF
       ELSE
         CALL GSTAGE(ti - 20)
@@ -198,7 +223,7 @@ SCENE play
     ENDIF
   ENDP
 
-  REM Stages 0..6 redraw the title text (a row of cells is 32 cells to redraw, about 30,000 T in both files: one row a tick).
+  REM Stages 0..7 redraw the title text (a row of cells is 32 cells to redraw, about 30,000 T in both files: one row a tick); stage 7 is the high score under the title.
   PROC TSTAGE(s):
     SELECT CASE s
       CASE 0
@@ -214,8 +239,10 @@ SCENE play
         INK 6 : PRINT AT 1, 10; "LEAP RUNNER";
       CASE 5
         INK 7 : PRINT AT 21, 6; "PRESS SPACE OR FIRE";
-      CASE ELSE
+      CASE 6
         PRINT AT 22, 4; "O P MOVE   Q OR SPACE JUMP";
+      CASE ELSE
+        INK 5 : PRINT AT 2, 12; "HI "; hi;
     ENDSEL
   ENDP
 
@@ -233,6 +260,7 @@ SCENE play
         PRINT AT 1, 2; "SCORE";
         PRINT AT 1, 16; "LIVES";
       CASE 4
+        PRINT AT 2, 12; "        ";
         PRINT AT 2, 2; "COINS";
       CASE 5
         CALL LOADLEVEL()
@@ -246,16 +274,7 @@ SCENE play
   PROC LOADLEVEL():
     LOCAL i
     HIDE hero
-    SELECT CASE lv
-      CASE 0
-        WORLD level
-      CASE 1
-        WORLD level2
-      CASE 2
-        WORLD level3
-      CASE ELSE
-        WORLD level4
-    ENDSEL
+    WORLD lv OF level, level2, level3, level4
     LOADTABLE lv
     cf = 0
     FOR i = 0 TO ce - 1
@@ -562,7 +581,13 @@ SCENE play
     st = 3 : tt = 0 : ei = 0
     HIDE hero
     CALL CLEARENEMIES()
+    CALL SETHI()
     PLAY over
+  ENDP
+
+  REM The game has ended (won or over): the score is the high score when it is higher.
+  PROC SETHI():
+    IF score > hi THEN hi = score ENDIF
   ENDP
 
   REM The flag: after levels 1 to 3 the next level's message (NL), after the fourth the win screen.
@@ -574,6 +599,7 @@ SCENE play
     ENDIF
     tt = 0 : ei = 0 : score = score + 500 : hud = BOR(hud, 1) : vx = 0 : vy = 0
     CALL CLEARENEMIES()
+    IF st = 2 THEN CALL SETHI() ENDIF
     PLAY win
   ENDP
 
