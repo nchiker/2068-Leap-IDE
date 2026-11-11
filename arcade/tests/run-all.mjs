@@ -44,6 +44,8 @@ const suites = [
   'tests/arcade-m11-differential.mjs',
   'tests/arcade-m12-compiler.mjs',
   'tests/arcade-m12-differential.mjs',
+  'tests/arcade-m13-compiler.mjs',
+  'tests/arcade-m13-differential.mjs',
   'arcade/tests/m1.mjs',
   'tests/arcade-m8-vaults.mjs',
   'arcade/tests/m1-overrun.mjs',

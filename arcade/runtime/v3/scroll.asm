@@ -406,10 +406,14 @@ window_repaint:
     call rows_p0
 .bm:
     ld (W_DST),bc               ; the next window row
-    ld a,(W_ACP)                ; ---- attributes, if this file does not show this col0 ----
+    ld a,(W_ACP)                ; ---- attributes, if this file does not show this attribute column ----
     ld l,a
     ld h,W_AC>>8
+    ld a,(W_P)                  ; the attribute column = col0 + (p >= 4): the tile covering at least half of the cell (a tie: the right one)
+    cp 4
+    ccf
     ld a,(W_C0)
+    adc a,0
     cp (hl)
     jr z,.noat
     ld (hl),a
@@ -593,9 +597,10 @@ SCK DEFL SCK+1
     jp nz,rp0_row
     ret
 
-; attr_rows: HL = the world row at col0, DE = the attribute address of the first row, A = rows.  Attribute of a cell = the attribute of the
-; tile m[c] (the spike's V2 convention: it changes in 8-pixel steps).  The world row walks with INC L (col0 + 23 <= 127: inside the row's half
-; page), the attribute row with INC E (cx + 23 <= 31).  Clobbers AF, BC, DE, HL.
+; attr_rows: HL = the world row at the attribute column acol = col0 + (p >= 4), DE = the attribute address of the first row, A = rows.
+; Attribute of a cell = the attribute of the tile m[acol + c], the tile covering at least half of the cell (Part C of docs/ARCADE_LANGUAGE_BATCH6.md;
+; it changes in 8-pixel steps, at phase 4).  Phase >= 4 means col0 + 24 <= world_w - 1 (see window_repaint).  The world row walks with INC L
+; (acol + 23 <= 127: inside the row's half page), the attribute row with INC E (cx + 23 <= 31).  Clobbers AF, BC, DE, HL.
 attr_rows:
     ld (W_CR),a
     ld b,W_ATTRT>>8

@@ -19,6 +19,9 @@
 //   5  the picture: the build as the linker places it and the build with every map, world and plan banked (bankAll) are equal tick by tick in state AND in RAM $4000-$7FFF (both display files and the
 //      window tables) over the same play-through
 //   6  negative control: a changed byte in a banked world (level3) is seen by the comparison of section 4
+//   7  pause (H, language batch 6 Part B): on the interpreter and tick by tick on TSRun, the paused ticks stand still (state, text cells, both display files but for the PAUSED cells, sound silent) and the game goes
+//      on as the unpaused run shifted by the paused ticks (state and both display files)
+//   8  high score (HI): one session on the interpreter and on TSRun: game over, retry, win, title (shows HI n), new game, game over; HI keeps the higher score
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -268,7 +271,7 @@ const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
 const M_ = await import(pathToFileURL(join(ROOT, 'tsrun/machine.js')).href);
 
 /** Boot the cartridge (DCK as built: chunk 2 with the banked worlds too) on a stock TS2068 and sample at every entry of PROC FRAME (sample k = the state after tick k - 1; sample 0 after INIT). */
-function runFramed(R, res, { ticks, stick }) {
+function runFramed(R, res, { ticks, stick, keys }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
   const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
   const must = (e) => { if (e) throw new Error(e); };
@@ -288,12 +291,13 @@ function runFramed(R, res, { ticks, stick }) {
     cells: m.ram.slice(SYM.CELL_TILE, SYM.CELL_TILE + 768), attrs: m.ram.slice(SYM.CELL_ATTR, SYM.CELL_ATTR + 768),
     ram4000: picture ? m.ram.slice(0x4000, 0x8000) : null,
     f4: SYM.V_SHADOW_F4 !== undefined ? m.ram[SYM.V_SHADOW_F4] : null,
+    sfxActive: SYM.V_SFX_ACTIVE !== undefined ? m.ram[SYM.V_SFX_ACTIVE] : null,
   });
   const out = { snaps: [], error: null };
   for (let f = 0; f < 400 && rd16(SYM.HO_MARK) !== SYM.HO_MARK_VALUE; f++) M_.runFrame(m);
   if (rd16(SYM.HO_MARK) !== SYM.HO_MARK_VALUE) { out.error = 'the runtime did not boot'; return out; }
   const fe = res.map.entries.frame;
-  const setInput = (k) => { m.joystick[0] = contact(stick ? stick(k) : 0); m.joystick[1] = contact(0); for (let r = 0; r < 8; r++) m.keyMatrix[r] = 0x1F; };
+  const setInput = (k) => { m.joystick[0] = contact(stick ? stick(k) : 0); m.joystick[1] = contact(0); for (let r = 0; r < 8; r++) m.keyMatrix[r] = 0x1F; if (keys && keys(k)) m.keyMatrix[6] &= ~0x10; };    // H is bit 4 of half-row 6 (H J K L ENTER); a held key reads 0
   setInput(1);
   const origRead = m.bus.read;
   m.bus.read = function (a) {
@@ -414,6 +418,172 @@ else {
   const g = runFramed(R3, damaged, { ticks: upTo, stick: stickOf(script) });
   const d = g.error ? g.error : vsInterp(g, full, upTo);
   check_(`with a byte of the banked world level3 changed the comparison fails at the level change (${d ?? 'it did not fail'})`, d !== null && /WORLD_RAM/.test(d));
+}
+
+// =================================================================================================================
+console.log('\n7. Pause (H): the paused game stands still, and goes on exactly where it was');
+// =================================================================================================================
+// the paused ticks are P (H goes down: PAUSED up) to Q (H goes down again: PAUSED cleared), none of them runs the game's logic; the tick after Q plays what an unpaused game plays at tick P, so
+// the paused run is the unpaused run shifted by D = Q + 1 - P ticks. The stick is held at right + fire for the paused ticks (it must not matter). P is the first tick after the first sound of level 1
+// so that the silencing can be seen (a sound that goes on for the two ticks after it). D is even: the runtime draws into the two display files in turn, so a game shifted by an odd number of ticks
+// would have the files' roles swapped, and the picture comparison needs the same parity.
+const H_CODE = 72, JUNK = RIGHT | FIRE;
+const interpWith = (src, ticks, stick, keys) => interpret(astFor(src), { version: 3, ticks, assets: ASSETS, stick, keys, maxSteps: 4_000_000_000 });
+const rowCells = (rec, row, c0, c1) => Array.from(rec.cells.slice(row * 32 + c0, row * 32 + c1));
+const PAUSED_CELLS = [...'PAUSED'].map((c) => c.charCodeAt(0));
+// the interpreter's record of a tick compared with another: variables, arrays, sprites, world, camera, text cells and attributes; `mask` = [row, c0, c1] cells left out
+const sameRec = (a, b, { mask = null, skipVars = [] } = {}) => {
+  for (const [k, v] of Object.entries(a.vars)) if (!skipVars.includes(k) && b.vars[k] !== v) return `${k} = ${v} against ${b.vars[k]}`;
+  if (JSON.stringify(a.arrays) !== JSON.stringify(b.arrays)) return 'arrays differ';
+  if (JSON.stringify(a.sprites) !== JSON.stringify(b.sprites)) return 'sprites differ';
+  if (!sameBuf(a.worldRam, b.worldRam) || a.cam !== b.cam) return 'WORLD_RAM / camera differ';
+  for (let i = 0; i < a.cells.length; i++) if (!(mask && i >= mask[0] * 32 + mask[1] && i < mask[0] * 32 + mask[2]) && (a.cells[i] !== b.cells[i] || a.attrs[i] !== b.attrs[i])) return `text cell ${i} (row ${i >> 5}, col ${i & 31}) differs`;
+  return null;
+};
+let pauseCase = null;
+if (!full) skip_('pause', 'no recorded play-through');
+else {
+  const rec = full.ticks;                                                // rec[t - 1] = the state after tick t
+  let P = 0; for (let t = 70; t < 380 && !P; t++) if (rec[t - 1].vars.ST === 1 && rec[t - 2].sfx.active && rec[t - 1].sfx.active && rec[t].sfx.active) P = t;     // a sound is playing at the end of ticks P - 1, P and P + 1
+  if (!P) P = 100;
+  const Q = P + 11, D = Q + 1 - P, N = Q + 90;
+  const sOrig = stickOf(script);
+  const pStick = (t) => (t < P ? sOrig(t) : t <= Q ? JUNK : sOrig(t - D));
+  const pKeys = (t, code) => code === H_CODE && (t === P || t === Q);
+  const pr = interpWith(PLAY_SRC, N, pStick, pKeys).ticks;
+  pauseCase = { P, Q, D, N, pStick, pKeys, pr };
+  const A = (t) => pr[t - 1];
+  let d = null;
+  for (let t = 1; t < P && !d; t++) { const e = sameRec(A(t), rec[t - 1], { skipVars: [] }); if (e) d = `tick ${t} before the pause: ${e}`; }
+  check_(`interpreter: the ${P - 1} ticks before the first H are the unpaused run's (no H, no difference)`, d === null, d ?? '');
+  d = null;
+  const ref = rec[P - 2];                                              // the state after tick P - 1: what stands still
+  for (let t = P; t < Q && !d; t++) {
+    const e = sameRec(A(t), ref, { mask: [21, 13, 19], skipVars: ['PAUSED'] });
+    if (e) d = `tick ${t}: ${e}`; else if (A(t).vars.PAUSED !== 1) d = `tick ${t}: PAUSED = ${A(t).vars.PAUSED}`;
+    else if (JSON.stringify(rowCells(A(t), 21, 13, 19)) !== JSON.stringify(PAUSED_CELLS)) d = `tick ${t}: row 21 does not read PAUSED`;
+  }
+  check_(`interpreter: H at tick ${P} pauses: for the ${Q - P} paused ticks (${P}..${Q - 1}, the stick held at right + fire) every variable, array, sprite, the world, the camera and the text equal the state after tick ${P - 1}, except PAUSED = 1 and the word PAUSED in row 21`, d === null, d ?? '');
+  const sfxRef = rec[P - 2].sfx.active && rec[P - 1].sfx.active, sfxNow = A(P).sfx.active;
+  check_(`interpreter: the sound that was playing (${sfxRef ? 'it goes on in the unpaused run' : 'NO SOUND PLAYING'}) is silenced by the pause (${sfxNow ? 'still playing' : 'silent'}) and stays silent while paused`, sfxRef && !sfxNow && pr.slice(P - 1, Q).every((x) => !x.sfx.active));
+  const eq = sameRec(A(Q), ref, { skipVars: [] });
+  check_(`interpreter: H again at tick ${Q} unpauses: PAUSED = ${A(Q).vars.PAUSED}, the PAUSED text is gone, everything is the state after tick ${P - 1} again`, A(Q).vars.PAUSED === 0 && eq === null, eq ?? '');
+  d = null;
+  for (let t = Q + 1; t <= N && !d; t++) { const e = sameRec(A(t), rec[t - D - 1]); if (e) d = `tick ${t} (the unpaused run's tick ${t - D}): ${e}`; }
+  check_(`interpreter: after the unpause the game plays exactly as the unpaused run shifted by ${D} ticks (ticks ${Q + 1}..${N} against ${Q + 1 - D}..${N - D}: variables, arrays, sprites, world, camera, text)`, d === null, d ?? '');
+  // H outside the playing state does nothing: on the title (tick 10) and on the win / game over screens
+  const t0 = interpWith(PLAY_SRC, 40, (t) => (t === 14 ? FIRE : 0), (t, code) => code === H_CODE && (t === 3 || t === 12)).ticks;
+  const t1 = interpWith(PLAY_SRC, 40, (t) => (t === 14 ? FIRE : 0)).ticks;
+  check_('interpreter: H on the title does nothing (the game starts as without it)', t0.every((x, i) => x.vars.PAUSED === 0 && sameRec(x, t1[i]) === null));
+}
+
+// the same on the cartridge in TSRun, tick by tick
+if (!pauseCase || !realOk) skip_('pause on the real runtime', 'the interpreter case or the banked build is missing');
+else {
+  const { P, Q, D, N, pStick, pKeys, pr } = pauseCase;
+  const t0 = Date.now();
+  const RP = { ...R3, picture: true };
+  const keysOf = (t) => pKeys(t, H_CODE);
+  const a = runFramed(RP, play, { ticks: N, stick: pStick, keys: keysOf });
+  const b = runFramed(RP, play, { ticks: N - D, stick: stickOf(script) });         // the unpaused run, long enough for the shifted comparison
+  const wantP = { init: full.init, ticks: pr };
+  let d = a.error ?? b.error ?? null;
+  if (!d) d = vsInterp(a, wantP, N);
+  check_(`the cartridge with H at ticks ${P} and ${Q}: ${N} ticks equal to the interpreter (variables, arrays, SPR_TAB, WORLD_RAM, camera), PAUSED included  (${((Date.now() - t0) / 1000).toFixed(0)} s)`, d === null, d ?? '');
+  // text cells on the machine against the interpreter's
+  d = null;
+  for (let t = 1; t <= N && !d; t++) { if (!sameBuf(a.snaps[t].cells, Uint8Array.from(pr[t - 1].cells)) || !sameBuf(a.snaps[t].attrs, Uint8Array.from(pr[t - 1].attrs))) d = `tick ${t}: the cell map / attributes differ from the interpreter's`; }
+  check_('the cartridge\'s text cells (CELL_TILE / CELL_ATTR) equal the interpreter\'s at every tick, the PAUSED text included', d === null, d ?? '');
+  // the display files: before the pause equal to the unpaused run; paused: the same at every tick but for the PAUSED cells; after: the unpaused run shifted
+  const mask = (img) => { const o = img.slice(); for (const base of [0x0000, 0x2000]) { for (let y = 168; y < 176; y++) for (let c = 13; c < 19; c++) o[base + (((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2)) + c] = 0; for (let c = 13; c < 19; c++) o[base + 0x1800 + 21 * 32 + c] = 0; } return o; };
+  d = null;
+  for (let t = 0; t < P && !d; t++) if (!sameBuf(a.snaps[t].ram4000, b.snaps[t].ram4000)) d = `sample ${t}: the display files differ from the unpaused run's before the pause`;
+  check_(`before the pause both display files (RAM $4000-$7FFF) are the unpaused run's, tick by tick (samples 0..${P - 1})`, d === null, d ?? '');
+  d = null;
+  const base = mask(a.snaps[P + 2].ram4000);
+  for (let t = P + 2; t < Q && !d; t++) if (!sameBuf(mask(a.snaps[t].ram4000), base)) d = `sample ${t}: the display files moved while paused`;
+  const stateStill = a.snaps.slice(P, Q).every((x, i) => JSON.stringify([x.sprites, x.cam, x.f4]) === JSON.stringify([a.snaps[P].sprites, a.snaps[P].cam, a.snaps[P].f4]));
+  check_(`while paused (samples ${P + 2}..${Q - 1}) both display files are identical from tick to tick except the 6 PAUSED cells of row 21; the sprites and camera stand still`, d === null && stateStill, d ?? '');
+  // the word is really drawn: ink in the 6 cells of row 21 in both display files while paused, none after the unpause
+  const ink = (img) => [0x0000, 0x2000].map((base) => { let n = 0; for (let y = 168; y < 176; y++) for (let c = 13; c < 19; c++) n += img[base + (((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2)) + c] ? 1 : 0; return n; });
+  const inkPaused = ink(a.snaps[P + 3].ram4000), inkAfter = ink(a.snaps[Q + 3].ram4000), inkBefore = ink(a.snaps[P - 1].ram4000);
+  check_(`PAUSED is on the screen while paused (bitmap bytes with ink in row 21, columns 13-18, in the two display files: ${inkPaused.join(' / ')}) and gone again after the unpause (${inkAfter.join(' / ')}; before the pause ${inkBefore.join(' / ')})`, inkPaused.every((n) => n > 10) && inkAfter.every((n) => n === 0) && inkBefore.every((n) => n === 0));
+  d = null;
+  for (let t = Q + 1; t <= N && !d; t++) if (!sameBuf(a.snaps[t].ram4000, b.snaps[t - D].ram4000)) d = `sample ${t}: the display files differ from the unpaused run's sample ${t - D}`;
+  check_(`after the unpause both display files equal the unpaused run's shifted by ${D} ticks (samples ${Q + 1}..${N} against ${Q + 1 - D}..${N - D}): the text was cleared and the game went on where it was`, d === null, d ?? '');
+  check_(`the sound is silenced on the machine: V_SFX_ACTIVE is ${a.snaps[P].sfxActive} after tick ${P} and while paused (the unpaused run: ${b.snaps[P].sfxActive})`, a.snaps[P - 1].sfxActive !== 0 && a.snaps[P].sfxActive === 0 && b.snaps[P].sfxActive !== 0 && a.snaps.slice(P, Q).every((x) => x.sfxActive === 0));
+}
+
+// =================================================================================================================
+console.log('\n8. High score (HI): kept across games, the higher wins, the title shows it');
+// =================================================================================================================
+// One session with a one-life variant: game over on a short play (score s0 > 0, so HI = s0), fire retries the level with three lives, the recorded route wins (HI = the final score, higher), fire goes to
+// the title ("HI n"), a new game left standing is over at once (a lower score: HI stays) -- on the interpreter, then on the cartridge tick by tick.
+let hiCase = null;
+if (!full) skip_('high score', 'no recorded play-through');
+else {
+  const HI_SRC = variant({ lives: 1 });
+  const lvStart = 21;                                                     // the record after which level 1 plays (the recorded run's first with ST 1)
+  const hiRow = (r) => String.fromCharCode(...rowCells(r, 2, 12, 19)).trimEnd();
+  // seg A: the recorded start, then standing still: the first K (46..140) after which the hero is hit with a score above 0
+  let seg = null;
+  for (let K = 60; K <= 140 && !seg; K += 4) {
+    const stickA = (t) => (t <= K ? script[t - 1] : 0);
+    const r = interpWith(HI_SRC, K + 300, stickA).ticks;
+    const over = r.findIndex((x) => x.vars.ST === 3) + 1;
+    if (over > 0 && r[over - 1].vars.SCORE > 0) seg = { K, over, score: r[over - 1].vars.SCORE };
+  }
+  if (!seg) check_('a short play with a score above 0 ends in game over (one life)', false, 'none of K = 60..140 did');
+  else {
+    // seg B: fire (a fresh edge) once game over has been up a while, the retry begins level 1; the recorded route from that level start on
+    // then: win, wait, fire (title), fire (new game), stand still until game over
+    const plan = [];                                                   // stick value by tick
+    for (let t = 1; t <= seg.K; t++) plan.push(script[t - 1]);
+    while (plan.length < seg.over + 20) plan.push(0);
+    plan.push(FIRE);                                                   // the retry
+    // run to find when the retry's level starts playing, then append the route with the recorded offsets
+    const startA = (r) => r.findIndex((x, k) => k >= seg.over && x.vars.ST === 1) + 1;
+    let r = interpWith(HI_SRC, plan.length + 120, (t) => plan[t - 1] ?? 0).ticks;
+    const t1 = startA(r);                                              // first tick with the retry's level playing
+    const off = t1 - lvStart;                                          // retry tick t plays what the recorded run played at tick t - off
+    while (plan.length < t1) plan.push(0);
+    for (let t = t1 + 1; t - off <= script.length; t++) plan.push(script[t - off - 1]);
+    r = interpWith(HI_SRC, plan.length + 40, (t) => plan[t - 1] ?? 0).ticks;
+    const win = r.findIndex((x, k) => k >= t1 && x.vars.ST === 2) + 1;
+    check_(`after the game over (tick ${seg.over}, score ${seg.score}) fire retries level 1 (playing again from tick ${t1}) and the recorded route wins from there (win screen at tick ${win}; ${win > 0 ? 'score ' + r[win - 1].vars.SCORE : ''})`, win > 0);
+    if (win > 0) {
+      while (plan.length < win + 30) plan.push(0);
+      plan.push(FIRE);                                                 // the win screen to the title
+      const toTitle = plan.length;
+      while (plan.length < toTitle + 14) plan.push(0);
+      plan.push(FIRE);                                                 // the title to a new game
+      const newGame = plan.length;
+      while (plan.length < newGame + 160) plan.push(0);
+      const ticks = plan.length;
+      const sess = interpWith(HI_SRC, ticks, (t) => plan[t - 1] ?? 0).ticks;
+      const V = (t) => sess[t - 1].vars;
+      const titleAt = sess.findIndex((x, k) => k >= win && x.vars.ST === 0) + 1;
+      const over2 = sess.findIndex((x, k) => k >= newGame && x.vars.ST === 3) + 1;
+      const hiAtOver0 = V(seg.over).HI, hiAtWin = V(win).HI, finalScore = V(win).SCORE;
+      check_(`HI is 0 until a game ends and the first title (tick 12) shows "${hiRow(sess[11])}"`, V(seg.over - 1).HI === 0 && hiRow(sess[11]) === 'HI 0' && sess.slice(0, seg.over - 1).every((x) => x.vars.HI === 0));
+      check_(`the first game over (score ${seg.score}) makes HI ${hiAtOver0}`, hiAtOver0 === seg.score);
+      check_(`the win (score ${finalScore}) is higher and makes HI ${hiAtWin}`, finalScore > seg.score && hiAtWin === finalScore);
+      check_(`the title after the win shows "${hiRow(sess[titleAt + 11])}" (HI ${V(titleAt + 11).HI}) and a new game starts from it with a score of 0 (tick ${newGame + 9}: SCORE ${V(newGame + 9).SCORE}, HI ${V(newGame + 9).HI}; the new game is not clearing it)`, titleAt > 0 && hiRow(sess[titleAt + 11]) === `HI ${finalScore}` && V(newGame + 9).SCORE === 0 && V(newGame + 9).HI === finalScore);
+      check_(`a lower score does not take it: the new game is over at tick ${over2} with score ${over2 > 0 ? V(over2).SCORE : '?'} and HI stays ${over2 > 0 ? V(over2).HI : '?'}`, over2 > 0 && V(over2).SCORE < finalScore && V(over2).HI === finalScore && V(ticks).HI === finalScore);
+      hiCase = { HI_SRC, plan, ticks, sess, titleAt, win, over2, seg, finalScore };
+    }
+  }
+}
+if (!hiCase || !realOk) skip_('the high score on the real runtime', 'the interpreter case or the banked build is missing');
+else {
+  const { HI_SRC, plan, ticks, sess, finalScore } = hiCase;
+  const t0 = Date.now();
+  const hiRes = compile(HI_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
+  const g = runFramed(R3, hiRes, { ticks, stick: (t) => plan[t - 1] ?? 0 });
+  let d = g.error ?? vsInterp(g, { init: full.init, ticks: sess }, ticks);
+  for (let t = 1; t <= ticks && !d; t++) if (!sameBuf(g.snaps[t].cells, Uint8Array.from(sess[t - 1].cells))) d = `tick ${t}: the text cells differ from the interpreter's`;
+  check_(`the whole session on the cartridge (${ticks} ticks: game over, retry, win, title with HI ${finalScore}, new game, game over; one-life variant): variables (HI among them), arrays, sprites, world, camera and text cells equal to the interpreter at every tick  (${((Date.now() - t0) / 1000).toFixed(0)} s)`, d === null, d ?? '');
+  check_(`on the machine HI is ${g.snaps[ticks]?.vars.HI} at the end (the interpreter ${sess.at(-1).vars.HI})`, g.snaps[ticks]?.vars.HI === finalScore);
 }
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}: arcade-runner (${passed} checks passed, ${failed} failed, ${skipped} skipped)`);

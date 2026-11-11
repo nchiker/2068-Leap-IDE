@@ -293,3 +293,17 @@ also runs `RT_TABLELOAD` (level 1's record through the window, levels 2 and 3 ma
 * ZEsarUX DOCK contents (zone 19) read before the run, at ticks 20, 450, 881 and after 913: chunks 0, 1, 2, 4, 5 equal to the DCK file (0 bytes differ),
   so `RT_TABLELOAD` writes nothing into the mapped window.
 * Not covered: Fuse state (screens only), sound, the joystick on ZEsarUX / Fuse, real hardware.
+
+## 14. Leap Runner with fuller levels, pause, high score and the half-cell colour rule, cross-emulator check, 2026-11-11 (`ARCADE_LANGUAGE_BATCH6.md`)
+
+`arcade/build/runner.dck` (40,969 bytes, chunks 0 1 2 4 5; mapped 16,344 of 16,384, banked 2,209: the four worlds and `play.lv1`), runtime v3 with
+part C (a window cell takes the colours of the tile covering most of it). Method and scripts of sections 12-13 unchanged (`runner-patch.mjs` as is;
+its stub lives in chunk 1's tail). Scenario regenerated (the levels changed): 905 ticks, flags at 413 and 836, levels begin at 21, 452 and 875, 58
+sampled ticks.
+* TSRun vs ZEsarUX, real keys and script-driven: 905 of 905 tick screens identical (0 bitmap, 0 attribute bytes differ), 0 state bytes differ at the 58 sampled ticks.
+* Fuse (6,010 movie frames, `arcade/build/xemu/fuse-runner-4`): every tick 1..905 in order, identical to TSRun's, 0 unmatched; 3.01 refreshes a tick
+  ({2: 19, 3: 795, 4: 22, 5: 1, 6: 1}); tick 1 to 905 takes 2,722 refreshes on Fuse, 2,715 on TSRun. Re-checked by the main session with
+  `runner-compare.mjs` on the saved outputs: all match.
+* 5-refresh ticks on TSRun: 1 and the world loads 20, 450, 873.
+* ZEsarUX DOCK contents (zone 19) before, at ticks 20, 450, 873 and after 905: chunks 0, 1, 2, 4, 5 equal to the DCK file.
+* Not covered: the pause and high-score cases (the scenario never presses H; they are checked interpreter vs TSRun in `tests/arcade-runner.mjs`), Fuse state, sound, real hardware.

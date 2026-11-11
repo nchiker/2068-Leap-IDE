@@ -43,7 +43,7 @@ const MUTANTS = [
   ['entry$init: the initialisers of the other scenes are also copied (a later scene starts with stale arrays)', [E(CG, "if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label));", "e.ld('hl', L(seg.label));")]],
   ['labels: scene-level PROCs are not qualified (two scenes with the same PROC name clash)', [E(CG, "const labelOf = (kind, key, si) => (multi && si >= 0 ?", "const labelOf = (kind, key, si) => (false && si >= 0 ?")]],
   ['symbols: a scene\'s names are not qualified', [E(CG, "const qual = (si, key) => (multi && si >= 0 ?", "const qual = (si, key) => (false && si >= 0 ?")]],
-  ['maps: the map table is not forced for a driver (the reset\'s LOADMAP finds none)', [E(CG, "const extMaps = v2 && (usesLoadMap || mapList.length > 1 || (driver && mapList.length > 0));", "const extMaps = v2 && (usesLoadMap || mapList.length > 1);")]],
+  ['maps: the map table is not forced for a driver (the reset\'s LOADMAP finds none)', [E(CG, "const extMaps = v2 && (usesLoadMap || mapList.length > 1 || (driver && mapList.length > 0) || bankedMaps > 0);", "const extMaps = v2 && (usesLoadMap || mapList.length > 1 || bankedMaps > 0);")]],
   ['driver: a program with one scene and an ENTER gets no driver', [E(CG, "const driver = v2 && (multi || containsType(scenes, 'Enter'));", "const driver = v2 && multi;")]],
   // ---- the machine reset ----
   ['reset: the sound is not stopped', [E(CG, "    e.label('scn$reset');\n    e.call(need('RT_SILENCE'));", "    e.label('scn$reset');")]],

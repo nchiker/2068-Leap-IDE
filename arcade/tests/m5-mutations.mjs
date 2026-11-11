@@ -79,7 +79,7 @@ const MUTANTS = [
   ['LOADMAP: a map of height 0 is read -- EQUIVALENT: clip_axis finds a zero length empty anyway', [E(T, '    ld a,(hl)\n    or a\n    ret z                       ; height 0', '    ld a,(hl)\n    or a\n    nop                         ; height 0')]],
   ['maps_boot: a count of 65 is not clamped to 64', [E(T, '    cp MAX_MAPS+1\n    jr c,.cnt\n    ld a,MAX_MAPS', '    cp MAX_MAPS+2\n    jr c,.cnt\n    ld a,MAX_MAPS')]],
   ['maps_boot: the extension flag is ignored (an old header\'s $8010 is taken for a table)', [E(T, '    bit 7,a\n    jr z,.none\n    ld hl,(GAME_MAPTAB)', '    bit 6,a\n    jr z,.none\n    ld hl,(GAME_MAPTAB)')]],
-  ['maps_boot: map 0 is not loaded (only the table is read)', [E(T, '    ld bc,0\n    ld de,0\n    call loadmap_core\n    scf\n    ret', '    ld bc,0\n    ld de,0\n    or a\n    ret')]],
+  ['maps_boot: map 0 is not loaded (only the table is read)', [E(T, '    ld de,0\n    call RT_LOADMAPPTR          ; (a map-table entry may point into the bank window)\n    scf\n    ret', '    ld de,0\n    or a\n    ret')]],
   ['boot: frame_div keeps bit 7 (the extension flag is read as part of the divisor)', [E('boot.asm', '    and $7F                     ; bit 7 (DIV_EXT)', '    and $FF                     ; bit 7 (DIV_EXT)')]],
   ['boot: V_BORDER is not initialised', [E('boot.asm', '    ld a,BORDER_COLOUR\n    ld (V_BORDER),a', '    ld a,BORDER_COLOUR\n    nop\n    nop\n    nop')]],
   ['cells_init: the old map_ptr is also loaded over a table\'s map 0', [E('video.asm', '    call maps_boot\n    ret c', '    call maps_boot\n    nop')]],

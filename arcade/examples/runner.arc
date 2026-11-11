@@ -3,11 +3,11 @@ REM the game area: the three worlds are MAPs that a WORLD statement loads, so th
 REM (docs/ARCADE_BANKING_CONTRACT.md).  Assets are in runner.assets.json, laid out by runner.assets.gen.mjs (level 1 is the platformer's world);
 REM the level data below (TABLE lv1 .. lv4: CXS/CYS, SX/SY, WLO/WHI, CKX/CKY, CIX, RCF/RNX and the counts CE / SE, each list indexed from 0 within its level) is
 REM printed by  node arcade/examples/runner.assets.gen.mjs --data  and checked against the maps by tests/arcade-runner.mjs; LOADLEVEL does LOADTABLE lv.
-REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank.   Joystick 1: the stick and fire.
+REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank, H pause (and H again to go on).   Joystick 1: the stick and fire.
 REM   128 x 16 cell worlds, three bands (2 / 3 / 11 rows at 1/4, 1/2, 1/1).  Stomp the walkers and bats by jumping on them (HIT while
 REM   falling), touch them from the side and you lose a life (brief invulnerability); spikes and the pit send you to the last checkpoint.
 REM   Coins (pickup tiles that spin by tile swaps) and a flag at the far end of each level; the flag shows LEVEL n and loads the next world
-REM   (WORLD levelN); after the fourth the win screen.  Three lives for the whole game; losing the last one is game over.
+REM   (WORLD lv OF level, level2, level3, level4); after the fourth the win screen.  Three lives for the whole game; losing the last one is game over.
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/runner.arc --assets arcade/examples/runner.assets.json --runtime v3
 GAME "Leap Runner"
 FRAMERATE 20
@@ -53,6 +53,8 @@ SCENE play
   DIM st, tt, fc, js, lf, rg, up, dn, fire, jmp, pj, pfire
   DIM px, py, x8, vx, vy, face, gnd, cg, anim, fr, inv, dropt, fx, tc, ltc, kq, ka, pk
   DIM lives, score, coins, hud, ck, rx, ry, ti, ei
+  REM pause (1 = paused, playing state only) and the high score: HI is the game's, it is not cleared when a game starts (0 at power-on)
+  DIM paused, hi
   DIM cam, nx, cf, cnx
   REM the level: lv is 0..3 (the index of its TABLE); LOADTABLE puts the level's lists in the arrays below, indexed from 0: its coins are 0..CE-1, its enemies 0..SE-1;
   REM CC and SD (coin taken, enemy killed) are per level, indexed the same way
@@ -81,51 +83,51 @@ SCENE play
     se = 11
   ENDTABLE
   TABLE lv2
-    cxs = 64, 72, 80, 120, 128, 280, 288, 376, 384, 424, 432, 464, 544, 552, 640, 648, 696, 704, 744, 752, 824, 832, 944, 952
-    cys = 104, 104, 104, 88, 88, 96, 96, 64, 64, 64, 64, 88, 88, 88, 96, 96, 88, 88, 80, 80, 80, 80, 104, 104
-    sx = 144, 288, 360, 400, 592, 632, 800, 864
-    sy = 96, 96, 56, 80, 64, 96, 56, 96
-    wlo = 0, 264, 0, 384, 0, 624, 0, 800
-    whi = 224, 336, 0, 432, 0, 664, 0, 896
+    cxs = 64, 72, 80, 120, 128, 240, 248, 256, 280, 288, 312, 320, 328, 336, 376, 384, 424, 432, 464, 496, 504, 536, 544, 552, 560, 600, 608, 616, 624, 640, 648, 696, 704, 744, 752, 776, 784, 792, 824, 832, 904, 912, 920, 928, 944, 952
+    cys = 104, 104, 104, 88, 88, 96, 88, 96, 96, 96, 96, 88, 88, 96, 64, 64, 64, 64, 88, 88, 88, 96, 88, 88, 96, 88, 80, 80, 88, 96, 96, 88, 88, 80, 80, 88, 80, 88, 80, 80, 88, 80, 80, 88, 104, 104
+    sx = 144, 224, 288, 360, 400, 520, 592, 632, 800, 864
+    sy = 96, 64, 96, 56, 80, 96, 64, 96, 56, 96
+    wlo = 0, 0, 264, 0, 384, 480, 0, 624, 0, 800
+    whi = 224, 0, 336, 0, 432, 520, 0, 664, 0, 896
     ckx = 304, 584, 824
     cky = 88, 88, 88
-    cix = 0, 4, 5, 8, 12, 14, 20, 22, 24
-    rcf = 0, 5, 12, 19
-    rnx = 0, 1, 4, 6
-    ce = 24
-    se = 8
-  ENDTABLE
-  TABLE lv3
-    cxs = 48, 56, 64, 104, 112, 192, 200, 248, 256, 304, 312, 520, 528, 560, 640, 648, 744, 752, 840, 848, 944, 952
-    cys = 104, 104, 104, 88, 88, 96, 96, 88, 88, 88, 88, 96, 96, 88, 88, 88, 88, 88, 104, 104, 104, 104
-    sx = 64, 224, 392, 480, 552, 672, 832, 880, 952
-    sy = 96, 56, 96, 56, 80, 64, 96, 64, 96
-    wlo = 0, 0, 368, 0, 544, 0, 816, 0, 936
-    whi = 144, 0, 496, 0, 560, 0, 904, 0, 1008
-    ckx = 384, 528, 832
-    cky = 88, 80, 88
-    cix = 0, 5, 8, 11, 11, 14, 18, 20, 22
-    rcf = 0, 10, 11, 18
-    rnx = 0, 2, 3, 6
-    ce = 22
-    se = 9
-  ENDTABLE
-  TABLE lv4
-    cxs = 48, 56, 64, 88, 96, 104, 112, 184, 192, 256, 264, 344, 352, 392, 400, 464, 472, 512, 520, 624, 632, 680, 688, 736, 744, 776, 784
-    cys = 104, 104, 104, 96, 88, 88, 96, 104, 104, 80, 80, 88, 88, 88, 88, 80, 80, 96, 96, 96, 96, 88, 88, 88, 88, 104, 104
-    sx = 120, 224, 328, 392, 464, 544, 632, 712, 784, 864
-    sy = 96, 64, 96, 80, 64, 80, 72, 56, 96, 72
-    wlo = 0, 0, 320, 384, 0, 528, 0, 0, 776, 0
-    whi = 128, 0, 328, 400, 0, 544, 0, 0, 864, 0
-    ckx = 328, 512, 832
-    cky = 88, 80, 88
-    cix = 0, 7, 9, 13, 17, 21, 25, 27, 27
-    rcf = 0, 9, 15, 25
-    rnx = 0, 1, 3, 7
-    ce = 27
+    cix = 0, 4, 7, 15, 21, 29, 35, 40, 46
+    rcf = 0, 5, 21, 34
+    rnx = 0, 1, 5, 8
+    ce = 46
     se = 10
   ENDTABLE
-  REM coins per level 50 24 22 27; enemies per level 11 8 9 10
+  TABLE lv3
+    cxs = 48, 56, 64, 80, 88, 104, 112, 192, 200, 216, 224, 232, 248, 256, 272, 280, 288, 304, 312, 408, 416, 424, 432, 520, 528, 560, 640, 648, 664, 672, 680, 712, 720, 728, 744, 752, 840, 848, 864, 872, 920, 928, 944, 952
+    cys = 104, 104, 104, 88, 88, 88, 88, 96, 96, 88, 80, 88, 88, 88, 80, 80, 80, 88, 88, 96, 88, 88, 96, 96, 96, 88, 88, 88, 88, 80, 80, 80, 80, 88, 88, 88, 104, 104, 88, 88, 80, 80, 104, 104
+    sx = 64, 224, 392, 480, 552, 640, 672, 832, 880, 952
+    sy = 96, 56, 96, 56, 80, 80, 64, 96, 64, 96
+    wlo = 0, 0, 368, 0, 544, 632, 0, 816, 0, 936
+    whi = 144, 0, 496, 0, 560, 648, 0, 904, 0, 1008
+    ckx = 384, 528, 832
+    cky = 88, 80, 88
+    cix = 0, 7, 13, 19, 23, 26, 36, 40, 44
+    rcf = 0, 18, 23, 36
+    rnx = 0, 2, 3, 7
+    ce = 44
+    se = 10
+  ENDTABLE
+  TABLE lv4
+    cxs = 48, 56, 64, 88, 96, 104, 112, 144, 152, 160, 184, 192, 216, 256, 264, 296, 304, 312, 344, 352, 368, 392, 400, 464, 472, 512, 520, 568, 576, 624, 632, 648, 656, 664, 680, 688, 712, 720, 736, 744, 776, 784, 848, 856, 880, 888, 944, 952, 960, 968
+    cys = 104, 104, 104, 96, 88, 88, 96, 96, 88, 96, 104, 104, 88, 80, 80, 96, 88, 96, 88, 88, 96, 88, 88, 80, 80, 96, 96, 88, 88, 96, 96, 88, 80, 88, 88, 88, 80, 88, 88, 88, 104, 104, 88, 88, 80, 80, 80, 80, 104, 104
+    sx = 120, 224, 328, 376, 392, 528, 544, 680, 784, 832, 904
+    sy = 96, 64, 96, 64, 80, 72, 80, 56, 96, 72, 96
+    wlo = 0, 0, 320, 0, 384, 0, 528, 0, 776, 0, 896
+    whi = 128, 0, 328, 0, 400, 0, 544, 0, 864, 0, 928
+    ckx = 328, 512, 832
+    cky = 88, 80, 88
+    cix = 0, 7, 13, 21, 25, 31, 40, 46, 50
+    rcf = 0, 13, 23, 40
+    rnx = 0, 1, 4, 8
+    ce = 50
+    se = 11
+  ENDTABLE
+  REM coins per level 50 46 44 50; enemies per level 11 10 10 11
   REM @@DATA-END@@
   REM six enemy slots: 0..3 walkers (sprites wk), 4..5 bats (sprites fl): alive, position, direction, spawn entry, origin x
   DIM en(5), ex(5), ey(5), ed(5), ek(5), e0(5)
@@ -137,7 +139,30 @@ SCENE play
   ENDP
 
   REM ---------------------------------------------------------------------------------------------------------------- states
+  REM H toggles the pause while playing (state 1; KEYPRESS: one press is one toggle).  A paused tick does nothing else: the logic, the timers, the input reads and the
+  REM edge flags (pj, pfire) stand still, so the game goes on exactly where it was; the toggling tick itself runs no logic either.
   PROC FRAME():
+    IF KEYPRESS("H") AND st = 1 THEN
+      CALL PAUSETOGGLE()
+    ELSE
+      IF paused = 0 THEN CALL GAMETICK() ENDIF
+    ENDIF
+  ENDP
+
+  REM Pausing silences the sound once and puts PAUSED in the HUD's message row (6 cells, a piece of a row: not the 32 a whole row costs); going on clears those cells.
+  PROC PAUSETOGGLE():
+    INK 7 : PAPER 0 : BRIGHT 1
+    IF paused = 0 THEN
+      paused = 1
+      SILENCE
+      PRINT AT 21, 13; "PAUSED";
+    ELSE
+      paused = 0
+      PRINT AT 21, 13; "      ";
+    ENDIF
+  ENDP
+
+  PROC GAMETICK():
     js = STICK(1)
     lf = KEYDOWN("O") OR BIT(js, 2)
     rg = KEYDOWN("P") OR BIT(js, 3)
@@ -168,7 +193,7 @@ SCENE play
 
   REM The title: level 1 scrolls by itself (the camera ping-pongs along the world); fire starts the game.  Everything that costs
   REM much (clearing and printing the text cells) is done a piece a tick (TSTAGE for the title, GSTAGE for starting a game), so
-  REM that no tick goes over its three refreshes (loading a world is the exception: see LOADLEVEL): TI counts the stages, 7 = the title waits for fire.
+  REM that no tick goes over its three refreshes (loading a world is the exception: see LOADLEVEL): TI counts the stages, 8 = the title waits for fire.
   PROC TITLEINIT():
     st = 0 : tt = 0 : cam = 0 : ti = 0
     HIDE hero
@@ -185,11 +210,11 @@ SCENE play
     CAMERA p
     cam = CAMX()
     CALL SPINCOINS()
-    IF ti < 7 THEN
+    IF ti < 8 THEN
       CALL TSTAGE(ti)
       ti = ti + 1
     ELSE
-      IF ti = 7 THEN
+      IF ti = 8 THEN
         IF fire AND (NOT pfire) THEN ti = 20 ENDIF
       ELSE
         CALL GSTAGE(ti - 20)
@@ -198,7 +223,7 @@ SCENE play
     ENDIF
   ENDP
 
-  REM Stages 0..6 redraw the title text (a row of cells is 32 cells to redraw, about 30,000 T in both files: one row a tick).
+  REM Stages 0..7 redraw the title text (a row of cells is 32 cells to redraw, about 30,000 T in both files: one row a tick); stage 7 is the high score under the title.
   PROC TSTAGE(s):
     SELECT CASE s
       CASE 0
@@ -214,8 +239,10 @@ SCENE play
         INK 6 : PRINT AT 1, 10; "LEAP RUNNER";
       CASE 5
         INK 7 : PRINT AT 21, 6; "PRESS SPACE OR FIRE";
-      CASE ELSE
+      CASE 6
         PRINT AT 22, 4; "O P MOVE   Q OR SPACE JUMP";
+      CASE ELSE
+        INK 5 : PRINT AT 2, 12; "HI "; hi;
     ENDSEL
   ENDP
 
@@ -233,6 +260,7 @@ SCENE play
         PRINT AT 1, 2; "SCORE";
         PRINT AT 1, 16; "LIVES";
       CASE 4
+        PRINT AT 2, 12; "        ";
         PRINT AT 2, 2; "COINS";
       CASE 5
         CALL LOADLEVEL()
@@ -246,16 +274,7 @@ SCENE play
   PROC LOADLEVEL():
     LOCAL i
     HIDE hero
-    SELECT CASE lv
-      CASE 0
-        WORLD level
-      CASE 1
-        WORLD level2
-      CASE 2
-        WORLD level3
-      CASE ELSE
-        WORLD level4
-    ENDSEL
+    WORLD lv OF level, level2, level3, level4
     LOADTABLE lv
     cf = 0
     FOR i = 0 TO ce - 1
@@ -562,7 +581,13 @@ SCENE play
     st = 3 : tt = 0 : ei = 0
     HIDE hero
     CALL CLEARENEMIES()
+    CALL SETHI()
     PLAY over
+  ENDP
+
+  REM The game has ended (won or over): the score is the high score when it is higher.
+  PROC SETHI():
+    IF score > hi THEN hi = score ENDIF
   ENDP
 
   REM The flag: after levels 1 to 3 the next level's message (NL), after the fourth the win screen.
@@ -574,6 +599,7 @@ SCENE play
     ENDIF
     tt = 0 : ei = 0 : score = score + 500 : hud = BOR(hud, 1) : vx = 0 : vy = 0
     CALL CLEARENEMIES()
+    IF st = 2 THEN CALL SETHI() ENDIF
     PLAY win
   ENDP
 

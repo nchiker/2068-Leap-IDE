@@ -108,6 +108,7 @@
  *   WORLD map: in a WINDOW game `win.ram` is the new world (decoded again: SETWORLD changes are lost), the world width and the camera limit are the new map's, the camera is 0; in a VIEW3D
  *   game the 32 x 32 array is rebuilt from the new plan, map_w / map_h are its own and the pose is kept, clamped into the new map (clampPose). Up to 64 MAPs (a MAP a WORLD names is not a
  *   screen map). Banking is invisible here: the interpreter never knows where a map is stored.
+ *   WORLD expr OF a, b, c (language batch 6, docs/ARCADE_LANGUAGE_BATCH6.md): the index is signed 16 bit; below 0 or past the last name nothing happens, else exactly `WORLD <the name>`.
  *
  * ── Language batch 3 (docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md) ─────────────────────────────────────────────────────
  *   With a VIEW3D the interpreter keeps a model of the runtime's 32 x 32 map array (row stride 32, 1,024 bytes; cells outside the game's map_w x map_h are wall type 1) and the pose
@@ -237,7 +238,7 @@ export function interpret(ast, opts = {}) {
   (function walk(n) {
     if (Array.isArray(n)) { n.forEach(walk); return; }
     if (!n || typeof n !== 'object') return;
-    if (n.type === 'World' && n.map?.name) worldNameKeys.add(up(n.map.name));
+    if (n.type === 'World') for (const m of n.map ? [n.map] : (n.maps ?? [])) if (m?.name) worldNameKeys.add(up(m.name));      // (batch 6: WORLD expr OF a, b, c)
     for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
   })(ast.items ?? []);
   const worldDecls = new Map();             // KEY -> the MAP node a WORLD names (not the WINDOW's / VIEW3D's own)
@@ -780,10 +781,16 @@ export function interpret(ast, opts = {}) {
       case 'World': {
         // WORLD map: the world (WINDOW: WORLD_RAM decoded again, width and camera limit of the new map, camera 0) or the plan (VIEW3D: array rebuilt, pose kept and clamped into the new map)
         if (!win && !view) throw new Unsupported('WORLD without a WINDOW or a VIEW3D', s);
-        const key = up(s.map.name);
+        let mapNode = s.map;
+        if (!mapNode) {                                  // batch 6: WORLD expr OF a, b, c: the index is signed 16 bit; outside the list nothing happens
+          const v = ev(s.index, sc);
+          if (v < 0 || v >= s.maps.length) return null;
+          mapNode = s.maps[v];
+        }
+        const key = up(mapNode.name);
         const decl = win ? (key === winMapKey ? worldMapDecl : worldDecls.get(key)) : (key === viewMapKey ? viewMapDecl : worldDecls.get(key));
         const as = decl ? lookupAsset(tabs.maps, decl.asset, decl.name) : undefined;
-        if (!decl || !as) throw new Unsupported(`WORLD: the map '${s.map.name}' is not in the project`, s);
+        if (!decl || !as) throw new Unsupported(`WORLD: the map '${mapNode.name}' is not in the project`, s);
         if (win) {
           const world = convertWorldMap(as, tileset ? tileset.count : 128);
           win.worldW = world.w; win.ram = world.src.slice(); win.camMax = camMaxOf(world.w, win.bandCodes); win.cam = 0;
