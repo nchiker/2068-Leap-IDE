@@ -72,7 +72,7 @@ function classify(toks, i, atStart) {
   case 'ident': {
     const prev = toks[i - 1];
     const prevWord = prev?.type === 'keyword' ? prev.value : null;
-    if (prevWord === 'PROC' || prevWord === 'CALL' || prevWord === 'FN' || prevWord === 'SCENE' || prevWord === 'ENTER') return 'procUse';
+    if (prevWord === 'PROC' || prevWord === 'CALL' || prevWord === 'FN' || prevWord === 'SCENE' || prevWord === 'ENTER' || prevWord === 'TABLE' || prevWord === 'LOADTABLE') return 'procUse';
     if (prevWord === 'FN') return 'procUse';
     if (prev?.type === 'ident' && prev.value === 'FN') return 'procUse';
     // a familiar word Arcade lacks (GOTO, LET, ...) where a statement should start
@@ -169,6 +169,7 @@ function definitionOf(text, name) {
   let d = s.procs.find((p) => same(p.name)); if (d) return { kind: 'procedure', ...d };
   d = s.fns.find((f) => same(f.name)); if (d) return { kind: 'function', ...d };
   d = s.scenes.find((x) => same(x.name)); if (d) return { kind: 'scene', ...d };
+  d = (s.tables ?? []).find((t) => same(t.name)); if (d) return { kind: 'table', ...d };
   d = s.assets.find((a) => same(a.name)); if (d) return { kind: a.kind.toLowerCase(), ...d };
   d = (s.consts ?? []).find((c) => same(c.name)); if (d) return { kind: 'constant', ...d };
   d = s.vars.find((v) => same(v.name)); if (d) return { kind: d.dims ? 'array' : 'variable', ...d };
@@ -214,8 +215,15 @@ const snippets = [
   snippetCompletion('PROC ${name}(${p}):\n\t${}\nENDP', { label: 'PROC', detail: 'PROC … ENDP', type: 'keyword', boost: 1 }),
   snippetCompletion('TIMER ${cooldown}', { label: 'TIMER', detail: 'TIMER name (counts down by itself)', type: 'keyword' }),
   snippetCompletion('PRINT AT ${row}, ${col}; ${value} USING "${0000}"', { label: 'USING', detail: 'PRINT n USING "0000"', type: 'keyword' }),
+  snippetCompletion('TABLE ${name}\n\t${target} = ${v1}, ${v2}\nENDTABLE', { label: 'TABLE', detail: 'TABLE … ENDTABLE', type: 'keyword', boost: 1 }),
   snippetCompletion('SCENE ${name}\n\tPROC INIT():\n\t\t${}\n\tENDP\n\n\tPROC FRAME():\n\t\t\n\tENDP\nENDSCENE', { label: 'SCENE', detail: 'SCENE … ENDSCENE', type: 'keyword', boost: 1 }),
 ];
+
+/** The tables a LOADTABLE on source line `line` (1-based) can name: the game-level ones, and those of the SCENE that line is in (docs/ARCADE_TABLES_CONTRACT.md 2.3). */
+function visibleTables(s, line) {
+  const scene = s.scenes.find((x) => x.line <= line && line <= x.endLine);
+  return s.tables.filter((t) => t.scene === null || t.scene === scene?.name);
+}
 
 function arcadeComplete(context) {
   const { state, pos } = context;
@@ -242,6 +250,7 @@ function arcadeComplete(context) {
   if (prevWord === 'CALL') return only(s.procs.map((p) => ({ label: p.name, type: 'function', detail: `PROC · line ${p.line}`, apply: p.name + '(' })));
   if (prevWord === 'ENTER') return only(s.scenes.map((x) => ({ label: x.name, type: 'class', detail: `scene · line ${x.line}` })));
   if (prevWord === 'FN') return only(s.fns.map((f) => ({ label: f.name, type: 'function', detail: `DEF FN · line ${f.line}`, apply: f.name + '(' })));
+  if (prevWord === 'LOADTABLE') return only(visibleTables(s, line.number).map((t) => ({ label: t.name, type: 'constant', detail: `table · line ${t.line}` })));
   if (prevWord === 'SHOW' || prevWord === 'HIDE') return only(s.assets.filter((a) => a.kind === 'SPRITE').map((a) => ({ label: a.name, type: 'constant', detail: a.count ? `sprite pool (${a.count})` : 'sprite' })));
   if (prevWord === 'PLAY') return { from: word.from, options: [...s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })), ...s.vars.filter((v) => v.dims === 0).map((v) => ({ label: v.name, type: 'variable', detail: `effect index · line ${v.line}` }))], validFor: /^\w*$/ };
   if (prevWord === 'LOADMAP' || prevWord === 'WORLD') return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
@@ -251,6 +260,7 @@ function arcadeComplete(context) {
     ...(s.consts ?? []).map((c) => ({ label: c.name, type: 'constant', detail: `CONST · line ${c.line}` })),
     ...s.procs.map((p) => ({ label: p.name, type: 'function', detail: `PROC · line ${p.line}` })),
     ...s.scenes.map((x) => ({ label: x.name, type: 'class', detail: `scene · line ${x.line}` })),
+    ...(s.tables ?? []).map((t) => ({ label: t.name, type: 'constant', detail: `table · line ${t.line}` })),
     ...s.assets.map((a) => ({ label: a.name, type: 'constant', detail: `${a.kind.toLowerCase()} · line ${a.line}` })),
   ];
   return { from: word.from, options: [...wordOptions, ...snippets, ...own], validFor: /^\w*\$?$/ };
@@ -319,7 +329,7 @@ const arcadeIndent = Prec.high(indentService.of((cx, pos) => {
 }));
 // Typing ENDIF, ENDP, NEXT, ... or ELSE / CASE dedents the line (indentOnInput in src/editor.js asks languageData).
 const arcadeIndentOnInput = EditorState.languageData.of(() => [{
-  indentOnInput: /^\s*(ENDIF|ENDP|ENDSCENE|ENDSEL|NEXT(\s+\w+\$?)?|WEND|ELSE|CASE)$/i,
+  indentOnInput: /^\s*(ENDIF|ENDP|ENDSCENE|ENDTABLE|ENDSEL|NEXT(\s+\w+\$?)?|WEND|ELSE|CASE)$/i,
 }]);
 
 function tidy(view) {

@@ -1,8 +1,8 @@
 REM Leap Runner, four levels: platformer.arc (the one-level reference, kept as it is) with three more worlds.  The game is larger than the 16 KB of
 REM the game area: the three worlds are MAPs that a WORLD statement loads, so the linker puts them in the cartridge's banked part
 REM (docs/ARCADE_BANKING_CONTRACT.md).  Assets are in runner.assets.json, laid out by runner.assets.gen.mjs (level 1 is the platformer's world);
-REM the level data below (CXS/CYS, SX/SY/STY, WLO/WHI, CKX/CKY, CIX, RCF/RNX, LCB/LSB: the four levels one after the other, absolute indexes) is
-REM printed by  node arcade/examples/runner.assets.gen.mjs --data  and checked against the maps by tests/arcade-runner.mjs.
+REM the level data below (TABLE lv1 .. lv4: CXS/CYS, SX/SY, WLO/WHI, CKX/CKY, CIX, RCF/RNX and the counts CE / SE, each list indexed from 0 within its level) is
+REM printed by  node arcade/examples/runner.assets.gen.mjs --data  and checked against the maps by tests/arcade-runner.mjs; LOADLEVEL does LOADTABLE lv.
 REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank.   Joystick 1: the stick and fire.
 REM   128 x 16 cell worlds, three bands (2 / 3 / 11 rows at 1/4, 1/2, 1/1).  Stomp the walkers and bats by jumping on them (HIT while
 REM   falling), touch them from the side and you lose a life (brief invulnerability); spikes and the pit send you to the last checkpoint.
@@ -54,28 +54,77 @@ SCENE play
   DIM px, py, x8, vx, vy, face, gnd, cg, anim, fr, inv, dropt, fx, tc, ltc, kq, ka, pk
   DIM lives, score, coins, hud, ck, rx, ry, ti, ei
   DIM cam, nx, cf, cnx
-  REM the level: lv is 0..3; the level's coins are CB..CE-1 of the lists below, its enemies SB..SE-1 (LCB / LSB give the starts, one more entry for the end of the last);
-  REM CC and SD (coin taken, enemy killed) are per level, indexed from CB / SB
-  DIM lv, nl, cb, ce, sb, se, sc0
+  REM the level: lv is 0..3 (the index of its TABLE); LOADTABLE puts the level's lists in the arrays below, indexed from 0: its coins are 0..CE-1, its enemies 0..SE-1;
+  REM CC and SD (coin taken, enemy killed) are per level, indexed the same way
+  DIM lv, nl, sc0
   REM the coin tile's four spin frames (tiles 6, 18, 19, 18)
   DIM ct(3) = 6, 18, 19, 18
   REM ---- the level data of the four levels, one after the other (printed by runner.assets.gen.mjs --data; do not edit)
-  REM the coin list and the enemy list of each level are sorted by x; the checkpoints are 3 a level, CIX has 9 and RCF / RNX 4 (the start and the 3 checkpoints) a level
+  REM the coin list and the enemy list of each level are sorted by x; the checkpoints are 3 a level, CIX has 9 and RCF / RNX 4 (the start and the 3 checkpoints) a level;
+  REM the arrays are sized to the largest level (50 coins, 11 enemies), CE / SE are the counts, and a table zeroes what its level does not list
   REM @@DATA-BEGIN@@
-  DIM cxs(122) = 64, 72, 80, 96, 104, 112, 120, 192, 200, 304, 312, 320, 328, 352, 360, 368, 376, 424, 432, 440, 464, 496, 504, 512, 520, 528, 536, 568, 576, 616, 624, 640, 648, 696, 704, 720, 728, 752, 760, 800, 808, 832, 840, 848, 888, 896, 912, 920, 944, 952, 64, 72, 80, 120, 128, 280, 288, 376, 384, 424, 432, 464, 544, 552, 640, 648, 696, 704, 744, 752, 824, 832, 944, 952, 48, 56, 64, 104, 112, 192, 200, 248, 256, 304, 312, 520, 528, 560, 640, 648, 744, 752, 840, 848, 944, 952, 48, 56, 64, 88, 96, 104, 112, 184, 192, 256, 264, 344, 352, 392, 400, 464, 472, 512, 520, 624, 632, 680, 688, 736, 744, 776, 784
-  DIM cys(122) = 104, 104, 104, 88, 80, 80, 88, 104, 104, 80, 80, 80, 80, 80, 80, 80, 80, 96, 88, 96, 96, 80, 80, 64, 64, 64, 64, 96, 96, 80, 80, 96, 96, 88, 88, 72, 72, 88, 88, 96, 96, 104, 104, 96, 96, 96, 80, 80, 104, 104, 104, 104, 104, 88, 88, 96, 96, 64, 64, 64, 64, 88, 88, 88, 96, 96, 88, 88, 80, 80, 80, 80, 104, 104, 104, 104, 104, 88, 88, 96, 96, 88, 88, 88, 88, 96, 96, 88, 88, 88, 88, 88, 104, 104, 104, 104, 104, 104, 104, 96, 88, 88, 96, 104, 104, 80, 80, 88, 88, 88, 88, 80, 80, 96, 96, 96, 96, 88, 88, 88, 88, 104, 104
-  DIM sx(37) = 160, 288, 368, 464, 528, 584, 704, 728, 864, 880, 944, 144, 288, 360, 400, 592, 632, 800, 864, 64, 224, 392, 480, 552, 672, 832, 880, 952, 120, 224, 328, 392, 464, 544, 632, 712, 784, 864
-  DIM sy(37) = 96, 96, 56, 88, 80, 56, 80, 64, 56, 96, 96, 96, 96, 56, 80, 64, 96, 56, 96, 96, 56, 96, 56, 80, 64, 96, 64, 96, 96, 64, 96, 80, 64, 80, 72, 56, 96, 72
-  DIM wlo(37) = 0, 272, 0, 448, 480, 0, 688, 0, 0, 816, 928, 0, 264, 0, 384, 0, 624, 0, 800, 0, 0, 368, 0, 544, 0, 816, 0, 936, 0, 0, 320, 384, 0, 528, 0, 0, 776, 0
-  DIM whi(37) = 224, 432, 0, 464, 544, 0, 704, 0, 0, 896, 1008, 224, 336, 0, 432, 0, 664, 0, 896, 144, 0, 496, 0, 560, 0, 904, 0, 1008, 128, 0, 328, 400, 0, 544, 0, 0, 864, 0
-  DIM ckx(11) = 416, 592, 832, 304, 584, 824, 384, 528, 832, 328, 512, 832
-  DIM cky(11) = 88, 88, 88, 88, 88, 88, 88, 80, 88, 88, 80, 88
-  DIM cix(35) = 0, 7, 9, 17, 23, 31, 39, 45, 50, 50, 54, 55, 58, 62, 64, 70, 72, 74, 74, 79, 82, 85, 85, 88, 92, 94, 96, 96, 103, 105, 109, 113, 117, 121, 123, 123
-  DIM rcf(15) = 0, 13, 24, 38, 50, 55, 62, 69, 74, 84, 85, 92, 96, 105, 111, 121
-  DIM rnx(15) = 0, 2, 4, 7, 11, 12, 15, 17, 19, 21, 22, 25, 28, 29, 31, 35
-  DIM lcb(4) = 0, 50, 74, 96, 123
-  DIM lsb(4) = 0, 11, 19, 28, 38
+  DIM cxs(49), cys(49), sx(10), sy(10), wlo(10), whi(10), ckx(2), cky(2), cix(8), rcf(3), rnx(3), ce, se
   DIM cc(49), sd(10)
+  TABLE lv1
+    cxs = 64, 72, 80, 96, 104, 112, 120, 192, 200, 304, 312, 320, 328, 352, 360, 368, 376, 424, 432, 440, 464, 496, 504, 512, 520, 528, 536, 568, 576, 616, 624, 640, 648, 696, 704, 720, 728, 752, 760, 800, 808, 832, 840, 848, 888, 896, 912, 920, 944, 952
+    cys = 104, 104, 104, 88, 80, 80, 88, 104, 104, 80, 80, 80, 80, 80, 80, 80, 80, 96, 88, 96, 96, 80, 80, 64, 64, 64, 64, 96, 96, 80, 80, 96, 96, 88, 88, 72, 72, 88, 88, 96, 96, 104, 104, 96, 96, 96, 80, 80, 104, 104
+    sx = 160, 288, 368, 464, 528, 584, 704, 728, 864, 880, 944
+    sy = 96, 96, 56, 88, 80, 56, 80, 64, 56, 96, 96
+    wlo = 0, 272, 0, 448, 480, 0, 688, 0, 0, 816, 928
+    whi = 224, 432, 0, 464, 544, 0, 704, 0, 0, 896, 1008
+    ckx = 416, 592, 832
+    cky = 88, 88, 88
+    cix = 0, 7, 9, 17, 23, 31, 39, 45, 50
+    rcf = 0, 13, 24, 38
+    rnx = 0, 2, 4, 7
+    ce = 50
+    se = 11
+  ENDTABLE
+  TABLE lv2
+    cxs = 64, 72, 80, 120, 128, 280, 288, 376, 384, 424, 432, 464, 544, 552, 640, 648, 696, 704, 744, 752, 824, 832, 944, 952
+    cys = 104, 104, 104, 88, 88, 96, 96, 64, 64, 64, 64, 88, 88, 88, 96, 96, 88, 88, 80, 80, 80, 80, 104, 104
+    sx = 144, 288, 360, 400, 592, 632, 800, 864
+    sy = 96, 96, 56, 80, 64, 96, 56, 96
+    wlo = 0, 264, 0, 384, 0, 624, 0, 800
+    whi = 224, 336, 0, 432, 0, 664, 0, 896
+    ckx = 304, 584, 824
+    cky = 88, 88, 88
+    cix = 0, 4, 5, 8, 12, 14, 20, 22, 24
+    rcf = 0, 5, 12, 19
+    rnx = 0, 1, 4, 6
+    ce = 24
+    se = 8
+  ENDTABLE
+  TABLE lv3
+    cxs = 48, 56, 64, 104, 112, 192, 200, 248, 256, 304, 312, 520, 528, 560, 640, 648, 744, 752, 840, 848, 944, 952
+    cys = 104, 104, 104, 88, 88, 96, 96, 88, 88, 88, 88, 96, 96, 88, 88, 88, 88, 88, 104, 104, 104, 104
+    sx = 64, 224, 392, 480, 552, 672, 832, 880, 952
+    sy = 96, 56, 96, 56, 80, 64, 96, 64, 96
+    wlo = 0, 0, 368, 0, 544, 0, 816, 0, 936
+    whi = 144, 0, 496, 0, 560, 0, 904, 0, 1008
+    ckx = 384, 528, 832
+    cky = 88, 80, 88
+    cix = 0, 5, 8, 11, 11, 14, 18, 20, 22
+    rcf = 0, 10, 11, 18
+    rnx = 0, 2, 3, 6
+    ce = 22
+    se = 9
+  ENDTABLE
+  TABLE lv4
+    cxs = 48, 56, 64, 88, 96, 104, 112, 184, 192, 256, 264, 344, 352, 392, 400, 464, 472, 512, 520, 624, 632, 680, 688, 736, 744, 776, 784
+    cys = 104, 104, 104, 96, 88, 88, 96, 104, 104, 80, 80, 88, 88, 88, 88, 80, 80, 96, 96, 96, 96, 88, 88, 88, 88, 104, 104
+    sx = 120, 224, 328, 392, 464, 544, 632, 712, 784, 864
+    sy = 96, 64, 96, 80, 64, 80, 72, 56, 96, 72
+    wlo = 0, 0, 320, 384, 0, 528, 0, 0, 776, 0
+    whi = 128, 0, 328, 400, 0, 544, 0, 0, 864, 0
+    ckx = 328, 512, 832
+    cky = 88, 80, 88
+    cix = 0, 7, 9, 13, 17, 21, 25, 27, 27
+    rcf = 0, 9, 15, 25
+    rnx = 0, 1, 3, 7
+    ce = 27
+    se = 10
+  ENDTABLE
   REM coins per level 50 24 22 27; enemies per level 11 8 9 10
   REM @@DATA-END@@
   REM six enemy slots: 0..3 walkers (sprites wk), 4..5 bats (sprites fl): alive, position, direction, spawn entry, origin x
@@ -192,8 +241,8 @@ SCENE play
     ENDSEL
   ENDP
 
-  REM Level lv: its world (WORLD puts the camera at 0 and redraws the whole window, so this is one long tick, over its three refreshes), its coin and enemy
-  REM ranges, nothing taken or killed, the player's start and the first checkpoint to pass.
+  REM Level lv: its world (WORLD puts the camera at 0 and redraws the whole window, so this is one long tick, over its three refreshes), its data (LOADTABLE lv:
+  REM the coin, enemy, checkpoint and respawn lists and the counts CE / SE), nothing taken or killed, the player's start and the first checkpoint to pass.
   PROC LOADLEVEL():
     LOCAL i
     HIDE hero
@@ -207,21 +256,22 @@ SCENE play
       CASE ELSE
         WORLD level4
     ENDSEL
-    cb = lcb(lv) : ce = lcb(lv + 1) : sb = lsb(lv) : se = lsb(lv + 1) : cf = cb
-    FOR i = 0 TO ce - cb - 1
+    LOADTABLE lv
+    cf = 0
+    FOR i = 0 TO ce - 1
       cc(i) = 0
     NEXT i
-    FOR i = 0 TO se - sb - 1
+    FOR i = 0 TO se - 1
       sd(i) = 0
     NEXT i
-    ck = 0 : rx = 24 : ry = 88 : cnx = ckx(lv * 3)
+    ck = 0 : rx = 24 : ry = 88 : cnx = ckx(0)
     coins = 0 : inv = 0 : dropt = 0 : pj = 1 : pk = 0
   ENDP
 
   REM The HUD of the level just loaded (its coin total and number are printed here, the other labels once per game), and the player starts.
   PROC BEGINLEVEL():
     INK 7 : PAPER 0 : BRIGHT 1
-    PRINT AT 2, 10; "/"; ce - cb;
+    PRINT AT 2, 10; "/"; ce;
     PRINT AT 2, 16; "LEVEL "; lv + 1;
     sc0 = score : hud = 7
     CALL FLUSHHUD()
@@ -236,7 +286,7 @@ SCENE play
     CAMERA cam
     cam = CAMX()
     CALL CLEARENEMIES()
-    nx = rnx(lv * 4 + ck) : cf = rcf(lv * 4 + ck)
+    nx = rnx(ck) : cf = rcf(ck)
   ENDP
 
   PROC PLAYTICK():
@@ -426,8 +476,8 @@ SCENE play
     IF st = 1 AND py > DEADY THEN CALL DIE() ENDIF
     IF st = 1 THEN
       IF px >= cnx THEN
-        rx = ckx(lv * 3 + ck) : ry = cky(lv * 3 + ck) : ck = ck + 1
-        IF ck < 3 THEN cnx = ckx(lv * 3 + ck) ELSE cnx = 32000 ENDIF
+        rx = ckx(ck) : ry = cky(ck) : ck = ck + 1
+        IF ck < 3 THEN cnx = ckx(ck) ELSE cnx = 32000 ENDIF
       ENDIF
     ENDIF
   ENDP
@@ -436,14 +486,14 @@ SCENE play
   PROC PICKUP():
     LOCAL k, x, y, lx, rx, ty, bt
     lx = px + BX : rx = lx + BW : ty = py + BY : bt = ty + BH
-    k = cix(lv * 9 + SHR(px, 7))
+    k = cix(SHR(px, 7))
     WHILE k < ce
       x = cxs(k)
       IF x >= rx THEN EXIT WHILE ENDIF
       IF x + 8 > lx THEN
         y = cys(k)
-        IF y < bt AND y + 8 > ty AND cc(k - cb) = 0 THEN
-          cc(k - cb) = 1
+        IF y < bt AND y + 8 > ty AND cc(k) = 0 THEN
+          cc(k) = 1
           SETWORLD x, y = 0
           coins = coins + 1 : score = score + 10 : hud = BOR(hud, 5)
           PLAY coin
@@ -581,7 +631,7 @@ SCENE play
     LOCAL k, lo, hi, b
     IF nx < se THEN
       IF sx(nx) < cam + 216 THEN
-        IF sd(nx - sb) = 0 AND sx(nx) > cam - 48 THEN
+        IF sd(nx) = 0 AND sx(nx) > cam - 48 THEN
           REM a bat is an entry with no turning points (WHI = 0)
           b = 0
           IF whi(nx) = 0 THEN b = 1 ENDIF
@@ -657,7 +707,7 @@ SCENE play
   REM The player met enemy slot i: falling onto it from above stomps it, anything else hurts.
   PROC TOUCH(i):
     IF vy > 0 AND py <= ey(i) - 12 THEN
-      en(i) = 0 : sd(ek(i) - sb) = 1
+      en(i) = 0 : sd(ek(i)) = 1
       HIDE wk(i) : HIDE fl(i - 4)
       vy = -6 : gnd = 0 : score = score + 100 : hud = BOR(hud, 1)
       PLAY stomp
@@ -679,11 +729,11 @@ SCENE play
     f = ct(BAND(SHR(fc, 3), 3))
     k = cf + BAND(fc, 7)
     IF k < ce THEN
-      IF cc(k - cb) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
+      IF cc(k) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
     ENDIF
     k = k + 8
     IF k < ce THEN
-      IF cc(k - cb) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
+      IF cc(k) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
     ENDIF
   ENDP
 ENDSCENE

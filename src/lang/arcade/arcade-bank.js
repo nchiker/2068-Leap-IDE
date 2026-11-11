@@ -8,7 +8,7 @@
  *   shippedChunks(bankedBytes)       the DOCK chunks a build ships: 0, 1, 4, 5 and, when anything is banked, 2 (and 3 past 8,192 banked bytes)
  *
  * A BANKABLE asset is a `MAP`: a screen map (the record DB w, DB h, w x h cells), a world (the WINDOW's map or one a WORLD statement names: its byte-RLE stream) or a floor
- * plan (the VIEW3D's map or one a WORLD names: its byte-RLE stream). `cand` = {key, name, kind: 'map' | 'world' | 'plan', data: Uint8Array, override: 'auto' | 'mapped' | 'banked'}.
+ * plan (the VIEW3D's map or one a WORLD names: its byte-RLE stream). `cand` = {key, name, kind: 'map' | 'world' | 'plan', data: Uint8Array, override: 'auto' | 'mapped' | 'banked'}. A bankable per-level TABLE record (docs/ARCADE_TABLES_CONTRACT.md section 3) is a candidate too: kind 'table', key `table:<scope>.<NAME>`, always 'auto'; a mapped one lies after the WORLD streams (`tableRecBytes`, not `tablesBytes`, the v3 scroll tables).
  * The window is $4000-$7FFF (DOCK chunks 2 and 3 mapped together); a banked asset is just an address in it, read in place by the runtime's loaders.
  */
 
@@ -32,7 +32,7 @@ export function rleOf(src) {
 
 /**
  * Sizes of a generated game, exactly as the linker lays it out. `banked` is a Set of the keys that live in the window (their bytes are not in the mapped part).
- * Returns {GAME_BASE, GAME_END, headerLen, descLen, codeEnd, spriteBytes, winData, worldRle, viewData, viewRle, viewPatterns, streamsBytes, tablesBytes, end, used}
+ * Returns {GAME_BASE, GAME_END, headerLen, descLen, codeEnd, spriteBytes, winData, worldRle, viewData, viewRle, viewPatterns, streamsBytes, tableRecBytes, tablesBytes, end, used}
  * where `end` is the first free address (tables not counted) and `used` the whole mapped part with the scroll tables (the figure of 16,384).
  */
 export function layoutOf(gen, runtime, banked = gen.bank?.keys ?? new Set()) {
@@ -56,8 +56,10 @@ export function layoutOf(gen, runtime, banked = gen.bank?.keys ?? new Set()) {
   const viewData = view ? viewOwn + viewPatterns + VIEW_DESC_BYTES : 0;
   let streamsBytes = 0;
   for (const st of gen.streams ?? []) if (!banked.has(st.key)) streamsBytes += st.data.length;
-  const end = codeEnd + spriteBytes + winData + viewData + streamsBytes;
-  return { GAME_BASE, GAME_END, headerLen, descLen, codeEnd, spriteBytes, descBytes, winData, worldRle, winOwn, viewData, viewRle, viewOwn, viewPatterns, streamsBytes, tablesBytes, end, used: end + tablesBytes - GAME_BASE };
+  let tableRecBytes = 0;                                       // bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md): the records not in the window, after the WORLD streams (NOT `tablesBytes`, the v3 scroll tables)
+  for (const t of gen.tables ?? []) if (!banked.has(t.key)) tableRecBytes += t.data.length;
+  const end = codeEnd + spriteBytes + winData + viewData + streamsBytes + tableRecBytes;
+  return { GAME_BASE, GAME_END, headerLen, descLen, codeEnd, spriteBytes, descBytes, winData, worldRle, winOwn, viewData, viewRle, viewOwn, viewPatterns, streamsBytes, tableRecBytes, tablesBytes, end, used: end + tablesBytes - GAME_BASE };
 }
 
 /**

@@ -43,6 +43,7 @@
  *     functions CAMX WORLDTILE TILEFLAGS TILEHIT SOLID are RESERVED; BAND was reserved by batch 1 as a bit function and is now also the top-level
  *     statement `BAND rows, num, den` (the position tells them apart: a statement starts a line, the function is always followed by a bracket).
  *     FLIP is contextual like FRAME (`SHOW s AT x, y FRAME f FLIP`), so a variable called `flip` keeps working.
+ *   - (bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md) TABLE ENDTABLE LOADTABLE are RESERVED (a variable called `table` must be renamed); TABLE and LOADTABLE may still name an asset (BATCH11_WORDS).
  *   - (the banked cartridge map, docs/ARCADE_BANKING_CONTRACT.md section 4) WORLD: load another MAP as the world of the WINDOW / the plan of the VIEW3D; reserved for variables, a legal asset name (BATCH11_WORDS)
  *   - (language batch 3, docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md) VIEW3D VIEW SETWALL and the functions COSA SINA FXMUL WALL SEEN DEPTH
  *     are RESERVED (a variable called `wall` or `depth` must be renamed; BATCH3_WORDS below lists them: they may still NAME AN ASSET, since assets have their own name
@@ -66,6 +67,7 @@ export const LIMITS = Object.freeze({
   maxDimV2: 1000,     // M4a: DIM a(n) with n 1..1000, elements a(0)..a(n) are 16-bit slots in GAME_VARS
   maxSlots2D: 1000,   // batch 1: DIM b(w, h) has (w + 1) * (h + 1) slots, at most 1000
   maxParams: 4,       // batch 1: PROC name(a, b, c, d)
+  maxTables: 256,     // bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md 2.1): TABLE declarations, all scopes together
   maxMaps: 64,        // batch 1: MAP declarations (the header's map table); 8 until the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4), then 64
   maxPool: 16,        // M4a: SPRITE name(n): n 1..16 (the runtime has 16 instances in all)
   maxInstances: 16,   // M4a: instances (things on screen) in all
@@ -166,6 +168,9 @@ const WORD_LIST = [
   W('DEF', 'structure', 'DEF FN f(x) = expr', 'Define a numeric function of one parameter; use it as FN f(expr).'),
   W('FN', 'structure', 'FN f(expr)', 'Call a function made with DEF FN.'),
   W('TIMER', 'game', 'TIMER a, b, c', 'Declare timers: ordinary number variables (read them, assign them, compare them) that the game also counts down by itself. At the start of every tick, before PROC FRAME runs, every timer greater than 0 goes down by 1; 0 or less is left alone. So after cooldown = 30 in one tick, cooldown reads 29 in the next FRAME and 0 from 30 ticks on: IF cooldown = 0 THEN means it has run out. A timer at the top level counts in every scene and keeps its value across ENTER; a timer inside a SCENE belongs to that scene (it starts at 0 at every entry and counts only while that scene runs). PROC INIT never counts a timer down. Top level or directly inside a SCENE, like DIM; numbers only (no $ name, no array). Needs a v2 runtime.'),
+  W('TABLE', 'structure', 'TABLE name ... ENDTABLE  (rows: target = value, value, ...)', 'Declare a table of level data: a block of rows, one per target. A target is a number variable or an array declared in the same scope (the game level, or the SCENE the table is in; a game-level table sees game-level names only); the values are constant expressions (CONSTs allowed). An array row lists 1 to all of its elements in DIM order (a 2-D array row by row) and LOADTABLE sets every element past the last one listed to 0; a variable row has exactly one value. A target appears once, a table has at least one row. Top level or directly inside a SCENE, like DIM; at most 256 tables. A table name is its own name: it cannot be used for a variable, constant, PROC, DEF FN, asset or scene. Needs a v2 runtime. The compiler keeps tables out of the code when the game is short of room (the banked cartridge map).'),
+  W('ENDTABLE', 'structure', 'ENDTABLE', 'Ends a TABLE.'),
+  W('LOADTABLE', 'game', 'LOADTABLE name  /  LOADTABLE index', 'Copy every row of a TABLE into its target: an array row sets the listed elements and zeroes the rest of the array, a variable row sets the variable; variables and arrays the table does not name keep their values. Nothing else changes (no sprite, screen, sound or scene). ENTER does not load a table: a game loads its level\'s table where it starts the level. By name, or by number: the table\'s place in the list this statement can see (the game-level tables in source order, then, inside a SCENE, that scene\'s tables), counting from 0. The number may be any expression and is checked when it runs: a value outside the list does nothing; a constant outside the list is a warning. A bare name that is a table loads that table. Needs a v2 runtime.'),
   W('DIM', 'statement', 'DIM a, b, c(n), d(w, h), e(n) = v0, v1, ...', 'Declare variables (every variable must be declared) and arrays. At the top level a DIM is global; inside a SCENE it belongs to the scene. An array c(n) has the elements c(0)..c(n) (16 bit, all 0 at the start); with a v2 runtime n is 1..1000. d(w, h) is a two-dimensional array of (w + 1) * (h + 1) elements, at most 1000, stored row by row (d(i, j) follows d(i, j - 1)). Sizes are constant expressions (numbers or CONSTs). "= v0, v1, ..." gives the first elements their values (constant expressions, at most one per element; the rest stay 0); the values are kept in the game and copied in when it starts. An index outside its range reads 0 and a write to it is ignored.'),
   W('IF', 'structure', 'IF cond THEN ... [ELSE ...] ENDIF', 'A block; there is no one-line form.'),
   W('THEN', 'structure', 'IF cond THEN', 'Part of IF.'),
@@ -256,7 +261,7 @@ export const RESERVED = new Set(WORD_LIST.filter(e => e.reserved).map(e => e.nam
 export const FUNCTIONS = new Map(WORD_LIST.filter(e => e.cls === 'function').map(e => [e.name, e]));
 
 /** Words that open or close a block; see arcade-parse.js for how they recover. */
-export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'ENDSEL', 'ENDP', 'ENDSCENE', 'PROC', 'SCENE']);
+export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'ENDSEL', 'ENDP', 'ENDSCENE', 'ENDTABLE', 'PROC', 'SCENE']);
 
 /**
  * The words language batch 3 reserved. A variable, PROC or DEF FN cannot have one of these names, but an ASSET may (SFX wall = "wall", PLAY wall): assets live in their own
@@ -265,7 +270,7 @@ export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'EN
 export const BATCH3_WORDS = Object.freeze(new Set(['VIEW3D', 'VIEW', 'SETWALL', 'COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']));
 
 /** Words of the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): reserved like batch 3's, and like them they may still NAME AN ASSET (`MAP world = "w"`). */
-export const BATCH11_WORDS = Object.freeze(new Set(['WORLD']));
+export const BATCH11_WORDS = Object.freeze(new Set(['WORLD', 'TABLE', 'LOADTABLE']));      // (TABLE and LOADTABLE: bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md; a project that named an asset `table` keeps building)
 
 /** Entry for a word (any case), or null. */
 export function wordEntry(word) {

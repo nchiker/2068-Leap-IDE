@@ -89,7 +89,7 @@ export function link(gen, runtime, image) {
   // the banked cartridge map: what lives in the window $4000-$7FFF (empty for a game that banks nothing), and the sizes of the mapped part
   const banked = gen.bank?.banked ?? [], bankedKeys = gen.bank?.keys ?? new Set();
   const lay = layoutOf(gen, runtime, bankedKeys);
-  const { GAME_END, headerLen, descLen, codeEnd, spriteBytes, descBytes, winData, worldRle, viewData, viewRle, viewPatterns, streamsBytes, tablesBytes, end } = lay;
+  const { GAME_END, headerLen, descLen, codeEnd, spriteBytes, descBytes, winData, worldRle, viewData, viewRle, viewPatterns, streamsBytes, tableRecBytes, tablesBytes, end } = lay;
   if (gen.base !== GAME_BASE + headerLen + descLen) return fail(`code was generated for base $${gen.base.toString(16)} but the image needs $${(GAME_BASE + headerLen + descLen).toString(16)}`);
   const bankedBytes = banked.reduce((a, b) => a + b.bytes, 0);
   if (bankedBytes > BANK_BYTES) return fail(`banked assets need ${bankedBytes} of ${BANK_BYTES} bytes`);
@@ -170,9 +170,13 @@ export function link(gen, runtime, image) {
     for (const st of gen.streams ?? []) {
       if (!addrOf.has(st.key)) { memory.set(st.data, at); addrOf.set(st.key, at); at += st.data.length; }
     }
+    // bankable per-level tables: a record that is not in the window sits right after the streams (layoutOf counts it); every LOADTABLE's address is a fixup too
+    for (const t of gen.tables ?? []) {
+      if (!addrOf.has(t.key)) { memory.set(t.data, at); addrOf.set(t.key, at); at += t.data.length; }
+    }
     for (const f of gen.fixups ?? []) {
       const a = addrOf.get(f.key);
-      if (a === undefined) return fail(`internal: the world '${f.key}' of a WORLD statement was not placed`);
+      if (a === undefined) return fail(`internal: the world or table '${f.key}' was not placed`);
       w16(f.at, a);
     }
   }
@@ -200,6 +204,7 @@ export function link(gen, runtime, image) {
     descriptors: descLen,
     code: gen.code.length,
     spriteData: spriteBytes,
+    ...((gen.tables ?? []).length ? { tables: tableRecBytes } : {}),      // the mapped bytes of the bankable per-level table records (the banked ones are in `banked`); only a game with tables has the field
     total: end - GAME_BASE,
     end,
     free: GAME_END - end,

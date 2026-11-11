@@ -137,6 +137,19 @@
  *  B5-4. PLAY expr: a bare name that is a declared SFX is the old `LD A,index / CALL RT_PLAY`; any other expression is evaluated, then LD A,H / OR A / JR NZ,skip / LD A,L / CALL RT_PLAY (RT_PLAY
  *        ignores an index past its table and leaves the effect that is playing alone); a constant index makes the call when it is 0..255 and none otherwise (the interpreter agrees).
  *
+ * ── Tables (docs/ARCADE_TABLES_CONTRACT.md sections 3 and 5; v2 runtime or later, a runtime build with RT_TABLELOAD) ─────────────────────────────────────
+ *  T2-1. TABLE name ... ENDTABLE is DATA, never code: each table becomes a record `DB runs; runs x {DW dst, DW len, len bytes}` (little-endian) of the slot ranges its rows name (an array row: all of the
+ *        array's slots, zero-padded past the listed values; a scalar row: its slot). The ranges are sorted by address and joined ONLY when exactly adjacent (the slots between belong to variables the
+ *        table must not touch). More than 255 runs after joining is an error at the TABLE. The record is the same whether it ends up mapped or banked, and is not in `gen.code`: `gen.tables` lists
+ *        {key, name, kind: 'table', data}; the linker places a mapped record after the WORLD streams (layoutOf: `tableRecBytes`) or the window holds it (gen.bank), and writes its address into every
+ *        use through `gen.fixups` ({at, key}, key = `table:<SCOPE>.<NAME>`, SCOPE = `game` or the upper-case scene name).
+ *  T2-2. LOADTABLE name = LD HL,record / CALL RT_TABLELOAD (6 bytes; the operand of LD HL is a fixup). The index form (any expression, a bare variable name too): the index in HL, then
+ *        LD DE,list / LD BC,count / CALL lib$tabidx, where `list` is the scope's DW pointer list (one DW per visible table, game-level tables in source order and then the scene's, each a fixup) in the
+ *        mapped code, and lib$tabidx (present only when used, 15 bytes) returns when HL >= count as an UNSIGNED number (a negative index fails too), else loads the pointer and JPs RT_TABLELOAD.
+ *        A constant index is resolved here: in range it is the direct form, outside it compiles to nothing. A bare name that is a visible table is the direct form.
+ *  T2-3. A table's rows resolve in the table's own scope (the game level, or the scene on top of it); a scene's table named in a game-level PROC is not visible (a PROC is generated in its home scope).
+ *        A runtime older than v2, or a build without RT_TABLELOAD, refuses a LOADTABLE (the second with a message that says to rebuild the runtime).
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -569,6 +582,47 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   let sceneCurSlot = 0, sceneSpSlot = 0;            // the driver's hidden slots: the current scene's index, the stack pointer saved at entry
   if (driver) { sceneCurSlot = allocSlot('scene.cur'); sceneSpSlot = allocSlot('scene.sp'); }
 
+  // ── 2a. bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md section 3): the records, built from the slot addresses of the table's own scope ──
+  const tableOf = (holder, si) => (holder.decls ?? []).filter((d) => d.type === 'Table').map((node) => ({ node, si }));
+  const gameTabs = tableOf(ast, -1), sceneTabs = scenes.map((sc, si) => tableOf(sc, si));
+  const allTabs = [...gameTabs, ...sceneTabs.flat()];
+  const visibleTabs = (si) => (si < 0 ? gameTabs : [...gameTabs, ...sceneTabs[si]]);
+  if (!v2) for (const t of allTabs) err(t.node, `TABLE is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
+  else for (const t of allTabs) {
+    const { node, si } = t;
+    t.key = `table:${si < 0 ? 'game' : up(scenes[si].name)}.${up(node.name)}`;
+    t.name = si < 0 ? node.name : `${scenes[si].name}.${node.name}`;
+    useCtx(si < 0 ? globalCtx : sceneCtx[si]);
+    const ranges = [];
+    let bad = false;
+    for (const row of node.rows ?? []) {
+      const k = up(row.target?.name ?? '');
+      const arr = arrays.get(k), vs = varSlots.get(k);
+      if (!arr && vs === undefined) { err(row.target ?? node, `TABLE ${node.name}: ${row.target?.name} is not a variable or array of this scope`); bad = true; continue; }
+      const vals = row.values.map((x) => fold(x));
+      const bv = vals.findIndex((x) => x === undefined);
+      if (bv >= 0) { err(row.values[bv], `a table value must be a constant expression`); bad = true; continue; }
+      const total = arr ? arr.n + 1 : 1;
+      if (vals.length > total || (!arr && vals.length !== 1)) { err(row, `TABLE ${node.name}: ${vals.length} values for ${row.target.name}, which has ${total === 1 ? 'one slot' : `only ${total} elements`}`); bad = true; continue; }
+      const words = new Array(total).fill(0);
+      vals.forEach((x, i) => { words[i] = x & 0xFFFF; });
+      ranges.push({ addr: arr ? arr.addr : vs, words });
+    }
+    if (bad) continue;
+    ranges.sort((a, b) => a.addr - b.addr);
+    const runs = [];
+    for (const r of ranges) {
+      const last = runs[runs.length - 1];
+      if (last && last.addr + 2 * last.words.length === r.addr) last.words = last.words.concat(r.words);       // exactly adjacent only
+      else runs.push({ addr: r.addr, words: r.words.slice() });
+    }
+    if (runs.length > 255) { err(node, `TABLE ${node.name} needs ${runs.length} runs: a table can name at most 255 separate targets (variables and arrays that are not next to each other)`); continue; }
+    const data = [runs.length];
+    for (const r of runs) { data.push(r.addr & 0xFF, r.addr >> 8, (2 * r.words.length) & 0xFF, (2 * r.words.length) >> 8); for (const w of r.words) data.push(w & 0xFF, w >> 8); }
+    t.data = Uint8Array.from(data);
+  }
+  useCtx(globalCtx);
+
   // ── 2b. the scrolling window (batch 2) ──
   const raKeys = ['RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V'];
   let win = null;                                   // {cx, cy, worldW, camMax, bands, world, worldSrc, tileFlags, tileRows, tables}
@@ -801,6 +855,13 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         if (!v2) err(s, `ENTER is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
         continue;
       }
+      if (s.type === 'LoadTable') {
+        if (!v2) err(s, 'LOADTABLE needs the v2 runtime (or later)');
+        else if (sym.RT_TABLELOAD === undefined) err(s, 'LOADTABLE needs RT_TABLELOAD, which this runtime does not provide: rebuild the runtime (this build predates bankable tables)');
+        else if (s.index) scanExpr(s.index);
+        else if (s.table && !visibleTabs(curScanScene).some((t) => up(t.node.name) === up(s.table.name))) scanExpr(s.table);
+        continue;
+      }
       if (s.type === 'Border' || s.type === 'Randomise') {
         const rt = s.type === 'Border' ? 'RT_BORDER' : 'RT_RANDOMISE';
         if (sym[rt] === undefined) notYet(s, s.type === 'Border' ? 'BORDER' : 'RANDOMISE');
@@ -864,7 +925,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       }
     }
   };
-  for (const p of allProcs) { useCtx(p.ctx); scanStmts(p.node.body); }
+  let curScanScene = -1;                            // the home scene of the callable being scanned (which tables a LOADTABLE sees)
+  for (const p of allProcs) { useCtx(p.ctx); curScanScene = p.scene; scanStmts(p.node.body); }
   for (const f of allFns) { useCtx(f.ctx); scanExpr(f.node.body); }
   useCtx(globalCtx);
   if (driver) {                                     // the machine reset of an ENTER is made of ordinary runtime routines (contract section 3)
@@ -909,6 +971,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'Fill': ex(s.x); ex(s.y); ex(s.w); ex(s.h); ex(s.value); break;
           case 'Copy': ex(s.x); ex(s.y); ex(s.w); ex(s.h); ex(s.dx); ex(s.dy); break;
           case 'LoadMap': ex(s.x); ex(s.y); break;
+          case 'LoadTable': ex(s.index ?? s.table); break;
           case 'Border': case 'Randomise': ex(s.value); break;
           case 'Show': ex(s.sprite); ex(s.x); ex(s.y); ex(s.frame); break;
           case 'Camera': ex(s.value); break;
@@ -994,6 +1057,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'Fill': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.value, active); break;
           case 'Copy': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.dx, active); ex(s.dy, active); break;
           case 'LoadMap': ex(s.x, active); ex(s.y, active); break;
+          case 'LoadTable': ex(s.index ?? s.table, active); break;
           default: break;
         }
       }
@@ -1066,7 +1130,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
 
   let params = new Map();                           // KEY -> slot address, for the callable being generated
   let loops = [];                                   // {kind, end}
-  const used = { bit: false, stick: false, nl: false, clamp: false, tile: false, tileat: false, shl: false, shr: false, fmt: false };
+  const used = { bit: false, stick: false, nl: false, clamp: false, tile: false, tileat: false, shl: false, shr: false, fmt: false, tabidx: false };
   const pool = new Map();                           // text -> label of its length-prefixed string
   const strLabel = (text) => { if (!pool.has(text)) pool.set(text, `str$${pool.size}`); return pool.get(text); };
   let tileSlots = null;                             // {x, y}: hidden slots TILE parks its column and row in
@@ -1734,6 +1798,29 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     worldFix.push({ label: fix, key: st.key });
   }
 
+  /**
+   * LOADTABLE (docs/ARCADE_TABLES_CONTRACT.md 2.3 / 5.3): a bare visible table name or a constant in range is `LD HL,record / CALL RT_TABLELOAD` (the operand is a fixup the linker fills); any other
+   * expression is evaluated to HL, then `LD DE,list / LD BC,count / CALL lib$tabidx`. A constant outside the list compiles to nothing.
+   */
+  const tabFix = [];                                // {label, key, off}: an address the linker fills (the operand of an LD HL, or a word of a pointer list)
+  const tabLists = new Map();                       // scope id ('g' or the scene index) -> the visible tables of a list some LOADTABLE needs
+  function loadTableStmt(s) {
+    const rt = need('RT_TABLELOAD');
+    const si = curC ? curC.scene : -1;
+    const vis = visibleTabs(si);
+    const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', 0); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
+    const named = s.table ? vis.find((t) => up(t.node.name) === up(s.table.name)) : undefined;
+    if (named) { direct(named); return; }
+    const x = s.table ?? s.index, k = fold(x);
+    if (k !== undefined) { if (k >= 0 && k < vis.length) direct(vis[k]); return; }
+    if (!vis.length) return;                        // (the checker refuses it)
+    gen(x);
+    const id = si < 0 ? 'g' : String(si);
+    tabLists.set(id, vis);
+    used.tabidx = true;
+    e.ld('de', L(`tab$list$${id}`)); e.ld('bc', vis.length); e.call('lib$tabidx');
+  }
+
   function loadMapStmt(s) {
     const idx = mapIndex.get(up(s.map.name));
     if (!s.x) { e.ld('a', idx); e.call(need('RT_LOADMAP')); return; }
@@ -1916,6 +2003,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       case 'LoadMap': loadMapStmt(s); return;
       case 'Camera': gen(s.value); e.call(need('RT_CAMERA')); return;
       case 'World': worldStmt(s); return;
+      case 'LoadTable': loadTableStmt(s); return;
       case 'SetWorld': setWorldStmt(s); return;
       case 'View': viewStmt(s); return;
       case 'SetWall': {
@@ -2206,6 +2294,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       e.add('hl', 'de'); e.add('hl', 'hl'); e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de'); e.ret();
       e.label(`lib$a2$${name}$bad`); e.ld('h', 'b'); e.ld('l', 'c'); e.ret();
     }
+    if (used.tabidx) {
+      // LOADTABLE by index (docs/ARCADE_TABLES_CONTRACT.md 5.3): HL = index, DE = the scope's pointer list, BC = its length (1..256) -> returns when HL >= BC as an unsigned number (a negative index too), else
+      // JP RT_TABLELOAD with HL = the record's address
+      e.label('lib$tabidx');
+      e.push('hl'); e.or('a'); e.sbc('hl', 'bc'); e.pop('hl'); e.ret('nc');
+      e.add('hl', 'hl'); e.add('hl', 'de'); e.ld('a', '(hl)'); e.inc('hl'); e.ld('h', '(hl)'); e.ld('l', 'a');
+      e.jp(need('RT_TABLELOAD'));
+    }
     if (used.nl) {
       // end of a PRINT: cursor to column 0 of the next row (the row after 23 is row 0)
       const keep = 'lib$nl$k';
@@ -2271,6 +2367,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       e.label('fmt$d2'); e.add('hl', 'de'); e.ld('a', 'c'); e.or('a'); e.jr('z', 'fmt$d3'); e.dec('c'); e.ret();
       e.label('fmt$d3'); e.ld('a', 'b'); e.jp('fmt$put');
       fmtBytes = e.size - m6;
+    }
+    // LOADTABLE by index: one pointer list per scope that needs it (a DW per visible table; each word is a fixup the linker fills with the record's address)
+    for (const [id, vis] of tabLists) {
+      e.label(`tab$list$${id}`);
+      vis.forEach((t, i) => { const lab = `tab$ptr$${id}$${i}`; e.label(lab); e.dw(0); tabFix.push({ label: lab, key: t.key, off: 0 }); });
     }
     // ── data (v1): hot boxes, string pool, tileset, sound effects, map ──
     if (v1) {
@@ -2377,11 +2478,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     }
     bankables.push({ key: up(a.name), name: a.name, kind, data, override, node: a, asset: a.asset });
   }
+  // bankable per-level tables: every record is a candidate too (no per-table override in this batch: tables are code, not project assets), after the maps
+  for (const t of allTabs) if (t.data) bankables.push({ key: t.key, name: t.name, kind: 'table', data: t.data, override: 'auto', node: t.node });
   const rate = ast.framerate ? ast.framerate.value : 30;
   return {
     errors, warnings,
     streams: [...streams.values()].filter((st) => !st.own && !st.error && st.data).map((st) => ({ key: st.key, name: st.name, kind: st.kind, data: st.data })),
-    fixups: worldFix.map((f) => ({ at: e.addressOf(f.label) + 1, key: f.key })),
+    fixups: [...worldFix.map((f) => ({ at: e.addressOf(f.label) + 1, key: f.key })), ...tabFix.map((f) => ({ at: e.addressOf(f.label) + f.off, key: f.key }))],
+    tables: allTabs.filter((t) => t.data).map((t) => ({ key: t.key, name: t.name, kind: 'table', data: t.data })),
     bankables,
     bank: plan ?? emptyBank(),
     code, base,
@@ -2399,7 +2503,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     v1: v1Info,
     v2: v2 ? { instTable: e.addressOf('inst$table'), instAssets, ninst: instAssets.length, mapTable: extMaps ? v1Info.mapTable : 0 } : null,
     phase: v3 ? phasePlan : null,
-    usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
+    usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(allTabs.length ? { tables: allTabs.length, tableBytes: allTabs.reduce((n, t) => n + (t.data?.length ?? 0), 0) } : {}), ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
   };
 }
 
@@ -2439,15 +2543,15 @@ export function generate(ast, runtime, assets = {}, opts = {}) {
     const lay2 = layoutOf(g2, runtime);
     if (lay2.used <= GAME_AREA_BYTES) {
       // the runtime build must be able to read from the window (slice B1): nothing it loads from $4000-$7FFF can be read otherwise
-      if (g2.bank.banked.length && runtime.symbols?.RT_LOADMAPPTR === undefined) return failWith(g2, [{ message: `${lay1.used > GAME_AREA_BYTES ? `the game does not fit: mapped part ${n3(lay1.used)} of ${n3(GAME_AREA_BYTES)} bytes, and` : 'a MAP is set to banked (or bankAll), but'} this runtime build cannot read banked assets (it has no RT_LOADMAPPTR): build the runtime with the banked cartridge map` }]);
+      if (g2.bank.banked.some((b) => b.kind !== 'table') && runtime.symbols?.RT_LOADMAPPTR === undefined) return failWith(g2, [{ message: `${lay1.used > GAME_AREA_BYTES ? `the game does not fit: mapped part ${n3(lay1.used)} of ${n3(GAME_AREA_BYTES)} bytes, and` : 'a MAP is set to banked (or bankAll), but'} this runtime build cannot read banked assets (it has no RT_LOADMAPPTR): build the runtime with the banked cartridge map` }]);
       return g2;
     }
     if (k < order.rest.length) { k++; continue; }
     // everything that may move is in the window and the mapped part still does not fit
-    const detail = `code ${g2.code.length}, sprites ${lay2.spriteBytes}${g2.window ? `, window data ${lay2.winData} and scroll tables ${lay2.tablesBytes}` : ''}${g2.view ? `, 3D view data ${lay2.viewData}` : ''}`;
+    const detail = `code ${g2.code.length}, sprites ${lay2.spriteBytes}${g2.window ? `, window data ${lay2.winData} and scroll tables ${lay2.tablesBytes}` : ''}${g2.view ? `, 3D view data ${lay2.viewData}` : ''}${(g2.tables ?? []).length ? `, tables ${lay2.tableRecBytes}` : ''}`;
     if (order.never.length && lay2.used - sizeOf(order.never) <= GAME_AREA_BYTES) {
       return failWith(g2, order.never.map(({ cand }) => ({ node: cand.node, message: `map '${cand.name}' is set to mapped but the game then does not fit (${n3(lay2.used)} of ${n3(GAME_AREA_BYTES)} bytes)` })));
     }
-    return failWith(g2, [{ message: `the game does not fit: mapped part ${n3(lay2.used)} of ${n3(GAME_AREA_BYTES)} bytes after banking every map, world and plan (${detail})` }]);
+    return failWith(g2, [{ message: `the game does not fit: mapped part ${n3(lay2.used)} of ${n3(GAME_AREA_BYTES)} bytes after banking every ${(g2.tables ?? []).length ? 'map, world, plan and table' : 'map, world and plan'} (${detail})` }]);
   }
 }

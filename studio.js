@@ -538,6 +538,7 @@ function renderSizes() {
     ['Map', d.map],
     ['Sound', d.sfx],
     ['Scenes', (good.scenes?.length ?? 0) >= 2 ? plural(good.scenes.length, 'scene') : undefined],     // (of the build on show)
+    ['Tables', u.tables],                                          // (mapped bytes of the TABLE records, docs/ARCADE_TABLES_CONTRACT.md; only when the game has tables)
     ['Header and tables', (u.header ?? 0) + (u.descriptors ?? 0)],
     ['Variables (RAM)', u.varBytes],
     ['Sprites', cg.sprites !== undefined ? `${plural(cg.sprites, 'asset')}, ${cg.instances} on screen` : undefined],

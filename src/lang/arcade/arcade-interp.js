@@ -129,6 +129,8 @@
  *   scene's index). Entering scenes in a ring of INITs longer than 1,000 switches in one call throws "interp: scene switch loop".
  *
  * ── Language batch 5 (docs/ARCADE_LANGUAGE_BATCH5.md) ───────────────────────────────────────────────────────────────────────────────────────
+ *   LOADTABLE (bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md 2.2 / 2.3): copies every row of a TABLE into its target, an array row zeroing the elements past the last value; a bare name that is a visible
+ *     table loads it, anything else is an index into the visible list (game-level tables in source order, then the scene's, when the statement is in the scene; a game-level PROC sees the game level only).
  *   TIMER a, b: a Dim node with `timer: true`, so a timer is an ordinary variable (record `vars` as always). At the start of every tick t >= 1, before PROC FRAME, every game-level timer and
  *   every timer of the CURRENT scene that is greater than 0 goes down by 1 (0 or less is left alone; INIT never counts; a scene's timers are rebuilt, 0, at every entry). Then the edges are taken:
  *   for every key and both sticks, `now` = the KEYDOWN / STICK value of tick t, edge = now AND NOT before, before = now. KEYPRESS(c) / JOYPRESS(n) read the edge of the LAST tick that began
@@ -460,6 +462,9 @@ export function interpret(ast, opts = {}) {
   // language batch 5: the timers (variables declared with TIMER) of the game level and of each scene
   const timerKeys = (holder) => (holder.decls ?? []).filter((d) => d.type === 'Dim' && d.timer).flatMap((d) => d.items.map((it) => up(it.name)));
   const gameTimers = timerKeys(ast), sceneTimers = sceneList.map(timerKeys);
+  // bankable per-level tables: the TABLEs of the game level and of each scene, in source order
+  const tablesOf = (holder) => (holder.decls ?? []).filter((d) => d.type === 'Table');
+  const gameTables = tablesOf(ast), sceneTables = sceneList.map(tablesOf);
   /** Start of a tick (before PROC FRAME): every game-level timer and every timer of the current scene that is above 0 goes down by 1. */
   const countTimers = () => {
     for (const k of gameTimers) { const c = globalScope.vars.get(k); if (c && c.v > 0) c.v--; }
@@ -894,6 +899,29 @@ export function interpret(ast, opts = {}) {
         }
         sfx.active = true; sfx.index = i; sfx.played = 0;
         if (clock) sfx.t0 = clock.play(tick, ++playN);
+        return null;
+      }
+      case 'LoadTable': {
+        // bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md 2.2 / 2.3): a bare name that is a visible table loads it; anything else is an index into the visible list (the game-level
+        // tables in source order, then the current scene's, when the statement stands in the scene), signed 16 bit; outside the list nothing happens
+        if (!V2) throw new Unsupported('LOADTABLE', s);
+        let inScene = false;
+        for (let c = sc; c; c = c.parent) if (c === sceneScope) { inScene = true; break; }
+        const visible = inScene ? [...gameTables, ...sceneTables[curScene]] : gameTables;
+        let t = s.table ? visible.find((x) => up(x.name) === up(s.table.name)) : undefined;
+        if (!t) {
+          const v = ev(s.table ?? s.index, sc);
+          if (v < 0 || v >= visible.length) return null;
+          t = visible[v];
+        }
+        const home = gameTables.includes(t) ? globalScope : sceneScope;
+        for (const row of t.rows) {
+          const c = home.find(up(row.target.name));
+          if (!c) throw new Error(`interp: TABLE ${t.name}: ${row.target.name} is not declared`);
+          const vals = row.values.map((x) => ev(x, home));
+          if (c.arr) { c.arr.fill(0); vals.forEach((x, k) => { if (k < c.arr.length) c.arr[k] = x; }); }      // the elements past the last value are 0
+          else c.v = vals[0] ?? 0;
+        }
         return null;
       }
       case 'Silence': sfx.active = false; if (clock) ++playN; return null;

@@ -108,6 +108,7 @@ class Scope {
     this.vars = new Map();    // KEY -> {name, type, kind: 'var'|'array'|'param'|'asset', assetKind?, pos, used}
     this.procs = new Map();   // KEY -> {name, param, node, used}
     this.fns = new Map();     // KEY -> {name, node}
+    this.tables = new Map();  // KEY -> {name, node, pos}: the TABLEs declared in this scope (bankable per-level tables)
   }
   lookup(map, key) {
     for (let s = this; s; s = s.parent) { const v = s[map].get(key); if (v) return v; }
@@ -151,7 +152,19 @@ class Checker {
     this.sceneLater = new Map();      // batch 4: SCENE node -> Map(KEY -> pos): the DIM / CONST names of that scene, wherever declared (a PROC sees its own scene's only)
     this.curLater = null;             // the sceneLater map of the scene being checked (null at the game level)
     this.entered = new Set();         // batch 4: KEYs of the scenes some ENTER names
+    // bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md): every TABLE of the program is known before any statement is checked, so a LOADTABLE sees tables declared below it
+    this.gameTables = (ast?.decls ?? []).filter((d) => d?.type === 'Table');                        // game level, source order
+    this.sceneTablesOf = new Map((ast?.scenes ?? []).map((sc) => [sc, (sc.decls ?? []).filter((d) => d?.type === 'Table')]));
+    this.gameTableMap = new Map();
+    for (const t of this.gameTables) if (t.name && !this.gameTableMap.has(up(t.name))) this.gameTableMap.set(up(t.name), t);
+    this.curScene = null;             // the SCENE being checked (null at the game level): which tables a LOADTABLE sees
+    this.tableNo = 0;
   }
+
+  /** The tables a statement in `scene` (null: at the game level) sees, in LOADTABLE's index order: the game-level tables in source order, then the scene's. */
+  visibleTables(scene = this.curScene) { return scene ? [...this.gameTables, ...(this.sceneTablesOf.get(scene) ?? [])] : this.gameTables; }
+  /** The visible TABLE node called `key` (upper case), or undefined. */
+  tableByName(key, scene = this.curScene) { return this.visibleTables(scene).find((t) => t.name && up(t.name) === key); }
 
   err(pos, message, severity = 'error') {
     const p = pos ?? { line: 1, col: 0, endCol: 0 };
@@ -229,6 +242,7 @@ class Checker {
       switch (item.type) {
         case 'Dim': this.declareDim(global, item, false); break;
         case 'Const': this.declareConst(global, item); break;
+        case 'Table': this.declareTable(global, item); break;
         case 'DefFn': this.checkFn(global, item); break;
         case 'Proc': this.checkProc(global, item); break;
         case 'Scene': this.checkScene(item); break;
@@ -272,6 +286,8 @@ class Checker {
       if (prev) { this.err(p.namePos, `PROC '${p.name}' is already defined (line ${prev.node.line})`); continue; }
       const v = scope.lookup('vars', key);
       if (v) { this.err(p.namePos, `'${p.name}' is already a ${v.kind === 'const' ? 'CONST' : 'variable'} (line ${v.pos.line})`); continue; }
+      const tb = scope !== this.global ? this.gameTableMap.get(key) : null;                // a game-level table seen from a scene (a scene's own tables report themselves)
+      if (tb) { this.err(p.namePos, `'${p.name}' is already the name of a TABLE (line ${tb.line})`); continue; }
       scope.procs.set(key, { name: p.name, param: p.param, params: p.params ?? (p.param ? [{ name: p.param }] : []), node: p, used: false });
     }
     for (const d of decls) {
@@ -281,13 +297,16 @@ class Checker {
       if (prev) { this.err(d.namePos, `DEF FN '${d.name}' is already defined (line ${prev.node.line})`); continue; }
       const v = scope.lookup('vars', key);
       if (v) { this.err(d.namePos, `'${d.name}' is already a ${v.kind === 'const' ? 'CONST' : 'variable'} (line ${v.pos.line})`); continue; }
+      const tb = scope !== this.global ? this.gameTableMap.get(key) : null;
+      if (tb) { this.err(d.namePos, `'${d.name}' is already the name of a TABLE (line ${tb.line})`); continue; }
       scope.fns.set(key, { name: d.name, node: d });
     }
   }
 
   checkScene(sc) {
     this.curLater = this.sceneLater.get(sc) ?? null;
-    try { this.checkSceneBody(sc); } finally { this.curLater = null; }
+    this.curScene = sc;
+    try { this.checkSceneBody(sc); } finally { this.curLater = null; this.curScene = null; }
   }
 
   checkSceneBody(sc) {
@@ -304,6 +323,7 @@ class Checker {
       switch (item.type) {
         case 'Dim': this.declareDim(scope, item, false); break;
         case 'Const': this.declareConst(scope, item); break;
+        case 'Table': this.declareTable(scope, item); break;
         case 'DefFn': this.checkFn(scope, item); break;
         case 'Proc': this.checkProc(scope, item); break;
         default: break;
@@ -478,6 +498,8 @@ class Checker {
     const prev = scope.lookup('vars', key);
     if (prev) { this.err(c.namePos ?? c, `'${c.name}' is already declared (line ${prev.pos.line})`); return; }
     if (scope.lookup('procs', key) || scope.lookup('fns', key)) { this.err(c.namePos ?? c, `'${c.name}' is already the name of a PROC or DEF FN`); return; }
+    const tb = this.tableClash(scope, key);
+    if (tb) { this.err(c.namePos ?? c, `'${c.name}' is already the name of a TABLE (line ${tb.line})`); return; }
     const value = this.constOf(c.value, scope, `CONST ${c.name}`);
     scope.vars.set(key, { name: c.name, type: 'num', kind: 'const', value: value ?? 0, bad: value === undefined, pos: c.namePos ?? c, used: false });
   }
@@ -536,11 +558,84 @@ class Checker {
         this.err(it, `'${it.name}' is already the name of a PROC or DEF FN`);
         continue;
       }
+      const tb = this.tableClash(scope, key);
+      if (tb) { this.err(it, `'${it.name}' is already the name of a TABLE (line ${tb.line})`); continue; }
       scope.vars.set(key, {
         name: it.name, type: typeOfName(it.name), kind: isArr ? 'array' : 'var',
         pos: { line: it.line, col: it.col, endCol: it.endCol }, used: false, size: sizes ? sizes[0] : null, sizes,
       });
     }
+  }
+
+  /**
+   * The TABLE a new variable / CONST called `key` in `scope` would clash with, else undefined: a table already met in the chain, or (from a scene) any game-level table, wherever it stands.
+   * A game-level variable and a game-level table report at whichever comes second (the table's own check sees the variable), so a later game-level table is not reported here.
+   */
+  tableClash(scope, key) { return scope.lookup('tables', key)?.node ?? (scope !== this.global ? this.gameTableMap.get(key) : undefined); }
+
+  /**
+   * TABLE name rows ENDTABLE (docs/ARCADE_TABLES_CONTRACT.md section 2.1). Each rule has its own message. `inProc`: the table stands inside a PROC (an error; the rows are still checked).
+   */
+  declareTable(scope, t, inProc = false) {
+    const at = t.namePos?.line ? t.namePos : t;
+    if (inProc) this.err(t, 'TABLE must be at the top level or directly inside a SCENE, not inside a PROC');
+    if (this.versionKnown && this.version < 2) this.err(t, 'TABLE needs the v2 runtime (or later)');
+    if (++this.tableNo === LIMITS.maxTables + 1) this.err(at, `at most ${LIMITS.maxTables} TABLEs per game (this is the ${this.tableNo}th)`);
+    const name = t.name ?? '';
+    let ok = !!name;
+    if (name) {
+      const key = up(name);
+      if (name.endsWith('$')) { this.err(at, `a TABLE name is not a string: '${name}' cannot end with $`); ok = false; }
+      const v = scope.lookup('vars', key);
+      const prevT = scope.lookup('tables', key)?.node ?? (scope !== this.global ? this.gameTableMap.get(key) : null);
+      const other = [...this.assets.entries()].find(([k]) => k.endsWith(`:${key}`));
+      if (v) { this.err(at, `'${name}' is already declared (line ${v.pos.line})`); ok = false; }
+      else if (scope.lookup('procs', key) || scope.lookup('fns', key)) { this.err(at, `'${name}' is already the name of a PROC or DEF FN`); ok = false; }
+      else if (prevT && prevT !== t) { this.err(at, `'${name}' is already declared (line ${prevT.line})`); ok = false; }
+      else if (other) { this.err(at, `'${name}' is already declared as a ${other[1].kind.toUpperCase()} (line ${other[1].pos?.line ?? 1})`); ok = false; }
+      else if (this.scenes.has(key)) { this.err(at, `'${name}' is already the name of a SCENE (line ${this.scenes.get(key).line})`); ok = false; }
+      if (ok) scope.tables.set(key, { name, node: t, pos: at });
+    }
+    if (!(t.rows ?? []).length) this.err(t, `TABLE ${name} has no rows: write target = value, value, ... between TABLE and ENDTABLE`);
+    const seen = new Map();
+    for (const row of t.rows ?? []) {
+      const tg = row.target;
+      if (!tg?.name) continue;
+      const key = up(tg.name);
+      const sym = scope.lookup('vars', key);
+      let good = false;
+      if (!sym) this.err(tg, `TABLE ${name}: ${tg.name} is not a variable or array of this scope`);
+      else if (sym.kind === 'const') this.err(tg, `TABLE ${name}: '${tg.name}' is a CONST (line ${sym.pos.line}): a row sets a variable or an array`);
+      else if (sym.kind !== 'var' && sym.kind !== 'array') this.err(tg, `TABLE ${name}: ${tg.name} is not a variable or array of this scope`);
+      else if (sym.type === 'str') this.err(tg, `TABLE ${name}: '${tg.name}' is a string: a table holds numbers`);
+      else good = true;
+      if (sym) sym.used = true;
+      if (seen.has(key)) this.err(tg, `TABLE ${name}: '${tg.name}' appears twice (first on line ${seen.get(key)})`);
+      else seen.set(key, tg.line);
+      for (const v of row.values ?? []) this.constOf(v, scope, 'a table value');
+      if (!good) continue;
+      const n = (row.values ?? []).length;
+      if (sym.kind === 'array') {
+        const total = sym.sizes ? sym.sizes.reduce((p, s) => p * (s + 1), 1) : null;
+        if (total !== null && n > total) this.err(row.values[total] ?? row, `TABLE ${name}: ${n} values for ${tg.name}, which has only ${total} elements`);
+      } else if (n !== 1) this.err(row.values?.[1] ?? row, `TABLE ${name}: ${tg.name} is a single variable and takes exactly one value (${n} given)`);
+    }
+  }
+
+  /**
+   * LOADTABLE (docs/ARCADE_TABLES_CONTRACT.md section 2.3): a bare name that is a visible table loads it; anything else is an index into the visible list (game-level tables in source order, then
+   * the scene's). A constant index outside the list is a warning (the statement does nothing); with no table visible an index is an error.
+   */
+  loadTableStmt(s, ctx) {
+    if (this.versionKnown && this.version < 2) { this.err(s, 'LOADTABLE needs the v2 runtime (or later)'); return; }
+    const visible = this.visibleTables();
+    if (s.table && this.tableByName(up(s.table.name))) return;
+    const e = s.table ?? s.index;
+    if (!e) return;
+    if (visible.length === 0) this.err(s, 'LOADTABLE: no TABLE is visible here (declare one with TABLE name ... ENDTABLE at the top level or in this SCENE)');
+    this.numArg(e, ctx, 'the table index');
+    const k = visible.length ? this.lit(e) : undefined;
+    if (k !== undefined && (k < 0 || k >= visible.length)) this.warn(e, `LOADTABLE ${k}: there ${visible.length === 1 ? 'is only 1 table' : `are only ${visible.length} tables`} here (0..${visible.length - 1}): this statement does nothing`);
   }
 
   checkFn(scope, d) {
@@ -563,6 +658,8 @@ class Checker {
       const key = up(p.name);
       if (ps.vars.has(key)) { this.err(p, `parameter '${p.name}' is declared twice`); continue; }
       const hidden = scope.lookup('vars', key);
+      const tbl = this.tableByName(key);
+      if (tbl) { this.err(p, `parameter '${p.name}' has the name of a TABLE (line ${tbl.line})`); ps.vars.set(key, { name: p.name, type: typeOfName(p.name), kind: 'param', pos: p, used: true }); continue; }
       if (hidden && hidden.kind === 'const') this.err(p, `parameter '${p.name}' has the name of a CONST (line ${hidden.pos.line})`);
       else if (hidden) this.warn(p, `parameter '${p.name}' hides the variable of the same name (line ${hidden.pos.line})`);
       ps.vars.set(key, { name: p.name, type: typeOfName(p.name), kind: 'param', pos: p, used: true });
@@ -618,6 +715,10 @@ class Checker {
               this.err(v, 'a FOR variable must be a number');
               sym = { kind: 'var', type: 'str', used: true };
               ctx.scope.vars.set(key, { name: v.name, type: 'str', kind: 'var', pos: { line: v.line, col: v.col, endCol: v.endCol }, used: true });
+            } else if (this.tableByName(key)) {
+              this.err(v, `'${v.name}' is the name of a TABLE (line ${this.tableByName(key).line}): a FOR variable cannot have its name`);
+              ctx.reported.add(key);
+              sym = { kind: 'var', type: 'num', used: true };
             } else {
               ctx.scope.vars.set(key, { name: v.name, type: 'num', kind: 'local', implicit: true, pos: { line: v.line, col: v.col, endCol: v.endCol }, used: true });
             }
@@ -737,6 +838,8 @@ class Checker {
         return;
       case 'Hide': return this.assetRef(s.sprite, 'sprite', ctx);
       case 'Play': return this.playStmt(s, ctx);
+      case 'LoadTable': return this.loadTableStmt(s, ctx);
+      case 'Table': this.declareTable(ctx.scope, s, true); return;
       case 'Enter':
         if (s.scene && !this.scenes.has(up(s.scene.name))) this.err(s.scene, `ENTER: unknown SCENE '${s.scene.name}'`);
         else if (s.scene) this.entered.add(up(s.scene.name));
@@ -810,6 +913,8 @@ class Checker {
       }
       const outer = ctx.scope.lookup('vars', key);
       if (outer && outer.kind === 'const') { this.err(n, `'${n.name}' is a CONST (line ${outer.pos.line}): a local cannot have its name`); continue; }
+      const tbl = this.tableByName(key);
+      if (tbl) { this.err(n, `'${n.name}' is the name of a TABLE (line ${tbl.line}): a local cannot have its name`); continue; }
       if (ctx.scope.lookup('procs', key) || ctx.scope.lookup('fns', key)) { this.err(n, `'${n.name}' is already the name of a PROC or DEF FN`); continue; }
       if (ctx.touched.has(key)) { this.err(n, `'${n.name}' is used earlier in this PROC: declare the LOCAL before its first use`); continue; }
       ctx.scope.vars.set(key, { name: n.name, type: typeOfName(n.name), kind: 'local', pos: { line: n.line, col: n.col, endCol: n.endCol }, used: false });
@@ -919,6 +1024,7 @@ class Checker {
         if (!sym) {
           const a = this.anyAsset(key);
           if (a) { if (!ctx.reported.has(key)) { ctx.reported.add(key); this.err(e, `'${e.name}' is a ${a.kind.toUpperCase()}, not a variable`); } return '?'; }
+          if (this.tableByName(key)) { if (!ctx.reported.has(key)) { ctx.reported.add(key); this.err(e, `'${e.name}' is a TABLE, not a variable: LOADTABLE ${e.name} copies it`); } return '?'; }
           this.undeclared(e, ctx); return '?';
         }
         sym.used = true;
