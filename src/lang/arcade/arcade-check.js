@@ -66,6 +66,7 @@
  *   - (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md) scenes: any number; ENTER does not return, so a statement after it in the same block is "unreachable statement"; a scene
  *     (not the first) that no ENTER names is a warning; the "FOR variable declared later" check looks at the game level plus the PROC's own scene only (another scene's DIM is not visible to it).
  *     (A runtime older than v2 refuses a second scene and ENTER in the code generator, which knows the runtime.)
+ *   - (language batch 7, docs/ARCADE_LANGUAGE_BATCH7.md) `SCENE name NOWINDOW` needs a WINDOW in the game and `NOVIEW` a VIEW3D; the wrong one of the two (NOVIEW in a WINDOW game, NOWINDOW in a VIEW3D game) is an error.
  *   - (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md) TIMER a, b (a Dim node with `timer: true`) declares ordinary variables like DIM, at the top level or directly in a SCENE (not in a PROC); a
  *     `$` name, an array size and an initialiser are errors; an unused timer gets the usual "variable never used" warning. KEYPRESS(c) takes a key written out exactly as KEYDOWN does;
  *     JOYPRESS(n) needs the literal 1 or 2 (a CONST works too). PRINT item USING "pattern": the item must be a number, the pattern is # and 0 only, 1 to 8 characters. PLAY by index: a bare name
@@ -258,6 +259,7 @@ class Checker {
     // language batch 4: scenes
     const scenes = ast.scenes ?? [];
     scenes.forEach((sc, i) => {
+      if (sc.mode) this.checkSceneMode(sc);
       if (i > 0 && !this.entered.has(up(sc.name)) && this.scenes.get(up(sc.name)) === sc) this.warn(sc.namePos?.line ? sc.namePos : sc, `SCENE '${sc.name}' is never entered: only the first scene starts by itself`);
     });
 
@@ -303,6 +305,19 @@ class Checker {
       if (tb) { this.err(d.namePos, `'${d.name}' is already the name of a TABLE (line ${tb.line})`); continue; }
       scope.fns.set(key, { name: d.name, node: d });
     }
+  }
+
+  /**
+   * Language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md section 1.2): `SCENE name NOWINDOW` needs a game with a WINDOW, `SCENE name NOVIEW` one with a VIEW3D; the other one of the two is an error too.
+   */
+  checkSceneMode(sc) {
+    const at = sc.modePos ?? sc.namePos ?? sc;
+    const word = sc.mode === 'nowindow' ? 'NOWINDOW' : 'NOVIEW';
+    const want = sc.mode === 'nowindow' ? 'WINDOW' : 'VIEW3D', other = sc.mode === 'nowindow' ? 'VIEW3D' : 'WINDOW', otherWord = sc.mode === 'nowindow' ? 'NOVIEW' : 'NOWINDOW';
+    const has = sc.mode === 'nowindow' ? this.hasWindow : this.hasView, hasOther = sc.mode === 'nowindow' ? this.hasView : this.hasWindow;
+    if (has) return;
+    if (hasOther) this.err(at, `SCENE '${sc.name}' ${word}: ${word} is for a game with a ${want}, and this game has a ${other} (line ${(sc.mode === 'nowindow' ? this.views : this.windows)[0].line}): use ${otherWord}`);
+    else this.err(at, `SCENE '${sc.name}' ${word}: ${word} needs a ${want} in the game (a scene without the ${sc.mode === 'nowindow' ? 'window' : '3D view'} only makes sense where the other scenes have one)`);
   }
 
   checkScene(sc) {

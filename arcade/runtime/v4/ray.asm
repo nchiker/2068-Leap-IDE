@@ -257,11 +257,12 @@ ray_map_load:
 
 ; RT_PLANLOAD: HL = the new plan's RLE stream (mapped or banked), B = map_w, C = map_h (each 4..32, not checked: the compiler does) -> VD_MAPW / VD_MAPH /
 ; VD_XMAX / VD_YMAX set, the 32 x 32 array rebuilt as the boot does (all 1, the plan, the outer ring) and the pose (RV_X, RV_Y) clamped into the new map
-; as RT_VIEW does (the angle stays); the next tick draws the new plan.  Ray mode only (V_RAY = 1): otherwise it returns at once.  Clobbers AF, BC, DE, HL.
+; as RT_VIEW does (the angle stays); the next tick draws the new plan.  Only in a game whose boot found a view, the view on or switched off (language
+; batch 7: it works in a NOVIEW scene, and the next RT_VIEWMODE on shows the new plan): otherwise it returns at once.  Clobbers AF, BC, DE, HL.
 RT_PLANLOAD:
-    ld a,(V_RAY)
-    or a
+    call view_has               ; (mode.asm) Z: no view.  The five bytes of the old LD A,(V_RAY) / OR A / RET Z test: no address after it moves
     ret z
+    nop
     call ray_dims
     call ray_map_load
     ld hl,(RV_X)
@@ -527,7 +528,7 @@ ray_attrs:
 ; The tick (main.asm AFTER_FRAME jumps here in ray mode)
 ; ===============================================================================================================
 ray_tick:
-    call ray_mask_dirty         ; the window's cells are never drawn from the cell map
+    call vm_pre                 ; (mode.asm, language batch 7: the view's attributes a file still owes after RT_VIEWMODE on), then ray_mask_dirty: the window's cells are never drawn from the cell map
     call redraw_dirty           ; the HUD / the cells around the window
     call ray_render
     jp TICK_COUNT

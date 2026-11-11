@@ -75,7 +75,9 @@ const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITE
   // v4 (the raycaster, docs/ARCADE_RAYCASTER_CONTRACT.md section 2; docs/ARCADE_RUNTIME_API_V4.md)
   'DIV_VIEW', 'GAME_VIEWDESC', 'VD_LEN', 'BB_TAB', 'BB_ENT', 'VIEW_W', 'VIEW_H', 'VIEW_CX', 'VIEW_CY', 'V_RAY', 'V4VARS', 'R4_END', 'RV_X', 'RV_Y', 'RV_A',
   'VD_COLW', 'VD_MAPW', 'VD_MAPH', 'MAP_RAM', 'RAY_BREC', 'RAY_COS', 'RAY_RECIP', 'RAY_HGT', 'RAY_HGT_LEN', 'RAY_PATM', 'RAY_HHR', 'RAY_PIR', 'RAY_DISTL',
-  'RAY_DISTH', 'RAY_BLIST', 'RAY_BCODE', 'RAY_BCODE_LEN', 'RAY_RAM', 'RAY_RAM_LIMIT', 'RAY_RAM_END', 'WORLD_RAM_LEN'];
+  'RAY_DISTH', 'RAY_BLIST', 'RAY_BCODE', 'RAY_BCODE_LEN', 'RAY_RAM', 'RAY_RAM_LIMIT', 'RAY_RAM_END', 'WORLD_RAM_LEN',
+  // language batch 7 (NOVIEW scenes, mode.asm RT_VIEWMODE): the NOVIEW phase-pool pieces and the mode byte
+  'NV_POOL_A', 'NV_POOL_A_LEN', 'NV_POOL_B', 'NV_POOL_B_LEN', 'NV_POOL_C', 'NV_POOL_C_LEN', 'NV_POOL_BYTES', 'V_RAYOFF'];
 
 export function buildRuntime({ quiet = true } = {}) {
   mkdirSync(WORK, { recursive: true });

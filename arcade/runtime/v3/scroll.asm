@@ -299,13 +299,14 @@ world_decode:
 ; RT_WORLDLOAD: HL = the new world's RLE stream (mapped or banked), A = world_w (24..128), DE = cam_max (pixels, as the compiler's camMax(); stored as given)
 ; -> WORLD_RAM decoded, W_WW / W_WXR (8 world_w) / W_CAMMAX set, the camera 0, and both display files' attribute caches invalidated (win_ac_clear), so the
 ; next two ticks repaint the whole window in both files as after window_boot.  Tile rows, attributes, flags, bands and the window's place stay; sprites are
-; not touched.  Window mode only (V_WIN = 1): otherwise it returns at once.  Clobbers AF, BC, DE, HL.
+; not touched.  Only in a game whose boot found a window, the window on or switched off (language batch 7: it works in a NOWINDOW scene, and the next
+; RT_WINMODE on shows the new world): otherwise it returns at once.  Clobbers AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------------------------------------------
 RT_WORLDLOAD:
     ld c,a
-    ld a,(V_WIN)
-    or a
+    call win_has                ; (mode.asm) Z: no window.  The six bytes of the old LD A,(V_WIN) / OR A / RET Z test: no address after it moves
     ret z
+    nop
     ld a,c
     ld (W_WW),a
     ld (W_CAMMAX),de

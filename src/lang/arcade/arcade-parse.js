@@ -90,6 +90,9 @@
  *  17b2. (language batch 6, docs/ARCADE_LANGUAGE_BATCH6.md Part A) `WORLD expr OF m0, m1, ...` is `World {map: null, index: expr, maps: [Ident]}`: after WORLD a bare name that ends the statement is the
  *      old form; anything else is an expression, which must be followed by OF (a contextual word, an ident: a variable called `of` stays legal) and the list of MAP names (the checker limits it to 64).
  *      `WORLD expr` without OF is an error.
+ *  17b3. (language batch 7, docs/ARCADE_LANGUAGE_BATCH7.md section 1) `SCENE name NOWINDOW` / `SCENE name NOVIEW`: the scene's display mode. The words are contextual (idents, recognised only after the scene name, so a variable
+ *      called `nowindow` stays legal); the Scene node gets `mode` ('nowindow' | 'noview') and `modePos`, and has neither when the clause is absent. Anything else after the name is an error here; whether the
+ *      game has the WINDOW / VIEW3D the clause needs is the checker's.
  *  17c. (bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md section 5.1) `TABLE name` rows `ENDTABLE` is a declaration like DIM (top level or directly in a SCENE; in a PROC it parses and the checker refuses it):
  *      node Table {name, namePos, rows: [TableRow {target: Ident, values: [expr]}], endLine} in the `decls` / `items` of the game or the scene. `LOADTABLE x` is `LoadTable {table: Ident | null, index?: expr}`,
  *      like Play: a bare unparenthesised name goes in `table` (the checker, interpreter and code generator read it as a table when one of that name is visible, else as an index expression).
@@ -448,14 +451,19 @@ class Parser {
   scene() {
     const st = this.next();
     let name = { text: '', line: st.line, col: st.end, end: st.end };
+    let mode = null, modePos = null;
     this.hdr(() => {
       // Scene names have a namespace of their own (the language doc has `SCENE play` while PLAY is a word).
       const t = this.peek();
       if (t.type === 'keyword' && !BLOCK_WORDS.has(t.value)) name = this.next();
       else name = this.expectName('a scene name');
+      // batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md section 1): the clause NOWINDOW / NOVIEW after the scene name (contextual words: idents, so `nowindow` stays a legal variable name)
+      const m = this.peek();
+      if (m.type === 'ident' && (m.value === 'NOWINDOW' || m.value === 'NOVIEW')) { this.next(); mode = m.value === 'NOWINDOW' ? 'nowindow' : 'noview'; modePos = pos(m); }
+      else if (!isEnd(m) && !isBlockWord(m)) this.fail(m, `unexpected ${describe(m)} after the scene name: only NOWINDOW or NOVIEW may follow it (SCENE name [NOWINDOW | NOVIEW])`);
       this.endStmt();
     });
-    const scene = this.mk('Scene', st, { name: name.text, namePos: pos(name), decls: [], procs: [], items: [], endLine: st.line });
+    const scene = this.mk('Scene', st, { name: name.text, namePos: pos(name), ...(mode ? { mode, modePos } : {}), decls: [], procs: [], items: [], endLine: st.line });
     this.close(scene);
     this.expects.push(new Set(['ENDSCENE', 'PROC', 'SCENE']));
     try {

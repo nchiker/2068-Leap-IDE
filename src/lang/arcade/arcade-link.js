@@ -112,6 +112,9 @@ export function link(gen, runtime, image) {
   if (gen.phase && !gen.phase.ok) {
     return fail(`${gen.phase.miss} bytes of sprite art do not fit in the phase pool (${runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0)} bytes): the runtime would stop at boot with a magenta border; use fewer phases, fewer instances or smaller sprites (the frame tables and one frame slot per instance must fit)`);
   }
+  if (gen.noviewPhase && !gen.noviewPhase.ok) {
+    return fail(`${gen.noviewPhase.miss} bytes of sprite art do not fit in the phase pool of a scene without the 3D view (SCENE ... NOVIEW: ${gen.noviewPhase.pieces.reduce((n, [, l]) => n + l, 0)} bytes, smaller than the ${runtime.constants?.PHASE_POOL_BYTES ?? 5888} of a normal game): use fewer phases, fewer instances or smaller sprites (the frame tables and one frame slot per instance must fit)`);
+  }
   const w16 = (a, v) => { memory[a] = v & 0xFF; memory[a + 1] = (v >> 8) & 0xFF; };
   w16(GAME_BASE, gen.entries.init);
   w16(GAME_BASE + 2, gen.entries.frame);
@@ -226,6 +229,7 @@ export function link(gen, runtime, image) {
       },
       gameVars: { used: gen.usage.varBytes, available: (cst.GAME_VARS_LIMIT ?? 0) - (cst.GAME_VARS_BASE ?? 0) + 1 },
     } : {}),
+    ...(gen.noviewPhase ? { noviewPhaseRam: { needed: gen.noviewPhase.need, available: gen.noviewPhase.pieces.reduce((n, [, l]) => n + l, 0), miss: gen.noviewPhase.miss, K: gen.noviewPhase.K, perAsset: gen.noviewPhase.perAsset } } : {}),
     ...(gen.phase ? {
       // language batch 2: bytes per category and the two capacity figures the Studio shows
       frames: gen.sprites.reduce((n, sp) => n + sp.data.length, 0),

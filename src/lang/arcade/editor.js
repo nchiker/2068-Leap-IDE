@@ -82,6 +82,8 @@ function classify(toks, i, atStart) {
     if ((t.value === 'FRAME' || t.value === 'FLIP') && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'SHOW')) return 'packageKeyword';
     // the clauses of VIEW3D (COLW CEIL FLOOR PATTERNS) are words there, ordinary names elsewhere (language batch 3)
     if (['COLW', 'CEIL', 'FLOOR', 'PATTERNS'].includes(t.value) && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'VIEW3D')) return 'packageKeyword';
+    // SCENE name NOWINDOW / NOVIEW (language batch 7): a word only as the third token of a SCENE line, an ordinary name elsewhere
+    if ((t.value === 'NOWINDOW' || t.value === 'NOVIEW') && i >= 2 && toks[i - 2]?.type === 'keyword' && toks[i - 2].value === 'SCENE' && toks[i - 1]?.type !== 'punct') return 'packageKeyword';
     // PRINT item USING "pattern" (language batch 5): a word before a string literal inside a PRINT, an ordinary name elsewhere
     if (t.value === 'USING' && toks[i + 1]?.type === 'string' && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'PRINT')) return 'packageKeyword';
     return 'variableName';
@@ -245,6 +247,12 @@ function arcadeComplete(context) {
   const head = before.slice(0, word.from - line.from).trimEnd();
   const prevWord = /([A-Za-z]+)$/.exec(head)?.[1]?.toUpperCase();
 
+  // language batch 7: after `SCENE name` the clause NOWINDOW / NOVIEW (the one the game's WINDOW / VIEW3D allows; both when the game has neither yet)
+  if (/^\s*SCENE\s+[A-Za-z][A-Za-z0-9_]*$/i.test(head)) {
+    const hasWin = /^\s*WINDOW\b/im.test(text), hasView = /^\s*VIEW3D\b/im.test(text);
+    const clauses = [...(hasView && !hasWin ? [] : [['NOWINDOW', 'scene without the scrolling window']]), ...(hasWin && !hasView ? [] : [['NOVIEW', 'scene without the 3D view']])];
+    return { from: word.from, options: clauses.map(([label, detail]) => ({ label, type: 'keyword', detail, info: () => helpDom(ARCADE_WORDS.get(label)) })), validFor: /^\w*$/ };
+  }
   // After a word that takes one kind of name, offer only that kind.
   const only = (list, type) => ({ from: word.from, options: list, validFor: /^\w*$/ , ...(type ? {} : {}) });
   if (prevWord === 'CALL') return only(s.procs.map((p) => ({ label: p.name, type: 'function', detail: `PROC · line ${p.line}`, apply: p.name + '(' })));

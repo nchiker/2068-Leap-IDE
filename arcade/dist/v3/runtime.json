@@ -179,7 +179,7 @@
     "RT_CLS": 2053,
     "RT_COPY": 8840,
     "RT_DIV": 1587,
-    "RT_END": 15661,
+    "RT_END": 15885,
     "RT_ENTRY": 256,
     "RT_FILL": 8482,
     "RT_FILLC": 8502,
@@ -212,6 +212,7 @@
     "RT_TILEFLAGS": 14781,
     "RT_TILEHIT": 14954,
     "RT_VIDEO": 512,
+    "RT_WINMODE": 15661,
     "RT_WORLDLOAD": 10379,
     "RT_WORLDTILE": 14762,
     "SCK": 12,
@@ -356,6 +357,7 @@
     "V_TEXT_ATTR": 57365,
     "V_TICKS": 57464,
     "V_WIN": 57441,
+    "V_WINOFF": 57442,
     "V_X": 57361,
     "V_Y": 57362,
     "W3_END": 57775,
@@ -459,6 +461,7 @@
     "dirty_byte": 809,
     "draw_all": 1002,
     "draw_cell": 654,
+    "drawn_dirty": 15758,
     "erase_all": 957,
     "erase_b1": 6278,
     "erase_b2": 6307,
@@ -572,6 +575,7 @@
     "wd_slot": 14384,
     "win_ac_clear": 14938,
     "win_draw_all": 13974,
+    "win_has": 15748,
     "win_hit": 15400,
     "win_mask_dirty": 10588,
     "win_tick": 10570,
@@ -721,7 +725,8 @@
     "W3_END": 57775,
     "W_TROWS": 23296,
     "W_ATTRT": 23552,
-    "W_FLAGT": 23808
+    "W_FLAGT": 23808,
+    "V_WINOFF": 57442
   },
   "image": "runtime.bin"
 }

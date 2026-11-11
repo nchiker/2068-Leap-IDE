@@ -101,6 +101,7 @@ plan_pool:
     ld hl,POOL_C
     ld (FC_NEXT+4),hl
     ; ---- 1. the FTAB of every used asset: nframes x (DW rom, DW slot = 0) ----
+.body:                          ; (language batch 7: RT_VIEWMODE's switch off enters here with FC_NEXT at the NOVIEW pieces, FC_MISS 0, the records in their 2D meaning)
     xor a
 .ft:
     call pp_asset               ; IX = record; carry = past the last asset, Z = unused

@@ -46,6 +46,8 @@ const suites = [
   'tests/arcade-m12-differential.mjs',
   'tests/arcade-m13-compiler.mjs',
   'tests/arcade-m13-differential.mjs',
+  'tests/arcade-m14-compiler.mjs',
+  'tests/arcade-m14-differential.mjs',
   'arcade/tests/m1.mjs',
   'tests/arcade-m8-vaults.mjs',
   'arcade/tests/m1-overrun.mjs',
@@ -89,6 +91,7 @@ const suites = [
   'arcade/tests/m10-runtime-sound.mjs',
   'arcade/tests/m11-runtime-bank.mjs',
   'arcade/tests/m12-runtime-table.mjs',
+  'arcade/tests/m14-runtime-mode.mjs',
   ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs'] : []),
 ];
 

@@ -66,11 +66,11 @@ const help = {
   ],
 };
 
-/** The Symbols tab's label for a scene: `name`, `(start)` on the first, then ` -> a, b` (its distinct ENTER targets in order of first appearance). */
+/** The Symbols tab's label for a scene: `name`, `(start)` on the first, `(no window)` / `(no view)` for a scene with NOWINDOW / NOVIEW (language batch 7), then ` -> a, b` (its distinct ENTER targets in order of first appearance). */
 function sceneLabel(s, scene, i) {
   const targets = [];
   for (const e of s.enters ?? []) if (e.from === scene.name && !targets.includes(e.to)) targets.push(e.to);
-  return scene.name + (i === 0 ? ' (start)' : '') + (targets.length ? ` -> ${targets.join(', ')}` : '');
+  return scene.name + (i === 0 ? ' (start)' : '') + (scene.mode === 'nowindow' ? ' (no window)' : scene.mode === 'noview' ? ' (no view)' : '') + (targets.length ? ` -> ${targets.join(', ')}` : '');
 }
 
 function symbolGroups(text) {

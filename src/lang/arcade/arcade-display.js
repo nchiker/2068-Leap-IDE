@@ -22,6 +22,12 @@
  *   scenes.x.display: 'q' is not a display setup (auto, buffers, fine, hires); ignored
  *   scene 'x': display 'fine' (8 x 1 colour) is not built into any runtime yet; the scene is built with two buffers      ('hires' says "(512 x 192 hi-res)")
  * A scene whose `auto` is not 'buffers' while its setting is gets no note: that is advice for the Studio's report.
+ *
+ * Language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md): a scene with the clause NOWINDOW / NOVIEW draws no window or 3D view, so "the game has a WINDOW or a VIEW3D" does not make it 'buffers' by itself (it is
+ * judged as a game without the window / view would be: sprites, redrawn text or tiles, else a static picture); its entry gets `mode` ('nowindow' | 'noview'), and no entry of any other scene has the key.
+ * `sceneModes(ast)` lists every scene's mode: the display model's one rule (what the scene shows):
+ *   'window' / 'view'  the scrolling window / the 3D view is drawn (a scene without the clause, in a game that has one)
+ *   'screen'           the whole 32 x 24 cell screen, sprites at screen positions (a game without the window / view, or a scene with the clause)
  */
 
 "use strict";
@@ -78,6 +84,16 @@ const byName = (items, type) => {
   return m;
 };
 
+/** What each scene shows (see the header): [{name, line, show: 'window' | 'view' | 'screen', mode: 'nowindow' | 'noview' | null}], one per SCENE in source order. */
+export function sceneModes(ast) {
+  const out = [];
+  try {
+    const kind = Array.isArray(ast?.windows) && ast.windows.length ? 'window' : Array.isArray(ast?.views) && ast.views.length ? 'view' : 'screen';
+    for (const sc of ast?.scenes ?? []) if (sc && typeof sc === 'object') out.push({ name: String(sc.name ?? ''), line: (sc.namePos ?? sc).line ?? 1, show: sc.mode ? 'screen' : kind, mode: sc.mode ?? null });
+  } catch { /* a malformed AST */ }
+  return out;
+}
+
 /** The project's override for a scene: the raw `display` of the entry (exact name first, then ignoring case), or undefined. */
 function overrideOf(scenes, name) {
   if (!isObj(scenes)) return undefined;
@@ -110,7 +126,7 @@ export function sceneDisplayPlan(ast, { scenes } = {}) {
       const frame = scan(['FRAME'], sceneProcs, topProcs, sceneFns, topFns);
       let auto, reason;
       if (init.sprites || frame.sprites) { auto = 'buffers'; reason = REASON_SPRITES; }
-      else if (windowed) { auto = 'buffers'; reason = REASON_WINDOW; }
+      else if (windowed && !sc.mode) { auto = 'buffers'; reason = REASON_WINDOW; }      // (batch 7: a NOWINDOW / NOVIEW scene draws no window or view)
       else if (frame.redraw) { auto = 'buffers'; reason = REASON_REDRAW; }
       else if (init.tiles) { auto = 'fine'; reason = REASON_FINE; }
       else { auto = 'hires'; reason = REASON_HIRES; }
@@ -134,6 +150,7 @@ export function sceneDisplayPlan(ast, { scenes } = {}) {
       out.push({
         name, line: at.line ?? 1, col: at.col ?? 0, auto, reason, override,
         setting: chosen === 'auto' ? auto : chosen, built: 'buffers', notes,
+        ...(sc.mode ? { mode: sc.mode } : {}),
       });
     }
   } catch { /* a malformed AST: report what was found */ }

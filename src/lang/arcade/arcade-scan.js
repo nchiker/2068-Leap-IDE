@@ -17,7 +17,7 @@ import { parse, tokenize } from './arcade-parse.js';
 /**
  * @returns {{
  *   assets: {kind: string, name: string, asset: string, count: number|null, line: number, col: number}[],
- *   scenes: {name: string, line: number, col: number, endLine: number}[],     (endLine: the ENDSCENE's line, Infinity when missing)
+ *   scenes: {name: string, line: number, col: number, endLine: number, mode?: 'nowindow' | 'noview'}[],     (endLine: the ENDSCENE's line, Infinity when missing; mode: the clause of language batch 7)
  *   procs:  {name: string, param: string|null, params: string[], locals: string[], scene: string|null, line: number, col: number}[],
  *   fns:    {name: string, param: string, line: number, col: number}[],
  *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number, timer?: true}[],     (language batch 5: a TIMER is listed here, with `timer: true`)
@@ -78,7 +78,7 @@ export function scanArcade(text) {
   addProcs(ast.procs, null);
   for (const s of ast.scenes ?? []) {
     const at = s.namePos ?? s;
-    out.scenes.push({ name: s.name, line: at.line, col: at.col, endLine: s.endLine ?? Infinity });
+    out.scenes.push({ name: s.name, line: at.line, col: at.col, endLine: s.endLine ?? Infinity, ...(s.mode ? { mode: s.mode } : {}) });
     addDecls(s.decls, s.name);
     addProcs(s.procs, s.name);
     for (const p of s.procs ?? []) findEnters(p.body, s.name);

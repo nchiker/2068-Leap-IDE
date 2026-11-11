@@ -77,7 +77,7 @@ sprites at screen positions, and the window / view back when the game enters a p
 * **Appended after the runtime's last routine** so that no address moves; the two fixes inside `RT_PLANLOAD` / `RT_WORLDLOAD` keep their size if
   possible. If an address does move, the hash baselines are regenerated with `regen-baselines.mjs --old 3a22ea1` (cross-checked) and the As built
   notes say so. Bytes: v3 has 880 free (keep >= 600); v4 has 1,592 free at its end (`RT_END $39C8`; the 1,751 quoted before counted gaps).
-* **Cost bounds:** v3 switch <= 5,000 T; v4 OFF <= 15,000 T beyond the pool build, ON <= 15,000 T; the tick of a `NOWINDOW` / `NOVIEW` scene costs
+* **Cost bounds:** v3 switch <= 5,000 T (amended after Part B: <= 8,000 T, since switching ON turns every sprite record a scene without the window left into dirty cells, about 480 T a record: measured 7,674 T with 32 records; a scene switch already costs about 69,000 T for the reset's CLS); v4 OFF <= 15,000 T beyond the pool build, ON <= 15,000 T; the tick of a `NOWINDOW` / `NOVIEW` scene costs
   what a game without the window / view costs.
 
 ## 4. Part C: Leap Runner shows it off (`arcade/examples/runner.arc`, v3)
@@ -125,3 +125,28 @@ sprites at screen positions, and the window / view back when the game enters a p
 
 B0 (v4 investigation: done, section 3) -> A (compiler side) and B (runtimes) in parallel with disjoint files -> C and D (examples; the owner sees both titles)
 -> tests, battery, cross-emulator -> As built, HANDOFF, plan, PR.
+
+## As built
+
+**Parts A and B (2026-11-11).**
+* **Compiler side** (`arcade-parse.js`: the clause as `mode` on the Scene node, contextual; `arcade-check.js` `checkSceneMode`; `arcade-codegen.js`
+  `emitSceneMode`: `LD A,0|1 / CALL RT_WINMODE|RT_VIEWMODE` after `scn$reset` in every `scn$go$k` and at boot, only in a program with a clause;
+  a runtime without the routine is one compile error naming it; the NOVIEW pool plan from the runtime's `NV_POOL_*` symbols, a missing symbol
+  is a compile error (no guessed address); `arcade-interp.js` / `arcade-display.js`: the mode per scene; the Studio words, completion after
+  `SCENE name`, the Symbols tab shows `(no window)` / `(no view)`). 320 of 320 compilations without the clause identical to `3a22ea1`.
+* **Runtime v3** (`arcade/runtime/v3/mode.asm`, appended): `RT_WINMODE`; a new byte `V_WINOFF` says "the window exists but is off" (the in-place
+  `RT_WORLDLOAD` test `win_has` = `V_WIN or V_WINOFF`, same size); OFF marks the window's 384 cells dirty in both files and empties the 2D sprite
+  records; both directions run `drawn_dirty` (each sprite record left by a non-window scene becomes dirty cells in its own file: the window tick
+  never erases). Measured: OFF 3,654 T, ON 820 T + about 480 T a sprite record (7,674 T with 32). v3 free 656 bytes.
+* **Runtime v4** (`arcade/runtime/v4/mode.asm`, appended): `RT_VIEWMODE` (saves IX, IY, the alternates); OFF gives the asset records their 2D
+  meaning back and builds the pool at `NV_POOL_A/B/C` through the new label `plan_pool.body`, marks the view's cells dirty, and on an OFF before
+  the first tick (a NOVIEW first scene) puts `BG_ATTR` back in both files' view area (the boot had written the view's colours there); ON runs
+  `drawn_dirty`, `ray_assets` and writes the view's attributes into the HIDDEN file only; the other file gets them from `vm_pre` (the ray tick's
+  first call, replacing `call ray_mask_dirty`: same size) in the tick that next draws it (`V_RAYATTR`), so the file on screen is never written
+  (no colour flash). `RT_PLANLOAD` tests `view_has` (same size). Measured on Vaults: OFF 5,184 T + the pool (10,800 T at 1 phase), ON 10,830 T
+  + about 2,450 T once on the next tick; every ray tick +27 T. v4 uses 15,069 of 16,384 bytes.
+* **No existing address moved** in either runtime (only `RT_END`); the 6 whole-cartridge hashes of `batch3-baseline.json` changed because the
+  cartridge contains the grown runtime (game areas unchanged; regenerated with `--old 3a22ea1`, old and new compiler cross-checked).
+* **Tests:** `tests/arcade-m14-compiler.mjs` (96 + 1 with `ARCADE_OLD`), `tests/arcade-m14-differential.mjs` (39: interpreter vs TSRun on v3 and v4,
+  titles against games without the window / view, the window / view back against games that never left it: the switched game is an odd number of
+  drawn ticks behind, so its display files are compared crosswise), `arcade/tests/m14-runtime-mode.mjs` (44). `m14-mutations.mjs` is still to do.
