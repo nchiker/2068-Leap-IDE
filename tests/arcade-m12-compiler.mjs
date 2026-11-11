@@ -639,8 +639,7 @@ console.log('\n7. The linker and the DCK: the record read back through the fixup
 // =================================================================================================================
 console.log('\n8. Programs with no TABLE compile to exactly the bytes of the previous compiler');
 {
-  const OLD_DEFAULT = '/tmp/claude-1000/-home-charlie-day-Projects-Leap-IDE/25a39a3e-7287-4816-b35a-0a3748c570ea/scratchpad/headsrc/src/lang/arcade';
-  const oldDir = process.env.ARCADE_OLD ?? (existsSync(join(OLD_DEFAULT, 'arcade-compile.js')) ? OLD_DEFAULT : null);
+  const oldDir = process.env.ARCADE_OLD ?? null;
   if (!oldDir) skip_('byte identity against the previous compiler', 'set ARCADE_OLD to a copy of the previous src/lang/arcade/ (git archive HEAD src)');
   else {
     const oldCompile = (await import(pathToFileURL(join(oldDir, 'arcade-compile.js')).href)).compile;
@@ -648,6 +647,7 @@ console.log('\n8. Programs with no TABLE compile to exactly the bytes of the pre
     for (const d of ['arcade/examples', 'arcade/tests/fixtures']) {
       if (!existsSync(join(ROOT, d))) continue;
       for (const f of readdirSync(join(ROOT, d)).filter((x) => x.endsWith('.arc')).sort()) {
+        if (/^\s*TABLE\b/im.test(readFileSync(join(ROOT, d, f), 'utf8'))) continue;      // a program WITH tables (runner.arc since T5) is not one this section is about
         const aj = join(ROOT, d, f.replace('.arc', '.assets.json'));
         progs.push({ src: `${d}/${f}`, text: readFileSync(join(ROOT, d, f), 'utf8'), assets: existsSync(aj) ? JSON.parse(readFileSync(aj, 'utf8')) : undefined });
       }
@@ -672,7 +672,7 @@ console.log('\n8. Programs with no TABLE compile to exactly the bytes of the pre
     info(`byte identity: ${n} compilations compared, ${same} identical, ${built} of them built a cartridge`);
     check_('and a good number of them built a cartridge (the comparison is not all errors)', built >= 20, `${built}`);
     const exs = progs.filter((p) => p.src.startsWith('arcade/examples/'));
-    check_('the examples are among them (bounce, breakout, shooter, platformer, runner, vaults, blockfall ...)', exs.length >= 8, `${exs.length}`);
+    check_('the examples are among them (bounce, breakout, shooter, platformer, vaults, blockfall ...; runner has tables)', exs.length >= 7, `${exs.length}`);
   }
 }
 

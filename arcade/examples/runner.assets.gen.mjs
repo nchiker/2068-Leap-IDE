@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 "use strict";
-// runner.assets.gen.mjs -- the three NEW levels and the level tables of runner.arc ("Leap Runner", four levels), and runner.assets.json.
+// runner.assets.gen.mjs -- the three NEW levels and the level tables (TABLE lv1 .. lv4) of runner.arc ("Leap Runner", four levels), and runner.assets.json.
 //   node arcade/examples/runner.assets.gen.mjs            writes runner.assets.json next to this file (deterministic)
 //   node arcade/examples/runner.assets.gen.mjs --ascii    prints every level (rows 5..15) with its coins, enemies and checkpoints
-//   node arcade/examples/runner.assets.gen.mjs --data     prints the DIM lines of the level data that runner.arc carries (all four levels, absolute indexes)
+//   node arcade/examples/runner.assets.gen.mjs --data     prints the DIM and TABLE lv1 .. lv4 lines of the level data that runner.arc carries (level-relative lists)
 //   node arcade/examples/runner.assets.gen.mjs --splice   writes those lines into runner.arc between its @@DATA-BEGIN@@ and @@DATA-END@@ markers
 //
 // Level 1 is the platformer's own (platformer.assets.gen.mjs, imported, never copied); levels 2 to 4 are laid out here with the same tileset, the same
@@ -173,7 +173,7 @@ function gauntlet() {
 export const LEVELS = [LEVEL1, ridge(), islands(), gauntlet()];
 export const NAMES = ['Meadow', 'Ridge', 'Islands', 'Gauntlet'];
 
-// ── the level tables (absolute indexes over the four levels) ───────────────────────────────────────────────────────────────────
+// ── the level tables (level-relative: every list of a level starts at 0, one TABLE a level) ─────────────────────────────────────────
 /** The walkers' turning points, from the map: the first x (8 px steps) where the cell in front is solid at its body or has no floor under it. */
 export function turning(level, spawn, dir) {
   const grid = level.g, flagsOf = (t) => FLAGS[t];
@@ -183,32 +183,38 @@ export function turning(level, spawn, dir) {
   while (!blocked(x, spawn[1], dir)) x += 8 * dir;
   return x;
 }
-export function tables() {
-  const t = { cxs: [], cys: [], sx: [], sy: [], wlo: [], whi: [], ckx: [], cky: [], cix: [], rcf: [], rnx: [], lcb: [0], lsb: [0] };
-  for (const L of LEVELS) {
-    const c0 = t.cxs.length, s0 = t.sx.length;
+/** One entry per level: its lists indexed from 0 (cxs cys: coins; sx sy wlo whi: enemies; ckx cky: checkpoints; cix: per 128 px, the first coin not left of x = 128 b;
+ *  rcf rnx: at a respawn at the start and at each checkpoint, the first coin not left of the camera and the first enemy not left of camera - 48) and the counts ce, se. */
+export function levelTables() {
+  return LEVELS.map((L) => {
+    const t = { cxs: [], cys: [], sx: [], sy: [], wlo: [], whi: [], ckx: [], cky: [], cix: [], rcf: [], rnx: [] };
     L.coins.forEach(([c, r]) => { t.cxs.push(c * 8); t.cys.push(r * 8); });
     L.spawns.forEach((s) => { t.sx.push(s[0]); t.sy.push(s[1]); t.wlo.push(s[2] === 0 ? turning(L, s, -1) : 0); t.whi.push(s[2] === 0 ? turning(L, s, 1) : 0); });
     L.checkpoints.forEach(([x, y]) => { t.ckx.push(x); t.cky.push(y); });
-    // cix(b): the first coin (absolute) not left of x = 128 b;  rcf / rnx at a respawn at checkpoint k (0 = the start): the camera is x - 72 clamped to 0..832
-    for (let b = 0; b < 9; b++) { const k = L.coins.findIndex(([c]) => c * 8 + 8 > 128 * b); t.cix.push(c0 + (k < 0 ? L.coins.length : k)); }
+    for (let b = 0; b < 9; b++) { const k = L.coins.findIndex(([c]) => c * 8 + 8 > 128 * b); t.cix.push(k < 0 ? L.coins.length : k); }
     for (const x of [24, ...L.checkpoints.map((c) => c[0])]) {
       const cam = Math.max(0, Math.min(832, x - 72));
-      t.rcf.push(c0 + L.coins.findIndex(([c]) => c * 8 + 8 > cam));
-      t.rnx.push(s0 + L.spawns.findIndex(([sx]) => sx >= cam - 48));
+      t.rcf.push(L.coins.findIndex(([c]) => c * 8 + 8 > cam));
+      t.rnx.push(L.spawns.findIndex(([sx]) => sx >= cam - 48));
     }
-    t.lcb.push(t.cxs.length); t.lsb.push(t.sx.length);
-  }
-  return t;
+    t.ce = L.coins.length; t.se = L.spawns.length;
+    return t;
+  });
 }
 
-/** The DIM lines of runner.arc's level data, between its @@DATA-BEGIN@@ and @@DATA-END@@ markers. */
+/** The scene declarations of runner.arc's level data, between its @@DATA-BEGIN@@ and @@DATA-END@@ markers: the DIMs (sized to the largest level) and TABLE lv1 .. lv4. */
 export function dataLines() {
-  const t = tables();
+  const ts = levelTables();
   const out = [];
-  const arr = (name, vals) => out.push(`  DIM ${name}(${vals.length - 1}) = ${vals.join(', ')}`);
-  for (const k of ['cxs', 'cys', 'sx', 'sy', 'wlo', 'whi', 'ckx', 'cky', 'cix', 'rcf', 'rnx', 'lcb', 'lsb']) arr(k, t[k]);
-  out.push(`  DIM cc(${Math.max(...LEVELS.map((L) => L.coins.length)) - 1}), sd(${Math.max(...LEVELS.map((L) => L.spawns.length)) - 1})`);
+  const big = (k) => Math.max(...ts.map((t) => t[k].length)) - 1;
+  const names = ['cxs', 'cys', 'sx', 'sy', 'wlo', 'whi', 'ckx', 'cky', 'cix', 'rcf', 'rnx'];
+  out.push(`  DIM ${names.map((k) => `${k}(${big(k)})`).join(', ')}, ce, se`);
+  out.push(`  DIM cc(${big('cxs')}), sd(${big('sx')})`);
+  ts.forEach((t, i) => {
+    out.push(`  TABLE lv${i + 1}`);
+    for (const k of names) out.push(`    ${k} = ${t[k].join(', ')}`);
+    out.push(`    ce = ${t.ce}`, `    se = ${t.se}`, '  ENDTABLE');
+  });
   out.push(`  REM coins per level ${LEVELS.map((L) => L.coins.length).join(' ')}; enemies per level ${LEVELS.map((L) => L.spawns.length).join(' ')}`);
   return out.join('\n') + '\n';
 }
@@ -238,8 +244,6 @@ if (MAIN) {
     process.exit(0);
   }
   if (process.argv.includes('--data')) {
-    const t = tables();
-    const arr = (name, vals) => console.log(`  DIM ${name}(${vals.length - 1}) = ${vals.join(', ')}`);
     process.stdout.write(dataLines());
     process.exit(0);
   }

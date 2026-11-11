@@ -166,3 +166,36 @@ change, as B5.
 * **Per-table override** in the project document (section 5 item 4).
 * **Bank C (chunk 6), `RT_BANKCOPY`, banked sound effects, `MUSIC`**: unchanged from the banking contract section 9.
 * **String tables** (no string arrays in the compiler yet).
+
+## As built: slices T1-T4 (2026-11-11, commit `c84b238`)
+
+* **T1 (runtimes):** `RT_TABLELOAD` is 34 bytes in each runtime, appended before `M_TILEOPS_E` (v2), `M_SCROLL_E` (v3) and in `ray.asm`
+  after its `raybb.asm` include (v4). Every pre-existing symbol kept its address (349 / 556 / 643 symbols compared; only `RT_END` moved).
+  Free bytes after: **v2 6,987, v3 2,041, v4 1,751**. Two improvements on section 4: the run count stays in A (nothing in the loop touches
+  it), and a record with 0 runs returns at once. Measured (TSRun, all three the same): 21 T per byte, 105 T per extra 2-byte run, a
+  1-run 2-byte record 162 T mapped / 295 T banked (banking a constant +133 T). Tests: `m12-runtime-table.mjs` 12 checks (about 17,800
+  interrupts per runtime at every instruction boundary, half with the window mapped; whole-64 KB compare), `m12-mutations.mjs` 96 of 96 killed.
+* **T2 / T3 (compiler):** as sections 2, 3 and 5. Decisions made: `lib$tabidx` takes HL = index, DE = list, BC = count (15 bytes); the
+  layout field is `tableRecBytes`; `usage.tables` exists only when the game has tables; keys `table:game.NAME` / `table:SCENE.NAME`, a
+  scene table's display name `scene.name`; a v0 / v1 runtime refuses `TABLE` as well as `LOADTABLE`; extra checker errors for a PROC
+  parameter / LOCAL / FOR variable named like a visible table and for `LOADTABLE (tablename)`; TABLE / LOADTABLE may still name an asset
+  (old projects build); a table banks without `RT_LOADMAPPTR`; records of unused tables are still emitted. A single table is capped in
+  practice by the variable RAM (about 3.8 KB). Tests: `tests/arcade-m12-compiler.mjs` 189 checks, `tests/arcade-m12-differential.mjs` 21
+  (120 random v2 programs and 30 each on v3 / v4, normal and `bankAll`, 255 runs, 256 tables); 138 of 138 baseline compilations
+  identical to the previous compiler (after T5, runner.arc has tables and is left out: 132 of 132 against `84acdec`; that section needs
+  `ARCADE_OLD=<git archive of the previous src>/src/lang/arcade` and is skipped without it, as in m11). Hash baselines regenerated (`regen-baselines.mjs --old 84acdec`: 16 hashes, runtime bytes only).
+  `run-all.mjs` now runs the m10, m11 and m12 compiler and differential tests too (they were missing): 69 steps.
+* **T4 (editor, Studio):** `arcade-scan.js` returns `tables`; TABLE ... ENDTABLE folds, indents and tidies as a block; completion after
+  `LOADTABLE` offers the visible tables; go to definition and rename; a "Tables" group in the Symbols tab (`profile.js`); the Studio's
+  size table has a "Tables" row (mapped bytes) and a banked table is a Banked-bar row (`banked: table level1 (3,609 bytes, auto)`, the map
+  rows' format). `tests/studio-smoke.mjs` 92 checks (12 new).
+* **T5 (Leap Runner on tables):** `runner.arc` keeps its level data in four tables `lv1` .. `lv4` (not `level1` ..: those are the MAP
+  names, and a table name may not clash), printed and spliced by `runner.assets.gen.mjs --data` / `--splice`, level-relative, the counts
+  `ce` / `se` as scalar rows; `LOADLEVEL` does `LOADTABLE lv`; `LCB` / `LSB` and the per-level offsets are gone. Arrays are sized to the
+  largest level, so each record is 343 bytes. Sizes (runtime v3): **mapped 16,342 -> 16,131** of 16,384, banked 1,670 -> 2,013 (the four
+  worlds + `play.lv1`; `lv2` .. `lv4`, 1,029 bytes, stay mapped because the policy banks only until the mapped part fits); with every table
+  banked the mapped part is 15,102, so about **1,280 bytes of mapped room** are now available for more content; variable slots 711 -> 376
+  (1,422 -> 752 bytes of RAM); code 10,486 -> 9,246. Gameplay unchanged: the recorded 1,762-tick play-through gives the same level entry
+  ticks (21, 452, 883, 1306), flags (413, 844, 1267) and final state (score 4,530, 1 life) as the previous version (checked by running the
+  old test in a worktree of `c84b238`). `tests/arcade-runner.mjs` 57 checks (it now reads the TABLE blocks). Cross-emulator:
+  `ARCADE_HARDWARE_NOTES.md` section 13.

@@ -28,7 +28,7 @@ import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { diffV3 } from './arcade-m6-common.mjs';
-import { LEVELS, COLS, ROWS, tables, dataLines, buildRunnerAssets } from '../arcade/examples/runner.assets.gen.mjs';
+import { LEVELS, COLS, ROWS, levelTables, dataLines, buildRunnerAssets } from '../arcade/examples/runner.assets.gen.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -183,10 +183,13 @@ console.log('1. The level data');
   check_('the level data of runner.arc is what runner.assets.gen.mjs --data prints', a > 30 && b > a && SRC.slice(a, b) === dataLines());
   const maps = ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'];
   const flags = ASSETS.tilesets.pf_tiles.tiles.map((t) => t.flags);
-  const T = tables();
-  const arrays = {};
-  for (const m of SRC.slice(a, b).matchAll(/DIM (\w+)\((\d+)\) = ([-\d, ]+)/g)) arrays[m[1]] = m[3].split(',').map(Number);
+  const T = levelTables();
+  // the four TABLE blocks of the data (TABLE lv1 .. lv4): one object a level, row name -> its values (level-relative lists, and the counts ce / se as one value)
+  const blocks = [...SRC.slice(a, b).matchAll(/ {2}TABLE (\w+)\n([\s\S]*?) {2}ENDTABLE/g)];
+  const level = blocks.map((m) => { const o = {}; for (const r of m[2].matchAll(/^ {4}(\w+) = ([-\d, ]+)$/gm)) o[r[1]] = r[2].split(',').map(Number); return o; });
+  check_(`the data are four tables lv1 .. lv4 (${blocks.map((m) => m[1]).join(' ')}), in level order`, blocks.map((m) => m[1]).join(' ') === 'lv1 lv2 lv3 lv4' && level.every((o) => o.ce.length === 1 && o.se.length === 1));
   LEVELS.forEach((L, i) => {
+    const arrays = level[i];
     const m = ASSETS.maps[maps[i]], cell = (c, r) => m.cells[r * COLS + c];
     const ok = m.w === COLS && m.h === ROWS && m.cells.length === COLS * ROWS;
     check_(`level ${i + 1}: the world ${maps[i]} is 128 x 16`, ok);
@@ -196,11 +199,12 @@ console.log('1. The level data');
     check_(`level ${i + 1}: the flag (tile 8 over the pole, tile 7, rows 8-13) stands on ground at column 122`, flag);
     // coins: exactly the coin tiles of the map, in the order of the list
     const coins = []; for (let c = 0; c < COLS; c++) for (let r = 5; r < ROWS; r++) if (cell(c, r) === 6) coins.push([c * 8, r * 8]);
-    const lo = arrays.lcb[i], hi = arrays.lcb[i + 1];
-    const listed = []; for (let k = lo; k < hi; k++) listed.push([arrays.cxs[k], arrays.cys[k]]);
+    const listed = []; for (let k = 0; k < arrays.ce[0]; k++) listed.push([arrays.cxs[k], arrays.cys[k]]);
+    check_(`level ${i + 1}: cxs / cys list exactly ce = ${arrays.ce[0]} coins (the array row is as long as the count)`, arrays.cxs.length === arrays.ce[0] && arrays.cys.length === arrays.ce[0]);
     check_(`level ${i + 1}: the ${listed.length} coins of the list are the coin tiles of the map (sorted by x)`, JSON.stringify(coins.sort((p, q) => p[0] - q[0] || p[1] - q[1])) === JSON.stringify(listed));
     // enemies: sorted by x; a walker stands on a solid top (16 px above it), a bat has no turning points
-    const sl = arrays.lsb[i], sh = arrays.lsb[i + 1];
+    const sl = 0, sh = arrays.se[0];
+    check_(`level ${i + 1}: sx / sy / wlo / whi list exactly se = ${sh} enemies`, [arrays.sx, arrays.sy, arrays.wlo, arrays.whi].every((r) => r.length === sh));
     let sorted = true, standing = true, bats = 0;
     for (let k = sl; k < sh; k++) {
       if (k > sl && arrays.sx[k] < arrays.sx[k - 1]) sorted = false;
@@ -220,10 +224,10 @@ console.log('1. The level data');
     }
     check_(`level ${i + 1}: the turning points (WLO / WHI) of the walkers agree with a second computation from the map`, bad === 0);
     // the checkpoints: three, on ground, at the hero's standing height, and no hazard under the hero's box there
-    const cps = [0, 1, 2].map((j) => [arrays.ckx[i * 3 + j], arrays.cky[i * 3 + j]]);
+    const cps = [0, 1, 2].map((j) => [arrays.ckx[j], arrays.cky[j]]);
     const okc = cps.every(([x, y]) => { const c0 = (x + 3) >> 3, c1 = (x + 12) >> 3, g = (y + 24) >> 3; return [c0, c1].every((c) => flags[cell(c, g)] & 1) && [c0, c1].every((c) => [y >> 3, (y >> 3) + 1, (y >> 3) + 2].every((r) => !(flags[cell(c, r)] & 3))); }) && cps[0][0] < cps[1][0] && cps[1][0] < cps[2][0];
     check_(`level ${i + 1}: three checkpoints in order, on solid ground, clear of walls and spikes`, okc);
-    check_(`level ${i + 1}: the respawn tables (RCF / RNX) and the coin index (CIX) follow the lists`, JSON.stringify([arrays.rcf.slice(i * 4, i * 4 + 4), arrays.rnx.slice(i * 4, i * 4 + 4), arrays.cix.slice(i * 9, i * 9 + 9)]) === JSON.stringify([T.rcf.slice(i * 4, i * 4 + 4), T.rnx.slice(i * 4, i * 4 + 4), T.cix.slice(i * 9, i * 9 + 9)]));
+    check_(`level ${i + 1}: the respawn tables (RCF / RNX) and the coin index (CIX) follow the lists`, JSON.stringify([arrays.rcf, arrays.rnx, arrays.cix]) === JSON.stringify([T[i].rcf, T[i].rnx, T[i].cix]) && arrays.rcf.every((v) => v >= 0 && v <= arrays.ce[0]) && arrays.rnx.every((v) => v >= 0 && v < arrays.se[0]));
   });
   info(`coins per level ${LEVELS.map((L) => L.coins.length).join(' / ')}, enemies per level ${LEVELS.map((L) => L.spawns.length).join(' / ')}`);
 }
@@ -247,7 +251,8 @@ else {
   const u = normal.usage;
   check_(`usage.mapped ${u.mapped.used} of ${u.mapped.available} bytes (fits)`, u.mapped.used <= u.mapped.available);
   const names = u.banked.assets.map((x) => x.name).sort().join(',');
-  check_(`usage.banked: the four worlds (${names}), ${u.banked.used} bytes, in the window`, names === 'level,level2,level3,level4' && u.banked.assets.every((x) => x.kind === 'world'));
+  const worlds = u.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
+  check_(`usage.banked: the four worlds, and nothing but tables besides (${names}), ${u.banked.used} bytes, in the window`, worlds === 'level,level2,level3,level4' && u.banked.assets.every((x) => x.kind === 'world' || x.kind === 'table'));
   check_(`the cartridge ships chunks ${normal.shipped.join(' ')} (0 1 runtime, 2 the banked worlds, 4 5 the mapped part)`, JSON.stringify(normal.shipped) === '[0,1,2,4,5]');
   const forced = JSON.parse(ASSETS_TEXT); for (const k of Object.keys(forced.maps)) forced.maps[k].bank = 'mapped';
   const f = compile(SRC, { runtime: R3.rt, image: R3.img, assets: forced });
