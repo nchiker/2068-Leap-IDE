@@ -59,3 +59,27 @@ WINDOW / VIEW3D, more than 64 names, constant index out of range warning), code 
 bytes for v3 and v4; mapped and banked streams through the fixups), the differential on the real v3 and v4 runtimes (index in range,
 negative, past the end; normal and `bankAll`), and byte identity of every program without the new form against the previous compiler
 (`ARCADE_OLD=<git archive of the previous src>/src/lang/arcade`, as m11 / m12).
+
+## Part C: the scrolling window takes a cell's colours from the tile that covers most of it (runtime v3; owner's choice, 2026-11-11)
+
+Why: a window cell at band position `pos` (phase `p = pos AND 7`, first column `col0 = pos >> 3`) shows the right `8 - p` pixels of tile
+`m[col0 + c]` and the left `p` pixels of `m[col0 + c + 1]`, but takes the attribute of `m[col0 + c]` for every p (`scroll.asm` `attr_rows`, the
+platformer contract's "changes in 8-pixel steps"). Leap Runner's tiles bordering the sky then show black outlines up to 7 pixels wide. The
+comparison (owner-reviewed images, a model verified byte-identical to the runtime): over one 8-pixel sweep 1,644 wrongly coloured pixels, 523
+wrongly black; with this change 920 and 269.
+
+1. **Rule:** the attribute of a window cell is that of `m[col0 + c + (p >= 4 ? 1 : 0)]` (the tile covering at least half of it; at exactly 4
+   pixels the right tile). Bitmaps are unchanged. Applies to every band (each band has its own `pos`). The cell map outside the window, sprites
+   (they still take the colours of the cell under them, now the new ones), collision, `WORLDTILE` and everything else are unchanged.
+2. **Cost:** none per tick: the attribute pass still runs only when its column changes, now at phase 4 instead of phase 0 (the cache key
+   `W_AC` holds the attribute column `col0 + (p >= 4)` instead of `col0`). Bytes: a few in v3 (2,041 free). Reading `col0 + 24` is safe:
+   `cam_max` keeps every band's `pos <= 8 world_w - 192`, so a phase of 4 or more means `col0 + 24 <= world_w - 1` (check it in the tests at
+   the maximum camera of each band ratio).
+3. **Byte identity:** compiled games are unchanged (the runtime's addresses do not move unless the change grows code before other labels:
+   keep it inside `scroll.asm`'s window code and regenerate the hash baselines with `regen-baselines.mjs --old <the commit before>`).
+4. **Tests:** the JS reference compositor (`refWindow`, `arcade/tests/m7-common.mjs`) gets the same rule, and the existing window tests
+   (every camera, both display files, every phase, every band layout) compare the runtime with it; add a test that fails under the old rule
+   (a sky / brick boundary at p = 3, 4 and 7). `tests/arcade-runner.mjs`, the platformer tests and the differential tests compare state
+   (not colours) or runtime against runtime and should pass unchanged; the cross-emulator check is repeated once.
+5. **Not done:** option 2 of the comparison (drop the minority tile's pixels when its colours differ), to be done with the blank-cell fast
+   path, whose time saving would pay for it.
