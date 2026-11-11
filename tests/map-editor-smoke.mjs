@@ -147,6 +147,23 @@ try {
   check('the canvas is w x cellPx wide, the ruler and the camera row are hidden for a cell map',
     await evaluate("(() => { const c = document.querySelector('[data-role=map-canvas]'), z = t.editor.getState().cellPx; return c.width === 32 * z && c.height === 24 * z && document.querySelector('[data-role=ruler]').hidden && document.querySelector('[data-role=camera-row]').hidden; })()"));
   check('no warnings for the shooter\'s own map', (await warnIds()).length === 0, (await warnIds()).join());
+  // ── the Bank select (banked cartridge map, slice B4): Auto removes the key; Mapped / Banked write it and keep the cells ──
+  {
+    const opts = await evaluate("[...document.querySelectorAll('[data-role=bank-select] option')].map((o) => o.value).join()");
+    check('the toolbar has a Bank select (Auto / Mapped / Banked), Auto for a map without the key', opts === 'auto,mapped,banked' && (await evaluate("document.querySelector('[data-role=bank-select]').value")) === 'auto', opts);
+    const cells0 = JSON.stringify(cellsOf(await asset('sky')));
+    const s0 = await sets();
+    await setSelect('[data-role=bank-select]', 'banked');
+    let a = await asset('sky');
+    check('Banked writes bank: "banked" through the host (one setAsset), the cells and tile set are untouched', a.bank === 'banked' && (await sets()) === s0 + 1 && JSON.stringify(cellsOf(a)) === cells0 && (await evaluate('t.log.bad.length')) === 0);
+    await setSelect('[data-role=bank-select]', 'mapped');
+    check('Mapped writes bank: "mapped"', (await asset('sky')).bank === 'mapped');
+    await click('[data-role=undo]');
+    check('Undo steps back over the bank choice (back to Banked) and the select follows', (await asset('sky')).bank === 'banked' && (await evaluate("document.querySelector('[data-role=bank-select]').value")) === 'banked');
+    await setSelect('[data-role=bank-select]', 'auto');
+    a = await asset('sky');
+    check('Auto removes the key again', !('bank' in a) && JSON.stringify(cellsOf(a)) === cells0 && (await evaluate("document.querySelector('[data-role=bank-select]').value")) === 'auto');
+  }
   await shot('01-shooter-dark');
 
   // the canvas shows the real tile bitmaps and attribute colours

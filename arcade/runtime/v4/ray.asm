@@ -31,8 +31,8 @@ UNIT_O_OP       EQU $71         ; LD (HL),C: odd
 ; ===============================================================================================================
 ; Boot
 ; ===============================================================================================================
-; ray_check (boot, before video_init; may use IX): V_RAY = 1 when frame_div has DIV_EXT and DIV_VIEW and view_desc is valid: the pointer and
-; map_src in $8000-$BFFF, colw 2 or 4, map_w and map_h 4..32, patterns 0 or in $8000-$BFFF.  Otherwise nothing is written (non-ray mode).
+; ray_check (boot, before video_init; may use IX): V_RAY = 1 when frame_div has DIV_EXT and DIV_VIEW and view_desc is valid: the pointer
+; in $8000-$BFFF, map_src in $8000-$BFFF or $4000-$7FFF (the bank window), colw 2 or 4, map_w and map_h 4..32, patterns 0 or in $8000-$BFFF.  Otherwise nothing is written (non-ray mode).
 ray_check:
     ld a,(GAME_DIV)
     and DIV_EXT|DIV_VIEW
@@ -59,9 +59,9 @@ ray_check:
     cp 32-4+1
     ret nc                      ; map_h 4..32
     ld a,(ix+6)
-    sub $80
-    cp $40
-    ret nc                      ; map_src
+    sub BANK_LO
+    cp $80
+    ret nc                      ; map_src: inside the game image ($8000-$BFFF) or the bank window ($4000-$7FFF, banking)
     ld a,(ix+7)
     or (ix+8)
     jr z,.pd                    ; patterns 0: the default
@@ -181,19 +181,12 @@ ray_boot:
     ld (VD_RPB),a
     dec a
     ld (R_PMASK),a
-    ld a,(ix+1)
-    ld (VD_MAPW),a
-    dec a
-    ld h,a
-    ld l,$FF
-    ld (VD_XMAX),hl             ; map_w * 256 - 1
-    ld a,(ix+2)
-    ld (VD_MAPH),a
-    dec a
-    ld h,a
-    ld l,$FF
-    ld (VD_YMAX),hl
-    call ray_map
+    ld b,(ix+1)
+    ld c,(ix+2)
+    call ray_dims               ; map_w, map_h and their limits
+    ld l,(ix+5)
+    ld h,(ix+6)                 ; map_src (mapped or banked)
+    call ray_map_load
     call ray_tables             ; (uses IX)
     ld ix,(GAME_VIEWDESC)
     call ray_pat
@@ -235,17 +228,64 @@ ray_boot:
     djnz .bb
     ret
 
+; ray_dims: B = map_w, C = map_h -> VD_MAPW, VD_MAPH, VD_XMAX = map_w * 256 - 1, VD_YMAX = map_h * 256 - 1.  Clobbers AF, DE.
+ray_dims:
+    ld a,b
+    ld (VD_MAPW),a
+    dec a
+    ld d,a
+    ld e,$FF
+    ld (VD_XMAX),de
+    ld a,c
+    ld (VD_MAPH),a
+    dec a
+    ld d,a
+    ld (VD_YMAX),de
+    ret
+
+; ray_map_load: HL = a plan's byte-RLE stream, mapped ($8000-$BFFF) or banked ($4000-$7FFF) -> the array, as ray_map.  A banked stream is read with the
+; bank window mapped (docs/ARCADE_BANKING_CONTRACT.md section 3: ray_map reads the stream and writes MAP_RAM / R_T0 in chunk 7, nothing else; interrupts
+; stay on); the window is unmapped before the caller touches RAY_RAM or the display files.  Clobbers AF, BC, DE, HL.
+ray_map_load:
+    ld a,h
+    sub BANK_LO
+    cp BANK_HI-BANK_LO
+    jr nc,ray_map               ; mapped: as before
+    call bank_on
+    call ray_map
+    jp bank_off
+
+; RT_PLANLOAD: HL = the new plan's RLE stream (mapped or banked), B = map_w, C = map_h (each 4..32, not checked: the compiler does) -> VD_MAPW / VD_MAPH /
+; VD_XMAX / VD_YMAX set, the 32 x 32 array rebuilt as the boot does (all 1, the plan, the outer ring) and the pose (RV_X, RV_Y) clamped into the new map
+; as RT_VIEW does (the angle stays); the next tick draws the new plan.  Ray mode only (V_RAY = 1): otherwise it returns at once.  Clobbers AF, BC, DE, HL.
+RT_PLANLOAD:
+    ld a,(V_RAY)
+    or a
+    ret z
+    call ray_dims
+    call ray_map_load
+    ld hl,(RV_X)
+    ld de,(VD_XMAX)
+    call clamp_hl
+    ld (RV_X),hl
+    ld hl,(RV_Y)
+    ld de,(VD_YMAX)
+    call clamp_hl
+    ld (RV_Y),hl
+    ret
+
 ; ray_map: the 32 x 32 array = 1, then the byte-RLE map_src (pairs count 1..255, value; count 0 ends; values above 4 read as 4) into the game's
 ; map_w x map_h cells, row-major; the expansion stops after map_w x map_h cells (a short list leaves the rest 1).  Then every 0 on the outer
-; ring of the array becomes 1 (only a 32-wide or 32-high map has its own ring there): a ray always stops inside the array.  IX = view_desc.
+; ring of the array becomes 1 (only a 32-wide or 32-high map has its own ring there): a ray always stops inside the array.  HL = the stream, the
+; dimensions are VD_MAPW / VD_MAPH (so it can be called again: RT_PLANLOAD).  Clobbers AF, BC, DE, HL; not IX.
 ray_map:
+    push hl                     ; the stream
     ld hl,MAP_RAM
     ld de,MAP_RAM+1
     ld bc,32*32-1
     ld (hl),1
     ldir
-    ld l,(ix+5)
-    ld h,(ix+6)                 ; HL = map_src
+    pop hl
     ld de,MAP_RAM
     ld a,(VD_MAPH)
     ld (R_T0),a                 ; rows left

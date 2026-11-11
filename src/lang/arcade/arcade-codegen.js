@@ -74,7 +74,7 @@
  *        outside the tileset's count (as TILE), FILLC a character outside 32..127. LOADMAP name = `LD A,index / CALL RT_LOADMAP`, with AT
  *        `LD A,index / CALL RT_LOADMAPAT` with BC = x, DE = y. BORDER n = `LD A,n AND 7 / CALL RT_BORDER`; RANDOMISE = `LD HL,0 / CALL RT_RANDOMISE`
  *        (seed from the frame counter), RANDOMISE n = HL = n, with 0 turned into 1 (a constant n at build time, a run-time n by two instructions).
- *  B1-7. Maps: up to 8. With ONE map and no LOADMAP the image is what it was (map_ptr -> 768 raw cell bytes). With a LOADMAP or two or more
+ *  B1-7. Maps: up to 64 (8 before the banked cartridge map: docs/ARCADE_BANKING_CONTRACT.md). With ONE map and no LOADMAP the image is what it was (map_ptr -> 768 raw cell bytes). With a LOADMAP or two or more
  *        maps the header is the 18-byte extended one (frame_div | $80, map_table at +16: `DB count, count x DW map`, each map `DB w, DB h`, w*h
  *        cells) and map_ptr is 0; the runtime then loads map 0 at (0, 0) at boot.
  *
@@ -162,6 +162,8 @@ import { Emitter, L, M } from './z80-emit.js';
 import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, convertSpriteV3, MAX_SFX } from './arcade-assets.js';
 import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, buildFrameT } from './arcade-window.js';
 import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
+import { LIMITS } from './arcade-words.js';
+import { layoutOf, bankOrder, assignAt, rleOf, n3, BANK_BYTES, GAME_AREA_BYTES } from './arcade-bank.js';
 
 const up = (s) => String(s).toUpperCase();
 const w16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -247,7 +249,7 @@ export function usingText(v, pattern) {
  * @param {{symbols: Object<string, number>, constants: Object<string, number>}} runtime
  * @param {object} [assets]
  */
-export function generate(ast, runtime, assets = {}) {
+function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const errors = [], warnings = [];
   const v4 = (runtime.version ?? 0) >= 4;
   const v3 = (runtime.version ?? 0) >= 3;
@@ -306,6 +308,17 @@ export function generate(ast, runtime, assets = {}) {
   const viewDecl = v4 ? (ast.views ?? [])[0] ?? null : null;                // VIEW3D: the first one (the checker refuses a second)
   const viewKey = viewDecl?.map ? up(viewDecl.map.name) : null;
   let viewMapDecl = null;                           // the MAP node the VIEW3D uses as its floor plan (not part of mapList)
+  // the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): a MAP any WORLD statement names is a world (WINDOW) or a plan (VIEW3D), stored once; it is not a screen map
+  const worldNameKeys = new Set();
+  (function walk(n) {
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'World' && n.map?.name) worldNameKeys.add(up(n.map.name));
+    for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
+  })(ast.items ?? []);
+  const worldOnlyDecls = new Map();                 // KEY -> the MAP node (named by a WORLD, not the WINDOW's or the VIEW3D's own)
+  const streams = new Map();                        // KEY -> {key, name, kind: 'world' | 'plan', own, w, h, camMax, data: Uint8Array (RLE), error?}: the worlds / plans a WORLD statement loads
+  const worldFix = [];                              // {label, key}: the `LD HL,src` of each WORLD (the linker puts the stream's address in)
   let worldDecl = null;                             // the MAP node the window uses as its world (not part of mapList)
   const sfxList = [], sfxIndex = new Map();         // {name, node, bytes, records}
   let tileset = null;                               // {node, count, bytes}
@@ -371,7 +384,8 @@ export function generate(ast, runtime, assets = {}) {
     } else if (v1 && a.kind === 'MAP') {
       if (worldKey !== null && up(a.name) === worldKey && !worldDecl) { worldDecl = a; continue; }       // the window's world: kept apart
       if (viewKey !== null && up(a.name) === viewKey && !viewMapDecl) { viewMapDecl = a; continue; }     // the view's floor plan: kept apart
-      if (mapList.length >= 8) { err(a, 'at most 8 MAPs per game'); continue; }
+      if ((winDecl || viewDecl) && worldNameKeys.has(up(a.name)) && !worldOnlyDecls.has(up(a.name))) { worldOnlyDecls.set(up(a.name), a); continue; }     // a WORLD's map: kept apart too
+      if (mapList.length >= LIMITS.maxMaps) { err(a, `at most ${LIMITS.maxMaps} MAPs per game`); continue; }
       mapList.push({ node: a });
     } else { notYet(a, `${a.kind} (${a.name})`); }
   }
@@ -576,7 +590,7 @@ export function generate(ast, runtime, assets = {}) {
           if (tileset.flagsProblem) throw new Error(`tileset "${tileset.node.asset}": ${tileset.flagsProblem}`);
           const tileRows = buildTileRows(tileset);
           win = {
-            cx, cy, worldW: world.w, worldH: world.h, camMax: camMaxOf(world.w, bands.map((b) => b.code)), bands, world,
+            key: worldKey, cx, cy, worldW: world.w, worldH: world.h, camMax: camMaxOf(world.w, bands.map((b) => b.code)), bands, world,
             worldSrc: world.src, tileFlags: buildTileFlags(tileset.flags), tileRows, tables: buildScrollTables(tileRows),
           };
           if (tileset.bytes.slice(0, 8).some((b) => b !== 0)) warnings.push({ ...pos(at), severity: 'warning', message: `tile 0 of the tileset "${tileset.node.asset}" is not blank: tile 0 is the sky of a window world (empty cells and the area beyond a short map are tile 0)` });
@@ -610,7 +624,7 @@ export function generate(ast, runtime, assets = {}) {
             patterns = c.patterns.map((n, i) => pick(n, 0, `PATTERNS byte ${i}`, 0, 255));
             if (patterns.length !== VIEW_PATTERN_BYTES) throw new Error(`PATTERNS needs ${VIEW_PATTERN_BYTES} bytes`);
           }
-          view = { colw, mapW: m.w, mapH: m.h, cells: m.cells, ink, ceil, floor, bright, attrTop: viewAttr(bright, ceil, ink), attrBottom: viewAttr(bright, floor, ink), patterns };
+          view = { key: viewKey, colw, mapW: m.w, mapH: m.h, cells: m.cells, ink, ceil, floor, bright, attrTop: viewAttr(bright, ceil, ink), attrBottom: viewAttr(bright, floor, ink), patterns };
         } catch (ex) { err(at, `view map "${viewMapDecl.asset}": ${ex.message}`); }
       }
     }
@@ -720,10 +734,45 @@ export function generate(ast, runtime, assets = {}) {
       err(s.frame ?? s, `FRAME ${fc} is outside the sprite "${spr.asset}": it has ${spr.framesSrc} frame${spr.framesSrc === 1 ? '' : 's'} (0..${spr.framesSrc - 1})${s.flip ? ' (FLIP adds the mirrored ones itself)' : ''}`);
     }
   }
+  /**
+   * The world / plan a WORLD statement loads (the banked cartridge map): the WINDOW's / VIEW3D's own map, or a MAP only a WORLD names, converted by the same rules (batch 2 / 3) and
+   * kept once. A failure is remembered (`error`) and reported at every WORLD that names it, prefixed `WORLD: `.
+   */
+  function streamOf(node) {
+    const key = up(node.name);
+    let st = streams.get(key);
+    if (st) return st;
+    st = { key, name: node.name, kind: win ? 'world' : 'plan', own: false, w: 0, h: 0, camMax: 0, data: null, error: null };
+    streams.set(key, st);
+    if (win && key === worldKey) { Object.assign(st, { own: true, w: win.worldW, h: win.worldH, camMax: win.camMax, data: rleOf(win.worldSrc) }); return st; }
+    if (view && key === viewKey) { Object.assign(st, { own: true, w: view.mapW, h: view.mapH, data: rleOf(view.cells) }); return st; }
+    const decl = worldOnlyDecls.get(key);
+    if (!decl) { st.error = `unknown MAP '${node.name}'`; return st; }
+    const asset = lookupIn(tabs.maps, decl.asset, decl.name);
+    if (asset === undefined) { st.error = `map asset "${decl.asset}" is not in the project`; return st; }
+    try {
+      if (win) {
+        const world = convertWorldMap(asset, tileset.count);
+        Object.assign(st, { w: world.w, h: world.h, camMax: camMaxOf(world.w, win.bands.map((b) => b.code)), data: rleOf(world.src), decl });
+      } else {
+        const m = convertViewMap(asset);
+        Object.assign(st, { w: m.w, h: m.h, data: rleOf(m.cells), decl });
+      }
+    } catch (ex) { st.error = `${win ? 'world' : 'view'} map "${decl.asset}": ${ex.message}`; }
+    return st;
+  }
   const scanStmts = (list) => {
     for (const s of list ?? []) {
       if (!s) continue;
       if (s.type === 'Local' || s.type === 'Const') continue;                    // declarations: no code
+      if (s.type === 'World') {
+        const rt = view ? 'RT_PLANLOAD' : 'RT_WORLDLOAD';
+        if (!winDecl && !viewDecl) err(s, 'WORLD needs a WINDOW (runtime v3) or a VIEW3D (runtime v4)');
+        else if (sym[rt] === undefined) err(s, `WORLD needs ${rt}, which this runtime does not provide (the runtime build predates the banked cartridge map)`);
+        else if (!win && !view) { /* the WINDOW / VIEW3D itself failed: already reported */ }
+        else { const st = streamOf(s.map); if (st.error) err(s.map, `WORLD: ${st.error}`); }
+        continue;
+      }
       if (s.type === 'Camera' || s.type === 'SetWorld') {
         const rt = s.type === 'Camera' ? 'RT_CAMERA' : 'RT_SETWORLD';
         if (!v3) err(s, `${s.type === 'Camera' ? 'CAMERA' : 'SETWORLD'} needs the v3 runtime (build with --runtime v3)`);
@@ -823,7 +872,9 @@ export function generate(ast, runtime, assets = {}) {
     for (const n of needed) if (sym[n] === undefined) err(scenes[0], `scenes need ${n}, which this runtime does not provide`);
     if (sym.BORDER_COLOUR === undefined && cst.BORDER_COLOUR === undefined) err(scenes[0], 'scenes need BORDER_COLOUR, which this runtime does not provide');
   }
-  const extMaps = v2 && (usesLoadMap || mapList.length > 1 || (driver && mapList.length > 0));
+  if (cst.MAX_MAPS !== undefined && mapList.length > cst.MAX_MAPS) err(mapList[cst.MAX_MAPS].node, `this runtime build holds at most ${cst.MAX_MAPS} maps in its map table (MAX_MAPS); the game has ${mapList.length}`);
+  const bankedMaps = plan ? mapList.filter((m) => plan.at.has(up(m.node.name))).length : 0;
+  const extMaps = v2 && (usesLoadMap || mapList.length > 1 || (driver && mapList.length > 0) || bankedMaps > 0);      // a banked map is read through the map table (the one-map form is for maps in the game image)
   if (mapList.length > 1 && !(v2 && sym.RT_LOADMAP !== undefined)) err(mapList[1].node, 'several MAPs need a runtime with the map table (the v2 runtime of language batch 1)');
   if (extMaps) {
     if (sym.RT_LOADMAP === undefined) err(ast, 'LOADMAP needs RT_LOADMAP, which this runtime does not provide');
@@ -1664,6 +1715,25 @@ export function generate(ast, runtime, assets = {}) {
     e.call(rt);
   }
 
+  /**
+   * WORLD map: v3 `LD HL,src / LD A,world_w / LD DE,cam_max / CALL RT_WORLDLOAD`, v4 `LD HL,src / LD BC,w << 8 | h / CALL RT_PLANLOAD` (contract section 4.6). `src` is the stream's address
+   * once the linker has placed it (mapped or in the window): the operand is a fixup (gen.fixups).
+   */
+  function worldStmt(s) {
+    const st = streamOf(s.map);
+    const fix = e.newLabel('wlfix');
+    if (win) {
+      const rt = need('RT_WORLDLOAD');
+      e.label(fix); e.ld('hl', 0);
+      e.ld('a', st.w); e.ld('de', st.camMax); e.call(rt);
+    } else {
+      const rt = need('RT_PLANLOAD');
+      e.label(fix); e.ld('hl', 0);
+      e.ld('bc', (st.w << 8) | st.h); e.call(rt);
+    }
+    worldFix.push({ label: fix, key: st.key });
+  }
+
   function loadMapStmt(s) {
     const idx = mapIndex.get(up(s.map.name));
     if (!s.x) { e.ld('a', idx); e.call(need('RT_LOADMAP')); return; }
@@ -1845,6 +1915,7 @@ export function generate(ast, runtime, assets = {}) {
       case 'Copy': copyStmt(s); return;
       case 'LoadMap': loadMapStmt(s); return;
       case 'Camera': gen(s.value); e.call(need('RT_CAMERA')); return;
+      case 'World': worldStmt(s); return;
       case 'SetWorld': setWorldStmt(s); return;
       case 'View': viewStmt(s); return;
       case 'SetWall': {
@@ -2218,9 +2289,10 @@ export function generate(ast, runtime, assets = {}) {
       if (sfxList.length) { e.label('sfx$table'); e.db(sfxList.length); sfxList.forEach((_, i) => e.dw(L(`sfx$${i}`))); }
       dataSize.sfx = sfxList.reduce((n, sf) => n + sf.bytes.length, 0) + (sfxList.length ? 1 + 2 * sfxList.length : 0);
       if (extMaps) {
-        mapList.forEach((m, i) => { e.label(`map$${i}`); e.db(m.w, m.h); for (let r = 0; r < m.h; r++) for (let c = 0; c < m.w; c++) e.db(m.bytes[r * 32 + c]); });
-        e.label('maps$table'); e.db(mapList.length); mapList.forEach((_, i) => e.dw(L(`map$${i}`)));
-        dataSize.map = mapList.reduce((n, m) => n + 2 + m.w * m.h, 0) + 1 + 2 * mapList.length;
+        const bankedAt = (m) => plan?.at.get(up(m.node.name));       // a banked map: its record is in the window, not in the game image
+        mapList.forEach((m, i) => { if (bankedAt(m) !== undefined) return; e.label(`map$${i}`); e.db(m.w, m.h); for (let r = 0; r < m.h; r++) for (let c = 0; c < m.w; c++) e.db(m.bytes[r * 32 + c]); });
+        e.label('maps$table'); e.db(mapList.length); mapList.forEach((m, i) => e.dw(bankedAt(m) ?? L(`map$${i}`)));
+        dataSize.map = mapList.reduce((n, m) => n + (bankedAt(m) !== undefined ? 0 : 2 + m.w * m.h), 0) + 1 + 2 * mapList.length;
       } else {
         if (mapList[0] && mapList[0].bytes) { e.label('map$'); for (const b of mapList[0].bytes) e.db(b); }
         dataSize.map = mapList[0] && mapList[0].bytes ? 768 : 0;
@@ -2284,9 +2356,34 @@ export function generate(ast, runtime, assets = {}) {
       if (ph > 1 && k < n) warnings.push({ ...pos(sp.node), severity: 'warning', message: `asset ${sp.name}: only ${k} of ${n} frames stay cached; a frame that is not cached is built when first drawn (about ${buildFrameT(sp.w, sp.h, ph)} cycles for this size) which can overrun the tick; use fewer phases (phases 2 or 1) or fewer frames` });
     });
   }
+  // the banked cartridge map: every MAP that converted is a bankable asset (declaration order), with the bytes it occupies (docs/ARCADE_BANKING_CONTRACT.md section 5)
+  const bankables = [];
+  for (const a of ast.assets ?? []) {
+    if (a.kind !== 'MAP') continue;
+    const m = mapList.find((x) => x.node === a);
+    let kind = null, data = null;
+    if (m && m.bytes) {
+      kind = 'map'; data = new Uint8Array(2 + m.w * m.h); data[0] = m.w; data[1] = m.h;
+      for (let r = 0; r < m.h; r++) for (let c = 0; c < m.w; c++) data[2 + r * m.w + c] = m.bytes[r * 32 + c];
+    } else if (win && a === worldDecl) { kind = 'world'; data = rleOf(win.worldSrc); }
+    else if (view && a === viewMapDecl) { kind = 'plan'; data = rleOf(view.cells); }
+    else { const st = streams.get(up(a.name)); if (st && st.decl === a && !st.error && st.data) { kind = st.kind; data = st.data; } }
+    if (!kind) continue;
+    const asset = lookupIn(tabs.maps, a.asset, a.name);
+    let override = 'auto';
+    if (asset && asset.bank !== undefined && asset.bank !== null) {
+      if (['auto', 'mapped', 'banked'].includes(asset.bank)) override = asset.bank;
+      else warnings.push({ ...pos(a), severity: 'warning', message: `map '${a.name}': bank ${JSON.stringify(asset.bank).replace(/^"|"$/g, "'")} is not auto, mapped or banked; auto used` });
+    }
+    bankables.push({ key: up(a.name), name: a.name, kind, data, override, node: a, asset: a.asset });
+  }
   const rate = ast.framerate ? ast.framerate.value : 30;
   return {
     errors, warnings,
+    streams: [...streams.values()].filter((st) => !st.own && !st.error && st.data).map((st) => ({ key: st.key, name: st.name, kind: st.kind, data: st.data })),
+    fixups: worldFix.map((f) => ({ at: e.addressOf(f.label) + 1, key: f.key })),
+    bankables,
+    bank: plan ?? emptyBank(),
     code, base,
     entries: { init: entry('entry$init'), frame: entry(driver || hasPrologue ? 'frame$entry' : 'P$FRAME') },
     frameDiv: 60 / rate,
@@ -2304,4 +2401,53 @@ export function generate(ast, runtime, assets = {}) {
     phase: v3 ? phasePlan : null,
     usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
   };
+}
+
+// ── the banked cartridge map: placement policy (docs/ARCADE_BANKING_CONTRACT.md section 5) ──────────────────────────────────────────────────────────────
+
+const emptyBank = () => ({ banked: [], keys: new Set(), at: new Map(), bytes: 0 });
+
+/**
+ * generate(ast, runtime, assets, {bankAll}) -> {errors, warnings, code, ...} as generateOnce, plus
+ *   bankables  every MAP that converted: {key, name, kind: 'map' | 'world' | 'plan', data, override: 'auto' | 'mapped' | 'banked', node, asset}
+ *   bank       {banked: [{key, name, kind, bytes, at, why, data}], keys, at, bytes}: what lives in the window $4000-$7FFF (empty when nothing is banked)
+ *   streams    the worlds / plans a WORLD statement loads (the own world / plan of a WINDOW / VIEW3D are in `window` / `view`)
+ *   fixups     [{at, key}]: the address of the operand of each WORLD's `LD HL,src`; the linker writes the stream's address there
+ * Policy `auto`: the game is laid out with everything mapped; if it fits the 16,384 bytes of chunks 4-5, nothing is banked (the bytes are the old compiler's). Otherwise the assets with the
+ * override `banked` go first, then the `auto` ones largest first (ties: declaration order), one at a time, until the mapped part fits; `mapped` ones never move. The code is generated again
+ * for the placement (the map records leave the code; the map table points into the window), and checked: one more asset is banked when the mapped part still does not fit.
+ * `opts.bankAll` (tests) banks every asset.
+ */
+export function generate(ast, runtime, assets = {}, opts = {}) {
+  const g1 = generateOnce(ast, runtime, assets, opts, null);
+  if (!g1.code || g1.errors.length) return g1;
+  const cands = g1.bankables ?? [];
+  const order = bankOrder(cands, !!opts.bankAll);
+  const lay1 = layoutOf(g1, runtime);
+  if (!cands.length || (runtime.version ?? 0) < 2 || (!order.first.length && !opts.bankAll && lay1.used <= GAME_AREA_BYTES)) return g1;      // (a v0 / v1 runtime has no map table to point into the window)
+  const sizeOf = (list) => list.reduce((n, x) => n + x.cand.data.length, 0);
+  const failWith = (g, list) => ({ ...g, code: null, errors: [...g.errors, ...list.map(({ node, message }) => ({ ...pos(node ?? ast), severity: 'error', message }))] });
+  let k = 0;
+  if (opts.bankAll) k = order.rest.length;
+  else { let est = lay1.used - sizeOf(order.first); while (est > GAME_AREA_BYTES && k < order.rest.length) { est -= order.rest[k].cand.data.length; k++; } }
+  for (;;) {
+    const placed = assignAt([...order.first, ...order.rest.slice(0, k)]);
+    if (placed.bytes > BANK_BYTES) return failWith(g1, [{ message: `banked assets need ${n3(placed.bytes)} of ${n3(BANK_BYTES)} bytes` }]);
+    const bank = { banked: placed.banked, bytes: placed.bytes, keys: new Set(placed.banked.map((b) => b.key)), at: new Map(placed.banked.map((b) => [b.key, b.at])) };
+    const g2 = generateOnce(ast, runtime, assets, opts, bank);
+    if (!g2.code || g2.errors.length) return g2;
+    const lay2 = layoutOf(g2, runtime);
+    if (lay2.used <= GAME_AREA_BYTES) {
+      // the runtime build must be able to read from the window (slice B1): nothing it loads from $4000-$7FFF can be read otherwise
+      if (g2.bank.banked.length && runtime.symbols?.RT_LOADMAPPTR === undefined) return failWith(g2, [{ message: `${lay1.used > GAME_AREA_BYTES ? `the game does not fit: mapped part ${n3(lay1.used)} of ${n3(GAME_AREA_BYTES)} bytes, and` : 'a MAP is set to banked (or bankAll), but'} this runtime build cannot read banked assets (it has no RT_LOADMAPPTR): build the runtime with the banked cartridge map` }]);
+      return g2;
+    }
+    if (k < order.rest.length) { k++; continue; }
+    // everything that may move is in the window and the mapped part still does not fit
+    const detail = `code ${g2.code.length}, sprites ${lay2.spriteBytes}${g2.window ? `, window data ${lay2.winData} and scroll tables ${lay2.tablesBytes}` : ''}${g2.view ? `, 3D view data ${lay2.viewData}` : ''}`;
+    if (order.never.length && lay2.used - sizeOf(order.never) <= GAME_AREA_BYTES) {
+      return failWith(g2, order.never.map(({ cand }) => ({ node: cand.node, message: `map '${cand.name}' is set to mapped but the game then does not fit (${n3(lay2.used)} of ${n3(GAME_AREA_BYTES)} bytes)` })));
+    }
+    return failWith(g2, [{ message: `the game does not fit: mapped part ${n3(lay2.used)} of ${n3(GAME_AREA_BYTES)} bytes after banking every map, world and plan (${detail})` }]);
+  }
 }

@@ -85,6 +85,8 @@
  *      - `VIEW x, y, a` (node View {x, y, a}) and `SETWALL x, y = t` (node SetWall {x, y, value}; y at the additive level like TILE's). COSA SINA FXMUL WALL SEEN DEPTH
  *        are ordinary built-in functions (arcade-words.js); SEEN and DEPTH take an instance reference like HIT.
  *      - The BATCH3_WORDS (reserved for variables) are read as names where an ASSET name is expected: SFX wall = "wall", PLAY wall, SHOW wall AT ..., HIT(wall, x).
+ *  17b. (the banked cartridge map, docs/ARCADE_BANKING_CONTRACT.md section 4) `WORLD map` (node World {map: Ident}): load another MAP as the world of the WINDOW or the plan of the VIEW3D.
+ *      WORLD is reserved for variables, like the batch 3 words, but may name an asset (`MAP world = "w"`; BATCH11_WORDS).
  *  18. (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md)
  *      - `TIMER a, b, c` is parsed by the same code as DIM (top level, in a SCENE, or in a PROC for the checker to refuse) and gives a Dim node with `timer: true`: a timer is an ordinary
  *        scalar variable, so every walker that knows Dim / variables handles it; the checker refuses a size, an initialiser and a $ name.
@@ -96,7 +98,7 @@
 
 "use strict";
 
-import { RESERVED, BLOCK_WORDS, FUNCTIONS, ASSET_KINDS, NOT_IN_ARCADE, LIMITS, BATCH3_WORDS, notInArcadeMessage } from './arcade-words.js';
+import { RESERVED, BLOCK_WORDS, FUNCTIONS, ASSET_KINDS, NOT_IN_ARCADE, LIMITS, BATCH3_WORDS, BATCH11_WORDS, notInArcadeMessage } from './arcade-words.js';
 
 // ── Tokenizer ─────────────────────────────────────────────────────
 const WORD_RE = /[A-Za-z][A-Za-z0-9_]*\$?/y;
@@ -255,7 +257,7 @@ class Parser {
   /** The name in an ASSET declaration: like expectName, but a word of language batch 3 (WALL, SEEN, ...) is allowed: assets have a name space of their own. */
   expectAssetName(what) {
     const t = this.peek();
-    if (t.type === 'keyword' && BATCH3_WORDS.has(t.value)) return this.next();
+    if (t.type === 'keyword' && (BATCH3_WORDS.has(t.value) || BATCH11_WORDS.has(t.value))) return this.next();
     return this.expectName(what);
   }
   /** A declared name: an identifier; a reserved word is reported but still returned so the parse goes on. */
@@ -652,6 +654,7 @@ class Parser {
       }
       case 'SHOW': return this.show();
       case 'CAMERA': { this.next(); return this.close(this.mk('Camera', t, { value: this.expr() })); }
+      case 'WORLD': { this.next(); return this.close(this.mk('World', t, { map: this.nameRef('a map name: WORLD level') })); }
       case 'SETWORLD': {
         this.next();
         const x = this.expr(); this.expectSym(',', "expected ',' : SETWORLD x, y = t");
@@ -736,7 +739,7 @@ class Parser {
 
   nameRef(what, allowWord = false) {
     const t = this.peek();
-    if (t.type !== 'ident' && !(allowWord && t.type === 'keyword' && !BLOCK_WORDS.has(t.value)) && !(t.type === 'keyword' && BATCH3_WORDS.has(t.value))) this.fail(t, `expected ${what} but found ${describe(t)}`);
+    if (t.type !== 'ident' && !(allowWord && t.type === 'keyword' && !BLOCK_WORDS.has(t.value)) && !(t.type === 'keyword' && (BATCH3_WORDS.has(t.value) || BATCH11_WORDS.has(t.value)))) this.fail(t, `expected ${what} but found ${describe(t)}`);
     this.next();
     return this.mk('Ident', t, { name: t.text });
   }

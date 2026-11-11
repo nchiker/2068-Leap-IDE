@@ -97,6 +97,36 @@ check('parseProject: invalid JSON gives an error, not a throw', !P.parseProject(
   check('scenes: a removed display stays removed after a round trip', back2.ok && !('play' in back2.project.scenes));
 }
 
+// ── Maps: the banking override (docs/ARCADE_BANKING_CONTRACT.md section 5) ──
+{
+  const mk = (bank) => {
+    const pj = P.newProject();
+    const m = { w: 4, h: 2, cells: '00'.repeat(8) };
+    if (bank !== undefined) m.bank = bank;
+    pj.assets.maps.room = m;
+    return pj;
+  };
+  const load = (bank) => P.validateProject(JSON.parse(P.serializeProject(mk(bank))));
+  for (const b of ['mapped', 'banked']) {
+    const r = load(b);
+    check(`bank "${b}" is kept, with no warning`, r.ok && r.project.assets.maps.room.bank === b && r.warnings.length === 0, JSON.stringify(r.warnings));
+  }
+  const ra = load('auto');
+  check('bank "auto" is stored as no key', ra.ok && !('bank' in ra.project.assets.maps.room) && ra.warnings.length === 0);
+  const rn = load(undefined);
+  check('no bank key: nothing added, no warning', rn.ok && !('bank' in rn.project.assets.maps.room) && rn.warnings.length === 0);
+  for (const bad of ['q', 7, true, null, ['banked']]) {
+    const r = load(bad);
+    check(`bad bank ${JSON.stringify(bad)}: dropped with a warning naming the map, the project still loads`,
+      r.ok && !('bank' in r.project.assets.maps.room) && r.warnings.some((w) => /maps\.room\.bank/.test(w)), JSON.stringify(r.warnings));
+  }
+  const pj = mk('banked');
+  const sv = P.setAsset(pj, 'maps', 'room', { ...P.getAsset(pj, 'maps', 'room'), bank: 'mapped' });
+  check('setAsset keeps the bank key (the editor writes it through the host)', sv.ok && P.getAsset(pj, 'maps', 'room').bank === 'mapped');
+  const back = P.parseProject(P.serializeProject(pj));
+  check('bank: serialize / parse round trip', back.ok && back.project.assets.maps.room.bank === 'mapped' && eq(back.project, pj));
+}
+
 // ── validateAsset ──
 const spr = np.assets.sprites.ball;
 check('validateAsset: sprite ok; wrong row count / hex / frames / phases refused',
@@ -246,7 +276,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
     check('empty ticksB / ticksC compile to exactly the one-channel size and image', sfxBytes(empties) === sfxBytes(one) && Buffer.compare(Buffer.from(empties.dck), Buffer.from(one.dck)) === 0);
   }
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
-  check('the examples index lists bounce, breakout, shooter, blockfall, platformer, vaults', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'platformer', 'shooter', 'vaults']));
+  check('the examples index lists bounce, breakout, shooter, blockfall, platformer, runner, vaults', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'platformer', 'runner', 'shooter', 'vaults']));
   for (const ex of index) {
     const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
     const res = doc.ok ? build(doc.project) : null;

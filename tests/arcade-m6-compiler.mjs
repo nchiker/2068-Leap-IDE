@@ -565,8 +565,9 @@ const w16 = (a) => MEM[a] | (MEM[a + 1] << 8);
   check_('... and equals planPool() of the runtime tests for it', refPlan.ok && refPlan.K.join() === refRes.usage.phaseRam.K.join());
   // the game area
   const manyFrames = withAssets({ sprites: { player: { w: 32, h: 48, frames: Array.from({ length: 32 }, () => ({ rows: Array.from({ length: 48 }, () => ({ bits: 'FFFFFFFF' })) })) } } });
-  const big = cm(prog('    SHOW p AT 1, 1 FRAME 3', { sprites: 'SPRITE p = "player"\n' }), manyFrames);
-  check_('32 frames of a 32 x 48 sprite (12 KB of data) plus the window data: the linker fails and says how many bytes too many', big.errors.length === 1 && /the game does not fit.*too many/.test(big.errors[0].message) && !big.dck, errText(big));
+  // two such sprites: one alone (12 KB) fits once the world is banked (the banked cartridge map); two do not even with everything banked
+  const big = cm(prog('    SHOW p AT 1, 1 FRAME 3\n    SHOW p2 AT 1, 1 FRAME 3', { sprites: 'SPRITE p = "player"\nSPRITE p2 = "player2"\n' }), { ...manyFrames, sprites: { player: manyFrames.sprites.player, player2: JSON.parse(JSON.stringify(manyFrames.sprites.player)) } });
+  check_('two sprites of 32 frames of 32 x 48 (24 KB of data) plus the window data: it does not fit even with the world banked, and the error says how many bytes', big.errors.length === 1 && /the game does not fit: mapped part [\d,]+ of 16,384 bytes after banking every map, world and plan/.test(big.errors[0].message) && !big.dck, errText(big));
 }
 
 // =================================================================================================================

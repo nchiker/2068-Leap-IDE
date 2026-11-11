@@ -417,7 +417,7 @@ const dckArea = (res) => res.dck.slice(9 + 2 * 8192, 9 + 4 * 8192);        // ch
   const fatA = () => ({ w: 32, h: 48, frames: Array.from({ length: 32 }, () => ({ rows: Array.from({ length: 48 }, () => ({ bits: 'FFFFFFFF', mask: 'FFFFFFFF' })) })) });
   const fat = { ...ASSETS, sprites: { ...ASSETS.sprites, fat: fatA(), fat2: fatA() } };
   const r = cm(`GAME "t"\nFRAMERATE 12\nMAP level = "maze"\nSPRITE f = "fat"\nSPRITE f2 = "fat2"\nVIEW3D level\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    SHOW f AT 1, 2 FRAME RND(32)\n    SHOW f2 AT 1, 2 FRAME RND(32)\n  ENDP\nENDSCENE\n`, fat);
-  check_('a game too big for the 16 KB area fails to link and says how many bytes (including the 3D view data)', r.errors.length === 1 && /the game does not fit.*3D view data \d+.*too many/.test(r.errors[0].message), errText(r));
+  check_('a game too big for the 16 KB area fails to link and says how many bytes (including the 3D view data)', r.errors.length === 1 && /the game does not fit: mapped part [\d,]+ of 16,384 bytes after banking every map, world and plan.*3D view data \d+/.test(r.errors[0].message), errText(r));      // the banked cartridge map: the plan is banked first, then it still does not fit
   // v4 without a VIEW3D: the runtime behaves as v3 without a window
   const nv = cm(`GAME "t"\nFRAMERATE 20\nSPRITE g = "guard"\nSCENE s\n  DIM v\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    v = v + 1\n    SHOW g AT v, 20 FRAME v MOD 3 FLIP\n  ENDP\nENDSCENE\n`);
   check_('a v4 program without a VIEW3D: header without DIV_VIEW (frame_div only), a phase plan as v3, no view in the report', nv.errors.length === 0 && nv.memory[0x8004] === 3 && nv.gen.phase !== null && !nv.usage.view && nv.gen.view === null, errText(nv));

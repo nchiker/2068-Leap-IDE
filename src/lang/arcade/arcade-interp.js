@@ -82,7 +82,7 @@
  *   - COPY x, y, w, h TO dx, dy: a memmove of cell byte + attribute for the cells whose source AND destination are on the screen.
  *   - LOADMAP map [AT x, y]: the map's w x h cells (a map keeps its own size; cell byte 128 + tile, or 32 for a blank) go to (x, y) (default
  *     0, 0); cells outside the screen are dropped, cells outside the map untouched; a tile cell gets its tile's attribute, a font cell BG_ATTR.
- *     The FIRST declared map is loaded at (0, 0) at the start. Up to 8 maps.
+ *     The FIRST declared map is loaded at (0, 0) at the start. Up to 64 maps (8 before the banked cartridge map).
  *   - BORDER n: the record's `border` = n AND 7 (initially opts.border0, default 1, the runtime's boot colour).
  *   - RANDOMISE n seeds with n AND $FFFF, 0 becoming 1; RANDOMISE alone seeds with the frame counter's low 16 bits (0 becoming 1) taken from
  *     `opts.frames(tick, k)` (k = 1, 2.. counts the bare RANDOMISEs of that tick, tick 0 = INIT; default tick * frame_div). The generator
@@ -103,6 +103,11 @@
  *   - WORLDTILE / TILEFLAGS / TILEHIT / SOLID / SETWORLD: arcade-window.js (world pixels; outside the world WORLDTILE is 0 and flags are 1 on the left, the
  *     right and above, 0 below, below winning at a corner; a rectangle with w or h <= 0 touches nothing; SETWORLD ignores a cell outside the world and a
  *     tile outside 0..min(31, tile count - 1)).
+ *
+ * ── The banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4) ─────────────────────────────────────────────────────────────────────────────
+ *   WORLD map: in a WINDOW game `win.ram` is the new world (decoded again: SETWORLD changes are lost), the world width and the camera limit are the new map's, the camera is 0; in a VIEW3D
+ *   game the 32 x 32 array is rebuilt from the new plan, map_w / map_h are its own and the pose is kept, clamped into the new map (clampPose). Up to 64 MAPs (a MAP a WORLD names is not a
+ *   screen map). Banking is invisible here: the interpreter never knows where a map is stored.
  *
  * ── Language batch 3 (docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md) ─────────────────────────────────────────────────────
  *   With a VIEW3D the interpreter keeps a model of the runtime's 32 x 32 map array (row stride 32, 1,024 bytes; cells outside the game's map_w x map_h are wall type 1) and the pose
@@ -225,6 +230,15 @@ export function interpret(ast, opts = {}) {
   const winMapKey = (ast.windows ?? [])[0]?.map ? up(ast.windows[0].map.name) : null;
   const viewMapKey = (ast.views ?? [])[0]?.map ? up(ast.views[0].map.name) : null;
   let worldMapDecl = null, viewMapDecl = null;
+  // the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): a MAP a WORLD statement names is a world / plan, not a screen map
+  const worldNameKeys = new Set();
+  (function walk(n) {
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'World' && n.map?.name) worldNameKeys.add(up(n.map.name));
+    for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
+  })(ast.items ?? []);
+  const worldDecls = new Map();             // KEY -> the MAP node a WORLD names (not the WINDOW's / VIEW3D's own)
   const V3 = (opts.version ?? 0) >= 3 || winMapKey !== null || viewMapKey !== null;                // 8-byte SPR_TAB entries (asset, frame), the batch 2 words
   const spriteUse = V3 ? scanSpriteUse(ast, (d) => lookupAsset(tabs.sprites, d.asset, d.name)) : new Map();
   for (const a of ast.assets ?? []) {
@@ -257,7 +271,8 @@ export function interpret(ast, opts = {}) {
     } else if (a.kind === 'MAP') {
       if (winMapKey !== null && up(a.name) === winMapKey && !worldMapDecl) { worldMapDecl = a; continue; }      // the window's world is not a screen map
       if (viewMapKey !== null && up(a.name) === viewMapKey && !viewMapDecl) { viewMapDecl = a; continue; }      // nor is the view's floor plan
-      if (mapDecls.length >= 8) throw new Unsupported('more than 8 MAPs', a);
+      if ((winMapKey !== null || viewMapKey !== null) && worldNameKeys.has(up(a.name)) && !worldDecls.has(up(a.name))) { worldDecls.set(up(a.name), a); continue; }     // a WORLD's map
+      if (mapDecls.length >= 64) throw new Unsupported('more than 64 MAPs', a);
       mapDecls.push(a);
     } else throw new Unsupported(`${a.kind} declaration`, a);
   }
@@ -755,6 +770,22 @@ export function interpret(ast, opts = {}) {
         const x = ev(s.x, sc), y = ev(s.y, sc), t = ev(s.value, sc);
         const c = x >> 3, r = y >> 3;
         if (t >= 0 && t < Math.min(32, win.tileCount) && c >= 0 && c < win.worldW && r >= 0 && r < 16) win.ram[r * 128 + c] = t * 8;
+        return null;
+      }
+      case 'World': {
+        // WORLD map: the world (WINDOW: WORLD_RAM decoded again, width and camera limit of the new map, camera 0) or the plan (VIEW3D: array rebuilt, pose kept and clamped into the new map)
+        if (!win && !view) throw new Unsupported('WORLD without a WINDOW or a VIEW3D', s);
+        const key = up(s.map.name);
+        const decl = win ? (key === winMapKey ? worldMapDecl : worldDecls.get(key)) : (key === viewMapKey ? viewMapDecl : worldDecls.get(key));
+        const as = decl ? lookupAsset(tabs.maps, decl.asset, decl.name) : undefined;
+        if (!decl || !as) throw new Unsupported(`WORLD: the map '${s.map.name}' is not in the project`, s);
+        if (win) {
+          const world = convertWorldMap(as, tileset ? tileset.count : 128);
+          win.worldW = world.w; win.ram = world.src.slice(); win.camMax = camMaxOf(world.w, win.bandCodes); win.cam = 0;
+        } else {
+          const m = convertViewMap(as);
+          view.mapW = m.w; view.mapH = m.h; view.ram = m.ram.slice(); view.pose = clampPose(m.w, m.h, view.pose.x, view.pose.y, view.pose.a);
+        }
         return null;
       }
       case 'View': {

@@ -23,7 +23,7 @@ SCRIPT_SPRDATA  EQU $8960       ; sprite art (up to 512 bytes)
 SCRIPT_SFXTAB   EQU $9300       ; DB count, DW pointers
 SCRIPT_SFXDATA  EQU $9340       ; effect records (up to 1216 bytes)
 SCRIPT_MAPTAB   EQU $9800       ; the map table (DB count, DW pointers; up to 17 bytes)
-SCRIPT_MAPS     EQU $9820       ; the maps (DB w, DB h, cells), up to $9FFF
+SCRIPT_MAPS     EQU $9890       ; the maps (DB w, DB h, cells), up to $9FFF (the table at $9800 holds up to 64 entries)
 SCRIPT_BASE     EQU $A000       ; the script; ends at $BFFF
 
 G_SP            EQU GAME_VARS_BASE              ; word: script pointer

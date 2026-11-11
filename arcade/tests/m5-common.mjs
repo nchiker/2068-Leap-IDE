@@ -14,7 +14,7 @@ export const { M, Z, FRAME_T, hex, int16, makeChecks, rd8, rd16, newMachine, boo
 export const rt = () => C4.runtime();
 
 export const OPS = { SPRTAB: 0x8800, HOT: 0x8840, INST: 0x8860, SPRDATA: 0x8960, TILESET: 0x8B60, SFXTAB: 0x9300, SFXDATA: 0x9340, MAPTAB: 0x9800,
-  MAPS: 0x9820, BASE: 0xA000, END: 0xC000, LOGBUF: 0xE200, LOGN: 0xE102 };
+  MAPS: 0x9890, BASE: 0xA000, END: 0xC000, LOGBUF: 0xE200, LOGN: 0xE102 };
 let _asm = null;
 const opsAsm = () => (_asm ??= assembleGame(join(RUNTIME_DIR, 'test_ops.asm'), { name: 'ops' }));
 const w16 = (v) => [v & 0xFF, (v >> 8) & 0xFF];
@@ -125,7 +125,7 @@ const SEED_INIT = 0xACE1;
 export class Model5 extends C4.Model2 {
   constructor(spec = {}) {
     super({ ...spec, map: null });
-    this.maps = (spec.maps ?? []).slice(0, Math.min(spec.mapCount ?? (spec.maps ?? []).length, 8)).map((m) => ({ w: m.w, h: m.h, cells: m.cells, zero: !!m.zeroPtr }));
+    this.maps = (spec.maps ?? []).slice(0, Math.min(spec.mapCount ?? (spec.maps ?? []).length, 64)).map((m) => ({ w: m.w, h: m.h, cells: m.cells, zero: !!m.zeroPtr }));
     this.noTable = spec.ext === false || spec.noMapTab;
     if (this.noTable) this.maps = [];
     this.seed = SEED_INIT;

@@ -9,7 +9,7 @@
 //   4  role limits and validateMap
 //   5  windowFrame
 //   6  history
-//   7  the five example assets files: round trip (deep equal) and compiled cartridges byte-identical
+//   7  the seven example assets files: round trip (deep equal) and compiled cartridges byte-identical
 //   8  validateMap against the REAL compiler: tiny programs with a WINDOW, a cell map, a VIEW3D (runtimes of arcade/dist)
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -60,6 +60,8 @@ console.log('\n1. Creation and the stored form');
 
   const a = M.fromAsset({ w: 3, h: 2, cells: [0, 1, 255, -1, null, 7], tileset: 'ts', note: { a: [1, 2] } });
   ok('fromAsset (array): blank in its three stored forms reads as -1', same(a.cells, [0, 1, -1, -1, -1, 7]) && a.repr === 'array' && a.tileset === 'ts' && a.w === 3 && a.h === 2);
+  { const bk = M.fromAsset({ w: 2, h: 1, cells: 'FF00', bank: 'banked' });
+    ok('bank (the banking override) is an unknown key: kept in extra and written back by toAsset', same(bk.extra, { bank: 'banked' }) && M.toAsset(bk).bank === 'banked' && !('bank' in M.toAsset({ ...bk, extra: {} }))); }
   ok('fromAsset keeps unknown keys in extra (a copy), tileset apart', same(a.extra, { note: { a: [1, 2] } }));
   ok('toAsset writes blank as 255 in an array and keeps tileset and the unknown keys', deepEq(M.toAsset(a), { w: 3, h: 2, cells: [0, 1, 255, 255, 255, 7], tileset: 'ts', note: { a: [1, 2] } }));
   const hx = M.fromAsset({ w: 3, h: 2, cells: '00 01 ff 02 FF 7e' });
@@ -263,7 +265,7 @@ const compileWith = (text, assets) => {
 {
   const dir = join(ROOT, 'arcade/examples');
   const files = readdirSync(dir).filter((f) => f.endsWith('.assets.json')).sort();
-  ok(`${files.length} example assets files found`, files.length === 6, files.join(' '));
+  ok(`${files.length} example assets files found`, files.length === 7, files.join(' '));
   let maps = 0, compiled = 0;
   for (const f of files) {
     const assets = JSON.parse(readFileSync(join(dir, f), 'utf8')), name = f.replace('.assets.json', '');
@@ -277,7 +279,7 @@ const compileWith = (text, assets) => {
     compiled++;
     ok(`${name}: compiles, and the cartridge from the round-tripped assets is byte-identical`, a.errors.length === 0 && b.errors.length === 0 && !!a.dck && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0, `${a.dck?.length} bytes`);
   }
-  ok('all four maps of the examples were seen (pf_world, sky, vl_maze, vl_panel)', maps === 4, String(maps));
+  ok('all eight maps of the examples were seen (pf_world, sky, vl_maze, vl_panel; runner: pf_world, rn_world2, rn_world3, rn_world4)', maps === 8, String(maps));
 
   // the blank forms: the compiler treats -1, null, 255 and 'ff' alike, so the normalisation cannot change a cartridge
   const sh = JSON.parse(readFileSync(join(dir, 'shooter.assets.json'), 'utf8')), shText = readFileSync(join(dir, 'shooter.arc'), 'utf8');

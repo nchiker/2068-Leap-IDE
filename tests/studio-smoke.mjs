@@ -41,7 +41,8 @@ try {
   const modules = await evaluate(`performance.getEntriesByType('resource').map(e => e.name).filter(n => n.startsWith(location.origin) && /\\.js(\\?|$)/.test(n))`);
   const bare = modules.filter((n) => !/\?v=[0-9a-f]+$/.test(n));
   check('every own module loads with its fingerprint', modules.length > 10 && bare.length === 0, `${modules.length} modules${bare.length ? ', unstamped: ' + bare.join(' ') : ''}`);
-  check('the size panel shows the template', /of 16,384 bytes/.test(await evaluate("document.getElementById('size-total').textContent")),
+  check('the size panel shows the template: "Mapped N / 16,384 bytes", and no bank budget (the template has no map)',
+    /^Mapped [\d,]+ \/ 16,384 bytes/.test(await evaluate("document.getElementById('size-total').textContent")) && await evaluate("document.getElementById('bank-block').hidden"),
     await evaluate("document.getElementById('size-total').textContent"));
   await b.shot('studio-template');
 
@@ -334,6 +335,69 @@ try {
   await sleep(700);
   check('an asset change triggers a recompile (the shooter now misses its "shot" sprite)', (await evaluate('leapStudio.lastCompile.errors.length')) >= 1, await status());
   await evaluate("leapStudio.openProject(window.structuredClone(JSON.parse(JSON.stringify(leapStudio.project))), {saved: false})");
+
+  // ── Slice B4: the banked cartridge map: two budgets, the Bank select of a map, the banked list ──
+  {
+    await evaluate("document.getElementById('btn-examples').click()");
+    await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="shooter"]\')', 5000);
+    await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="shooter"]\').click()');
+    await waitFor("leapStudio.project.name.toLowerCase() === 'shooter' && leapStudio.lastCompile?.ok", 15000);
+    const bankPanel = () => evaluate(`({ mapped: document.getElementById('size-total').textContent, bank: document.getElementById('bank-total').textContent,
+      hidden: document.getElementById('bank-block').hidden, rows: [...document.querySelectorAll('#bank-list .bank-row')].map((r) => r.textContent),
+      status: document.getElementById('sb-prog').textContent, bankKey: leapStudio.project.assets.maps.sky.bank ?? null })`);
+    let bp = await bankPanel();
+    check('B4: a game with a map shows both budgets, "Mapped N / 16,384" and "Banked 0 / 16,384", and says nothing is banked',
+      !bp.hidden && /^Mapped [\d,]+ \/ 16,384 bytes/.test(bp.mapped) && /^Banked 0 \/ 16,384 bytes/.test(bp.bank) && bp.rows.length === 1 && /nothing banked/.test(bp.rows[0]) && !/banked/.test(bp.status), JSON.stringify(bp));
+    await evaluate(`document.querySelector('.proj-row[data-asset="maps/sky"]').click()`);
+    const sel = await waitFor(`document.querySelector('#tool-maps [data-role="bank-select"]') && document.querySelector('#tool-maps [data-role="bank-select"]').value`, 10000);
+    check('B4: the map editor offers Bank: Auto / Mapped / Banked, Auto chosen for a map without the key',
+      sel === 'auto' && (await evaluate(`document.querySelectorAll('#tool-maps [data-role="map-editor"]').length`)) === 1 && (await evaluate(`[...document.querySelectorAll('#tool-maps [data-role="bank-select"] option')].map((o) => o.value).join()`)) === 'auto,mapped,banked',
+      `${sel} ${await evaluate(`[...document.querySelectorAll('#tool-maps [data-role="bank-select"] option')].map((o) => o.value).join()`)}`);
+    const setBank = (v) => evaluate(`(() => { const s = document.querySelector('#tool-maps [data-role="bank-select"]'); s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change')); return true; })()`);
+    await evaluate("(() => { leapStudio.autosaveNow(); return true; })()");
+    await setBank('banked');
+    const wrote = await evaluate(`({ key: leapStudio.project.assets.maps.sky.bank, w: leapStudio.project.assets.maps.sky.w, dirty: !document.getElementById('dirty-mark').hidden })`);
+    check('B4: choosing Banked writes assets.maps.sky.bank, keeps the map, marks the project changed', wrote.key === 'banked' && wrote.w === 32 && wrote.dirty, JSON.stringify(wrote));
+    const rc = await waitFor(`leapStudio.lastCompile?.usage?.banked?.assets?.length === 1 && leapStudio.lastCompile`, 10000).then(() => true, () => false);
+    bp = await bankPanel();
+    const cmp = await evaluate(`({ ok: leapStudio.lastCompile.ok, errors: leapStudio.lastCompile.errors.map((e) => e.message), dck: leapStudio.lastCompile.dck?.length ?? 0,
+      shipped: JSON.stringify(leapStudio.lastCompile.shipped ?? null), asset: JSON.stringify(leapStudio.lastCompile.usage?.banked?.assets?.[0] ?? null) })`);
+    check('B4: the game recompiles with the map banked and builds a DCK', rc && cmp.ok && cmp.errors.length === 0 && cmp.dck > 0, JSON.stringify(cmp));
+    check('B4: the banked list names it ("banked: map sky (N bytes, set to Banked)"), the Banked budget counts it, the status bar says so',
+      bp.rows.length === 1 && /^banked: map sky \([\d,]+ bytes, set to Banked\)$/.test(bp.rows[0]) && !/^Banked 0 \//.test(bp.bank) && /\+ [\d,]+ banked/.test(bp.status), JSON.stringify(bp));
+    const dl = await evaluate(`(() => { window.smokeDck = null; HTMLAnchorElement.prototype.click = function () { if (this.download) fetch(this.href).then(r => r.arrayBuffer()).then(t => { window.smokeDck = { name: this.download, size: t.byteLength }; }); };
+      document.getElementById('btn-dck').click(); return !document.getElementById('btn-dck').disabled; })()`);
+    const dck = await waitFor('window.smokeDck', 5000);
+    check('B4: the DCK button saves the banked cartridge (a .dck larger than the single-bank build)', dl && !!dck && /\.dck$/.test(dck.name) && dck.size >= cmp.dck && dck.size > 16384 * 2, JSON.stringify(dck));
+    // the select shows the stored value again after the recompile re-renders the editor, and an asset save from the editor keeps the key
+    await sleep(500);
+    check('B4: the select keeps Banked after the recompile', (await evaluate(`document.querySelector('#tool-maps [data-role="bank-select"]').value`)) === 'banked');
+    await setBank('mapped');
+    const m2 = await evaluate(`leapStudio.project.assets.maps.sky.bank`);
+    await sleep(700);
+    bp = await bankPanel();
+    check('B4: Mapped writes "mapped" and the banked list is empty again', m2 === 'mapped' && bp.rows.length === 1 && /nothing banked/.test(bp.rows[0]) && !/banked/.test(bp.status), JSON.stringify([m2, bp]));
+    await setBank('auto');
+    const m3 = await evaluate(`Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank')`);
+    check('B4: Auto removes the key', m3 === false);
+    await setBank('banked');
+    await sleep(1200);
+    const saved = await evaluate(`JSON.parse(localStorage.getItem('leap-studio.project')).assets.maps.sky.bank`);
+    check('B4: the override is auto-saved with the project', saved === 'banked', String(saved));
+    // reload from the saved document: the key survives validation, a bad value is dropped with a warning
+    const badDoc = await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.assets.maps.sky.bank = 'q'; return JSON.stringify(p); })()`);
+    await evaluate(`(() => { const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(badDoc)}], 'bad-bank.leapgame'));
+      const input = document.getElementById('file-input'); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
+    await waitFor("leapStudio.project.name.toLowerCase() === 'shooter' && leapStudio.lastCompile?.ok && !Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank') && !leapStudio.isDirty()", 10000).catch(() => null);
+    const dropped = await evaluate(`({ key: Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank'), ok: leapStudio.lastCompile?.ok, banked: leapStudio.lastCompile?.usage?.banked?.used })`);
+    check('B4: a bad bank value in an opened file is dropped (auto used, the game still builds)', dropped.key === false && dropped.ok === true && dropped.banked === 0, JSON.stringify(dropped));
+    // an old compiler result without usage.mapped / usage.banked still renders (the size panel falls back)
+    const fb = await evaluate(`(() => { const lg = leapStudio.lastGood; const u = lg.usage; const keep = { m: u.mapped, b: u.banked };
+      delete u.mapped; delete u.banked; document.getElementById('size-total').textContent = ''; leapStudio.renderSizes(); const t = document.getElementById('size-total').textContent, hid = document.getElementById('bank-block').hidden;
+      u.mapped = keep.m; u.banked = keep.b; leapStudio.renderSizes(); return { t, hid }; })()`);
+    check('B4: an old usage (no mapped / banked) falls back to the single budget and hides the bank block', /^Mapped [\d,]+ \/ 16,384 bytes/.test(fb.t) && fb.hid === true, JSON.stringify(fb));
+    await b.shot('studio-bank');
+  }
 
   // ── Theme ──
   const t = await evaluate(`(() => { const btn = document.getElementById('btn-theme'), th = () => document.documentElement.dataset.theme;

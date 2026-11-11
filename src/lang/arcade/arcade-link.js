@@ -44,10 +44,12 @@
 
 "use strict";
 
-import { buildWindowDesc, rleEncode } from './arcade-window.js';
+import { buildWindowDesc } from './arcade-window.js';
 import { buildViewDesc, VIEW_DESC_BYTES, VIEW_RAM_BYTES } from './arcade-view.js';
+import { layoutOf, shippedChunks, BANK_BASE, BANK_BYTES, GAME_AREA_BYTES, CHUNK } from './arcade-bank.js';
 
-export const CHUNK = 8192;
+export { CHUNK };
+/** The chunks every build ships; a build with banked assets also ships chunk 2 (and 3 past 8,192 banked bytes): see shippedChunks() in arcade-bank.js and `link().shipped`. */
 export const SHIPPED_CHUNKS = [0, 1, 4, 5];
 
 /** Build a TS2068 DCK from 8 KB chunks (bank 0 = DOCK only, every chunk kind 2). chunks: index -> Uint8Array(8192). */
@@ -78,36 +80,34 @@ export function findSource(map, addr) {
 
 export function link(gen, runtime, image) {
   const errors = [];
-  const fail = (message) => { errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message }); return { errors, memory: null, dck: null, map: null, usage: null }; };
+  const fail = (message) => { errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message }); return { errors, memory: null, dck: null, map: null, usage: null, shipped: null }; };
   if (!gen || !gen.code) return fail('nothing to link');
   if (!(image instanceof Uint8Array) || image.length !== 65536) return fail('the runtime image must be 65,536 bytes');
   const cst = runtime.constants ?? {};
   const GAME_BASE = cst.GAME_BASE ?? 0x8000;
-  const GAME_END = GAME_BASE + 2 * CHUNK;          // chunks 4-5 end at $C000
   const n = gen.sprites.length;
-  const headerLen = gen.headerLen ?? 8, descLen = (gen.descLen ?? 6) * n;
+  // the banked cartridge map: what lives in the window $4000-$7FFF (empty for a game that banks nothing), and the sizes of the mapped part
+  const banked = gen.bank?.banked ?? [], bankedKeys = gen.bank?.keys ?? new Set();
+  const lay = layoutOf(gen, runtime, bankedKeys);
+  const { GAME_END, headerLen, descLen, codeEnd, spriteBytes, descBytes, winData, worldRle, viewData, viewRle, viewPatterns, streamsBytes, tablesBytes, end } = lay;
   if (gen.base !== GAME_BASE + headerLen + descLen) return fail(`code was generated for base $${gen.base.toString(16)} but the image needs $${(GAME_BASE + headerLen + descLen).toString(16)}`);
+  const bankedBytes = banked.reduce((a, b) => a + b.bytes, 0);
+  if (bankedBytes > BANK_BYTES) return fail(`banked assets need ${bankedBytes} of ${BANK_BYTES} bytes`);
 
   const memory = Uint8Array.from(image);
   memory.fill(0, GAME_BASE, GAME_END);
-  const codeEnd = gen.base + gen.code.length;
-  let spriteBytes = 0;
-  for (const s of gen.sprites) spriteBytes += s.data.length;
-  // language batch 2: the window's data
-  const win = gen.window ?? null;
-  const descBytes = win ? 14 + 2 * win.bands.length : 0;
-  const worldRle = win ? rleEncode(win.worldSrc) : null;
-  const winData = win ? worldRle.length + win.tileFlags.length + win.tileRows.length + descBytes : 0;
-  const tablesBytes = win ? win.tables.length : 0;
-  // language batch 3: the 3D view's data
-  const view = gen.view ?? null;
-  const viewRle = view ? rleEncode(view.cells) : null;
-  const viewPatterns = view?.patterns ? view.patterns.length : 0;
-  const viewData = view ? viewRle.length + viewPatterns + VIEW_DESC_BYTES : 0;
-  const end = codeEnd + spriteBytes + winData + viewData;
+  // language batch 2: the window's data; batch 3: the 3D view's data
+  const win = gen.window ?? null, view = gen.view ?? null;
   if (end + tablesBytes > GAME_END) {
-    return fail(`the game does not fit: ${end + tablesBytes - GAME_BASE} bytes (code ${gen.code.length}, sprites ${spriteBytes}${win ? `, window data ${winData} and scroll tables ${tablesBytes}` : ''}${view ? `, 3D view data ${viewData}` : ''}) in the ${GAME_END - GAME_BASE}-byte game area, ${end + tablesBytes - GAME_END} too many`);
+    return fail(`the game does not fit: ${end + tablesBytes - GAME_BASE} bytes (code ${gen.code.length}, sprites ${spriteBytes}${win ? `, window data ${winData} and scroll tables ${tablesBytes}` : ''}${view ? `, 3D view data ${viewData}` : ''}${streamsBytes ? `, worlds and plans ${streamsBytes}` : ''}) in the ${GAME_END - GAME_BASE}-byte game area, ${end + tablesBytes - GAME_END} too many`);
   }
+  // the window: chunk 2 (and 3 past 8,192 banked bytes) is shipped; its unused bytes are $FF, the banked assets sit at their addresses
+  const shipped = shippedChunks(bankedBytes);
+  if (bankedBytes > 0) {
+    memory.fill(0xFF, BANK_BASE, BANK_BASE + CHUNK * (shipped.includes(3) ? 2 : 1));
+    for (const b of banked) memory.set(b.data, b.at);
+  }
+  const addrOf = new Map(banked.map((b) => [b.key, b.at]));      // where each world / plan is: the window, or (below) the mapped part
   const warnings = [];
   if (gen.phase && !gen.phase.ok) {
     return fail(`${gen.phase.miss} bytes of sprite art do not fit in the phase pool (${runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0)} bytes): the runtime would stop at boot with a magenta border; use fewer phases, fewer instances or smaller sprites (the frame tables and one frame slot per instance must fit)`);
@@ -139,7 +139,8 @@ export function link(gen, runtime, image) {
   let winLayout = null;
   if (win) {
     let at = codeEnd + spriteBytes;
-    const worldSrc = at; memory.set(worldRle, at); at += worldRle.length;
+    let worldSrc = addrOf.get(win.key);                          // banked: the descriptor points into the window and the stream is not in the game image
+    if (worldSrc === undefined) { worldSrc = at; memory.set(worldRle, at); at += worldRle.length; addrOf.set(win.key, worldSrc); }
     const tileFlags = at; memory.set(win.tileFlags, at); at += win.tileFlags.length;
     const tileRows = at; memory.set(win.tileRows, at); at += win.tileRows.length;
     const windowDesc = at;
@@ -153,7 +154,8 @@ export function link(gen, runtime, image) {
   let viewLayout = null;
   if (view) {
     let at = codeEnd + spriteBytes;
-    const mapSrc = at; memory.set(viewRle, at); at += viewRle.length;
+    let mapSrc = addrOf.get(view.key);
+    if (mapSrc === undefined) { mapSrc = at; memory.set(viewRle, at); at += viewRle.length; addrOf.set(view.key, mapSrc); }
     const patterns = viewPatterns ? at : 0;
     if (viewPatterns) { memory.set(view.patterns, at); at += viewPatterns; }
     const viewDesc = at;
@@ -162,8 +164,21 @@ export function link(gen, runtime, image) {
     viewLayout = { mapSrc, patterns, viewDesc };
   }
 
+  // the worlds / plans only a WORLD statement names, then every WORLD's `LD HL,src`
+  {
+    let at = codeEnd + spriteBytes + winData + viewData;
+    for (const st of gen.streams ?? []) {
+      if (!addrOf.has(st.key)) { memory.set(st.data, at); addrOf.set(st.key, at); at += st.data.length; }
+    }
+    for (const f of gen.fixups ?? []) {
+      const a = addrOf.get(f.key);
+      if (a === undefined) return fail(`internal: the world '${f.key}' of a WORLD statement was not placed`);
+      w16(f.at, a);
+    }
+  }
+
   const chunks = {};
-  for (const c of SHIPPED_CHUNKS) chunks[c] = memory.slice(c * CHUNK, (c + 1) * CHUNK);
+  for (const c of shipped) chunks[c] = memory.slice(c * CHUNK, (c + 1) * CHUNK);
   const dck = buildDck(chunks);
 
   const lines = [...gen.srcMap].sort((a, b) => a.addr - b.addr);
@@ -176,6 +191,7 @@ export function link(gen, runtime, image) {
     sprites: gen.symbols.sprites,
     ...(gen.symbols.arrays ? { arrays: gen.symbols.arrays, instances: gen.symbols.instances } : {}),
     entries: gen.entries,
+    banked: banked.map((b) => ({ name: b.name, kind: b.kind, at: b.at, bytes: b.bytes, why: b.why })),       // the banked assets: they are data in the window, not code, so findSource() does not name them
   };
   const usage = {
     gameBase: GAME_BASE,
@@ -191,6 +207,10 @@ export function link(gen, runtime, image) {
     dckBytes: dck.length,
     // the whole 16 KB game area: everything above plus the scroll tables (`total` and `free` leave the tables out, as they were first reported)
     gameArea: { used: end + tablesBytes - GAME_BASE, available: GAME_END - GAME_BASE, free: GAME_END - end - tablesBytes },
+    // the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 5): the mapped part (the same as gameArea) and the window
+    mapped: { used: end + tablesBytes - GAME_BASE, available: GAME_AREA_BYTES },
+    banked: { used: bankedBytes, available: BANK_BYTES, assets: banked.map((b) => ({ name: b.name, kind: b.kind, bytes: b.bytes, at: b.at, why: b.why })) },
+    shippedChunks: shipped,
     ...(view ? {
       // language batch 3: the 3D view (the ray tables and buffers are the runtime's own memory, built at scene start: nothing of them is in the image)
       frames: gen.sprites.reduce((n, sp) => n + sp.data.length, 0),
@@ -213,5 +233,5 @@ export function link(gen, runtime, image) {
     } : {}),
   };
   errors.push(...warnings);
-  return { errors, memory, dck, map, usage };
+  return { errors, memory, dck, map, usage, shipped };
 }

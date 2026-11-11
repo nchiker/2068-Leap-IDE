@@ -81,6 +81,13 @@
 .size-fill.warn { background: var(--amber-fg); }
 .size-fill.over { background: var(--red-fg); }
 .size-total { margin: 4px 0 6px; color: var(--fg); }
+.bank-fill { background: var(--blue-fg); }
+.bank-fill.warn { background: var(--amber-fg); }
+.bank-fill.over { background: var(--red-fg); }
+#bank-block { margin-top: 8px; }
+.bank-list { margin: 0 0 6px; color: var(--fg-muted); }
+.bank-row { padding: 1px 0; overflow-wrap: anywhere; }
+.bank-row b { font-weight: 600; color: var(--fg); }
 .size-table { width: 100%; border-collapse: collapse; }
 .size-table td { padding: 1px 0; color: var(--fg-muted); }
 .size-table td:last-child { text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
