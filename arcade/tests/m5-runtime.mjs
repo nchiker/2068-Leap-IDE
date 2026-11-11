@@ -299,9 +299,9 @@ console.log('\n4. The header: the map table at boot, old headers');
   // dirty after boot: the first ticks draw map 0; the picture then equals the model
   const st = C.observe ? null : null; void st;
 }
-for (const [name, sp, wantN, wantTab] of [['count 9 is read as 8', { mapCount: 9, nine: true }, 8, true], ['count 0 = no maps', { mapCount: 0 }, 0, true]]) {
+for (const [name, sp, wantN, wantTab] of [['count 65 is read as 64 (MAX_MAPS)', { mapCount: 65, nine: true }, 64, true], ['count 0 = no maps', { mapCount: 0 }, 0, true]]) {
   const r = rng(901);
-  const maps = Array.from({ length: name.startsWith('count 9') ? 9 : 2 }, () => randomMap(r, r.int(1, 12), r.int(1, 12)));
+  const maps = Array.from({ length: name.startsWith('count 65') ? 65 : 2 }, () => (name.startsWith('count 65') ? randomMap(r, r.int(1, 3), r.int(1, 3)) : randomMap(r, r.int(1, 12), r.int(1, 12))));
   const gm = C.opsGame({ tiles, maps, mapCount: sp.mapCount, insts: [], assets: [], script: [] });
   const m = C.park(gm, 4);
   const mdl = new C.Model5({ tiles, maps, mapCount: sp.mapCount });

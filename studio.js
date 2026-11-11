@@ -301,10 +301,14 @@ const ASSET_EDITORS = {
 };
 const editors = {};              // kind -> {api} | {missing: true}
 
-async function ensureEditor(kind) {
+const editorLoads = {};          // kind -> the pending ensureEditor() (two calls before the module loads must make one editor)
+function ensureEditor(kind) {
+  if (!ASSET_EDITORS[kind]) return Promise.resolve(null);
+  if (editors[kind]) return Promise.resolve(editors[kind].api ?? null);
+  return (editorLoads[kind] ??= createEditor(kind));
+}
+async function createEditor(kind) {
   const def = ASSET_EDITORS[kind];
-  if (!def) return null;
-  if (editors[kind]) return editors[kind].api ?? null;
   const box = $(def.container);
   try {
     const mod = await import(def.module);
@@ -498,7 +502,7 @@ function renderResult() {
   const nWarn = res.warnings.length + assetWarns.length;
   $('editor-title').textContent = list.length || assetWarns.length ? `${activeFile} — ${plural(res.errors.length, 'error')}${nWarn ? `, ${plural(nWarn, 'warning')}` : ''}` : activeFile;
   $('sb-prog').textContent = res.ok
-    ? `${res.usage.total} of ${res.usage.total + res.usage.free} bytes · ${Math.max(1, Math.round(res.ms))} ms`
+    ? `${res.usage.total} of ${res.usage.total + res.usage.free} bytes${res.usage.banked?.used ? ` + ${res.usage.banked.used} banked` : ''} · ${Math.max(1, Math.round(res.ms))} ms`
     : `${plural(res.errors.length, 'error')}`;
   $('btn-run').disabled = !emulator;
   $('btn-dck').disabled = !res.ok;
@@ -512,14 +516,19 @@ function renderSizes() {
   const good = lastGood;
   const table = $('size-table');
   table.replaceChildren();
-  if (!good) { $('size-total').textContent = 'Nothing compiled yet'; $('size-fill').style.width = '0'; return; }
+  if (!good) { $('size-total').textContent = 'Nothing compiled yet'; $('size-fill').style.width = '0'; $('bank-block').hidden = true; return; }
   const u = good.usage, cg = u.codegen ?? {};
-  const budget = u.total + u.free;
-  const pct = Math.round((u.total / budget) * 100);
+  // two budgets (docs/ARCADE_BANKING_CONTRACT.md section 5): the mapped part (the game's 16 KB) and the bank window; a result without
+  // `mapped` / `banked` (an older compiler) falls back to gameArea, then to total + free
+  const mapped = u.mapped ?? u.gameArea ?? { used: u.total, available: u.total + u.free };
+  const budget = mapped.available;
+  const pct = Math.round((mapped.used / budget) * 100);
   const fill = $('size-fill');
-  fill.style.width = Math.min(100, (u.total / budget) * 100) + '%';
+  fill.style.width = Math.min(100, (mapped.used / budget) * 100) + '%';
   fill.className = 'size-fill' + (pct >= 100 ? ' over' : pct >= 85 ? ' warn' : '');
-  $('size-total').textContent = `${fmt(u.total)} of ${fmt(budget)} bytes (${pct} %), ${fmt(u.free)} free` + (lastCompile.ok ? '' : ' — last good build');
+  const stale = lastCompile.ok ? '' : ' — last good build';
+  $('size-total').textContent = `Mapped ${fmt(mapped.used)} / ${fmt(budget)} bytes (${pct} %), ${fmt(Math.max(0, budget - mapped.used))} free${stale}`;
+  renderBank(good, u, stale);
   const d = u.data ?? {};
   const rows = [
     ['Code', u.code],
@@ -543,6 +552,29 @@ function renderSizes() {
     table.append(tr);
   }
   $('sb-runtime').textContent = lang ? lang.runtimeLabel() : 'runtime —';
+}
+
+/** The bank window's bar and its list of banked assets (hidden for an old result without `usage.banked`, or a game with no maps). */
+const BANK_WHY = { auto: 'auto', override: 'set to Banked', bankAll: 'forced' };
+function renderBank(good, u, stale) {
+  const block = $('bank-block'), list = $('bank-list');
+  list.replaceChildren();
+  const bk = u.banked;
+  const hasMaps = P.listAssets(project, 'maps').length > 0 || (u.data?.map ?? 0) > 0;
+  block.hidden = !bk || !(bk.used > 0 || bk.assets?.length || hasMaps);
+  if (block.hidden) return;
+  const pct = Math.round((bk.used / bk.available) * 100);
+  const fill = $('bank-fill');
+  fill.style.width = Math.min(100, (bk.used / bk.available) * 100) + '%';
+  fill.className = 'size-fill bank-fill' + (pct >= 100 ? ' over' : pct >= 85 ? ' warn' : '');
+  $('bank-total').textContent = `Banked ${fmt(bk.used)} / ${fmt(bk.available)} bytes (${pct} %), ${fmt(Math.max(0, bk.available - bk.used))} free${stale}`;
+  if (!bk.assets?.length) { list.append(el('div', 'bank-row', 'nothing banked: the game fits in its mapped 16 KB')); return; }
+  for (const a of bk.assets) {
+    const row = el('div', 'bank-row');
+    row.dataset.role = 'bank-asset';
+    row.append(document.createTextNode('banked: '), el('b', null, `${a.kind} ${a.name}`), document.createTextNode(` (${fmt(a.bytes)} bytes, ${BANK_WHY[a.why] ?? a.why})`));
+    list.append(row);
+  }
 }
 
 /** The editor's linter source (src/editor.js): this file's problems as CodeMirror diagnostics. */
@@ -969,7 +1001,7 @@ window.leapStudio = {
     const a = lang.runtime.symbols.V_TICKS, bus = emulator.machine.bus;
     return bus.read(a) | (bus.read(a + 1) << 8);
   },
-  analyze, runProject, stopProject, openProject, makeHost, selectAsset, switchFile, saveProject, autosaveNow,
+  analyze, renderSizes, runProject, stopProject, openProject, makeHost, selectAsset, switchFile, saveProject, autosaveNow,
   isDirty,
 };
 

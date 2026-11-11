@@ -174,7 +174,18 @@ export function validateProject(doc) {
       if (!isAssetName(aname)) { errors.push(`assets.${kind}: bad name "${aname}" (a letter, then letters, digits and _, up to ${MAX_NAME})`); continue; }
       const bad = validateAsset(kind, value);
       if (bad) errors.push(`assets.${kind}.${aname}: ${bad}`);
-      else assets[kind][aname] = clone(value);
+      else {
+        assets[kind][aname] = clone(value);
+        // maps: the banking override (docs/ARCADE_BANKING_CONTRACT.md section 5). 'auto' is the default, so it is stored as no key; a bad value is dropped
+        if (kind === 'maps' && Object.hasOwn(value, 'bank')) {
+          const b = value.bank;
+          if (b === 'auto') delete assets[kind][aname].bank;
+          else if (b !== 'mapped' && b !== 'banked') {
+            warnings.push(`assets.maps.${aname}.bank must be "auto", "mapped" or "banked" (got ${JSON.stringify(b)}); ignored, auto used`);
+            delete assets[kind][aname].bank;
+          }
+        }
+      }
     }
   }
   const unknown = Object.keys(src).filter((k) => !ASSET_KINDS.includes(k));

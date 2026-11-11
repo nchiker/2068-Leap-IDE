@@ -8,8 +8,9 @@
  *   scenes   the project's scenes object ({name: {display: 'auto'|'buffers'|'fine'|'hires'}}), optional; `out.scenes` is the per-scene display plan
  *            (arcade-display.js, language batch 4 section 10), set as soon as the program checks without errors (absent before that, also
  *            when a later stage fails), and its notes are warnings
+ *   bankAll  test option (docs/ARCADE_BANKING_CONTRACT.md section 5): bank every bankable asset (every MAP) into the window $4000-$7FFF; `out.shipped` lists the DOCK chunks of `out.dck`
  *   assets   {sprites: {name: {w, h, rows: [{bits, mask}]}}} (or that sprites map itself); since M3 also
- *            {sprites, tilesets: {name: {tiles}}, sfx: {name: {ticks}}, maps: {name: {w, h, cells}}} (arcade-assets.js)
+ *            {sprites, tilesets: {name: {tiles}}, sfx: {name: {ticks}}, maps: {name: {w, h, cells, bank?: 'auto' | 'mapped' | 'banked'}}} (arcade-assets.js)
  *
  * Which runtime API the code is made for is decided by `runtime.version`: 0 (or absent) = the M2 build
  * (arcade/build/runtime.json, docs/ARCADE_RUNTIME_API.md), 1 = the M3 build (arcade/build/v1/runtime.json,
@@ -100,7 +101,7 @@ export function usageLines(u) {
   return lines;
 }
 
-export function compile(text, { runtime, image, assets, scenes } = {}) {
+export function compile(text, { runtime, image, assets, scenes, bankAll = false } = {}) {
   const out = { dck: null, memory: null, map: null, errors: [], warnings: [], usage: null };
   const sort = (l) => l.sort((a, b) => a.line - b.line || a.col - b.col);
   const take = (list) => { for (const d of list) (d.severity === 'warning' ? out.warnings : out.errors).push(d); };
@@ -120,7 +121,7 @@ export function compile(text, { runtime, image, assets, scenes } = {}) {
     return out;
   }
 
-  const gen = generate(ast, runtime, assets);
+  const gen = generate(ast, runtime, assets, { bankAll });
   take(gen.errors ?? []);
   take(gen.warnings ?? []);
   if (out.errors.length || !gen.code) { sort(out.errors); sort(out.warnings); return out; }
@@ -131,6 +132,7 @@ export function compile(text, { runtime, image, assets, scenes } = {}) {
   if (out.errors.length) return out;
   out.dck = linked.dck;
   out.memory = linked.memory;
+  out.shipped = linked.shipped;
   out.map = linked.map;
   out.usage = { ...linked.usage, codegen: gen.usage };
   out.gen = gen;

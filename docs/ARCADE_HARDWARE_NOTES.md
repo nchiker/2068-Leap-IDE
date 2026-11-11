@@ -241,3 +241,42 @@ window is drawn into that file as part of the tick (`ray_tick` returns to `TICK_
 * Not covered: Fuse state (only screens), real keys on Fuse, the AY joystick on ZEsarUX and Fuse (ZEsarUX reads AY R14 as 0 = no stick; the TSRun joystick run is the only STICK(1) with a pressed stick), the border
   (neither `.scr` has it; V_BORDER, the variable, matches TSRun and ZEsarUX), sound, **memory contention** (none modelled by TSRun; the ticks that overrun are on the tick-length figures above, not on timing of
   real hardware), real hardware. 250 ticks of one path; the win (key, door, treasure) and the hurt / lose path are not replayed here.
+
+## 11. Bank probe: DOCK chunks 2, 3, 6 and 2+3 mapped over RAM with the interrupt running (2026-11-10, slice B0)
+
+`arcade/spike/bank/` (`probe.asm`, runners `tsrun.mjs`, `zesarux.py`, `fuse.sh` + `fuse-check.mjs`; exact commands and counts in its `RESULTS.md`).
+A cartridge maps DOCK chunk 2, 3, 6 or chunks 2+3 together (`$F4` = `$3F`, the 16 KB window of `docs/ARCADE_BANKING_CONTRACT.md`) for the
+length of an `LDIR` (pieces of 1 byte to 8,191, at odd offsets, straddling `$6000`), interrupts on, the ISR flipping the display file every frame,
+and checks in Z80 code: (1) every copied byte against the formula, (2) the RAM under the window unchanged (checksums before and after),
+(3) the displayed picture, (4) the interrupt count. Green border = pass, red = first failure.
+
+| | TSRun | ZEsarUX 13.0 | Fuse 1.9.1 |
+|---|---|---|---|
+| (1) bytes | PASS: 160 pieces, 171,364 bytes | PASS: 240 pieces, 257,046 bytes | PASS (pass marker; Fuse gives no record) |
+| (2) RAM under | PASS | PASS (DOCK data also intact afterwards) | PASS (marker) |
+| (3) picture | PASS: 647 of 647 frames are a reference screen | PASS: every display-RAM sample (335 and 368 in two runs) | PASS: 669 of 669 movie frames |
+| (4) interrupts | PASS: 649 in 649 frames, 65 taken while mapped | PASS: 816 in 816.4 refreshes | PASS: 655 alternating frames, no repeat |
+
+Re-run by a second agent: the same figures (ZEsarUX's display-sample count varies run to run because it samples at real speed). Negative
+controls (a corrupted copied byte, a changed RAM byte under the window, a corrupted byte across the `$6000` straddle) end red on TSRun and
+ZEsarUX; the first also on Fuse.
+
+* **ZEsarUX lets a mapped DOCK chunk above `$4000` be written** (`poke_byte_no_time_timex` protects only `dir < 16384`): a write into the
+  window changes the DOCK data there; TSRun and Fuse ignore it. A runtime must never write into the window; ZEsarUX will not catch it.
+* **The stock ROM hands over with `$F4` = `$43`: DOCK chunk 6 is mapped** when the DCK has one. The runtimes set `$F4` = `$33` before they
+  clear any RAM (checked in `boot.asm`); a cartridge that clears `$C000-$DFFF` first wipes nothing on TSRun / Fuse but the DOCK copy on ZEsarUX.
+* All three emulators' video reads display RAM by construction, so (3) is their model, not proof about the real SCLD: checklist item 0
+  stays open.
+
+## 12. Leap Runner (4 levels, runtime v3, banked worlds) cross-emulator check, 2026-11-11 (slice B5)
+
+`arcade/build/runner.dck` (`arcade/examples/runner.arc`; 40,969 bytes, DOCK chunks 0, 1, 2, 4, 5; the four worlds, 1,670 bytes, in the bank window) on
+TSRun, ZEsarUX 13.0 and Fuse 1.9.1, method of section 10 (`arcade/tools/xemu/runner-*`, order in the header of `runner-compare.mjs`; the Fuse test copy keeps
+its key stub and 1,536-tick table in the free tail of chunk 1, the game area being full). Scenario `runner-scenario.json`: 913 ticks; level 1, flag at tick
+413, **level 2's banked world loaded at tick 450**, flag 844, **level 3 loaded at 881**. Run twice (the second time by a separate agent, scenario regenerated
+byte-identical):
+* TSRun vs ZEsarUX, real keys and script-driven: all 913 tick screens identical (0 bitmap, 0 attribute bytes of 913 x 6,912), 0 state bytes differ at the 58
+  sampled ticks (5,248 bytes each).
+* Fuse (6,010 movie frames): all 913 tick screens appear, identical to TSRun's and in order, 0 unmatched frames in the span, 3.00 refreshes a tick.
+* A world-load tick takes 5 refreshes (against 3), followed by a 2: the decode of 2,048 bytes through the window plus the whole-window repaint.
+* Not covered: Fuse state (screens only), sound, the joystick on ZEsarUX / Fuse, real hardware (checklist item 0 is what banking depends on).

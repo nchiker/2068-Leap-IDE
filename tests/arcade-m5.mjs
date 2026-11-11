@@ -263,9 +263,9 @@ bad('FILL as a name', '', /reserved/, { decl: 'DIM v, fill' });
 bad('COPY as a name', '', /reserved/, { decl: 'DIM v, copy' });
 bad('LOADMAP as a name', '', /reserved/, { decl: 'DIM v, loadmap' });
 {
-  const maps9 = Array.from({ length: 9 }, (_, i) => `MAP m${i} = "m1"\n`).join('');
-  const e = errs(prog('    LOADMAP m0', { maps: maps9 }));
-  check_('more than 8 MAPs is an error', e.some((d) => /at most 8 MAPs/.test(d.message)), msgs(e));
+  const maps65 = Array.from({ length: 65 }, (_, i) => `MAP m${i} = "m1"\n`).join('');      // 64 since the banked cartridge map (it was 8)
+  const e = errs(prog('    LOADMAP m0', { maps: maps65 }));
+  check_('more than 64 MAPs is an error', e.some((d) => /at most 64 MAPs/.test(d.message)), msgs(e));
   const maps8 = Array.from({ length: 8 }, (_, i) => `MAP m${i} = "m1"\n`).join('');
   const e8 = errs(prog(Array.from({ length: 8 }, (_, i) => `    LOADMAP m${i}`).join('\n'), { maps: maps8 }));
   check_('exactly 8 MAPs is fine', e8.length === 0, msgs(e8));
@@ -459,7 +459,7 @@ if (R.ok) {
     const withSpr = cmp(GAME('SPRITE b = "ball"\nMAP a = "m1"\n', '    LOADMAP a\n    SHOW b AT 1, 2'), { ...ASSETS, sprites: { ball: { w: 8, h: 8, rows: Array.from({ length: 8 }, () => ({ bits: 'FF', mask: 'FF' })) } } });
     check_('with sprites: the descriptors follow the 18-byte header at $8012', withSpr.errors.length === 0 && h16(withSpr.memory, 0x8006) === 0x8012, errText(withSpr));
     const nine = cmp(GAME(Array.from({ length: 9 }, (_, i) => `MAP m${i} = "m1"\n`).join(''), '    v = 1'));
-    check_('nine MAPs: an error', nine.errors.some((e) => /at most 8 MAPs/.test(e.message)), errText(nine));
+    check_('nine MAPs compile (the limit is 64 since the banked cartridge map; 65 is an error)', nine.errors.length === 0 && cmp(GAME(Array.from({ length: 65 }, (_, i) => `MAP m${i} = "m1"\n`).join(''), '    v = 1')).errors.some((e) => /at most 64 MAPs/.test(e.message)), errText(nine));
     const noTs = cmp(`GAME "t"\nMAP a = "m1"\nSCENE s\n  DIM v\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    LOADMAP a\n  ENDP\nENDSCENE\n`);
     check_('a MAP needs a TILESET (also with LOADMAP)', noTs.errors.some((e) => /needs a TILESET/.test(e.message)), errText(noTs));
     const missing = cmp(GAME('MAP a = "nothere"\n', '    LOADMAP a'));

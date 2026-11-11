@@ -50,7 +50,7 @@
  *     Asset names (SPRITE, SFX, TILESET, MAP) are in their own name spaces, apart from variables, PROCs and DEF FNs, and each kind is
  *       apart from the others: every place that names an asset says which kind it wants (SHOW / HIDE / HIT a sprite, PLAY an SFX,
  *       LOADMAP a MAP, and TILESET has no use), so no statement can be ambiguous and a SFX `lock` may coexist with a PROC `lock` and a
- *       variable `lock`. Two assets of the SAME kind may not share a name. At most 8 MAPs. Messages that mention a name that is the wrong
+ *       variable `lock`. Two assets of the SAME kind may not share a name. At most 64 MAPs (8 before the banked cartridge map). Messages that mention a name that is the wrong
  *       kind are kept ("'x' is a SFX, not a SPRITE", "'x' is a variable, not a SPRITE", "'ball' is a SPRITE, not a variable").
  *   - (language batch 2, docs/ARCADE_LANGUAGE_BATCH2.md) WINDOW BAND CAMERA SETWORLD FLIP and the functions CAMX WORLDTILE TILEFLAGS TILEHIT SOLID need a v3
  *     runtime (check(ast, {version: 3})): with an older one each use is an error that says so. WINDOW: once, at the top level, naming a declared MAP; its
@@ -132,6 +132,13 @@ class Checker {
     this.hasWindow = this.windows.length > 0;
     this.views = (ast?.views ?? []);
     this.hasView = this.views.length > 0;
+    this.worldStmts = [];             // the banked cartridge map: every WORLD statement of the program (found by a walk of the tree, before the bodies are checked)
+    (function walk(n, out) {
+      if (Array.isArray(n)) { n.forEach((x) => walk(x, out)); return; }
+      if (!n || typeof n !== 'object') return;
+      if (n.type === 'World') out.push(n);
+      for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k], out);
+    })(ast?.items ?? [], this.worldStmts);
     this.windowWordSeen = false;      // batch 3: the window words in a VIEW3D / v4 program are ONE message
     this.ast = ast;
     this.errors = errors;
@@ -193,6 +200,13 @@ class Checker {
     for (const v of this.views) {      // batch 3: the MAP a VIEW3D uses is the floor plan (it is not loaded into the cell map)
       const sym = v.map ? this.assets.get(`map:${up(v.map.name)}`) : null;
       if (sym) sym.view = true;
+    }
+    // the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): a MAP any WORLD names is a world (WINDOW) or a plan (VIEW3D) too
+    if (this.hasWindow || this.hasView) {
+      for (const w of this.worldStmts) {
+        const sym = w.map?.type === 'Ident' ? this.assets.get(`map:${up(w.map.name)}`) : null;
+        if (sym) { if (this.hasView) sym.view = true; else sym.world = true; }
+      }
     }
     // every variable name of the global level and of each scene, for the "declared after a FOR made it a local" check
     const addLater = (decls, into) => {
@@ -708,6 +722,14 @@ class Checker {
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the wall type');
         this.range(s.value, 0, LIMITS.maxWallType, 'the wall type');
         return;
+      case 'World': {
+        // WORLD map: a WINDOW (runtime v3) or a VIEW3D (runtime v4) must exist; the map checks themselves (size, tiles, walls) are the code generator's, as for the WINDOW's and the VIEW3D's own map
+        if (!this.hasWindow && !this.hasView) { this.err(s, 'WORLD needs a WINDOW (runtime v3) or a VIEW3D (runtime v4)'); return; }
+        const sym = s.map?.type === 'Ident' ? this.assets.get(`map:${up(s.map.name)}`) : null;
+        if (!sym) { this.err(s.map ?? s, `WORLD: unknown MAP '${s.map?.name ?? ''}'`); return; }
+        sym.used = true;
+        return;
+      }
       case 'SetWorld':
         if (!this.windowWord(s, 'SETWORLD')) this.needV3(s, 'SETWORLD');
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the tile');

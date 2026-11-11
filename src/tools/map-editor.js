@@ -228,7 +228,13 @@ export function createMapEditor(container, host) {
   tsSel.title = 'The tile set this map is drawn with (authoring only: the program names its own TILESET)';
   tsSel.addEventListener('change', () => edit(() => { map.tileset = tsSel.value || null; }));
   const tsLabel = el('span', 'mapd-label', 'Tile set');
-  bar.append(nameSel, btnNew, btnDup, btnRen, btnDel, el('span', 'mapd-sep'), tsLabel, tsSel);
+  // The banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 5): asset.bank = 'mapped' | 'banked'; absent = auto (the compiler decides).
+  const bankSel = selectEl([['auto', 'Auto'], ['mapped', 'Mapped'], ['banked', 'Banked']], 'auto', (v) => edit(() => {
+    if (v === 'mapped' || v === 'banked') { map.extra = map.extra ?? {}; map.extra.bank = v; } else if (map.extra) delete map.extra.bank;
+  }), 'Where the cartridge keeps this map: Auto (banked only when the game would not fit), Mapped (always in the game\'s 16 KB) or Banked (always in the bank window)');
+  bankSel.dataset.role = 'bank-select';
+  const bankLabel = el('span', 'mapd-label', 'Bank');
+  bar.append(nameSel, btnNew, btnDup, btnRen, btnDel, el('span', 'mapd-sep'), tsLabel, tsSel, el('span', 'mapd-sep'), bankLabel, bankSel);
 
   const newBox = el('div', 'mapd-newbox');
   newBox.dataset.role = 'new-box';
@@ -611,6 +617,10 @@ export function createMapEditor(container, host) {
     for (const n of sets) { const o = el('option', null, n); o.value = n; tsSel.append(o); }
     if (typeof map.tileset === 'string' && !sets.includes(map.tileset)) { const o = el('option', null, `${map.tileset} (missing)`); o.value = map.tileset; tsSel.append(o); }
     tsSel.value = typeof map.tileset === 'string' ? map.tileset : '';
+    const bk = map.extra?.bank;
+    bankSel.querySelector('option[data-odd]')?.remove();
+    if (bk !== undefined && !['auto', 'mapped', 'banked'].includes(bk)) { const o = el('option', null, `${String(bk)} (not valid)`); o.value = '__odd'; o.dataset.odd = '1'; bankSel.append(o); bankSel.value = '__odd'; }
+    else bankSel.value = bk === 'mapped' || bk === 'banked' ? bk : 'auto';
     syncCamera();
   }
   function syncCamera() {

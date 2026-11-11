@@ -137,8 +137,14 @@
         <!-- Size and budget of the last successful compile -->
         <section class="sizes" id="size-panel" aria-label="Size and budget">
           <div class="sizes-title">Size and budget</div>
-          <div class="size-bar" title="The game's own 16 KB of the cartridge"><div class="size-fill" id="size-fill"></div></div>
+          <div class="size-bar" title="The game's own 16 KB of the cartridge: code, sprites, text and the maps kept with them"><div class="size-fill" id="size-fill"></div></div>
           <div class="size-total" id="size-total">—</div>
+          <!-- The bank window: maps, worlds and floor plans the cartridge keeps in its second 16 KB (hidden while the game has no maps) -->
+          <div id="bank-block" hidden>
+            <div class="size-bar" title="The bank window: 16 KB of maps, worlds and floor plans that are paged in when the game loads one"><div class="size-fill bank-fill" id="bank-fill"></div></div>
+            <div class="size-total" id="bank-total">—</div>
+            <div class="bank-list" id="bank-list"></div>
+          </div>
           <table class="size-table" id="size-table"></table>
         </section>
       </div>
@@ -180,23 +186,24 @@
     "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
     "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
     "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
-    "./src/arcade-project.js": "./src/arcade-project.js?v=6c8af3175b",
+    "./src/arcade-project.js": "./src/arcade-project.js?v=1f907f17fa",
     "./src/emulator.js": "./src/emulator.js?v=c7ebc64993",
     "./src/files.js": "./src/files.js?v=70f9a1c03a",
     "./src/help.js": "./src/help.js?v=2738bd9e3b",
     "./src/lang/arcade/arcade-assetcheck.js": "./src/lang/arcade/arcade-assetcheck.js?v=779c884688",
     "./src/lang/arcade/arcade-assets.js": "./src/lang/arcade/arcade-assets.js?v=84465a402d",
-    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=4b1d6c9b20",
-    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=d291863642",
-    "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=e0da000df2",
+    "./src/lang/arcade/arcade-bank.js": "./src/lang/arcade/arcade-bank.js?v=68457beeb3",
+    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=45d78b22f7",
+    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=db4bfed67f",
+    "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=7c9b159db9",
     "./src/lang/arcade/arcade-display.js": "./src/lang/arcade/arcade-display.js?v=a0c7c18454",
-    "./src/lang/arcade/arcade-link.js": "./src/lang/arcade/arcade-link.js?v=3b8b2a0d70",
-    "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=0f31520a53",
+    "./src/lang/arcade/arcade-link.js": "./src/lang/arcade/arcade-link.js?v=5fe1dc2819",
+    "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=9c570c6809",
     "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=364fc9f7ed",
     "./src/lang/arcade/arcade-view.js": "./src/lang/arcade/arcade-view.js?v=276aaae9e3",
     "./src/lang/arcade/arcade-window.js": "./src/lang/arcade/arcade-window.js?v=23b1bf8a73",
-    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=e3f1eb1466",
-    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=a459ca5c5d",
+    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=8823c6193a",
+    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=77481a6aea",
     "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=ca686f3fe9",
     "./src/lang/arcade/z80-emit.js": "./src/lang/arcade/z80-emit.js?v=bb4d890929",
     "./src/lang/basic/cartridge.js": "./src/lang/basic/cartridge.js?v=cb99a1e28a",
@@ -250,7 +257,7 @@
 }
 </script>
 <script type="module" src="src/editor.js?v=d836aeb5be"></script>
-<script type="module" src="studio.js?v=cab302edbd"></script>
+<script type="module" src="studio.js?v=4a67832924"></script>
 
 </body>
 </html>

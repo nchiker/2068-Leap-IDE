@@ -105,7 +105,7 @@ console.log('\n2. Boot: ray mode, tables, the map loader, attributes');
     ['map_w 33', { view: { ...good, desc: [4, 33, 16, 0x47, 0x4F, 0x00, 0xBF, 0, 0, 0] } }],
     ['map_h 3', { view: { ...good, desc: [4, 16, 3, 0x47, 0x4F, 0x00, 0xBF, 0, 0, 0] } }],
     ['map_h 33', { view: { ...good, desc: [4, 16, 33, 0x47, 0x4F, 0x00, 0xBF, 0, 0, 0] } }],
-    ['map_src outside the game image', { view: { ...good, desc: [4, 16, 16, 0x47, 0x4F, 0x00, 0x40, 0, 0, 0] } }],
+    ['map_src outside the game image and the bank window ($3F00; $4000-$7FFF is the window since banking B1)', { view: { ...good, desc: [4, 16, 16, 0x47, 0x4F, 0x00, 0x3F, 0, 0, 0] } }],
     ['patterns outside the game image', { view: { ...good, desc: [4, 16, 16, 0x47, 0x4F, 0x00, 0xBF, 0x00, 0xC0, 0] } }],
     ['patterns ending past $BFFF', { view: { ...good, desc: [4, 16, 16, 0x47, 0x4F, 0x00, 0xBF, 0xF5, 0xBF, 0] } }],
     ['view_desc pointer $C000', { view: good, viewPtr: 0xC000 }],

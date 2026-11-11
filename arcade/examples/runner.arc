@@ -1,0 +1,689 @@
+REM Leap Runner, four levels: platformer.arc (the one-level reference, kept as it is) with three more worlds.  The game is larger than the 16 KB of
+REM the game area: the three worlds are MAPs that a WORLD statement loads, so the linker puts them in the cartridge's banked part
+REM (docs/ARCADE_BANKING_CONTRACT.md).  Assets are in runner.assets.json, laid out by runner.assets.gen.mjs (level 1 is the platformer's world);
+REM the level data below (CXS/CYS, SX/SY/STY, WLO/WHI, CKX/CKY, CIX, RCF/RNX, LCB/LSB: the four levels one after the other, absolute indexes) is
+REM printed by  node arcade/examples/runner.assets.gen.mjs --data  and checked against the maps by tests/arcade-runner.mjs.
+REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank.   Joystick 1: the stick and fire.
+REM   128 x 16 cell worlds, three bands (2 / 3 / 11 rows at 1/4, 1/2, 1/1).  Stomp the walkers and bats by jumping on them (HIT while
+REM   falling), touch them from the side and you lose a life (brief invulnerability); spikes and the pit send you to the last checkpoint.
+REM   Coins (pickup tiles that spin by tile swaps) and a flag at the far end of each level; the flag shows LEVEL n and loads the next world
+REM   (WORLD levelN); after the fourth the win screen.  Three lives for the whole game; losing the last one is game over.
+REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/runner.arc --assets arcade/examples/runner.assets.json --runtime v3
+GAME "Leap Runner"
+FRAMERATE 20
+
+REM level and physics.  Positions are pixels; the player's x also lives in 1/8 pixels (x8) for smooth acceleration.
+CONST BX = 3
+CONST BY = 2
+CONST BW = 10
+CONST BH = 22
+CONST ACC = 4
+CONST VMAX = 20
+CONST FRIC = 4
+CONST GRAV = 1
+CONST VFALL = 7
+CONST VJUMP = -9
+CONST LZ = 72
+CONST RZ = 112
+CONST DEADY = 120
+
+REM instances: the hero last (a later instance is drawn on top): 4 + 2 + 1 = 7 of the 16.  The coins are tiles (see SPINCOINS).
+SPRITE wk(4) = "pf_walker"
+SPRITE fl(2) = "pf_bat"
+SPRITE hero = "pf_hero"
+TILESET pf = "pf_tiles"
+MAP level = "pf_world"
+MAP level2 = "rn_world2"
+MAP level3 = "rn_world3"
+MAP level4 = "rn_world4"
+SFX jump = "pf_jump"
+SFX coin = "pf_coin"
+SFX stomp = "pf_stomp"
+SFX hurt = "pf_hurt"
+SFX win = "pf_win"
+SFX over = "pf_over"
+
+WINDOW level
+BAND 2, 1, 4
+BAND 3, 1, 2
+BAND 11, 1, 1
+
+SCENE play
+  REM st: 0 title, 1 playing, 2 game won, 3 game over, 4 level complete (the next world is loaded when its message has been up a while)
+  DIM st, tt, fc, js, lf, rg, up, dn, fire, jmp, pj, pfire
+  DIM px, py, x8, vx, vy, face, gnd, cg, anim, fr, inv, dropt, fx, tc, ltc, kq, ka, pk
+  DIM lives, score, coins, hud, ck, rx, ry, ti, ei
+  DIM cam, nx, cf, cnx
+  REM the level: lv is 0..3; the level's coins are CB..CE-1 of the lists below, its enemies SB..SE-1 (LCB / LSB give the starts, one more entry for the end of the last);
+  REM CC and SD (coin taken, enemy killed) are per level, indexed from CB / SB
+  DIM lv, nl, cb, ce, sb, se, sc0
+  REM the coin tile's four spin frames (tiles 6, 18, 19, 18)
+  DIM ct(3) = 6, 18, 19, 18
+  REM ---- the level data of the four levels, one after the other (printed by runner.assets.gen.mjs --data; do not edit)
+  REM the coin list and the enemy list of each level are sorted by x; the checkpoints are 3 a level, CIX has 9 and RCF / RNX 4 (the start and the 3 checkpoints) a level
+  REM @@DATA-BEGIN@@
+  DIM cxs(122) = 64, 72, 80, 96, 104, 112, 120, 192, 200, 304, 312, 320, 328, 352, 360, 368, 376, 424, 432, 440, 464, 496, 504, 512, 520, 528, 536, 568, 576, 616, 624, 640, 648, 696, 704, 720, 728, 752, 760, 800, 808, 832, 840, 848, 888, 896, 912, 920, 944, 952, 64, 72, 80, 120, 128, 280, 288, 376, 384, 424, 432, 464, 544, 552, 640, 648, 696, 704, 744, 752, 824, 832, 944, 952, 48, 56, 64, 104, 112, 192, 200, 248, 256, 304, 312, 520, 528, 560, 640, 648, 744, 752, 840, 848, 944, 952, 48, 56, 64, 88, 96, 104, 112, 184, 192, 256, 264, 344, 352, 392, 400, 464, 472, 512, 520, 624, 632, 680, 688, 736, 744, 776, 784
+  DIM cys(122) = 104, 104, 104, 88, 80, 80, 88, 104, 104, 80, 80, 80, 80, 80, 80, 80, 80, 96, 88, 96, 96, 80, 80, 64, 64, 64, 64, 96, 96, 80, 80, 96, 96, 88, 88, 72, 72, 88, 88, 96, 96, 104, 104, 96, 96, 96, 80, 80, 104, 104, 104, 104, 104, 88, 88, 96, 96, 64, 64, 64, 64, 88, 88, 88, 96, 96, 88, 88, 80, 80, 80, 80, 104, 104, 104, 104, 104, 88, 88, 96, 96, 88, 88, 88, 88, 96, 96, 88, 88, 88, 88, 88, 104, 104, 104, 104, 104, 104, 104, 96, 88, 88, 96, 104, 104, 80, 80, 88, 88, 88, 88, 80, 80, 96, 96, 96, 96, 88, 88, 88, 88, 104, 104
+  DIM sx(37) = 160, 288, 368, 464, 528, 584, 704, 728, 864, 880, 944, 144, 288, 360, 400, 592, 632, 800, 864, 64, 224, 392, 480, 552, 672, 832, 880, 952, 120, 224, 328, 392, 464, 544, 632, 712, 784, 864
+  DIM sy(37) = 96, 96, 56, 88, 80, 56, 80, 64, 56, 96, 96, 96, 96, 56, 80, 64, 96, 56, 96, 96, 56, 96, 56, 80, 64, 96, 64, 96, 96, 64, 96, 80, 64, 80, 72, 56, 96, 72
+  DIM wlo(37) = 0, 272, 0, 448, 480, 0, 688, 0, 0, 816, 928, 0, 264, 0, 384, 0, 624, 0, 800, 0, 0, 368, 0, 544, 0, 816, 0, 936, 0, 0, 320, 384, 0, 528, 0, 0, 776, 0
+  DIM whi(37) = 224, 432, 0, 464, 544, 0, 704, 0, 0, 896, 1008, 224, 336, 0, 432, 0, 664, 0, 896, 144, 0, 496, 0, 560, 0, 904, 0, 1008, 128, 0, 328, 400, 0, 544, 0, 0, 864, 0
+  DIM ckx(11) = 416, 592, 832, 304, 584, 824, 384, 528, 832, 328, 512, 832
+  DIM cky(11) = 88, 88, 88, 88, 88, 88, 88, 80, 88, 88, 80, 88
+  DIM cix(35) = 0, 7, 9, 17, 23, 31, 39, 45, 50, 50, 54, 55, 58, 62, 64, 70, 72, 74, 74, 79, 82, 85, 85, 88, 92, 94, 96, 96, 103, 105, 109, 113, 117, 121, 123, 123
+  DIM rcf(15) = 0, 13, 24, 38, 50, 55, 62, 69, 74, 84, 85, 92, 96, 105, 111, 121
+  DIM rnx(15) = 0, 2, 4, 7, 11, 12, 15, 17, 19, 21, 22, 25, 28, 29, 31, 35
+  DIM lcb(4) = 0, 50, 74, 96, 123
+  DIM lsb(4) = 0, 11, 19, 28, 38
+  DIM cc(49), sd(10)
+  REM coins per level 50 24 22 27; enemies per level 11 8 9 10
+  REM @@DATA-END@@
+  REM six enemy slots: 0..3 walkers (sprites wk), 4..5 bats (sprites fl): alive, position, direction, spawn entry, origin x
+  DIM en(5), ex(5), ey(5), ed(5), ek(5), e0(5)
+  REM the bats' vertical path: a sine, +-12 pixels in 16 steps
+  DIM sn(15) = 0, 5, 9, 11, 12, 11, 9, 5, 0, -5, -9, -11, -12, -11, -9, -5
+
+  PROC INIT():
+    CALL TITLEINIT()
+  ENDP
+
+  REM ---------------------------------------------------------------------------------------------------------------- states
+  PROC FRAME():
+    js = STICK(1)
+    lf = KEYDOWN("O") OR BIT(js, 2)
+    rg = KEYDOWN("P") OR BIT(js, 3)
+    REM Q and A are read every other tick (a KEYDOWN is 250 T and a few hundred more to call): the jump key is read through SPACE and the stick every tick
+    IF BAND(fc, 1) = 1 THEN
+      kq = KEYDOWN("Q") : ka = KEYDOWN("A")
+    ENDIF
+    up = kq OR BIT(js, 0)
+    dn = ka OR BIT(js, 1)
+    fire = KEYDOWN(" ") OR BIT(js, 4)
+    jmp = fire OR up
+    tt = tt + 1
+    fc = fc + 1
+    IF fc > 30000 THEN fc = 0 ENDIF
+    SELECT CASE st
+      CASE 0
+        CALL TITLETICK()
+      CASE 1
+        CALL PLAYTICK()
+      CASE 4
+        CALL LEVELTICK()
+      CASE ELSE
+        CALL ENDTICK()
+    ENDSEL
+    pj = jmp
+    pfire = fire
+  ENDP
+
+  REM The title: level 1 scrolls by itself (the camera ping-pongs along the world); fire starts the game.  Everything that costs
+  REM much (clearing and printing the text cells) is done a piece a tick (TSTAGE for the title, GSTAGE for starting a game), so
+  REM that no tick goes over its three refreshes (loading a world is the exception: see LOADLEVEL): TI counts the stages, 7 = the title waits for fire.
+  PROC TITLEINIT():
+    st = 0 : tt = 0 : cam = 0 : ti = 0
+    HIDE hero
+    CALL CLEARENEMIES()
+    lv = 0
+    CALL LOADLEVEL()
+  ENDP
+
+  PROC TITLETICK():
+    LOCAL p
+    p = (tt * 2) MOD 1664
+    IF p > 832 THEN p = 1664 - p ENDIF
+    IF tt > 8000 THEN tt = 0 ENDIF
+    CAMERA p
+    cam = CAMX()
+    CALL SPINCOINS()
+    IF ti < 7 THEN
+      CALL TSTAGE(ti)
+      ti = ti + 1
+    ELSE
+      IF ti = 7 THEN
+        IF fire AND (NOT pfire) THEN ti = 20 ENDIF
+      ELSE
+        CALL GSTAGE(ti - 20)
+        ti = ti + 1
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM Stages 0..6 redraw the title text (a row of cells is 32 cells to redraw, about 30,000 T in both files: one row a tick).
+  PROC TSTAGE(s):
+    SELECT CASE s
+      CASE 0
+        INK 7 : PAPER 0 : BRIGHT 1
+        FILLC 0, 1, 32, 1 = 32
+      CASE 1
+        FILLC 0, 2, 32, 1 = 32
+      CASE 2
+        FILLC 0, 21, 32, 1 = 32
+      CASE 3
+        FILLC 0, 22, 32, 1 = 32
+      CASE 4
+        INK 6 : PRINT AT 1, 10; "LEAP RUNNER";
+      CASE 5
+        INK 7 : PRINT AT 21, 6; "PRESS SPACE OR FIRE";
+      CASE ELSE
+        PRINT AT 22, 4; "O P MOVE   Q OR SPACE JUMP";
+    ENDSEL
+  ENDP
+
+  REM Starting a game takes seven ticks: 0 the variables, 1 and 2 clear the title text, 3 and 4 print the HUD's labels, 5 loads level 1, 6 its HUD and the first respawn.
+  PROC GSTAGE(s):
+    SELECT CASE s
+      CASE 0
+        score = 0 : lives = 3 : hud = 0 : lv = 0
+      CASE 1
+        INK 7 : PAPER 0 : BRIGHT 1
+        FILLC 0, 1, 32, 1 = 32
+      CASE 2
+        FILLC 0, 21, 32, 1 = 32
+      CASE 3
+        PRINT AT 1, 2; "SCORE";
+        PRINT AT 1, 16; "LIVES";
+      CASE 4
+        PRINT AT 2, 2; "COINS";
+      CASE 5
+        CALL LOADLEVEL()
+      CASE ELSE
+        CALL BEGINLEVEL()
+    ENDSEL
+  ENDP
+
+  REM Level lv: its world (WORLD puts the camera at 0 and redraws the whole window, so this is one long tick, over its three refreshes), its coin and enemy
+  REM ranges, nothing taken or killed, the player's start and the first checkpoint to pass.
+  PROC LOADLEVEL():
+    LOCAL i
+    HIDE hero
+    SELECT CASE lv
+      CASE 0
+        WORLD level
+      CASE 1
+        WORLD level2
+      CASE 2
+        WORLD level3
+      CASE ELSE
+        WORLD level4
+    ENDSEL
+    cb = lcb(lv) : ce = lcb(lv + 1) : sb = lsb(lv) : se = lsb(lv + 1) : cf = cb
+    FOR i = 0 TO ce - cb - 1
+      cc(i) = 0
+    NEXT i
+    FOR i = 0 TO se - sb - 1
+      sd(i) = 0
+    NEXT i
+    ck = 0 : rx = 24 : ry = 88 : cnx = ckx(lv * 3)
+    coins = 0 : inv = 0 : dropt = 0 : pj = 1 : pk = 0
+  ENDP
+
+  REM The HUD of the level just loaded (its coin total and number are printed here, the other labels once per game), and the player starts.
+  PROC BEGINLEVEL():
+    INK 7 : PAPER 0 : BRIGHT 1
+    PRINT AT 2, 10; "/"; ce - cb;
+    PRINT AT 2, 16; "LEVEL "; lv + 1;
+    sc0 = score : hud = 7
+    CALL FLUSHHUD()
+    st = 1 : tt = 0 : fc = 0
+    CALL RESPAWN()
+  ENDP
+
+  REM Put the player at the checkpoint, the camera on him, the enemies and coins back to where the camera is.
+  PROC RESPAWN():
+    px = rx : py = ry : x8 = px * 8 : vx = 0 : vy = 0 : face = 1 : gnd = 1 : cg = 3
+    cam = px - LZ
+    CAMERA cam
+    cam = CAMX()
+    CALL CLEARENEMIES()
+    nx = rnx(lv * 4 + ck) : cf = rcf(lv * 4 + ck)
+  ENDP
+
+  PROC PLAYTICK():
+    REM a coin the box touched when the last tick asked (the search and the SETWORLD are done one tick later, away from the query's tick)
+    IF pk THEN
+      pk = 0
+      CALL PICKUP()
+    ENDIF
+    CALL PLAYER()
+    IF st = 1 THEN
+      CALL FOLLOW()
+      CALL DRAWPLAYER()
+      CALL ENEMIES()
+      CALL SPINCOINS()
+      IF inv > 0 THEN
+        inv = inv - 1
+        IF inv <= 30 AND BAND(inv, 2) <> 0 THEN HIDE hero ENDIF
+      ENDIF
+      IF hud <> 0 AND BAND(fc, 3) = 3 THEN CALL SHOWHUD() ENDIF
+    ENDIF
+  ENDP
+
+  REM Game won (2) and game over (3): the world stays up; the end text is put up a piece a tick (EI); fire (after half a second) goes back to the title after a
+  REM win and retries the level after game over.
+  PROC ENDTICK():
+    IF st = 2 THEN
+      SHOW hero AT px, py FRAME 5 + BAND(SHR(tt, 2), 1)
+    ENDIF
+    CALL SPINCOINS()
+    SELECT CASE ei
+      CASE 0
+        CALL FLUSHHUD()
+      CASE 1
+        INK 7 : PAPER 0 : BRIGHT 1
+        FILLC 0, 21, 32, 1 = 32
+      CASE 2
+        FILLC 0, 22, 32, 1 = 32
+      CASE 3
+        IF st = 2 THEN
+          INK 6 : PRINT AT 21, 3; "YOU FINISHED LEAP RUNNER!";
+        ELSE
+          INK 2 : PRINT AT 21, 11; "GAME OVER";
+        ENDIF
+      CASE 4
+        INK 7
+        IF st = 2 THEN
+          PRINT AT 22, 7; "PRESS FIRE FOR TITLE";
+        ELSE
+          PRINT AT 22, 7; "PRESS FIRE TO RETRY";
+        ENDIF
+    ENDSEL
+    IF ei < 5 THEN ei = ei + 1 ENDIF
+    IF tt > 10 AND ei > 4 AND fire AND (NOT pfire) THEN
+      IF st = 2 THEN
+        CALL TITLEINIT()
+      ELSE
+        REM retry: the same level again with three lives and the score it started with
+        lives = 3 : score = sc0 : hud = 7 : nl = lv : st = 4 : tt = 0 : ei = 0
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM Level complete (4): the message "LEVEL n" for the level to come (NL: the next one after a flag, the same after game over), then its world is loaded and
+  REM played.  EI counts the ticks: 0 the HUD, 1 and 2 clear the end rows, 3 the message, 36 loads the world (one long tick), 37 clears the message, 38 starts.
+  PROC LEVELTICK():
+    IF nl > lv THEN
+      SHOW hero AT px, py FRAME 5 + BAND(SHR(tt, 2), 1)
+    ENDIF
+    CALL SPINCOINS()
+    SELECT CASE ei
+      CASE 0
+        CALL FLUSHHUD()
+      CASE 1
+        INK 7 : PAPER 0 : BRIGHT 1
+        FILLC 0, 21, 32, 1 = 32
+      CASE 2
+        FILLC 0, 22, 32, 1 = 32
+      CASE 3
+        INK 6 : PRINT AT 21, 12; "LEVEL "; nl + 1;
+      CASE 36
+        lv = nl
+        CALL LOADLEVEL()
+      CASE 37
+        INK 7 : PAPER 0 : BRIGHT 1
+        FILLC 0, 21, 32, 1 = 32
+      CASE 38
+        CALL BEGINLEVEL()
+    ENDSEL
+    ei = ei + 1
+  ENDP
+
+  REM ---------------------------------------------------------------------------------------------------------------- the player
+  PROC PLAYER():
+    LOCAL d, nx2, ny, r
+    d = rg - lf
+    IF d <> 0 THEN
+      vx = vx + d * ACC
+      IF vx > VMAX THEN vx = VMAX ENDIF
+      IF vx < -VMAX THEN vx = -VMAX ENDIF
+      face = d
+    ELSE
+      IF vx > 0 THEN
+        vx = vx - FRIC
+        IF vx < 0 THEN vx = 0 ENDIF
+      ENDIF
+      IF vx < 0 THEN
+        vx = vx + FRIC
+        IF vx > 0 THEN vx = 0 ENDIF
+      ENDIF
+    ENDIF
+    REM horizontal: move, then if the box is inside a solid tile put its edge on the tile's face
+    x8 = x8 + vx
+    nx2 = SHR(x8, 3)
+    IF nx2 <> px THEN
+      IF SOLID(nx2 + BX, py + BY, BW, BH) THEN
+        IF vx > 0 THEN
+          nx2 = SHR(nx2 + BX + BW - 1, 3) * 8 - BW - BX
+        ELSE
+          nx2 = SHR(nx2 + BX, 3) * 8 + 8 - BX
+        ENDIF
+        x8 = nx2 * 8 : vx = 0
+      ENDIF
+      px = nx2
+    ENDIF
+    REM jump (with a little coyote time), variable height, drop through planks
+    IF gnd THEN
+      cg = 3
+    ELSE
+      IF cg > 0 THEN cg = cg - 1 ENDIF
+    ENDIF
+    IF jmp AND (NOT pj) AND cg > 0 THEN
+      vy = VJUMP : cg = 0 : gnd = 0
+      PLAY jump
+    ENDIF
+    IF (NOT jmp) AND vy < -3 THEN vy = -3 ENDIF
+    IF dn THEN
+      dropt = 5
+    ELSE
+      IF dropt > 0 THEN dropt = dropt - 1 ENDIF
+    ENDIF
+    REM vertical.  Standing on the ground and still over the same tiles as last tick (TC: the box's first and last tile column) nothing can have changed:
+    REM no query.  Otherwise: gravity, then land on a solid tile, on a plank the feet cross, or bump the head.
+    tc = SHL(SHR(px + BX, 3), 5) + SHR(px + BX + BW - 1, 3)
+    IF gnd AND tc = ltc AND dropt = 0 THEN
+      vy = 0
+    ELSE
+    vy = vy + GRAV
+    IF vy > VFALL THEN vy = VFALL ENDIF
+    ny = py + vy
+    gnd = 0
+    IF vy > 0 THEN
+      IF SOLID(px + BX, ny + BY, BW, BH) THEN
+        r = SHR(ny + BY + BH - 1, 3)
+        ny = r * 8 - BY - BH : vy = 0 : gnd = 1
+      ELSE
+        IF dropt = 0 THEN
+          r = SHR(ny + BY + BH - 1, 3)
+          IF r > SHR(py + BY + BH - 1, 3) THEN
+            IF TILEHIT(px + BX, r * 8, BW, 1, 8) THEN
+              ny = r * 8 - BY - BH : vy = 0 : gnd = 1
+            ENDIF
+          ENDIF
+        ENDIF
+      ENDIF
+    ELSE
+      IF vy < 0 THEN
+        IF SOLID(px + BX, ny + BY, BW, BH) THEN
+          r = SHR(ny + BY, 3)
+          ny = r * 8 + 8 - BY : vy = 0
+        ENDIF
+      ENDIF
+    ENDIF
+    py = ny
+    ENDIF
+    ltc = tc
+    REM what the box touches: hazard (2), pickup (4), goal (16); asked every fourth tick (a query is 1,300 T; any box overlaps a coin, a spike or the flag for at least 4 ticks)
+    fx = 0
+    IF BAND(fc, 3) = 0 THEN fx = TILEHIT(px + BX, py + BY, BW, BH, 22) ENDIF
+    IF fx <> 0 THEN
+      IF BAND(fx, 16) <> 0 THEN
+        CALL WIN()
+      ELSE
+        IF BAND(fx, 4) <> 0 THEN pk = 1 ENDIF
+        IF BAND(fx, 2) <> 0 THEN CALL DIE() ENDIF
+      ENDIF
+    ENDIF
+    IF st = 1 AND py > DEADY THEN CALL DIE() ENDIF
+    IF st = 1 THEN
+      IF px >= cnx THEN
+        rx = ckx(lv * 3 + ck) : ry = cky(lv * 3 + ck) : ck = ck + 1
+        IF ck < 3 THEN cnx = ckx(lv * 3 + ck) ELSE cnx = 32000 ENDIF
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM Take the coins the box overlaps (the coins list is sorted by x; CIX(b) is the first coin not left of x = 128 b, so the search starts near the player; the pickup tile goes with SETWORLD).
+  PROC PICKUP():
+    LOCAL k, x, y, lx, rx, ty, bt
+    lx = px + BX : rx = lx + BW : ty = py + BY : bt = ty + BH
+    k = cix(lv * 9 + SHR(px, 7))
+    WHILE k < ce
+      x = cxs(k)
+      IF x >= rx THEN EXIT WHILE ENDIF
+      IF x + 8 > lx THEN
+        y = cys(k)
+        IF y < bt AND y + 8 > ty AND cc(k - cb) = 0 THEN
+          cc(k - cb) = 1
+          SETWORLD x, y = 0
+          coins = coins + 1 : score = score + 10 : hud = BOR(hud, 5)
+          PLAY coin
+        ENDIF
+      ENDIF
+      k = k + 1
+    WEND
+  ENDP
+
+  PROC DRAWPLAYER():
+    IF inv > 30 THEN
+      fr = 7
+    ELSE
+      IF gnd = 0 THEN
+        IF vy < 0 THEN fr = 5 ELSE fr = 6 ENDIF
+      ELSE
+        IF ABS(vx) < 2 THEN
+          fr = 0
+        ELSE
+          anim = anim + ABS(vx)
+          IF anim > 20000 THEN anim = 0 ENDIF
+          fr = 1 + BAND(SHR(anim, 6), 3)
+        ENDIF
+      ENDIF
+    ENDIF
+    IF face > 0 THEN
+      SHOW hero AT px, py FRAME fr
+    ELSE
+      SHOW hero AT px, py FRAME fr FLIP
+    ENDIF
+  ENDP
+
+  REM The camera follows with a dead zone (LZ..RZ pixels from the window's left edge); CAMERA clamps to the world.
+  PROC FOLLOW():
+    cam = CAMX()
+    IF px - cam < LZ THEN cam = px - LZ ENDIF
+    IF px + 16 - cam > RZ THEN cam = px + 16 - RZ ENDIF
+    CAMERA cam
+    cam = CAMX()
+  ENDP
+
+  REM ---------------------------------------------------------------------------------------------------------------- life and death
+  PROC HURT():
+    lives = lives - 1 : hud = BOR(hud, 2)
+    IF lives <= 0 THEN
+      CALL GAMEOVER()
+    ELSE
+      inv = 40 : vy = -5 : vx = 0 - face * 16 : gnd = 0
+      PLAY hurt
+    ENDIF
+  ENDP
+
+  REM A hazard or the pit: a life, back to the last checkpoint.
+  PROC DIE():
+    lives = lives - 1 : hud = BOR(hud, 2)
+    IF lives <= 0 THEN
+      CALL GAMEOVER()
+    ELSE
+      PLAY hurt
+      inv = 30
+      CALL RESPAWN()
+    ENDIF
+  ENDP
+
+  PROC GAMEOVER():
+    st = 3 : tt = 0 : ei = 0
+    HIDE hero
+    CALL CLEARENEMIES()
+    PLAY over
+  ENDP
+
+  REM The flag: after levels 1 to 3 the next level's message (NL), after the fourth the win screen.
+  PROC WIN():
+    IF lv < 3 THEN
+      st = 4 : nl = lv + 1
+    ELSE
+      st = 2
+    ENDIF
+    tt = 0 : ei = 0 : score = score + 500 : hud = BOR(hud, 1) : vx = 0 : vy = 0
+    CALL CLEARENEMIES()
+    PLAY win
+  ENDP
+
+  PROC CLEARENEMIES():
+    LOCAL i
+    FOR i = 0 TO 5
+      en(i) = 0
+      HIDE wk(i) : HIDE fl(i - 4)
+    NEXT i
+  ENDP
+
+  PROC FLUSHHUD():
+    WHILE hud <> 0
+      CALL SHOWHUD()
+    WEND
+  ENDP
+
+  REM Prints ONE changed number a call (hud: bit 0 score, 1 lives, 2 coins; the labels are printed once, when a game starts): a number is 1,000 to 2,500 T
+  REM to print and the cells it dirties are redrawn by the runtime in the next tick.  While playing it is called on every fourth tick (fc MOD 4 = 3), after
+  REM the tick that asks for a coin and the one that takes it.
+  PROC SHOWHUD():
+    INK 6 : PAPER 0 : BRIGHT 1
+    IF BAND(hud, 1) <> 0 THEN
+      PRINT AT 1, 8; score;
+      hud = BAND(hud, 6)
+    ELSE
+      IF BAND(hud, 2) <> 0 THEN
+        PRINT AT 1, 22; lives;
+        hud = BAND(hud, 5)
+      ELSE
+        PRINT AT 2, 8; coins;
+        hud = BAND(hud, 3)
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM ---------------------------------------------------------------------------------------------------------------- enemies
+  PROC ENEMIES():
+    LOCAL i
+    CALL SPAWNER()
+    IF BAND(fc, 1) = 0 THEN
+      FOR i = 0 TO 3
+        IF en(i) THEN CALL WALKER(i) ENDIF
+      NEXT i
+    ELSE
+      FOR i = 4 TO 5
+        IF en(i) THEN CALL BAT(i) ENDIF
+      NEXT i
+    ENDIF
+  ENDP
+
+  REM At most one new enemy a tick: the next entry of the sorted list when it comes within 216 pixels of the camera
+  REM (a walker needs a free walker slot, a bat a free bat slot; killed or passed entries are skipped).
+  PROC SPAWNER():
+    LOCAL k, lo, hi, b
+    IF nx < se THEN
+      IF sx(nx) < cam + 216 THEN
+        IF sd(nx - sb) = 0 AND sx(nx) > cam - 48 THEN
+          REM a bat is an entry with no turning points (WHI = 0)
+          b = 0
+          IF whi(nx) = 0 THEN b = 1 ENDIF
+          IF b = 0 THEN
+            lo = 0 : hi = 3
+          ELSE
+            lo = 4 : hi = 5
+          ENDIF
+          FOR k = lo TO hi
+            IF en(k) = 0 THEN
+              en(k) = 1 : ex(k) = sx(nx) : ey(k) = sy(nx) : ek(k) = nx : e0(k) = sx(nx)
+              ed(k) = -1 + b * 2
+              nx = nx + 1
+              EXIT FOR
+            ENDIF
+          NEXT k
+        ELSE
+          nx = nx + 1
+        ENDIF
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM A walker patrols its ground 4 pixels every other tick (walkers on the even ticks, bats on the odd ones, which halves their cost per tick) between the two turning points of its spawn entry (WLO / WHI: where a wall or the edge of its
+  REM ground is, worked out from the map by the generator and checked by the tests; no run-time query).
+  PROC WALKER(i):
+    LOCAL f, x, d, k
+    d = ed(i) : k = ek(i)
+    x = ex(i) + d * 4
+    IF x < cam - 48 THEN
+      en(i) = 0
+      HIDE wk(i)
+    ELSE
+      IF x <= wlo(k) THEN
+        x = wlo(k) : d = 1
+      ELSE
+        IF x >= whi(k) THEN x = whi(k) : d = -1 ENDIF
+      ENDIF
+      ed(i) = d : ex(i) = x
+      f = BAND(SHR(x, 3), 1)
+      IF d > 0 THEN
+        SHOW wk(i) AT x, ey(i) FRAME f
+      ELSE
+        SHOW wk(i) AT x, ey(i) FRAME f FLIP
+      ENDIF
+      REM (HIT only when the boxes can overlap, and when the touch can matter: falling onto it, or not blinking: HIT is 2,400 T)
+      IF ABS(x - px) < 13 AND ey(i) - py > -15 AND ey(i) - py < 21 AND (inv = 0 OR vy > 0) THEN
+        IF HIT(hero, wk(i)) THEN CALL TOUCH(i) ENDIF
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM A bat flies to and fro 56 pixels either side of where it appeared and bobs on the sine table.
+  PROC BAT(i):
+    LOCAL f, x, y
+    x = ex(i) + ed(i) * 4
+    IF x < cam - 80 THEN
+      en(i) = 0
+      HIDE fl(i - 4)
+    ELSE
+      IF ABS(x - e0(i)) > 56 THEN ed(i) = 0 - ed(i) ENDIF
+      ex(i) = x
+      y = sy(ek(i)) + sn(BAND(SHR(fc, 1) + i * 5, 15))
+      ey(i) = y
+      f = BAND(SHR(fc, 1), 1)
+      SHOW fl(i - 4) AT x, y FRAME f
+      IF ABS(x - px) < 12 AND y - py > -12 AND y - py < 22 AND (inv = 0 OR vy > 0) THEN
+        IF HIT(hero, fl(i - 4)) THEN CALL TOUCH(i) ENDIF
+      ENDIF
+    ENDIF
+  ENDP
+
+  REM The player met enemy slot i: falling onto it from above stomps it, anything else hurts.
+  PROC TOUCH(i):
+    IF vy > 0 AND py <= ey(i) - 12 THEN
+      en(i) = 0 : sd(ek(i) - sb) = 1
+      HIDE wk(i) : HIDE fl(i - 4)
+      vy = -6 : gnd = 0 : score = score + 100 : hud = BOR(hud, 1)
+      PLAY stomp
+    ELSE
+      IF inv = 0 THEN CALL HURT() ENDIF
+    ENDIF
+  ENDP
+
+  REM ---------------------------------------------------------------------------------------------------------------- coins
+  REM The coins spin as TILES: the pickup tile of each coin in view is swapped through its four spin frames (ct) with SETWORLD, one coin in eight a
+  REM tick (coin k when k - CF is the tick's number mod 8; a turn takes 32 ticks), so one or two SETWORLDs a tick (at most 14 coins are ever in view, and the two tries a tick reach 16) and no sprite at all.  (The first version drew
+  REM six 8 x 8 sprites over the still tiles: 2,400 T each in the runtime's blitter, 14,000 T on a tick with six coins in view.)  The list is
+  REM sorted by x: CF is the first coin not left of the camera.  A taken coin (cc) is left alone.
+  PROC SPINCOINS():
+    LOCAL k, f
+    WHILE cf < ce AND cxs(cf) + 8 <= cam
+      cf = cf + 1
+    WEND
+    f = ct(BAND(SHR(fc, 3), 3))
+    k = cf + BAND(fc, 7)
+    IF k < ce THEN
+      IF cc(k - cb) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
+    ENDIF
+    k = k + 8
+    IF k < ce THEN
+      IF cc(k - cb) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
+    ENDIF
+  ENDP
+ENDSCENE

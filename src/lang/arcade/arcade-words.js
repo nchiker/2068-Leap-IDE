@@ -43,6 +43,7 @@
  *     functions CAMX WORLDTILE TILEFLAGS TILEHIT SOLID are RESERVED; BAND was reserved by batch 1 as a bit function and is now also the top-level
  *     statement `BAND rows, num, den` (the position tells them apart: a statement starts a line, the function is always followed by a bracket).
  *     FLIP is contextual like FRAME (`SHOW s AT x, y FRAME f FLIP`), so a variable called `flip` keeps working.
+ *   - (the banked cartridge map, docs/ARCADE_BANKING_CONTRACT.md section 4) WORLD: load another MAP as the world of the WINDOW / the plan of the VIEW3D; reserved for variables, a legal asset name (BATCH11_WORDS)
  *   - (language batch 3, docs/ARCADE_RAYCASTER_CONTRACT.md section 6, docs/ARCADE_LANGUAGE_BATCH3.md) VIEW3D VIEW SETWALL and the functions COSA SINA FXMUL WALL SEEN DEPTH
  *     are RESERVED (a variable called `wall` or `depth` must be renamed; BATCH3_WORDS below lists them: they may still NAME AN ASSET, since assets have their own name
  *     space, so `SFX wall = "wall"` and `PLAY wall` keep working). The clause words of VIEW3D (COLW CEIL FLOOR PATTERNS) are contextual like FRAME; its INK and BRIGHT clauses
@@ -65,7 +66,7 @@ export const LIMITS = Object.freeze({
   maxDimV2: 1000,     // M4a: DIM a(n) with n 1..1000, elements a(0)..a(n) are 16-bit slots in GAME_VARS
   maxSlots2D: 1000,   // batch 1: DIM b(w, h) has (w + 1) * (h + 1) slots, at most 1000
   maxParams: 4,       // batch 1: PROC name(a, b, c, d)
-  maxMaps: 8,         // batch 1: MAP declarations (the header's map table)
+  maxMaps: 64,        // batch 1: MAP declarations (the header's map table); 8 until the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4), then 64
   maxPool: 16,        // M4a: SPRITE name(n): n 1..16 (the runtime has 16 instances in all)
   maxInstances: 16,   // M4a: instances (things on screen) in all
   maxAssets: 8,       // M4a: distinct sprite assets (pre-shifted tables)
@@ -139,7 +140,8 @@ const WORD_LIST = [
   W('WINDOW', 'game', 'WINDOW map [AT cx, cy]', 'Top level, once: use the declared MAP as a scrolling world shown in a window of 24 x 16 cells (192 x 128 pixels) at screen cell (cx, cy) (default 4, 4; both constants 0..8). The map is 24..128 cells wide and 1..16 tall and uses the tiles 0..31 of the TILESET (tile 0 should be blank: the sky). The cells of the screen outside the window stay yours (HUD text and tiles); cells inside it are repainted from the world every tick. SHOW uses world pixel coordinates. Needs the v3 runtime.'),
   W('CAMERA', 'game', 'CAMERA x', 'Set the camera: the world x (in pixels) at the left edge of the window. The value is clamped to 0..the largest value the world allows (the world width x 8 - 192, halved when a BAND scrolls at 2/1). CAMX() reads the clamped value. Needs a WINDOW.'),
   W('SETWORLD', 'game', 'SETWORLD x, y = t', 'Change one cell of the world: the cell that contains the world pixel (x, y) becomes tile t (0..31, a tile of the TILESET); a cell outside the world, or a tile outside the tileset, is ignored. The picture follows on the next tick. Collision words see the new tile at once. Needs a WINDOW.'),
-  W('LOADMAP', 'game', 'LOADMAP map  /  LOADMAP map AT x, y', 'Copy the whole of a declared MAP (its w x h cells) onto the screen cells, at the top-left or at cell (x, y); the part that falls outside the 32 x 24 screen is clipped, cells outside the map are left alone. Each tile cell takes its tile\'s colours. A game may declare up to 8 maps; the first one is loaded when the game starts.'),
+  W('LOADMAP', 'game', 'LOADMAP map  /  LOADMAP map AT x, y', 'Copy the whole of a declared MAP (its w x h cells) onto the screen cells, at the top-left or at cell (x, y); the part that falls outside the 32 x 24 screen is clipped, cells outside the map are left alone. Each tile cell takes its tile\'s colours. A game may declare up to 64 maps; the first one is loaded when the game starts.'),
+  W('WORLD', 'game', 'WORLD map', 'Load another MAP as the world of the WINDOW (runtime v3) or the floor plan of the VIEW3D (runtime v4), as if the WINDOW or VIEW3D had named it at the start: in a WINDOW game the world is replaced, the camera goes back to 0 and the whole window is redrawn (SETWORLD changes made before are lost; WORLD with the WINDOW\'s own map restarts a level); in a VIEW3D game the floor plan is replaced and the viewer stays where it is, moved into the new map if it is outside (the game normally follows with VIEW; SETWALL changes are lost). The map must be valid for a world (24..128 cells wide, at most 16 rows) or a plan (4..32 cells each way, the outer ring walls). A MAP named by WINDOW, VIEW3D or WORLD is a world or plan: it is stored once, not loaded at the start, and LOADMAP cannot use it. Needs a WINDOW or a VIEW3D.'),
   W('FILL', 'game', 'FILL x, y, w, h = t', 'Set the w x h screen cells from column x, row y to tile t (0..127 of the TILESET), each with the tile\'s colours. The rectangle is clipped to the 32 x 24 screen; a w or h of 0 or less does nothing. Much cheaper than a TILE loop.'),
   W('FILLC', 'game', 'FILLC x, y, w, h = c', 'Like FILL with the font character c (32..127) and the current text colours (INK, PAPER, BRIGHT). FILLC 0, 0, 32, 24 = 32 blanks the screen cells (CLS also resets the cursor).'),
   W('COPY', 'game', 'COPY x, y, w, h TO dx, dy', 'Copy the rectangle of screen cells (tile or character and colours) at column x, row y to column dx, row dy. Source and destination may overlap (as memmove: the result is as if the whole rectangle were read first); only cells whose source and destination are both on the screen are copied.'),
@@ -261,6 +263,9 @@ export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'EN
  * name space, and the first project that used one of them (breakout.arc) named a sound `wall`. arcade-parse.js reads them as names in asset declarations and references.
  */
 export const BATCH3_WORDS = Object.freeze(new Set(['VIEW3D', 'VIEW', 'SETWALL', 'COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']));
+
+/** Words of the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): reserved like batch 3's, and like them they may still NAME AN ASSET (`MAP world = "w"`). */
+export const BATCH11_WORDS = Object.freeze(new Set(['WORLD']));
 
 /** Entry for a word (any case), or null. */
 export function wordEntry(word) {

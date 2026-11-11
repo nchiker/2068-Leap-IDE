@@ -21,6 +21,9 @@ PORT_AY_DATA    EQU $F6         ; AY data (write) / selected register (read); th
 ; $FF bit 7 stays 0 ("DOCK") the whole time.  Chunks 2, 3, 6, 7 of the DCK are not shipped.
 ; ---------------------------------------------------------------------------------------------------------------
 F4_PLAY         EQU $33
+F4_BANK         EQU $3F         ; banking (docs/ARCADE_BANKING_CONTRACT.md): DOCK chunks 0-5 mapped, so chunks 2+3 (the 16 KB bank window $4000-$7FFF) read the cartridge
+BANK_LO         EQU $40         ; the window's high-byte range: an address with H in BANK_LO..BANK_HI-1 is a banked asset
+BANK_HI         EQU $80
 SCLD_BOOT       EQU $00         ; mode 0, file 1 shown, interrupt on, DOCK selected
 HANDOFF_SP      EQU $61FE       ; where the stock ROM leaves SP (chunk 3); documented, only checked by the test
 
@@ -385,7 +388,7 @@ GAME_WINDESC    EQU GAME_BASE+18
 GAME_HEADER_WIN_LEN EQU 20
 GAME_MAPTAB     EQU GAME_BASE+16        ; DW map_table: DB count (0..MAX_MAPS), count x DW map_ptr; a map: DB w, DB h, w*h cell bytes (row-major)
 GAME_HEADER_EXT_LEN EQU 18
-MAX_MAPS        EQU 8
+MAX_MAPS        EQU 64          ; (8 before banking; the table is indexed with ADD A,A, fine below 128)
 ; Variables in the formerly free $E0F8-$E0FF (boot sets V_BORDER; V_NMAP / V_MAPTAB are 0 without a map table)
 V_BORDER        EQU VARS+$F8    ; byte: the last border colour written (0..7); boot value BORDER_COLOUR
 V_NMAP          EQU VARS+$F9    ; byte: number of maps in the map table (0..MAX_MAPS)

@@ -178,7 +178,7 @@ maps_boot:
     ex de,hl
     ld bc,0
     ld de,0
-    call loadmap_core
+    call RT_LOADMAPPTR          ; (a map-table entry may point into the bank window)
     scf
     ret
 .none:

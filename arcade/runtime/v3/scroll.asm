@@ -50,19 +50,18 @@ window_boot:
     sub $80
     cp $40-13
     ret nc                      ; its 14 pages inside the game image
-    push ix
-    pop hl
-    ld de,9
-    add hl,de
-    ld b,3
-.pv:
-    ld a,(hl)
+    ld a,(ix+9)
     sub $80
     cp $40
-    ret nc                      ; tile_flags (+9), world_src (+11), tilerows (+13): inside the game image
-    inc hl
-    inc hl
-    djnz .pv
+    ret nc                      ; tile_flags (+9) and tilerows (+13): inside the game image
+    ld a,(ix+13)
+    sub $80
+    cp $40
+    ret nc
+    ld a,(ix+11)
+    sub BANK_LO
+    cp $80
+    ret nc                      ; world_src (+11): inside the game image ($8000-$BFFF) or the bank window ($4000-$7FFF, banking)
     ld b,(ix+2)                 ; ---- the bands ----
     ld c,0                      ; rows so far
     push ix
@@ -135,33 +134,7 @@ window_boot:
     ; ---- the world: byte-RLE pairs (count 1..255, value), count 0 ends; exactly 2,048 bytes (stop there; zero the rest if short) ----
     ld l,(ix+10)
     ld h,(ix+11)
-    ld de,WORLD_RAM
-.rp:
-    ld a,(hl)
-    or a
-    jr z,.rz
-    ld b,a
-    inc hl
-    ld c,(hl)
-    inc hl
-.rr:
-    ld a,d
-    cp (WORLD_RAM+WORLD_RAM_LEN)>>8
-    jr z,.rd                    ; 2,048 bytes written: the rest of the list is ignored
-    ld a,c
-    ld (de),a
-    inc de
-    djnz .rr
-    jr .rp
-.rz:
-    ld a,d
-    cp (WORLD_RAM+WORLD_RAM_LEN)>>8
-    jr z,.rd
-    xor a
-    ld (de),a
-    inc de
-    jr .rz
-.rd:
+    call world_load
     ld l,(ix+12)                ; ---- the phase-0 tile rows, page aligned ----
     ld h,(ix+13)
     ld de,W_TROWS
@@ -243,6 +216,77 @@ window_boot:
     ld a,1
     ld (V_WIN),a
     ret
+
+; ---------------------------------------------------------------------------------------------------------------
+; world_load: HL = a world's byte-RLE stream, mapped ($8000-$BFFF) or banked ($4000-$7FFF) -> WORLD_RAM (docs/ARCADE_BANKING_CONTRACT.md section 3).  A banked
+; stream is decoded with the bank window mapped (the decoder reads the stream and writes WORLD_RAM in chunk 7, nothing else; interrupts stay on) and the
+; window is unmapped again before the caller touches the display files ($5B00-$5DFF).  world_decode: the decoder itself: byte-RLE pairs (count 1..255,
+; value), count 0 ends; exactly 2,048 bytes (stop there; zero the rest if short).  Both clobber AF, BC, DE, HL.
+; ---------------------------------------------------------------------------------------------------------------
+world_load:
+    ld a,h
+    sub BANK_LO
+    cp BANK_HI-BANK_LO
+    jr nc,world_decode          ; mapped: as before
+    call bank_on
+    call world_decode
+    jp bank_off
+world_decode:
+    ld de,WORLD_RAM
+.rp:
+    ld a,(hl)
+    or a
+    jr z,.rz
+    ld b,a
+    inc hl
+    ld c,(hl)
+    inc hl
+.rr:
+    ld a,d
+    cp (WORLD_RAM+WORLD_RAM_LEN)>>8
+    ret z                       ; 2,048 bytes written: the rest of the list is ignored
+    ld a,c
+    ld (de),a
+    inc de
+    djnz .rr
+    jr .rp
+.rz:
+    ld a,d
+    cp (WORLD_RAM+WORLD_RAM_LEN)>>8
+    ret z
+    xor a
+    ld (de),a
+    inc de
+    jr .rz
+
+; ---------------------------------------------------------------------------------------------------------------
+; RT_WORLDLOAD: HL = the new world's RLE stream (mapped or banked), A = world_w (24..128), DE = cam_max (pixels, as the compiler's camMax(); stored as given)
+; -> WORLD_RAM decoded, W_WW / W_WXR (8 world_w) / W_CAMMAX set, the camera 0, and both display files' attribute caches invalidated (win_ac_clear), so the
+; next two ticks repaint the whole window in both files as after window_boot.  Tile rows, attributes, flags, bands and the window's place stay; sprites are
+; not touched.  Window mode only (V_WIN = 1): otherwise it returns at once.  Clobbers AF, BC, DE, HL.
+; ---------------------------------------------------------------------------------------------------------------
+RT_WORLDLOAD:
+    ld c,a
+    ld a,(V_WIN)
+    or a
+    ret z
+    ld a,c
+    ld (W_WW),a
+    ld (W_CAMMAX),de
+    ld b,0
+    push hl                     ; the stream
+    ld h,b
+    ld l,c
+    add hl,hl
+    add hl,hl
+    add hl,hl
+    ld (W_WXR),hl
+    ld l,b
+    ld h,b
+    ld (V_CAM),hl               ; camera 0
+    call win_ac_clear
+    pop hl
+    jr world_load
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; win_tick: the tick work in window mode (main.asm jumps here after frame_entry; it goes back to TICK_COUNT).  Everything into the hidden file.

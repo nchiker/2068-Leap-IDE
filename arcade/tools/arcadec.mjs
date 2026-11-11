@@ -80,6 +80,12 @@ if (u.view) console.log(`  3D view       ${u.view.mapW} x ${u.view.mapH} map, ${
 if (u.data && (u.data.strings || u.data.tileset || u.data.sfx || u.data.map)) {
   console.log(`  data in code  strings+hot boxes ${u.data.strings}, tileset ${u.data.tileset}, sound ${u.data.sfx}, map ${u.data.map} (already counted in "code")`);
 }
+if (u.mapped) console.log(`  mapped part   ${u.mapped.used} of ${u.mapped.available} bytes`);
+if (u.banked && u.banked.used > 0) {
+  console.log(`  banked part   ${u.banked.used} of ${u.banked.available} bytes`);
+  for (const b of u.banked.assets) console.log(`    banked ${b.kind.padEnd(8)} ${b.name.padEnd(16)} ${b.bytes} bytes`);
+}
+if (u.shippedChunks) console.log(`  chunks        ${u.shippedChunks.join(' ')} shipped`);
 console.log(`  game total    ${u.total} of ${u.total + u.free} bytes from GAME_BASE; free ${u.free}`);
 const rtEnd = runtime.symbols && runtime.symbols.RT_END;
 console.log(rtEnd !== undefined

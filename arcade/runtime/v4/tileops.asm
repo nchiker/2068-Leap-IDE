@@ -801,7 +801,8 @@ RT_COPY:
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; RT_LOADMAP: A = map index -> the map at cell (0, 0).  RT_LOADMAPAT: A = map index, BC = x, DE = y (signed).  An index >= the map count, no table,
-; or a zero pointer in the table: nothing.  RT_LOADMAPPTR: HL = address of a map record (DB w, DB h, w*h cell bytes), BC = x, DE = y.
+; or a zero pointer in the table: nothing.  RT_LOADMAPPTR: HL = address of a map record (DB w, DB h, w*h cell bytes; mapped $8000-$BFFF or banked
+; $4000-$7FFF, read through the bank window), BC = x, DE = y.
 ; The map is cut to the screen on all four sides; cells outside it are untouched.  Clobbers AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------------------------------------------
 RT_LOADMAP:
@@ -828,6 +829,21 @@ RT_LOADMAPAT:
     or l
     ret z
 RT_LOADMAPPTR:
+    ld a,h                      ; banking (docs/ARCADE_BANKING_CONTRACT.md section 3): a map record in $4000-$7FFF is read in place with the
+    sub BANK_LO                 ; bank window mapped (DOCK chunks 2-3 over the display files), which only loadmap_core's source reads touch
+    cp BANK_HI-BANK_LO
+    jp nc,loadmap_core          ; a mapped map ($8000-$BFFF, or anything else): exactly as before
+    call bank_on
+    call loadmap_core
+bank_off:                       ; unmap the window: $F4 = F4_PLAY.  bank_on / bank_off clobber A only; only these two (and the boot) write $F4
+    ld a,F4_PLAY
+    jr bank_set
+bank_on:                        ; map the window: $F4 = F4_BANK (DOCK chunks 0-5; chunks 2-3 now read the cartridge, the display files vanish)
+    ld a,F4_BANK
+bank_set:
+    ld (V_SHADOW_F4),a          ; the shadow first, then the port (the shadow is never read back from the port)
+    out (PORT_HSR),a
+    ret
 loadmap_core:
     ld a,(hl)
     or a
@@ -953,7 +969,7 @@ maps_boot:
     ex de,hl
     ld bc,0
     ld de,0
-    call loadmap_core
+    call RT_LOADMAPPTR          ; (a map-table entry may point into the bank window)
     scf
     ret
 .none:

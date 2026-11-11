@@ -244,7 +244,7 @@ function arcadeComplete(context) {
   if (prevWord === 'FN') return only(s.fns.map((f) => ({ label: f.name, type: 'function', detail: `DEF FN · line ${f.line}`, apply: f.name + '(' })));
   if (prevWord === 'SHOW' || prevWord === 'HIDE') return only(s.assets.filter((a) => a.kind === 'SPRITE').map((a) => ({ label: a.name, type: 'constant', detail: a.count ? `sprite pool (${a.count})` : 'sprite' })));
   if (prevWord === 'PLAY') return { from: word.from, options: [...s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })), ...s.vars.filter((v) => v.dims === 0).map((v) => ({ label: v.name, type: 'variable', detail: `effect index · line ${v.line}` }))], validFor: /^\w*$/ };
-  if (prevWord === 'LOADMAP') return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
+  if (prevWord === 'LOADMAP' || prevWord === 'WORLD') return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
 
   const own = [
     ...s.vars.map((v) => ({ label: v.name, type: 'variable', detail: v.timer ? `timer · line ${v.line}` : v.dims === 2 ? `array(${v.size ?? '?'}, ${v.size2 ?? '?'}) · line ${v.line}` : v.dims === 1 ? `array(${v.size ?? '?'}) · line ${v.line}` : `variable · line ${v.line}` })),

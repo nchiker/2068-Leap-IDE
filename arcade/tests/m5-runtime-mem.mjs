@@ -31,8 +31,8 @@ const REGIONS = [
     overlap === null && S.RT_ARGS === S.T3 + 0x40 && S.TO_BUFT === S.T3 && S.TO_BUFA === S.T3 + 0x20 && S.TO_VARS === S.RT_ARGS + 12 && toEnd <= S.T3 + S.T3_LEN && S.V_BORDER === S.VARS + 0xF8, overlap ?? '');
   check('RT_ARGS words: RA_X +0, RA_Y +2, RA_W +4, RA_H +6, RA_V = RA_DX +8, RA_DY +10', S.RA_X === S.RT_ARGS && S.RA_Y === S.RT_ARGS + 2 && S.RA_W === S.RT_ARGS + 4 && S.RA_H === S.RT_ARGS + 6 && S.RA_V === S.RT_ARGS + 8 && S.RA_DX === S.RA_V && S.RA_DY === S.RT_ARGS + 10);
   const cst = C.rt().json.constants;
-  check('runtime.json carries the constants the compiler needs (RT_ARGS, RA_*, GAME_MAPTAB = $8010, GAME_HEADER_EXT_LEN = 18, DIV_EXT = $80, MAX_MAPS = 8, V_BORDER) and the entry points',
-    cst.RT_ARGS === S.RT_ARGS && cst.GAME_MAPTAB === 0x8010 && cst.GAME_HEADER_EXT_LEN === 18 && cst.DIV_EXT === 0x80 && cst.MAX_MAPS === 8 && cst.V_BORDER === S.V_BORDER &&
+  check('runtime.json carries the constants the compiler needs (RT_ARGS, RA_*, GAME_MAPTAB = $8010, GAME_HEADER_EXT_LEN = 18, DIV_EXT = $80, MAX_MAPS = 64, V_BORDER) and the entry points',
+    cst.RT_ARGS === S.RT_ARGS && cst.GAME_MAPTAB === 0x8010 && cst.GAME_HEADER_EXT_LEN === 18 && cst.DIV_EXT === 0x80 && cst.MAX_MAPS === 64 && cst.V_BORDER === S.V_BORDER &&
     ['RT_FILL', 'RT_FILLC', 'RT_COPY', 'RT_LOADMAP', 'RT_LOADMAPAT', 'RT_LOADMAPPTR', 'RT_BORDER', 'RT_RANDOMISE'].every((n) => C.rt().json.symbols[n] === S[n] && S[n] > 0));
 }
 

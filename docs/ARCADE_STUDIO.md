@@ -189,3 +189,20 @@ Contract: [`ARCADE_LANGUAGE_BATCH4.md`](ARCADE_LANGUAGE_BATCH4.md) sections 10 a
 Auto / Two buffers / 8x1 colour / Hi-res text, the last two disabled ("not built yet") unless the loaded project carries them; a change goes through the same changed -> autosave -> recompile path as the asset editors.
 The size panel has a `Scenes` row. The Symbols tab's Scenes group reads `name (start) -> a, b` from `scanArcade`'s new `enters`. **Only the two-buffer setup exists in the runtimes**, so today the override can only pin
 `buffers`; the field, the validation and the UI are in place for the runtimes that will add the others. Tests: `tests/arcade-display.mjs` (73), `tests/arcade-project.mjs`, a block in `tests/studio-smoke.mjs`.
+
+## As built: banking (B4, 2026-11-10)
+
+The banked cartridge map (`docs/ARCADE_BANKING_CONTRACT.md` sections 5 and 8) in the Studio:
+
+* **Size panel, two budgets.** The existing bar is now `Mapped N / 16,384 bytes (p %), F free` (from `usage.mapped`; an older result falls back to `usage.gameArea`, then to `total + free`). A second bar, `Banked N / 16,384 bytes`
+  (`usage.banked`, class `bank-fill`, a `--blue-fg` bar that turns amber and red like the first), sits under it and is hidden when the game has no map assets, nothing is banked and `usage.banked` is absent. Under it is one row per banked asset,
+  `banked: map sky (770 bytes, set to Banked)` (`kind name (bytes, why)`; why is `auto`, `set to Banked` for an override or `forced` for the test option), or `nothing banked: the game fits in its mapped 16 KB`. The names are the declared `MAP` names (the compiler's), not asset names.
+  The status bar reads `8479 of 16384 bytes + 770 banked · 54 ms` while something is banked. Both budgets show the last good build, as before.
+* **Bank select: in the map editor's toolbar**, after Tile set (`[data-role=bank-select]`, Auto / Mapped / Banked). It is an edit like any other (one `setAsset`, one undo step, auto-save, recompile). `bank` travels in the map model's `extra` keys, so
+  `fromAsset` / `toAsset` already kept it; Auto deletes the key. A stored value that is not one of the three shows as `x (not valid)`.
+* **Validation** (`validateProject`): `bank` of `mapped` or `banked` is kept; `auto` is stored as no key; anything else is dropped with a warning (`assets.maps.room.bank must be "auto", "mapped" or "banked" ...`). (The compiler's own warning for a bad value
+  therefore reaches the Studio only through a project that bypasses validation.) `setAsset` does not look at `bank` (it keeps whatever the editor writes).
+* **Problems list:** the compiler's new errors and warnings (`the game does not fit: mapped part ...`, `banked assets need ...`, `map 'x' is set to mapped ...`) are ordinary diagnostics and appear with no Studio change.
+* **Fixed on the way:** `ensureEditor` could run twice before an editor module had loaded (two quick selections), putting two editors in one tab; it now keeps the pending load.
+* Tests: a `B4` block in `tests/studio-smoke.mjs` (the Shooter's `sky` map set to Banked: banked list, both budgets, status bar, a DCK saved, Auto / Mapped round trip, auto-save, a bad value in an opened file, the old-usage fallback), `tests/arcade-project.mjs`
+  (bank validation), `tests/map-editor-smoke.mjs` (the select and its undo), `tests/map-model.mjs` (`bank` kept in `extra`).
