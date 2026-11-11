@@ -2,6 +2,7 @@
 "use strict";
 // runner.assets.gen.mjs -- the three NEW levels and the level tables (TABLE lv1 .. lv4) of runner.arc ("Leap Runner", four levels), and runner.assets.json.
 //   node arcade/examples/runner.assets.gen.mjs            writes runner.assets.json next to this file (deterministic)
+//   node arcade/examples/runner.assets.gen.mjs --check            asserts the game's limits (see "the limits of runner.arc"); every other mode refuses to run when one is broken
 //   node arcade/examples/runner.assets.gen.mjs --ascii    prints every level (rows 5..15) with its coins, enemies and checkpoints
 //   node arcade/examples/runner.assets.gen.mjs --data     prints the DIM and TABLE lv1 .. lv4 lines of the level data that runner.arc carries (level-relative lists)
 //   node arcade/examples/runner.assets.gen.mjs --splice   writes those lines into runner.arc between its @@DATA-BEGIN@@ and @@DATA-END@@ markers
@@ -39,7 +40,7 @@ function make(mountains, clouds) {
   const L = { g, coins: [], spawns: [], checkpoints: [], put };
   L.ground = (c0, c1, top) => { for (let c = c0; c <= c1; c++) { put(c, top, T.GRASS); for (let r = top + 1; r < ROWS; r++) put(c, r, T.DIRT); } };
   L.run = (c0, c1, r, t) => { for (let c = c0; c <= c1; c++) put(c, r, t); };
-  L.coin = (c, r) => { put(c, r, T.COIN); L.coins.push([c, r]); };
+  L.coin = (c, r) => { if (c < 0 || c >= COLS || r < 5 || r > 13 || g[r][c] !== T.SKY) throw new Error(`coin (${c}, ${r}): not a free sky cell (it was tile ${g[r]?.[c]})`); put(c, r, T.COIN); L.coins.push([c, r]); };
   L.coins_ = (c0, c1, r) => { for (let c = c0; c <= c1; c++) L.coin(c, r); };
   const top = (c) => { for (let r = 5; r < ROWS; r++) if (g[r][c] === T.GRASS || g[r][c] === T.BRICK) return r; return 16; };
   L.walker = (c) => L.spawns.push([c * 8, top(c) * 8 - 16, 0]);
@@ -84,8 +85,16 @@ function ridge() {
   coins_(47, 48, 8); coins_(53, 54, 8); coin(58, 11); coins_(68, 69, 11);
   coins_(80, 81, 12); coins_(87, 88, 11); coins_(93, 94, 10);
   coins_(103, 104, 10); coins_(118, 119, 13);
-  [18, 36, 50, 79, 108].forEach((c) => L.walker(c));
-  L.flyer(45, 56); L.flyer(74, 64); L.flyer(100, 56);
+  // denser: arcs over the pits, spikes and walls along the route (the limits, among them 14 coins in view, are checked by limitProblems)
+  coin(30, 12); coin(31, 11); coin(32, 12);                  // over the first pit
+  coin(39, 12); coins_(40, 41, 11); coin(42, 12);            // over the spikes at 40
+  coins_(62, 63, 11);                                        // over the spikes at 62
+  coin(67, 12); coin(70, 12);                                // the ends of the arc over the 4-wide pit (68-69 are up)
+  coin(75, 11); coins_(76, 77, 10); coin(78, 11);            // over the two-high wall
+  coin(97, 11); coin(98, 10); coin(99, 11);                  // over the last pit
+  coin(113, 11); coins_(114, 115, 10); coin(116, 11);        // over the last wall
+  [18, 36, 50, 65, 79, 108].forEach((c) => L.walker(c));
+  L.flyer(28, 64); L.flyer(45, 56); L.flyer(74, 64); L.flyer(100, 56);
   L.checkpoints = [[38 * 8, 88], [73 * 8, 88], [103 * 8, 88]];
   return L.finish();
 }
@@ -122,7 +131,16 @@ function islands() {
   coins_(65, 66, 12); coin(70, 11);
   coins_(80, 81, 11); coins_(93, 94, 11);
   coins_(105, 106, 13); coins_(118, 119, 13);
-  [8, 49, 69, 104, 119].forEach((c) => L.walker(c));
+  // denser: arcs over the spikes and across the gaps between the islands, rows on the long grounds
+  coins_(10, 11, 11);                                        // over the first spikes
+  coin(27, 11); coin(28, 10); coin(29, 11);                  // first gap of pit one
+  coins_(34, 36, 10);                                        // second gap
+  coin(51, 12); coins_(52, 53, 11); coin(54, 12);            // over the spikes at 52
+  coin(83, 11); coins_(84, 85, 10);                          // gaps of pit two
+  coin(89, 10); coin(90, 10); coin(91, 11);
+  coins_(108, 109, 11);                                      // over the spikes at 108
+  coins_(115, 116, 10);                                      // over the wall
+  [8, 49, 69, 80, 104, 119].forEach((c) => L.walker(c));      // 80: on the first island of pit two
   L.flyer(28, 56); L.flyer(60, 56); L.flyer(84, 64); L.flyer(110, 64);
   L.checkpoints = [[48 * 8, 88], [66 * 8, 80], [104 * 8, 88]];
   return L.finish();
@@ -164,8 +182,20 @@ function gauntlet() {
   coins_(43, 44, 11); coins_(49, 50, 11);
   coins_(58, 59, 10); coins_(64, 65, 12);
   coins_(78, 79, 12); coins_(85, 86, 11); coins_(92, 93, 11); coins_(97, 98, 13);
-  [15, 41, 49, 68, 98].forEach((c) => L.walker(c));
-  L.flyer(28, 64); L.flyer(58, 64); L.flyer(79, 72); L.flyer(89, 56); L.flyer(108, 72);
+  // denser: every pit has its arc, every spike row and wall a coin or two over it, and the islands carry rows (at most 14 coins in view: limitProblems)
+  coin(18, 12); coin(19, 11); coin(20, 12);                  // over the first pit
+  coin(27, 11);                                              // over the second pit
+  coin(37, 12); coin(38, 11); coin(39, 12);                  // over the third pit
+  coins_(71, 72, 11);                                        // over the spike pair
+  coin(81, 11); coin(82, 10); coin(83, 11);                  // first gap of the long pit
+  coin(89, 10); coin(90, 11);                                // second gap
+  coins_(106, 107, 11);                                      // over the spikes at 106
+  coins_(110, 111, 10);                                      // over the wall
+  coins_(118, 119, 10);                                      // over the last wall
+  coins_(120, 121, 13);                                      // after the last wall, before the flag
+  coin(46, 12);                                              // before the step
+  [15, 41, 49, 68, 98, 113].forEach((c) => L.walker(c));
+  L.flyer(28, 64); L.flyer(47, 64); L.flyer(66, 72); L.flyer(85, 56); L.flyer(104, 72);   // 19 columns (152 px) apart: see the spawn limit
   L.checkpoints = [[41 * 8, 88], [64 * 8, 80], [104 * 8, 88]];
   return L.finish();
 }
@@ -202,6 +232,100 @@ export function levelTables() {
   });
 }
 
+// ── the limits of runner.arc, checked for every level ──────────────────────────────────────────────────────────────────────────────
+// Where each number comes from (all of it is in runner.arc):
+//   coins 50, enemies 11     the arrays cxs..cys(49) / sx..whi(10) and cc(49) / sd(10) are sized to the largest level; every level's TABLE is padded to them, so
+//                            up to 50 / 11 costs no cartridge or RAM bytes, and one more grows all four records and the arrays.
+//   14 coins in view         SPINCOINS swaps the pickup tile of coin CF + (fc MOD 8) and of that + 8, so the 16 coins from the first one not left of the camera are
+//                            reached; at most 14 coins are ever in the 192-px window (cxs < cam + 192, cxs + 8 > cam) and each is swapped once every 8 ticks.
+//   coins per 128 px (CIX)   PICKUP starts at cix(px / 128) and walks the sorted list up to the coin right of the hero's box (px + 13): its worst walk (11 coins in
+//                            level 1) is the cost the game was measured with, so no level may walk more.
+//   6 enemy slots            en(5): walkers (whi <> 0) use the 4 slots 0..3 (sprites wk), bats (whi = 0) the 2 slots 4..5 (sprites fl). SPAWNER starts at most one
+//                            entry a tick, in list order, when sx < cam + 216 and sx > cam - 48; with no free slot of its kind it waits (and with it every entry
+//                            behind it, a bat blocking the walkers too).  A walker leaves its slot when x < cam - 48, a bat when x < cam - 80 (or when stomped).
+//                            Entries that wait show up inside the view when they finally start: simulateSpawns() plays the SPAWNER and the walk of the enemies
+//                            from the start and each checkpoint with the camera at 0.5 .. 2.5 px a tick (nobody stomps anything) and reports the worst such pop-in.
+//   9 CIX entries, 4 RCF / RNX, 3 checkpoints, 128 px world: the array sizes.
+export const LIMITS = { coins: 50, enemies: 11, view: 14, scan: 11, walkerSlots: 4, batSlots: 2, popIn: 32, minXGap: 16 };
+
+/** Play runner.arc's SPAWNER / WALKER / BAT slot logic over a camera that moves right at `speed` px a tick from `startCam` (the respawn: entries from `nx0`).
+ *  Returns, for every entry that was not in the first view (sx >= startCam + 192), how many pixels of it were inside the view when it started. */
+export function simulateSpawns(t, startCam, nx0, speed, parity) {
+  const en = new Array(6).fill(0), ex = new Array(6).fill(0), ed = new Array(6).fill(0), ek = new Array(6).fill(0), e0 = new Array(6).fill(0);
+  let nx = nx0, fc = parity;
+  const seen = [];
+  for (let tick = 0; tick < 2500; tick++) {
+    const cam = Math.min(832, Math.floor(startCam + speed * tick));
+    fc++;
+    if (nx < t.se && t.sx[nx] < cam + 216) {                                   // SPAWNER
+      if (t.sx[nx] > cam - 48) {
+        const b = t.whi[nx] === 0 ? 1 : 0, lo = b ? 4 : 0, hi = b ? 5 : 3;
+        for (let k = lo; k <= hi; k++) if (!en[k]) {
+          en[k] = 1; ex[k] = t.sx[nx]; ek[k] = nx; e0[k] = t.sx[nx]; ed[k] = -1 + b * 2;
+          if (t.sx[nx] >= startCam + 192) seen.push({ k: nx, bat: b === 1, vis: Math.max(0, cam + 192 - t.sx[nx]) });
+          nx++; break;
+        }
+      } else nx++;
+    }
+    if ((fc & 1) === 0) {                                                       // ENEMIES: walkers on even ticks
+      for (let i = 0; i < 4; i++) if (en[i]) {
+        const k = ek[i]; let x = ex[i] + ed[i] * 4, d = ed[i];
+        if (x < cam - 48) en[i] = 0;
+        else { if (x <= t.wlo[k]) { x = t.wlo[k]; d = 1; } else if (x >= t.whi[k]) { x = t.whi[k]; d = -1; } ed[i] = d; ex[i] = x; }
+      }
+    } else {                                                                    // bats on odd ticks
+      for (let i = 4; i < 6; i++) if (en[i]) {
+        const x = ex[i] + ed[i] * 4;
+        if (x < cam - 80) en[i] = 0; else { if (Math.abs(x - e0[i]) > 56) ed[i] = -ed[i]; ex[i] = x; }
+      }
+    }
+  }
+  return seen;
+}
+
+/** Every limit above for every level, as {problems: [string], stats: [{...}]}.  The worlds' own rules (flag, start, checkpoints on ground, the walkers' turning points) are checked by tests/arcade-runner.mjs. */
+export function checkLimits(levels = LEVELS, tables = levelTables()) {
+  const problems = [], stats = [];
+  levels.forEach((L, i) => {
+    const t = tables[i], n = `level ${i + 1}`, bad = (m) => problems.push(`${n}: ${m}`);
+    const standable = []; // [c, topRow]: a cell the hero can stand on (solid or a plank) with the cell above it free
+    for (let c = 0; c < COLS; c++) for (let r = 6; r < ROWS; r++) if ((FLAGS[L.g[r][c]] & 9) && !(FLAGS[L.g[r - 1][c]] & 1)) standable.push([c, r]);
+    if (t.ce > LIMITS.coins) bad(`${t.ce} coins, the arrays hold ${LIMITS.coins}`);
+    if (t.se > LIMITS.enemies) bad(`${t.se} enemies, the arrays hold ${LIMITS.enemies}`);
+    if (L.checkpoints.length !== 3 || t.cix.length !== 9 || t.rcf.length !== 4 || t.rnx.length !== 4) bad('CKX/CKY need 3 entries, CIX 9, RCF / RNX 4');
+    if (!L.checkpoints.every(([x], j) => x > 24 && (j === 0 || x > L.checkpoints[j - 1][0]))) bad('the checkpoints must rise in x and the first lie right of the start (x 24)');
+    if (!t.cix.every((v, j) => j === 0 || v >= t.cix[j - 1])) bad('CIX is not rising');
+    // coins: sorted, distinct, on free sky cells (L.coin refuses anything else), reachable from a floor, at most 14 in view, short PICKUP walks
+    for (let k = 1; k < t.ce; k++) if (t.cxs[k] < t.cxs[k - 1] || (t.cxs[k] === t.cxs[k - 1] && t.cys[k] <= t.cys[k - 1])) bad(`the coin list is not sorted / distinct at ${k}`);
+    L.coins.forEach(([c, r]) => {
+      if (!standable.some(([sc, st]) => Math.abs(sc - c) <= 4 && st - r >= 1 && st - r <= 6)) bad(`coin (${c}, ${r}) is out of reach: no floor within 4 columns and 6 rows under it`);
+    });
+    let view = 0, viewAt = 0;
+    for (let cam = 0; cam <= 832; cam++) { const v = L.coins.filter(([c]) => c * 8 + 8 > cam && c * 8 < cam + 192).length; if (v > view) { view = v; viewAt = cam; } }
+    if (view > LIMITS.view) bad(`${view} coins in view at camera ${viewAt} (at most ${LIMITS.view})`);
+    let scan = 0;
+    for (let px = 0; px < 1008; px++) { let w = 0; for (let k = t.cix[px >> 7]; k < t.ce; k++) { w++; if (t.cxs[k] >= px + 13) break; } scan = Math.max(scan, w); }
+    if (scan > LIMITS.scan) bad(`PICKUP walks ${scan} coins at worst (at most ${LIMITS.scan})`);
+    // enemies: sorted, apart, walkers' patrols disjoint, at most 4 walkers / 2 bats alive at once (static bound for walkers), bats at their heights, no pop-in beyond the limit
+    for (let k = 1; k < t.se; k++) if (t.sx[k] - t.sx[k - 1] < LIMITS.minXGap) bad(`enemies ${k - 1} and ${k} are ${t.sx[k] - t.sx[k - 1]} px apart (at least ${LIMITS.minXGap})`);
+    const walkers = [...Array(t.se).keys()].filter((k) => t.whi[k] !== 0);
+    for (const a of walkers) for (const b of walkers) if (a < b && t.wlo[a] < t.whi[b] + 16 && t.wlo[b] < t.whi[a] + 16) bad(`the patrols of walkers ${a} and ${b} overlap`);
+    let wMax = 0;
+    for (let cam = 0; cam <= 832; cam++) wMax = Math.max(wMax, walkers.filter((k) => t.sx[k] < cam + 216 && t.whi[k] >= cam - 48).length);
+    if (wMax > LIMITS.walkerSlots) bad(`${wMax} walkers can be alive together (${LIMITS.walkerSlots} slots)`);
+    for (let k = 0; k < t.se; k++) if (t.whi[k] === 0 && (t.sy[k] < 56 || t.sy[k] > 72)) bad(`bat ${k} flies at y ${t.sy[k]} (56..72 is the range the levels use)`);
+    let pop = 0, popWho = '';
+    const starts = [[24, 0], ...L.checkpoints.map(([x], j) => [x, j + 1])];
+    for (const [x, j] of starts) {
+      const cam = Math.max(0, Math.min(832, x - 72));
+      for (const sp of [0.5, 1, 1.5, 2, 2.5]) for (const par of [0, 1]) for (const e of simulateSpawns(t, cam, t.rnx[j], sp, par)) if (e.vis > pop) { pop = e.vis; popWho = `${e.bat ? 'bat' : 'walker'} ${e.k} from ${j ? 'checkpoint ' + j : 'the start'} at ${sp} px a tick`; }
+    }
+    if (pop > LIMITS.popIn) bad(`an enemy can start ${pop} px inside the view (${popWho}; at most ${LIMITS.popIn}): space the entries out or thin the bats`);
+    stats.push({ coins: t.ce, enemies: t.se, view, scan, walkersAlive: wMax, popIn: pop });
+  });
+  return { problems, stats };
+}
+
 /** The scene declarations of runner.arc's level data, between its @@DATA-BEGIN@@ and @@DATA-END@@ markers: the DIMs (sized to the largest level) and TABLE lv1 .. lv4. */
 export function dataLines() {
   const ts = levelTables();
@@ -231,6 +355,13 @@ export function buildRunnerAssets() {
 }
 
 if (MAIN) {
+  const lim = checkLimits();
+  if (process.argv.includes('--check')) {
+    lim.stats.forEach((x, i) => console.log(`level ${i + 1}: ${x.coins} coins (${x.view} at most in view, PICKUP walk ${x.scan}), ${x.enemies} enemies (${x.walkersAlive} walkers alive at most, pop-in up to ${x.popIn} px)`));
+    console.log(lim.problems.length ? lim.problems.join('\n') : 'all limits hold');
+    process.exit(lim.problems.length ? 1 : 0);
+  }
+  if (lim.problems.length) { console.error('runner levels break the game\'s limits:\n  ' + lim.problems.join('\n  ')); process.exit(1); }
   if (process.argv.includes('--ascii')) {
     const ch = { [T.SKY]: ' ', [T.GRASS]: 'G', [T.DIRT]: 'd', [T.BRICK]: 'B', [T.PLANK]: '=', [T.SPIKES]: '^', [T.COIN]: 'o', [T.POLE]: '|', [T.FLAG]: 'F', [T.SIGN]: 'S' };
     LEVELS.forEach((L, i) => {
