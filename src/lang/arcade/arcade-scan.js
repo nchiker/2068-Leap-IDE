@@ -1,7 +1,7 @@
 /**
  * src/lang/arcade/arcade-scan.js — what an Arcade program defines, and block structure (pure; no DOM, no CodeMirror).
  *
- *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts, enters}  from the parser's AST (never throws)
+ *   scanArcade(text)      -> {assets, scenes, procs, fns, vars, consts, enters, tables}  from the parser's AST (never throws)
  *   blockLines(lines)     -> {depth, dedent, blocks}  indentation and fold ranges by the block words
  *   inputHints(text)      -> string[]  the keys / joysticks a program reads, for the Studio's hint line
  *   scanRoles(text)       -> {tileset, maps, world, floorplans, view}  what each map / tile set is for (Studio slice S2; never throws)
@@ -16,18 +16,19 @@ import { parse, tokenize } from './arcade-parse.js';
 /**
  * @returns {{
  *   assets: {kind: string, name: string, asset: string, count: number|null, line: number, col: number}[],
- *   scenes: {name: string, line: number, col: number}[],
+ *   scenes: {name: string, line: number, col: number, endLine: number}[],     (endLine: the ENDSCENE's line, Infinity when missing)
  *   procs:  {name: string, param: string|null, params: string[], locals: string[], scene: string|null, line: number, col: number}[],
  *   fns:    {name: string, param: string, line: number, col: number}[],
  *   vars:   {name: string, size: number|null, size2: number|null, dims: number, scene: string|null, line: number, col: number, timer?: true}[],     (language batch 5: a TIMER is listed here, with `timer: true`)
  *   consts: {name: string, scene: string|null, line: number, col: number}[],     (language batch 1: CONST name = expr)
+ *   tables: {name: string, scene: string|null, rows: number, line: number, col: number}[],   (TABLE name ... ENDTABLE, bankable per-level tables: docs/ARCADE_TABLES_CONTRACT.md; `scene` null at the game level)
  *   enters: {from: string|null, to: string, line: number, col: number}[],        (language batch 4: every ENTER statement in source order; `from` is the enclosing scene's name, null in a top-level PROC;
  *                                                                                  line / col are the target name's position)
  * }}
  * `size` is the first dimension when it is a plain number (null for a scalar or a size written as an expression), `dims` 0 (a scalar), 1 or 2.
  */
 export function scanArcade(text) {
-  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [], enters: [] };
+  const out = { assets: [], scenes: [], procs: [], fns: [], vars: [], consts: [], enters: [], tables: [] };
   let ast;
   try { ast = parse(text).ast; } catch { return out; }
   const addDecls = (decls, scene) => {
@@ -40,6 +41,9 @@ export function scanArcade(text) {
       } else if (d.type === 'Const') {
         const p = d.namePos ?? d;
         out.consts.push({ name: d.name, scene, line: p.line, col: p.col });
+      } else if (d.type === 'Table') {
+        const p = d.namePos ?? d;
+        out.tables.push({ name: d.name, scene, line: p.line, col: p.col, rows: (d.rows ?? []).length });
       } else if (d.type === 'DefFn') {
         const p = d.namePos ?? d;
         out.fns.push({ name: d.name, param: d.param ?? '', line: p.line, col: p.col });
@@ -73,7 +77,7 @@ export function scanArcade(text) {
   addProcs(ast.procs, null);
   for (const s of ast.scenes ?? []) {
     const at = s.namePos ?? s;
-    out.scenes.push({ name: s.name, line: at.line, col: at.col });
+    out.scenes.push({ name: s.name, line: at.line, col: at.col, endLine: s.endLine ?? Infinity });
     addDecls(s.decls, s.name);
     addProcs(s.procs, s.name);
     for (const p of s.procs ?? []) findEnters(p.body, s.name);
@@ -140,8 +144,8 @@ export function scanRoles(text) {
 
 // ── Block structure ──────────────────────────────────────────────────────────────────────────────────────────
 
-const OPEN = new Map([['IF', 1], ['FOR', 1], ['WHILE', 1], ['PROC', 1], ['SCENE', 1], ['SELECT', 2]]);
-const CLOSE = new Map([['ENDIF', 1], ['NEXT', 1], ['WEND', 1], ['ENDP', 1], ['ENDSCENE', 1], ['ENDSEL', 2]]);
+const OPEN = new Map([['IF', 1], ['FOR', 1], ['WHILE', 1], ['PROC', 1], ['SCENE', 1], ['SELECT', 2], ['TABLE', 1]]);
+const CLOSE = new Map([['ENDIF', 1], ['NEXT', 1], ['WEND', 1], ['ENDP', 1], ['ENDSCENE', 1], ['ENDSEL', 2], ['ENDTABLE', 1]]);
 const MID = new Set(['ELSE', 'CASE']);
 
 const tokenCache = new Map();
@@ -161,6 +165,7 @@ function lineWords(line) {
     if (t.value === 'CASE' && prevWord === 'SELECT') continue;                           // SELECT CASE
     if (t.value === 'ELSE' && prevWord === 'CASE') continue;                             // CASE ELSE
     if (t.value === 'SCENE' && prevWord === 'ENTER') continue;                           // (ENTER name)
+    if (t.value === 'TABLE' && i !== 0) continue;                                      // a MAP / SPRITE ... named `table` is no block (TABLE may name an asset)
     hit.push({ word: t.value, from: t.col, to: t.end, first: i === 0 });
   }
   if (tokenCache.size > 4000) tokenCache.clear();

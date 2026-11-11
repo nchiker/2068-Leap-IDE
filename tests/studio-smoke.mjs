@@ -111,6 +111,50 @@ try {
   await b.key('Escape', { vk: 27 });
   check('Escape closes Help', await waitFor("document.querySelector('.help-overlay').hidden", 3000));
 
+
+  // ── Tables (docs/ARCADE_TABLES_CONTRACT.md section 6): TABLE / ENDTABLE / LOADTABLE in the editor ──
+  const TBL = 'GAME "tbl"\nFRAMERATE 30\nDIM xs(4), n\nTABLE level1\n  xs = 1, 2, 3\n  n = 3\nENDTABLE\nSCENE play\n  DIM ys(3), m\n  TABLE lvx\n    ys = 7, 8\n    m = 2\n  ENDTABLE\n  PROC INIT():\n    LOADTABLE level1\n    LOADTABLE lvx\n  ENDP\n  PROC FRAME():\n  ENDP\nENDSCENE\n';
+  await setSource(TBL);
+  check('a program with TABLE / ENDTABLE / LOADTABLE compiles', (await evaluate('leapStudio.lastCompile.ok')) === true, await evaluate('JSON.stringify(leapStudio.lastCompile.errors)'));
+  const colors = await evaluate(`(() => { const out = {}; for (const sp of document.querySelectorAll('.cm-line span')) { const t = sp.textContent;
+    if (['TABLE', 'ENDTABLE', 'LOADTABLE', 'SCENE', 'DIM', 'xs'].includes(t) && !(t in out)) out[t] = [getComputedStyle(sp).color, getComputedStyle(sp).textDecorationLine]; } return out; })()`);
+  check('TABLE, ENDTABLE and LOADTABLE are highlighted as words (TABLE and ENDTABLE like DIM, LOADTABLE like SCENE and the other game words, none marked invalid)',
+    ['TABLE', 'ENDTABLE', 'LOADTABLE'].every((w) => colors[w] && colors[w][0] !== colors.xs?.[0] && !/underline/.test(colors[w][1])) && colors.TABLE[0] === colors.ENDTABLE[0] && colors.TABLE[0] === colors.DIM?.[0] && colors.LOADTABLE[0] === colors.SCENE?.[0], JSON.stringify(colors));
+  // folding: the fold gutter offers a marker on the TABLE line; folding it hides the rows
+  const lines0 = await evaluate("document.querySelectorAll('.cm-line').length");
+  const fold = await evaluate(`(() => { const lineEls = [...document.querySelectorAll('.cm-line')]; const tIdx = lineEls.findIndex((l) => /^TABLE level1/.test(l.textContent));
+    const gut = [...document.querySelectorAll('.cm-foldGutter .cm-gutterElement')]; const top = lineEls[tIdx].getBoundingClientRect().top;
+    const g = gut.find((x) => Math.abs(x.getBoundingClientRect().top - top) < 4 && x.textContent.includes('▾')); if (!g) return 'no marker'; g.click(); return 'clicked'; })()`);
+  await sleep(300);
+  const lines1 = await evaluate("document.querySelectorAll('.cm-line').length");
+  check('TABLE ... ENDTABLE folds: the fold gutter marks the TABLE line, folding hides its rows (the closing line stays, as for PROC)', fold === 'clicked' && lines1 === lines0 - 2 && (await evaluate("document.querySelectorAll('.cm-foldPlaceholder').length")) === 1, `${fold} ${lines0} -> ${lines1}`);
+  // Tidy: the rows sit one level in, ENDTABLE under TABLE, the scene's table one level in the scene
+  await setSource('GAME "tbl"\nFRAMERATE 30\nDIM xs(4)\nTABLE level1\nxs = 1, 2\nENDTABLE\nSCENE play\nDIM ys(3)\nTABLE lvx\nys = 7\nENDTABLE\nPROC INIT():\nENDP\nPROC FRAME():\nENDP\nENDSCENE\n');
+  await evaluate('leapEditor.tidy()');
+  const tidy = await evaluate('leapEditor.getSource()');
+  check('Tidy indents TABLE rows and ENDTABLE by the block, game level and inside a SCENE',
+    tidy.includes('\nTABLE level1\n  xs = 1, 2\nENDTABLE\n') && tidy.includes('\n  TABLE lvx\n    ys = 7\n  ENDTABLE\n'), JSON.stringify(tidy));
+  // completion after LOADTABLE: the visible tables (game level + the scene's own), nothing else
+  await setSource(TBL.replace('LOADTABLE level1\n    LOADTABLE lvx', 'LOADTABLE level1\n    LOADTABLE '));
+  await evaluate("(() => { leapEditor.setCursor(16, 100); leapEditor.focus(); return true; })()");
+  await b.send('Input.insertText', { text: 'l' });
+  const lt = await waitFor("[...document.querySelectorAll('.cm-tooltip-autocomplete li')].map(l => l.textContent).join('|')", 4000);
+  check('completion after LOADTABLE offers the visible tables (level1, lvx) and no other kind of name', /level1/.test(lt ?? '') && /lvx/.test(lt ?? '') && !/xs|PROC|ys/.test(lt ?? ''), lt);
+  await b.key('Escape', { vk: 27 });
+  // go to definition on a table name: line 4 for level1
+  const def = await evaluate(`(() => { const ed = document.querySelector('.cm-content'); const src = leapEditor.getSource().split('\\n'); const ln = src.findIndex((l) => /LOADTABLE level1/.test(l)) + 1;
+    leapEditor.setCursor(ln, src[ln - 1].indexOf('level1') + 2); const ok = leapEditor.goToDefinition(); return { ok, text: document.querySelector('.cm-activeLine')?.textContent }; })()`);
+  check('go to definition on a table name moves the cursor to its TABLE line', def.ok === true && /^TABLE level1/.test(def.text ?? ''), JSON.stringify(def));
+  // Symbols tab: a Tables group with both tables and their lines
+  await evaluate("document.querySelector('.panel-tab[data-tab=\"symbols\"]').click()");
+  const tsyms = await waitFor(`(() => { const g = [...document.querySelectorAll('#tool-symbols .sym-group')].map((n) => n.textContent); return g.some((x) => /^Tables/.test(x)) ? { groups: g, rows: [...document.querySelectorAll('#tool-symbols .sym-row')].map((r) => r.textContent) } : null; })()`, 5000);
+  check('the Symbols tab lists the tables with their lines: "level1" (line 4) and the scene\'s "play.lvx"',
+    !!tsyms && tsyms.groups.some((x) => /^Tables \(2\)/.test(x)) && tsyms.rows.some((r) => /^level1line 4$/.test(r)) && tsyms.rows.some((r) => /^play\.lvxline 10$/.test(r)), JSON.stringify(tsyms));
+  await evaluate("document.querySelector('.panel-tab[data-tab=\"display\"]').click()");
+  // hover help comes from the word table
+  const hov = await evaluate(`(async () => { const h = (await import('./src/lang/arcade/arcade-words.js')); const w = h.ARCADE_WORDS.get('LOADTABLE'); return !!w && /Copy every row/.test(w.help ?? w.desc ?? JSON.stringify(w)); })()`);
+  check('LOADTABLE has help text in the word table (hover and Help read it)', hov === true);
+
   // ── Multi-file ──
   await evaluate(`(() => { window.prompt = () => 'extra.arc'; document.getElementById('btn-add-file').click(); return true; })()`);
   await sleep(200);
@@ -397,6 +441,31 @@ try {
       u.mapped = keep.m; u.banked = keep.b; leapStudio.renderSizes(); return { t, hid }; })()`);
     check('B4: an old usage (no mapped / banked) falls back to the single budget and hides the bank block', /^Mapped [\d,]+ \/ 16,384 bytes/.test(fb.t) && fb.hid === true, JSON.stringify(fb));
     await b.shot('studio-bank');
+  }
+
+
+  // ── Tables: a banked table in the size panel (docs/ARCADE_TABLES_CONTRACT.md section 6) ──
+  {
+    await evaluate("(() => { window.confirm = () => true; document.getElementById('btn-new').click(); return true; })()");
+    const vals = (n, k) => Array.from({ length: n }, (_, i) => (i * k) % 200).join(', ');
+    // five tables of 3,609 bytes: the mapped 16 KB does not hold them all, so the compiler banks the first (the largest, in source order) by itself
+    let big = 'GAME "tables"\nFRAMERATE 30\nDIM a(1000), b(800)\n';
+    for (let t = 1; t <= 5; t++) big += `TABLE level${t}\n  a = ${vals(1000, 2 + t)}\n  b = ${vals(800, 4 + t)}\nENDTABLE\n`;
+    big += 'SCENE play\n  PROC INIT():\n    LOADTABLE level1\n  ENDP\n  PROC FRAME():\n    LOADTABLE level2\n  ENDP\nENDSCENE\n';
+    await evaluate(`leapEditor.setSource(${JSON.stringify(big)}, {fresh: true})`);
+    await waitFor("leapStudio.lastCompile?.usage?.tables !== undefined && leapStudio.lastCompile.ok", 20000).catch(() => null);
+    const tp = await evaluate(`({ ok: leapStudio.lastCompile.ok, err: JSON.stringify(leapStudio.lastCompile.errors.slice(0, 2)), hidden: document.getElementById('bank-block').hidden,
+      rows: [...document.querySelectorAll('#bank-list .bank-row')].map((r) => r.textContent), bank: document.getElementById('bank-total').textContent,
+      sizes: [...document.querySelectorAll('#size-table tr')].map((r) => r.textContent), tables: leapStudio.lastCompile.usage?.tables, status: document.getElementById('sb-prog').textContent })`);
+    check('a game with a table too big for the mapped part compiles', tp.ok && typeof tp.tables === 'number', JSON.stringify(tp));
+    check('the Banked bar lists the banked table as one row: "banked: table level1 (3,609 bytes, auto)", and counts its bytes',
+      !tp.hidden && tp.rows.length === 1 && tp.rows[0] === 'banked: table level1 (3,609 bytes, auto)' && /^Banked 3,609 \//.test(tp.bank) && /\+ 3,?609 banked/.test(tp.status), JSON.stringify(tp));
+    check('the Mapped breakdown has a "Tables" row with the mapped bytes of the other four tables (14,436)',
+      tp.sizes.some((r) => r === 'Tables' + Number(tp.tables).toLocaleString('en-US')) && tp.tables === 14436, JSON.stringify(tp.sizes));
+    // a game with no TABLE has no Tables row
+    await evaluate(`leapEditor.setSource('GAME "x"\\nFRAMERATE 30\\nSCENE play\\n  PROC INIT():\\n  ENDP\\n  PROC FRAME():\\n  ENDP\\nENDSCENE\\n', {fresh: true})`);
+    await waitFor("leapStudio.lastCompile?.ok && leapStudio.lastCompile.usage.tables === undefined", 10000).catch(() => null);
+    check('a game without tables shows no "Tables" row', (await evaluate("[...document.querySelectorAll('#size-table tr')].every((r) => !/^Tables/.test(r.textContent))")) === true);
   }
 
   // ── Theme ──

@@ -87,6 +87,9 @@
  *      - The BATCH3_WORDS (reserved for variables) are read as names where an ASSET name is expected: SFX wall = "wall", PLAY wall, SHOW wall AT ..., HIT(wall, x).
  *  17b. (the banked cartridge map, docs/ARCADE_BANKING_CONTRACT.md section 4) `WORLD map` (node World {map: Ident}): load another MAP as the world of the WINDOW or the plan of the VIEW3D.
  *      WORLD is reserved for variables, like the batch 3 words, but may name an asset (`MAP world = "w"`; BATCH11_WORDS).
+ *  17c. (bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md section 5.1) `TABLE name` rows `ENDTABLE` is a declaration like DIM (top level or directly in a SCENE; in a PROC it parses and the checker refuses it):
+ *      node Table {name, namePos, rows: [TableRow {target: Ident, values: [expr]}], endLine} in the `decls` / `items` of the game or the scene. `LOADTABLE x` is `LoadTable {table: Ident | null, index?: expr}`,
+ *      like Play: a bare unparenthesised name goes in `table` (the checker, interpreter and code generator read it as a table when one of that name is visible, else as an index expression).
  *  18. (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md)
  *      - `TIMER a, b, c` is parsed by the same code as DIM (top level, in a SCENE, or in a PROC for the checker to refuse) and gives a Dim node with `timer: true`: a timer is an ordinary
  *        scalar variable, so every walker that knows Dim / variables handles it; the checker refuses a size, an initialiser and a $ name.
@@ -203,7 +206,7 @@ const MAX_DEPTH = 150;
 const STRAY = {
   ELSE: 'ELSE without IF', ENDIF: 'ENDIF without IF', NEXT: 'NEXT without FOR', WEND: 'WEND without WHILE',
   CASE: 'CASE outside SELECT', ENDSEL: 'ENDSEL without SELECT', ENDP: 'ENDP without PROC',
-  ENDSCENE: 'ENDSCENE without SCENE',
+  ENDSCENE: 'ENDSCENE without SCENE', ENDTABLE: 'ENDTABLE without TABLE',
 };
 
 const describe = t => t.type === 'newline' ? 'the end of the line'
@@ -380,6 +383,12 @@ class Parser {
         (scene ? scene : prog).items.push(d);
         return;
       }
+      if (v === 'TABLE') {                                  // bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md)
+        const d = this.tableDecl();
+        (scene ? scene : prog).decls.push(d);
+        (scene ? scene : prog).items.push(d);
+        return;
+      }
       if (STRAY[v]) this.fail(t, STRAY[v]);
     }
     const hint = t.type === 'ident' && NOT_IN_ARCADE.get(t.value);
@@ -543,6 +552,58 @@ class Parser {
     return this.close(this.mk('Dim', st, timer ? { items, timer: true } : { items }));
   }
 
+  /**
+   * `TABLE name` rows `ENDTABLE` (docs/ARCADE_TABLES_CONTRACT.md section 5.1): node Table {name, namePos, rows: [TableRow {target: Ident, values: [expr]}], endLine}. A row is `target = v0, v1, ...`
+   * (one line); REM lines and blank lines are allowed, anything else is an error at its line. A missing ENDTABLE is reported at the TABLE (the block also ends at a PROC or SCENE word).
+   */
+  tableDecl() {
+    const st = this.next();
+    const node = this.mk('Table', st, { name: '', namePos: pos(st), rows: [], endLine: st.line });
+    this.hdr(() => {
+      const n = this.expectName('a table name');
+      node.name = n.text; node.namePos = pos(n);
+      this.close(node);
+      this.endStmt();
+    });
+    this.expects.push(new Set(['ENDTABLE']));
+    try {
+      for (;;) {
+        this.skipSeps();
+        const t = this.peek();
+        if (t.type === 'eof') { this.record(st, 'TABLE without ENDTABLE'); break; }
+        if (isKw(t, 'ENDTABLE')) { this.next(); node.endLine = t.line; break; }
+        if (t.type === 'comment') { this.next(); continue; }
+        if (isKw(t, 'PROC') || isKw(t, 'SCENE') || isKw(t, 'ENDSCENE')) { this.record(st, 'TABLE without ENDTABLE'); break; }
+        const before = this.pos;
+        try {
+          node.rows.push(this.tableRow());
+          this.endStmt();
+        } catch (e) {
+          if (!(e instanceof PErr)) throw e;
+          this.recordErr(e); this.sync();
+        }
+        if (this.pos === before) this.next();
+      }
+    } finally { this.expects.pop(); }
+    return node;
+  }
+
+  /** One row of a TABLE: `target = value, value, ...` */
+  tableRow() {
+    const t = this.peek();
+    if (t.type !== 'ident') this.fail(t, `only rows (target = value, value, ...) may stand in a TABLE: found ${describe(t)}`);
+    this.next();
+    if (isSym(this.peek(), '(')) this.fail(this.peek(), `a TABLE row names a whole array or a variable, not an element: write ${t.text} = v0, v1, ...`);
+    this.expectSym('=', `expected '=' and the values after ${t.text}: ${t.text} = v0, v1, ...`);
+    const values = [];
+    for (;;) {
+      values.push(this.expr());
+      if (isSym(this.peek(), ',')) { this.next(); continue; }
+      break;
+    }
+    return this.close(this.mk('TableRow', t, { target: this.mk('Ident', t, { name: t.text }), values }));
+  }
+
   constDecl() {
     const st = this.next();
     const name = this.expectName('a constant name');
@@ -653,6 +714,15 @@ class Parser {
         return this.close(this.mk('LoadMap', t, { map, x, y }));
       }
       case 'SHOW': return this.show();
+      case 'TABLE': return this.tableDecl();             // not valid in a PROC: the checker says so (the whole block is read so the rows do not become errors of their own)
+      case 'LOADTABLE': {
+        this.next();
+        const a = this.peek();
+        if (isEnd(a) || isBlockWord(a)) this.fail(a, `expected a table name or number but found ${describe(a)}`);
+        const arg = this.expr();
+        if (arg.type === 'Ident' && !arg.parens) return this.close(this.mk('LoadTable', t, { table: arg }));      // a bare name: a table (or, if none has that name, a variable: the checker decides)
+        return this.close(this.mk('LoadTable', t, { table: null, index: arg }));
+      }
       case 'CAMERA': { this.next(); return this.close(this.mk('Camera', t, { value: this.expr() })); }
       case 'WORLD': { this.next(); return this.close(this.mk('World', t, { map: this.nameRef('a map name: WORLD level') })); }
       case 'SETWORLD': {

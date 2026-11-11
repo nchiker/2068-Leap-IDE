@@ -1051,4 +1051,35 @@ maps_boot:
 .none:
     or a
     ret
+; RT_TABLELOAD (docs/ARCADE_TABLES_CONTRACT.md section 4): HL = a table record, DB runs (1..255), then per run DW dst, DW len, len bytes (len even, >= 2; dst / len inside
+; the game's variable block, chunk 7: the compiler's guarantee, not checked here).  Each run is LDIRed to its dst.  A record in $4000-$7FFF (H = BANK_LO..BANK_HI-1) is read in place
+; with the bank window mapped for the WHOLE record (bank_on first, bank_off last; banking contract rules 1-5: interrupts stay enabled, nothing but the record is read from the window,
+; writes go to chunk 7 only); a record anywhere else is read where it is.  The run count stays in A (LD, INC and LDIR leave it alone; no EX AF,AF' / EXX, no IX / IY).  Clobbers AF, BC, DE, HL.
+; A run count of 0 returns at once (it would be 256 runs).
+RT_TABLELOAD:
+    ld a,h
+    sub BANK_LO
+    cp BANK_HI-BANK_LO
+    jr nc,tabload_run           ; a mapped record ($8000-$BFFF, or anything else): read where it is
+    call bank_on
+    call tabload_run
+    jp bank_off
+tabload_run:
+    ld a,(hl)
+    inc hl
+    or a
+    ret z
+tabload_one:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl                      ; DE = dst
+    ld c,(hl)
+    inc hl
+    ld b,(hl)
+    inc hl                      ; BC = len
+    ldir                        ; HL = the next run (the source is read in place, the destination is in chunk 7)
+    dec a                       ; nothing in the loop touches A: the run count stays there
+    jr nz,tabload_one
+    ret
 M_TILEOPS_E:
