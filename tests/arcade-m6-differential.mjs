@@ -68,7 +68,8 @@ function runReal(R, res, { ticks, stick, keys }) {
       const o = hasFrame ? { visible: m.ram[e], asset: m.ram[e + 1], x: s16(rd16(e + 2)), y: s16(rd16(e + 4)), frame: m.ram[e + 6] } : { visible: m.ram[e], x: rd16(e + 2), y: rd16(e + 4) };
       return o;
     }),
-    worldRam: hasWorld ? m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 2048) : null,
+    // WORLD_RAM: bits 0-2 of every byte are the runtime's class bits (docs/ARCADE_WINDOW_FASTPATH.md section 2); the interpreter has none, so compare byte AND $F8
+    worldRam: hasWorld ? m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 2048).map((b) => b & 0xF8) : null,
     cam: hasWorld ? rd16(SYM.V_CAM) : 0,
   });
   const out = { snaps: [], error: null, machine: m };

@@ -311,7 +311,8 @@ function runFramed(R, res, { ticks, stick, keys, ray }) {
       const e = SYM.SPR_TAB + ent * i;
       return hasFrame ? { visible: m.ram[e], asset: m.ram[e + 1], x: s16(rd16(e + 2)), y: s16(rd16(e + 4)), frame: m.ram[e + 6] } : { visible: m.ram[e], x: rd16(e + 2), y: rd16(e + 4) };
     }),
-    worldRam: hasWorld && !ray ? m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 2048) : null,
+    // WORLD_RAM: bits 0-2 of every byte are the runtime's class bits (docs/ARCADE_WINDOW_FASTPATH.md section 2); the interpreter has none, so compare byte AND $F8
+    worldRam: hasWorld && !ray ? m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 2048).map((b) => b & 0xF8) : null,
     cam: hasWorld && !ray ? rd16(SYM.V_CAM) : 0,
     wallRam: hasWorld && ray ? m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 1024) : null,
     pose: hasWorld && ray && SYM.V_POSE !== undefined ? { x: rd16(SYM.V_POSE), y: rd16(SYM.V_POSE + 2), a: m.ram[SYM.V_POSE + 4] } : null,

@@ -9,6 +9,10 @@
 //   3. whole games: sprites in world coordinates at every window edge and corner (clipped by ring repair), culled ones, HUD text and tiles around the
 //      window, the camera moving and clamped, SETWORLD, frames; the shown picture equals the model after EVERY refresh (both files), frame_div 1..3;
 //   4. non-window games: DIV_EXT only, or DIV_WIN with a bad descriptor, run exactly as part 1's model.
+// Window fast path / colour clash option 2 (docs/ARCADE_WINDOW_FASTPATH.md, sections 1, 2 and 6): the reference compositor follows option 2 (a cell whose two tiles
+// have different attributes shows only the tile that gives it its colours) and WORLD_RAM carries the class bits; M7_OPTION=1 makes both option 1 (the old runtime),
+// and the checks marked "new" (written for the new behaviour alone: every case of the table at every phase, the class-bit model on its own worlds, the tile pages
+// replicated at all 8 bytes) are then expected to fail on the old runtime.
 //   node arcade/tests/m7-runtime.mjs        (M7_QUICK=1: shorter)
 import * as W from './m7-common.mjs';
 import { rng, randomTiles } from './m3-scenes.mjs';
@@ -53,12 +57,12 @@ console.log('1. Boot: the world (byte-RLE), the tile pages, the geometry, cam_ma
   for (const [name, rle] of cases) {
     const game = W.winGame({ tiles, win: { cx: 4, cy: 4, worldW: 128, bands: L.three, ram: null, rle, flags }, script: [] });
     const m = W.bootIdle(game);
-    const exp = W.rleDecode(rle), got = m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048);
+    const exp = W.expectWorld(W.rleDecode(rle), 128, W.tileRowsOf(tiles), tiles.map((t) => t.attr)), got = m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048);
     const after = m.ram.slice(S.WORLD_RAM + 2048, S.WORLD_RAM + 4096);       // POOL_B behind WORLD_RAM: as a boot with the empty list leaves it
     afterRef ??= (() => { const g0 = W.winGame({ tiles, win: { cx: 4, cy: 4, worldW: 128, bands: L.three, ram: null, rle: [0], flags }, script: [] }); return W.bootIdle(g0).ram.slice(S.WORLD_RAM + 2048, S.WORLD_RAM + 4096); })();
     if (rd8(m, S.V_WIN) === 1 && exp.every((v, i) => v === got[i]) && after.every((v, i) => v === afterRef[i])) ok++; else bad.push(name);
   }
-  check(`WORLD_RAM after the boot = the contract's expansion of the byte-RLE world_src, nothing written past it, for ${cases.length} encodings (${cases.map((c) => c[0]).join('; ')})`, ok === cases.length, bad.join('; '));
+  check(`WORLD_RAM after the boot = the contract's expansion of the byte-RLE world_src${W.CLASS_BITS ? ' with its class bits (section 2 of the window fast-path contract)' : ''}, nothing written past it, for ${cases.length} encodings (${cases.map((c) => c[0]).join('; ')})`, ok === cases.length, bad.join('; '));
   // the RLE expansions themselves: our decoder against the cases' intent
   check('(the reference decoder: the random world round-trips; too long is cut; short and empty are zero-filled)',
     W.rleDecode(cases[0][1]).length === 2048 && W.rleDecode(cases[4][1]).every((v) => v === 0x30) && W.rleDecode(cases[3][1]).slice(1000).every((v) => v === 0) && W.rleDecode([0]).every((v) => v === 0));
@@ -70,6 +74,8 @@ console.log('1. Boot: the world (byte-RLE), the tile pages, the geometry, cam_ma
   const pagesOk = Array.from({ length: 256 }, (_, i) => m.ram[S.W_TROWS + i] === rows[i]).every(Boolean) &&
     Array.from({ length: 32 }, (_, t) => m.ram[S.W_ATTRT + 8 * t] === tiles[t].attr && m.ram[S.W_FLAGT + 8 * t] === flags[t]).every(Boolean);
   check('the tile rows (copied from an unaligned tilerows), the tile attributes (TILE_ATTR) and the flags are in their pages at + 8 t', pagesOk);
+  const pagesAll = Array.from({ length: 256 }, (_, i) => m.ram[S.W_ATTRT + i] === tiles[i >> 3].attr && m.ram[S.W_FLAGT + i] === flags[i >> 3]).every(Boolean);
+  check('new: the attribute page and the flags page hold the tile\'s value at all 8 bytes 8 t .. 8 t + 7 (the raw WORLD_RAM byte, class bits and all, indexes them)', pagesAll);
   check('cam_max is clamped to floor((8 world_w - 192) / 2) with a ratio-2 band (descriptor 9,999 -> 304); the window geometry (cx 3, cy 7)',
     rd16(m, S.W_CAMMAX) === 304 && rd8(m, S.W_CX) === 3 && rd8(m, S.W_CY) === 7 && rd8(m, S.W_WW) === 100 && rd16(m, S.W_WXR) === 800 && rd8(m, S.W_NB) === 4,
     `cam_max ${rd16(m, S.W_CAMMAX)}`);
@@ -105,17 +111,83 @@ console.log('1. Boot: the world (byte-RLE), the tile pages, the geometry, cam_ma
 }
 
 // ==================================================================================================================
+console.log('\n1b. The class bits of WORLD_RAM (docs/ARCADE_WINDOW_FASTPATH.md section 2): the model on worked examples, the runtime after the boot on worlds 24, 25, 61 and 128 wide');
+{
+  // the model against rows worked out by hand from the contract: tile 0 blank (attr 0x28), 1 blank (attr 0x31), 3 and 5 ordinary with attribute 0x16
+  const rows = new Uint8Array(256); for (let r = 0; r < 8; r++) { rows[3 * 8 + r] = 0xA5; rows[5 * 8 + r] = 0x5A; }
+  const attr = Array(32).fill(0x16); attr[0] = 0x28; attr[1] = 0x31;
+  const ramOf = (ts) => { const a = new Uint8Array(2048); ts.forEach((t, y) => { a[y] = t * 8; }); return a; };
+  const cls = (ts) => Array.from(W.classifyWorld(ramOf(ts), ts.length, rows, attr).slice(0, ts.length));
+  // t = 0 0 3 3 1: S = 0 1 1 0 1, D = 0 0 1 0 1, P = 1 1 1 1 1  ->  bytes 4, 5, 31, 28, 15
+  const hand1 = JSON.stringify(cls([0, 0, 3, 3, 1])) === JSON.stringify([4, 5, 31, 28, 15]);
+  // t = 3 3 5 5 (equal colours, nothing blank): all clean  ->  24 24 40 40
+  const hand2 = JSON.stringify(cls([3, 3, 5, 5])) === JSON.stringify([24, 24, 40, 40]);
+  // t = 3 0 0 3 5 (W = 5): S = 0 1 1 1 0 (0|3: colours differ; 0|0 blank; 0|3 differ; 3|5 equal), D = 0 1 0 1 0, P = 1 1 1 1 0 -> 28 + ... : 3*8+4, 0+1+2+4, 0+1+0+4, 24+1+2+4, 40
+  const hand3 = JSON.stringify(cls([3, 0, 0, 3, 5])) === JSON.stringify([28, 7, 5, 31, 40]);
+  // blank tile 1 next to blank tile 0: S (both blank), D (colours differ), the pair bit
+  const hand4 = JSON.stringify(cls([0, 1])) === JSON.stringify([4, 8 + 1 + 2 + 4]);
+  // beyond the world nothing but the tile (bits 0-2 zero); every row is classified, a row of tile 0 included (blank / blank: S, pair bit): 4 5 5
+  const wr = W.classifyWorld(ramOf([3, 0, 0]), 3, rows, attr);
+  const hand5 = wr[3] === 0 && wr[127] === 0 && JSON.stringify(Array.from(wr.slice(128, 132))) === JSON.stringify([4, 5, 5, 0]);
+  // the SETWORLD helper equals a full classification, for every column, every tile of the set, several widths
+  let setBad = 0, setN = 0;
+  const rr = rng(1701);
+  for (const Wd of [24, 25, 61, 128]) {
+    const ts = Array.from({ length: Wd }, () => rr.pick([0, 1, 3, 5, 0, 0]));
+    let c = W.classifyWorld(ramOf(ts), Wd, rows, attr);
+    for (let k = 0; k < 400; k++) {
+      const x = rr.chance(0.5) ? rr.pick([0, 1, Wd - 2, Wd - 1]) * 8 + rr.int(0, 7) : rr.int(-20, Wd * 8 + 20), y = rr.int(-9, 135), t = rr.pick([0, 1, 3, 5]);
+      c = W.setWorldClassed(c, Wd, rows, attr, x, y, t);
+      const raw = c.map((v) => v & 0xF8);
+      setN++;
+      const full = W.classifyWorld(raw, Wd, rows, attr);
+      if (!full.every((v, i) => v === c[i])) setBad++;
+    }
+  }
+  check('(the class model: five rows worked out by hand from the contract; the SETWORLD update of bytes x - 1, x, x + 1 equals a full re-classification after each of 1,600 random sets, worlds 24, 25, 61, 128 wide)',
+    hand1 && hand2 && hand3 && hand4 && hand5 && setBad === 0, `${hand1} ${hand2} ${hand3} ${hand4} ${hand5} ${setBad}/${setN}`);
+
+  // the runtime's WORLD_RAM after the boot = the model, on worlds of several widths; tiles: 0, 1, 2 blank (attributes 28, 31, 28), 3.. ordinary with a few attributes,
+  // the last tile with a single set pixel (a tile with one non-zero row is not blank); columns past the world hold tiles that must not be classified
+  const rc = rng(1702);
+  const tiles = W.randomWinTiles(rc, 32);
+  [0x28, 0x31, 0x28, 0x28, 0x16, 0x16, 0x2F, 0x47].forEach((a, k) => { tiles[k].attr = a; });
+  for (let k = 0; k < 3; k++) tiles[k].bmp = Array(8).fill(0);
+  for (let k = 3; k < 8; k++) tiles[k].bmp = tiles[k].bmp.map((b) => b || 0x5A);
+  tiles[6].bmp = [0x80, 0, 0, 0, 0, 0, 0, 0]; tiles[7].bmp = [0, 0, 0, 0, 0, 0, 0, 1];
+  for (let k = 8; k < 32; k++) tiles[k].attr = [0x28, 0x16, 0x31][k % 3];
+  const rowsT = W.tileRowsOf(tiles), attrT = tiles.map((t) => t.attr);
+  const bad = [];
+  let nWorlds = 0;
+  for (const Wd of [24, 25, 61, 128]) for (const density of [0.2, 0.6, 0.9]) {
+    const ram = new Uint8Array(2048);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 128; x++) ram[y * 128 + x] = (rc.chance(density) ? rc.pick([0, 1, 2, 0, 0, 7, 6]) : rc.int(3, 31)) * 8;   // every column holds a tile, those past W too
+    const game = W.winGame({ tiles, win: { cx: 4, cy: 4, worldW: Wd, bands: L.one, ram, flags: [] }, script: [] });
+    const m = W.bootIdle(game);
+    const got = m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048), want = W.classifyWorld(ram, Wd, rowsT, attrT);
+    nWorlds++;
+    let n = 0, first = null;
+    for (let i = 0; i < 2048; i++) if (got[i] !== want[i]) { n++; first ??= { row: i >> 7, col: i & 127, got: got[i], want: want[i] }; }
+    if (n || rd8(m, S.V_WIN) !== 1) bad.push(`${Wd} wide, ${density}: ${n} bytes ${JSON.stringify(first)}`);
+  }
+  check(`new: WORLD_RAM after the boot equals the class-bit model byte for byte, bits 0-2 included (${nWorlds} worlds: 24, 25, 61 and 128 wide, blank tiles other than 0, tiles with one set pixel, columns past the world)`, bad.length === 0, bad[0] ?? '');
+}
+
+// ==================================================================================================================
 console.log('\n2. window_repaint against the reference compositor: every camera 0..cam_max, every band layout, both files, bitmap and attributes');
 let sweptCams = 0, sweptCalls = 0;
-function sweep(label, { bands, cx, cy, worldW, seed, sky = 0.3, step = 1 }) {
+const classBoot = { n: 0, bad: [] };                      // the class bits after each sweep's boot
+function sweep(label, { bands, cx, cy, worldW, seed, sky = 0.3, step = 1, world = null, cover = null }) {
   const r = rng(seed);
-  const tiles = W.randomWinTiles(r, 32);
-  const ram = W.randomWorld(r, worldW, 32, { sky });
+  const tiles = world ? world.tiles : W.randomWinTiles(r, 32);
+  const ram = world ? world.ram : W.randomWorld(r, worldW, 32, { sky });
   const win = { cx, cy, worldW, bands, ram };
   const game = W.winGame({ tiles, win, script: [] });
   const m = W.bootIdle(game);
   const model = new W.Model7({ tiles, win });
   const camMax = rd16(m, S.W_CAMMAX);
+  classBoot.n++;
+  { const got = m.ram.slice(S.WORLD_RAM, S.WORLD_RAM + 2048), want = model.worldRam(); if (!got.every((v, i) => v === want[i])) classBoot.bad.push(label); }
   // poison everything of both display files outside the window: it must stay
   const inWin = (adr) => { const y = ((adr & 0x1800) >> 5) | ((adr & 0xE0) >> 2) | ((adr & 0x700) >> 8), c = adr & 31; return y >= 8 * cy && y < 8 * cy + 128 && c >= cx && c < cx + 24; };
   const inWinA = (i) => (i >> 5) >= cy && (i >> 5) < cy + 16 && (i & 31) >= cx && (i & 31) < cx + 24;
@@ -151,6 +223,7 @@ function sweep(label, { bands, cx, cy, worldW, seed, sky = 0.3, step = 1 }) {
     for (let y = 8 * cy; y < 8 * cy + 128; y++) for (let c = cx; c < cx + 24; c++) { const a = rowAddr(y) + c; if (m.ram[base + a] !== exp.bitmap[a]) { n++; first ??= { cam, file, y, c, got: m.ram[base + a], exp: exp.bitmap[a] }; } }
     for (let i = 0; i < 768; i++) if (inWinA(i) && m.ram[base + 6144 + i] !== exp.attrs[i]) { n++; first ??= { cam, file, attrCell: i }; }
     if (n) bad++;
+    if (cover) cover(cam, bands);
   }
   m.bus.write = w;
   const both = cams.every((c) => files[0].has(c) && files[1].has(c));
@@ -170,6 +243,63 @@ sweep('1 band, 24 wide (cam_max 0), (8, 8)', { bands: L.one, cx: 8, cy: 8, world
 sweep('1 band, 25 wide (cam_max 8: every phase at the right edge), (0, 0)', { bands: L.one, cx: 0, cy: 0, worldW: 25, seed: 29 });
 sweep('4 bands, 24 wide (cam_max 0)', { bands: L.four, cx: 3, cy: 5, worldW: 24, seed: 30 });
 sweep('3 bands, 26 wide, (4, 4)', { bands: L.three, cx: 4, cy: 4, worldW: 26, seed: 31 });
+check(`WORLD_RAM after the boot of each of the ${classBoot.n} sweep worlds equals the model${W.CLASS_BITS ? ' (class bits included)' : ''}`, classBoot.bad.length === 0, classBoot.bad.join('; '));
+
+// ---- every case of the contract's table at every phase (docs/ARCADE_WINDOW_FASTPATH.md section 1 and 6) --------------------------------------------------------
+// tiles 0, 1, 2 blank (attributes 28, 31, 28: blank 1 differs in colour, blank 2 is the sky's twin), 3 ordinary with the sky's colours, 4 and 5 ordinary with one colour of
+// their own, 6 and 7 ordinary with a single set pixel (not blank), the colours 2F and 47.  Each row of the world walks a de Bruijn sequence over those eight tiles
+// (every ordered pair of tiles once), turned by the row number, so that every (A, B) pair stands in a window cell at every phase.
+const CASE = W.caseWorld(1801);
+{
+  const seen = new Set(), seenBlankN = new Set();
+  const cover = (cam, bands) => {
+    let row0 = 0;
+    for (const b of bands) {
+      const pos = W.bandPos(cam, b.code), col0 = pos >> 3, p = pos & 7;
+      if (p) for (let wr = row0; wr < row0 + b.rows; wr++) for (let c = 0; c < 24; c++) {
+        const tA = CASE.ram[wr * 128 + col0 + c] >> 3, tB = CASE.ram[wr * 128 + col0 + c + 1] >> 3;
+        seen.add(`${W.cellCase(CASE.rows, CASE.attr, tA, tB)}/${p}`);
+        if ((tA === 1 || tA === 2 || tB === 1 || tB === 2) && W.isBlankTile(CASE.rows, tA) && W.isBlankTile(CASE.rows, tB)) seenBlankN.add(p);
+      }
+      row0 += b.rows;
+    }
+  };
+  const before = sweptCalls;
+  const o = { world: CASE, cover };
+  sweep('new: every case of the table (blank / blank, blank / ordinary, ordinary / ordinary, equal and different colours; blank tiles 1 and 2; one-pixel tiles), 1 band, 128 wide, (4, 4)', { bands: L.one, cx: 4, cy: 4, worldW: 128, seed: 61, step: QUICK ? 3 : 1, ...o });
+  sweep('new: the same case world, 3 bands 2/3/11 (a phase of its own per band), (0, 8)', { bands: L.three, cx: 0, cy: 8, worldW: 128, seed: 62, step: QUICK ? 5 : 1, ...o });
+  sweep('new: the same case world, 4 bands 2/4/6/4, (8, 0)', { bands: L.four, cx: 8, cy: 0, worldW: 128, seed: 63, step: QUICK ? 5 : 1, ...o });
+  sweep('new: the same case world, ratio 2 bands, 3 phases per cell step', { bands: L.ratio2, cx: 4, cy: 4, worldW: 128, seed: 64, step: QUICK ? 5 : 1, ...o });
+  const want = 8 * 7;
+  check(`new: the case world puts every case of the table (blank / blank, blank / ordinary, ordinary / blank, ordinary / ordinary; equal and different colours) at every phase 1..7 in a window cell: ${seen.size} of ${want} combinations seen (${sweptCalls - before} repaints); blank tiles other than 0 at phases ${[...seenBlankN].sort().join(',')}`,
+    seen.size === want && seenBlankN.size === 7 && CASE.seqLen === 64, `${seen.size} / ${want}`);
+
+  // a check that fails under option 1 (the old colour rule): at the phases 3 and 4 the repaint equals option 2 and differs from option 1
+  const win = { cx: 4, cy: 4, worldW: 128, bands: L.one, ram: CASE.ram };
+  const m = W.bootIdle(W.winGame({ tiles: CASE.tiles, win, script: [] }));
+  const model = new W.Model7({ tiles: CASE.tiles, win });
+  const out = {};
+  for (const p of [3, 4]) {
+    let eq2 = 0, eq1 = 0, n = 0;
+    for (const q of [3, 20, 41, 77, 93]) {
+      const cam = 8 * q + p, file = n & 1;
+      wr16(m, S.V_CAM, cam); m.ram[S.V_HIDDEN] = file; m.ram[S.V_HOFF] = file ? 0x20 : 0;
+      for (let k = 0; k < 8; k++) m.ram[S.W_AC + k] = 0xFF;
+      W.callRoutine(m, S.window_repaint);
+      const base = file ? 0x6000 : 0x4000, e1 = { bitmap: new Uint8Array(6144), attrs: new Uint8Array(768) }, e2 = { bitmap: new Uint8Array(6144), attrs: new Uint8Array(768) };
+      W.refWindow(e1.bitmap, e1.attrs, win, model.ram, model.rows, model.wAttr, cam, { option: 1 });
+      W.refWindow(e2.bitmap, e2.attrs, win, model.ram, model.rows, model.wAttr, cam, { option: 2 });
+      let d1 = 0, d2 = 0;
+      for (let y = 32; y < 160; y++) for (let c = 4; c < 28; c++) { const a = rowAddr(y) + c; if (m.ram[base + a] !== e1.bitmap[a]) d1++; if (m.ram[base + a] !== e2.bitmap[a]) d2++; }
+      n++;
+      if (d2 === 0) eq2++;
+      if (d1 === 0) eq1++;
+    }
+    out[p] = { eq2, eq1, n };
+  }
+  check(`new: at phase 3 and at phase 4 the repaint of the case world equals the option-2 model and differs from the option-1 model (a check against the old rule fails): ${JSON.stringify(out)}`,
+    [3, 4].every((p) => out[p].eq2 === out[p].n && out[p].eq1 === 0));
+}
 console.log(`  (${sweptCalls} repaints, ${sweptCams} distinct cameras over the layouts)`);
 
 // ---- Part C (docs/ARCADE_LANGUAGE_BATCH6.md): a cell takes the attribute of the tile covering most of it; checked against the rule written out, not the reference

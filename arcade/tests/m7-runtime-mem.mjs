@@ -6,6 +6,8 @@
 //     frame cache's scratch, the cell map / dirty maps (HUD), SPR_TAB, GAME_VARS, RT_ARGS (the script's calls), the stack, and WORLD_RAM only in the
 //     cells SETWORLD names (inside the world); never SPR_DRAWN (no erase in window mode), the tile pages, PHASE_OFF, TILE_ATTR, GLYPH_TAB, the free
 //     tails of V3VARS and the display files, T2, T4, the unallocated pool; in cache mode the pool only in slots / FTAB slot words and AST only at AST_RR;
+//     Window fast path (docs/ARCADE_WINDOW_FASTPATH.md sections 2 and 6): $5E00-$5EFF may hold a per-tile blank page written by the boot in window mode (so it is read-only
+//     during play, like the three pages before it), $5F00-$5FFF and $7B00-$7FFF stay free; the attribute page and the flags page hold the tile's value at all 8 bytes.
 //  3. the stack depth of a window tick (cache misses from win_draw_all included) and of an interrupt.
 //   node arcade/tests/m7-runtime-mem.mjs        (M7_QUICK=1: shorter)
 import * as W from './m7-common.mjs';
@@ -21,7 +23,7 @@ console.log('Runtime v3 part 2: memory-write confinement in window mode\n');
 console.log('1. The map');
 {
   const regs = [['V_CAM', S.V_CAM, 2], ['window state (W_CX .. W3_END)', S.W_CX, S.W3_END - S.W_CX], ['V3VARS free tail', S.W3_END, S.V3VARS + 0xC0 - S.W3_END], ['FC_VARS', S.V3VARS + 0xC0, 0x40],
-    ['W_TROWS', S.W_TROWS, 256], ['W_ATTRT', S.W_ATTRT, 256], ['W_FLAGT', S.W_FLAGT, 256], ['display file 1 attributes', 0x5800, 0x300], ['display tail 1 free', S.W_FLAGT + 256, 0x6000 - S.W_FLAGT - 256]];
+    ['W_TROWS', S.W_TROWS, 256], ['W_ATTRT', S.W_ATTRT, 256], ['W_FLAGT', S.W_FLAGT, 256], ['display file 1 attributes', 0x5800, 0x300], ['W_BLANKT (the blank page, if the runtime has one)', 0x5E00, 256], ['display tail 1 free', 0x5F00, 0x100]];
   let overlap = null;
   for (let i = 0; i < regs.length; i++) for (let j = i + 1; j < regs.length; j++) { const [, a, la] = regs[i], [, b, lb] = regs[j]; if (a < b + lb && b < a + la) overlap ??= `${regs[i][0]} / ${regs[j][0]}`; }
   check('V3VARS: V_CAM $E100, the window state $E102..$E1AE, free $E1AF-$E1BF, the frame cache $E1C0-$E1FF: disjoint; the three pages $5B00/$5C00/$5D00 in display file 1\'s tail (after its attributes)',
@@ -56,7 +58,7 @@ function confined(label, { seed, cacheMode, nticks }) {
       const x = r.int(-20, 820), y = r.int(-20, 140), t2 = r.int(0, 31);
       t.push(op.setworld(x, y, t2));
       const c = Math.floor(x / 8), rr = Math.floor(y / 8);
-      if (c >= 0 && c < 100 && rr >= 0 && rr < 16) worldCells.add(S.WORLD_RAM + rr * 128 + c);
+      if (c >= 0 && c < 100 && rr >= 0 && rr < 16) for (const k of W.CLASS_BITS ? [c - 1, c, c + 1] : [c]) if (k >= 0 && k < 100) worldCells.add(S.WORLD_RAM + rr * 128 + k);   // the class bits of x - 1 and x + 1 change with it
     }
     t.push(op.tilehit(r.int(-30, 830), r.int(-30, 140), r.int(-2, 40), r.int(-2, 40), r.int(0, 255)), op.tileflags(r.int(-30, 830), r.int(-30, 140)), op.worldtile(r.int(-30, 830), r.int(-30, 140)));
     t.push(op.hit(r.int(0, insts.length - 1), r.int(0, insts.length - 1)));
@@ -74,9 +76,9 @@ function confined(label, { seed, cacheMode, nticks }) {
     ['T2', S.T2_FREE, 32], ['DIRTY1', S.DIRTY1, 96], ['SPR_DRAWN', S.SPR_DRAWN, 128], ['T4', S.T4_FREE, 32], ['TILE_ATTR', S.TILE_ATTR, 128], ['AST', S.AST, 128], ['POOL_C', S.POOL_C, S.POOL_C_LEN],
     ['GLYPH_TAB', S.GLYPH_TAB, 2048], ['VARS', S.VARS, 0xFC], ['VARS free', S.VARS + 0xFC, 4], ['V3VARS window', S.V3VARS, S.W3_END - S.V3VARS], ['V3VARS free', S.W3_END, S.V3VARS + 0xC0 - S.W3_END],
     ['FC_VARS', S.V3VARS + 0xC0, 0x40], ['GAME_VARS', S.GAME_VARS_BASE, 0x800], ['WORLD_RAM', S.WORLD_RAM, 0x800], ['POOL_B', S.POOL_B, S.POOL_B_LEN], ['T3', S.T3, 0x80], ['STACK', S.STACK_CANARY, S.STACK_TOP - S.STACK_CANARY],
-    ['HANDOFF', 0xFF00, 0x100], ['W_TROWS', S.W_TROWS, 256], ['W_ATTRT', S.W_ATTRT, 256], ['W_FLAGT', S.W_FLAGT, 256], ['tail $5E00', 0x5E00, 0x200], ['tail $7B00', 0x7B00, 0x500]];
-  const free = REG.filter(([n]) => ['T2', 'T4', 'VARS free', 'V3VARS free', 'tail $5E00', 'tail $7B00'].includes(n));
-  const ro = REG.filter(([n]) => ['PHASE_OFF', 'TILE_ATTR', 'GLYPH_TAB', 'W_TROWS', 'W_ATTRT', 'W_FLAGT', ...(cacheMode ? [] : ['AST'])].includes(n));
+    ['HANDOFF', 0xFF00, 0x100], ['W_TROWS', S.W_TROWS, 256], ['W_ATTRT', S.W_ATTRT, 256], ['W_FLAGT', S.W_FLAGT, 256], ['W_BLANKT', 0x5E00, 0x100], ['tail $5F00', 0x5F00, 0x100], ['tail $7B00', 0x7B00, 0x500]];
+  const free = REG.filter(([n]) => ['T2', 'T4', 'VARS free', 'V3VARS free', 'tail $5F00', 'tail $7B00'].includes(n));
+  const ro = REG.filter(([n]) => ['PHASE_OFF', 'TILE_ATTR', 'GLYPH_TAB', 'W_TROWS', 'W_ATTRT', 'W_FLAGT', 'W_BLANKT', ...(cacheMode ? [] : ['AST'])].includes(n));
   const pools = REG.filter(([n]) => n.startsWith('POOL'));
   let poisoned = false, snapRo = null;
   const writes = new Map();
@@ -100,13 +102,15 @@ function confined(label, { seed, cacheMode, nticks }) {
   const freeOk = free.every(([, a, l]) => Array.from({ length: l }, (_, k) => m.ram[a + k]).every((v, k) => v === pat(k)));
   const poolTailOk = pools.every(([, a, l]) => Array.from({ length: l }, (_, k) => k).every((k) => allocated.has(a + k) || m.ram[a + k] === pat(k)));
   const drawnOk = Array.from({ length: 128 }, (_, k) => m.ram[S.SPR_DRAWN + k] === pat(k)).every(Boolean);
-  check(`${label}: no free area written (T2, T4, $E0FC-$E0FF, $E1AF-$E1BF, $5E00-$5FFF, $7B00-$7FFF), no unallocated pool byte, SPR_DRAWN never (no erase in window mode)`, freeOk && poolTailOk && drawnOk);
+  check(`${label}: no free area written (T2, T4, $E0FC-$E0FF, $E1AF-$E1BF, $5F00-$5FFF, $7B00-$7FFF), no unallocated pool byte, SPR_DRAWN never (no erase in window mode)`, freeOk && poolTailOk && drawnOk);
   const allowed = ['CELL_TILE', 'CELL_ATTR', 'DIRTY0', 'DIRTY1', 'SPR_TAB', 'VARS', 'V3VARS window', 'FC_VARS', 'GAME_VARS', 'WORLD_RAM', 'T3', 'STACK', ...(cacheMode ? ['POOL_A', 'POOL_B', 'POOL_C', 'AST'] : [])];
   check(`${label}: play writes only the cell map, dirty maps, SPR_TAB, variables, V3VARS up to W3_END, the cache scratch, GAME_VARS, RT_ARGS, the stack, WORLD_RAM${cacheMode ? ', the pool / AST (cache mode)' : ''}`,
     Object.keys(touched).every((n) => allowed.includes(n)), JSON.stringify(touched));
   const worldW = [...writes.keys()].filter((a) => a >= S.WORLD_RAM && a < S.WORLD_RAM + 0x800);
-  check(`${label}: WORLD_RAM is written only in the ${worldCells.size} cells SETWORLD named inside the world (${worldW.length} bytes written)`, worldW.length > 0 && worldW.every((a) => worldCells.has(a)));
-  check(`${label}: PHASE_OFF, TILE_ATTR, GLYPH_TAB, the three tile pages${cacheMode ? '' : ', AST'} are byte for byte what the boot left`, ro.every(([, a, l], i) => Array.from({ length: l }, (_, k) => m.ram[a + k]).every((v, k) => v === snapRo[i][k])));
+  check(`${label}: WORLD_RAM is written only in the ${worldCells.size} cells SETWORLD named inside the world${W.CLASS_BITS ? ' and their left and right neighbours (the class bits)' : ''} (${worldW.length} bytes written)`, worldW.length > 0 && worldW.every((a) => worldCells.has(a)));
+  check(`${label}: PHASE_OFF, TILE_ATTR, GLYPH_TAB, the three tile pages and the blank page $5E00-$5EFF${cacheMode ? '' : ', AST'} are byte for byte what the boot left`, ro.every(([, a, l], i) => Array.from({ length: l }, (_, k) => m.ram[a + k]).every((v, k) => v === snapRo[i][k])));
+  const pagesAll = Array.from({ length: 256 }, (_, i) => m.ram[S.W_ATTRT + i] === tiles[i >> 3].attr && m.ram[S.W_FLAGT + i] === win.flags[i >> 3]).every(Boolean);
+  check(`${label}: new: the attribute page and the flags page hold each tile's value at all 8 bytes 8 t .. 8 t + 7 after the play (class bits in WORLD_RAM index them raw)`, pagesAll);
   if (cacheMode) {
     const poolW = [...writes.keys()].filter((a) => pools.some(([, p, l]) => a >= p && a < p + l));
     const astW = [...writes.keys()].filter((a) => a >= S.AST && a < S.AST + 128);

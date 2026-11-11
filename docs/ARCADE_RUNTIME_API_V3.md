@@ -32,7 +32,7 @@ Chunk 7 is the contract's section 1 exactly; chunk 6 is v2's with three changes 
 
 Boot zeroes `$E000-$F1FF`. The runtime's own stack depth in a tick is 26 bytes when `draw_all` builds a frame (`draw_all` > `fc_miss` > `build_frame`),
 plus 10 for an interrupt (measured); this happens after `frame_entry` has returned, so compiled code keeps the 1,012 bytes it had in v2.
-`$5B00-$5FFF` and `$7B00-$7FFF` (the display files' tails, RAM in the play mapping) are still unused.
+`$5B00-$5FFF` and `$7B00-$7FFF` (the display files' tails, RAM in the play mapping) are still unused (part 2 uses `$5B00-$5DFF` in window mode, and since the window fast path `$5E00-$5EFF` too).
 
 ### Header and descriptor
 
@@ -189,9 +189,10 @@ kept when smaller). `V_CAM` is 0.
 | `$E102-$E127` | window state: `W_CX`, `W_CY`, `W_NB`, `W_WW`, `W_TABHI`, `W_BEND`, `W_CAMMAX`, `W_WXR` (8 world_w), `W_WX0/1`, `W_WY0/1` (window pixel bounds), `W_BMBASE`, `W_ATBASE`, `W_DMASK0/3`, `W_BANDS` (8), `W_AC` (8: the col0 whose attributes file 0 / 1 shows per band, `$FF` = none) |
 | `$E128-$E1AE` | tick scratch (repaint, `win_draw_all`, the 16 x 4-byte ring records `W_RING`, ring repair) and the routines' scratch (`TH_*` for `RT_TILEHIT`, `WH_*` for the window `RT_HIT`) |
 | `$E1AF-$E1BF` | free |
-| `$5B00` / `$5C00` / `$5D00` | tile rows (phase-0 copy path) / tile attribute at + 8t / tile flags at + 8t: three pages of display file 1's unused tail, written once by the boot, **in window mode only** |
+| `$5B00` / `$5C00` / `$5D00` | tile rows (phase-0 copy path) / tile attribute at + 8t / tile flags at + 8t: three pages of display file 1's unused tail, written once by the boot, **in window mode only** (since the window fast path the attribute and flags of tile t fill all of 8t .. 8t + 7) |
+| `$5E00` | `W_BLANKT` (window fast path): attr(t) at 8t, blank(t) at 8t + 1, written by the boot in window mode only, read by the class pass and `RT_SETWORLD` |
 
-`$5E00-$5FFF` and `$7B00-$7FFF` stay unused. The stack: a window tick uses at most 26 bytes of the runtime's own (`win_draw_all` > `fc_miss` >
+`$5F00-$5FFF` and `$7B00-$7FFF` stay unused (`$5E00-$5EFF` is `W_BLANKT` since the window fast path). The stack: a window tick uses at most 26 bytes of the runtime's own (`win_draw_all` > `fc_miss` >
 `build_frame`, as part 1) plus 10 for an interrupt (measured, `m7-runtime-mem.mjs`).
 
 ### The tick in window mode (`main.asm` `AFTER_FRAME` -> `win_tick` -> `TICK_COUNT`)
@@ -255,7 +256,7 @@ ticks, on this runtime): mean tick 160,605 T; **182 of 860 ticks exceed 3 refres
 to 120,256 (55,000-62,000 in the ticks around 186-202); the runtime's part exceeds 176,064 - 15,000 in 25 ticks (worst 173,176 with 34,813 of sprites and
 6,050 of ring repair; one tick of 183,290 redraws 44,485 T of HUD cells). So the overrun is mainly the game's logic, then sprites near the window edge.
 
-**Blank-cell path: not included.** (1) The contract's tick fits without it (172,013 / 172,752 of 176,064). (2) It does not fit the ROM: the spike's
+**Blank-cell path: not included** (superseded 2026-11-11: see "As built: the window fast path and colour-clash option 2" below). (1) The contract's tick fits without it (172,013 / 172,752 of 176,064). (2) It does not fit the ROM: the spike's
 path is about +1.1 KB, 735 bytes are left. (3) It makes the worst case worse: on a world without blank cells the spike measured +8 % for the bitmap,
 which would take the solid-world repaint to about 134,000 (1 band; budget 130,000) and 137,000 (4 bands; budget 135,000) (estimates from the spike's
 ratio, not built). It would help open levels (the platformer's world is 53 % sky; spike: -28 % at 70-76 % blank pairs).
@@ -333,3 +334,44 @@ Contract: `docs/ARCADE_BANKING_CONTRACT.md` sections 2 and 3. **The common part*
 **`RT_WORLDLOAD`**: HL = the world's RLE stream (mapped or banked), A = `world_w` (24..128), DE = `cam_max` in pixels (the compiler's `camMax()`); clobbers AF, BC, DE, HL, keeps IX, IY and the alternates. Window mode only (`V_WIN` = 1): otherwise it returns at once, touching nothing. It sets `W_WW` = A, `W_WXR` = 8 * A, `W_CAMMAX` = DE **as given (no clamp, no check of the range: the compiler computes both)**, `V_CAM` = 0, calls `win_ac_clear` (the attribute caches of both display files: the next two ticks repaint the whole window in both files, as after the boot) and decodes the stream into `WORLD_RAM` (through the window when banked). The tile rows, attributes, flags, bands, the window's place and the sprites do not change; the display files and the three tile pages are not written by the call. A game calling it between ticks (in `FRAME`) sees the new world in that very tick.
 **Size**: +84 bytes (`runtime (chunks 0-1)` 14,225 -> 14,309 of 16,384: **2,075 free**, was 2,159): the common part 26, `world_load` 16 and `RT_WORLDLOAD` 36 (`world_decode`, 31 bytes, is the old inline decoder moved), and +6 net in `window_boot` (the three separate pointer checks instead of the loop, the call).
 Tests: `arcade/tests/m11-runtime-bank.mjs` on v3: the common tests; `window_boot` with a banked world = the mapped boot (`WORLD_RAM` against the JavaScript decode, the window state, the tile pages, both display files; the window mapped once, only the stream read) and the high-byte checks of the three pointers; `RT_WORLDLOAD` from the window and mapped for three worlds (24, 100, 128 wide) = the boot's decode of that world (state, camera 0, both display files after two ticks), the display files untouched by the call, the stream edges (`$4000`, ending at `$7FFF`, `$3F00`, `$8040`), an interrupt at every instruction boundary (about 32,000), outside window mode; `arcade/tests/m11-mutations.mjs`.
+
+## As built: the window fast path and colour-clash option 2 (2026-11-11, branch `arcade-window-fastpath`)
+
+Contract: `docs/ARCADE_WINDOW_FASTPATH.md` (with the owner's amendment of the bounds). Runtime v3 only; compiled games are the same bytes (6 hash
+baselines regenerated for the moved addresses with `regen-baselines.mjs --old 0e6f777`).
+
+* **The picture:** at phase <> 0, a window cell whose two tiles' attribute bytes differ shows only the pixels of the tile whose colours it takes
+  (A's when p < 4, B's when p >= 4); the other part of the cell is paper. No pixel of the window is drawn in another tile's ink. Phase 0, cells of
+  equal colours, the attributes (Part C), sprites, ring repair and collision are unchanged.
+* **Class bits:** `WORLD_RAM` bytes are `tile * 8 + S + 2 D + 4 P` (contract section 2: S = the cell with this byte as B is special, D = its
+  colours differ, P = this cell or the next is special). `cls_world` (a right-to-left state machine over each row's columns 0..world_w - 1) runs
+  after the decode in `window_boot` and in `RT_WORLDLOAD` (after the bank window is unmapped); `RT_SETWORLD` reclassifies x - 1, x, x + 1.
+  Readers use the raw byte: the attribute and flags pages are replicated at 8t .. 8t + 7, `RT_WORLDTILE` shifts. The reference interpreter's
+  WORLD_RAM has no class bits; the differential tests compare `byte AND $F8`.
+* **The repaint:** `rows_pn` tests P of every upward cell's byte (`bit 2,e / jp nz`): a clear P means both cells of the pair are ordinary and the
+  inline code runs as before (about 18 T per pair, plus `and $F8` on each row's first cell). A set P goes to that pair's stub (`rpn_stub0` ..
+  `rpn_stubs_end`, 12), which runs each cell through the shared handlers `H_UP_OR`, `H_UP_S`, `H_DN_S` (ordinary OR cell; blank pair: 8 zero
+  stores; differing colours: one table, chosen by F' carry = p >= 4, set per band; `window_repaint` saves AF'). `rows_p0` masks its upward cells.
+* **Measured** (TSRun; `m7-runtime-perf.mjs`, `tests/arcade-runner-perf.mjs`, `tests/arcade-m6-platformer-perf.mjs`):
+
+| | Before | After |
+|---|---:|---:|
+| Leap Runner, worst tick that is not a world load | 173,167 | **158,342** (mean 138,905 -> 127,235; mean `window_repaint` 109,177 -> 97,160) |
+| Platformer "win twice", worst tick | 174,919 | **160,199** (mean `window_repaint` 112,088 -> 98,964) |
+| `window_repaint` worst, direct, 1 / 3 / 4 bands, ordinary world (a: one attribute, no blank) | 124,672 / 126,526 / 127,425 | 128,369 / 130,279 / 131,206 |
+| The same, Leap Runner's worlds (g) | as above (content independent) | 106,251-109,613 / 110,501-112,401 / 111,020-113,837 |
+| The same, dense colour boundaries (b, d, e; worst d, stripes of two colours) | as above | 137,009 / 138,619 / 139,150 |
+| In a running game, world a (interrupt included) | 124,969 (1 band) | 130,458 / 132,371 / 133,322 |
+| The contract's tick, worst (world a / random-colour solid b) | 172,013 | 174,718 / 176,459 |
+| Phase-0 repaint | 77,863 (1 band, bitmap) | +2,149 |
+| A Leap Runner world load (decode + class pass) | 228,000-238,000 | 368,000-381,000 (about 2.5 frames more) |
+| `RT_SETWORLD` | 113..596 | up to about 970 |
+| v3 free bytes | 2,033 | 880 |
+
+  A world whose neighbouring tiles mostly differ in colour costs more than before (the owner accepted this: real games' worlds have few colour
+  boundaries). A differing cell through a stub costs about what an ordinary inline cell does; the only faster method found (a second copy loop)
+  needs about 1 KB.
+* **Tests:** `refWindow` (option 2, `M7_OPTION=1` for the old rule) and the class-bit model (`classifyWorld`, `setWorldClassed`) in `m7-common.mjs`;
+  every window test compares with them; a de Bruijn world gives every case at every phase 1..7; class bits after boot, SETWORLD (edges included)
+  and RT_WORLDLOAD (`m11-runtime-bank.mjs`, whose poisoning now spares `$5B00-$5EFF` in window games); interrupts at every instruction of the stubs,
+  handlers, class pass and SETWORLD (`m7-runtime-regs.mjs` section 4); `m7-mutations.mjs` 111 mutants (35 new, 2 proved equivalent).
