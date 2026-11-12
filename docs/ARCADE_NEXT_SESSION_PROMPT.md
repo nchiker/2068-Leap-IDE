@@ -1,5 +1,13 @@
 # Prompt for the next session (written 2026-11-11, updated 2026-11-12 after the compiler size pass)
 
+**RESUME HERE (2026-11-12, wireframe in progress, branch `arcade-wire`):** contract `docs/ARCADE_WIREFRAME_CONTRACT.md` (owner chose the
+wireframe game first). Done and committed: contract, W3a front end (`3e01b87`), W4 Studio model assets (`94590d9`), W1 kernels in v2 (`82b1cab`,
++5,058 bytes, 1,114 free, DCK hashes regenerated). Running when this was written: W2 tick integration (Opus, worktree
+`<scratchpad>/wt-w2`, files main/boot/skip/video.asm, RT_WIREMODE, `arcade/tests/m17-runtime-tick.mjs`) and W3b codegen + interpreter (Sonnet,
+main tree). If they were lost: re-brief from contract section 7 (the interface: DIV_WIRE bit 6, `$8012 DW wire_desc`, RT_WIREMODE A=0/1).
+After W2: `regen-baselines.mjs --old 82b1cab`, full run-all. Then W5 sample game "Orbit Gates" (section 9), W6 verification (add a direct
+eye-transform test: all 256 headings at |d| = 16,000).
+
 Suggested setup: main thread on the strongest model available (Opus 5.5 or Fable 5.2) at high effort, because it writes the contracts and reviews every agent's work; agents on Opus for cycle-critical Z80 kernels, Sonnet 5.5 for routine implementation and tests, Haiku 5.5 for running test suites (the prompt below says so).
 
 ---
