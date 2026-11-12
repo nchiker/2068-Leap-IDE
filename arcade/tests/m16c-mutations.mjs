@@ -48,8 +48,7 @@ const MUTANTS = [
   ['F4: LDIR keeps the slot', [E(EM, "      case 'cpl': case 'neg':", "      case 'ldir': case 'cpl': case 'neg':")]],
   ['F4: every address is tracked (runtime variables too)', [E(EM, 'const lo = slots ? slots[0] : 0, hi = slots ? slots[1] : 0;', 'const lo = 0, hi = 0x10000;')]],
   ['F4: LD DE,(v) with HL = v copies L into D', [E(EM, "encode('ld', [d[0], 'h']), { args: [d[0], 'h'], was: 'ld', need: { s }, split: true }", "encode('ld', [d[0], 'l']), { args: [d[0], 'l'], was: 'ld', need: { s }, split: true }")]],
-  ['F4: a patched LD HL,0 (LOADTABLE) is taken for the constant 0', [E(CG, "const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', P(0));", "const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', 0);")]],
-  ['F4: a patched LD HL,0 (WORLD) is taken for the constant 0', [E(CG, "e.label(fix); e.ld('hl', P(0));\n      e.ld('a', st.w);", "e.label(fix); e.ld('hl', 0);\n      e.ld('a', st.w);")]],
+  ['F4: a patched LD HL,0 (WORLD / LOADTABLE: ldPatched) is taken for the constant 0', [E(CG, "function ldPatched(label) { e.label(label); e.ld('hl', P(0)); }", "function ldPatched(label) { e.label(label); e.ld('hl', 0); }")]],
   ['F4: the slot range is not set (nothing tracked but constants)', [E(CG, '    e.slots = [VARS_BASE, VARS_BASE + 2 * nSlots];', '    e.slots = [0, 0];')]],
   // ---- F5: RET and tail calls (z80-emit.js foldReturns, NO_TAIL) ----
   ['F5: a tail call across a label', [E(EM, 'if (labelled || target === null || (noTail && noTail(target))) continue;', 'if (target === null || (noTail && noTail(target))) continue;')]],
@@ -74,8 +73,6 @@ const MUTANTS = [
   ['F1: a decided comparison jumps the wrong way', [E(CG, '          if ((wantLt ? T > 32767 : T === -32768) === sense) e.jp(label);', '          if ((wantLt ? T > 32767 : T === -32768) !== sense) e.jp(label);')]],
   ['F1: K < x not mirrored', [E(CG, "const o = rc !== undefined ? op : ({ '<': '>', '>': '<', '<=': '>=', '>=': '<=', '=': '=', '<>': '<>' })[op];\n      if (o === '=' || o === '<>') {\n        if (K === -1", "const o = op;\n      if (o === '=' || o === '<>') {\n        if (K === -1")]],
   ['F1: = 1 without the DEC HL', [E(CG, "if (K === 1) { e.dec('hl'); e.ld('a', 'h'); e.or('l'); }", "if (K === 1) { e.ld('a', 'h'); e.or('l'); }")]],
-  ['F1: = -1 without the INC A', [E(CG, "else if (K === -1) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }", "else if (K === -1) { e.ld('a', 'l'); e.and('h'); }")]],
-  ['F1: = K (1..255) ignores the high byte', [E(CG, "else { e.ld('a', 'l'); e.xor(K); e.or('h'); }", "else { e.ld('a', 'l'); e.xor(K); }")]],
   ['F1: FOR with a constant step: v <= K tested as v < K', [E(CG, 'if (stepConst >= 0) ltConst(K + 1, BODY, true); else ltConst(K, BODY, false);', 'if (stepConst >= 0) ltConst(K, BODY, true); else ltConst(K, BODY, false);')]],
   ['F1: FOR with a negative step: v >= K tested as v > K', [E(CG, 'if (stepConst >= 0) ltConst(K + 1, BODY, true); else ltConst(K, BODY, false);', 'if (stepConst >= 0) ltConst(K + 1, BODY, true); else ltConst(K + 1, BODY, false);')]],
   ['F1: FOR with a constant step: the always-true edge taken for every step', [E(CG, 'if (stepConst >= 0 ? K === 32767 : K === -32768) e.jp(BODY);', 'if (K === 32767 || K === -32768) e.jp(BODY);')]],
@@ -88,10 +85,10 @@ const MUTANTS = [
   ['F6: used for STEP 2 as well', [E(CG, 'if (CG.for && limSlot === null && stepConst === 1) {', 'if (CG.for && limSlot === null && stepConst >= 1) {')]],
   // ---- F3: SELECT with the selector in HL ----
   ['F3: a case with two values skips the second', [E(CG, "if (i < c.values.length - 1) e.jp('z', BODY); else e.jp('nz', NEXT);", "e.jp('nz', NEXT);")]],
-  ['F3: -1 without the INC A', [E(CG, "else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }", "else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); }")]],
-  ['F3: 1..255 ignores the high byte', [E(CG, "else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); e.or('h'); }", "else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); }")]],
-  ['F3: a multiple of 256 ignores the low byte', [E(CG, "else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); e.or('l'); }", "else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); }")]],
-  ['F3: any other value: the low byte is not tested', [E(CG, "e.ld('a', 'l'); e.xor(lo); e.jr('nz', t); e.ld('a', 'h'); e.xor(hi); e.label(t);", "e.ld('a', 'l'); e.xor(lo); e.ld('a', 'h'); e.xor(hi); e.label(t);")]],
+  ['eqKeepHL (F1 and F3): -1 without the INC A', [E(CG, "else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }", "else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); }")]],
+  ['eqKeepHL (F1 and F3): 1..255 ignores the high byte', [E(CG, "else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); e.or('h'); }", "else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); }")]],
+  ['eqKeepHL (F3): a multiple of 256 ignores the low byte', [E(CG, "else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); e.or('l'); }", "else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); }")]],
+  ['eqKeepHL (F3): any other value: the low byte is not tested', [E(CG, "e.ld('a', 'l'); e.xor(lo); e.jr('nz', t); e.ld('a', 'h'); e.xor(hi); e.label(t);", "e.ld('a', 'l'); e.xor(lo); e.ld('a', 'h'); e.xor(hi); e.label(t);")]],
   ['F3: the last case before ELSE falls into ELSE', [E(CG, 'if (ci < s.cases.length - 1 || s.else) e.jp(END);', 'if (ci < s.cases.length - 1) e.jp(END);')]],
   // ---- F7, F8 ----
   ['F7: PRINT AT row and column swapped in BC', [E(CG, 'e.ld(\'bc\', (clampK(rc, 23) << 8) | clampK(cc, 31));', 'e.ld(\'bc\', (clampK(cc, 31) << 8) | clampK(rc, 23));')]],
@@ -101,13 +98,12 @@ const MUTANTS = [
   ['F8: every constant tested as the whole byte', [E(CG, "if ((lo || hi) === 255) e.or('a'); else e.and(lo || hi);", "e.or('a');")]],
   ['F8: BAND(x, k) = 0 read as <> 0', [E(CG, "if (bandBranch(other, label, (o === '<>') === sense)) return;", "if (bandBranch(other, label, (o === '=') === sense)) return;")]],
   // ---- F9: array routines; the 2-D key ----
-  ['F9: the range test one too wide', [E(CG, 'const lim = a.n + 1, bad = `${label}$o`;', 'const lim = a.n + 2, bad = `${label}$o`;')]],
+  ['arrayAddr (inline and F9 routines): the range test one too wide', [E(CG, "    const lim = a.n + 1;\n    e.ld('a', 'l'); e.sub(lim & 255);", "    const lim = a.n + 2;\n    e.ld('a', 'l'); e.sub(lim & 255);")]],
   ['F9: a read outside the array gives the sink\'s address', [E(CG, "e.label(bad); e.ld('hl', mode === 'r' ? 0 : arrSink); e.ret();", "e.label(bad); e.ld('hl', arrSink); e.ret();")]],
   ['F9: the read routine reads one byte', [E(CG, "if (mode === 'r') { e.ld('a', '(hl)'); e.inc('l'); e.ld('h', '(hl)'); e.ld('l', 'a'); }\n      e.ret();", "if (mode === 'r') { e.ld('a', '(hl)'); e.ld('l', 'a'); e.ld('h', 0); }\n      e.ret();")]],
-  ['F9: the element address is not doubled', [E(CG, "      e.add('hl', 'hl'); e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');\n      if (mode === 'r')", "      e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');\n      if (mode === 'r')")]],
-  ['F9: two scenes\' same-named 1-D arrays share a routine', [E(CG, 'if (arUsed.has(label) && arUsed.get(label).a.addr !== a.addr) label += `$${a.addr.toString(16)}`;', '')]],
+  ['arrayAddr (inline and F9 routines): the element address is not doubled', [E(CG, "e.jp('nc', oob);\n    e.add('hl', 'hl'); e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');\n  }", "e.jp('nc', oob);\n    e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');\n  }")]],
+  ['routineKey: two scenes\' same-named arrays share their routines (1-D F9 and 2-D; the 2-D case was a bug fixed in C2)', [E(CG, "const routineKey = (map, name, a, arrOf = (v) => v) => (map.has(name) && arrOf(map.get(name)).addr !== a.addr ? `${name}$${a.addr.toString(16)}` : name);", "const routineKey = (map, name) => name;")]],
   ['F9: reads and writes counted together', [E(CG, "if (n.type === 'Assign' && n.target?.type === 'Index') { count('w', n.target);", "if (n.type === 'Assign' && n.target?.type === 'Index') { count('r', n.target);")]],
-  ['2-D: two scenes\' same-named 2-D arrays share a routine (the bug fixed in C2)', [E(CG, 'if (used.a2.has(key) && used.a2.get(key).addr !== a.addr) key = `${a.name}$${a.addr.toString(16)}`;', '')]],
 ];
 
 if (checkOnly) {

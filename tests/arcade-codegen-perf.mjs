@@ -12,6 +12,7 @@
 //                                                                 * no tick that was within the budget goes over it (the ticks over the budget stay a subset of the before's);
 //                                                                 * the run has the same number of measured ticks (else it is not the same game).
 //   node tests/arcade-codegen-perf.mjs --games runner,vaults    only these (runner, platformer, vaults, starfall, blockfall)
+//   node tests/arcade-codegen-perf.mjs --cg-off arr             the working tree's compiler with these code generator fixes switched off (compile(text, {cg}): cmpc, sel, for, at, band, arr)
 //
 // The measurements are the existing suites' own, not new ones (each takes a `compile` function for this):
 //   runner      tests/arcade-runner-perf.mjs measure(): Leap Runner (runner.arc, v3, runner.script.json); the ticks that are not a world load or a scene start; budget 3 refreshes
@@ -50,6 +51,11 @@ const sgn = (v) => (v > 0 ? '+' : v < 0 ? '-' : ' ') + fmt(Math.abs(v));
 
 // ── the compiler ──────────────────────────────────────────────────────────────────────────────────
 let tmp = null, compileFn = workingCompile, compilerLabel = 'working tree';
+if (opt('--cg-off')) {
+  const off = Object.fromEntries(opt('--cg-off').split(',').filter(Boolean).map((k) => [k, false]));
+  compileFn = (text, o) => workingCompile(text, { ...o, cg: { ...(o?.cg ?? {}), ...off } });
+  compilerLabel = `working tree, code generator fixes off: ${opt('--cg-off')}`;
+}
 if (opt('--old')) {
   const ref = opt('--old');
   tmp = mkdtempSync(join(tmpdir(), 'codegen-perf-'));

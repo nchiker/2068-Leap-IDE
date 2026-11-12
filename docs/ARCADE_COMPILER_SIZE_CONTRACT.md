@@ -409,3 +409,18 @@ scene's start to the win with the level changes in between and is silent from th
 after it (TSRun). The song-level sound comparisons (V_SFX_ACTIVE, AY_SHADOW and the chip on every sample, the real runtime against the interpreter's chip model) pass: play-through 1,739 samples (1,738 with a song,
 425 with a channel-C effect over it), game over and back 146, the title / demo flow 351 and 331, fire in the title 121. `node tests/arcade-runner-perf.mjs --check` PASS, `node tests/studio-smoke.mjs` all checks passed
 (twice, the second after `publish-runtime.mjs`), `node arcade/examples/runner.assets.gen.mjs --check` all limits hold, `node tests/arcade-emitter-opt.mjs` 90 passed, 0 failed.
+
+### As built: C6, the code review (2026-11-12)
+
+A fresh `/code-review high` of `main...arcade-codegen-size` (a reviewer that wrote none of it) found 10 points; none was a wrong result today.
+**Fixed** (every output byte unchanged: 80/80 run-all including the hash baselines; CODEGEN_OFF still the old bytes): (1) every load the linker
+patches goes through one helper, `ldPatched` (F4 can no longer meet a patched `LD HL,0` written without `P()`); (2) `align()` throws while an
+optimisation is on (the padding would be computed on provisional addresses; nothing uses it today); (3) a tail call shortened to JR keeps
+`was: 'call'` in the listing; (5) the F9 routines call `arrayAddr` itself instead of a copy of its instructions; (6) the compiler no longer reads
+`ARCADE_CG_OFF` from the environment (`tests/arcade-codegen-perf.mjs --cg-off <list>` instead); (8) one `eqKeepHL(k)` for F1's `=` / `<>` and
+F3's case values; (9) one `routineKey` for the 1-D (F9) and 2-D routines' unique names; (10) `listing-diff.mjs` removes its unpacked copy.
+m16c updated to the shared helpers (67 mutants: the reworked six killed). **Not changed, with reasons:** (4) JR on hot loop back-edges costs
+2 T a taken jump: accepted in section 5 (F2 alone is slower, the batch is faster on every run); (7) the result keeps its Emitter (non-enumerable):
+the tests and the listing tool use it, and the Studio keeps one result at a time; (10b) regen-baselines copies m5's stand-in runtime rather than
+importing a test module into a tool.
+

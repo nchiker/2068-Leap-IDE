@@ -1182,9 +1182,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   if (errors.length) return fail();
 
   // ── 4c. compiler size pass, the code generator's fixes (docs/ARCADE_COMPILER_SIZE_CONTRACT.md section 4): all on; `opts.cg` {cmpc, sel, for, at, band, arr} switches one off, and so does
-  // the environment variable ARCADE_CG_OFF (a list, e.g. "arr": for the measurements with tools that take no option, tests/arcade-codegen-perf.mjs) ──
-  const cgOff = new Set(String(globalThis.process?.env?.ARCADE_CG_OFF ?? '').split(',').filter(Boolean));
-  const CG = Object.fromEntries(['cmpc', 'sel', 'for', 'at', 'band', 'arr'].map((k) => [k, (opts.cg?.[k] ?? true) && !cgOff.has(k)]));
+  // nothing else: no environment variable (a measurement switches fixes off through compile(text, {cg}), e.g. tests/arcade-codegen-perf.mjs --cg-off) ──
+  const CG = Object.fromEntries(['cmpc', 'sel', 'for', 'at', 'band', 'arr'].map((k) => [k, opts.cg?.[k] ?? true]));
   // F9: the 1-D arrays read (or written) with a run-time index at two or more places get one routine for it; counted here over the reachable code. The count only chooses between two
   // correct forms (a place in code that is folded away, or compiled twice, makes the choice a little worse, never wrong): 'r' + address / 'w' + address -> places
   const arSites = new Map();
@@ -1204,12 +1203,16 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     for (const c of reach) { useCtx(c.ctx); curC = c; walk(c.node); }
     curC = null; useCtx(globalCtx);
   }
+  /**
+   * The key of an array's access routines in `map` (key -> the array): its name, or name$address when another array of that name (in another scene)
+   * already has routines there. One rule for the 1-D (F9) and the 2-D routines.
+   */
+  const routineKey = (map, name, a, arrOf = (v) => v) => (map.has(name) && arrOf(map.get(name)).addr !== a.addr ? `${name}$${a.addr.toString(16)}` : name);
   const arUsed = new Map();                         // label -> {a, mode}: the routines to emit
   /** The label of the access routine of a 1-D array for this mode, or null when the access stays inline (fewer than two places). */
   const arRoutine = (a, mode) => {
     if (!CG.arr || (arSites.get(mode + a.addr) ?? 0) < 2) return null;
-    let label = `lib$a${mode}$${a.name}`;
-    if (arUsed.has(label) && arUsed.get(label).a.addr !== a.addr) label += `$${a.addr.toString(16)}`;      // two scenes may each have an array of this name
+    const label = routineKey(arUsed, `lib$a${mode}$${a.name}`, a, (v) => v.a);
     arUsed.set(label, { a, mode });
     return label;
   };
@@ -1309,6 +1312,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
    * The bounds test is a 16-bit unsigned compare of HL with n + 1 in A (LD A,L / SUB lo / LD A,H / SBC A,hi: carry = inside), which
    * leaves HL alone, 32 T; the address is 2 * HL + base, 32 T (LD DE / ADD HL,HL / ADD HL,DE).
    */
+  /**
+   * `label: LD HL,0` whose operand the linker fills in (gen.fixups: the label's address + 1). Every patched load goes through here: the operand is P(0), so the
+   * emitter's HL tracking (F4) never takes it for the constant 0 (tests/arcade-emitter-opt.mjs checks that every fixup is such a load or a data word).
+   */
+  function ldPatched(label) { e.label(label); e.ld('hl', P(0)); }
   function arrayAddr(a, oob) {
     const lim = a.n + 1;
     e.ld('a', 'l'); e.sub(lim & 255); e.ld('a', 'h'); e.sbc('a', lim >> 8); e.jp('nc', oob);
@@ -1340,8 +1348,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     operands(ix, jx);
     // the routines' key: the array's name, made unique by its address when another array of that name (in another scene) has routines too
     used.a2 ??= new Map();
-    let key = a.name;
-    if (used.a2.has(key) && used.a2.get(key).addr !== a.addr) key = `${a.name}$${a.addr.toString(16)}`;
+    const key = routineKey(used.a2, a.name, a);
     used.a2.set(key, a);
     (a2modes.get(key) ?? a2modes.set(key, new Set()).get(key)).add(mode);
     arrZero ??= allocSlot('arr.zero');
@@ -1697,6 +1704,19 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.label(END);
   }
 
+  /**
+   * Z = (HL == k), HL kept (F1's = / <> with a constant, F3's case values); k is taken as a 16-bit value. 0: LD A,H / OR L; -1: LD A,L / AND H / INC A;
+   * 1..255: LD A,L / XOR k / OR H; a multiple of 256: LD A,H / XOR hi / OR L; any other: LD A,L / XOR lo / JR NZ,t / LD A,H / XOR hi / t:. Clobbers A.
+   */
+  function eqKeepHL(k) {
+    k &= 0xFFFF;
+    const lo = k & 255, hi = k >> 8;
+    if (k === 0) { e.ld('a', 'h'); e.or('l'); }
+    else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }
+    else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); e.or('h'); }
+    else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); e.or('l'); }
+    else { const t = e.newLabel('cv'); e.ld('a', 'l'); e.xor(lo); e.jr('nz', t); e.ld('a', 'h'); e.xor(hi); e.label(t); }
+  }
   /** F1: HL = x, T a constant in -32767..32767 -> jump to `label` when (x < T, signed) == wantLt. (x XOR $8000) + (65536 - (T XOR $8000)) carries exactly when x >= T. Destroys HL; clobbers A, DE. */
   function ltConst(T, label, wantLt) {
     e.ld('a', 'h'); e.xor(0x80); e.ld('h', 'a'); e.ld('de', (0x10000 - ((T + 0x8000) & 0xFFFF)) & 0xFFFF); e.add('hl', 'de');
@@ -1794,9 +1814,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       if (o === '=' || o === '<>') {
         if (K === -1 || (K >= 1 && K <= 255)) {
           gen(other);
-          if (K === 1) { e.dec('hl'); e.ld('a', 'h'); e.or('l'); }                  // (HL is destroyed)
-          else if (K === -1) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }            // both bytes $FF
-          else { e.ld('a', 'l'); e.xor(K); e.or('h'); }
+          if (K === 1) { e.dec('hl'); e.ld('a', 'h'); e.or('l'); }                  // (HL is destroyed; one byte shorter than the form that keeps it)
+          else eqKeepHL(K);
           e.jp((o === '=') === sense ? 'z' : 'nz', label);
           return;
         }
@@ -1968,11 +1987,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const fix = e.newLabel('wlfix');
     if (win) {
       const rt = need('RT_WORLDLOAD');
-      e.label(fix); e.ld('hl', P(0));
+      ldPatched(fix);
       e.ld('a', st.w); e.ld('de', st.camMax); e.call(rt);
     } else {
       const rt = need('RT_PLANLOAD');
-      e.label(fix); e.ld('hl', P(0));
+      ldPatched(fix);
       e.ld('bc', (st.w << 8) | st.h); e.call(rt);
     }
     worldFix.push({ label: fix, key: st.key });
@@ -1989,7 +2008,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const rt = need('RT_TABLELOAD');
     const si = curC ? curC.scene : -1;
     const vis = visibleTabs(si);
-    const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', P(0)); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
+    const direct = (t) => { const fix = e.newLabel('tbfix'); ldPatched(fix); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
     const named = s.table ? vis.find((t) => up(t.node.name) === up(s.table.name)) : undefined;
     if (named) { direct(named); return; }
     const x = s.table ?? s.index, k = fold(x);
@@ -2324,12 +2343,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         const BODY = e.newLabel('cbody'), NEXT = e.newLabel('cnext');
         c.values.forEach((val, i) => {
           mark(val);
-          const k = fold(val) & 0xFFFF, lo = k & 255, hi = k >> 8;
-          if (k === 0) { e.ld('a', 'h'); e.or('l'); }
-          else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }
-          else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); e.or('h'); }
-          else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); e.or('l'); }
-          else { const t = e.newLabel('cv'); e.ld('a', 'l'); e.xor(lo); e.jr('nz', t); e.ld('a', 'h'); e.xor(hi); e.label(t); }
+          eqKeepHL(fold(val));
           if (i < c.values.length - 1) e.jp('z', BODY); else e.jp('nz', NEXT);
         });
         e.label(BODY);
@@ -2481,11 +2495,10 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       curC = null;
     }
     useCtx(globalCtx);
-    for (const [label, { a, mode }] of arUsed) {    // F9: the inline form's instructions, in its order, so the registers and flags at return are the inline form's
-      const lim = a.n + 1, bad = `${label}$o`;
+    for (const [label, { a, mode }] of arUsed) {    // F9: the inline form itself (arrayAddr), so the registers and flags at return are the inline form's
+      const bad = `${label}$o`;
       e.label(label);
-      e.ld('a', 'l'); e.sub(lim & 255); e.ld('a', 'h'); e.sbc('a', lim >> 8); e.jp('nc', bad);
-      e.add('hl', 'hl'); e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');
+      arrayAddr(a, bad);
       if (mode === 'r') { e.ld('a', '(hl)'); e.inc('l'); e.ld('h', '(hl)'); e.ld('l', 'a'); }
       e.ret();
       e.label(bad); e.ld('hl', mode === 'r' ? 0 : arrSink); e.ret();

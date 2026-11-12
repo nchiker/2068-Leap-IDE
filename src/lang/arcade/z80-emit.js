@@ -120,7 +120,11 @@ export class Emitter {
   /** Fill with `n` copies of `value`. */
   ds(n, value = 0) { for (let i = 0; i < n; i++) this.db(value); return this; }
   /** Pad with `value` until the address is a multiple of `n`. */
-  align(n, value = 0) { while (this.pc % n) this.db(value); return this; }
+  align(n, value = 0) {
+    // the padding is taken from the provisional address: finish() would move what follows when an optimisation shortens code before it
+    if (this.opt.hl || this.opt.ret || this.opt.jr) throw new Error('align() cannot be used with the optimisations (the code before it may shrink)');
+    while (this.pc % n) this.db(value); return this;
+  }
 
   // ── operand helpers ──
   imm8(v) {
@@ -468,7 +472,7 @@ export class Emitter {
       }
       for (const c of cands) {
         const short = c.w.short; delete c.w.short;
-        if (short) Object.assign(c.w, encode('jr', c.w.args), { mn: 'jr', was: 'jp' });
+        if (short) Object.assign(c.w, encode('jr', c.w.args), { mn: 'jr', was: c.w.was ?? 'jp' });      // (a tail call stays was: 'call', tail: true)
       }
     }
     layout();

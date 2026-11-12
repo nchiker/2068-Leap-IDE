@@ -19,7 +19,7 @@
 // A compiler with Emitter.listing() (the size pass on) gives the listing itself; an older one is recorded by wrapping its Emitter from
 // outside (no compiler file is changed).
 "use strict";
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -46,6 +46,7 @@ const emitOf = (s) => (s === undefined ? undefined : { hl: false, ret: false, jr
 function compilerDir(x) {
   if (existsSync(join(resolve(x), 'src/lang/arcade/arcade-compile.js'))) return resolve(x);
   const dir = mkdtempSync(join(tmpdir(), 'listing-diff-'));
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }));      // the unpacked copy is removed when the tool ends
   const tar = execFileSync('git', ['-C', ROOT, 'archive', x, 'src/lang/arcade'], { maxBuffer: 1 << 28 });      // read-only: nothing in the repository changes
   execFileSync('tar', ['-x', '-C', dir], { input: tar });
   return dir;
