@@ -1,0 +1,83 @@
+correct colw 4: 2000 scenes; per billboard call (pictures / mismatches): K0 7274/0, A1 7274/0, A2 14548/0, Q 7274/0, QM 7274/0; A2 hit 1879 cold 1993 A1-fallback 2074 (model disagreements 0); exercised: 7274 drawn, 831 partly hidden, 4737 clipped left/right, 714 clipped at the top; stack bytes {"K0":6,"A1":6,"A2":6,"Q":8,"QM":8}
+correct colw 2: 2000 scenes; per billboard call (pictures / mismatches): K0 7274/0, A1 7274/0, A2 14548/0, Q 7274/0, QM 7274/0; A2 hit 1996 cold 2108 A1-fallback 2076 (model disagreements 0); exercised: 7274 drawn, 1026 partly hidden, 4622 clipped left/right, 722 clipped at the top; stack bytes {"K0":6,"A1":6,"A2":6,"Q":8,"QM":8}
+
+### colw 4
+| scene | cols x rows | K0 | A1 | A2 cold | A2 warm | Q banked (Hs) | QM mapped |
+|---|---|---|---|---|---|---|---|
+| 1: wraith 16x16, 8 rows, centred | 2 x 8 | 5,820 (phases 5,541-6,657) | 11,752 | 19,285 | 6,240 | 5,609 (8) | 4,632 |
+| 1: wraith 16x16, 16 rows, centred | 4 x 16 | 11,250 (phases 11,246-13,356) | 20,785 | 21,493 | 8,048 | 10,147 (17) | 7,937 |
+| 1: wraith 16x16, 24 rows, centred | 6 x 24 | 20,465 (phases 19,908-22,694) | 32,273 | 32,814 | 11,755 | 15,036 (24) | 11,125 |
+| 1: wraith 16x16, 32 rows, centred | 10 x 32 | 37,165 (phases 34,045-37,165) | 45,131 | 45,868 | 17,006 | 25,887 (34) | 17,710 |
+| 1: wraith 16x16, 48 rows, centred | 14 x 48 | 68,783 (phases 64,047-68,783) | 63,543 | 64,483 | 27,607 | 43,384 (48) | 28,025 |
+| 2: 32x32, 32 rows, centred | 10 x 32 | 36,622 | 77,851 | 79,194 | 79,194 | 22,104 (33) | 15,538 |
+| 2: 32x32, 64 rows, centred | 18 x 64 | 110,211 | 133,349 | 135,249 | 135,249 | 70,608 (67) | 43,744 |
+| 3a: 32x32 at hgt 48: 96 rows, 111 px, centre at x 8 (clipped left) | 16 x 96 | 139,594 | 126,248 | 128,388 | 128,388 | 89,142 (96) | 50,456 |
+| 3b: 32x48 at hgt 48: 144 rows (48 clipped at the top), 166 px (clipped both sides) | 32 x 96 | 269,532 | 231,710 | 234,366 | 234,366 | 160,086 (144) | 89,145 |
+| 4: 16x16 48 rows, one ray hidden (the middle) | 13 x 48 | 65,035 | 63,298 | 64,238 | 27,592 | 48,137 (48) | 48,166 |
+| 4: 16x16 48 rows, a run of 4 rays hidden (left part) | 10 x 48 | 52,271 | 62,583 | 63,523 | 27,547 | 52,658 (48) | 52,687 |
+| 4: 16x16 48 rows, every other ray hidden | 7 x 48 | 41,622 | 56,483 | 57,396 | 25,582 | 68,216 (48) | 68,245 |
+| 4: 32x32 64 rows, one ray hidden (the middle) | 17 x 64 | 105,393 | 132,874 | 134,774 | 134,774 | 77,026 (67) | 77,055 |
+| 4: 32x32 64 rows, a run of 4 rays hidden (left part) | 14 x 64 | 88,971 | 131,489 | 133,389 | 133,389 | 83,046 (67) | 83,075 |
+| 4: 32x32 64 rows, every other ray hidden | 9 x 64 | 65,540 | 119,357 | 121,257 | 121,257 | 121,618 (67) | 121,647 |
+
+### colw 2
+| scene | cols x rows | K0 | A1 | A2 cold | A2 warm | Q banked (Hs) | QM mapped |
+|---|---|---|---|---|---|---|---|
+| 1: wraith 16x16, 8 rows, centred | 4 x 8 | 8,164 (phases 7,895-9,014) | 14,785 | 25,024 | 6,689 | 6,139 (8) | 5,162 |
+| 1: wraith 16x16, 16 rows, centred | 9 x 16 | 19,913 (phases 19,913-20,237) | 33,973 | 34,873 | 9,557 | 11,229 (17) | 9,019 |
+| 1: wraith 16x16, 24 rows, centred | 14 x 24 | 38,149 (phases 36,235-38,706) | 44,668 | 45,485 | 13,077 | 16,676 (24) | 12,765 |
+| 1: wraith 16x16, 32 rows, centred | 18 x 32 | 59,891 (phases 59,190-62,313) | 63,372 | 64,385 | 19,134 | 28,349 (34) | 20,172 |
+| 1: wraith 16x16, 48 rows, centred | 28 x 48 | 122,535 (phases 118,058-122,535) | 88,132 | 89,568 | 30,284 | 46,950 (48) | 31,591 |
+| 2: 32x32, 32 rows, centred | 18 x 32 | 59,348 | 112,502 | 114,100 | 114,100 | 27,710 (33) | 19,758 |
+| 2: 32x32, 64 rows, centred | 37 x 64 | 203,515 | 192,812 | 195,306 | 195,306 | 75,836 (67) | 48,972 |
+| 3a: 32x32 at hgt 48: 96 rows, 111 px, centre at x 8 (clipped left) | 32 x 96 | 252,802 | 174,907 | 177,557 | 177,557 | 94,163 (96) | 55,477 |
+| 3b: 32x48 at hgt 48: 144 rows (48 clipped at the top), 166 px (clipped both sides) | 64 x 96 | 497,588 | 334,342 | 338,018 | 338,018 | 169,634 (144) | 98,694 |
+| 4: 16x16 48 rows, one ray hidden (the middle) | 27 x 48 | 118,784 | 87,887 | 89,323 | 30,269 | 51,706 (48) | 51,735 |
+| 4: 16x16 48 rows, a run of 4 rays hidden (left part) | 24 x 48 | 107,675 | 87,392 | 88,828 | 30,224 | 51,864 (48) | 51,893 |
+| 4: 16x16 48 rows, every other ray hidden | 14 x 48 | 70,129 | 84,889 | 86,325 | 30,101 | 77,242 (48) | 77,271 |
+| 4: 32x32 64 rows, one ray hidden (the middle) | 36 x 64 | 198,694 | 192,337 | 194,831 | 194,831 | 82,257 (67) | 82,286 |
+| 4: 32x32 64 rows, a run of 4 rays hidden (left part) | 33 x 64 | 184,487 | 191,552 | 194,046 | 194,046 | 88,286 (67) | 88,315 |
+| 4: 32x32 64 rows, every other ray hidden | 19 x 64 | 116,777 | 184,362 | 186,856 | 186,856 | 134,258 (67) | 134,287 |
+
+vaults win: 1436 ticks, 1420 with the view, 290 billboard draws (with a drawn column); key unchanged from the previous tick 5.9 %, 7-slot model: hits 17 (5.9 %), cold 273, A1 fallback 0
+  visible instances over the run: {"outside":0,"behind":3772,"side":394,"drawable":1309} (per view tick: outside 0.00, behind 2.66, side 0.28, drawable 0.92)
+  other keys unchanged from the previous tick: noOcclusion 5.9 %, phaseOnly 9.3 %, frameAndSize 39.3 %; why the A2 key changed: {"frame":31,"wpx":119,"position":97,"occlusion":0,"notDrawnBefore":26}
+  K0: billboards per tick mean 3,829 p95 22,345 max 74,964; whole run 5,437,512 T; split {"setup+gen":2413771,"rows":3023741}
+  A1: billboards per tick mean 4,655 p95 27,473 max 72,401; whole run 6,609,639 T; split {"scan+setup":1993456,"prepare":2833783,"copy":747480,"row tail":1034920}
+  A2: billboards per tick mean 5,006 p95 29,213 max 73,941; whole run 7,108,844 T; split {"scan+setup":2290962,"A2 key/slot":610659,"prepare":2902074,"copy":747480,"row tail":557669}
+  Q: billboards per tick mean 3,280 p95 15,329 max 59,745; whole run 4,657,529 T; split {"select+scan+setup":2516926,"stage":950218,"fold":18903,"copy":846032,"row tail":325450}
+  QM: billboards per tick mean 2,643 p95 11,425 max 37,103; whole run 3,752,442 T; split {"select+scan+setup":2442590,"copy":846032,"row tail":456817,"stage":3830,"fold":3173}
+  worst picture for K0: tick 997 (3 billboards [{"i":10,"hpx":4,"wpx":4,"tx":1430},{"i":2,"hpx":48,"wpx":55,"tx":250},{"i":3,"hpx":48,"wpx":55,"tx":160}]): K0 74,964, A1 72,401, A2 73,941, Q 59,745, QM 37,103
+
+vaults lose: 392 ticks, 361 with the view, 45 billboard draws (with a drawn column); key unchanged from the previous tick 4.4 %, 7-slot model: hits 2 (4.4 %), cold 43, A1 fallback 0
+  visible instances over the run: {"outside":0,"behind":684,"side":29,"drawable":276} (per view tick: outside 0.00, behind 1.89, side 0.08, drawable 0.76)
+  other keys unchanged from the previous tick: noOcclusion 4.4 %, phaseOnly 4.4 %, frameAndSize 40.0 %; why the A2 key changed: {"frame":3,"wpx":18,"position":16,"occlusion":0,"notDrawnBefore":6}
+  K0: billboards per tick mean 1,237 p95 6,019 max 30,972; whole run 446,649 T; split {"setup+gen":270687,"rows":175962}
+  A1: billboards per tick mean 1,831 p95 9,724 max 41,135; whole run 661,167 T; split {"scan+setup":244661,"prepare":259730,"copy":40600,"row tail":116176}
+  A2: billboards per tick mean 2,123 p95 11,949 max 42,853; whole run 766,494 T; split {"scan+setup":283098,"A2 key/slot":92548,"prepare":296888,"copy":40600,"row tail":53360}
+  Q: billboards per tick mean 1,820 p95 6,875 max 27,317; whole run 656,980 T; split {"select+scan+setup":502912,"stage":71699,"fold":5593,"copy":44484,"row tail":32292}
+  QM: billboards per tick mean 1,632 p95 6,183 max 18,816; whole run 589,004 T; split {"select+scan+setup":493402,"copy":44484,"row tail":44115,"stage":3830,"fold":3173}
+  worst picture for K0: tick 194 (2 billboards [{"i":12,"hpx":10,"wpx":11,"tx":612},{"i":5,"hpx":37,"wpx":42,"tx":335}]): K0 30,972, A1 41,135, A2 42,853, Q 22,555, QM 16,155
+
+Q bytes per frame (pre-shifted / one phase + a runtime shift):
+  16x16: colw4_n6 2,324 / 1,078 [4 7 11 18 29 48]; colw4_n8 2,960 / 1,390 [4 6 8 12 17 24 34 48]; colw4_n12 3,966 / 1,880 [4 5 6 8 10 12 16 19 24 31 38 48]; colw2_n6 4,772 / 1,078 [4 7 11 18 29 48]; colw2_n8 5,992 / 1,390 [4 6 8 12 17 24 34 48]; colw2_n12 8,240 / 1,974 [4 5 6 8 10 12 16 19 24 31 38 48]
+  32x32: colw4_n6 8,792 / 4,176 [8 13 22 36 58 96]; colw4_n8 10,842 / 5,278 [8 11 16 23 33 47 67 96]; colw4_n12 15,302 / 7,374 [8 10 13 16 20 25 31 39 49 61 77 96]; colw2_n6 18,000 / 4,292 [8 13 22 36 58 96]; colw2_n8 22,192 / 5,310 [8 11 16 23 33 47 67 96]; colw2_n12 31,442 / 7,468 [8 10 13 16 20 25 31 39 49 61 77 96]
+  8x8: colw4_n6 628 / 290 [2 3 5 9 15 24]; colw4_n8 792 / 388 [2 3 4 6 8 12 17 24]; colw4_n12 1,066 / 510 [2 3 4 5 6 8 10 12 15 19 24]; colw2_n6 1,332 / 308 [2 3 5 9 15 24]; colw2_n8 1,656 / 388 [2 3 4 6 8 12 17 24]; colw2_n12 2,282 / 510 [2 3 4 5 6 8 10 12 15 19 24]
+  Vaults (10 billboard frames: wraith 4, gem 2, potion 1, key 1, treasure 2): colw4_n6 16,456 / 7,628; colw4_n8 20,928 / 9,892; colw4_n12 28,060 / 13,320; colw2_n6 33,960 / 7,700; colw2_n8 42,576 / 9,892; colw2_n12 58,568 / 13,884
+wrote /home/charlie.day/Projects/Leap-IDE/arcade/spike/bb/approach-colw4.png (5944 x 548): columns = hpx 4 .. 48; rows = today, Q 6 heights, Q 8, Q 12; the bar under a Q cell is green when Q draws exactly hpx rows, red when it snapped
+wrote /home/charlie.day/Projects/Leap-IDE/arcade/spike/bb/approach-colw2.png (5944 x 548): columns = hpx 4 .. 48; rows = today, Q 6 heights, Q 8, Q 12; the bar under a Q cell is green when Q draws exactly hpx rows, red when it snapped
+proj: one 16x16 in view (2.3 cells), angle changed: 7,005 T (1 drawable of 1 visible)  bb_project.uw 1053, gen_mul.rl 746, RAY_MULC / RAY_MULS (generated multiplies) 726, bb_project.f0 540, gen_mul.one 486, bb_project 456, bb_project.far 313, mul8x16 282, ray_bb.c 237, bb_project.cset 200, gen_mul.bit 157, tm_cs 156, mul_p 152, recip_a 146, abs_hl 133, gen_mul.hd 132, tm_sn 132, gen_mul.sh 130, ray_bb.p 120, bb_project.fok 117, gen_mul.new 104, ray_bb.d 88, gen_mul.z 86, tm_sg 84, gen_mul 58, gen_mul.end 40, ray_bb 36, bb_sort 31, bb_project.ts 24, bb_project.cpos 19, bb_project.um 11, bb_draw 10
+proj: one 16x16 in view, angle unchanged (the multiplies kept): 5,158 T (1 drawable of 1 visible)  bb_project.uw 1053, RAY_MULC / RAY_MULS (generated multiplies) 726, bb_project.f0 540, bb_project 456, bb_project.far 313, mul8x16 282, ray_bb.c 237, bb_project.cset 200, tm_cs 156, mul_p 152, recip_a 146, abs_hl 133, tm_sn 132, ray_bb.p 120, bb_project.fok 117, gen_mul 92, ray_bb.d 88, tm_sg 84, ray_bb 36, bb_sort 31, bb_project.ts 24, bb_project.cpos 19, bb_project.um 11, bb_draw 10
+proj: three 16x16 in view, angle changed: 17,544 T (3 drawable of 3 visible)  bb_project.uw 3141, RAY_MULC / RAY_MULS (generated multiplies) 2178, bb_project.f0 1620, bb_project 1368, bb_project.far 939, mul8x16 846, gen_mul.rl 746, bb_project.cset 600, gen_mul.one 486, tm_cs 468, mul_p 456, recip_a 438, tm_sn 396, bb_sort.j 388, bb_tx 380, ray_bb.c 367, bb_project.fok 351, abs_hl 327, ray_bb.d 254, tm_sg 252, ray_bb.p 238, bb_sort.k 166, gen_mul.bit 157, gen_mul.hd 132, gen_mul.sh 130, bb_sort.place 119, gen_mul.new 104, gen_mul.z 86, bb_project.ts 72, gen_mul 58, bb_project.cpos 57, gen_mul.end 40, ray_bb 36, neg_hl 34, bb_project.um 33, bb_sort 32, bb_draw 30, bb_project.tn 19
+proj: three 16x16 in view, angle unchanged: 15,697 T (3 drawable of 3 visible)  bb_project.uw 3141, RAY_MULC / RAY_MULS (generated multiplies) 2178, bb_project.f0 1620, bb_project 1368, bb_project.far 939, mul8x16 846, bb_project.cset 600, tm_cs 468, mul_p 456, recip_a 438, tm_sn 396, bb_sort.j 388, bb_tx 380, ray_bb.c 367, bb_project.fok 351, abs_hl 327, ray_bb.d 254, tm_sg 252, ray_bb.p 238, bb_sort.k 166, bb_sort.place 119, gen_mul 92, bb_project.ts 72, bb_project.cpos 57, ray_bb 36, neg_hl 34, bb_project.um 33, bb_sort 32, bb_draw 30, bb_project.tn 19
+proj: one visible, behind the viewer (projected, rejected): 1,666 T (0 drawable of 1 visible)  bb_project 442, RAY_MULC / RAY_MULS (generated multiplies) 363, ray_bb.c 237, neg_hl 136, gen_mul 92, abs_hl 84, ray_bb.p 82, tm_cs 78, tm_sn 66, tm_sg 50, ray_bb 36
+proj: one visible, in front but off the view to the side (projected, rejected): 4,352 T (0 drawable of 1 visible)  RAY_MULC / RAY_MULS (generated multiplies) 726, bb_project.f0 540, bb_project.uw 505, bb_project 456, bb_project.far 313, mul8x16 282, ray_bb.c 237, tm_cs 156, mul_p 152, recip_a 146, abs_hl 141, neg_hl 136, tm_sn 132, bb_project.fok 117, gen_mul 92, tm_sg 92, ray_bb.p 82, ray_bb 36, bb_project.um 11
+proj: sixteen visible, eight in view, angle unchanged: 56,096 T (8 drawable of 16 visible)  RAY_MULC / RAY_MULS (generated multiplies) 8712, bb_project.uw 8330, bb_project 7184, bb_project.f0 4320, bb_sort.j 3633, bb_tx 2660, bb_project.far 2504, mul8x16 2256, tm_cs 1872, bb_project.cset 1600, tm_sn 1584, neg_hl 1224, mul_p 1216, ray_bb.c 1212, abs_hl 1182, recip_a 1168, tm_sg 1072, ray_bb.p 1005, bb_project.fok 916, ray_bb.d 669, bb_sort.k 581, bb_sort.place 404, bb_project.ts 192, bb_project.cpos 152, gen_mul 92, bb_project.fm 88, bb_draw 80, bb_project.tn 76, bb_project.um 44, ray_bb 36, bb_sort 32
+
+code bytes (ROM part / RAM part / shared bb_xc + mul8x16c): K0 575 / 97 / 102; A1 848 / 185 / 102; A2 1157 / 227 / 102; Q 716 / 143 / 102; QM 732 / 143 / 102
+
+OK: 0 mismatches
+
+real	2m10.113s
+user	1m21.073s
+sys	0m0.615s
