@@ -276,3 +276,81 @@ same exclusions as each game's own suite. `--old <ref>` compiles with another re
 run. "Before" = `arcade/spike/codegen/perf-before.json` (compiler of 9b7969c): Runner median 129,953 / 95th 145,626 / worst 160,866; Vaults win
 156,814 / 185,574, 8 over; Starfall 54,326 / 100,351; Blockfall 11,132 / 43,831 / 93,556. About 95 s. Starfall's script moved to
 `tests/arcade-starfall-script.mjs`; the runner / platformer / Vaults perf suites export their measurement (their output is unchanged).
+
+### As built: C2 (code generator: F1, F3, F6, F7, F8, then F9; 2026-11-12, not committed: a worktree diff on 7d20dd1)
+
+**Design.** All in `arcade-codegen.js`. Each fix has a switch, `opts.cg` {`cmpc`, `sel`, `for`, `at`, `band`, `arr`} (all on;
+`compile(text, {cg})` passes it), and the environment variable `ARCADE_CG_OFF=<list>` switches the same fixes off for tools that take no option
+(`ARCADE_CG_OFF=arr node tests/arcade-codegen-perf.mjs ...` is F1-F8 without F9).
+* **F1** `ltConst(T, label, wantLt)` is the sign-bias ADD; `compare` uses it after the comparisons with 0, with the edges decided at build time,
+  and the `= K` / `<> K` forms for 1, -1 and 2..255. The FOR limit test uses it when limit and step are constants.
+* **F3** as section 4, plus one more value form that keeps HL: a multiple of 256 is `LD A,H / XOR hi / OR L`. The last case has no `JP END`
+  when nothing follows it; no hidden slot is allocated.
+* **F6** as section 4 when the start is not a constant (INC HL, the overflow exit, F1's test at CHECK with HL = the variable on both ways in).
+  **With a constant start** nothing but the loop's own step reaches the limit test, so it is made on the value before the step: `INC HL /
+  LD (v),HL / DEC HL` then F1's `old < K`. The loop goes on exactly when the old value is below K; an old value of 32767 is never below K, which
+  is the overflow exit, so there is no separate exit (6 bytes and 20 T an iteration less). This is a different instruction sequence from the
+  one section 4 writes, with the same result for every value (the F6 test runs both against a model and the old code).
+* **F7**, **F8** as section 4 (F8 also where the BAND is compared with 0 by `=` / `<>`; a mask of 255 is `OR A`).
+* **F9** the routines are per array AND per direction: `lib$ar$<NAME>` exists when the array is read with a run-time index at two or more
+  places, `lib$aw$<NAME>` when it is written at two or more (one read and one write would cost more through two routines than inline). The
+  places are counted over the reachable code before generation; the count only chooses between two correct forms. The routine bodies are the
+  inline form's instructions in its order, so A, DE, HL and the flags at return are the inline form's and BC is kept.
+
+**Code bytes** (every example; "alone" = that fix on top of C1):
+
+| | runner | vaults | platformer | shooter | blockfall | breakout | bounce | total |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| before the pass | 9893 | 13513 | 9059 | 11376 | 11449 | 1505 | 465 | 57260 |
+| C1 (F2, F4, F5) | -539 | -507 | -467 | -255 | -344 | -52 | -13 | -2177 |
+| F1 `cmpc` alone | -383 | -476 | -368 | -320 | -281 | -81 | -38 | -1947 |
+| F3 `sel` alone | -171 | -162 | -145 | -49 | -68 | 0 | 0 | -595 |
+| F6 `for` alone | -56 | -136 | -78 | -155 | -318 | -40 | 0 | -783 |
+| F7 `at` alone | -21 | -28 | -13 | -11 | -28 | -10 | 0 | -111 |
+| F8 `band` alone | -10 | -66 | -40 | 0 | -5 | 0 | 0 | -121 |
+| F9 `arr` alone | -449 | -983 | -808 | -1435 | -503 | 0 | 0 | -4178 |
+| F1-F5 | -1093 | -1145 | -980 | -624 | -693 | -133 | -51 | -4719 |
+| F1-F5 and F9 | -1542 | -2133 | -1785 | -2057 | -1195 | -133 | -51 | -8896 |
+| F1-F8 | -1154 | -1322 | -1076 | -730 | -915 | -167 | -51 | -5415 |
+| everything | -1603 | -2308 | -1880 | -2155 | -1416 | -167 | -51 | -9580 |
+
+Section 5's targets are met: F1-F5 at least -911 / -983 / -4031 (Runner / Vaults / all); with F9 at least -1317 / -1921 / -7937. F6, F7 and F8
+each save bytes in at least one example and cost none anywhere. The code is now 47,680 bytes (was 57,260).
+
+**Time** (`node tests/arcade-codegen-perf.mjs --compare arcade/spike/codegen/perf-before.json`, T-states a tick against the compiler of 9b7969c;
+both runs: 7 runs compared, 0 breaches):
+
+| run | median, F1-F8 | median, all | 95th, all | worst, all | over budget |
+|---|--:|--:|--:|--:|--:|
+| runner / play-through | -884 | -496 | -302 | -276 | 0 (0) |
+| platformer / win twice | -881 | -422 | -244 | -323 | 0 (0) |
+| platformer / game over | -893 | -476 | -356 | -348 | 0 (0) |
+| vaults / win run | -846 | -113 | -89 | -3,415 | 8 (8) |
+| vaults / lose run | -641 | -70 | -221 | -3,432 | 6 (6) |
+| starfall / script | -3,882 | -1,930 | -1,189 | -551 | 6 (6) |
+| blockfall / script | -154 | -133 | -1,413 | -3,310 | 0 (0) |
+
+F1-F8 without F9 is faster on every run (median, 95th and worst all lower); with F9 every run is still faster than before the pass: F9 gives
+back about half of what F1-F8 won, less than section 5 allowed for.
+
+**Tests.** `tests/arcade-codegen-exhaustive.mjs` (29 checks, about a minute; it is NOT in `run-all.mjs` yet): on TSRun's CPU, a tiny program's
+PROC FRAME called directly. F1: 219 constants (the edges, bytes, 200 random) x every 16-bit x x 12 comparisons (six operators, both orders),
+comparisons as values and in AND / OR / NOT, the edges decided at build time. F3: five case lists and nested SELECTs for every selector,
+against a model and the old form. F6: 388 loops (the edges, empty loops, a limit of 32767, -32768 TO 32767, a body that sets the variable,
+EXIT FOR, seven steps), each with a constant and a variable start, new and old code against a model. F8: 16 masks x every x, six forms.
+F9: both routines of seven array sizes for every 16-bit index against the inline form built with the emitter (H L A F B C D E SP at return,
+the value / address, memory untouched) and 20,000 calls of a program on / off. Each section checks that the new form is what was compiled.
+`node tests/arcade-compile.mjs` 197 passed. `node arcade/tests/run-all.mjs --jobs 4`: 65 of 78 steps pass. Besides the 45 pinned checks of C1,
+the same ones, three more fail:
+* `tests/arcade-m3.mjs` "the PRINT code calls RT_AT with B = 1, C = 2 ...": the byte shape of F7 (pinned).
+* `tests/arcade-runner.mjs` "usage.banked: the four worlds ...": the game is smaller, so `level3` is no longer banked (section 7 names this
+  check). **Its negative control then throws** (`level3` is not among the banked assets) and the suite stops there; with that one block
+  skipped in a temporary copy, the other 98 checks pass (the play-through against the interpreter among them).
+* `tests/arcade-m4.mjs` "real runtime: pool game, 16 instances, joystick" (tick 129: AY_SHADOW[0] = 50, want 150). **Not a pinned byte and
+  not a difference in what the program does**: every variable, array, sprite and cell of the run equals the interpreter's; only the sound
+  model's refresh count differs. The harness reads V_FRAMES when RT_PLAY is entered, and RT_PLAY posts the effect some 30 instructions later:
+  with the faster FOR, that tick's `PLAY zap` is entered in refresh 385 and the effect starts one refresh later than the model expects.
+  The same compiled logic with 40 NOPs added to each loop iteration passes; with 150 NOPs two OTHER pool games fail the same way at tick 76.
+  So the check depends on where a PLAY falls relative to the frame interrupt. The harness needs a look in C3 (take the refresh when the
+  effect is posted, not when RT_PLAY is entered).
+Every differential suite (m6, m8 to m15), the platformer, Vaults, Starfall and Blockfall suites pass.

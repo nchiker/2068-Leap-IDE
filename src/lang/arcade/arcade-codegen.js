@@ -1181,6 +1181,39 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const hasPrologue = gameTimerAddrs.length > 0 || sceneTimerAddrs.some((l) => l.length > 0) || pressKeyInfo.size > 0 || pressJoyInfo.size > 0;
   if (errors.length) return fail();
 
+  // ── 4c. compiler size pass, the code generator's fixes (docs/ARCADE_COMPILER_SIZE_CONTRACT.md section 4): all on; `opts.cg` {cmpc, sel, for, at, band, arr} switches one off, and so does
+  // the environment variable ARCADE_CG_OFF (a list, e.g. "arr": for the measurements with tools that take no option, tests/arcade-codegen-perf.mjs) ──
+  const cgOff = new Set(String(globalThis.process?.env?.ARCADE_CG_OFF ?? '').split(',').filter(Boolean));
+  const CG = Object.fromEntries(['cmpc', 'sel', 'for', 'at', 'band', 'arr'].map((k) => [k, (opts.cg?.[k] ?? true) && !cgOff.has(k)]));
+  // F9: the 1-D arrays read (or written) with a run-time index at two or more places get one routine for it; counted here over the reachable code. The count only chooses between two
+  // correct forms (a place in code that is folded away, or compiled twice, makes the choice a little worse, never wrong): 'r' + address / 'w' + address -> places
+  const arSites = new Map();
+  if (CG.arr) {
+    const count = (mode, node) => {
+      const a = arrays.get(up(node.name));
+      if (!a || a.h !== undefined || fold(node.index) !== undefined) return;
+      arSites.set(mode + a.addr, (arSites.get(mode + a.addr) ?? 0) + 1);
+    };
+    const walk = (n) => {
+      if (Array.isArray(n)) { n.forEach(walk); return; }
+      if (!n || typeof n !== 'object') return;
+      if (n.type === 'Assign' && n.target?.type === 'Index') { count('w', n.target); walk(n.target.index); walk(n.target.index2); walk(n.value); return; }
+      if (n.type === 'Index') count('r', n);
+      for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
+    };
+    for (const c of reach) { useCtx(c.ctx); curC = c; walk(c.node); }
+    curC = null; useCtx(globalCtx);
+  }
+  const arUsed = new Map();                         // label -> {a, mode}: the routines to emit
+  /** The label of the access routine of a 1-D array for this mode, or null when the access stays inline (fewer than two places). */
+  const arRoutine = (a, mode) => {
+    if (!CG.arr || (arSites.get(mode + a.addr) ?? 0) < 2) return null;
+    let label = `lib$a${mode}$${a.name}`;
+    if (arUsed.has(label) && arUsed.get(label).a.addr !== a.addr) label += `$${a.addr.toString(16)}`;      // two scenes may each have an array of this name
+    arUsed.set(label, { a, mode });
+    return label;
+  };
+
   // ── 5. code ──
   const nSprites = sprites.length;
   const base = GAME_BASE + HEADER_BYTES + DESC_LEN * nSprites;
@@ -1264,7 +1297,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const deferred = [];                              // out-of-line stubs, emitted after the current callable's RET
   let arrSink = null;                               // hidden slot that absorbs a write to an index outside the array
   let arrZero = null;                               // hidden slot that is never written: what a 2-D read outside the array points at
-  const a2modes = new Map();                        // 2-D array name -> Set('r' | 'w'): the shared access routines to emit
+  const a2modes = new Map();                        // 2-D array key (its name, or name$address when two scenes each have one of that name) -> Set('r' | 'w'): the routines to emit
   const flushDeferred = () => { while (deferred.length) deferred.shift()(); };
   const arrayOf = (x) => {
     const a = arrays.get(up(x.name));
@@ -1305,11 +1338,15 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       return true;
     }
     operands(ix, jx);
-    (used.a2 ??= new Map()).set(a.name, a);
-    (a2modes.get(a.name) ?? a2modes.set(a.name, new Set()).get(a.name)).add(mode);
+    // the routines' key: the array's name, made unique by its address when another array of that name (in another scene) has routines too
+    used.a2 ??= new Map();
+    let key = a.name;
+    if (used.a2.has(key) && used.a2.get(key).addr !== a.addr) key = `${a.name}$${a.addr.toString(16)}`;
+    used.a2.set(key, a);
+    (a2modes.get(key) ?? a2modes.set(key, new Set()).get(key)).add(mode);
     arrZero ??= allocSlot('arr.zero');
     arrSink ??= allocSlot('arr.sink');
-    e.call(`lib$a2${mode}$${a.name}`);
+    e.call(`lib$a2${mode}$${key}`);
     return false;
   }
   function arrayRead(x) {
@@ -1327,6 +1364,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const c = fold(x.index);
     if (c !== undefined) { if (c >= 0 && c <= a.n) e.ld('hl', M(a.addr + 2 * c)); else e.ld('hl', 0); return; }
     gen(x.index);
+    const rr = arRoutine(a, 'r');
+    if (rr) { e.call(rr); return; }                 // F9: index in HL -> element in HL (0 outside the array); A, DE and the flags as the inline form leaves them
     const oob = e.newLabel('aoob'), back = e.newLabel('aback');
     arrayAddr(a, oob);
     e.ld('a', '(hl)'); e.inc('l'); e.ld('h', '(hl)'); e.ld('l', 'a');       // INC L: element addresses are even, so L cannot wrap
@@ -1360,12 +1399,16 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       return;
     }
     gen(target.index);
-    const oob = e.newLabel('aoob'), back = e.newLabel('aback');
-    arrayAddr(a, oob);
-    e.label(back);
     arrSink ??= allocSlot('arr.sink');
     const sink = arrSink;
-    deferred.push(() => { e.label(oob); e.ld('hl', sink); e.jp(back); });
+    const wr = arRoutine(a, 'w');
+    if (wr) e.call(wr);                             // F9: index in HL -> the element's address in HL (the sink slot outside the array)
+    else {
+      const oob = e.newLabel('aoob'), back = e.newLabel('aback');
+      arrayAddr(a, oob);
+      e.label(back);
+      deferred.push(() => { e.label(oob); e.ld('hl', sink); e.jp(back); });
+    }
     if (isSimple(value)) { loadSimple('de', value); }
     else { e.push('hl'); gen(value); e.pop('de'); e.ex('de', 'hl'); }
     e.ld('(hl)', 'e'); e.inc('l'); e.ld('(hl)', 'd');
@@ -1654,10 +1697,36 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.label(END);
   }
 
+  /** F1: HL = x, T a constant in -32767..32767 -> jump to `label` when (x < T, signed) == wantLt. (x XOR $8000) + (65536 - (T XOR $8000)) carries exactly when x >= T. Destroys HL; clobbers A, DE. */
+  function ltConst(T, label, wantLt) {
+    e.ld('a', 'h'); e.xor(0x80); e.ld('h', 'a'); e.ld('de', (0x10000 - ((T + 0x8000) & 0xFFFF)) & 0xFFFF); e.add('hl', 'de');
+    e.jp(wantLt ? 'nc' : 'c', label);
+  }
+  /**
+   * F8: x is BAND(y, k) with one constant: jump to `label` when (BAND(y, k) <> 0) == sense, testing only the byte k has bits in. Returns false (nothing emitted) when x is not that,
+   * or k has bits in both bytes. k = 0: never true (y is still evaluated for its effects).
+   */
+  function bandBranch(x, label, sense) {
+    if (!CG.band || x.type !== 'Func' || x.name !== 'BAND') return false;
+    let [l, r] = x.args;
+    if (fold(l) !== undefined && fold(r) === undefined) [l, r] = [r, l];
+    const k = fold(r);
+    if (k === undefined || fold(l) !== undefined) return false;
+    const lo = k & 255, hi = (k >> 8) & 255;
+    if (!lo && !hi) { if (!isSimple(l)) gen(l); if (!sense) e.jp(label); return true; }
+    if (lo && hi) return false;
+    gen(l);
+    e.ld('a', lo ? 'l' : 'h');
+    if ((lo || hi) === 255) e.or('a'); else e.and(lo || hi);
+    e.jp(sense ? 'nz' : 'z', label);
+    return true;
+  }
+
   // ── conditions: jump to `label` when the truth of x equals `sense`, else fall through ──
   function branch(x, label, sense) {
     const c = fold(x);
     if (c !== undefined) { if ((c !== 0) === sense) e.jp(label); return; }
+    if (bandBranch(x, label, sense)) return;
     if (x.type === 'Unary' && x.op === 'NOT') { branch(x.operand, label, !sense); return; }
     if (x.type === 'Binary') {
       const op = x.op;
@@ -1708,6 +1777,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       const other = rc === 0 ? l : r;
       const o = rc === 0 ? op : ({ '<': '>', '>': '<', '<=': '>=', '>=': '<=', '=': '=', '<>': '<>' })[op];   // other <o> 0
       if (o === '=' || o === '<>') {
+        if (bandBranch(other, label, (o === '<>') === sense)) return;
         gen(other); e.ld('a', 'h'); e.or('l');
         e.jp((o === '=') === sense ? 'z' : 'nz', label);
         return;
@@ -1715,6 +1785,32 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       if (o === '<' || o === '>=') {
         gen(other); e.bit(7, 'h');
         e.jp((o === '<') === sense ? 'nz' : 'z', label);
+        return;
+      }
+    }
+    if (CG.cmpc && (rc !== undefined || lc !== undefined)) {      // F1: other <o> K, K a constant (the folded 16-bit value)
+      const other = rc !== undefined ? l : r, K = w16(rc !== undefined ? rc : lc);
+      const o = rc !== undefined ? op : ({ '<': '>', '>': '<', '<=': '>=', '>=': '<=', '=': '=', '<>': '<>' })[op];
+      if (o === '=' || o === '<>') {
+        if (K === -1 || (K >= 1 && K <= 255)) {
+          gen(other);
+          if (K === 1) { e.dec('hl'); e.ld('a', 'h'); e.or('l'); }                  // (HL is destroyed)
+          else if (K === -1) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }            // both bytes $FF
+          else { e.ld('a', 'l'); e.xor(K); e.or('h'); }
+          e.jp((o === '=') === sense ? 'z' : 'nz', label);
+          return;
+        }
+      } else {
+        // other < T (wantLt) or other >= T: `> K` is `>= K + 1`, `<= K` is `< K + 1`
+        const wantLt = o === '<' || o === '<=', T = (o === '>' || o === '<=') ? K + 1 : K;
+        if (T > 32767 || T === -32768) {            // decided here: other < 32768 always, other < -32768 never (an ADD of 0 would never carry)
+          if (!isSimple(other)) gen(other);
+          if ((wantLt ? T > 32767 : T === -32768) === sense) e.jp(label);
+          return;
+        }
+        gen(other);
+        // jump when (other < T) == (wantLt == sense)
+        ltConst(T, label, wantLt === sense);
         return;
       }
     }
@@ -1757,7 +1853,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   function setCursor(row, col) {
     const rc = fold(row), cc = fold(col);
     const clampK = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
-    if (rc !== undefined && cc !== undefined) { e.ld('b', clampK(rc, 23)); e.ld('c', clampK(cc, 31)); }
+    if (rc !== undefined && cc !== undefined) { if (CG.at) e.ld('bc', (clampK(rc, 23) << 8) | clampK(cc, 31)); else { e.ld('b', clampK(rc, 23)); e.ld('c', clampK(cc, 31)); } }      // F7
     else if (rc !== undefined) { gen(col); e.ld('a', 31); used.clamp = true; e.call('lib$clamp'); e.ld('c', 'a'); e.ld('b', clampK(rc, 23)); }
     else if (cc !== undefined) { gen(row); e.ld('a', 23); used.clamp = true; e.call('lib$clamp'); e.ld('b', 'a'); e.ld('c', clampK(cc, 31)); }
     else {
@@ -2167,6 +2263,27 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     if (stepSlot !== null) { gen(s.step); e.ld(M(stepSlot), 'hl'); }
     if (fromHeld) e.pop('hl'); else gen(s.from);
     e.ld(M(v), 'hl');
+    if (CG.for && limSlot === null && stepConst === 1) {          // F6: a constant limit K and STEP 1
+      const K = w16(limConst), from = fold(s.from);
+      // the first test: decided here when the start is a constant too (start > K: the body is jumped over), else made at CHECK with the start still in HL
+      if (from === undefined) e.jp(CHECK); else if (from > K) e.jp(END);
+      e.label(BODY);
+      loops.push({ kind: 'FOR', end: END });
+      block(s.body);
+      loops.pop();
+      e.ld('hl', M(v)); e.inc('hl'); e.ld(M(v), 'hl');
+      if (from === undefined) {
+        e.ld('a', 'h'); e.xor(0x80); e.or('l'); e.jp('z', END);  // the overflow exit: 32767 + 1 (the variable keeps the wrapped value, as before)
+        e.label(CHECK);                                           // HL = the variable on both ways in
+        if (K === 32767) e.jp(BODY); else ltConst(K + 1, BODY, true);
+      } else {
+        // nothing else comes to the test, so it is made on the value before the step: again exactly when old < K (old = 32767 is never < K: that is the overflow exit)
+        e.dec('hl');
+        if (K !== -32768) ltConst(K, BODY, true);
+      }
+      e.label(END);
+      return;
+    }
     e.jp(CHECK);
     e.label(BODY);
     loops.push({ kind: 'FOR', end: END });
@@ -2187,6 +2304,10 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       e.jp(END);
       e.label(NEG);
       e.ld('hl', M(v)); loadLim('de'); lessBranch(BODY, false);   // v >= limit
+    } else if (CG.cmpc && limSlot === null) {                     // F1: constant limit K and constant step: v <= K (step >= 0) or v >= K
+      const K = w16(limConst);
+      if (stepConst >= 0 ? K === 32767 : K === -32768) e.jp(BODY);        // always true (the overflow exit above ends the loop)
+      else { e.ld('hl', M(v)); if (stepConst >= 0) ltConst(K + 1, BODY, true); else ltConst(K, BODY, false); }
     } else if (stepConst >= 0) {
       loadLim('hl'); e.ld('de', M(v)); lessBranch(BODY, false);
     } else {
@@ -2196,6 +2317,30 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   }
 
   function selectStmt(s) {
+    if (CG.sel && s.cases.every((c) => c.values.every((v) => fold(v) !== undefined))) {      // F3: every case value a constant: the selector stays in HL, every test keeps it
+      const END = e.newLabel('esel');
+      gen(s.expr);
+      s.cases.forEach((c, ci) => {
+        const BODY = e.newLabel('cbody'), NEXT = e.newLabel('cnext');
+        c.values.forEach((val, i) => {
+          mark(val);
+          const k = fold(val) & 0xFFFF, lo = k & 255, hi = k >> 8;
+          if (k === 0) { e.ld('a', 'h'); e.or('l'); }
+          else if (k === 0xFFFF) { e.ld('a', 'l'); e.and('h'); e.inc('a'); }
+          else if (hi === 0) { e.ld('a', 'l'); e.xor(lo); e.or('h'); }
+          else if (lo === 0) { e.ld('a', 'h'); e.xor(hi); e.or('l'); }
+          else { const t = e.newLabel('cv'); e.ld('a', 'l'); e.xor(lo); e.jr('nz', t); e.ld('a', 'h'); e.xor(hi); e.label(t); }
+          if (i < c.values.length - 1) e.jp('z', BODY); else e.jp('nz', NEXT);
+        });
+        e.label(BODY);
+        block(c.body);
+        if (ci < s.cases.length - 1 || s.else) e.jp(END);
+        e.label(NEXT);
+      });
+      if (s.else) block(s.else.body);
+      e.label(END);
+      return;
+    }
     const sel = allocSlot('select');
     const END = e.newLabel('esel');
     gen(s.expr); e.ld(M(sel), 'hl');
@@ -2336,6 +2481,15 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       curC = null;
     }
     useCtx(globalCtx);
+    for (const [label, { a, mode }] of arUsed) {    // F9: the inline form's instructions, in its order, so the registers and flags at return are the inline form's
+      const lim = a.n + 1, bad = `${label}$o`;
+      e.label(label);
+      e.ld('a', 'l'); e.sub(lim & 255); e.ld('a', 'h'); e.sbc('a', lim >> 8); e.jp('nc', bad);
+      e.add('hl', 'hl'); e.ld('de', a.addr & 0xFFFF); e.add('hl', 'de');
+      if (mode === 'r') { e.ld('a', '(hl)'); e.inc('l'); e.ld('h', '(hl)'); e.ld('l', 'a'); }
+      e.ret();
+      e.label(bad); e.ld('hl', mode === 'r' ? 0 : arrSink); e.ret();
+    }
     if (used.bit) {
       // HL = v, DE = n -> HL = bit n of v (0 if n is outside 0..15)
       const z = 'lib$bit$z', sh = 'lib$bit$sh';
@@ -2673,6 +2827,7 @@ const emptyBank = () => ({ banked: [], keys: new Set(), at: new Map(), bytes: 0 
  * override `banked` go first, then the `auto` ones largest first (ties: declaration order), one at a time, until the mapped part fits; `mapped` ones never move. The code is generated again
  * for the placement (the map records leave the code; the map table points into the window), and checked: one more asset is banked when the mapped part still does not fit.
  * `opts.bankAll` (tests) banks every asset.
+ * `opts.cg` {cmpc, sel, for, at, band, arr} switches the code generator's fixes of the compiler size pass (F1, F3, F6, F7, F8, F9; all on by default) off one by one.
  * `opts.emit` {hl, ret, jr} switches the emitter's optimisations (compiler size pass F4 / F5 / F2; all on by default) off one by one, for measurements and tests. The result has a
  * non-enumerable `emitter` (the Emitter of the code): `gen.emitter.listing()` and `gen.emitter.asm()` give what was emitted, for the listing diff tool and the sjasmplus cross-check.
  */

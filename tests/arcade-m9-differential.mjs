@@ -25,7 +25,7 @@ import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
-import { real, compileReal, runReal, interpFor, diffRecords, errText, s16, hex, ROOT, M_ } from './arcade-m5-harness.mjs';
+import { real, compileReal, runReal, interpFor, diffRecords, differential, errText, s16, hex, ROOT, M_ } from './arcade-m5-harness.mjs';
 import { diffV3 } from './arcade-m6-common.mjs';
 import { diffV4 } from './arcade-m8-common.mjs';
 import { ASSETS, HAND, genProgram, genV3, genV4, sceneKeys } from './arcade-m9-common.mjs';
@@ -418,6 +418,37 @@ console.log('\n4. v4: VIEW3D (SPR_TAB entries, the map array, the pose)');
     check_(`v4 survival: ${nSw} switches into dead seen on the machine: every instance hidden at (0, 0) frame 0`, nSw >= 3 && badSp === '', badSp || `${nSw} switches`);
     check_('v4 survival: ... and the 32 x 32 map array (SETWALL edits) is exactly what it was before the switch' + (R.rt.symbols.V_POSE !== undefined ? ', and the pose' : ' (runtime.json has no V_POSE: the pose is checked against the interpreter only)'), badWin === '', badWin);
   }
+}
+
+console.log('\n5. v2: two scenes each with a 2-D array of the same name (each gets its own access routines; found 2026-11-12: they shared one, the second array\'s)');
+{
+  const src = `DIM t
+SCENE one
+  DIM g(3, 3), i, j, s
+  PROC INIT():
+    FOR i = 0 TO 3 : FOR j = 0 TO 3 : g(i, j) = i * 10 + j : NEXT j : NEXT i
+  ENDP
+  PROC FRAME():
+    s = 0
+    FOR i = 0 TO 3 : FOR j = 0 TO 3 : s = s + g(i, j) : NEXT j : NEXT i
+    t = s
+    ENTER two
+  ENDP
+ENDSCENE
+SCENE two
+  DIM a, b, c, d, e, g(5, 2), i, j, s
+  PROC INIT():
+    FOR i = 0 TO 5 : FOR j = 0 TO 2 : g(i, j) = 100 + i * 3 + j : NEXT j : NEXT i
+  ENDP
+  PROC FRAME():
+    s = 0
+    FOR i = 0 TO 5 : FOR j = 0 TO 2 : s = s + g(i, j) : NEXT j : NEXT i
+    t = s
+  ENDP
+ENDSCENE
+`;
+  const r = differential(src, { sprites: {} }, { ticks: 4 });
+  check_('v2: scene one sums its own g(3, 3), scene two its own g(5, 2): the real runtime equals the interpreter on every tick', r.ok, r.detail);
 }
 
 console.log(`\n${passed} passed, ${failed} failed${skipped ? ` (${skipped} skipped)` : ''}`);
