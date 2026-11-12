@@ -264,6 +264,10 @@ differential, game play-through or interpreter comparison fails.
 **Tool.** `arcade/tools/listing-diff.mjs` (the spike's `instr.mjs`, moved): per example, each source line's code before (a git ref read with
 `git archive`, or another directory) and after, and a check that the per-line differences add up to the change in code bytes.
 
+**C1 tick costs (main thread, `tests/arcade-codegen-perf.mjs --compare`, 2026-11-12):** faster on every run. Median / 95th / worst, T:
+Runner -369 / -384 / -512; platformer win -302 / -434 / -439, over -304 / -269 / -199; Vaults win -304 / -282 / -762 (8 over, as before), lose
+-202 / -266 / -762; Starfall -416 / -542 / -204; Blockfall -36 / -207 / -798. No new tick over budget.
+
 ### As built: the perf tool (C4, 2026-11-12)
 
 `tests/arcade-codegen-perf.mjs` measures the seven recorded runs of the five games (Runner; platformer win twice and game over; Vaults win and
