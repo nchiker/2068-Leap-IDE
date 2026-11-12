@@ -107,6 +107,15 @@ export function usageLines(u) {
   return lines;
 }
 
+/**
+ * Every fix of the compiler size pass switched off (docs/ARCADE_COMPILER_SIZE_CONTRACT.md): `compile(text, {...opts, ...CODEGEN_OFF})` gives exactly the bytes of the
+ * compiler before the pass (checked on 27 builds of the examples and fixtures against commit 9b7969c). Identity checks against older compilers use it.
+ */
+export const CODEGEN_OFF = Object.freeze({
+  emit: Object.freeze({ hl: false, ret: false, jr: false }),
+  cg: Object.freeze({ cmpc: false, sel: false, for: false, at: false, band: false, arr: false }),
+});
+
 export function compile(text, { runtime, image, assets, scenes, bankAll = false, emit, cg } = {}) {
   const out = { dck: null, memory: null, map: null, errors: [], warnings: [], usage: null };
   const sort = (l) => l.sort((a, b) => a.line - b.line || a.col - b.col);
