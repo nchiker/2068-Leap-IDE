@@ -4,6 +4,9 @@ Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured tar
 * **C1 DONE**, reviewed and verified (3419caa): emitter F2 / F4 / F5, all 7 examples -2,177 bytes; 45 pinned-byte checks fail as expected (C3).
 * **C4 perf tool DONE** (e278b91).
 * **C2 in progress** (14:20): the same Fable agent, worktree `.../scratchpad/wt-c1` reset to 7d20dd1; checkpoints in `arcade/spike/codegen/wip-c2.patch`.
+* **C3 tool in progress** (14:35): a Sonnet agent adds `regen-baselines.mjs --accept-codegen-change <ref>` (behaviour-guarded, 300 ticks on the real
+  runtime) and removes `tests/arcade-m11-compiler.mjs` section 7's /tmp dependency; checkpoints in `arcade/spike/codegen/wip-c3tool.patch`.
+* C1 alone measured faster on every run (contract section 13).
 * Then: C2 (F1, F3, F6, F7, F8, then F9), C3, C4, C5, C6 as the contract's section 10.
 
 ---
