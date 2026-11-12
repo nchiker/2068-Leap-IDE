@@ -5,50 +5,71 @@
    "src": "arcade/examples/breakout.arc",
    "assets": "arcade/examples/breakout.assets.json",
    "runtime": 2,
-   "bytes": 1505,
-   "sha256": "01c92f85ae997cbe5ab289de7e17de5769c303942c081772fc44b5027445320a"
+   "bytes": 1338,
+   "sha256": "1ad5841268ae8945888d99b9c84ff98d3b1165d6a319f7e83fe2705f514ff171",
+   "prevSha256": "01c92f85ae997cbe5ab289de7e17de5769c303942c081772fc44b5027445320a",
+   "prevBytes": 1505,
+   "acceptedFrom": "9b7969c"
   },
   {
    "src": "arcade/examples/bounce.arc",
    "assets": "arcade/examples/bounce.assets.json",
    "runtime": 2,
-   "bytes": 465,
-   "sha256": "f044d34d7423747b353e98c70511a501c9567175a63620e7e20d946f135e451f"
+   "bytes": 414,
+   "sha256": "87f576ea599f7c3aace153ef0487614192e171be4ccf35d6626d189826f0e9fd",
+   "prevSha256": "f044d34d7423747b353e98c70511a501c9567175a63620e7e20d946f135e451f",
+   "prevBytes": 465,
+   "acceptedFrom": "9b7969c"
   },
   {
-   "src":"arcade/tests/fixtures/shooter-v1.arc",
+   "src": "arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/examples/shooter.assets.json",
    "runtime": 2,
-   "bytes": 8986,
-   "sha256": "c4b1234a4684fa1310745a6c824fbfbf87e04cfa51f1c1d3c24a0998a72572b7"
+   "bytes": 6472,
+   "sha256": "c6e0f7acda42a971559f440267615715366c8207af8adc0f03dbaa095f9520cc",
+   "prevSha256": "c4b1234a4684fa1310745a6c824fbfbf87e04cfa51f1c1d3c24a0998a72572b7",
+   "prevBytes": 8986,
+   "acceptedFrom": "9b7969c"
   },
   {
    "src": "arcade/tests/fixtures/blockfall-v0.arc",
    "assets": "arcade/tests/fixtures/blockfall-v0.assets.json",
    "runtime": 2,
-   "bytes": 7848,
-   "sha256": "a0623fae338cd0ae5048dc8944781649bf8b133135f782f39e0256d39b937155"
+   "bytes": 6341,
+   "sha256": "7be098d84160654c819798fabaf1f422c73100f8acf1f7bdccd19923ef7e7c00",
+   "prevSha256": "a0623fae338cd0ae5048dc8944781649bf8b133135f782f39e0256d39b937155",
+   "prevBytes": 7848,
+   "acceptedFrom": "9b7969c"
   },
   {
    "src": "arcade/tests/fixtures/breakout-v1.arc",
    "assets": "arcade/tests/fixtures/breakout-v1.assets.json",
    "runtime": 2,
-   "bytes": 1475,
-   "sha256": "289af7be77ecc015f6b7993aca298f8cad313aa70b8465dc258e0a73c2156b99"
+   "bytes": 1311,
+   "sha256": "8ffc88e283effab7134b0bea7563bfc80987bb3e1544fcc43cf6d90558cd935d",
+   "prevSha256": "289af7be77ecc015f6b7993aca298f8cad313aa70b8465dc258e0a73c2156b99",
+   "prevBytes": 1475,
+   "acceptedFrom": "9b7969c"
   },
   {
    "src": "arcade/tests/fixtures/breakout-v1.arc",
    "assets": "arcade/tests/fixtures/breakout-v1.assets.json",
    "runtime": 1,
-   "bytes": 1472,
-   "sha256": "3e0860f7b3f0b0249c2ca6676e26cd1d040ba3e36c7d184ed205f90a2cae781b"
+   "bytes": 1308,
+   "sha256": "d87503555708706f02b667a65bbebbf4457c1b64c2322a54bc7907ead60db20e",
+   "prevSha256": "3e0860f7b3f0b0249c2ca6676e26cd1d040ba3e36c7d184ed205f90a2cae781b",
+   "prevBytes": 1472,
+   "acceptedFrom": "9b7969c"
   },
   {
    "src": "arcade/examples/bounce-static.arc",
    "assets": "arcade/examples/bounce.assets.json",
    "runtime": 0,
-   "bytes": 44,
-   "sha256": "2f07adebd905bbe2051e86cdc8b62325505b108a7feb5eed54308e81bfdbafc0"
+   "bytes": 42,
+   "sha256": "c6cfca3aedce918d0698510d3a32983e2b3fe1739b10aa0cfb6b105b7dc8e87b",
+   "prevSha256": "2f07adebd905bbe2051e86cdc8b62325505b108a7feb5eed54308e81bfdbafc0",
+   "prevBytes": 44,
+   "acceptedFrom": "9b7969c"
   }
  ]
 }

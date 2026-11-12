@@ -11,12 +11,15 @@
 //   node arcade/tools/regen-baselines.mjs --accept-codegen-change <git ref>
 //     ACCEPT A CODE-GENERATION CHANGE (docs/ARCADE_COMPILER_SIZE_CONTRACT.md sections 3, 7 and 8): the new compiler gives different bytes on purpose, and
 //     the guard is BEHAVIOUR instead of bytes.  Every program of the three baselines is compiled by the OLD compiler (src/ of <ref>) and by the NEW one
-//     (the working tree) against the same real runtime (arcade/build/v<n>, n = the record's `runtime`; batch1's v0 / v1 records run on v2, see below), and
-//     both games are run on the REAL runtime (the cartridge on a stock TS2068 in TSRun, tests/arcade-m5-harness.mjs) for --ticks ticks (default 300) with
-//     the SAME input.  EVERY tick's state is compared, old against new: variables and arrays (by name, and the slot layout -- the address of every variable
-//     and array -- must be the same: only code may change), sprites (visible, x, y), the 768 cells and 768 attributes, cursor, text attribute, border,
-//     V_SFX_ACTIVE, the AY shadow R0..R10 and the chip's R0..R10 (the three SOUND fields only on a tick whose sample fell in the same refresh for the old and the
-//     new game: a faster game may finish a heavy tick one refresh earlier, and the sound player has then run one refresh less at the sample; at most 5% of the ticks).  Only if every program matches on every tick are the records rewritten: the new hashes /
+//     (the working tree) against the same real runtime (arcade/build/v<n>, n = the record's `runtime`; batch1's v0 / v1 records run on v2, see below).
+//     BOTH builds are run on the REAL runtime (the cartridge on a stock TS2068 in TSRun, tests/arcade-m5-harness.mjs) for --ticks ticks (default 300) with the
+//     SAME input, and EACH must equal the reference interpreter driven by THAT run's own recorded clock (the differential suites' comparison: `interpFor(src,
+//     assets, got)` gives the interpreter the run's refreshes, its RANDOMISE seeds and its sound calls' refreshes; `diffRecords` compares, every tick, the
+//     variables and arrays by name, the sprites, the 768 cells and attributes, cursor, text attribute and border, and, for a game with songs, the sound
+//     (compareSoundRun: V_SFX_ACTIVE, AY shadow, chip).  Why not old against new: a faster build ends a tick in another refresh and a game that seeds RND from the
+//     frame counter (blockfall-v1) then plays other pieces; that is timing, not behaviour, and the interpreter is told the clock.)  Old against new directly, and
+//     the slot layout (hidden slots may go: only named variables are compared), are printed as INFO lines.  Only if both builds of every program equal the
+//     interpreter on every tick are the records rewritten: the new hashes /
 //     byte counts go in, the old ones are kept as prevSha256 / prevBytes (batch1) or prevDckSha256 / prevAreaSha256 / prevBytes / prevDckBytes (batch2 / 3)
 //     and `acceptedFrom` says the ref.  If any program differs the tool prints where (program, tick, first field), rewrites nothing and exits 1.
 //     Condition (a) of the contract -- the full `node arcade/tests/run-all.mjs` and the game suites pass with the new compiler except the hash checks --
@@ -105,10 +108,8 @@ try {
 
   // ---- state comparison ----
   const KEYS = ['vars', 'arrays', 'sprites', 'cells', 'attrs', 'cursor', 'textAttr', 'border', 'sfxActive', 'ay', 'chip'];
-  const SOUND = ['sfxActive', 'ay', 'chip'];
-  function firstDiff(a, b, skipSound = false) {
+  function firstDiff(a, b) {
     for (const k of KEYS) {
-      if (skipSound && SOUND.includes(k)) continue;
       const x = a[k], y = b[k];
       if (x?.buffer || y?.buffer) { for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return `${k}[${i}] (row ${(i / 32) | 0}, col ${i % 32}): old ${x[i]}, new ${y[i]}`; continue; }
       const jx = JSON.stringify(x), jy = JSON.stringify(y);
@@ -161,25 +162,33 @@ try {
         const rb = f === 'batch1' ? newCompile(src, { runtime: RR.rt, image: RR.img, assets }) : b;
         if (ra.errors.length || rb.errors.length) { console.log('compile errors on the real runtime', label, ra.errors[0]?.message, '|', rb.errors[0]?.message); bad++; continue; }
         const inp = inputFor(src, TICKS);
-        const ga = H.runReal(ra, { ticks: TICKS, stick: inp.stick, keys: inp.keys, R: RR }), gb = H.runReal(rb, { ticks: TICKS, stick: inp.stick, keys: inp.keys, R: RR });
+        const keysI = (t, c) => inp.keys(t).includes(c), hasSongs = /^\s*MUSIC\s/im.test(src);
+        // THE GUARD: each build, run on the real runtime with the input, must equal the reference interpreter driven by THAT run's own recorded clock (the refreshes at which the run
+        // sampled, the RANDOMISE seeds it took, the sound calls' refreshes): the differential suites' comparison (tests/arcade-m5-harness.mjs interpFor + diffRecords; for a game with
+        // songs compareSoundRun).  A faster build may finish a tick in another refresh and seed RND from another frame counter: that is timing, and the interpreter is told it.
+        const verify = (res) => {
+          const got = H.runReal(res, { ticks: TICKS, stick: inp.stick, keys: inp.keys, R: RR });
+          if (got.error) return { got, d: 'the run failed: ' + got.error };
+          const mk = (n, extra = {}) => H.interpFor(src, assets, got, { version: RR.rt.version })(n, { keys: keysI, stick: inp.stick, ...extra });
+          let want;
+          try { want = mk(TICKS); } catch (err) { return { got, d: 'the interpreter failed: ' + err.message }; }
+          // (sprites only on v2: v3's SPR_TAB holds window-relative positions, not comparable with the interpreter's records)
+          let d = H.diffRecords(got.ticks, want, { sprites: RR.rt.version === 2, straddle: got.straddle });
+          if (!d && hasSongs) { const sw = H.compareSoundRun(got, TICKS, (clock, n) => mk(n, { clock }), []); if (sw.d) d = 'sound: ' + sw.d; }
+          return { got, d };
+        };
+        const va = verify(ra), vb = verify(rb), ga = va.got, gb = vb.got;
+        const verdict = (va.d ? `the OLD build differs from the interpreter: ${va.d}` : '') + (va.d && vb.d ? ' | ' : '') + (vb.d ? `the NEW build differs from the interpreter: ${vb.d}` : '') || null;
+        // INFO only: the two builds against each other (they may differ in timing: RANDOMISE from the frame counter, a tick ending in another refresh) and the slot layout (hidden slots)
+        let direct = 'not compared';
+        if (!ga.error && !gb.error) { direct = 'identical on every tick'; for (let i = 0; i < TICKS; i++) { const dd = firstDiff(ga.ticks[i], gb.ticks[i]); if (dd) { direct = `first difference at tick ${i + 1}: ${dd}`; break; } } }
         const layout = same(ra.map.vars, rb.map.vars) && same(ra.map.arrays ?? {}, rb.map.arrays ?? {});
-        let verdict = null, skippedSound = 0;
-        if (ga.error || gb.error) verdict = `the run failed: old ${ga.error ?? 'ok'}, new ${gb.error ?? 'ok'}`;
-        else if (!layout) verdict = 'the slot layout (variable / array addresses) differs between the old and the new compiler';
-        else for (let i = 0; i < TICKS; i++) {
-          // The sound state is sampled at the end of the refresh in which the tick completed.  A faster game can finish a heavy tick one refresh earlier than the old one did (V_FRAMES then
-          // differs between the two samples, S[k]): the effect player has run one refresh more or less at that sample, which is timing, not behaviour.  Everything else is still compared on
-          // that tick, the sound again from the next tick on (the runs have to agree there), and the number of such ticks is limited and reported.
-          const skip = ga.S[i + 1] !== gb.S[i + 1];
-          if (skip) skippedSound++;
-          const d = firstDiff(ga.ticks[i], gb.ticks[i], skip); if (d) { verdict = `tick ${i + 1}: ${d}`; break; }
-        }
-        if (!verdict && skippedSound > Math.ceil(TICKS / 20)) verdict = `the two runs were at different refreshes on ${skippedSound} ticks (more than 5%): the timing differs too much to compare the sound`;
         let mv = 0;
-        if (!ga.error) for (let i = 1; i < ga.ticks.length; i++) if (firstDiff(ga.ticks[i - 1], ga.ticks[i])) mv++;
-        const tOld = ga.ticks.length, rep = `${label}: ${verdict ? 'DIFFERS at ' + verdict : `${tOld} ticks identical`}; state moved on ${mv}/${Math.max(tOld - 1, 0)} ticks${skippedSound ? `; sound not compared on ${skippedSound} tick(s) where the sample fell one refresh apart` : ''}; old code ${ra.gen.code.length} B, new ${rb.gen.code.length} B`;
+        if (!gb.error) for (let i = 1; i < gb.ticks.length; i++) if (firstDiff(gb.ticks[i - 1], gb.ticks[i])) mv++;
+        const tOld = gb.ticks.length, rep = `${label}: ${verdict ?? `old and new both equal the interpreter on ${tOld} ticks`}; state moved on ${mv}/${Math.max(tOld - 1, 0)} ticks; old code ${ra.gen.code.length} B, new ${rb.gen.code.length} B`;
         rows.push(rep);
         console.log((verdict ? 'FAIL ' : 'ok   ') + rep);
+        console.log(`  info: old against new directly: ${direct}; slot layout ${layout ? 'identical' : 'differs (hidden slots), named variables and arrays compared by name'}`);
         if (verdict) { bad++; continue; }
         if (mv === 0) console.log(`warning: ${label}: the state never changed in ${TICKS} ticks (the input did not move this game)`);
         else moved++;
@@ -199,7 +208,7 @@ try {
   }
   if (accept && !bad && !DRY) for (const f of files) write(f);
   if (accept) {
-    console.log(`\n${programs} program(s) from ${files.join(', ')}: ${bad ? bad + ' FAILED' : `all ran ${TICKS} ticks on the real runtime with the same state on every tick (${moved} of them with a moving state); ${changed} record(s) changed`}`);
+    console.log(`\n${programs} program(s) from ${files.join(', ')}: ${bad ? bad + ' FAILED' : `old and new builds of all ran ${TICKS} ticks on the real runtime equal to the interpreter on every tick (${moved} of them with a moving state); ${changed} record(s) changed`}`);
     if (bad) console.log('nothing was rewritten');
     else if (DRY) console.log('dry run: nothing was written');
     else console.log(`records rewritten in ${FIX} (prev* fields keep the old hashes, acceptedFrom = ${ref})`);
