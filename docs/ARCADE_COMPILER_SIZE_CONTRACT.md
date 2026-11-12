@@ -129,7 +129,7 @@ its effects) and `BXOR(x, k) = 0` means x = k (both bytes: left as it is).
 * Bytes with F9: Runner at least -1,317, Vaults -1,921, all 7 examples -7,937 (the re-measured prototype F1-F4 + F9 within 5 %).
 * Time (F9 makes it about break-even, owner's choice): for every recorded run of Leap Runner, the platformer, Vaults, Starfall and Blockfall, the
   **median tick is not higher** than before, the **worst and 95th percentile ticks rise by at most 0.25 %** of the budget (440 T at 3 refreshes,
-  587 T at 4), **no gameplay tick that was within budget goes over it** (Vaults stays at 8 ticks over, the others at 0), and F1-F8 without F9 is
+  586 T at 4, 293 T for Blockfall's 2; rounded down), **no gameplay tick that was within budget goes over it** (Vaults stays at 8 ticks over, the others at 0), and F1-F8 without F9 is
   measured too: it must be faster on every run, but **only together** (F2 alone is slightly slower on Vaults: a taken JR costs 2 T more than a JP).
   F6-F8 are expected to win back some of F9's cost; the as-built notes give the figures with and without F9. Starfall and Blockfall have no perf
   suite of their own today: C4 adds one for each (tick costs over their recorded scripts, as `tests/arcade-runner-perf.mjs`).
@@ -204,4 +204,13 @@ this file before C1 starts. **Answered:** five must-fix (F6 kept its overflow ex
 F1's FOR form needs a constant step and K is the folded value; section 8 excludes the baseline checks from its own condition, adds batch1, and
 section 7 names `tests/arcade-runner.mjs`) and the tightenings (F4's invalidation list and slot range, the patched `LD HL,0`; F5's exclusion list from
 the sources; F2's size bookkeeping; the `= 1` form; F2 alone is slower: the time target holds for the batch together; Starfall and Blockfall perf
-suites added to C4). (Fable wrote the prototypes, so its review is anchored on them; the independent check is the code review of C6.)
+suites added to C4).
+
+## As built: the perf tool (C4, 2026-11-12)
+
+`tests/arcade-codegen-perf.mjs` measures the seven recorded runs of the five games (Runner; platformer win twice and game over; Vaults win and
+lose; Starfall; Blockfall with `CONST FREESEED = 0`, the variant its suite measures) on the real runtimes, whole tick with the interrupt, the
+same exclusions as each game's own suite. `--old <ref>` compiles with another ref's `src/`; `--save` / `--compare` apply section 5's bounds per
+run. "Before" = `arcade/spike/codegen/perf-before.json` (compiler of 9b7969c): Runner median 129,953 / 95th 145,626 / worst 160,866; Vaults win
+156,814 / 185,574, 8 over; Starfall 54,326 / 100,351; Blockfall 11,132 / 43,831 / 93,556. About 95 s. Starfall's script moved to
+`tests/arcade-starfall-script.mjs`; the runner / platformer / Vaults perf suites export their measurement (their output is unchanged). (Fable wrote the prototypes, so its review is anchored on them; the independent check is the code review of C6.)

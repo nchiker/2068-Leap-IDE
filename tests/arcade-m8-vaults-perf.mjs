@@ -27,7 +27,7 @@ const Z_ = await import(pathToFileURL(join(ROOT, 'tsrun/z80.js')).href);
 export const FRAME_T = M_.tStatesPerFrame;
 export const BUDGET = 4 * FRAME_T;
 const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
-const runsToStick = (runs) => { const a = []; for (const [v, n] of runs) for (let i = 0; i < n; i++) a.push(v); return (t) => a[t - 1] ?? 0; };
+export const runsToStick = (runs) => { const a = []; for (const [v, n] of runs) for (let i = 0; i < n; i++) a.push(v); return (t) => a[t - 1] ?? 0; };
 
 export function loadRuntime(dir = 'arcade/build/v4') {
   const json = join(ROOT, dir, 'runtime.json');
@@ -36,9 +36,9 @@ export function loadRuntime(dir = 'arcade/build/v4') {
 }
 
 /** Run `ticks` ticks of the compiled game with `stick(k)` and return one record per tick. */
-export function profile(src, { ticks, stick, assets = VAULTS_ASSETS, runtimeDir } = {}) {
+export function profile(src, { ticks, stick, assets = VAULTS_ASSETS, runtimeDir, compile: compileFn = compile } = {}) {      // compileFn: another compiler (tests/arcade-codegen-perf.mjs --old)
   const R = loadRuntime(runtimeDir);
-  const res = compile(src, { runtime: R.rt, image: R.img, assets });
+  const res = compileFn(src, { runtime: R.rt, image: R.img, assets });
   if (res.errors.length) throw new Error('compile: ' + res.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
   const S = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
   const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
@@ -147,7 +147,7 @@ ENDSCENE
 `;
 }
 
-const RUNS = [['win run', WIN_RUNS], ['lose run', LOSE_RUNS]];
+export const RUNS = [['win run', WIN_RUNS], ['lose run', LOSE_RUNS]];
 
 if (MAIN) {
   const spikes = process.argv.includes('--spikes') ? Number(process.argv[process.argv.indexOf('--spikes') + 1]) : 0;

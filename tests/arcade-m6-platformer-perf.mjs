@@ -32,9 +32,9 @@ export function loadRuntime(dir = 'arcade/build/v3') {
 }
 
 /** Run `ticks` ticks of the compiled game with `stick(k)` and return one record per tick. */
-export function profile(src, { ticks, stick, assets = ASSETS, runtimeDir } = {}) {
+export function profile(src, { ticks, stick, assets = ASSETS, runtimeDir, compile: compileFn = compile } = {}) {      // compileFn: another compiler (tests/arcade-codegen-perf.mjs --old)
   const R = loadRuntime(runtimeDir);
-  const res = compile(src, { runtime: R.rt, image: R.img, assets });
+  const res = compileFn(src, { runtime: R.rt, image: R.img, assets });
   if (res.errors.length) throw new Error('compile: ' + res.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
   const S = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
   const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));

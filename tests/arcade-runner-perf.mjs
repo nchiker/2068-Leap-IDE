@@ -47,69 +47,81 @@ if (scriptInfo.lives !== 3) { if (!SRC.includes(START_MARK)) throw new Error('ru
 const argv = process.argv.slice(2);
 const TICKS = argv.includes('--ticks') ? Math.min(script.length, Number(argv[argv.indexOf('--ticks') + 1])) : script.length;
 
-const json = join(ROOT, 'arcade/build/v3/runtime.json');
-const rt = JSON.parse(readFileSync(json, 'utf8'));
-const img = new Uint8Array(readFileSync(join(dirname(json), rt.image ?? 'runtime.bin')));
-const res = compile(PLAY_SRC, { runtime: rt, image: img, assets: ASSETS });
-const SCENE_CUR = res.gen?.symbols?.scene?.cur ?? null;
-if (res.errors.length) throw new Error('compile: ' + res.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
-const S = { ...rt.symbols, ...(rt.constants ?? {}) };
-for (const k of ['RT_WORLDLOAD', 'window_boot', 'window_repaint', 'WORK_START', 'WORK_END', 'AFTER_FRAME', 'ISR', 'ISR_END', 'SND_S', 'SND_E']) if (S[k] === undefined) throw new Error(`the runtime has no symbol ${k}`);
+const MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-const ROMDIR = join(ROOT, 'tsrun/roms');
-M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom')));
-M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom')));
-M_.insertDock(m, res.dck);
-M_.resetMachine(m);
-const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
-for (let f = 0; f < 400 && rd16(S.HO_MARK) !== S.HO_MARK_VALUE; f++) M_.runFrame(m);
-if (rd16(S.HO_MARK) !== S.HO_MARK_VALUE) throw new Error('the runtime did not boot');
+/** Run the recorded play-through and return {ticks, res, rt, div}; `compileFn` is the compiler (default: the working tree's), `nTicks` the number of ticks (default: the whole script). */
+export function measure({ compile: compileFn = compile, ticks: nTicks = TICKS } = {}) {
+  const json = join(ROOT, 'arcade/build/v3/runtime.json');
+  const rt = JSON.parse(readFileSync(json, 'utf8'));
+  const img = new Uint8Array(readFileSync(join(dirname(json), rt.image ?? 'runtime.bin')));
+  const res = compileFn(PLAY_SRC, { runtime: rt, image: img, assets: ASSETS });
+  const SCENE_CUR = res.gen?.symbols?.scene?.cur ?? null;
+  if (res.errors.length) throw new Error('compile: ' + res.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
+  const S = { ...rt.symbols, ...(rt.constants ?? {}) };
+  for (const k of ['RT_WORLDLOAD', 'window_boot', 'window_repaint', 'WORK_START', 'WORK_END', 'AFTER_FRAME', 'ISR', 'ISR_END', 'SND_S', 'SND_E']) if (S[k] === undefined) throw new Error(`the runtime has no symbol ${k}`);
 
-const fe = res.map.entries.frame;
-const div = res.memory[0x8004] & 0x3F;
-const ticks = [];
-let inIsr = false, isrT0 = 0, isrAcc = 0, w0 = null, entries = 0, load = null, rep = null, repT = 0;
-let prevScene = SCENE_CUR !== null ? 0 : -1, grace = SCENE_CUR !== null ? 2 : 0;          // scene start: the first scene's first two ticks, and the tick that ENTERs a scene with the two after it
-const nframes = (TICKS + 3) * Math.max(div, 3) * 4 + 400;
-for (let f = 0; f < nframes && ticks.length < TICKS; f++) {
-  const end = m.frameStart + FRAME_T;
-  while (m.tstates < end) {
-    const cpu = m.cpu, pc = cpu.pc;
-    const isr = (pc >= S.ISR && pc < S.ISR_END) || (pc >= S.SND_S && pc < S.SND_E) || (inIsr && pc >= S.SND_XS && pc < S.SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
-    if (isr && !inIsr) { inIsr = true; isrT0 = m.tstates - 13; } else if (!isr && inIsr) { inIsr = false; isrAcc += m.tstates - isrT0; }
-    if (!inIsr) {
-      if (pc === S.WORK_START) { w0 = { t0: m.tstates, i0: isrAcc }; load = null; repT = 0; rep = null; }
-      if (pc === fe && w0) { entries++; m.joystick[0] = contact(script[entries - 1] ?? 0); m.joystick[1] = 0; }
-      if (w0) {
-        if (pc === S.RT_WORLDLOAD) load = 'WORLD';
-        else if (pc === S.window_boot && !load) load = 'scene';
-        if (pc === S.window_repaint && !rep) rep = { t0: m.tstates, sp: cpu.sp, ret: rd16(cpu.sp), i0: isrAcc };
-        else if (rep && pc === rep.ret && cpu.sp === rep.sp + 2) { repT += m.tstates - rep.t0 - (isrAcc - rep.i0); rep = null; }
+  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
+  const ROMDIR = join(ROOT, 'tsrun/roms');
+  M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom')));
+  M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom')));
+  M_.insertDock(m, res.dck);
+  M_.resetMachine(m);
+  const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
+  for (let f = 0; f < 400 && rd16(S.HO_MARK) !== S.HO_MARK_VALUE; f++) M_.runFrame(m);
+  if (rd16(S.HO_MARK) !== S.HO_MARK_VALUE) throw new Error('the runtime did not boot');
+
+  const fe = res.map.entries.frame;
+  const div = res.memory[0x8004] & 0x3F;
+  const ticks = [];
+  let inIsr = false, isrT0 = 0, isrAcc = 0, w0 = null, entries = 0, load = null, rep = null, repT = 0;
+  let prevScene = SCENE_CUR !== null ? 0 : -1, grace = SCENE_CUR !== null ? 2 : 0;          // scene start: the first scene's first two ticks, and the tick that ENTERs a scene with the two after it
+  const nframes = (nTicks + 3) * Math.max(div, 3) * 4 + 400;
+  for (let f = 0; f < nframes && ticks.length < nTicks; f++) {
+    const end = m.frameStart + FRAME_T;
+    while (m.tstates < end) {
+      const cpu = m.cpu, pc = cpu.pc;
+      const isr = (pc >= S.ISR && pc < S.ISR_END) || (pc >= S.SND_S && pc < S.SND_E) || (inIsr && pc >= S.SND_XS && pc < S.SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
+      if (isr && !inIsr) { inIsr = true; isrT0 = m.tstates - 13; } else if (!isr && inIsr) { inIsr = false; isrAcc += m.tstates - isrT0; }
+      if (!inIsr) {
+        if (pc === S.WORK_START) { w0 = { t0: m.tstates, i0: isrAcc }; load = null; repT = 0; rep = null; }
+        if (pc === fe && w0) { entries++; m.joystick[0] = contact(script[entries - 1] ?? 0); m.joystick[1] = 0; }
+        if (w0) {
+          if (pc === S.RT_WORLDLOAD) load = 'WORLD';
+          else if (pc === S.window_boot && !load) load = 'scene';
+          if (pc === S.window_repaint && !rep) rep = { t0: m.tstates, sp: cpu.sp, ret: rd16(cpu.sp), i0: isrAcc };
+          else if (rep && pc === rep.ret && cpu.sp === rep.sp + 2) { repT += m.tstates - rep.t0 - (isrAcc - rep.i0); rep = null; }
+        }
+        if (pc === S.WORK_END && w0) {
+          if (SCENE_CUR !== null && m.ram[SCENE_CUR] !== prevScene) { prevScene = m.ram[SCENE_CUR]; grace = 3; }
+          if (grace > 0) { if (!load) load = 'scene start'; grace--; }
+          ticks.push({ n: entries, load, t: m.tstates - w0.t0, tx: m.tstates - w0.t0 - (isrAcc - w0.i0), repaint: repT });
+          w0 = null;
+        }
       }
-      if (pc === S.WORK_END && w0) {
-        if (SCENE_CUR !== null && m.ram[SCENE_CUR] !== prevScene) { prevScene = m.ram[SCENE_CUR]; grace = 3; }
-        if (grace > 0) { if (!load) load = 'scene start'; grace--; }
-        ticks.push({ n: entries, load, t: m.tstates - w0.t0, tx: m.tstates - w0.t0 - (isrAcc - w0.i0), repaint: repT });
-        w0 = null;
-      }
+      if (cpu.halted) break;
+      Z_.runZ80(cpu, m.bus, 1, m);
     }
-    if (cpu.halted) break;
-    Z_.runZ80(cpu, m.bus, 1, m);
+    M_.runFrame(m);
   }
-  M_.runFrame(m);
+
+  return { ticks, res, rt, div };
 }
 
-const loads = ticks.filter((x) => x.load), play = ticks.filter((x) => !x.load);
-const sorted = play.map((x) => x.t).sort((a, b) => a - b);
-const worst = play.reduce((a, x) => (x.t > a.t ? x : a), { t: 0, n: 0 });
-const over = ticks.filter((x) => x.t > BUDGET), overPlay = play.filter((x) => x.t > BUDGET);
-console.log(`Leap Runner, the recorded play-through: ${ticks.length} ticks (${TICKS < script.length ? `first ${TICKS} of ${script.length}` : 'all'}), frame_div ${div}, runtime ${rt.version}; budget ${fmt(BUDGET)} T (3 refreshes), interrupt time included`);
-console.log(`  ticks that are not a world load: ${play.length}: median ${fmt(pct(sorted, 0.5))}, 95th ${fmt(pct(sorted, 0.95))}, 99th ${fmt(pct(sorted, 0.99))}, worst ${fmt(worst.t)} (tick ${worst.n}; ${fmt(worst.tx)} without the interrupt), mean ${fmt(mean(play.map((x) => x.t)))}`);
-console.log(`  window_repaint: mean ${fmt(mean(ticks.map((x) => x.repaint)))} T a tick over all ticks, ${fmt(mean(play.map((x) => x.repaint)))} over the ticks that are not loads (max ${fmt(Math.max(...ticks.map((x) => x.repaint)))})`);
-console.log(`  loads (ticks that call RT_WORLDLOAD or are a scene start): ${loads.length}: ${loads.map((x) => `tick ${x.n} ${x.load} ${fmt(x.t)}`).join(', ') || 'none'}`);
-console.log(`  ticks over ${fmt(BUDGET)}: ${over.length} in all (${overPlay.length} that are not loads${overPlay.length ? ': ' + overPlay.map((x) => `tick ${x.n} ${fmt(x.t)}`).join(', ') : ''})`);
-console.log(`  the 5 costliest ticks that are not loads: ${play.slice().sort((a, b) => b.t - a.t).slice(0, 5).map((x) => `tick ${x.n} ${fmt(x.t)} (repaint ${fmt(x.repaint)})`).join(', ')}`);
-const ok = worst.t < WORST_BEFORE && overPlay.length === 0;
-console.log(`  worst tick that is not a world load ${fmt(worst.t)} ${worst.t < WORST_BEFORE ? '<' : '>='} ${fmt(WORST_BEFORE)} (the figure before the window fast path): ${worst.t < WORST_BEFORE ? 'below' : 'NOT below'}`);
-if (argv.includes('--check')) { console.log(ok ? 'PASS' : 'FAIL'); process.exit(ok ? 0 : 1); }
+export { BUDGET, FRAME_T, script as SCRIPT };
+
+if (MAIN) {
+  const { ticks, rt, div } = measure();
+  const loads = ticks.filter((x) => x.load), play = ticks.filter((x) => !x.load);
+  const sorted = play.map((x) => x.t).sort((a, b) => a - b);
+  const worst = play.reduce((a, x) => (x.t > a.t ? x : a), { t: 0, n: 0 });
+  const over = ticks.filter((x) => x.t > BUDGET), overPlay = play.filter((x) => x.t > BUDGET);
+  console.log(`Leap Runner, the recorded play-through: ${ticks.length} ticks (${TICKS < script.length ? `first ${TICKS} of ${script.length}` : 'all'}), frame_div ${div}, runtime ${rt.version}; budget ${fmt(BUDGET)} T (3 refreshes), interrupt time included`);
+  console.log(`  ticks that are not a world load: ${play.length}: median ${fmt(pct(sorted, 0.5))}, 95th ${fmt(pct(sorted, 0.95))}, 99th ${fmt(pct(sorted, 0.99))}, worst ${fmt(worst.t)} (tick ${worst.n}; ${fmt(worst.tx)} without the interrupt), mean ${fmt(mean(play.map((x) => x.t)))}`);
+  console.log(`  window_repaint: mean ${fmt(mean(ticks.map((x) => x.repaint)))} T a tick over all ticks, ${fmt(mean(play.map((x) => x.repaint)))} over the ticks that are not loads (max ${fmt(Math.max(...ticks.map((x) => x.repaint)))})`);
+  console.log(`  loads (ticks that call RT_WORLDLOAD or are a scene start): ${loads.length}: ${loads.map((x) => `tick ${x.n} ${x.load} ${fmt(x.t)}`).join(', ') || 'none'}`);
+  console.log(`  ticks over ${fmt(BUDGET)}: ${over.length} in all (${overPlay.length} that are not loads${overPlay.length ? ': ' + overPlay.map((x) => `tick ${x.n} ${fmt(x.t)}`).join(', ') : ''})`);
+  console.log(`  the 5 costliest ticks that are not loads: ${play.slice().sort((a, b) => b.t - a.t).slice(0, 5).map((x) => `tick ${x.n} ${fmt(x.t)} (repaint ${fmt(x.repaint)})`).join(', ')}`);
+  const ok = worst.t < WORST_BEFORE && overPlay.length === 0;
+  console.log(`  worst tick that is not a world load ${fmt(worst.t)} ${worst.t < WORST_BEFORE ? '<' : '>='} ${fmt(WORST_BEFORE)} (the figure before the window fast path): ${worst.t < WORST_BEFORE ? 'below' : 'NOT below'}`);
+  if (argv.includes('--check')) { console.log(ok ? 'PASS' : 'FAIL'); process.exit(ok ? 0 : 1); }
+}
