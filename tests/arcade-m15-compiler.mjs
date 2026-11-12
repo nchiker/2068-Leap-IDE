@@ -94,6 +94,10 @@ console.log('1. Parser and checker: MUSIC name = "asset", PLAY song, NOMUSIC (co
   badAt('the 9th MUSIC: "too many songs (at most 8)" at its name', nineSrc, 'too many songs (at most 8)', { line: at(nineSrc, 'MUSIC m8').line, col: 6 });
   badAt('... and the 10th too', nineSrc, 'too many songs (at most 8)', { line: at(nineSrc, 'MUSIC m9').line, col: 6 });
   check_('... exactly two such errors', errs(nineSrc).filter((d) => d.message === 'too many songs (at most 8)').length === 2, msgs(errs(nineSrc)));
+  // a repeated name is not a new song: 8 songs and a ninth of an existing name give the duplicate error and no "too many songs"
+  const eightDup = game(Array.from({ length: 8 }, (_, i) => `    PLAY m${i}\n`).join(''), '', `${eight}MUSIC m0 = "jingle"\n`);
+  check_('8 songs plus a second MUSIC m0: "m0 is already declared" and no "too many songs"', errs(eightDup).some((d) => /^'m0' is already declared/.test(d.message)) && !errs(eightDup).some((d) => /too many songs/.test(d.message)), msgs(errs(eightDup)));
+  check_('... and a genuine ninth song after the duplicate still gets "too many songs" (once)', (() => { const s9 = game('', '', `${eight}MUSIC m0 = "jingle"\nMUSIC m8 = "tune"\n`); return errs(s9).filter((d) => d.message === 'too many songs (at most 8)').length === 1; })());
   // declarations
   const inScene = `GAME "t"\nSCENE s\n  MUSIC q = "tune"\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n  ENDP\nENDSCENE\n`;
   badAt('MUSIC inside a SCENE: "MUSIC must be at the top level, outside any SCENE"', inScene, 'MUSIC must be at the top level, outside any SCENE', { line: 3, col: 2 });
@@ -340,7 +344,8 @@ function againstExpect(name, src, ticks, events, extra = {}) {
   eq('... tick 8: the song has ended: the volumes 0, the tones as they were, V_SFX_ACTIVE 0, music.active false', [r2.ticks[7].ay.regs.slice(8), r2.ticks[7].ay.regs.slice(0, 8), r2.ticks[7].ay.flags, r2.ticks[7].music.active], [[0, 0, 0], songRow(ASSETS15.music.jingle, 6).slice(0, 8), 0, false]);
   // a channel-C effect over a song
   const r3 = againstExpect('tune, then PLAY blip at tick 3 (channel C borrowed for 6 refreshes, the song plays on A and B)', game('    IF t = 3 THEN PLAY blip ENDIF\n', '    PLAY tune\n'), 20, [[0, 'music', 'tune'], [3, 'play', 'blip']]);
-  eq('... right after the PLAY (tick 3) the request is pending: V_SFX_ACTIVE = SB_FX | SB_MUS | SB_SYNC = 7', r3.ticks[2].ay.flags, SB_FX | SB_MUS | SB_SYNC);
+  // (code review fix: while a song plays RT_PLAY posts the effect, SB_NEW, and the next refresh installs it)
+  eq('... right after the PLAY (tick 3) the effect is posted, not yet installed: V_SFX_ACTIVE = SB_MUS | SB_NEW = 10', r3.ticks[2].ay.flags, SB_MUS | 8);
   const b0 = ASSETS15.sfx.blip.ticks[0];
   eq('... tick 4: R4 R5 R10 are blip\'s first record (tone 120, vol 12), R7 = the song\'s bits outside $24 with blip\'s (tone on, noise off: $20), A and B are the song\'s row 3', r3.ticks[3].ay.regs, [...tuneRows(3).slice(0, 4), b0.tone & 255, b0.tone >> 8, tuneRows(3)[6], (tuneRows(3)[7] & 0xDB) | 0x20, tuneRows(3)[8], tuneRows(3)[9], b0.vol]);
   eq('... tick 4..9: V_SFX_ACTIVE = 3 (effect and song); tick 10: the effect is over and C is the song\'s again (= row 9)', [r3.ticks.slice(3, 9).map((t) => t.ay.flags), r3.ticks[9].ay.regs], [[3, 3, 3, 3, 3, 3], tuneRows(9)]);
@@ -355,7 +360,7 @@ function againstExpect(name, src, ticks, events, extra = {}) {
   eq('... tick 14: chord has ended and the song resumes with row 5 (it had played rows 0..4)', r4.ticks[13].ay.regs, tuneRows(5));
   // SILENCE during a channel-C effect over a song, NOMUSIC with and without an effect
   const r5 = againstExpect('tune + drone, SILENCE at tick 6 (the song gets C back at the next refresh)', game('    IF t = 3 THEN PLAY drone ENDIF\n    IF t = 6 THEN SILENCE ENDIF\n', '    PLAY tune\n'), 12, [[0, 'music', 'tune'], [3, 'play', 'drone'], [6, 'silence'], ]);
-  eq('... tick 6 (the SILENCE): pending, the effect off: V_SFX_ACTIVE = SB_MUS | SB_SYNC; tick 7 = the song\'s row 6', [r5.ticks[5].ay.flags, r5.ticks[6].ay.regs], [SB_MUS | SB_SYNC, tuneRows(6)]);
+  eq('... tick 6 (the SILENCE): posted, the effect still on until the next refresh: V_SFX_ACTIVE = SB_FX | SB_MUS | SB_NEW; tick 7 = the song\'s row 6', [r5.ticks[5].ay.flags, r5.ticks[6].ay.regs], [SB_FX | SB_MUS | 8, tuneRows(6)]);
   const r6 = againstExpect('tune, NOMUSIC at tick 4 with nothing else playing: the volumes go to 0 AT ONCE', game('    IF t = 4 THEN NOMUSIC ENDIF\n', '    PLAY tune\n'), 8, [[0, 'music', 'tune'], [4, 'nomusic']]);
   eq('... tick 4: volumes 0, tones of row 3 kept, V_SFX_ACTIVE 0', [r6.ticks[3].ay.regs, r6.ticks[3].ay.flags], [[...tuneRows(3).slice(0, 8), 0, 0, 0], 0]);
   const r7 = againstExpect('tune + drone, NOMUSIC at tick 5: the effect plays on; A and B go quiet at the next refresh', game('    IF t = 3 THEN PLAY drone ENDIF\n    IF t = 5 THEN NOMUSIC ENDIF\n', '    PLAY tune\n'), 12, [[0, 'music', 'tune'], [3, 'play', 'drone'], [5, 'nomusic']]);

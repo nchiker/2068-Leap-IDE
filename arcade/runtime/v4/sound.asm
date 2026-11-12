@@ -19,13 +19,17 @@
 ; it writes and PAUSES the song (its position is kept); a channel-C effect owns R4, R5, R10 (and R6 for type 5) and the song plays on A and B.
 ; While a song or a request is pending, the main thread never writes the chip (an interrupt between its register select and its data write would
 ; misdirect it): it posts SB_SYNC.  With no song and nothing pending, RT_PLAY and RT_SILENCE write the same registers as before music existed.
+; While a song plays, RT_PLAY and RT_SILENCE do not touch the effect the interrupt is playing either (its type, pointer, MUS_OWN and SB_FX: an
+; interrupt in the middle of changing them would play the song as if no effect owned anything, or move a paused song on): they post the new effect
+; in V_SFX_NCH / V_SFX_NPTR with one SET of SB_NEW, and the interrupt installs it at its next refresh, before anything else (SND_TICK .new).
     ; (no ORG: follows text.asm)
 M_SOUND_S:
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; RT_PLAY: A = effect index.  Starts that effect (replacing the one playing); no sfx table, an index >= the table's count
 ; (read as at most 8) or a null effect pointer: ignored.  Clobbers AF, BC, DE, HL.
-; SB_FX is cleared first (one RES: the interrupt leaves the effect alone while its type and pointer change; a song plays on).
+; With no song SB_FX is cleared first (one RES: the interrupt leaves the effect alone while its type and pointer change); with a song the effect
+; is posted (SB_NEW, see the header).
 ; ---------------------------------------------------------------------------------------------------------------
 RT_PLAY:
     ld c,a
@@ -53,8 +57,6 @@ RT_PLAY:
     ld a,d
     or e
     ret z                       ; a null pointer is no effect
-    ld hl,V_SFX_ACTIVE
-    res SB_FX,(hl)
     ld hl,3
     add hl,de
     ld a,(hl)                   ; byte 3 of the first record: 3 = three channels, 4 = channel C, anything else one channel
@@ -71,7 +73,12 @@ RT_PLAY:
     jr .set
 .one:
     ld a,1
-.set:
+.set:                           ; A = the type, DE = the stream (types 3, 4, 5) or the first record (type 1)
+    ld hl,V_SFX_ACTIVE
+    res SB_NEW,(hl)             ; a posted effect not yet taken is replaced (an interrupt from here on finds none: the call takes effect a refresh later)
+    bit SB_MUS,(hl)
+    jr nz,.new                  ; a song plays: post it
+    res SB_FX,(hl)
     ld (V_SFX_CH),a
     ld (V_SFX_PTR),de
     call SND_OWNSET             ; MUS_OWN for this type
@@ -83,9 +90,14 @@ RT_PLAY:
     ld hl,V_SFX_ACTIVE
     jr .go
 .post:
-    set SB_SYNC,(hl)           ; a song or a request: the interrupt gives the other registers back to the song first
+    set SB_SYNC,(hl)           ; a request: the interrupt brings the chip back first
 .go:
     set SB_FX,(hl)
+    ret
+.new:
+    ld (V_SFX_NCH),a
+    ld (V_SFX_NPTR),de
+    set SB_NEW,(hl)            ; (one instruction: the interrupt sees the whole request or none)
     ret
 
 ; ---------------------------------------------------------------------------------------------------------------
@@ -97,6 +109,9 @@ RT_SILENCE:
     push de
     push hl
     ld hl,V_SFX_ACTIVE
+    res SB_NEW,(hl)             ; a posted effect not yet taken is dropped
+    bit SB_MUS,(hl)
+    jr nz,.new                  ; a song plays: post "no effect"
     res SB_FX,(hl)
     call SND_OWNCLR             ; no effect owns anything
     ld hl,V_SFX_ACTIVE
@@ -104,6 +119,11 @@ RT_SILENCE:
     or a
     jr z,.now
     set SB_SYNC,(hl)
+    jr .x
+.new:
+    xor a
+    ld (V_SFX_NCH),a
+    set SB_NEW,(hl)
     jr .x
 .now:
     call SND_SYNC
@@ -298,6 +318,29 @@ SND_S:
     push bc
     push de
     push hl
+    cp 1<<SB_SYNC
+    jr c,.fx                    ; neither a request nor a posted effect (bits 2 and 3 clear): the common case, 19 T
+    bit SB_NEW,a
+    jr z,.sy
+    ; ---- .new: the effect RT_PLAY / RT_SILENCE posted while a song plays (type 0: none) replaces the one playing; the chip is then synchronised
+    and ~((1<<SB_NEW)|(1<<SB_FX))
+    or 1<<SB_SYNC
+    ld (V_SFX_ACTIVE),a         ; (interrupts are off: the main thread cannot change it under us)
+    ld a,(V_SFX_NCH)
+    or a
+    jr z,.none
+    ld (V_SFX_CH),a
+    ld hl,(V_SFX_NPTR)
+    ld (V_SFX_PTR),hl
+    call SND_OWNSET
+    ld hl,V_SFX_ACTIVE
+    set SB_FX,(hl)
+    jr .nw
+.none:
+    call SND_OWNCLR
+.nw:
+    ld a,(V_SFX_ACTIVE)
+.sy:
     bit SB_SYNC,a
     jr z,.fx
     ld hl,V_SFX_ACTIVE

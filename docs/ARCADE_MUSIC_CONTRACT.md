@@ -115,6 +115,25 @@ The same `sound.asm` in v2, v3 and v4 (v4 adds its `KEY_ROWSEL` tail, as before)
   noticing (the boundary test now compares the song's and the effect's position with a run without the interrupt, over a song that ends a pattern
   at every refresh), and no song had an item of 0 pairs (a hand-made song has them now).
 
+**Code review fix (2026-11-12, after M5).** The branch review found a race: with a song playing, `RT_PLAY` cleared `SB_FX`, changed the effect's type,
+pointer and `MUS_OWN`, then set `SB_FX` again; a frame interrupt in that window (about 100 T) played the song as if no effect owned anything (its
+registers over the effect's for one refresh) and moved a song that a three-channel effect pauses; `RT_SILENCE` had the same window (it cleared the
+owners before posting `SB_SYNC`). Now, **while a song plays, neither touches the effect the interrupt is playing**: they write the new effect (type and
+pointer, or type 0 for `RT_SILENCE`) to `V_SFX_NCH` `$FF1A` / `V_SFX_NPTR` `$FF18` and set the new bit `SB_NEW` (bit 3) with one instruction; the
+interrupt installs it first thing at its next refresh (owners, then `SB_SYNC`), which is the refresh and the order the posted path already had. With
+no song both routines are as before (games without songs write what they wrote), and the interrupt's first test (`CP 4 / JR C`: no request, nothing
+posted) makes an effect's refresh 1 T cheaper than before the fix. Cost: +76 bytes (v3 15,602, 782 free; v4 15,586, 798 free); the worst
+interrupt with a song and a channel-C effect 3,665 -> 4,503 T (the owners are set in the interrupt now), a pattern change 1,840 T, the song + C effect
+median 995 T. `m15-runtime-music.mjs` section 4 now also checks the chip right after an interrupt inside the call (equal to the whole call before or after
+that interrupt, or unchanged), the song's position for `RT_PLAY` / `RT_SILENCE`, against the two placements built exactly, with four new situations (a
+three-channel effect replaced or stopped while it pauses a song that writes every refresh, a channel-C effect replaced or stopped over it); the runtime
+before the fix fails it ("the chip after the interrupt is ... neither the call before it, after it, nor unchanged"). The interpreter's chip model
+(`src/lang/arcade/arcade-sound.js`) posts the same way, so the game-level comparisons see the same flags (`SB_NEW` = 8 until the next refresh). `m15-mutations.mjs`: 91 mutants
+(9 new for the posting and the interrupt's first test); `m15c-mutations.mjs`: 52 (3 new for the interpreter's posting). Results: runtime 91 killed, 1 equivalent (RT_SILENCE's
+`set SB_SYNC` on the no-song path: it runs only with SB_SYNC already set); compiler 46 killed, 6 equivalent. The run found a gap the fix had opened in the
+tests (a PLAY / SILENCE with no song and a request pending must not write the chip from the main thread): a direct check now covers it. Full battery after
+the fix: run-all 78/78, the Studio / IDE suites, `arcade-runner-perf --check` (worst gameplay tick 160,866 T), `arcade-m6-platformer-perf --check`.
+
 ## 6. Interpreter (`arcade-interp.js`)
 
 Models the song state (order position, pattern position, wait, ownership) and produces the AY register values per refresh exactly as the runtime

@@ -42,7 +42,11 @@ const MUTANTS = [
   ['chip: the song writes the shared R7 whole', [E(SD, 'chip[r] = own[r] === 2 ? (v & ~C_BITS & 0xFF) | (chip[7] & C_BITS) : v;', 'chip[r] = v;')]],
   ['chip: the song writes the effect\'s registers', [E(SD, '        mus[r] = v;\n        if (own[r] === 1) continue;', '        mus[r] = v;')]],
   ['EQUIVALENT: chip: RT_MUSIC does not copy the chip into the song\'s shadow (the copy only spares WRITES: before the song\'s first item every SYNC that reads the shadow is followed in the same refresh by that item, which writes all eleven registers; the model keeps states, not writes)', [E(SD, '      mus = chip.slice();', '      mus = new Array(11).fill(0);')]],
-  ['chip: NOMUSIC during an effect syncs at once', [E(SD, '      if (fx || pending) pending = true; else sync();', '      sync();')]],
+  ['chip: NOMUSIC during an effect syncs at once', [E(SD, '      if (fx || pending || posted) pending = true; else sync();', '      sync();')]],
+  // (code review fix: RT_PLAY / RT_SILENCE post the effect while a song plays; the next refresh installs it)
+  ['chip: PLAY during a song installs the effect at once (not posted)', [E(SD, '      if (song) { posted = { i, bytes, type }; return; }', '')]],
+  ['chip: a posted effect is never installed', [E(SD, '        fx = p.type ? { index: p.i, bytes: p.bytes, type: p.type, pos: p.type === 1 ? 0 : 4 } : null;', '        fx = null;')]],
+  ['chip: SILENCE during a song stops the effect at once (not posted)', [E(SD, 'posted = null; if (song) { posted = { type: 0 }; return; } fx = null;', 'posted = null; fx = null;')]],
   ['chip: type 5 (noise) read as type 4', [E(SD, "bytes[3] === 4 ? 4 + (bytes[2] ? 1 : 0) : 1;", "bytes[3] === 4 ? 4 : 1;")]],
   ['chip: the request flag is never cleared', [E(SD, 'if (pending) { pending = false; sync(); }', 'if (pending) { sync(); }')]],
   ['chip: the next pattern starts one refresh late', [E(SD, '        g.pat = g.s.order[g.ord]; g.at = 0;\n        continue;', '        g.pat = g.s.order[g.ord]; g.at = 0;\n        return;')]],

@@ -25,7 +25,16 @@ const E = (from, to) => ({ file: 'sound.asm', from, to });
 const NOP2 = '    nop\n    nop', NOP3 = '    nop\n    nop\n    nop';
 const MUTANTS = [
   // ---- RT_PLAY ----
-  ['RT_PLAY: SB_FX not cleared before the type and pointer change', [E('    ret z                       ; a null pointer is no effect\n    ld hl,V_SFX_ACTIVE\n    res SB_FX,(hl)', '    ret z                       ; a null pointer is no effect\n    ld hl,V_SFX_ACTIVE\n' + NOP2)]],
+  ['RT_PLAY: SB_FX not cleared before the type and pointer change (no song)', [E('    jr nz,.new                  ; a song plays: post it\n    res SB_FX,(hl)', '    jr nz,.new                  ; a song plays: post it\n' + NOP2)]],
+  // (code review fix, 2026-11-12: with a song RT_PLAY / RT_SILENCE post the effect, SB_NEW, and the interrupt installs it)
+  ['RT_PLAY: with a song the effect is changed under the interrupt instead of posted', [E('    jr nz,.new                  ; a song plays: post it', NOP2)]],
+  ['RT_PLAY: the posted effect is never flagged (SB_NEW not set)', [E('    set SB_NEW,(hl)            ; (one instruction', NOP2 + '            ; (one instruction')]],
+  ['tick: the shortcut skips a pending request (SYNC or a posted effect never taken)', [E('    cp 1<<SB_SYNC\n    jr c,.fx', '    cp 1<<SB_NEW+1\n    jr c,.fx')]],
+  ['tick: a posted effect is never installed', [E('    bit SB_NEW,a\n    jr z,.sy', '    bit SB_NEW,a\n    jr .sy')]],
+  ['tick: a posted RT_SILENCE (type 0) is installed as an effect', [E('    jr z,.none', NOP2)]],
+  ['tick: the posted effect does not get its owners', [E('    call SND_OWNSET\n    ld hl,V_SFX_ACTIVE\n    set SB_FX,(hl)\n    jr .nw', NOP3 + '\n    ld hl,V_SFX_ACTIVE\n    set SB_FX,(hl)\n    jr .nw')]],
+  ['tick: no chip synchronisation after installing a posted effect', [E('    or 1<<SB_SYNC', '    or 0')]],
+  ['tick: the old effect keeps playing after a posted RT_SILENCE (SB_FX not cleared)', [E('    and ~((1<<SB_NEW)|(1<<SB_FX))', '    and ~(1<<SB_NEW)')]],
   ['RT_PLAY: byte 3 = 4 not recognised (channel C plays as records)', [E('    cp 4\n    jr nz,.one', '    cp 5\n    jr nz,.one')]],
   ['RT_PLAY: the noise flag not added (type 5 never)', [E('    add a,(hl)                  ; 4 + the noise flag (byte 2)', '    nop                         ; 4 + the noise flag (byte 2)')]],
   ['RT_PLAY: a channel-C stream starts at its header', [E('.str:\n    inc hl\n    ex de,hl', '.str:\n    nop\n    ex de,hl')]],
@@ -35,10 +44,11 @@ const MUTANTS = [
   ['RT_PLAY: no SND_SYNC when nothing else plays (stale volumes of other channels)', [E('    call SND_SYNC               ; nothing else plays', NOP3 + '                         ; nothing else plays')]],
   ['RT_PLAY: SB_FX not set at the end', [E('.go:\n    set SB_FX,(hl)\n    ret', '.go:\n' + NOP2 + '\n    ret')]],
   // ---- RT_SILENCE ----
-  ['RT_SILENCE: SB_FX not cleared', [E('    push hl\n    ld hl,V_SFX_ACTIVE\n    res SB_FX,(hl)\n    call SND_OWNCLR             ; no effect owns anything', '    push hl\n    ld hl,V_SFX_ACTIVE\n' + NOP2 + '\n    call SND_OWNCLR             ; no effect owns anything')]],
+  ['RT_SILENCE: SB_FX not cleared (no song)', [E('    jr nz,.new                  ; a song plays: post "no effect"\n    res SB_FX,(hl)', '    jr nz,.new                  ; a song plays: post "no effect"\n' + NOP2)]],
+  ['RT_SILENCE: with a song the effect is stopped under the interrupt instead of posted', [E('    jr nz,.new                  ; a song plays: post "no effect"', NOP2)]],
   ['RT_SILENCE: the owners not cleared', [E('    call SND_OWNCLR             ; no effect owns anything', NOP3 + '                         ; no effect owns anything')]],
   ['RT_SILENCE: never posts (writes the chip from the main thread during a song)', [E('    jr z,.now\n    set SB_SYNC,(hl)\n    jr .x', '    jr .now\n    set SB_SYNC,(hl)\n    jr .x')]],
-  ['RT_SILENCE: posts nothing with a song (the song never gets its registers back)', [E('    jr z,.now\n    set SB_SYNC,(hl)\n    jr .x', '    jr z,.now\n' + NOP2 + '\n    jr .x')]],
+  ['EQUIVALENT since the code review fix: RT_SILENCE posts nothing with a request pending (with a song RT_SILENCE now posts through SB_NEW; this line runs only with no song and V_SFX_ACTIVE <> 0 after SB_FX is cleared, i.e. SB_SYNC already set: setting it again changes nothing)', [E('    jr z,.now\n    set SB_SYNC,(hl)\n    jr .x', '    jr z,.now\n' + NOP2 + '\n    jr .x')]],
   ['RT_SILENCE: no SND_SYNC with nothing else playing (volumes stay)', [E('.now:\n    call SND_SYNC', '.now:\n' + NOP3)]],
   ['RT_SILENCE: BC not kept', [E('RT_SILENCE:\n    push bc', 'RT_SILENCE:\n    nop'), E('.x:\n    pop hl\n    pop de\n    pop bc', '.x:\n    pop hl\n    pop de\n    nop')]],
   // ---- RT_MUSIC ----

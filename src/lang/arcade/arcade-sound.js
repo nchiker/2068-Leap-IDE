@@ -17,6 +17,8 @@
  *   - SYNC (SND_SYNC): with a song every register no effect owns goes to the song's value (shared R7: the song's bits outside $24 with the chip's $24); with no song the volumes R8-R10 no
  *     effect owns go to 0. Written only where the chip differs (the final state is all that is modelled here).
  *   - RT_PLAY / RT_SILENCE / RT_NOMUSIC sync the chip AT ONCE when nothing else is pending (no song, no request), else they post a request (SB_SYNC) that the next refresh honours first.
+ *     While a SONG plays, RT_PLAY / RT_SILENCE do not touch the effect playing at all (code review fix, ARCADE_MUSIC_CONTRACT.md 5a): they post the new effect (or none) with SB_NEW,
+ *     and the next refresh installs it first (its owners, then a sync), so until then the flags show the old effect, the song and SB_NEW.
  *     RT_MUSIC writes nothing: the song's shadow starts as a copy of the chip and the song's first refresh writes all eleven registers. An index past the table: RT_PLAY changes nothing.
  *   - A refresh: the pending sync, then the effect's entry (its end: no owner, then a sync), then the song unless an effect of type 1 or 3 plays (it pauses the song, position kept): a wait
  *     counts down; else items are read: pairs go to the song's shadow and to every register no effect owns (shared R7 merged), `$80 + k` waits k more refreshes, $FF steps the order list in
@@ -25,7 +27,7 @@
 
 "use strict";
 
-export const SB_FX = 1, SB_MUS = 2, SB_SYNC = 4;
+export const SB_FX = 1, SB_MUS = 2, SB_SYNC = 4, SB_NEW = 8;
 const OWNED = { 1: [0, 1, 6, 7, 8], 3: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4: [4, 5, 10], 5: [4, 5, 6, 10] };
 const C_BITS = 0x24;                                 // the channel-C bits of R7 (tone C off, noise C off)
 
@@ -36,6 +38,7 @@ export function createSoundChip(effects = [], songs = []) {
   let fx = null;                                     // {index, bytes, type, pos}
   let song = null;                                   // {index, s, ord, pat, at, wait}
   let pending = false;                               // SB_SYNC
+  let posted = null;                                 // SB_NEW: {i, bytes, type} or {type: 0} (RT_SILENCE), posted while a song plays
 
   const ownFor = (type) => {
     const o = new Array(11).fill(0);
@@ -104,12 +107,14 @@ export function createSoundChip(effects = [], songs = []) {
       if (i < 0 || i >= Math.min(effects.length, 8)) return;
       const bytes = effects[i];
       const type = bytes[3] === 3 ? 3 : bytes[3] === 4 ? 4 + (bytes[2] ? 1 : 0) : 1;
+      posted = null;
+      if (song) { posted = { i, bytes, type }; return; }
       own = ownFor(type);
       fx = null;                                     // (RT_PLAY looks at the other bits with SB_FX cleared)
       syncOrPost();
       fx = { index: i, bytes, type, pos: type === 1 ? 0 : 4 };
     },
-    silence() { fx = null; own = ownFor(0); syncOrPost(); },
+    silence() { posted = null; if (song) { posted = { type: 0 }; return; } fx = null; own = ownFor(0); syncOrPost(); },
     music(k) {
       if (k < 0 || k >= songs.length || !songs[k]) return;
       if (!fx) own = ownFor(0);
@@ -120,16 +125,21 @@ export function createSoundChip(effects = [], songs = []) {
     nomusic() {
       if (!song) return;
       song = null;
-      if (fx || pending) pending = true; else sync();
+      if (fx || pending || posted) pending = true; else sync();
     },
     refresh() {
-      if (!fx && !song && !pending) return;
+      if (!fx && !song && !pending && !posted) return;
+      if (posted) {                                  // the posted effect (type 0: none) replaces the one playing, then the chip is synchronised
+        const p = posted; posted = null;
+        fx = p.type ? { index: p.i, bytes: p.bytes, type: p.type, pos: p.type === 1 ? 0 : 4 } : null;
+        own = ownFor(p.type); pending = true;
+      }
       if (pending) { pending = false; sync(); }
       if (fx) fxStep();
       if (song && !(fx && fx.type < 4)) songStep();
     },
     regs: () => chip.slice(),
-    flags: () => (fx ? SB_FX : 0) | (song ? SB_MUS : 0) | (pending ? SB_SYNC : 0),
+    flags: () => (fx ? SB_FX : 0) | (song ? SB_MUS : 0) | (pending ? SB_SYNC : 0) | (posted ? SB_NEW : 0),
     effect: () => (fx ? fx.index : -1),
     song: () => (song ? song.index : -1),
   };

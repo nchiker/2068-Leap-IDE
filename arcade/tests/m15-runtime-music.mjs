@@ -28,7 +28,7 @@ for (const v of VERS) {
   const rt = mod.buildRuntime();
   BUILDS[v] = { v, mod, rt, S: rt.syms, K: rt.json.constants };
 }
-const SB_FX = 1, SB_MUS = 2, SB_SYNC = 4;
+const SB_FX = 1, SB_MUS = 2, SB_SYNC = 4, SB_NEW = 8;
 const QUICK = !!process.env.M15_QUICK;                       // the mutation runs: fewer random scripts, every third interrupt boundary
 
 // ---- assets ----------------------------------------------------------------------------------------------------------------------------
@@ -140,8 +140,9 @@ class Model {
     this.mus = new Array(11).fill(0);
     this.own = new Array(11).fill(0);
     this.fx = null; this.song = null; this.pending = false; this.fxType = 1;
+    this.posted = null;                                       // (code review fix) RT_PLAY / RT_SILENCE while a song plays: {type, e} or {type: 0}, taken by the next refresh
   }
-  get flags() { return (this.fx ? SB_FX : 0) | (this.song ? SB_MUS : 0) | (this.pending ? SB_SYNC : 0); }
+  get flags() { return (this.fx ? SB_FX : 0) | (this.song ? SB_MUS : 0) | (this.pending ? SB_SYNC : 0) | (this.posted ? SB_NEW : 0); }
   put(w, r, v) { this.chip[r] = v; w.push([r, v]); }
   putIf(w, r, v) { if (this.chip[r] !== v) this.put(w, r, v); }
   ownFor(type) {
@@ -166,6 +167,8 @@ class Model {
     if (i >= Math.min(this.effects.length, 8)) return w;
     const e = this.effects[i], b = e.bytes;
     const type = b[3] === 3 ? 3 : b[3] === 4 ? 4 + b[2] : 1;
+    this.posted = null;
+    if (this.song) { this.posted = { e, type }; return w; }    // a song plays: posted, the effect playing is left alone
     this.fx = { e, type, pos: type === 1 ? 0 : 4 }; this.fxType = type;
     this.own = this.ownFor(type);
     const busy = this.song || this.pending;
@@ -176,6 +179,8 @@ class Model {
   }
   silence() {
     const w = [];
+    this.posted = null;
+    if (this.song) { this.posted = { type: 0 }; return w; }
     this.fx = null; this.own = this.ownFor(0);
     if (this.song || this.pending) this.pending = true; else this.sync(w);
     return w;
@@ -191,13 +196,18 @@ class Model {
     const w = [];
     if (!this.song) return w;
     this.song = null;
-    if (this.fx || this.pending) this.pending = true; else this.sync(w);
+    if (this.fx || this.pending || this.posted) this.pending = true; else this.sync(w);
     return w;
   }
   // one refresh (the interrupt) -> its writes
   refresh() {
     const w = [];
     if (!this.flags) return w;
+    if (this.posted) {                                        // the posted effect replaces the one playing (type 0: none), then the chip is synchronised
+      const p = this.posted; this.posted = null;
+      if (p.type) { this.fx = { e: p.e, type: p.type, pos: p.type === 1 ? 0 : 4 }; this.fxType = p.type; } else this.fx = null;
+      this.own = this.ownFor(p.type); this.pending = true;
+    }
     if (this.pending) { this.pending = false; this.sync(w); }
     if (this.fx) this.fxStep(w);
     if (this.song && !(this.fx && this.fxType < 4)) this.songStep(w);
@@ -361,17 +371,32 @@ for (const v of VERS) {
       ['RT_MUSIC over a song and a C effect', [{ music: 0 }, { play: 1 }], { music: 1 }], ['RT_MUSIC with nothing', [], { music: 0 }],
       ['RT_NOMUSIC with a C effect', [{ music: 0 }, { play: 0 }], { nomusic: true }], ['RT_NOMUSIC alone', [{ music: 0 }], { nomusic: true }],
       ['RT_MUSIC over a song that ends a pattern at every refresh', [{ music: 3 }], { music: 0 }], ['RT_PLAY over a C effect and a one-refresh song', [{ music: 3 }, { play: 1 }], { play: 0 }],
+      // (code review 2026-11-12) a three-channel effect replaced or stopped while it pauses a song that writes at every refresh: the song must stay
+      // paused and never write over the effect's registers in the middle of the call
+      ['RT_PLAY 3 over a 3 effect pausing a one-refresh song', [{ music: 3 }, { play: 2 }], { play: 2 }], ['RT_SILENCE of a 3 effect pausing a one-refresh song', [{ music: 3 }, { play: 2 }], {}],
+      ['RT_PLAY C over a C effect and a one-refresh song', [{ music: 3 }, { play: 0 }], { play: 1 }], ['RT_SILENCE of a C effect over a one-refresh song', [{ music: 3 }, { play: 0 }], {}],
     ];
     // the state an interrupt in the middle must not disturb: for RT_MUSIC the new song's position, for RT_PLAY the new effect's; it must equal a run without
     // the interrupt, or that run one refresh later (an interrupt after the last SET counts as a refresh of the new song / effect)
-    const keyOf = (r, op) => 'music' in op ? [rd16(r.m, S.V_MUS_ORD), rd16(r.m, S.V_MUS_PTR), rd8(r.m, S.V_MUS_WAIT), ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_SHADOW + k))].join()
-      : 'play' in op ? [rd16(r.m, S.V_SFX_PTR), rd8(r.m, S.V_SFX_CH), ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_OWN + k))].join() : null;
+    // (since the code review: for RT_PLAY / RT_SILENCE the song's position is checked too, so a paused song that moved is seen; effect and song must
+    // both equal ONE of the two placements)
+    const songKey = (r) => [rd16(r.m, S.V_MUS_ORD), rd16(r.m, S.V_MUS_PTR), rd8(r.m, S.V_MUS_WAIT), ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_SHADOW + k))].join();
+    const keyOf = (r, op) => 'music' in op ? [songKey(r), '']
+      : 'play' in op ? [[rd16(r.m, S.V_SFX_PTR), rd8(r.m, S.V_SFX_CH), ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_OWN + k))].join(), songKey(r)]
+      : op.nomusic ? null : [[rd8(r.m, S.V_SFX_ACTIVE) & 1, ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_OWN + k))].join(), songKey(r)];
+    const chipOf = (m) => Array.from({ length: 11 }, (_, k) => m.ay.regs[k]).join();
     for (const [name, setup, op] of cases) {
       // the routine's length in instructions, from a run without interrupts
       const probe = rig(vv, effs, songs);
       const doOp = (r, o) => ('play' in o ? callRoutine(r.m, S.RT_PLAY, { a: o.play }) : 'music' in o ? callRoutine(r.m, S.RT_MUSIC, { hl: r.songAt[o.music] }) : o.nomusic ? callRoutine(r.m, S.RT_NOMUSIC, {}) : callRoutine(r.m, S.RT_SILENCE, {}));
       for (const o of setup) { doOp(probe, o); frame(probe); frame(probe); }
-      const refs = [2, 3].map((nf) => { const q = rig(vv, effs, songs); for (const o of setup) { doOp(q, o); frame(q); frame(q); } readyForIrq(q.m); doOp(q, op); for (let k = 0; k < nf; k++) frame(q); return keyOf(q, op); });
+      // the two runs a cut call may equal (code review 2026-11-12: built as the two placements exactly, where the old test took the call followed by 2 or 3
+      // refreshes): the whole call before the interrupt, or after it; each followed by the two refreshes the trial runs after the routine
+      // ('none': the last trial, whose interrupt would come after the routine has returned, so it never fires)
+      const refs = ['before', 'after', 'none'].map((when) => { const q = rig(vv, effs, songs); for (const o of setup) { doOp(q, o); frame(q); frame(q); } readyForIrq(q.m); if (when === 'before') { doOp(q, op); fireIrq(q); } else if (when === 'after') { fireIrq(q); doOp(q, op); } else doOp(q, op); frame(q); frame(q); return keyOf(q, op); });
+      // what the chip may hold right after an interrupt that comes in the middle of the call: as if the whole call came before that interrupt, or
+      // after it, or unchanged (the interrupt wrote nothing: a one-refresh hold); anything else is a mixture the song or the effect never plays
+      const chipRefs = ['before', 'after'].map((when) => { const q = rig(vv, effs, songs); for (const o of setup) { doOp(q, o); frame(q); frame(q); } readyForIrq(q.m); if (when === 'before') doOp(q, op); fireIrq(q); return chipOf(q.m); });
       const name2 = 'play' in op ? 'RT_PLAY' : 'music' in op ? 'RT_MUSIC' : op.nomusic ? 'RT_NOMUSIC' : 'RT_SILENCE';
       const steps = 3000;                                    // (the loop stops at the first trial whose interrupt comes after the routine has returned)
       for (let at = 0; at < steps; at += QUICK ? 3 : 1) {
@@ -386,14 +411,17 @@ for (const v of VERS) {
         cpu.a = 'play' in op ? op.play : 0;
         if ('music' in op) { cpu.h = r.songAt[op.music] >> 8; cpu.l = r.songAt[op.music] & 255; }
         cpu.pc = S[name2];
-        let n = 0, done = false, fired = false;
+        let n = 0, done = false, fired = false, mixed = '';
         while (n++ < 100000) {
           if (cpu.pc === pc0 && cpu.sp === sp0) { done = true; break; }
           if (!fired && n > at && cpu.iff1 && !cpu.eiDelay) {
             fired = true;
+            const chipBefore = chipOf(m);
             Z.irqZ80(cpu, m.bus);
             const spI = cpu.sp, pcI = m.bus.read(spI) | (m.bus.read(spI + 1) << 8);
             let k = 0; while (!(cpu.pc === pcI && cpu.sp === spI + 2) && k++ < 20000) Z.runZ80(cpu, m.bus, 1, m);
+            const chipAfter = chipOf(m);
+            if (!('music' in op) && !op.nomusic && chipAfter !== chipBefore && !chipRefs.includes(chipAfter)) mixed ||= `the chip after the interrupt is ${chipAfter}: neither the call before it (${chipRefs[0]}), after it (${chipRefs[1]}) nor unchanged`;
             continue;
           }
           Z.runZ80(cpu, m.bus, 1, m);
@@ -417,12 +445,13 @@ for (const v of VERS) {
           }
           if (!why && !(flags & SB_MUS) && !(flags & SB_FX)) for (let k = 8; k <= 10 && !why; k++) if (m.ay.regs[k]) why = `R${k} = ${m.ay.regs[k]} with nothing playing`;
         }
-        if (!why && done) { const k = keyOf(r, op); if (k !== null && !refs.includes(k)) why = `the ${'music' in op ? 'song' : 'effect'} is not where a run without the interrupt has it (${k} vs ${refs[0]})`; }
+        if (!why && mixed) why = mixed;
+        if (!why && done) { const k = keyOf(r, op); if (k !== null && !(fired ? refs.slice(0, 2) : refs.slice(2)).some((x) => x[0] === k[0] && x[1] === k[1])) why = `the ${'music' in op ? 'song' : 'effect'} is not where a run without the interrupt has it (${k} vs ${refs[0]})`; }
         if (why) { bad++; first ||= `${name}, interrupt after ${at} instructions: ${why}`; }
         if (!fired) break;                                    // past the routine's end
       }
     }
-    check(`v${v}: an interrupt at every instruction boundary of RT_PLAY, RT_SILENCE, RT_MUSIC, RT_NOMUSIC with a song playing (${cases.length} situations, ${trials} trials): no split select / data pair, AY_SHADOW = chip, two refreshes later every register no effect owns holds the song's value (none playing: volumes 0)`,
+    check(`v${v}: an interrupt at every instruction boundary of RT_PLAY, RT_SILENCE, RT_MUSIC, RT_NOMUSIC with a song playing (${cases.length} situations, ${trials} trials): no split select / data pair, AY_SHADOW = chip, two refreshes later every register no effect owns holds the song's value (none playing: volumes 0), the song and the effect where a run without the interrupt has them, and (RT_PLAY / RT_SILENCE) the chip after the interrupt as if the call came wholly before or after it, or unchanged`,
       bad === 0 && trials > 100, first || `${trials} trials`);
   }
 
@@ -448,6 +477,23 @@ for (const v of VERS) {
     check(`v${v}: RT_MUSIC (${mu.t} T) and RT_NOMUSIC (${nm.t} T) keep IX, IY and the alternates and leave SP alone`, mu.preserved && mu.spOk && nm.preserved && nm.spOk);
     const r0 = rig(vv, effs, songs), z = call(r0, 'RT_MUSIC', { hl: 0 });
     check(`v${v}: RT_MUSIC with HL = 0 does nothing (V_SFX_ACTIVE ${rd8(r0.m, S.V_SFX_ACTIVE)}, no writes)`, rd8(r0.m, S.V_SFX_ACTIVE) === 0 && z.writes.length === 0);
+    // (code review fix, mutation run: the no-song path with a request pending) NOMUSIC while an effect plays posts SB_SYNC; a PLAY or SILENCE before the next
+    // refresh must not write the chip from the main thread (the interrupt may be about to write it too: contract 5a "the main thread never writes the chip
+    // while a song or a request is pending"); it posts, and the next refresh gives the chip its values
+    {
+      const pend = (op) => {
+        const q = rig(vv, effs, songs);
+        call(q, 'RT_MUSIC', { hl: q.songAt[0] }); frame(q); frame(q);
+        call(q, 'RT_PLAY', { a: 0 }); frame(q); frame(q);
+        call(q, 'RT_NOMUSIC');
+        const flags0 = rd8(q.m, S.V_SFX_ACTIVE);
+        const c = op === 'play' ? call(q, 'RT_PLAY', { a: 1 }) : call(q, 'RT_SILENCE');
+        return { flags0, flags: rd8(q.m, S.V_SFX_ACTIVE), writes: c.writes.length };
+      };
+      const p1 = pend('play'), p2 = pend('silence');
+      check(`v${v}: with no song and a request pending (NOMUSIC during an effect: V_SFX_ACTIVE ${p1.flags0}), RT_PLAY and RT_SILENCE write nothing from the main thread and keep the request (SB_SYNC) for the next refresh (writes ${p1.writes} / ${p2.writes}, flags ${p1.flags} / ${p2.flags})`,
+        (p1.flags0 & SB_SYNC) && !(p1.flags0 & SB_MUS) && p1.writes === 0 && p2.writes === 0 && (p1.flags & SB_SYNC) && (p2.flags & SB_SYNC));
+    }
     console.log(`  v${v} the sound module: ${S.M_SOUND_E - S.M_SOUND_S} bytes`);
   }
 }
