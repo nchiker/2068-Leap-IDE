@@ -36,23 +36,29 @@ export class XS {
   next() { if (this.x === 0) this.x = 1; this.x = (this.x ^ (this.x << 7)) & 0xFFFF; this.x ^= this.x >> 9; this.x = (this.x ^ (this.x << 8)) & 0xFFFF; return this.x & 0x7FFF; }
 }
 
-let _real = null;
-export function real() {
-  if (_real) return _real;
-  const json = join(ROOT, 'arcade/build/v2/runtime.json');
-  if (!existsSync(json)) return (_real = { ok: false, why: 'arcade/build/v2/runtime.json does not exist' });
+const _reals = new Map();
+/** The parsed arcade/build/v<version>/runtime.json and runtime.bin (default v2: what every caller used before; v3 / v4 are for tools/regen-baselines.mjs). */
+export function real(version = 2) {
+  if (_reals.has(version)) return _reals.get(version);
+  const r = loadReal(version);
+  _reals.set(version, r);
+  return r;
+}
+function loadReal(version) {
+  let _real;
+  const json = join(ROOT, `arcade/build/v${version}/runtime.json`);
+  if (!existsSync(json)) return (_real = { ok: false, why: `arcade/build/v${version}/runtime.json does not exist` });
   const rt = JSON.parse(readFileSync(json, 'utf8'));
   const img = new Uint8Array(readFileSync(join(dirname(json), rt.image ?? 'runtime.bin')));
   const need = ['RT_FILL', 'RT_FILLC', 'RT_COPY', 'RT_LOADMAP', 'RT_LOADMAPAT', 'RT_BORDER', 'RT_RANDOMISE', 'V_BORDER', 'RT_ARGS'];
   const missing = need.filter((n) => rt.symbols[n] === undefined);
-  _real = { rt, img, SYM: rt.symbols, ok: rt.version === 2 && missing.length === 0, why: missing.length ? `runtime.json lacks ${missing.join(' ')}` : '' };
+  _real = { rt, img, SYM: rt.symbols, ok: rt.version === version && missing.length === 0, why: missing.length ? `runtime.json lacks ${missing.join(' ')}` : '' };
   return _real;
 }
 
 export const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
-export function compileReal(src, assets) {
-  const R = real();
-  const res = compile(src, { runtime: R.rt, image: R.img, assets });
+export function compileReal(src, assets, { R = real(), compile: compileFn = compile } = {}) {      // (R: another runtime table, compile: another compiler; tools/regen-baselines.mjs)
+  const res = compileFn(src, { runtime: R.rt, image: R.img, assets });
   if (res.errors.length) throw new Error('compile: ' + errText(res));
   return res;
 }
@@ -62,8 +68,8 @@ const KEYROWS = ['\x01ZXCV', 'ASDFG', 'QWERT', '12345', '09876', 'POIUY', '\rLKJ
 const KEYPOS = new Map(); KEYROWS.forEach((r, row) => [...r].forEach((ch, bit) => KEYPOS.set(ch.charCodeAt(0), [row, bit])));
 
 /** Boot the cartridge and run until `ticks` ticks have completed. */
-export function runReal(res, { ticks, stick = null, keys = null, measure = false, hooks = null } = {}) {
-  const R = real(), SYM = R.SYM;
+export function runReal(res, { ticks, stick = null, keys = null, measure = false, hooks = null, R: Rov = null } = {}) {
+  const R = Rov ?? real(), SYM = R.SYM;
   const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
   const must = (e) => { if (e) throw new Error(e); };
   const ROMDIR = join(TSRUN, 'roms');

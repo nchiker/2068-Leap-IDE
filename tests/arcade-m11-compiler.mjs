@@ -3,7 +3,7 @@
 // arcade-m11-compiler.mjs -- tests for slices B2 (linker, DCK) and B3 (compiler, WORLD) of the banked cartridge map. The contract is docs/ARCADE_BANKING_CONTRACT.md (sections 4, 5, 6 and 7).
 //
 //   node tests/arcade-m11-compiler.mjs
-//   ARCADE_OLD=<dir of the previous src/lang/arcade/> node tests/arcade-m11-compiler.mjs     the byte-identity comparison (section 7) against that compiler
+//   (section 7 compares with the compiler of git 9f36c51^, made with `git archive`; ARCADE_OLD=<dir of a src/lang/arcade/ copy> or ARCADE_OLD_REF=<git ref> choose another)
 //
 // No machine is booted here (tests/arcade-m11-differential.mjs runs the banked games on the real runtimes). Runtime tables used: the real arcade/build/v2|v3|v4/runtime.json of the tree, with the
 // symbols RT_WORLDLOAD / RT_PLANLOAD set to fixed made-up addresses (so that these tests do not depend on how far the runtime build is); section 8 also compiles against the real tables.
@@ -14,9 +14,11 @@
 //   4  placement (contract section 5): nothing banked when it fits, largest first, ties in declaration order, overrides, bankAll, the errors, usage
 //   5  the linker and the DCK (section 6): chunks shipped per build, $FF fill, read-back of the window, the flat image, WORLD streams in the window
 //   6  the code is generated again for the placement: the map table, a banked boot map, the one-map form, determinism
-//   7  byte identity: every example and fixture compiles to exactly the bytes of the previous compiler (needs ARCADE_OLD or the scratch copy)
+//   7  byte identity: every example and fixture compiles to exactly the bytes of the previous compiler (the compiler of git 9f36c51^, by git archive)
 //   8  the real runtime tables: WORLD programs against arcade/build/v3 and v4 as they are now
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -507,9 +509,18 @@ console.log('\n6. The code is generated for the placement: boot map, the one-map
 // =================================================================================================================
 console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked compile to exactly the bytes of the previous compiler');
 {
-  const OLD_DEFAULT = '/tmp/claude-1000/-home-charlie-day-Projects-Leap-IDE/10a0188f-ac8e-4b19-8628-9567564da16d/scratchpad/arcade-old';
-  const oldDir = process.env.ARCADE_OLD ?? (existsSync(join(OLD_DEFAULT, 'arcade-compile.js')) ? OLD_DEFAULT : null);
-  if (!oldDir) skip_('byte identity against the previous compiler', 'set ARCADE_OLD to a copy of the previous src/lang/arcade/');
+  // The previous compiler is the compiler of git 9f36c51^ (the commit before "Banked cartridge map, slices B0-B5", which added WORLD and the banking): `git archive` of its src/ into a
+  // temporary directory, so the comparison is reproducible.  ARCADE_OLD=<dir of a src/lang/arcade/ copy> or ARCADE_OLD_REF=<git ref> choose another one.
+  const OLD_REF = process.env.ARCADE_OLD_REF ?? '9f36c51^';
+  let oldDir = process.env.ARCADE_OLD ?? null, oldTmp = null, oldWhy = '';
+  if (!oldDir) {
+    try {
+      oldTmp = mkdtempSync(join(tmpdir(), 'arcade-old-'));
+      execFileSync('sh', ['-c', `git -C "${ROOT}" archive "${OLD_REF}" src | tar -x -C "${oldTmp}"`], { stdio: ['ignore', 'ignore', 'pipe'] });
+      oldDir = join(oldTmp, 'src/lang/arcade');
+    } catch (e) { oldWhy = `git archive ${OLD_REF} failed (${String(e.message).split('\n')[0]})`; oldDir = null; }
+  }
+  if (!oldDir) skip_('byte identity against the previous compiler', oldWhy || 'set ARCADE_OLD to a copy of the previous src/lang/arcade/');
   else {
     const oldCompile = (await import(pathToFileURL(join(oldDir, 'arcade-compile.js')).href)).compile;
     const { readdirSync } = await import('node:fs');
@@ -548,6 +559,7 @@ console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked comp
     const o8 = oldCompile(eight, { runtime: REAL[2].rt, image: REAL[2].img, assets: ASSETS11 }), w8 = compile(eight, { runtime: REAL[2].rt, image: REAL[2].img, assets: ASSETS11 });
     check_('8 maps of 770 bytes (they fit): identical image and DCK', o8.errors.length === 0 && w8.errors.length === 0 && sameBytes(o8.memory, w8.memory) && sameBytes(o8.dck, w8.dck));
   }
+  if (oldTmp) rmSync(oldTmp, { recursive: true, force: true });
 }
 
 // =================================================================================================================
