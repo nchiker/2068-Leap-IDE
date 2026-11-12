@@ -17,6 +17,9 @@
  * Extra fields by id: tiles / bright0 / bright1 / view (black-bright-mix), groups / tiles / cells / majorityAttr (background-attr-mix),
  * tile (tile0-not-blank), cells (map-undefined-tile, world-shape, floorplan-shape), ticks (sfx-unstorable: the indices of ONE channel; `channel` 'A' | 'B' | 'C' is
  * present when the effect has channels B or C, one finding per channel with a bad tick), count (tileset-size).
+ * Songs (kind 'music', docs/ARCADE_MUSIC_CONTRACT.md sections 3 and 7): music-unstorable (error; `pattern`, `channel` 'A' | 'B' | 'C' and `ticks`, one finding
+ * per pattern and channel with a bad tick), music-shape (error: a limit of section 3, an order entry naming no pattern, an empty order list or pattern, a
+ * loop outside the order list; `pattern` when one pattern is at fault), music-unused-pattern (warning: a pattern the order list never plays; `pattern`).
  */
 
 "use strict";
@@ -316,9 +319,50 @@ function checkSfx(name, asset, out) {
   }
 }
 
+const MUSIC_MAX_PATTERNS = 32, MUSIC_MAX_ORDER = 64, MUSIC_MAX_TICKS = 1800;        // arcade-assets.js MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS
+
+function checkMusic(name, asset, out) {
+  const mk = (id, severity, message, extra = {}, compilerAlso = true) => out.push({ id, severity, kind: 'music', asset: name, message, compilerAlso, ...extra });
+  const pats = isObj(asset) ? asset.patterns : null;
+  if (!Array.isArray(pats)) { mk('asset-malformed', 'error', `song "${name}" has no "patterns" array`, {}, false); return; }
+  if (pats.length === 0) mk('music-shape', 'error', `song "${name}" has no patterns`);
+  if (pats.length > MUSIC_MAX_PATTERNS) mk('music-shape', 'error', `song "${name}" has ${pats.length} patterns; at most ${MUSIC_MAX_PATTERNS}`);
+  pats.forEach((p, i) => {
+    if (!isObj(p) || !Array.isArray(p.ticks)) { mk('asset-malformed', 'error', `song "${name}": pattern ${i} has no "ticks" array`, { pattern: i }, false); return; }
+    const chans = [['A', p.ticks]];
+    for (const [key, ch] of [['ticksB', 'B'], ['ticksC', 'C']]) {
+      const v = p[key];
+      if (v === undefined || v === null) continue;
+      if (!Array.isArray(v)) { mk('asset-malformed', 'error', `song "${name}": pattern ${i} "${key}" (channel ${ch}) must be an array of ticks`, { pattern: i, channel: ch }, false); continue; }
+      chans.push([ch, v]);
+    }
+    const len = Math.max(...chans.map(([, v]) => v.length));
+    if (len === 0) mk('music-shape', 'error', `song "${name}": pattern ${i} has no ticks`, { pattern: i });
+    if (len > MUSIC_MAX_TICKS) mk('music-shape', 'error', `song "${name}": pattern ${i} is ${len} refreshes long; at most ${MUSIC_MAX_TICKS}`, { pattern: i });
+    for (const [ch, arr] of chans) {
+      const bad = unstorableTicks(arr);
+      if (!bad.length) continue;
+      const plural = bad.length > 1;
+      mk('music-unstorable', 'error', `song "${name}": pattern ${i} channel ${ch} tick${plural ? 's' : ''} ${list(bad)} ${plural ? 'have' : 'has'} a tone of 3840..4095 with volume 15, which cannot be stored; lower the volume or the tone`,
+        { pattern: i, channel: ch, ticks: bad });
+    }
+  });
+  const order = asset.order;
+  if (!Array.isArray(order) || order.length === 0) { mk('music-shape', 'error', `song "${name}" has an empty order list: it plays nothing`); return; }
+  if (order.length > MUSIC_MAX_ORDER) mk('music-shape', 'error', `song "${name}": the order list has ${order.length} entries; at most ${MUSIC_MAX_ORDER}`);
+  const bad = order.map((p, k) => (Number.isInteger(p) && p >= 0 && p < pats.length ? -1 : k)).filter((k) => k >= 0);
+  if (bad.length) mk('music-shape', 'error', `song "${name}": order position${bad.length > 1 ? 's' : ''} ${list(bad)} name${bad.length > 1 ? '' : 's'} no pattern (the patterns are 0..${pats.length - 1})`, { positions: bad });
+  const loop = asset.loop;
+  if (loop !== undefined && loop !== null && !(Number.isInteger(loop) && loop >= 0 && loop < order.length)) mk('music-shape', 'error', `song "${name}": the loop ${JSON.stringify(loop)} is not an order position (0..${order.length - 1}, or null for none)`);
+  const played = new Set(order);
+  pats.forEach((p, i) => {
+    if (!played.has(i)) mk('music-unused-pattern', 'warning', `song "${name}": pattern ${i} is not in the order list, so it is never played (it still takes room on the cartridge)`, { pattern: i }, false);
+  });
+}
+
 /**
- * All asset warnings of a project. See the header. Order: tile sets, maps, sound effects, each by asset name.
- * @param {object} project  a .leapgame project ({assets: {tilesets, maps, sfx}})
+ * All asset warnings of a project. See the header. Order: tile sets, maps, sound effects, songs, each by asset name.
+ * @param {object} project  a .leapgame project ({assets: {tilesets, maps, sfx, music}})
  * @param {object|null} roles  scanRoles(source)
  */
 export function checkAssets(project, roles) {
@@ -328,7 +372,7 @@ export function checkAssets(project, roles) {
   };
   try {
     const r = isObj(roles) ? roles : null;
-    const tsTab = table(project, 'tilesets'), mapTab = table(project, 'maps'), sfxTab = table(project, 'sfx');
+    const tsTab = table(project, 'tilesets'), mapTab = table(project, 'maps'), sfxTab = table(project, 'sfx'), musTab = table(project, 'music');
     for (const name of Object.keys(tsTab).sort()) guard('tilesets', name, () => checkTileset(name, tsTab[name], r, project, out));
     if (r && worldsOf(r).length) {
       const sets = new Set();       // the tile sets the worlds are drawn with: tile 0 must be blank in each (checked once per set)
@@ -341,6 +385,7 @@ export function checkAssets(project, roles) {
     }
     if (r) for (const name of Object.keys(mapTab).sort()) guard('maps', name, () => checkMap(name, mapTab[name], mapRole(name, r), r, project, out));
     for (const name of Object.keys(sfxTab).sort()) guard('sfx', name, () => checkSfx(name, sfxTab[name], out));
+    for (const name of Object.keys(musTab).sort()) guard('music', name, () => checkMusic(name, musTab[name], out));
   } catch (e) {
     out.push({ id: 'asset-malformed', severity: 'error', kind: 'project', asset: '', message: `the assets could not be checked: ${e?.message ?? e}`, compilerAlso: false });
   }

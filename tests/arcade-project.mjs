@@ -137,6 +137,25 @@ check('validateAsset: sprite ok; wrong row count / hex / frames / phases refused
   P.validateAsset('sprites', { ...spr, phases: 3 }) !== null &&
   P.validateAsset('sprites', { w: 16, h: 1, frames: [{ rows: [{ bits: 'FFFFF' }] }] }) !== null);
 check('validateAsset: the flat "rows" form is accepted too', P.validateAsset('sprites', { w: 8, h: 1, rows: [{ bits: '3C', mask: '3C' }] }) === null);
+// ── Songs (docs/ARCADE_MUSIC_CONTRACT.md section 3): validateAsset('music'), and the source references of a song ──
+{
+  const T = (tone) => ({ tone, vol: 8, noise: 0, mix: 6 });
+  const good = { patterns: [{ ticks: [T(100), T(200)] }, { ticks: [T(1)], ticksB: [T(2)], name: 'b' }], order: [0, 1, 0], loop: 1, extra: true };
+  const v = (x) => P.validateAsset('music', x);
+  check('validateAsset music: a good song (unknown keys, a pattern label, loop null or absent)', v(good) === null && v({ ...good, loop: null }) === null && v({ patterns: good.patterns, order: [1] }) === null);
+  check('validateAsset music: refuses no patterns, an empty or missing order list, an index outside it, a loop outside it',
+    /needs "patterns"/.test(v({ order: [0] })) && /non-empty "order"/.test(v({ ...good, order: [] })) && /non-empty "order"/.test(v({ patterns: good.patterns }))
+    && /order entry 2 is 2: a pattern index 0\.\.1/.test(v({ ...good, order: [0, 1, 2] })) && /"loop" is 3/.test(v({ ...good, loop: 3 })));
+  check('validateAsset music: the limits (32 patterns, 64 order entries, 1,800 ticks a pattern channel) and every pattern checked as an effect',
+    /at most 32 patterns/.test(v({ patterns: Array(33).fill({ ticks: [T(1)] }), order: [0] })) && v({ patterns: Array(32).fill({ ticks: [T(1)] }), order: Array(64).fill(31), loop: 63 }) === null
+    && /at most 64 entries/.test(v({ ...good, order: Array(65).fill(0), loop: 0 })) && /pattern 0: a pattern has at most 1800 ticks/.test(v({ patterns: [{ ticks: Array(1801).fill(T(1)) }], order: [0] }))
+    && /pattern 1: channel B tick 0: "tone" must be 0\.\.4095/.test(v({ ...good, patterns: [good.patterns[0], { ticks: [T(1)], ticksB: [T(9999)] }] })) && /pattern 0 has no ticks/.test(v({ patterns: [{ ticks: [] }], order: [0] })));
+  const pm = P.newProject('song');
+  check('setAsset stores a song, refuses a damaged one', P.setAsset(pm, 'music', 'tune', good).ok && eq(P.getAsset(pm, 'music', 'tune'), good) && P.setAsset(pm, 'music', 'bad', { ...good, order: [] }).ok === false && P.getAsset(pm, 'music', 'bad') === null);
+  P.setFile(pm, 'main.arc', pm.files['main.arc'] + 'MUSIC title = "tune"\n');
+  check('assetReferences finds a MUSIC declaration of a song', eq(P.assetReferences(pm, 'music', 'tune').map((r) => r.file), ['main.arc']));
+}
+
 check('validateAsset: tileset, map, sfx, unknown kind',
   P.validateAsset('tilesets', { tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00' })) }] }) === null &&
   P.validateAsset('tilesets', { tiles: [{ rows: [] }] }) !== null &&

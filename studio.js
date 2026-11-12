@@ -23,6 +23,7 @@ import { checkAssets } from './src/lang/arcade/arcade-assetcheck.js';
 import { toggleHelp, setHelpProfile } from './src/help.js';
 import { createSymbolsTool } from './src/tools/symbols.js';
 import * as P from './src/arcade-project.js';
+import { newSong, toSong, fromSong, songInfo } from './src/tools/music-model.js';
 
 const profile = STUDIO_PROFILES[0];
 
@@ -242,21 +243,32 @@ function makeHost(id) {
     assetWarnings: (kind, name) => projectAssetWarnings().filter((w) => (kind === undefined || w.kind === kind) && (name === undefined || w.asset === name)),
     usedBy: (kind, name) => usedBy(kind, name),
     soundCount: () => scanArcade(P.buildSource(project).text).assets.filter((a) => a.kind === 'SFX').length,
+    songCount: () => songCount(),
     status: (text) => say(String(text), 'idle'),
     palette: TS_RGB,
   };
 }
 const studioHost = makeHost('studio');
 
+/** How many MUSIC lines the source declares (docs/ARCADE_MUSIC_CONTRACT.md section 2; a game takes at most 8). Counted here, not by scanArcade, which knows
+ *  SPRITE / TILESET / MAP / SFX declarations. */
+function songCount() {
+  let n = 0;
+  for (const line of P.buildSource(project).text.split('\n')) if (/^\s*MUSIC\s+[A-Za-z]\w*\s*=\s*"/i.test(line)) n++;
+  return n;
+}
+
 const NEW_ASSET = {
   sprites: () => ({ w: 16, h: 16, frames: [{ rows: Array.from({ length: 16 }, () => ({ bits: '0000', mask: '0000', ink: 7, paper: 0, bright: 0 })) }] }),
   tilesets: () => ({ tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00', ink: 0, paper: 7, bright: 0 })), flags: 0 }] }),
   maps: () => ({ w: 32, h: 24, tileset: '', cells: 'FF'.repeat(32 * 24) }),
   sfx: () => ({ ticks: [{ tone: 200, vol: 0, noise: 0, mix: 6 }] }),
+  music: () => toSong(newSong()),          // one short pattern, order [0], loop 0 (music-model.js)
 };
+const KIND_WORD = { sprites: 'sprite', tilesets: 'tile set', maps: 'map', sfx: 'sound effect', music: 'song' };
 
 function newAssetUi(kind) {
-  const raw = window.prompt(`Name of the new ${kind.replace(/s$/, '').replace('tileset', 'tile set')} (a letter, then letters, digits and _):`, '');
+  const raw = window.prompt(`Name of the new ${KIND_WORD[kind] ?? kind} (a letter, then letters, digits and _):`, '');
   if (raw === null || raw.trim() === '') return;
   const name = raw.trim();
   if (Object.keys(project.assets[kind]).some((n) => n.toUpperCase() === name.toUpperCase())) { say(`There is already a ${kind} asset "${name}"`, 'error'); return; }
@@ -273,12 +285,12 @@ function renameAssetUi(kind, name) {
 }
 
 function deleteAssetUi(kind, name) {
-  if (!window.confirm(`Delete the ${kind.replace(/s$/, '')} "${name}"?`)) return;
+  if (!window.confirm(`Delete the ${KIND_WORD[kind] ?? kind} "${name}"?`)) return;
   studioHost.deleteAsset(kind, name);
 }
 
-const ASSET_TITLES = { sprites: 'Sprites', tilesets: 'Tile sets', maps: 'Maps', sfx: 'Sound effects' };
-const SHOWN_KINDS = ['sprites', 'tilesets', 'maps', 'sfx'];
+const ASSET_TITLES = { sprites: 'Sprites', tilesets: 'Tile sets', maps: 'Maps', sfx: 'Sound effects', music: 'Songs' };
+const SHOWN_KINDS = ['sprites', 'tilesets', 'maps', 'sfx', 'music'];
 
 function assetMeta(kind, a) {
   if (kind === 'sprites') return `${a.w}×${a.h}${(a.frames?.length ?? 1) > 1 ? ` ×${a.frames.length}` : ''}`;
@@ -287,6 +299,9 @@ function assetMeta(kind, a) {
   if (kind === 'sfx') {                          // the effect lasts as long as its longest channel; B / C (batch 5) are listed when used
     const n = (k) => (Array.isArray(a[k]) ? a[k].length : 0);
     return `${Math.max(n('ticks'), n('ticksB'), n('ticksC'))} ticks${n('ticksB') || n('ticksC') ? ', 3 channels' : ''}`;
+  }
+  if (kind === 'music') {                        // patterns and the length of one pass of the order list
+    try { const i = songInfo(fromSong(a)); return `${plural(i.patterns, 'pattern')}, ${i.seconds.toFixed(1)} s`; } catch { return ''; }
   }
   return '';
 }
@@ -298,12 +313,15 @@ const ASSET_EDITORS = {
   tilesets: { tab: 'tilesets', module: './src/tools/tile-editor.js', factory: 'createTileEditor', container: 'tool-tilesets', title: 'tile editor' },
   maps: { tab: 'maps', module: './src/tools/map-editor.js', factory: 'createMapEditor', container: 'tool-maps', title: 'map editor' },
   sfx: { tab: 'sfx', module: './src/tools/sound-editor.js', factory: 'createSoundEditor', container: 'tool-sfx', title: 'sound editor' },
+  // songs open in the sound editor (docs/ARCADE_MUSIC_CONTRACT.md section 7): the same tab and the same instance, its select(name, 'music') switches mode
+  music: { tab: 'sfx', shared: 'sfx' },
 };
 const editors = {};              // kind -> {api} | {missing: true}
 
 const editorLoads = {};          // kind -> the pending ensureEditor() (two calls before the module loads must make one editor)
 function ensureEditor(kind) {
   if (!ASSET_EDITORS[kind]) return Promise.resolve(null);
+  if (ASSET_EDITORS[kind].shared) kind = ASSET_EDITORS[kind].shared;
   if (editors[kind]) return Promise.resolve(editors[kind].api ?? null);
   return (editorLoads[kind] ??= createEditor(kind));
 }
@@ -331,7 +349,7 @@ function selectAsset(kind, name) {
   const def = ASSET_EDITORS[kind];
   if (def) {
     showTab(def.tab);
-    ensureEditor(kind).then((api) => api?.select?.(name));
+    ensureEditor(kind).then((api) => api?.select?.(name, kind));
   } else {
     say(`Editing ${kind === 'tilesets' ? 'tile sets' : kind === 'maps' ? 'maps' : 'sound effects'} comes with a later Studio slice; ${name} is used by name in the source`, 'idle');
   }
@@ -490,7 +508,7 @@ function renderResult() {
   }
   // asset warnings the compile does not report itself (docs/ARCADE_STUDIO_S2_CONTRACT.md section 3); a click selects the asset
   const assetWarns = projectAssetWarnings().filter((w) => !w.compilerAlso);
-  const assetLabel = { tilesets: 'tiles', maps: 'map', sfx: 'sound', sprites: 'sprite' };
+  const assetLabel = { tilesets: 'tiles', maps: 'map', sfx: 'sound', sprites: 'sprite', music: 'song' };
   for (const w of assetWarns) {
     const row = el('div', `problem ${w.severity}`);
     row.dataset.asset = `${w.kind}/${w.asset}`;

@@ -32,7 +32,7 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 # page -> (entry scripts, optional entry scripts)
 PAGES = {
     'ide.html': (['src/editor.js', 'ide.js'], []),
-    'studio.html': (['src/editor.js', 'studio.js'], ['src/tools/sprite-editor.js']),
+    'studio.html': (['src/editor.js', 'studio.js'], ['src/tools/sprite-editor.js', 'src/tools/tile-editor.js', 'src/tools/map-editor.js', 'src/tools/sound-editor.js']),
 }
 IMPORT_RE = re.compile(r'''(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.{1,2}/[^'"]+)['"]''')
 

@@ -142,6 +142,7 @@ export function createSpriteEditor(container, host) -> { refresh(), select(name)
 | `assetWarnings(kind?, name?)` | (S2) The asset checks (`src/lang/arcade/arcade-assetcheck.js`, contract `ARCADE_STUDIO_S2_CONTRACT.md` section 3) for the live project, filtered; a new array of `{id, severity, kind, asset, tile?, cells?, message, compilerAlso}`. |
 | `usedBy(kind, name)` | (S2) `{assets: [maps drawn with this tile set], source: [{file, line}]}`. |
 | `soundCount()` | (S2) How many `SFX` lines the source declares (the game takes at most 8). |
+| `songCount()` | (M4) How many `MUSIC` lines the source declares (the game takes at most 8). |
 | `palette` | `[{name, rgb}]` of the 8 TS2068 colours x 2 brightness (index = `ink + 8 * bright`), the same RGB the emulator shows, for swatches. |
 
 ### Asset values
@@ -206,3 +207,55 @@ The banked cartridge map (`docs/ARCADE_BANKING_CONTRACT.md` sections 5 and 8) in
 * **Fixed on the way:** `ensureEditor` could run twice before an editor module had loaded (two quick selections), putting two editors in one tab; it now keeps the pending load.
 * Tests: a `B4` block in `tests/studio-smoke.mjs` (the Shooter's `sky` map set to Banked: banked list, both budgets, status bar, a DCK saved, Auto / Mapped round trip, auto-save, a bad value in an opened file, the old-usage fallback), `tests/arcade-project.mjs`
   (bank validation), `tests/map-editor-smoke.mjs` (the select and its undo), `tests/map-model.mjs` (`bank` kept in `extra`).
+
+## As built: music editor (M4, 2026-11-12)
+
+Contract: [`ARCADE_MUSIC_CONTRACT.md`](ARCADE_MUSIC_CONTRACT.md) sections 3 (the asset) and 7 (the Studio). Songs (`assets.music.<name>` = `{patterns, order, loop}`) are edited in
+the **sound editor**, as the owner decided: no separate tracker, no text note format.
+
+| Part | Files | Tests |
+|---|---|---|
+| Model | `src/tools/music-model.js` (pure, Node-importable): `fromSong` / `toSong`, `newSong`, pattern list (`addPattern`, `duplicatePattern`, `deletePattern`, `movePattern`, `labelPattern`), order list (`orderAppend`, `orderInsert`, `orderRemove`, `orderMove`, `orderSet`, `setLoop`), note entry (`INSTRUMENTS`, `noteRecords`, `enterNote`, `enterRest`), `songInfo`, `validateSong`, `songTimeline`, `renderSong`, `createHistory` | `tests/music-model.mjs` (106) |
+| Editor | `src/tools/sound-editor.js` (song mode) | `tests/sound-editor-smoke.mjs` (169 in all; the song block is 31 of them) |
+| Project | `validateAsset('music', ...)` and `MUSIC_LIMITS` in `src/arcade-project.js`; `assetReferences` knows `MUSIC` | `tests/arcade-project.mjs` |
+| Checks | `music-unstorable`, `music-shape`, `music-unused-pattern` in `src/lang/arcade/arcade-assetcheck.js` | `tests/arcade-assetcheck.mjs`, `tests/music-model.mjs` |
+| Studio | a **Songs** group in the project panel (its `+` makes `newSong()`), `ASSET_EDITORS.music = {tab: 'sfx', shared: 'sfx'}`, host `songCount()` | a block in `tests/studio-smoke.mjs` |
+
+**The editor.** Buttons **Effects | Songs** at the left of the editor's top bar switch between the project's `sfx` and `music` assets (the asset last shown in each mode comes back).
+In song mode the pattern shown is edited exactly as an effect is: the same lanes, tracks A / B / C, painting, the row editor, every range operation; the pattern is
+`song.patterns[i]` in sound-model's editing form, so no operation needed a song version. Above the lanes, the **song panel**:
+* **Patterns**: one chip per pattern (`2 intro` when it has a label; dashed when the order list never plays it); Add (a silent pattern as long as the one shown, after it),
+  Duplicate (the copy goes right after), Delete (its order entries go; refused for the last pattern), ◀ ▶ (move it in the list), Label. Adding, duplicating, moving and
+  deleting renumber the order list, so the song plays the same music (tested on 400 random operations).
+* **Order**: one chip per entry (↻ marks the loop; clicking one selects it and shows its pattern); Append / Insert (the pattern shown), Set (the selected entry plays the
+  pattern shown), ◀ ▶, Remove (refused for the last entry); the **loop** select (`none (stop)` or a position). The loop stays on the entry it marks when entries are
+  inserted, removed or moved; when its own entry is removed it goes to the entry after it (the last, if none).
+* A line with the song's size on the cartridge (`convertMusic(...).bytes`, with refused fields clamped as the effect size is, so a size always shows), its length per pass and
+  the loop's length in seconds.
+
+**Note entry** (a row under the row editor; effects have it too): note, octave, length in refreshes, instrument, an optional peak volume and the tick to start at; Enter
+writes `noteRecords` into the selected track from that tick (overwriting, padding a short track with silent records, extending the pattern), Rest writes silence. The
+tick follows the cursor and moves to the end of each note entered, so notes typed one after another make a melody. Instruments (volume envelopes; `toneOfNote` for the
+tone): **pluck** (from the peak, falling by a fifth every refresh), **organ** (held; the last refresh at half, so repeated notes are heard apart), **bass** (two refreshes at
+the peak, falling to 60 %, the last refresh silent from 4 refreshes on), **drum** (noise only, falling by 30 %, the note picks the noise period). A record that would be
+unstorable (tone 3840+ at volume 15: the lowest notes of octave 0) gets volume 14.
+
+**Preview.** ▶ Pattern plays the pattern shown, ▶ Song the whole song: the order list, then (with a loop) from the loop to the end once more, through `renderSfx` over
+`songTimeline` (each channel padded to its pattern's length with the compiler's silent record; a channel no pattern uses is left out, so a channel-A song mixes as a
+one-channel effect); the order entry playing is marked. The preview stops at 5 minutes (`MAX_PREVIEW_TICKS`).
+
+**Undo / redo, saving.** One history per asset: in song mode it holds the whole song, so a pattern edit, an order change and a loop change are each one step, and every
+edit is one `setAsset('music', name, song)`. A refused write rolls back as for effects.
+
+**Validation.** `validateAsset('music')` (what `setAsset` and opening a project enforce): 1..32 patterns, each a pattern with the effect's shape checks and at least one tick
+(at most 1,800 per channel), a non-empty order list of at most 64 pattern indices that exist, `loop` null / absent or an order position. As for effects, an unstorable record
+passes it and is reported by the checks: `music-unstorable` (per pattern and channel, `compilerAlso`), `music-shape` (the structure, for a project that bypassed validation),
+`music-unused-pattern` (a warning the compiler does not give, shown in the problems list). The editor's own list comes from `validateSong`, whose `ok` is exactly "convertMusic
+accepts it" (1,500 random songs); clicking an unstorable entry goes to its pattern, channel and tick.
+
+**Studio wiring.** Songs open in the Sounds tab: `selectAsset('music', name)` shows the tab and calls the sound editor's `select(name, 'music')` (a second argument; `select(name)`
+alone keeps the editor's mode); `onSelectAsset` events of kind `music` do the same. **Fixed on the way:** `tools/stamp-modules.py` now fingerprints the tile, map and sound
+editors (loaded with `import(variable)`, so they and their models had no stamp and could be served stale after an update).
+
+**Not done here** (other slices): the Symbols tab listing songs (needs `scanArcade` to know `MUSIC`, the language slice M3); the size panel's music row (the compiler's
+`usage`, M3); songs for the sample games (M5).
