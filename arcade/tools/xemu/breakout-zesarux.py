@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run an Arcade cartridge in ZEsarUX 13.0 (headless, stock TS2068 ROM, no input) and record the runtime state at the end
-of every frame interrupt.  Adapted from zesarux-run.py; the symbols are those of the v1 runtime
-(arcade/build/v1/runtime.json).
+of every frame interrupt.  Adapted from zesarux-run.py; the symbols are those of the runtime the cartridge was built against: v2
+(arcade/build/v2/runtime.json; breakout.arc uses KEYDOWN, which v1 refuses; v1's addresses differ, V_TICKS 57352 against v2's 57464).
 
-  python3 arcade/tools/xemu/breakout-zesarux.py CART.dck [--out arcade/build/xemu] [--ticks 300]
+  python3 arcade/tools/xemu/breakout-zesarux.py CART.dck [--out arcade/build/xemu] [--ticks 300] [--runtime v2]
+
+Order of the commands: see the header of breakout-tsrun.mjs (build the cartridge, then tsrun, zesarux, fuse, compare).
 
 Method: a breakpoint at the runtime's ISR_DONE (end of the frame interrupt, after the flip).  At each hit, once the cartridge
 has entered (HO_MARK = $5AA5), the script reads V_TICKS, V_SYNC, V_SHADOW_FF, V_SFX_ACTIVE and AY_SHADOW.  After the ISR's
@@ -31,8 +33,8 @@ ARCADE = Path(__file__).resolve().parents[2]
 TICK_TARGETS = (5, 20, 60)
 
 
-def symbols():
-    rt = json.loads((ARCADE / "build/v1/runtime.json").read_text())
+def symbols(runtime="v2"):
+    rt = json.loads((ARCADE / "build" / runtime / "runtime.json").read_text())
     return rt["symbols"], rt["constants"]
 
 
@@ -60,9 +62,10 @@ def main():
     ap.add_argument("--out", default=str(ARCADE / "build/xemu"))
     ap.add_argument("--ticks", type=int, default=300)
     ap.add_argument("--port", type=int, default=10777)
+    ap.add_argument("--runtime", default="v2")
     ap.add_argument("--max-hits", type=int, default=20000)
     a = ap.parse_args()
-    S, C = symbols()
+    S, C = symbols(a.runtime)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
 

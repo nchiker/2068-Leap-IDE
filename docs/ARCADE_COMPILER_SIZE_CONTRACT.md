@@ -424,3 +424,12 @@ m16c updated to the shared helpers (67 mutants: the reworked six killed). **Not 
 the tests and the listing tool use it, and the Studio keeps one result at a time; (10b) regen-baselines copies m5's stand-in runtime rather than
 importing a test module into a tool.
 
+
+### As built: cross-emulator check (2026-11-12)
+
+The compiled code of every game changed, so every example was compared on TSRun, ZEsarUX 13.0 and Fuse 1.9.1 at equal game ticks
+(`arcade/tools/xemu/*-compare.mjs`): Leap Runner 905 ticks, the platformer 170, Vaults 250, Starfall 513, Breakout 300: **all compared bytes and
+ticks match** (0 bitmap / attribute bytes differ, every sampled state identical). The Starfall and Breakout scripts had fallen behind earlier
+batches (Starfall's title scene of batch 4: the scripts never left the title and its keys test failed with the old bytes too; Breakout's scripts
+read runtime v1's symbols): they now follow the runner scripts (a scenario of inputs, a patched script cartridge, keys / joystick / script modes;
+Starfall covers the title, two games and the game over) and their headers give the order of commands.

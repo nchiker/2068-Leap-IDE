@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 // breakout-compare.mjs -- compare the breakout screens of TSRun, ZEsarUX and Fuse at equal game ticks.
-//   node arcade/tools/xemu/breakout-compare.mjs [--dir arcade/build/xemu]
+//   node arcade/tools/xemu/breakout-compare.mjs [--dir arcade/build/xemu] [--fuse DIR (default <dir>/fuse-breakout)]
+// The cartridge is the runtime v2 build; order of the commands: see the header of breakout-tsrun.mjs.
 // Reads (all written by the three run scripts into --dir):
 //   breakout-tsrun-log.txt, breakout-tsrun-t<N>.bin, breakout-zesarux-t<N>.bin, breakout-zesarux-log.txt,
 //   fuse-breakout/frame-*.scr  (fmfconv output of breakout-fuse.sh)
@@ -75,7 +76,7 @@ for (const line of logLines) {
 const tsrunMd5s = new Set(tsrunTick.values());
 
 // ---- the Fuse movie ----------------------------------------------------------------------------------------
-const fuseDir = join(dir, 'fuse-breakout');
+const fuseDir = resolve(args.includes('--fuse') ? args[args.indexOf('--fuse') + 1] : join(dir, 'fuse-breakout'));
 const scr = readdirSync(fuseDir).filter((f) => /^frame-\d+\.scr$/.test(f)).sort();
 const fuse = scr.map((f) => md5(readFileSync(join(fuseDir, f))));
 console.log(`\n== Fuse: ${scr.length} frames, ${new Set(fuse).size} distinct screens`);
@@ -176,3 +177,9 @@ const eq = tsAy.length === zeAy.length && tsAy.every((x, i) => x.key === zeAy[i]
 console.log(`\n== AY registers (ticks 0..300): TSRun ${tsAy.length} distinct states, ZEsarUX ${zeAy.length}; ${eq ? 'the same states in the same order (R0..R10)' : 'DIFFER'}`);
 const starts = (a) => a.map((x, i) => (i > 0 && x.sfx !== 0 && a[i - 1].sfx === 0 ? x.ticks : null)).filter((t) => t !== null);
 console.log(`sound effects start at ticks: TSRun ${starts(tsAy).join(' ')}; ZEsarUX ${starts(zeAy).join(' ')}`);
+
+// verdict: the ZEsarUX screens equal TSRun's, every TSRun tick 1..60 is in the Fuse movie, Fuse's ticks are in order with none skipped, and the AY states agree
+const zeBad = TICKS.filter((n) => { const t = tsrunDumps.get(n), z = zesDumps.get(n); if (!t || !z) return true; const d = diff(t, z); return d.px || d.attr; }).length;
+const failures = zeBad + missing.length + (ordered ? 0 : 1) + skipped.length + (eq ? 0 : 1);
+console.log(`\n${failures ? `${failures} DIFFERENCE(S)` : 'ALL COMPARED SCREENS, TICKS AND AY STATES MATCH'}`);
+process.exit(failures ? 1 : 0);

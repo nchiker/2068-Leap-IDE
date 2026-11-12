@@ -3,7 +3,9 @@
 # to one .scr per refresh (6912 bytes each, the displayed screen).  Adapted from fuse-movie.sh.
 #   sh arcade/tools/xemu/breakout-fuse.sh [CART.dck] [OUTDIR] [SECONDS]
 # Defaults: arcade/build/breakout.dck, arcade/build/xemu/fuse-breakout, 15 seconds (about 750 refreshes; tick 60 is at
-# about refresh 240 after the entry, which is refresh ~104).  Compare with breakout-compare.mjs.
+# about refresh 240 after the entry, which is refresh ~104).  Compare with breakout-compare.mjs.  OUTDIR is emptied of an earlier movie, so give a new one
+# to keep the old.  The cartridge is the runtime v2 build (arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json
+# --runtime v2); order of the commands: see the header of breakout-tsrun.mjs.
 set -e
 here=$(cd "$(dirname "$0")/../../.." && pwd)
 cart=${1:-$here/arcade/build/breakout.dck}; out=${2:-$here/arcade/build/xemu/fuse-breakout}; secs=${3:-15}
