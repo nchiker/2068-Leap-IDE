@@ -20,6 +20,8 @@
 
 "use strict";
 
+import { MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS } from './lang/arcade/arcade-assets.js';
+
 export const FORMAT = 1;
 export const MAIN_FILE = 'main.arc';
 export const ASSET_KINDS = Object.freeze(['sprites', 'tilesets', 'maps', 'sfx', 'music']);
@@ -58,8 +60,8 @@ function validateRows(rows, what, bytes) {
   return null;
 }
 
-/** The limits of a song (the compiler's, arcade-assets.js MAX_PATTERNS / MAX_ORDER / MAX_PATTERN_TICKS; repeated here so this module stays standalone). */
-export const MUSIC_LIMITS = Object.freeze({ patterns: 32, order: 64, ticks: 1800 });
+/** The limits of a song: the compiler's, arcade-assets.js MAX_PATTERNS / MAX_ORDER / MAX_PATTERN_TICKS (not repeated here). */
+export const MUSIC_LIMITS = Object.freeze({ patterns: MAX_PATTERNS, order: MAX_ORDER, ticks: MAX_PATTERN_TICKS });
 
 /** The shape of a sound effect (or a song's pattern): ticks = channel A, ticksB / ticksC (batch 5) = channels B and C, null or absent = none. */
 function validateSfxShape(value, where, maxTicks = 1800) {

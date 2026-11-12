@@ -228,6 +228,7 @@ export function createSoundEditor(container, host) {
   const lastNames = { sfx: null, music: null };     // the asset last shown in each mode
   let noteAt = 0, noteCur = -1, noteNext = null;     // note entry: the tick the next note goes to (follows the cursor, then the end of the last note)
   let hist = null;                      // undo / redo of the effect, or of the whole song
+  let stats = {};                       // song mode: songInfo / validateSong of the song as of the last render, worked out once (they convert the whole song)
   let lastStored = '';                  // JSON of the asset as last read from / written to the host
   let track = 0;                        // the channel being edited: 0 = A, 1 = B, 2 = C
   let cur = 0;                          // the tick the row editor shows
@@ -395,11 +396,19 @@ export function createSoundEditor(container, host) {
   notes.dataset.role = 'notes';
   const noteSel = select(MM.NOTE_LETTERS.map((n) => [n, n]), 'C', () => {}, 'The note', 'note-name');
   const noteOct = input(4, 'The octave (4 is the middle octave: C4 = middle C, A4 = 440 Hz)', 44, 'note-oct', 'number', { min: '0', max: '8', step: '1' });
-  const noteLen = input(8, 'How many refreshes the note lasts (60 a second)', 52, 'note-len', 'number', { min: '1', max: '1800', step: '1' });
+  const noteLen = input(8, 'How many refreshes the note lasts (60 a second)', 52, 'note-len', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
   const noteInst = select(MM.INSTRUMENTS.map((x) => [x.id, x.label]), 'pluck', () => {}, 'The instrument: a volume envelope (the drum plays noise)', 'note-inst');
   const noteVol = input('', 'The loudest volume 1..15 (empty: the instrument\'s own)', 44, 'note-vol', 'number', { min: '1', max: '15', step: '1' });
   const noteAtIn = input(0, 'The tick the note starts at', 54, 'note-at', 'number', { min: '0', step: '1' });
   noteAtIn.addEventListener('change', () => { const v = parseNum(noteAtIn.value); if (Number.isFinite(v)) noteAt = clamp(Math.round(v), 0, MM.MAX_PATTERN_TICKS - 1); noteAtIn.value = String(noteAt); });
+  /** Tell now (status line) when the note and octave chosen are below the AY's lowest note, instead of when Enter is pressed. */
+  const warnLowNote = () => {
+    const oct = parseNum(noteOct.value);
+    if (!(Number.isInteger(oct) && oct >= 0 && oct <= 8)) return;
+    const low = MM.noteRefusal(`${noteSel.value}${oct}`, noteInst.value);
+    if (low) say(low, 'err');
+  };
+  for (const c of [noteSel, noteOct, noteInst]) c.addEventListener('change', warnLowNote);
   notes.append(el('b', null, 'Note'), noteSel, label('octave'), noteOct, label('length'), noteLen, noteInst, label('peak'), noteVol, label('at tick'), noteAtIn,
     button('Enter', 'Write the note into the selected channel from that tick (it overwrites, and extends the channel when needed)', () => noteCmd(false), '', 'note-enter'),
     button('Rest', 'Write silence of that length into the selected channel', () => noteCmd(true), '', 'note-rest'));
@@ -409,12 +418,12 @@ export function createSoundEditor(container, host) {
   ops.dataset.role = 'ops';
   const rangeLabel = label('', 'The ticks the operations below act on');
   rangeLabel.dataset.role = 'range';
-  const insN = input(1, 'How many ticks to insert (copies of the last selected tick)', 44, 'ins-n', 'number', { min: '1', max: '1800', step: '1' });
+  const insN = input(1, 'How many ticks to insert (copies of the last selected tick)', 44, 'ins-n', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
   const scaleF = input(0.5, 'Volume factor', 52, 'scale-f', 'number', { min: '0', step: '0.1' });
   const swFrom = input(0, 'First tone (a number, or a note name such as A4)', 58, 'sw-from', 'text');
   const swTo = input(0, 'Last tone (a number, or a note name such as A5)', 58, 'sw-to', 'text');
   const swMode = select([['tone', 'linear in tone'], ['semitones', 'linear in semitones']], 'semitones', () => {}, 'Linear in the period, or in pitch (musical)', 'sw-mode');
-  const repN = input(2, 'Play the range this many times in all', 44, 'rep-n', 'number', { min: '1', max: '1800', step: '1' });
+  const repN = input(2, 'Play the range this many times in all', 44, 'rep-n', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
   const setField = select(M.FIELD_NAMES.map((f) => [f, f]), 'vol', () => {}, 'The field to set', 'set-field');
   const setVal = input(8, 'The value', 52, 'set-val', 'number', { step: '1' });
   const rangeOf = () => [rng[0], rng[1]];
@@ -499,6 +508,7 @@ export function createSoundEditor(container, host) {
   const doc = () => (kind === 'music' ? song : sfx);          // what the history and the host store
   /** Take `d` (from the history or the host) as what is edited: the effect, or the song and its pattern `pat`. */
   function adopt(d) {
+    stats = {};
     if (kind === 'music') {
       song = d;
       pat = song ? clamp(pat, 0, song.patterns.length - 1) : 0;
@@ -508,7 +518,7 @@ export function createSoundEditor(container, host) {
   }
   function setEffect(d) {
     adopt(d);
-    hist = M.createHistory(doc(), UNDO_STEPS + 1);
+    hist = MM.createHistory(doc(), UNDO_STEPS + 1);      // music-model's: bounded by size too (a song's snapshot is large)
   }
   function clampSel() {
     const n = tickCount();
@@ -530,7 +540,7 @@ export function createSoundEditor(container, host) {
     name = n;
     lastNames[kind] = n;
     lastStored = JSON.stringify(asset);
-    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; track = 0; pat = 0; opos = 0; if (kind === 'music') pat = d.order[0] ?? 0; }
+    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; noteCur = -1; noteNext = null; track = 0; pat = 0; opos = 0; if (kind === 'music') pat = d.order[0] ?? 0; }
     setEffect(d);
     clampSel();
     renderAll();
@@ -559,7 +569,7 @@ export function createSoundEditor(container, host) {
       if (Number.isInteger(res.pos)) opos = res.pos;
       if (Number.isInteger(res.pattern)) pat = res.pattern;
       adopt(song);
-      if (pat !== patBefore && !res.range) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; }
+      if (pat !== patBefore && !res.range) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; noteCur = -1; }
     }
     if (res.range) { rng = [res.range[0], res.range[1]]; anchor = rng[0]; cur = rng[0]; }
     clampSel();
@@ -602,7 +612,7 @@ export function createSoundEditor(container, host) {
   function showPattern(i, pos = null) {
     if (kind !== 'music' || !song || stroke) return;
     if (Number.isInteger(pos)) opos = clamp(pos, 0, song.order.length - 1);
-    if (i !== pat) { pat = clamp(i, 0, song.patterns.length - 1); sfx = song.patterns[pat]; cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; }
+    if (i !== pat) { pat = clamp(i, 0, song.patterns.length - 1); sfx = song.patterns[pat]; cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; noteCur = -1; noteNext = null; }
     renderAll();
   }
   function labelCmd() {
@@ -618,6 +628,7 @@ export function createSoundEditor(container, host) {
     if (!Number.isFinite(len) || len < 1) { say('The length is a number of refreshes, 1 or more', 'err'); return; }
     const oct = parseNum(noteOct.value);
     if (!rest && !(Number.isInteger(oct) && oct >= 0 && oct <= 8)) { say('The octave is a whole number 0..8', 'err'); return; }
+    if (!rest) { const low = MM.noteRefusal(`${noteSel.value}${oct}`, noteInst.value); if (low) { say(low, 'err'); return; } }
     const pk = parseNum(noteVol.value);
     const opts = Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 1, 15) } : {};
     const at = noteAt;
@@ -1009,11 +1020,13 @@ export function createSoundEditor(container, host) {
     if (name && names.includes(name)) nameSel.value = name;
     syncSong();
   }
+  const songInfo = () => (stats.info ??= MM.songInfo(song));
+  const songValidation = () => (stats.val ??= MM.validateSong(song));
   /** The song panel: pattern chips, order chips (the loop marked), the loop select, the song's size and length. */
   function syncSong() {
     songBox.hidden = !(kind === 'music' && song);
     if (songBox.hidden) return;
-    const info = MM.songInfo(song);
+    const info = songInfo();
     const played = new Set(song.order);
     patChips.replaceChildren();
     song.patterns.forEach((p, i) => {
@@ -1044,7 +1057,7 @@ export function createSoundEditor(container, host) {
     if (!sfx) { infoEl.textContent = ''; return; }
     infoEl.replaceChildren();
     if (kind === 'music') {
-      const si = MM.songInfo(song), n = MM.patternLength(sfx);
+      const si = songInfo(), n = MM.patternLength(sfx);
       infoEl.append(document.createTextNode(`pattern ${pat}: ${n} tick${n === 1 ? '' : 's'}, ${(n / M.REFRESH_HZ).toFixed(2)} s, ${si.patternBytes[pat]} bytes\n` +
         `song: ${si.seconds.toFixed(2)} s a pass${si.loop === null ? '' : `, the loop ${si.loopSeconds.toFixed(2)} s`}\n${si.bytes === null ? '?' : si.bytes} bytes on the cartridge (patterns with waits, order list, loop)\n`));
       const c = H.count();
@@ -1104,7 +1117,7 @@ export function createSoundEditor(container, host) {
   }
   /** Song mode: the song's own validation (music-model validateSong: the compiler's rules); a click on an unstorable tick goes to its pattern and channel. */
   function renderSongWarnings() {
-    const v = MM.validateSong(song);
+    const v = songValidation();
     const items = [];
     for (const u of v.unstorable) {
       const first = `pattern ${u.pattern}: ${u.channel === 'A' && !M.isMulti(song.patterns[u.pattern]) ? '' : `channel ${u.channel} `}tick ${u.ticks[0]}:`;
@@ -1125,6 +1138,7 @@ export function createSoundEditor(container, host) {
   }
   function renderAll() {
     if (destroyed) return;
+    stats = {};                                         // the song may have changed: size and checks are worked out again, once, for this render
     const has = !!sfx;
     const names = H.list();
     emptyNote.textContent = kind === 'music' ? 'No songs in this project yet. Press New to make one.' : 'No sound effects in this project yet. Pick a preset and press New.';

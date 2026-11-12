@@ -204,8 +204,8 @@ class Checker {
       const key = `${kind}:${up(a.name)}`;
       const prev = this.assets.get(key);
       if (kind === 'map' && ++mapNo > LIMITS.maxMaps) this.err(a.namePos ?? a, `at most ${LIMITS.maxMaps} MAPs per game (this is the ${mapNo}th of ${mapCount})`);
-      if (kind === 'music' && ++songNo > LIMITS.maxSongs) this.err(a.namePos ?? a, `too many songs (at most ${LIMITS.maxSongs})`);
       if (prev) { this.err(a.namePos, `'${a.name}' is already declared (line ${prev.pos.line})`); continue; }
+      if (kind === 'music' && ++songNo > LIMITS.maxSongs) this.err(a.namePos ?? a, `too many songs (at most ${LIMITS.maxSongs})`);      // only a new song counts: a repeated name is the error above
       if (a.count !== null && a.count !== undefined && (a.count < 1 || a.count > LIMITS.maxPool)) {
         this.err(a.countPos ?? a, `a pool of ${a.count} sprites is out of range (1..${LIMITS.maxPool})`);
       }

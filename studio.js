@@ -243,20 +243,12 @@ function makeHost(id) {
     assetWarnings: (kind, name) => projectAssetWarnings().filter((w) => (kind === undefined || w.kind === kind) && (name === undefined || w.asset === name)),
     usedBy: (kind, name) => usedBy(kind, name),
     soundCount: () => scanArcade(P.buildSource(project).text).assets.filter((a) => a.kind === 'SFX').length,
-    songCount: () => songCount(),
+    songCount: () => scanArcade(P.buildSource(project).text).assets.filter((a) => a.kind === 'MUSIC').length,
     status: (text) => say(String(text), 'idle'),
     palette: TS_RGB,
   };
 }
 const studioHost = makeHost('studio');
-
-/** How many MUSIC lines the source declares (docs/ARCADE_MUSIC_CONTRACT.md section 2; a game takes at most 8). Counted here, not by scanArcade, which knows
- *  SPRITE / TILESET / MAP / SFX declarations. */
-function songCount() {
-  let n = 0;
-  for (const line of P.buildSource(project).text.split('\n')) if (/^\s*MUSIC\s+[A-Za-z]\w*\s*=\s*"/i.test(line)) n++;
-  return n;
-}
 
 const NEW_ASSET = {
   sprites: () => ({ w: 16, h: 16, frames: [{ rows: Array.from({ length: 16 }, () => ({ bits: '0000', mask: '0000', ink: 7, paper: 0, bright: 0 })) }] }),
@@ -292,6 +284,7 @@ function deleteAssetUi(kind, name) {
 const ASSET_TITLES = { sprites: 'Sprites', tilesets: 'Tile sets', maps: 'Maps', sfx: 'Sound effects', music: 'Songs' };
 const SHOWN_KINDS = ['sprites', 'tilesets', 'maps', 'sfx', 'music'];
 
+const songMeta = new WeakMap();      // song asset object -> its project-list line
 function assetMeta(kind, a) {
   if (kind === 'sprites') return `${a.w}×${a.h}${(a.frames?.length ?? 1) > 1 ? ` ×${a.frames.length}` : ''}`;
   if (kind === 'tilesets') return `${(a.tiles ?? a.frames ?? []).length} tiles`;
@@ -301,7 +294,14 @@ function assetMeta(kind, a) {
     return `${Math.max(n('ticks'), n('ticksB'), n('ticksC'))} ticks${n('ticksB') || n('ticksC') ? ', 3 channels' : ''}`;
   }
   if (kind === 'music') {                        // patterns and the length of one pass of the order list
-    try { const i = songInfo(fromSong(a)); return `${plural(i.patterns, 'pattern')}, ${i.seconds.toFixed(1)} s`; } catch { return ''; }
+    // songInfo converts the whole song (the bytes), so it is worked out once per asset: setAsset stores a fresh copy on every change, so the object is the cache key
+    if (!a || typeof a !== 'object') return '';
+    let meta = songMeta.get(a);
+    if (meta === undefined) {
+      try { const i = songInfo(fromSong(a)); meta = `${plural(i.patterns, 'pattern')}, ${i.seconds.toFixed(1)} s`; } catch { meta = ''; }
+      songMeta.set(a, meta);
+    }
+    return meta;
   }
   return '';
 }

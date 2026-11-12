@@ -21,7 +21,7 @@
  *   INSTRUMENTS, noteRecords, enterNote, enterRest  note entry for one track (a sound-model trackView), filling records with toneOfNote
  *   patternLength, patternBytes, songInfo, validateSong    lengths, sizes (convertMusic), the compiler's rules
  *   songTimeline, renderSong                        the patterns in order (the loop played once more) as one effect, and its AY preview
- *   createHistory                                   undo / redo (the sprite editor's)
+ *   createHistory                                   undo / redo (the sprite editor's, also bounded by size)
  */
 
 "use strict";
@@ -29,8 +29,45 @@
 import * as S from './sound-model.js';
 import { convertMusic, convertPattern, MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS, MAX_SONGS } from '../lang/arcade/arcade-assets.js';
 
-export { createHistory } from './sprite-model.js';
 export { MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS, MAX_SONGS };
+
+/**
+ * Undo / redo for songs: the sprite editor's history (whole snapshots, `commit(doc)` / `undo()` / `redo()` / `current` / `canUndo` / `canRedo` / `reset` / `depth`),
+ * but bounded by size as well as by count.  A snapshot is the whole song as JSON (Blockfall's is 184 KB, one at the format's limits several MB), so 200 of them
+ * would be hundreds of MB: the oldest steps are dropped while the stored JSON exceeds `maxBytes` (default HISTORY_MAX_BYTES), always keeping the current
+ * snapshot and, when there is more than one, the step before it, so one undo is always possible after an edit.
+ */
+export const HISTORY_MAX_BYTES = 8 * 1024 * 1024;
+export function createHistory(initial, limit = 200, maxBytes = HISTORY_MAX_BYTES) {
+  const snapshot = (d) => JSON.stringify(d);
+  let stack = [snapshot(initial)], at = 0, bytes = stack[0].length;
+  const trim = () => {
+    while (stack.length > limit) { bytes -= stack[0].length; stack.shift(); at--; }
+    while (stack.length > 2 && at > 0 && bytes > maxBytes) { bytes -= stack[0].length; stack.shift(); at--; }      // the oldest first; the current one and the one before it stay
+  };
+  return {
+    commit(d) {
+      const snap = snapshot(d);
+      if (snap === stack[at]) return false;
+      for (const dropped of stack.slice(at + 1)) bytes -= dropped.length;
+      stack = stack.slice(0, at + 1);
+      stack.push(snap);
+      bytes += snap.length;
+      at++;
+      trim();
+      return true;
+    },
+    undo() { if (at <= 0) return null; at--; return JSON.parse(stack[at]); },
+    redo() { if (at >= stack.length - 1) return null; at++; return JSON.parse(stack[at]); },
+    get current() { return JSON.parse(stack[at]); },
+    get canUndo() { return at > 0; },
+    get canRedo() { return at < stack.length - 1; },
+    reset(d) { stack = [snapshot(d)]; at = 0; bytes = stack[0].length; },
+    get depth() { return { undo: at, redo: stack.length - 1 - at }; },
+    /** Characters of JSON held (about the bytes in memory), and the number of snapshots. */
+    get size() { return { bytes, snapshots: stack.length }; },
+  };
+}
 
 /** The length of a new pattern (refreshes): 32 is about half a second, four notes of 8. */
 export const DEFAULT_PATTERN_TICKS = 32;
@@ -224,21 +261,23 @@ export const INSTRUMENTS = [
 ];
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const NOTE_LETTERS = NOTE_NAMES.slice();
-/** The MIDI number of a note name ('C#4', 'Bb3') or a number. Throws for anything else. */
-function midiOf(note) {
-  if (typeof note === 'number' && Number.isInteger(note)) return note;
-  const m = /^([A-Ga-g])([#b]?)(-?\d)$/.exec(String(note).trim());
-  if (!m) throw new Error(`"${note}" is not a note name such as A4, C#5 or Bb3`);
-  return { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12 * (Number(m[3]) + 1);
+/** Why `note` (a name or MIDI number) cannot be entered with `instrument`: a string, or null when it can.  (Note entry shows it in the status line before it writes.) */
+export function noteRefusal(note, instrument = 'organ') {
+  if (instrument === 'drum') return null;
+  return S.noteTooLow(note);
 }
 /**
  * The records of one note: `length` refreshes (1..1800) of `note` (a name or a MIDI number) played by `instrument` (an INSTRUMENTS id).
  * opts.peak: the loudest volume (default the instrument's).  A record that would be unstorable (tone 3840 and above with volume 15) gets volume 14.
+ * Throws a RangeError ("C0 is below the AY's lowest note, A0") for a tone note the AY cannot play: below A0 the tone period would pass 4095 and every such note
+ * would sound the same.  The drum plays noise (the note only picks the noise period), so it takes any note.
  */
 export function noteRecords(note, length, instrument = 'organ', opts = {}) {
   const inst = INSTRUMENTS.find((x) => x.id === instrument);
   if (!inst) throw new RangeError(`unknown instrument ${instrument} (${INSTRUMENTS.map((x) => x.id).join(', ')})`);
-  const midi = midiOf(note);
+  const midi = S.midiOfNote(note);
+  const low = noteRefusal(note, instrument);
+  if (low) throw new RangeError(low);
   const n = clampInt(Number.isFinite(length) ? length : 1, 1, MAX_PATTERN_TICKS);
   const peak = clampInt(Number.isFinite(opts.peak) ? opts.peak : inst.peak, 0, 15);
   const tone = S.toneOfNote(midi);
@@ -268,7 +307,7 @@ function writeRecords(view, at, records) {
   recs.forEach((r, k) => { list[at + k] = { ...r }; });
   return { message, range: [at, at + recs.length - 1], next: at + recs.length };
 }
-/** Enter a note in a track: the records of noteRecords from tick `at`.  -> {message, range: the note's ticks, next: the tick after it} (throws for a bad note name). */
+/** Enter a note in a track: the records of noteRecords from tick `at`.  -> {message, range: the note's ticks, next: the tick after it} (throws for a bad note name or one below A0). */
 export function enterNote(view, at, note, length, instrument = 'organ', opts = {}) {
   return writeRecords(view, at, noteRecords(note, length, instrument, opts));
 }

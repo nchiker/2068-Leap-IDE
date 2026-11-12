@@ -203,7 +203,7 @@ section('5  note entry');
     && MM.noteRecords('C6', 1, 'drum')[0].noise === 6 && MM.noteRecords('C1', 1, 'drum')[0].noise === 31);
   ok('a peak volume overrides the instrument\'s', same(MM.noteRecords('C4', 3, 'organ', { peak: 6 }).map((r) => r.vol), [6, 6, 3]));
   ok('a note can be a MIDI number, a sharp or a flat', MM.noteRecords(69, 1)[0].tone === S.toneOfNote('A4') && MM.noteRecords('C#5', 1)[0].tone === MM.noteRecords('Db5', 1)[0].tone);
-  ok('every note of octaves 0..8 of every instrument at peak 15 is storable (tone 3840+ gets volume 14)', MM.INSTRUMENTS.every((x) => MM.NOTE_LETTERS.every((n) => [0, 1, 4, 8].every((o) => MM.noteRecords(`${n}${o}`, 3, x.id, { peak: 15 }).every((r) => !(r.vol === 15 && r.tone >= 3840))))) && MM.noteRecords('A0', 1, 'organ', { peak: 15 })[0].vol === 14);
+  ok('every note of octaves 0..8 (below A0 only the drum) of every instrument at peak 15 is storable (tone 3840+ gets volume 14)', MM.INSTRUMENTS.every((x) => MM.NOTE_LETTERS.every((n) => [0, 1, 4, 8].every((o) => MM.noteRefusal(`${n}${o}`, x.id) || MM.noteRecords(`${n}${o}`, 3, x.id, { peak: 15 }).every((r) => !(r.vol === 15 && r.tone >= 3840))))) && MM.noteRecords('A0', 1, 'organ', { peak: 15 })[0].vol === 14);
   ok('a bad note name or instrument throws', throws(() => MM.noteRecords('H4', 1), /not a note name/) && throws(() => MM.noteRecords('C4', 1, 'tuba'), /unknown instrument/));
   ok('the length is clamped to 1..1800', MM.noteRecords('C4', 0).length === 1 && MM.noteRecords('C4', 9999).length === 1800);
   // writing into a track
@@ -349,6 +349,51 @@ section('9  undo / redo');
   for (let k = 1; k < snaps.length; k++) { const u = h.redo(); if (JSON.stringify(MM.toSong(u)) !== snaps[k]) fwd = false; }
   ok('redo steps forward through them again', fwd && !h.canRedo);
   ok('an operation that was refused changes nothing, so it records no step', (() => { const t = MM.fromSong(song([pt(1)], [0], 0)); const hh = MM.createHistory(t); MM.deletePattern(t, 0); MM.orderRemove(t, 0); return hh.commit(t) === false; })());
+}
+
+// ═══ 10 ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+section('10  review fixes: octave 0, the size-bounded history, one copy of the limits');
+{
+  // octave 0: toneOfNote clamps silently (its other callers keep that), note entry refuses
+  const lowNames = ['C0', 'C#0', 'D0', 'D#0', 'E0', 'F0', 'F#0', 'G0', 'G#0'];
+  ok('toneOfNote still clamps C0..G#0 to 4095 (unchanged for its other callers) and A0 is 4009', lowNames.every((n) => S.toneOfNote(n) === 4095) && S.toneOfNote('A0') === 4009 && S.toneOfNote('A#0') === 3784);
+  ok('noteTooLow: every note C0..G#0 (and flats, MIDI numbers) is too low, A0 and up is not', lowNames.every((n) => /^\S+ is below the AY's lowest note, A0$/.test(S.noteTooLow(n))) && S.noteTooLow('A0') === null && S.noteTooLow('Bb0') === null && S.noteTooLow(21) === null && S.noteTooLow(20) === "G#0 is below the AY's lowest note, A0");
+  ok('the message names the note as typed: C0 is below the AY\'s lowest note, A0', S.noteTooLow('C0') === "C0 is below the AY's lowest note, A0" && S.noteTooLow('c0') === "C0 is below the AY's lowest note, A0" && S.noteTooLow('Ab0') === "Ab0 is below the AY's lowest note, A0");
+  ok('noteRecords refuses C0 .. G#0 for pluck / organ / bass with that message (a RangeError)', lowNames.every((n) => ['pluck', 'organ', 'bass'].every((i) => throws(() => MM.noteRecords(n, 4, i), /^[A-G]#?0 is below the AY's lowest note, A0$/))) && throws(() => MM.noteRecords(0, 4, 'organ'), /^C-1 is below|is below the AY's lowest note, A0$/));
+  ok('noteRecords takes A0 (tone 4009) and A1', MM.noteRecords('A0', 2, 'organ')[0].tone === 4009 && MM.noteRecords('A1', 2, 'organ')[0].tone === S.toneOfNote('A1'));
+  ok('the drum plays noise, so a low note is fine there (it picks the noise period)', MM.noteRecords('C0', 3, 'drum').every((r) => r.mix === 5 && r.noise === 31) && MM.noteRefusal('C0', 'drum') === null && MM.noteRefusal('C0', 'organ') === "C0 is below the AY's lowest note, A0");
+  const view = { ticks: [{ tone: 100, vol: 3, noise: 0, mix: 6 }] };
+  ok('enterNote with C0 throws and leaves the track untouched', throws(() => MM.enterNote(view, 0, 'C0', 4, 'pluck'), /lowest note, A0/) && view.ticks.length === 1 && view.ticks[0].tone === 100);
+  // one note-name grammar: sound-model's midiOfNote
+  ok('midiOfNote: A4 = 69, C#5, Bb3, a number as it is, a bad name throws', S.midiOfNote('A4') === 69 && S.midiOfNote('C#5') === 73 && S.midiOfNote('Bb3') === 58 && S.midiOfNote('c4') === 60 && S.midiOfNote(60) === 60 && throws(() => S.midiOfNote('H4'), /not a note name/) && S.noteNameOfMidi(73) === 'C#5');
+  ok('music-model keeps no second grammar: noteRecords rejects a bad name with the same message', throws(() => MM.noteRecords('X9', 1), /"X9" is not a note name such as A4, C#5 or Bb3/));
+
+  // the history is bounded by size as well as by count
+  const big = MM.fromSong(song([pt(1800, 100, 1800, 1800), pt(1800, 200, 1800, 1800)], [0, 1], 0));
+  const one = JSON.stringify(MM.toSong(big)).length;
+  const budget = Math.round(4.5 * one), h = MM.createHistory(big, 201, budget);
+  let n = 0;
+  for (let k = 0; k < 40; k++) { big.patterns[0].ticks[k % 1800].vol = 1 + (k % 9); if (h.commit(big)) n++; }
+  ok(`40 edits of a ${(one / 1e6).toFixed(2)} MB song under a ${(budget / 1e6).toFixed(1)} MB budget: committed, but only the newest steps are kept (${h.size.snapshots} snapshots, ${(h.size.bytes / 1e6).toFixed(1)} MB)`, n === 40 && h.size.snapshots <= 4 && h.size.bytes <= budget && h.canUndo);
+  let steps = 0; while (h.undo()) steps++;
+  ok('undo goes back through exactly the kept steps and stops, each a valid song', steps === h.depth.redo && steps >= 1 && steps <= 3 && !h.canUndo);
+  let again = 0; let last = null; for (let u; (u = h.redo());) { again++; last = u; }
+  ok('redo returns to the newest edit, exactly', again === steps && JSON.stringify(MM.toSong(last)) === JSON.stringify(MM.toSong(big)));
+  const small = MM.createHistory(MM.newSong(), 201), sm = MM.newSong();
+  for (let k = 0; k < 250; k++) { sm.order = [0]; MM.setLoop(sm, null); sm.patterns[0].ticks[0].vol = k % 15; small.commit(sm); }
+  ok('a small song keeps the count limit (200 snapshots: 200 undo steps), as the sprite history does', small.depth.undo === 200, JSON.stringify(small.depth));
+  const one1 = MM.createHistory(big, 201, 10);
+  big.patterns[0].ticks[0].vol = 2; one1.commit(big); big.patterns[0].ticks[0].vol = 3; one1.commit(big);
+  ok('even a budget smaller than one snapshot keeps the current one and one undo step', one1.canUndo && one1.size.snapshots === 2);
+  one1.reset(MM.newSong());
+  ok('reset starts over (one snapshot, nothing to undo)', one1.size.snapshots === 1 && !one1.canUndo && !one1.canRedo);
+
+  // one copy of the limits: the project's and the checker's come from arcade-assets.js
+  const limitsOk = import('../src/arcade-project.js').then(({ MUSIC_LIMITS }) => MUSIC_LIMITS.patterns === MM.MAX_PATTERNS && MUSIC_LIMITS.order === MM.MAX_ORDER && MUSIC_LIMITS.ticks === MM.MAX_PATTERN_TICKS && MM.MAX_SONGS === 8);
+  ok('MUSIC_LIMITS and the model\'s limits are arcade-assets.js\'s (32 / 64 / 1800 / 8)', await limitsOk && MM.MAX_PATTERNS === 32 && MM.MAX_ORDER === 64 && MM.MAX_PATTERN_TICKS === 1800);
+  const fs = await import('node:fs');
+  const src = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
+  ok('no second copy: arcade-project.js and arcade-assetcheck.js hold no 32 / 64 / 1800 literals for the song limits', !/patterns: 32|MUSIC_MAX_PATTERNS = 32|MUSIC_MAX_ORDER = 64|MUSIC_MAX_TICKS = 1800/.test(src('src/arcade-project.js') + src('src/lang/arcade/arcade-assetcheck.js')));
 }
 
 console.log(`\nAll checks done: ${passed} passed, ${failed} failed`);

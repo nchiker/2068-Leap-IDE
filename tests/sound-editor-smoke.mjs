@@ -642,6 +642,32 @@ try {
   await click('[data-role=note-enter]');
   sg = await song();
   check('a drum note at tick 30 pads C to 30 and extends the pattern to 33 refreshes (noise only)', sg.patterns[1].ticksC.length === 33 && sg.patterns[1].ticksC.slice(30).every((x) => x.mix === 5) && (await state()).trackLengths.join() === '32,0,33');
+  // a note below the AY's lowest (octave 0 below A0) is refused with a plain message and writes nothing; A0 is accepted
+  const lowC = JSON.stringify(await song()), lowSets = await songSets();
+  await setField('[data-role=note-inst]', 'organ'); await setField('[data-role=note-name]', 'C'); await setField('[data-role=note-oct]', 0);
+  const lowMsg = await status();
+  check('choosing C0 shows "C0 is below the AY\'s lowest note, A0" in the status line at once', lowMsg === "C0 is below the AY's lowest note, A0", lowMsg);
+  await setField('[data-role=note-at]', 0);
+  await click('[data-role=note-enter]');
+  check('Enter with C0 is refused (same message), the song is not changed and the host is not written', (await status()) === "C0 is below the AY's lowest note, A0" && JSON.stringify(await song()) === lowC && (await songSets()) === lowSets, await status());
+  await setField('[data-role=note-name]', 'A'); await click('[data-role=note-enter]');
+  check('A0 is accepted: one write, a tone of 4009 on channel C from tick 0', (await songSets()) === lowSets + 1 && (await song()).patterns[(await state()).pattern].ticksC[0].tone === 4009, await status());
+  await click('[data-role=undo]');
+  check('... and its undo restores the song', JSON.stringify(await song()) === lowC);
+  const setsBeforeDrum = await songSets();
+  await setField('[data-role=note-inst]', 'drum'); await setField('[data-role=note-name]', 'C'); await setField('[data-role=note-at]', 0); await click('[data-role=note-enter]');
+  check('a drum takes C0 (it plays noise, the note only picks the noise period): written', (await songSets()) === setsBeforeDrum + 1 && (await song()).patterns[(await state()).pattern].ticksC[0].mix === 5, await status());
+  await click('[data-role=undo]');
+  // note entry's start tick after a switch of pattern: the cursor is at tick 0 in both, so the tick must still go back to 0
+  await click('[data-role=pat-0]');
+  await setField('[data-role=note-inst]', 'pluck'); await setField('[data-role=note-name]', 'C'); await setField('[data-role=note-oct]', 4); await setField('[data-role=note-len]', 5); await setField('[data-role=note-at]', 0);
+  await click('[data-role=note-enter]');
+  ss = await state();
+  check('a note at tick 0 of pattern 0: the cursor is on tick 0 and the next note goes to 5', ss.cur === 0 && ss.noteAt === 5, JSON.stringify({ cur: ss.cur, noteAt: ss.noteAt }));
+  await click('[data-role=undo]');
+  await click('[data-role=pat-1]');
+  ss = await state();
+  check('switching to pattern 1 (the cursor was already at 0) puts the note entry back at tick 0, not at 5', ss.pattern === 1 && ss.noteAt === 0 && (await evaluate("document.querySelector('[data-role=note-at]').value")) === '0', JSON.stringify({ pattern: ss.pattern, noteAt: ss.noteAt }));
   // the order list and the loop
   await click('[data-role=ord-0]');
   ss = await state();

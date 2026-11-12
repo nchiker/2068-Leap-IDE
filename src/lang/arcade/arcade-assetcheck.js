@@ -24,6 +24,8 @@
 
 "use strict";
 
+import { MAX_PATTERNS as MUSIC_MAX_PATTERNS, MAX_ORDER as MUSIC_MAX_ORDER, MAX_PATTERN_TICKS as MUSIC_MAX_TICKS } from './arcade-assets.js';
+
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const table = (project, kind) => (isObj(project) && isObj(project.assets) && isObj(project.assets[kind]) ? project.assets[kind] : {});
 const upper = (s) => String(s).toUpperCase();
@@ -318,8 +320,6 @@ function checkSfx(name, asset, out) {
       message: `sound effect "${name}": ${multi ? `channel ${ch} ` : ''}tick${plural ? 's' : ''} ${list(bad)} ${plural ? 'have' : 'has'} a tone of 3840..4095 with volume 15, which cannot be stored (the byte $FF ends an effect); lower the volume or the tone` });
   }
 }
-
-const MUSIC_MAX_PATTERNS = 32, MUSIC_MAX_ORDER = 64, MUSIC_MAX_TICKS = 1800;        // arcade-assets.js MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS
 
 function checkMusic(name, asset, out) {
   const mk = (id, severity, message, extra = {}, compilerAlso = true) => out.push({ id, severity, kind: 'music', asset: name, message, compilerAlso, ...extra });

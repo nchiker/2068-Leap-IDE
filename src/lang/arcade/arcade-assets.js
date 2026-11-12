@@ -23,6 +23,8 @@
 
 "use strict";
 
+import { LIMITS } from './arcade-words.js';
+
 export const MAX_TILES = 128;
 export const MAX_SFX = 8;
 export const CELLS = 768;
@@ -179,7 +181,7 @@ export function convertSfx(asset) {
 }
 
 // ── music (docs/ARCADE_MUSIC_CONTRACT.md sections 3 and 4) ──────────────────────────────────────────────────────────────────────────────────
-export const MAX_SONGS = 8;
+export const MAX_SONGS = LIMITS.maxSongs;           // the language's limit (arcade-words.js), the checker's "too many songs"
 export const MAX_PATTERNS = 32;
 export const MAX_ORDER = 64;
 export const MAX_PATTERN_TICKS = 1800;              // the effect editor's cap, per pattern
