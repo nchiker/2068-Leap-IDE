@@ -60,7 +60,9 @@ FILL_BOOT:
     DB BG_ATTR
     DW DATTR1, DATTR_LEN-1
     DB BG_ATTR
-    DW PHASE_OFF, $E000-PHASE_OFF-1     ; all of chunk 6 to 0 (PHASE_OFF: no shift of any asset yet, build_assets fills it in; the pool is not read before it is written), then the tables below
+    DW PHASE_OFF, CELL_TILE-PHASE_OFF-1 ; chunk 6 to 0 in two ranges (PHASE_OFF: no shift of any asset yet, build_assets fills it in; the pool is not read before it is
+    DB 0                                ; written), without the 1,536 bytes of the cell map, which the entries below fill: the boot is 32,000 T shorter
+    DW DIRTY0, $E000-DIRTY0-1           ; (the font's unpacking, cells_init, takes about 140,000 T more than the plain copy did)
     DB 0
     DW CELL_TILE, CELL_COUNT-1
     DB CELL_BLANK
@@ -77,13 +79,39 @@ FILL_BOOT:
 ; the first two ticks draw it).  Header values are clamped like v0's: a tile count above 128 is read as 128.
 ; ---------------------------------------------------------------------------------------------------------------
 cells_init:
-    ld hl,FONT_GLYPHS           ; glyphs of codes 32..127 (codes 0..31 stay blank: the table was cleared)
+    ; ---- the font: glyphs of codes 32..127 (codes 0..31 stay blank: the table was cleared), unpacked from FONT_PACK (runtime.asm): a bit
+    ; stream of rows 0..6 of every glyph, 6 bits a row (bits 2, 3, .. 7), then (code, row 7) of the FONT_ROW7_N glyphs that have a row 7 ----
+    ld hl,FONT_PACK
     ld e,32
-    ld b,96
+    ld c,$80                    ; C = the bit buffer: the bits not yet used, then a 1 as the end marker (here: empty)
 .font:
-    call glyph_put
+    ld d,GLYPH_TAB>>8           ; plane 0
+    ld b,7                      ; rows 0..6
+.frow:
+    ld a,$20                    ; the marker that falls out of A after 6 bits
+.fbit:
+    sla c                       ; carry = the next bit of the stream
+    jr nz,.fhave
+    ld c,(hl)                   ; that was the end marker (C is 0, the carry set): the next byte of the stream, the marker behind its last bit
+    inc hl
+    rl c
+.fhave:
+    rra                         ; the bits come in at bit 7: after 6 of them the first is bit 2, bits 1, 0 are 0 and the marker is the carry
+    jr nc,.fbit
+    ld (de),a
+    inc d                       ; the next plane
+    djnz .frow
     inc e
-    djnz .font
+    jp p,.font                  ; until code 128
+    ld b,FONT_ROW7_N            ; HL = FONT_ROW7 (the stream is a whole number of bytes)
+    ld d,(GLYPH_TAB>>8)+7
+.frow7:
+    ld e,(hl)
+    inc hl
+    ld a,(hl)
+    inc hl
+    ld (de),a
+    djnz .frow7
     ; ---- the tileset: DB count, count x (8 bitmap bytes, 1 attribute byte) ----
     ld hl,(GAME_TILESET)
     ld a,h
@@ -99,13 +127,14 @@ cells_init:
     jr z,.notiles
     ld b,a                      ; tiles left
     ld e,128                    ; glyph code of tile 0
-    ld iy,TILE_ATTR
 .tile:
     call glyph_put              ; (HL advances by 8)
     ld a,(hl)
     inc hl
-    ld (iy+0),a
-    inc iy
+    ld d,TILE_ATTR>>8           ; TILE_ATTR is page aligned: tile t's attribute at + t, and E = 128 + t
+    res 7,e
+    ld (de),a
+    set 7,e
     inc e
     djnz .tile
 .notiles:
@@ -153,12 +182,12 @@ FILL_DIRTY:
 ; ---------------------------------------------------------------------------------------------------------------
 maps_boot:
     ld a,(GAME_DIV)
-    bit 7,a
-    jr z,.none
+    add a,a                     ; carry = bit 7 (DIV_EXT)
+    ret nc                      ; (every early return below leaves through an OR, which clears the carry)
     ld hl,(GAME_MAPTAB)
     ld a,h
     or l
-    jr z,.none
+    ret z
     ld a,(hl)
     inc hl
     cp MAX_MAPS+1
@@ -168,21 +197,19 @@ maps_boot:
     ld (V_NMAP),a
     ld (V_MAPTAB),hl
     or a
-    jr z,.none
+    ret z
     ld e,(hl)
     inc hl
     ld d,(hl)
     ld a,d
     or e
-    jr z,.none
+    ret z
     ex de,hl
     ld bc,0
-    ld de,0
+    ld d,b
+    ld e,c
     call RT_LOADMAPPTR          ; (a map-table entry may point into the bank window)
     scf
-    ret
-.none:
-    or a
     ret
 ; glyph_put: HL = 8 glyph bytes (rows 0..7), E = the cell value (glyph code).  Writes row k to GLYPH_TAB + 256 k + E ("planes": the cell
 ; renderers index a row of a glyph with B = plane, C = code).  HL advances by 8.  Clobbers AF, C, D.
@@ -231,7 +258,7 @@ draw_cell:
     add a,DFILE0>>8
     ld d,a
     ld b,GLYPH_TAB>>8
-    jr cell_rows
+    ; (falls into cell_rows)
 
 ; cell_rows: BC = glyph plane 0 + code (B = GLYPH_TAB >> 8, C = code), DE = bitmap address of row 0 in the hidden file.  Copies the 8 rows.
 ; Clobbers AF, BC, DE (D ends at the last row).

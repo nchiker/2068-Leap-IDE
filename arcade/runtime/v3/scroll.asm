@@ -29,45 +29,24 @@ window_boot:
     ret nc                      ; window_desc outside the game image
     push hl
     pop ix
-    ld a,(ix+0)
-    cp 9
-    ret nc                      ; cx 0..8
-    ld a,(ix+1)
-    cp 9
-    ret nc                      ; cy 0..8
-    ld a,(ix+2)
-    dec a
-    cp 4
-    ret nc                      ; nbands 1..4
-    ld a,(ix+3)
-    sub 24
-    cp 128-24+1
-    ret nc                      ; world_w 24..128
-    ld a,(ix+6)
-    or a
-    ret nz                      ; tables page aligned
-    ld a,(ix+7)
-    sub $80
-    cp $40-13
-    ret nc                      ; its 14 pages inside the game image
-    ld a,(ix+9)
-    sub $80
-    cp $40
-    ret nc                      ; tile_flags (+9) and tilerows (+13): inside the game image
-    ld a,(ix+13)
-    sub $80
-    cp $40
-    ret nc
-    ld a,(ix+11)
-    sub BANK_LO
-    cp $80
-    ret nc                      ; world_src (+11): inside the game image ($8000-$BFFF) or the bank window ($4000-$7FFF, banking)
-    ld b,(ix+2)                 ; ---- the bands ----
-    ld c,0                      ; rows so far
-    push ix
-    pop hl
-    ld de,14
-    add hl,de                   ; HL = the band records; D = 0: 1 = a ratio-2 band
+    ld de,WB_CHK                ; ---- the descriptor's 14 bytes against WB_CHK: byte - low must be 0..span ----
+    ld b,14
+.ck:
+    ld a,(de)
+    inc de
+    ld c,a
+    ld a,(hl)
+    inc hl
+    sub c
+    ld c,a                      ; C = byte - low
+    ld a,(de)
+    inc de
+    cp c
+    ret c                       ; span < byte - low: refused
+    djnz .ck
+    ld d,b                      ; ---- the bands ----  D = 0: 1 = a ratio-2 band;  HL = the band records (descriptor + 14)
+    ld c,b                      ; rows so far
+    ld b,(ix+2)
 .bv:
     ld a,(hl)
     dec a
@@ -146,13 +125,16 @@ window_boot:
     ld bc,TILE_ATTR
 .tf:
     push hl                     ; blank: the OR of the tile's 8 rows is 0
+    push bc
     ld l,e
     ld h,W_TROWS>>8
     xor a
-    DUP 8
+    ld b,8
+.tr:
     or (hl)
     inc l
-    EDUP
+    djnz .tr
+    pop bc
     pop hl
     sub 1
     sbc a,a
@@ -164,6 +146,10 @@ window_boot:
     inc d
     ld a,(hl)
     ld (de),a                   ; W_FLAGT = W_ATTRT + $100
+    inc d
+    xor a
+    ld (de),a                   ; W_BLANKT = W_ATTRT + $200: 0 (8 t and 8 t + 1 are written below)
+    dec d
     dec d
     inc e
     ld a,e
@@ -179,12 +165,9 @@ window_boot:
     inc e
     pop af
     ld (de),a
-    xor a
-    DUP 6
-    inc e
-    ld (de),a
-    EDUP
-    inc e
+    ld a,e
+    add a,7
+    ld e,a                      ; the next tile's 8 t
     dec d
     dec d
     inc hl
@@ -222,18 +205,13 @@ window_boot:
     or l
     ld l,a
     ld (W_BMBASE),hl
-    ld a,(W_CY)                 ; attributes: $5800 + 32 cy + cx
-    ld l,a
-    ld h,0
-    add hl,hl
-    add hl,hl
-    add hl,hl
-    add hl,hl
-    add hl,hl
-    ld a,(W_CX)
-    ld e,a
-    ld d,DATTR0>>8
-    add hl,de
+    ld a,h                      ; attributes: $5800 + 32 cy + cx = the same low byte, the high byte $58 + the third (H = $40 + 8 * the third)
+    rrca
+    rrca
+    rrca
+    and 3
+    or DATTR0>>8
+    ld h,a
     ld (W_ATBASE),hl
     ld a,(W_CX)                 ; dirty masks: byte 0 keeps the columns 0..cx-1 (cx ones), byte 3 keeps cx+24..31
     ld b,a
@@ -252,6 +230,24 @@ window_boot:
     ld a,1
     ld (V_WIN),a
     ret
+
+; WB_CHK: window_boot's checks of window_desc, one pair (low, span) per descriptor byte 0..13: the byte is accepted when byte - low is 0..span
+; (unsigned).  (0, 255) = any value.
+WB_CHK:
+    DB 0, 8                     ; cx 0..8
+    DB 0, 8                     ; cy 0..8
+    DB 1, 3                     ; nbands 1..4
+    DB 24, 128-24               ; world_w 24..128
+    DB 0, 255                   ; cam_max (clamped below)
+    DB 0, 255
+    DB 0, 0                     ; tables: page aligned
+    DB $80, $40-13-1            ; tables: its 14 pages inside the game image
+    DB 0, 255
+    DB $80, $3F                 ; tile_flags (+9): inside the game image
+    DB 0, 255
+    DB BANK_LO, $7F             ; world_src (+11): inside the game image ($8000-$BFFF) or the bank window ($4000-$7FFF, banking)
+    DB 0, 255
+    DB $80, $3F                 ; tilerows (+13): inside the game image
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; world_load: HL = a world's byte-RLE stream, mapped ($8000-$BFFF) or banked ($4000-$7FFF) -> WORLD_RAM (docs/ARCADE_BANKING_CONTRACT.md section 3).  A banked
@@ -304,9 +300,8 @@ world_decode:
 ; ---------------------------------------------------------------------------------------------------------------
 RT_WORLDLOAD:
     ld c,a
-    call win_has                ; (mode.asm) Z: no window.  The six bytes of the old LD A,(V_WIN) / OR A / RET Z test: no address after it moves
+    call win_has                ; (mode.asm) Z: no window
     ret z
-    nop
     ld a,c
     ld (W_WW),a
     ld (W_CAMMAX),de
@@ -1229,86 +1224,7 @@ wd_draw:
     ld e,a
     ld d,h                      ; DE = the screen address
     pop hl                      ; HL = the FTAB entry
-    ld a,c
-    or a
-    jr nz,wd_shifted
-    ld a,(hl)                   ; shift 0: the rows in the game image
-    inc hl
-    ld h,(hl)
-    ld l,a
-    ld a,b
-    cp 1
-    jr nz,.r2
-    call blitp1
-    jp wd_next
-.r2:
-    cp 2
-    jr nz,.r3
-    call blitr2
-    jp wd_next
-.r3:
-    cp 3
-    jr nz,.r4
-    call blitr3
-    jp wd_next
-.r4:
-    call blitr4
-    jp wd_next
-wd_shifted:                     ; a pre-shifted copy in the frame's slot
-    inc hl
-    inc hl
-    ld a,(hl)
-    inc hl
-    or (hl)
-    jr z,wd_miss
-    ld a,(hl)
-    dec hl
-    ld l,(hl)
-    ld h,a                      ; HL = the slot
-wd_slot:
-    ld a,b
-    ld b,PHASE_OFF>>8
-    cp 3
-    jr nz,.p2
-    PHASE_ADD
-    call blitp3
-    jp wd_next
-.p2:
-    cp 2
-    jr nz,.p4
-    PHASE_ADD
-    call blitp2
-    jp wd_next
-.p4:
-    cp 4
-    jr nz,.p5
-    PHASE_ADD
-    call blitp4
-    jp wd_next
-.p5:
-    PHASE_ADD
-    call blitp5
-    jp wd_next
-wd_miss:                        ; no slot: build the frame into one (fc_miss, as draw_all)
-    dec hl
-    dec hl
-    dec hl
-    ld (V_FTE),hl
-    push bc
-    push de
-    ld a,(W_AREC)
-    sub AST&$FF
-    rrca
-    rrca
-    rrca
-    rrca
-    and $0F
-    call fc_miss
-    pop de
-    pop bc
-    ld a,h
-    or l
-    jr nz,wd_slot
+    call blit_frame             ; (main.asm) the blit, shared with draw_all: shift 0 from the game image, else the slot, a miss builds the frame
 wd_next:
     ld a,(W_I)
     inc a
@@ -1909,9 +1825,7 @@ th_done:
 th_sideout:
     call th_side
     jr th_done
-th_zero:
-    ld hl,0
-    ret
+th_zero         EQU rt_zero     ; (api.asm: HL = 0, RET)
 th_side:                        ; TH_ACC |= 1.  Clobbers AF.
     ld a,(TH_ACC)
     or 1
@@ -1925,27 +1839,27 @@ th_side:                        ; TH_ACC |= 1.  Clobbers AF.
 win_hit:
     push de
     ld de,WH_A
-    call wbox
+    call hit_box                ; (text.asm: a WH_* destination gives 24-bit edges)
     pop de
     jr nc,.no
     ld a,e
     ld de,WH_B
-    call wbox
+    call hit_box                ; (text.asm: a WH_* destination gives 24-bit edges)
     jr nc,.no
-    ld hl,WH_A+0                ; a.x0 < b.x1
-    ld de,WH_B+3
+    ld de,WH_A+0                ; a.x0 < b.x1
+    ld hl,WH_B+3
     call lt24
     jr nc,.no
-    ld hl,WH_B+0                ; b.x0 < a.x1
-    ld de,WH_A+3
+    ld de,WH_B+0                ; b.x0 < a.x1
+    ld hl,WH_A+3
     call lt24
     jr nc,.no
-    ld hl,WH_A+6                ; a.y0 < b.y1
-    ld de,WH_B+9
+    ld de,WH_A+6                ; a.y0 < b.y1
+    ld hl,WH_B+9
     call lt24
     jr nc,.no
-    ld hl,WH_B+6                ; b.y0 < a.y1
-    ld de,WH_A+9
+    ld de,WH_B+6                ; b.y0 < a.y1
+    ld hl,WH_A+9
     call lt24
     jr nc,.no
     ld hl,1
@@ -1954,85 +1868,23 @@ win_hit:
     ld hl,0
     ret
 
-; lt24: carry set when the signed 24-bit value at HL is below the one at DE (the values are within +-2^17: the difference cannot overflow).
-; Clobbers AF, C, DE, HL.
+; lt24: carry set when the signed 24-bit value at DE is below the one at HL (the values are within +-2^17: the difference cannot overflow).
+; Clobbers AF, DE, HL.
 lt24:
     ld a,(de)
-    ld c,a
-    ld a,(hl)
-    sub c
+    sub (hl)
     inc hl
     inc de
     ld a,(de)
-    ld c,a
-    ld a,(hl)
-    sbc a,c
+    sbc a,(hl)
     inc hl
     inc de
     ld a,(de)
-    ld c,a
-    ld a,(hl)
-    sbc a,c
+    sbc a,(hl)
     rla                         ; carry = the sign of the difference
     ret
 
-; wbox: A = instance, DE = 12 bytes -> carry set and the box (24-bit x0, x1, y0, y1) written; carry clear when the instance does not exist, is
-; hidden or its box is empty.  Clobbers AF, BC, DE, HL.
-wbox:
-    ld (WH_DEST),de
-    ld hl,V_NINST
-    cp (hl)
-    ret nc
-    add a,a
-    add a,a
-    add a,a
-    add a,SPR_TAB&$FF
-    ld l,a
-    ld h,SPR_TAB>>8
-    ld a,(hl)
-    or a
-    ret z
-    inc l
-    ld a,(hl)                   ; the asset
-    inc l
-    ld e,(hl)
-    inc l
-    ld d,(hl)
-    inc l
-    ld (WH_X),de
-    ld e,(hl)
-    inc l
-    ld d,(hl)
-    ld (WH_Y),de
-    add a,a
-    add a,a
-    add a,a
-    add a,a
-    add a,(AST&$FF)+AST_HOT
-    ld l,a
-    ld h,AST>>8                 ; HL -> hot x, y, w, h
-    inc l
-    inc l
-    ld a,(hl)
-    or a
-    ret z                       ; w = 0
-    inc l
-    ld a,(hl)
-    or a
-    ret z                       ; h = 0
-    dec l
-    dec l
-    dec l
-    ld bc,(WH_DEST)
-    ld de,(WH_X)
-    push hl
-    call axis24
-    pop hl
-    inc l
-    ld de,(WH_Y)
-    call axis24
-    scf
-    ret
+; (wbox, the window's box builder, is hit_box in text.asm now: one routine for both modes, the axis routine chosen by the destination.)
 ; axis24: HL -> offset (the size at + 2), DE = position (signed), BC = destination -> 24-bit position + offset and + size at (BC), BC += 6.
 axis24:
     ld a,(hl)
@@ -2044,33 +1896,22 @@ axis24:
     rla
     sbc a,a
     ld (WH_T),a                 ; the sign extension
-    ld a,e
-    add a,h
+    ld a,h
+    call .edge                  ; position + offset
+    ld a,l                      ; + size
+.edge:                          ; WH_T:D:E += A, written at (BC) as 3 bytes, BC += 3 (LD and INC BC keep the carry between the bytes)
+    add a,e
     ld e,a
+    ld (bc),a
+    inc bc
     ld a,d
     adc a,0
     ld d,a
-    ld a,(WH_T)
-    adc a,0
-    ld (WH_T),a                 ; WH_T:D:E = position + offset
-    call .put
-    ld a,e
-    add a,l
-    ld e,a
-    ld a,d
-    adc a,0
-    ld d,a
+    ld (bc),a
+    inc bc
     ld a,(WH_T)
     adc a,0
     ld (WH_T),a
-.put:
-    ld a,e
-    ld (bc),a
-    inc bc
-    ld a,d
-    ld (bc),a
-    inc bc
-    ld a,(WH_T)
     ld (bc),a
     inc bc
     ret

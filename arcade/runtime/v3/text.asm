@@ -318,9 +318,8 @@ RT_TILEAT:
     ld h,a
     ld l,c
     ld a,(hl)
-    bit 7,a
-    jr z,.none
-    and $7F
+    sub $80                     ; a font cell (below 128): no tile; else A = the tile
+    jr c,.none
     ld l,a
     ld h,0
     ret
@@ -337,7 +336,7 @@ RT_TILEAT:
 RT_HIT:
     ld hl,V_WIN
     bit 0,(hl)
-    jr nz,hit_w                 ; window mode (v3 part 2, scroll.asm): the stored signed positions, exact
+    jp nz,win_hit               ; window mode (v3 part 2, scroll.asm): the stored signed positions, exact
     push de
     ld de,HB_A
     call hit_box
@@ -372,11 +371,10 @@ RT_HIT:
 .no:
     ld hl,0
     ret
-hit_w:
-    jp win_hit
 
-; hit_box: A = sprite index, DE = destination (4 words: x0, x1, y0, y1).  Carry set = filled; carry clear = no such sprite,
-; hidden, or an empty box.  Clobbers AF, BC, DE, HL.
+; hit_box: A = sprite index, DE = destination -> carry set = filled; carry clear = no such sprite, hidden, or an empty box.  Clobbers AF, BC, DE, HL.
+; Two callers, told apart by the destination's page: RT_HIT (HB_A / HB_B: 4 words x0, x1, y0, y1, unsigned 16 bit) and win_hit (scroll.asm; WH_A / WH_B,
+; a page higher: the four edges as signed 24-bit values, axis24).
 hit_box:
     ld (V_HITDEST),de
     ld hl,V_NINST
@@ -385,61 +383,70 @@ hit_box:
     add a,a
     add a,a
     add a,a                     ; 8 * index (SPR_ENT)
-    ld e,a
-    ld d,0
-    ld hl,SPR_TAB
-    add hl,de
+    add a,SPR_TAB&$FF
+    ld l,a
+    ld h,SPR_TAB>>8             ; (SPR_TAB lies inside one page: asserted in sprite.asm)
     ld a,(hl)
     or a
     ret z                       ; hidden (OR cleared the carry)
-    inc hl
+    inc l
     ld a,(hl)                   ; the instance's asset
-    inc hl
+    inc l
     ld e,(hl)
-    inc hl
+    inc l
     ld d,(hl)
-    inc hl
+    inc l
     ld (V_HITX),de              ; x
     ld e,(hl)
-    inc hl
+    inc l
     ld d,(hl)
     ld (V_HITY),de              ; y
     add a,a
     add a,a
     add a,a
     add a,a                     ; 16 * asset (AST_LEN)
-    add a,(AST&$FF)+AST_HOT     ; (AST + 16 * 7 + 7 does not carry out of the low byte: asserted in sprite.asm)
+    add a,(AST&$FF)+AST_HOT+2   ; (AST + 16 * 7 + 11 does not carry out of the low byte: asserted in assets.asm)
     ld l,a
-    ld h,AST>>8                 ; HL -> the asset's hot x, y, w, h
-    inc hl
-    inc hl
+    ld h,AST>>8                 ; HL -> the asset's hot w (x, y, w, h)
     ld a,(hl)                   ; w
     or a
     ret z
-    inc hl
+    inc l
     ld a,(hl)                   ; h
     or a
     ret z
-    dec hl
-    dec hl
-    dec hl                      ; HL -> hot x
+    dec l
+    dec l
+    dec l                       ; HL -> hot x
     ld bc,(V_HITDEST)
     ld de,(V_HITX)
+    bit 0,b                     ; the destination's page: HB_* (RT_HIT) or WH_* (win_hit)
+    jr nz,.win
     push hl
     call box_axis               ; x0, x1
     pop hl
-    inc hl                      ; HL -> hot y
+    inc l                       ; HL -> hot y
     ld de,(V_HITY)
     call box_axis               ; y0, y1
     scf
     ret
+.win:                           ; window mode: the same with 24-bit edges
+    push hl
+    call axis24
+    pop hl
+    inc l
+    ld de,(V_HITY)
+    call axis24
+    scf
+    ret
+    ASSERT ((HB_A>>8)&1) == 0 && ((HB_B>>8)&1) == 0 && ((WH_A>>8)&1) == 1 && ((WH_B>>8)&1) == 1
 
 ; box_axis: HL -> offset byte (the size is at HL + 2), DE = position -> writes position + offset, then + size, as words at (BC),
 ; BC advanced by 4.  Clobbers AF, DE, HL.
 box_axis:
     ld a,(hl)
-    inc hl
-    inc hl
+    inc l
+    inc l
     ld l,(hl)                   ; L = size
     ld h,a                      ; H = offset
     ld a,e

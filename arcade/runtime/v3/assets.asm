@@ -97,22 +97,53 @@ plan_pool:
     ld (FC_NEXT+2),hl
     ld hl,POOL_C
     ld (FC_NEXT+4),hl
-    ; ---- 1. the FTAB of every used asset: nframes x (DW rom, DW slot = 0) ----
+    ld hl,pp_ftab               ; 1. the FTAB of every used asset
+    call pp_each
+    ld hl,pp_min                ; 2. min(nframes, instances) slots of every used asset with phases > 1
+    call pp_each
+    ld hl,(FC_MISS)
+    ld a,h
+    or l
+    jp nz,pool_fail
+    ld hl,pp_extra              ; 3. more slots, asset by asset, while they fit (up to nframes)
+    call pp_each
+    ld hl,pp_build              ; 4. build the frames that have a slot (falls into pp_each)
+
+; pp_each: HL = a step of the plan.  Calls it for every asset that has an instance, in index order, with IX = the asset's record and FC_A = the asset.
+; The step may clobber every register but IX's meaning is its own (nothing is kept in a register between two assets).  Boot only.
+pp_each:
+    ld (V_ROWSAVE),hl           ; (boot scratch)
     xor a
-.ft:
-    call pp_asset               ; IX = record; carry = past the last asset, Z = unused
-    jr c,.ftdone
-    jr z,.ftnext
+.a:
+    ld (FC_A),a
+    ld hl,V_NAST
+    cp (hl)
+    ret nc                      ; past the last asset
+    add a,a
+    add a,a
+    add a,a
+    add a,a
+    ld e,a
+    ld d,0
+    ld ix,AST
+    add ix,de
+    ld a,(ix+AST_NINST)
+    or a                        ; (clears the carry)
+    ld hl,(V_ROWSAVE)
+    call nz,call_hl             ; (main.asm: JP (HL))  an asset without an instance is skipped
+    ld a,(FC_A)
+    inc a
+    jr .a
+
+; ---- step 1. the FTAB of the asset: nframes x (DW rom, DW slot = 0) ----
+pp_ftab:
     ld a,(ix+AST_NF)
     add a,a
     add a,a
     ld c,a
     ld b,0                      ; BC = 4 x nframes
     call pool_alloc
-    jr nc,.ftok
-    call pp_miss
-    jr .ftnext
-.ftok:
+    jp c,pp_miss                ; it does not fit: counted, the boot stops after step 2
     ld (ix+AST_FTAB),l
     ld (ix+AST_FTAB+1),h
     push hl                     ; FTAB
@@ -156,19 +187,12 @@ plan_pool:
     ex de,hl
     dec a
     jr nz,.fte
-.ftnext:
-    ld a,(FC_A)
-    inc a
-    jr .ft
-.ftdone:
-    ; ---- 2. min(nframes, instances) slots of every used asset with phases > 1 ----
-    xor a
-.mk:
-    call pp_asset
-    jr c,.mkdone
-    jr z,.mknext
+    ret
+
+; ---- step 2. min(nframes, instances) slots of the asset when it has phases > 1 ----
+pp_min:
     call pp_slen
-    jr z,.mknext                ; one phase: no slot
+    ret z                       ; one phase: no slot
     ld a,(ix+AST_NINST)
     cp (ix+AST_NF)
     jr c,.mkn
@@ -187,46 +211,27 @@ plan_pool:
 .mkl:
     pop bc
     djnz .mks
-.mknext:
-    ld a,(FC_A)
-    inc a
-    jr .mk
-.mkdone:
-    ld hl,(FC_MISS)
-    ld a,h
-    or l
-    jp nz,pool_fail
-    ; ---- 3. more slots, asset by asset, while they fit (up to nframes) ----
-    xor a
-.ex:
-    call pp_asset
-    jr c,.exdone
-    jr z,.exnext
+    ret
+
+; ---- step 3. more slots of the asset while they fit (up to nframes) ----
+pp_extra:
     call pp_slen
-    jr z,.exnext
+    ret z
 .exs:
     ld a,(ix+AST_K)
     cp (ix+AST_NF)
-    jr nc,.exnext               ; every frame has its slot
+    ret nc                      ; every frame has its slot
     ld bc,(FC_SLEN)
     call pool_alloc
-    jr c,.exnext                ; the next slot of this asset does not fit: the next asset
+    ret c                       ; the next slot of this asset does not fit: the next asset
     call pp_assign
     jr .exs
-.exnext:
-    ld a,(FC_A)
-    inc a
-    jr .ex
-.exdone:
-    ; ---- 4. build the frames that have a slot (frames 0..K-1) ----
-    xor a
-.bd:
-    call pp_asset
-    ret c
-    jr z,.bdnext
+
+; ---- step 4. build the asset's frames that have a slot (frames 0..K-1) ----
+pp_build:
     ld a,(ix+AST_K)
     or a
-    jr z,.bdnext
+    ret z
     ld b,a
     ld l,(ix+AST_FTAB)
     ld h,(ix+AST_FTAB+1)
@@ -242,10 +247,7 @@ plan_pool:
     add hl,de
     pop bc
     djnz .bdf
-.bdnext:
-    ld a,(FC_A)
-    inc a
-    jr .bd
+    ret
 
 ; pool_fail: the art does not fit the phase pool (FC_MISS = the bytes that did not fit).  Stop: magenta border, interrupts off.
 pool_fail:
@@ -253,26 +255,6 @@ pool_fail:
     ld a,POOL_FAIL_BORDER
     out (PORT_ULA),a
     jr $
-
-; pp_asset: A = asset index -> FC_A = A, IX = its record; carry = A >= V_NAST (past the last asset); else Z = unused (no instance).
-; Clobbers AF, DE, HL.
-pp_asset:
-    ld (FC_A),a
-    ld hl,V_NAST
-    cp (hl)
-    ccf
-    ret c
-    add a,a
-    add a,a
-    add a,a
-    add a,a
-    ld e,a
-    ld d,0
-    ld ix,AST
-    add ix,de
-    ld a,(ix+AST_NINST)
-    or a                        ; (clears the carry)
-    ret
 
 ; pp_slen: FC_SLEN = (phases - 1) x CLEN of the asset at IX; Z when phases = 1.  Clobbers AF, BC, HL.
 pp_slen:
@@ -513,9 +495,7 @@ build_frame:
     ld h,AST>>8                 ; HL -> the record
     ld a,(hl)
     ld (BF_ROWS),a              ; AST_H
-    ld a,l
-    add a,AST_WB-AST_H
-    ld l,a
+    set 2,l                     ; AST_WB = AST_H + 4 (the records are 16-aligned: bit 2 of L is clear at AST_H)
     ld b,(hl)                   ; B = AST_WB
     inc l
     ld a,(hl)                   ; AST_XMASK
@@ -549,14 +529,14 @@ build_frame:
     ld d,(hl)
     push de
     pop ix                      ; IX = the slot = copy 1, row 0
-    ld a,b
-    dec a
+    dec b
     jp z,bf_w1
-    dec a
+    dec b
     jp z,bf_w2
-    dec a
+    dec b
     jp z,bf_w3
-    jp bf_w4
+    ; (wb = 4: falls into bf_w4, the first variant below)
+    ASSERT AST_WB-AST_H == 4 && (AST&$0F) == 0 && AST_LEN == 16     ; SET 2,L above and in api.asm, skip.asm
 
 ; BF_VARIANT name, wb: the row loop of build_frame for one source width (window wb + 1 bytes).  Mask registers B C H L A (the first wb + 1 of
 ; them), image registers the same in the alternate set; E' counts the bits of a phase, D' = g; DE = CLEN (IX stride to the next copy).
@@ -690,10 +670,10 @@ name:
         jp nz,.row
         ret
     ENDM
+    BF_VARIANT bf_w4, 4         ; first: build_frame falls into it
     BF_VARIANT bf_w1, 1
     BF_VARIANT bf_w2, 2
     BF_VARIANT bf_w3, 3
-    BF_VARIANT bf_w4, 4
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; fc_miss: A = asset, V_FTE = the FTAB entry of the frame wanted (its slot is 0; only an asset with K < nframes can miss) -> HL = the slot now
@@ -796,14 +776,14 @@ fc_miss:
     ld (hl),e
     inc hl
     ld (hl),d
-    push de
+    ld (V_PTR),de               ; the slot (V_PTR: boot scratch, free at run time; not the stack: the tick's depth stays 26 bytes)
     ld hl,(V_FTE)
     ld a,(FC_A)
     call build_frame
     ld hl,(FC_MISSES)
     inc hl
     ld (FC_MISSES),hl
-    pop hl
+    ld hl,(V_PTR)
     jr .out
 .nx:
     ld a,(FC_F)

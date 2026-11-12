@@ -96,7 +96,7 @@ ROWR2_LEN       EQU 17
         ld d,a
 1:
     ENDM
-    MACRO BLITTER name, run, blk
+    MACRO BLITTER name, run, blk, looped
 name:
         ld a,(V_Y)
         cpl
@@ -113,19 +113,27 @@ name:
 .mid:
         ADJUST_DE
         ld a,(V_H)
+        IF looped
+        sub 9
+        jr c,.last              ; 1..8 rows left: the last group (a looped run takes 8 rows like any other count: no .last8)
+        inc a
+        ELSE
         sub 8
         jr c,.last              ; 1..7 rows left: the last group
         jr z,.last8             ; exactly 8 left
+        ENDIF
         ld (V_H),a
         call blk                ; a whole group of 8 rows
         jr .mid
+        IF looped == 0
 .last8:
         jp blk
+        ENDIF
 .last:
-        add a,8
+        add a,8+looped
         jp run
 .only:
-        ld a,(V_H)
+        add a,c                 ; A = V_H - k1 (zero or below): back to V_H
         jp run
     ENDM
     MACRO ENTRIES blk, len
@@ -195,23 +203,23 @@ BF6 = 0
 BF7 = 0
 BF8 = 0
 FPLACED = 0
-    MACRO BLT_TRY name, run, blk, flag
+    MACRO BLT_TRY name, run, blk, flag, looped
         IF (flag == 0) && (FPLACED == 0)
-        BLITTER name, run, blk
+        BLITTER name, run, blk, looped
 flag = 1
 FPLACED = 1
         ENT_SLOT
         ENDIF
     ENDM
     MACRO BLT_ALL
-        BLT_TRY blitp1, runp1, BLKP1, BF1
-        BLT_TRY blitp2, runp2, BLKP2, BF2
-        BLT_TRY blitp3, runp3, BLKP3, BF3
-        BLT_TRY blitp4, runp4, blkp4, BF4
-        BLT_TRY blitp5, runp5, blkp5, BF5
-        BLT_TRY blitr2, runr2, BLKR2, BF6
-        BLT_TRY blitr3, runr3, blkr3, BF7
-        BLT_TRY blitr4, runr4, blkr4, BF8
+        BLT_TRY blitp1, runp1, BLKP1, BF1, 0
+        BLT_TRY blitp2, runp2, BLKP2, BF2, 0
+        BLT_TRY blitp3, runp3, BLKP3, BF3, 0
+        BLT_TRY blitp4, runp4, blkp4, BF4, 1
+        BLT_TRY blitp5, runp5, blkp5, BF5, 1
+        BLT_TRY blitr2, runr2, BLKR2, BF6, 0
+        BLT_TRY blitr3, runr3, blkr3, BF7, 1
+        BLT_TRY blitr4, runr4, blkr4, BF8, 1
     ENDM
     MACRO FILL_ONE
 FPLACED = 0
@@ -313,8 +321,7 @@ erase_cells:
     jp nz,erase_big             ; more than 3 cell rows or more than 3 columns
     ld a,b
     and 7
-    dec a
-    ld c,a                      ; C = columns - 1 (0..2)
+    ld c,a                      ; C = columns (1..3)
     ld a,b
     rrca
     rrca
@@ -323,46 +330,24 @@ erase_cells:
     dec a                       ; cell rows - 1 (0..2)
     jr z,.rows1
     dec a
-    jr z,.rows2
-    ld a,c                      ; 3 cell rows
-    or a
-    jp z,erase_r3c1
-    dec a
-    jp z,erase_r3c2
-    jp erase_r3c3
-.rows2:
-    ld a,c
-    or a
+    jr nz,.rows3
+    dec c                       ; 2 cell rows
     jp z,erase_r2c1
-    dec a
+    dec c
     jp z,erase_r2c2
     jp erase_r2c3
 .rows1:
-    ld a,c
-    or a
+    dec c
     jp z,erase_r1c1
-    dec a
+    dec c
     jp z,erase_r1c2
     jp erase_r1c3
-
-erase_big:                      ; B = N
-    ld a,b
-    rrca
-    rrca
-    rrca
-    and 7
-    ld (E_NR),a                 ; cell rows, 1..7
-    ld a,b
-    and 7
-    dec a                       ; columns - 1, 0..4
-    jp z,erase_b1
-    dec a
-    jp z,erase_b2
-    dec a
-    jp z,erase_b3
-    dec a
-    jp z,erase_b4
-    jp erase_b5
+.rows3:
+    dec c
+    jp z,erase_r3c1
+    dec c
+    jp z,erase_r3c2
+    ; (3 rows of 3 cells: falls into erase_r3c3, the first variant below)
 
     ; ERASE_CELL_BODY dir: one cell's 8 pixel rows from the glyph table: dir 0 runs rows 0..7 (INC B, INC D), dir 1 rows 7..0 (DEC B, DEC D).
     ; Cells alternate, so D is already on the next cell's first row when a cell ends (no "back to row 0" fix-up between cells).
@@ -440,9 +425,9 @@ r1:
         ERASE_ROW cols
         ret
     ENDM
+    ERASE_NEST erase_r3c3, erase_r2c3, erase_r1c3, 3  ; first: erase_cells falls into erase_r3c3
     ERASE_NEST erase_r3c1, erase_r2c1, erase_r1c1, 1
     ERASE_NEST erase_r3c2, erase_r2c2, erase_r1c2, 2
-    ERASE_NEST erase_r3c3, erase_r2c3, erase_r1c3, 3
 
 ; ERASE_BIG name, cols, rowfn, head: E_NR cell rows of cols cells: the one-row variant per cell row, then the pointers on to the next cell row.  A row of 4 or 5
 ; cells is its first 2 cells here (head = 2: a cell going down, one going up, the same instructions as the start of a row of 4 / 5) and then the
@@ -470,11 +455,29 @@ name:
         ld d,a
         jr name
     ENDM
+erase_big:                      ; B = N
+    ld a,b
+    rrca
+    rrca
+    rrca
+    and 7
+    ld (E_NR),a                 ; cell rows, 1..7
+    ld a,b
+    and 7
+    dec a                       ; columns - 1, 0..4
+    jp z,erase_b1
+    dec a
+    jp z,erase_b2
+    dec a
+    jp z,erase_b3
+    dec a
+    jp z,erase_b4
+    ; (5 columns: falls into erase_b5, the first variant below)
+    ERASE_BIG erase_b5, 5, erase_r1c3, 2
     ERASE_BIG erase_b1, 1, erase_r1c1, 0
     ERASE_BIG erase_b2, 2, erase_r1c2, 0
     ERASE_BIG erase_b3, 3, erase_r1c3, 0
     ERASE_BIG erase_b4, 4, erase_r1c2, 2
-    ERASE_BIG erase_b5, 5, erase_r1c3, 2
 
     ASSERT (AST&$FF)+AST_LEN*MAX_ASSETS <= 256  ; hit_box, draw_all, RT_SHOW index an asset record with an 8-bit add
     ASSERT (PHASE_OFF&$FF)+127 < 256

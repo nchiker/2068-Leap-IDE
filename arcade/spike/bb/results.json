@@ -1,0 +1,3681 @@
+{
+ "correct": {
+  "colw4": {
+   "scenes": 2000,
+   "billboardCalls": {
+    "K0": {
+     "pictures": 7274,
+     "mismatches": 0
+    },
+    "A1": {
+     "pictures": 7274,
+     "mismatches": 0
+    },
+    "A2": {
+     "pictures": 14548,
+     "mismatches": 0
+    },
+    "Q": {
+     "pictures": 7274,
+     "mismatches": 0
+    },
+    "QM": {
+     "pictures": 7274,
+     "mismatches": 0
+    }
+   },
+   "a2": {
+    "hit": 1879,
+    "cold": 1993,
+    "a1": 2074,
+    "modelBad": 0
+   },
+   "exercised": {
+    "drawnBillboards": 7274,
+    "partialOcclusion": 831,
+    "clippedLeftRight": 4737,
+    "clippedTop": 714
+   },
+   "minSp": {
+    "K0": 6,
+    "A1": 6,
+    "A2": 6,
+    "Q": 8,
+    "QM": 8
+   }
+  },
+  "colw2": {
+   "scenes": 2000,
+   "billboardCalls": {
+    "K0": {
+     "pictures": 7274,
+     "mismatches": 0
+    },
+    "A1": {
+     "pictures": 7274,
+     "mismatches": 0
+    },
+    "A2": {
+     "pictures": 14548,
+     "mismatches": 0
+    },
+    "Q": {
+     "pictures": 7274,
+     "mismatches": 0
+    },
+    "QM": {
+     "pictures": 7274,
+     "mismatches": 0
+    }
+   },
+   "a2": {
+    "hit": 1996,
+    "cold": 2108,
+    "a1": 2076,
+    "modelBad": 0
+   },
+   "exercised": {
+    "drawnBillboards": 7274,
+    "partialOcclusion": 1026,
+    "clippedLeftRight": 4622,
+    "clippedTop": 722
+   },
+   "minSp": {
+    "K0": 6,
+    "A1": 6,
+    "A2": 6,
+    "Q": 8,
+    "QM": 8
+   }
+  }
+ },
+ "scenes": [
+  {
+   "name": "1: wraith 16x16, 8 rows, centred",
+   "colw": 4,
+   "hpx": 8,
+   "wpx": 9,
+   "L": 60,
+   "cols": 2,
+   "rows": 8,
+   "K0": {
+    "t": 5820,
+    "split": {
+     "setup+gen": 3800,
+     "rows": 2020
+    }
+   },
+   "A1": {
+    "t": 11752,
+    "split": {
+     "scan+setup": 3225,
+     "prepare": 5586,
+     "copy": 640,
+     "row tail": 2301
+    }
+   },
+   "A2c": {
+    "t": 19285,
+    "split": {
+     "scan+setup": 4032,
+     "A2 key/slot": 2580,
+     "prepare": 11192,
+     "copy": 640,
+     "row tail": 841
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 6240,
+    "split": {
+     "scan+setup": 4032,
+     "A2 key/slot": 727,
+     "copy": 640,
+     "row tail": 841
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 5609,
+    "split": {
+     "select+scan+setup": 3542,
+     "stage": 806,
+     "fold": 55,
+     "copy": 704,
+     "row tail": 502
+    },
+    "Hs": 8
+   },
+   "QM": {
+    "t": 4632,
+    "split": {
+     "select+scan+setup": 3237,
+     "copy": 704,
+     "row tail": 691
+    },
+    "Hs": 8
+   },
+   "phases": {
+    "K0": {
+     "min": 5541,
+     "max": 6657
+    },
+    "A1": {
+     "min": 9486,
+     "max": 11758
+    },
+    "A2c": {
+     "min": 15183,
+     "max": 19291
+    },
+    "A2w": {
+     "min": 5800,
+     "max": 6246
+    },
+    "Q": {
+     "min": 4892,
+     "max": 5609
+    },
+    "QM": {
+     "min": 4251,
+     "max": 4632
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 16 rows, centred",
+   "colw": 4,
+   "hpx": 16,
+   "wpx": 18,
+   "L": 55,
+   "cols": 4,
+   "rows": 16,
+   "K0": {
+    "t": 11250,
+    "split": {
+     "setup+gen": 5088,
+     "rows": 6162
+    }
+   },
+   "A1": {
+    "t": 20785,
+    "split": {
+     "scan+setup": 3457,
+     "prepare": 11592,
+     "copy": 1280,
+     "row tail": 4456
+    }
+   },
+   "A2c": {
+    "t": 21493,
+    "split": {
+     "scan+setup": 4320,
+     "A2 key/slot": 2580,
+     "prepare": 11592,
+     "copy": 1280,
+     "row tail": 1721
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 8048,
+    "split": {
+     "scan+setup": 4320,
+     "A2 key/slot": 727,
+     "copy": 1280,
+     "row tail": 1721
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 10147,
+    "split": {
+     "select+scan+setup": 4475,
+     "stage": 2276,
+     "fold": 55,
+     "copy": 2244,
+     "row tail": 1097
+    },
+    "Hs": 17
+   },
+   "QM": {
+    "t": 7937,
+    "split": {
+     "select+scan+setup": 4164,
+     "copy": 2244,
+     "row tail": 1529
+    },
+    "Hs": 17
+   },
+   "phases": {
+    "K0": {
+     "min": 11246,
+     "max": 13356
+    },
+    "A1": {
+     "min": 20785,
+     "max": 25334
+    },
+    "A2c": {
+     "min": 21493,
+     "max": 26070
+    },
+    "A2w": {
+     "min": 8042,
+     "max": 8963
+    },
+    "Q": {
+     "min": 10140,
+     "max": 10147
+    },
+    "QM": {
+     "min": 7930,
+     "max": 7937
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 24 rows, centred",
+   "colw": 4,
+   "hpx": 24,
+   "wpx": 27,
+   "L": 51,
+   "cols": 6,
+   "rows": 24,
+   "K0": {
+    "t": 20465,
+    "split": {
+     "setup+gen": 6707,
+     "rows": 13758
+    }
+   },
+   "A1": {
+    "t": 32273,
+    "split": {
+     "scan+setup": 3923,
+     "prepare": 19206,
+     "copy": 3840,
+     "row tail": 5304
+    }
+   },
+   "A2c": {
+    "t": 32814,
+    "split": {
+     "scan+setup": 4512,
+     "A2 key/slot": 2580,
+     "prepare": 19206,
+     "copy": 3840,
+     "row tail": 2676
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 11755,
+    "split": {
+     "scan+setup": 4512,
+     "A2 key/slot": 727,
+     "copy": 3840,
+     "row tail": 2676
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 15036,
+    "split": {
+     "select+scan+setup": 5081,
+     "stage": 4166,
+     "fold": 55,
+     "copy": 4224,
+     "row tail": 1510
+    },
+    "Hs": 24
+   },
+   "QM": {
+    "t": 11125,
+    "split": {
+     "select+scan+setup": 4770,
+     "copy": 4224,
+     "row tail": 2131
+    },
+    "Hs": 24
+   },
+   "phases": {
+    "K0": {
+     "min": 19908,
+     "max": 22694
+    },
+    "A1": {
+     "min": 27641,
+     "max": 32540
+    },
+    "A2c": {
+     "min": 28182,
+     "max": 33109
+    },
+    "A2w": {
+     "min": 10675,
+     "max": 11910
+    },
+    "Q": {
+     "min": 15036,
+     "max": 15043
+    },
+    "QM": {
+     "min": 11125,
+     "max": 11132
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 32 rows, centred",
+   "colw": 4,
+   "hpx": 32,
+   "wpx": 37,
+   "L": 46,
+   "cols": 10,
+   "rows": 32,
+   "K0": {
+    "t": 37165,
+    "split": {
+     "setup+gen": 9233,
+     "rows": 27932
+    }
+   },
+   "A1": {
+    "t": 45131,
+    "split": {
+     "scan+setup": 4279,
+     "prepare": 27030,
+     "copy": 7680,
+     "row tail": 6142
+    }
+   },
+   "A2c": {
+    "t": 45868,
+    "split": {
+     "scan+setup": 5011,
+     "A2 key/slot": 2601,
+     "prepare": 27030,
+     "copy": 7680,
+     "row tail": 3546
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 17006,
+    "split": {
+     "scan+setup": 5011,
+     "A2 key/slot": 769,
+     "copy": 7680,
+     "row tail": 3546
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 25887,
+    "split": {
+     "select+scan+setup": 6000,
+     "stage": 8702,
+     "fold": 55,
+     "copy": 8976,
+     "row tail": 2154
+    },
+    "Hs": 34
+   },
+   "QM": {
+    "t": 17710,
+    "split": {
+     "select+scan+setup": 5689,
+     "copy": 8976,
+     "row tail": 3045
+    },
+    "Hs": 34
+   },
+   "phases": {
+    "K0": {
+     "min": 34045,
+     "max": 37165
+    },
+    "A1": {
+     "min": 40179,
+     "max": 45131
+    },
+    "A2c": {
+     "min": 40916,
+     "max": 45868
+    },
+    "A2w": {
+     "min": 15606,
+     "max": 17006
+    },
+    "Q": {
+     "min": 22934,
+     "max": 25887
+    },
+    "QM": {
+     "min": 16185,
+     "max": 17710
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 48 rows, centred",
+   "colw": 4,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 14,
+   "rows": 48,
+   "K0": {
+    "t": 68783,
+    "split": {
+     "setup+gen": 12425,
+     "rows": 56358
+    }
+   },
+   "A1": {
+    "t": 63543,
+    "split": {
+     "scan+setup": 5301,
+     "prepare": 35044,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 64483,
+    "split": {
+     "scan+setup": 6172,
+     "A2 key/slot": 2601,
+     "prepare": 35044,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 27607,
+    "split": {
+     "scan+setup": 6172,
+     "A2 key/slot": 769,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 43384,
+    "split": {
+     "select+scan+setup": 7159,
+     "stage": 16262,
+     "fold": 55,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 28025,
+    "split": {
+     "select+scan+setup": 6848,
+     "copy": 16896,
+     "row tail": 4281
+    },
+    "Hs": 48
+   },
+   "phases": {
+    "K0": {
+     "min": 64047,
+     "max": 68783
+    },
+    "A1": {
+     "min": 57731,
+     "max": 63543
+    },
+    "A2c": {
+     "min": 58644,
+     "max": 64483
+    },
+    "A2w": {
+     "min": 25210,
+     "max": 27607
+    },
+    "Q": {
+     "min": 39227,
+     "max": 43384
+    },
+    "QM": {
+     "min": 25884,
+     "max": 28025
+    }
+   }
+  },
+  {
+   "name": "2: 32x32, 32 rows, centred",
+   "colw": 4,
+   "hpx": 32,
+   "wpx": 37,
+   "L": 46,
+   "cols": 10,
+   "rows": 32,
+   "K0": {
+    "t": 36622,
+    "split": {
+     "setup+gen": 9224,
+     "rows": 27398
+    }
+   },
+   "A1": {
+    "t": 77851,
+    "split": {
+     "scan+setup": 4279,
+     "prepare": 56748,
+     "copy": 7680,
+     "row tail": 9144
+    }
+   },
+   "A2c": {
+    "t": 79194,
+    "split": {
+     "scan+setup": 5302,
+     "prepare": 56748,
+     "copy": 7680,
+     "row tail": 9464
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 79194,
+    "split": {
+     "scan+setup": 5302,
+     "prepare": 56748,
+     "copy": 7680,
+     "row tail": 9464
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 22104,
+    "split": {
+     "select+scan+setup": 5620,
+     "stage": 7064,
+     "fold": 55,
+     "copy": 7260,
+     "row tail": 2105
+    },
+    "Hs": 33
+   },
+   "QM": {
+    "t": 15538,
+    "split": {
+     "select+scan+setup": 5309,
+     "copy": 7260,
+     "row tail": 2969
+    },
+    "Hs": 33
+   }
+  },
+  {
+   "name": "2: 32x32, 64 rows, centred",
+   "colw": 4,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 18,
+   "rows": 64,
+   "K0": {
+    "t": 110211,
+    "split": {
+     "setup+gen": 15347,
+     "rows": 94864
+    }
+   },
+   "A1": {
+    "t": 133349,
+    "split": {
+     "scan+setup": 5999,
+     "prepare": 89224,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 135249,
+    "split": {
+     "scan+setup": 7259,
+     "prepare": 89224,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 135249,
+    "split": {
+     "scan+setup": 7259,
+     "prepare": 89224,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 70608,
+    "split": {
+     "select+scan+setup": 8580,
+     "stage": 28274,
+     "fold": 55,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 43744,
+    "split": {
+     "select+scan+setup": 8263,
+     "copy": 29480,
+     "row tail": 6001
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "3a: 32x32 at hgt 48: 96 rows, 111 px, centre at x 8 (clipped left)",
+   "colw": 4,
+   "hpx": 96,
+   "wpx": 111,
+   "L": -47,
+   "cols": 16,
+   "rows": 96,
+   "K0": {
+    "t": 139594,
+    "split": {
+     "setup+gen": 13802,
+     "rows": 125792
+    }
+   },
+   "A1": {
+    "t": 126248,
+    "split": {
+     "scan+setup": 5544,
+     "prepare": 74076,
+     "copy": 30720,
+     "row tail": 15908
+    }
+   },
+   "A2c": {
+    "t": 128388,
+    "split": {
+     "scan+setup": 6724,
+     "prepare": 74076,
+     "copy": 30720,
+     "row tail": 16868
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 128388,
+    "split": {
+     "scan+setup": 6724,
+     "prepare": 74076,
+     "copy": 30720,
+     "row tail": 16868
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 89142,
+    "split": {
+     "select+scan+setup": 8025,
+     "stage": 41244,
+     "fold": 55,
+     "copy": 33792,
+     "row tail": 6026
+    },
+    "Hs": 96
+   },
+   "QM": {
+    "t": 50456,
+    "split": {
+     "select+scan+setup": 8079,
+     "copy": 33792,
+     "row tail": 8585
+    },
+    "Hs": 96
+   }
+  },
+  {
+   "name": "3b: 32x48 at hgt 48: 144 rows (48 clipped at the top), 166 px (clipped both sides)",
+   "colw": 4,
+   "hpx": 144,
+   "wpx": 166,
+   "L": -19,
+   "cols": 32,
+   "rows": 96,
+   "K0": {
+    "t": 269532,
+    "split": {
+     "setup+gen": 25598,
+     "rows": 243934
+    }
+   },
+   "A1": {
+    "t": 231710,
+    "split": {
+     "scan+setup": 9008,
+     "prepare": 145167,
+     "copy": 61440,
+     "row tail": 16095
+    }
+   },
+   "A2c": {
+    "t": 234366,
+    "split": {
+     "scan+setup": 10704,
+     "prepare": 145167,
+     "copy": 61440,
+     "row tail": 17055
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 234366,
+    "split": {
+     "scan+setup": 10704,
+     "prepare": 145167,
+     "copy": 61440,
+     "row tail": 17055
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 160086,
+    "split": {
+     "select+scan+setup": 12921,
+     "stage": 73500,
+     "fold": 55,
+     "copy": 67584,
+     "row tail": 6026
+    },
+    "Hs": 144
+   },
+   "QM": {
+    "t": 89145,
+    "split": {
+     "select+scan+setup": 12975,
+     "copy": 67584,
+     "row tail": 8586
+    },
+    "Hs": 144
+   }
+  },
+  {
+   "name": "4: 16x16 48 rows, one ray hidden (the middle)",
+   "colw": 4,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 13,
+   "rows": 48,
+   "K0": {
+    "t": 65035,
+    "split": {
+     "setup+gen": 11887,
+     "rows": 53148
+    }
+   },
+   "A1": {
+    "t": 63298,
+    "split": {
+     "scan+setup": 5286,
+     "prepare": 34814,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 64238,
+    "split": {
+     "scan+setup": 6157,
+     "A2 key/slot": 2601,
+     "prepare": 34814,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 27592,
+    "split": {
+     "scan+setup": 6157,
+     "A2 key/slot": 769,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 48137,
+    "split": {
+     "select+scan+setup": 7382,
+     "stage": 16262,
+     "fold": 4585,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 48166,
+    "split": {
+     "select+scan+setup": 7411,
+     "stage": 16262,
+     "fold": 4585,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   }
+  },
+  {
+   "name": "4: 16x16 48 rows, a run of 4 rays hidden (left part)",
+   "colw": 4,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 10,
+   "rows": 48,
+   "K0": {
+    "t": 52271,
+    "split": {
+     "setup+gen": 10081,
+     "rows": 42190
+    }
+   },
+   "A1": {
+    "t": 62583,
+    "split": {
+     "scan+setup": 5241,
+     "prepare": 34144,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 63523,
+    "split": {
+     "scan+setup": 6112,
+     "A2 key/slot": 2601,
+     "prepare": 34144,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 27547,
+    "split": {
+     "scan+setup": 6112,
+     "A2 key/slot": 769,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 52658,
+    "split": {
+     "select+scan+setup": 8051,
+     "stage": 16262,
+     "fold": 8437,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 52687,
+    "split": {
+     "select+scan+setup": 8080,
+     "stage": 16262,
+     "fold": 8437,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   }
+  },
+  {
+   "name": "4: 16x16 48 rows, every other ray hidden",
+   "colw": 4,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 7,
+   "rows": 48,
+   "K0": {
+    "t": 41622,
+    "split": {
+     "setup+gen": 8534,
+     "rows": 33088
+    }
+   },
+   "A1": {
+    "t": 56483,
+    "split": {
+     "scan+setup": 5223,
+     "prepare": 29982,
+     "copy": 13440,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 57396,
+    "split": {
+     "scan+setup": 6067,
+     "A2 key/slot": 2601,
+     "prepare": 29982,
+     "copy": 13440,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 25582,
+    "split": {
+     "scan+setup": 6067,
+     "A2 key/slot": 769,
+     "copy": 13440,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 68216,
+    "split": {
+     "select+scan+setup": 8016,
+     "stage": 18636,
+     "fold": 23768,
+     "copy": 14784,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 68245,
+    "split": {
+     "select+scan+setup": 8045,
+     "stage": 18636,
+     "fold": 23768,
+     "copy": 14784,
+     "row tail": 3012
+    },
+    "Hs": 48
+   }
+  },
+  {
+   "name": "4: 32x32 64 rows, one ray hidden (the middle)",
+   "colw": 4,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 17,
+   "rows": 64,
+   "K0": {
+    "t": 105393,
+    "split": {
+     "setup+gen": 14809,
+     "rows": 90584
+    }
+   },
+   "A1": {
+    "t": 132874,
+    "split": {
+     "scan+setup": 5984,
+     "prepare": 88764,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 134774,
+    "split": {
+     "scan+setup": 7244,
+     "prepare": 88764,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 134774,
+    "split": {
+     "scan+setup": 7244,
+     "prepare": 88764,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 77026,
+    "split": {
+     "select+scan+setup": 8803,
+     "stage": 28274,
+     "fold": 6250,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 77055,
+    "split": {
+     "select+scan+setup": 8832,
+     "stage": 28274,
+     "fold": 6250,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "4: 32x32 64 rows, a run of 4 rays hidden (left part)",
+   "colw": 4,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 14,
+   "rows": 64,
+   "K0": {
+    "t": 88971,
+    "split": {
+     "setup+gen": 13003,
+     "rows": 75968
+    }
+   },
+   "A1": {
+    "t": 131489,
+    "split": {
+     "scan+setup": 5939,
+     "prepare": 87424,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 133389,
+    "split": {
+     "scan+setup": 7199,
+     "prepare": 87424,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 133389,
+    "split": {
+     "scan+setup": 7199,
+     "prepare": 87424,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 83046,
+    "split": {
+     "select+scan+setup": 9472,
+     "stage": 28274,
+     "fold": 11601,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 83075,
+    "split": {
+     "select+scan+setup": 9501,
+     "stage": 28274,
+     "fold": 11601,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "4: 32x32 64 rows, every other ray hidden",
+   "colw": 4,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 9,
+   "rows": 64,
+   "K0": {
+    "t": 65540,
+    "split": {
+     "setup+gen": 10380,
+     "rows": 55160
+    }
+   },
+   "A1": {
+    "t": 119357,
+    "split": {
+     "scan+setup": 5891,
+     "prepare": 77900,
+     "copy": 23040,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 121257,
+    "split": {
+     "scan+setup": 7151,
+     "prepare": 77900,
+     "copy": 23040,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 121257,
+    "split": {
+     "scan+setup": 7151,
+     "prepare": 77900,
+     "copy": 23040,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 121618,
+    "split": {
+     "select+scan+setup": 10587,
+     "stage": 28274,
+     "fold": 49058,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 121647,
+    "split": {
+     "select+scan+setup": 10616,
+     "stage": 28274,
+     "fold": 49058,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 8 rows, centred",
+   "colw": 2,
+   "hpx": 8,
+   "wpx": 9,
+   "L": 60,
+   "cols": 4,
+   "rows": 8,
+   "K0": {
+    "t": 8164,
+    "split": {
+     "setup+gen": 5080,
+     "rows": 3084
+    }
+   },
+   "A1": {
+    "t": 14785,
+    "split": {
+     "scan+setup": 3618,
+     "prepare": 8226,
+     "copy": 640,
+     "row tail": 2301
+    }
+   },
+   "A2c": {
+    "t": 25024,
+    "split": {
+     "scan+setup": 4481,
+     "A2 key/slot": 2580,
+     "prepare": 16482,
+     "copy": 640,
+     "row tail": 841
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 6689,
+    "split": {
+     "scan+setup": 4481,
+     "A2 key/slot": 727,
+     "copy": 640,
+     "row tail": 841
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 6139,
+    "split": {
+     "select+scan+setup": 4072,
+     "stage": 806,
+     "fold": 55,
+     "copy": 704,
+     "row tail": 502
+    },
+    "Hs": 8
+   },
+   "QM": {
+    "t": 5162,
+    "split": {
+     "select+scan+setup": 3767,
+     "copy": 704,
+     "row tail": 691
+    },
+    "Hs": 8
+   },
+   "phases": {
+    "K0": {
+     "min": 7895,
+     "max": 9014
+    },
+    "A1": {
+     "min": 11299,
+     "max": 14785
+    },
+    "A2c": {
+     "min": 18562,
+     "max": 25024
+    },
+    "A2w": {
+     "min": 6179,
+     "max": 6689
+    },
+    "Q": {
+     "min": 5422,
+     "max": 6139
+    },
+    "QM": {
+     "min": 4781,
+     "max": 5162
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 16 rows, centred",
+   "colw": 2,
+   "hpx": 16,
+   "wpx": 18,
+   "L": 55,
+   "cols": 9,
+   "rows": 16,
+   "K0": {
+    "t": 19913,
+    "split": {
+     "setup+gen": 8131,
+     "rows": 11782
+    }
+   },
+   "A1": {
+    "t": 33973,
+    "split": {
+     "scan+setup": 4113,
+     "prepare": 23484,
+     "copy": 1920,
+     "row tail": 4456
+    }
+   },
+   "A2c": {
+    "t": 34873,
+    "split": {
+     "scan+setup": 5147,
+     "A2 key/slot": 2601,
+     "prepare": 23484,
+     "copy": 1920,
+     "row tail": 1721
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 9557,
+    "split": {
+     "scan+setup": 5147,
+     "A2 key/slot": 769,
+     "copy": 1920,
+     "row tail": 1721
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 11229,
+    "split": {
+     "select+scan+setup": 5557,
+     "stage": 2276,
+     "fold": 55,
+     "copy": 2244,
+     "row tail": 1097
+    },
+    "Hs": 17
+   },
+   "QM": {
+    "t": 9019,
+    "split": {
+     "select+scan+setup": 5246,
+     "copy": 2244,
+     "row tail": 1529
+    },
+    "Hs": 17
+   },
+   "phases": {
+    "K0": {
+     "min": 19913,
+     "max": 20237
+    },
+    "A1": {
+     "min": 33933,
+     "max": 34278
+    },
+    "A2c": {
+     "min": 34833,
+     "max": 35178
+    },
+    "A2w": {
+     "min": 9517,
+     "max": 9892
+    },
+    "Q": {
+     "min": 11222,
+     "max": 11229
+    },
+    "QM": {
+     "min": 9012,
+     "max": 9019
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 24 rows, centred",
+   "colw": 2,
+   "hpx": 24,
+   "wpx": 27,
+   "L": 51,
+   "cols": 14,
+   "rows": 24,
+   "K0": {
+    "t": 38149,
+    "split": {
+     "setup+gen": 11599,
+     "rows": 26550
+    }
+   },
+   "A1": {
+    "t": 44668,
+    "split": {
+     "scan+setup": 4948,
+     "prepare": 30576,
+     "copy": 3840,
+     "row tail": 5304
+    }
+   },
+   "A2c": {
+    "t": 45485,
+    "split": {
+     "scan+setup": 5792,
+     "A2 key/slot": 2601,
+     "prepare": 30576,
+     "copy": 3840,
+     "row tail": 2676
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 13077,
+    "split": {
+     "scan+setup": 5792,
+     "A2 key/slot": 769,
+     "copy": 3840,
+     "row tail": 2676
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 16676,
+    "split": {
+     "select+scan+setup": 6721,
+     "stage": 4166,
+     "fold": 55,
+     "copy": 4224,
+     "row tail": 1510
+    },
+    "Hs": 24
+   },
+   "QM": {
+    "t": 12765,
+    "split": {
+     "select+scan+setup": 6410,
+     "copy": 4224,
+     "row tail": 2131
+    },
+    "Hs": 24
+   },
+   "phases": {
+    "K0": {
+     "min": 36235,
+     "max": 38706
+    },
+    "A1": {
+     "min": 44623,
+     "max": 51720
+    },
+    "A2c": {
+     "min": 45424,
+     "max": 52537
+    },
+    "A2w": {
+     "min": 13032,
+     "max": 14177
+    },
+    "Q": {
+     "min": 16670,
+     "max": 16677
+    },
+    "QM": {
+     "min": 12759,
+     "max": 12766
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 32 rows, centred",
+   "colw": 2,
+   "hpx": 32,
+   "wpx": 37,
+   "L": 46,
+   "cols": 18,
+   "rows": 32,
+   "K0": {
+    "t": 59891,
+    "split": {
+     "setup+gen": 14803,
+     "rows": 45088
+    }
+   },
+   "A1": {
+    "t": 63372,
+    "split": {
+     "scan+setup": 6110,
+     "prepare": 43440,
+     "copy": 7680,
+     "row tail": 6142
+    }
+   },
+   "A2c": {
+    "t": 64385,
+    "split": {
+     "scan+setup": 7097,
+     "A2 key/slot": 2622,
+     "prepare": 43440,
+     "copy": 7680,
+     "row tail": 3546
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 19134,
+    "split": {
+     "scan+setup": 7097,
+     "A2 key/slot": 811,
+     "copy": 7680,
+     "row tail": 3546
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 28349,
+    "split": {
+     "select+scan+setup": 8462,
+     "stage": 8702,
+     "fold": 55,
+     "copy": 8976,
+     "row tail": 2154
+    },
+    "Hs": 34
+   },
+   "QM": {
+    "t": 20172,
+    "split": {
+     "select+scan+setup": 8151,
+     "copy": 8976,
+     "row tail": 3045
+    },
+    "Hs": 34
+   },
+   "phases": {
+    "K0": {
+     "min": 59190,
+     "max": 62313
+    },
+    "A1": {
+     "min": 55883,
+     "max": 63372
+    },
+    "A2c": {
+     "min": 56924,
+     "max": 64385
+    },
+    "A2w": {
+     "min": 17505,
+     "max": 19134
+    },
+    "Q": {
+     "min": 25395,
+     "max": 28349
+    },
+    "QM": {
+     "min": 18646,
+     "max": 20172
+    }
+   }
+  },
+  {
+   "name": "1: wraith 16x16, 48 rows, centred",
+   "colw": 2,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 28,
+   "rows": 48,
+   "K0": {
+    "t": 122535,
+    "split": {
+     "setup+gen": 21283,
+     "rows": 101252
+    }
+   },
+   "A1": {
+    "t": 88132,
+    "split": {
+     "scan+setup": 7440,
+     "prepare": 57494,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 89568,
+    "split": {
+     "scan+setup": 8765,
+     "A2 key/slot": 2643,
+     "prepare": 57494,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 30284,
+    "split": {
+     "scan+setup": 8765,
+     "A2 key/slot": 853,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 46950,
+    "split": {
+     "select+scan+setup": 10725,
+     "stage": 16262,
+     "fold": 55,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 31591,
+    "split": {
+     "select+scan+setup": 10414,
+     "copy": 16896,
+     "row tail": 4281
+    },
+    "Hs": 48
+   },
+   "phases": {
+    "K0": {
+     "min": 118058,
+     "max": 122535
+    },
+    "A1": {
+     "min": 80070,
+     "max": 88174
+    },
+    "A2c": {
+     "min": 81479,
+     "max": 89582
+    },
+    "A2w": {
+     "min": 28147,
+     "max": 30448
+    },
+    "Q": {
+     "min": 42792,
+     "max": 46950
+    },
+    "QM": {
+     "min": 29449,
+     "max": 31591
+    }
+   }
+  },
+  {
+   "name": "2: 32x32, 32 rows, centred",
+   "colw": 2,
+   "hpx": 32,
+   "wpx": 37,
+   "L": 46,
+   "cols": 18,
+   "rows": 32,
+   "K0": {
+    "t": 59348,
+    "split": {
+     "setup+gen": 14794,
+     "rows": 44554
+    }
+   },
+   "A1": {
+    "t": 112502,
+    "split": {
+     "scan+setup": 6110,
+     "prepare": 89568,
+     "copy": 7680,
+     "row tail": 9144
+    }
+   },
+   "A2c": {
+    "t": 114100,
+    "split": {
+     "scan+setup": 7388,
+     "prepare": 89568,
+     "copy": 7680,
+     "row tail": 9464
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 114100,
+    "split": {
+     "scan+setup": 7388,
+     "prepare": 89568,
+     "copy": 7680,
+     "row tail": 9464
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 27710,
+    "split": {
+     "select+scan+setup": 8388,
+     "stage": 8450,
+     "fold": 55,
+     "copy": 8712,
+     "row tail": 2105
+    },
+    "Hs": 33
+   },
+   "QM": {
+    "t": 19758,
+    "split": {
+     "select+scan+setup": 8077,
+     "copy": 8712,
+     "row tail": 2969
+    },
+    "Hs": 33
+   }
+  },
+  {
+   "name": "2: 32x32, 64 rows, centred",
+   "colw": 2,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 37,
+   "rows": 64,
+   "K0": {
+    "t": 203515,
+    "split": {
+     "setup+gen": 27491,
+     "rows": 176024
+    }
+   },
+   "A1": {
+    "t": 192812,
+    "split": {
+     "scan+setup": 8962,
+     "prepare": 145724,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 195306,
+    "split": {
+     "scan+setup": 10816,
+     "prepare": 145724,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 195306,
+    "split": {
+     "scan+setup": 10816,
+     "prepare": 145724,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 75836,
+    "split": {
+     "select+scan+setup": 13808,
+     "stage": 28274,
+     "fold": 55,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 48972,
+    "split": {
+     "select+scan+setup": 13491,
+     "copy": 29480,
+     "row tail": 6001
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "3a: 32x32 at hgt 48: 96 rows, 111 px, centre at x 8 (clipped left)",
+   "colw": 2,
+   "hpx": 96,
+   "wpx": 111,
+   "L": -47,
+   "cols": 32,
+   "rows": 96,
+   "K0": {
+    "t": 252802,
+    "split": {
+     "setup+gen": 24302,
+     "rows": 228500
+    }
+   },
+   "A1": {
+    "t": 174907,
+    "split": {
+     "scan+setup": 8283,
+     "prepare": 119996,
+     "copy": 30720,
+     "row tail": 15908
+    }
+   },
+   "A2c": {
+    "t": 177557,
+    "split": {
+     "scan+setup": 9973,
+     "prepare": 119996,
+     "copy": 30720,
+     "row tail": 16868
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 177557,
+    "split": {
+     "scan+setup": 9973,
+     "prepare": 119996,
+     "copy": 30720,
+     "row tail": 16868
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 94163,
+    "split": {
+     "select+scan+setup": 13046,
+     "stage": 41244,
+     "fold": 55,
+     "copy": 33792,
+     "row tail": 6026
+    },
+    "Hs": 96
+   },
+   "QM": {
+    "t": 55477,
+    "split": {
+     "select+scan+setup": 13100,
+     "copy": 33792,
+     "row tail": 8585
+    },
+    "Hs": 96
+   }
+  },
+  {
+   "name": "3b: 32x48 at hgt 48: 144 rows (48 clipped at the top), 166 px (clipped both sides)",
+   "colw": 2,
+   "hpx": 144,
+   "wpx": 166,
+   "L": -19,
+   "cols": 64,
+   "rows": 96,
+   "K0": {
+    "t": 497588,
+    "split": {
+     "setup+gen": 46642,
+     "rows": 450946
+    }
+   },
+   "A1": {
+    "t": 334342,
+    "split": {
+     "scan+setup": 14515,
+     "prepare": 242292,
+     "copy": 61440,
+     "row tail": 16095
+    }
+   },
+   "A2c": {
+    "t": 338018,
+    "split": {
+     "scan+setup": 17231,
+     "prepare": 242292,
+     "copy": 61440,
+     "row tail": 17055
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 338018,
+    "split": {
+     "scan+setup": 17231,
+     "prepare": 242292,
+     "copy": 61440,
+     "row tail": 17055
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 169634,
+    "split": {
+     "select+scan+setup": 22469,
+     "stage": 73500,
+     "fold": 55,
+     "copy": 67584,
+     "row tail": 6026
+    },
+    "Hs": 144
+   },
+   "QM": {
+    "t": 98694,
+    "split": {
+     "select+scan+setup": 22523,
+     "copy": 67584,
+     "row tail": 8587
+    },
+    "Hs": 144
+   }
+  },
+  {
+   "name": "4: 16x16 48 rows, one ray hidden (the middle)",
+   "colw": 2,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 27,
+   "rows": 48,
+   "K0": {
+    "t": 118784,
+    "split": {
+     "setup+gen": 20742,
+     "rows": 98042
+    }
+   },
+   "A1": {
+    "t": 87887,
+    "split": {
+     "scan+setup": 7425,
+     "prepare": 57264,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 89323,
+    "split": {
+     "scan+setup": 8750,
+     "A2 key/slot": 2643,
+     "prepare": 57264,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 30269,
+    "split": {
+     "scan+setup": 8750,
+     "A2 key/slot": 853,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 51706,
+    "split": {
+     "select+scan+setup": 10951,
+     "stage": 16262,
+     "fold": 4585,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 51735,
+    "split": {
+     "select+scan+setup": 10980,
+     "stage": 16262,
+     "fold": 4585,
+     "copy": 16896,
+     "row tail": 3012
+    },
+    "Hs": 48
+   }
+  },
+  {
+   "name": "4: 16x16 48 rows, a run of 4 rays hidden (left part)",
+   "colw": 2,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 24,
+   "rows": 48,
+   "K0": {
+    "t": 107675,
+    "split": {
+     "setup+gen": 19119,
+     "rows": 88556
+    }
+   },
+   "A1": {
+    "t": 87392,
+    "split": {
+     "scan+setup": 7380,
+     "prepare": 56814,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 88828,
+    "split": {
+     "scan+setup": 8705,
+     "A2 key/slot": 2643,
+     "prepare": 56814,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 30224,
+    "split": {
+     "scan+setup": 8705,
+     "A2 key/slot": 853,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 51864,
+    "split": {
+     "select+scan+setup": 10929,
+     "stage": 18636,
+     "fold": 4503,
+     "copy": 14784,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 51893,
+    "split": {
+     "select+scan+setup": 10958,
+     "stage": 18636,
+     "fold": 4503,
+     "copy": 14784,
+     "row tail": 3012
+    },
+    "Hs": 48
+   }
+  },
+  {
+   "name": "4: 16x16 48 rows, every other ray hidden",
+   "colw": 2,
+   "hpx": 48,
+   "wpx": 55,
+   "L": 37,
+   "cols": 14,
+   "rows": 48,
+   "K0": {
+    "t": 70129,
+    "split": {
+     "setup+gen": 13709,
+     "rows": 56420
+    }
+   },
+   "A1": {
+    "t": 84889,
+    "split": {
+     "scan+setup": 7257,
+     "prepare": 54434,
+     "copy": 15360,
+     "row tail": 7838
+    }
+   },
+   "A2c": {
+    "t": 86325,
+    "split": {
+     "scan+setup": 8582,
+     "A2 key/slot": 2643,
+     "prepare": 54434,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 30101,
+    "split": {
+     "scan+setup": 8582,
+     "A2 key/slot": 853,
+     "copy": 15360,
+     "row tail": 5306
+    },
+    "hit": true
+   },
+   "Q": {
+    "t": 77242,
+    "split": {
+     "select+scan+setup": 13189,
+     "stage": 18636,
+     "fold": 27621,
+     "copy": 14784,
+     "row tail": 3012
+    },
+    "Hs": 48
+   },
+   "QM": {
+    "t": 77271,
+    "split": {
+     "select+scan+setup": 13218,
+     "stage": 18636,
+     "fold": 27621,
+     "copy": 14784,
+     "row tail": 3012
+    },
+    "Hs": 48
+   }
+  },
+  {
+   "name": "4: 32x32 64 rows, one ray hidden (the middle)",
+   "colw": 2,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 36,
+   "rows": 64,
+   "K0": {
+    "t": 198694,
+    "split": {
+     "setup+gen": 26950,
+     "rows": 171744
+    }
+   },
+   "A1": {
+    "t": 192337,
+    "split": {
+     "scan+setup": 8947,
+     "prepare": 145264,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 194831,
+    "split": {
+     "scan+setup": 10801,
+     "prepare": 145264,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 194831,
+    "split": {
+     "scan+setup": 10801,
+     "prepare": 145264,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 82257,
+    "split": {
+     "select+scan+setup": 14034,
+     "stage": 28274,
+     "fold": 6250,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 82286,
+    "split": {
+     "select+scan+setup": 14063,
+     "stage": 28274,
+     "fold": 6250,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "4: 32x32 64 rows, a run of 4 rays hidden (left part)",
+   "colw": 2,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 33,
+   "rows": 64,
+   "K0": {
+    "t": 184487,
+    "split": {
+     "setup+gen": 25327,
+     "rows": 159160
+    }
+   },
+   "A1": {
+    "t": 191552,
+    "split": {
+     "scan+setup": 8902,
+     "prepare": 144524,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 194046,
+    "split": {
+     "scan+setup": 10756,
+     "prepare": 144524,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 194046,
+    "split": {
+     "scan+setup": 10756,
+     "prepare": 144524,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 88286,
+    "split": {
+     "select+scan+setup": 14712,
+     "stage": 28274,
+     "fold": 11601,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 88315,
+    "split": {
+     "select+scan+setup": 14741,
+     "stage": 28274,
+     "fold": 11601,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   }
+  },
+  {
+   "name": "4: 32x32 64 rows, every other ray hidden",
+   "colw": 2,
+   "hpx": 64,
+   "wpx": 74,
+   "L": 27,
+   "cols": 19,
+   "rows": 64,
+   "K0": {
+    "t": 116777,
+    "split": {
+     "setup+gen": 17753,
+     "rows": 99024
+    }
+   },
+   "A1": {
+    "t": 184362,
+    "split": {
+     "scan+setup": 8692,
+     "prepare": 137544,
+     "copy": 25600,
+     "row tail": 12526
+    }
+   },
+   "A2c": {
+    "t": 186856,
+    "split": {
+     "scan+setup": 10546,
+     "prepare": 137544,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "cold": true
+   },
+   "A2w": {
+    "t": 186856,
+    "split": {
+     "scan+setup": 10546,
+     "prepare": 137544,
+     "copy": 25600,
+     "row tail": 13166
+    },
+    "hit": false
+   },
+   "Q": {
+    "t": 134258,
+    "split": {
+     "select+scan+setup": 17876,
+     "stage": 28274,
+     "fold": 54409,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   },
+   "QM": {
+    "t": 134287,
+    "split": {
+     "select+scan+setup": 17905,
+     "stage": 28274,
+     "fold": 54409,
+     "copy": 29480,
+     "row tail": 4219
+    },
+    "Hs": 67
+   }
+  }
+ ],
+ "vaults": {
+  "win": {
+   "ticks": 1436,
+   "viewTicks": 1420,
+   "billboardDraws": 290,
+   "keyUnchangedFromPreviousTick": {
+    "n": 17,
+    "rate": 0.05862068965517241
+   },
+   "fitsASlot": {
+    "n": 290,
+    "rate": 1
+   },
+   "slotModel7": {
+    "hits": 17,
+    "colds": 273,
+    "a1Fallback": 0,
+    "hitRate": 0.05862068965517241
+   },
+   "otherKeysUnchanged": {
+    "noOcclusion": {
+     "n": 17,
+     "rate": 0.05862068965517241
+    },
+    "phaseOnly": {
+     "n": 27,
+     "rate": 0.09310344827586207
+    },
+    "frameAndSize": {
+     "n": 114,
+     "rate": 0.3931034482758621
+    }
+   },
+   "missCause": {
+    "frame": 31,
+    "wpx": 119,
+    "position": 97,
+    "occlusion": 0,
+    "notDrawnBefore": 26
+   },
+   "billboardsPerTick": {
+    "n": 1420,
+    "mean": 1,
+    "min": 0,
+    "max": 4,
+    "p50": 1,
+    "p95": 3
+   },
+   "perTick": {
+    "K0": {
+     "n": 1420,
+     "mean": 3829,
+     "min": 0,
+     "max": 74964,
+     "p50": 460,
+     "p95": 22345,
+     "total": 5437512
+    },
+    "A1": {
+     "n": 1420,
+     "mean": 4655,
+     "min": 0,
+     "max": 72401,
+     "p50": 460,
+     "p95": 27473,
+     "total": 6609639
+    },
+    "A2": {
+     "n": 1420,
+     "mean": 5006,
+     "min": 0,
+     "max": 73941,
+     "p50": 460,
+     "p95": 29213,
+     "total": 7108844
+    },
+    "Q": {
+     "n": 1420,
+     "mean": 3280,
+     "min": 0,
+     "max": 59745,
+     "p50": 1101,
+     "p95": 15329,
+     "total": 4657529
+    },
+    "QM": {
+     "n": 1420,
+     "mean": 2643,
+     "min": 0,
+     "max": 37103,
+     "p50": 1101,
+     "p95": 11425,
+     "total": 3752442
+    }
+   },
+   "split": {
+    "K0": {
+     "setup+gen": 2413771,
+     "rows": 3023741
+    },
+    "A1": {
+     "scan+setup": 1993456,
+     "prepare": 2833783,
+     "copy": 747480,
+     "row tail": 1034920
+    },
+    "A2": {
+     "scan+setup": 2290962,
+     "A2 key/slot": 610659,
+     "prepare": 2902074,
+     "copy": 747480,
+     "row tail": 557669
+    },
+    "Q": {
+     "select+scan+setup": 2516926,
+     "stage": 950218,
+     "fold": 18903,
+     "copy": 846032,
+     "row tail": 325450
+    },
+    "QM": {
+     "select+scan+setup": 2442590,
+     "copy": 846032,
+     "row tail": 456817,
+     "stage": 3830,
+     "fold": 3173
+    }
+   },
+   "worst": {
+    "tick": 997,
+    "pose": {
+     "x": 894,
+     "y": 3159,
+     "a": 4
+    },
+    "n": 3,
+    "t": {
+     "K0": 74964,
+     "A1": 72401,
+     "A2": 73941,
+     "Q": 59745,
+     "QM": 37103
+    },
+    "list": [
+     {
+      "i": 10,
+      "hpx": 4,
+      "wpx": 4,
+      "tx": 1430
+     },
+     {
+      "i": 2,
+      "hpx": 48,
+      "wpx": 55,
+      "tx": 250
+     },
+     {
+      "i": 3,
+      "hpx": 48,
+      "wpx": 55,
+      "tx": 160
+     }
+    ]
+   },
+   "projected": {
+    "outside": 0,
+    "behind": 3772,
+    "side": 394,
+    "drawable": 1309
+   }
+  },
+  "lose": {
+   "ticks": 392,
+   "viewTicks": 361,
+   "billboardDraws": 45,
+   "keyUnchangedFromPreviousTick": {
+    "n": 2,
+    "rate": 0.044444444444444446
+   },
+   "fitsASlot": {
+    "n": 45,
+    "rate": 1
+   },
+   "slotModel7": {
+    "hits": 2,
+    "colds": 43,
+    "a1Fallback": 0,
+    "hitRate": 0.044444444444444446
+   },
+   "otherKeysUnchanged": {
+    "noOcclusion": {
+     "n": 2,
+     "rate": 0.044444444444444446
+    },
+    "phaseOnly": {
+     "n": 2,
+     "rate": 0.044444444444444446
+    },
+    "frameAndSize": {
+     "n": 18,
+     "rate": 0.4
+    }
+   },
+   "missCause": {
+    "frame": 3,
+    "wpx": 18,
+    "position": 16,
+    "occlusion": 0,
+    "notDrawnBefore": 6
+   },
+   "billboardsPerTick": {
+    "n": 361,
+    "mean": 1,
+    "min": 0,
+    "max": 3,
+    "p50": 1,
+    "p95": 2
+   },
+   "perTick": {
+    "K0": {
+     "n": 361,
+     "mean": 1237,
+     "min": 0,
+     "max": 30972,
+     "p50": 233,
+     "p95": 6019,
+     "total": 446649
+    },
+    "A1": {
+     "n": 361,
+     "mean": 1831,
+     "min": 0,
+     "max": 41135,
+     "p50": 233,
+     "p95": 9724,
+     "total": 661167
+    },
+    "A2": {
+     "n": 361,
+     "mean": 2123,
+     "min": 0,
+     "max": 42853,
+     "p50": 233,
+     "p95": 11949,
+     "total": 766494
+    },
+    "Q": {
+     "n": 361,
+     "mean": 1820,
+     "min": 0,
+     "max": 27317,
+     "p50": 1659,
+     "p95": 6875,
+     "total": 656980
+    },
+    "QM": {
+     "n": 361,
+     "mean": 1632,
+     "min": 0,
+     "max": 18816,
+     "p50": 1659,
+     "p95": 6183,
+     "total": 589004
+    }
+   },
+   "split": {
+    "K0": {
+     "setup+gen": 270687,
+     "rows": 175962
+    },
+    "A1": {
+     "scan+setup": 244661,
+     "prepare": 259730,
+     "copy": 40600,
+     "row tail": 116176
+    },
+    "A2": {
+     "scan+setup": 283098,
+     "A2 key/slot": 92548,
+     "prepare": 296888,
+     "copy": 40600,
+     "row tail": 53360
+    },
+    "Q": {
+     "select+scan+setup": 502912,
+     "stage": 71699,
+     "fold": 5593,
+     "copy": 44484,
+     "row tail": 32292
+    },
+    "QM": {
+     "select+scan+setup": 493402,
+     "copy": 44484,
+     "row tail": 44115,
+     "stage": 3830,
+     "fold": 3173
+    }
+   },
+   "worst": {
+    "tick": 194,
+    "pose": {
+     "x": 5681,
+     "y": 7042,
+     "a": 4
+    },
+    "n": 2,
+    "t": {
+     "K0": 30972,
+     "A1": 41135,
+     "A2": 42853,
+     "Q": 22555,
+     "QM": 16155
+    },
+    "list": [
+     {
+      "i": 12,
+      "hpx": 10,
+      "wpx": 11,
+      "tx": 612
+     },
+     {
+      "i": 5,
+      "hpx": 37,
+      "wpx": 42,
+      "tx": 335
+     }
+    ]
+   },
+   "projected": {
+    "outside": 0,
+    "behind": 684,
+    "side": 29,
+    "drawable": 276
+   }
+  }
+ },
+ "qbytes": {
+  "perFrame": {
+   "16x16": {
+    "colw4_n6": {
+     "heights": [
+      4,
+      7,
+      11,
+      18,
+      29,
+      48
+     ],
+     "preShifted": 2324,
+     "onePhase": 1078
+    },
+    "colw4_n8": {
+     "heights": [
+      4,
+      6,
+      8,
+      12,
+      17,
+      24,
+      34,
+      48
+     ],
+     "preShifted": 2960,
+     "onePhase": 1390
+    },
+    "colw4_n12": {
+     "heights": [
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      16,
+      19,
+      24,
+      31,
+      38,
+      48
+     ],
+     "preShifted": 3966,
+     "onePhase": 1880
+    },
+    "colw2_n6": {
+     "heights": [
+      4,
+      7,
+      11,
+      18,
+      29,
+      48
+     ],
+     "preShifted": 4772,
+     "onePhase": 1078
+    },
+    "colw2_n8": {
+     "heights": [
+      4,
+      6,
+      8,
+      12,
+      17,
+      24,
+      34,
+      48
+     ],
+     "preShifted": 5992,
+     "onePhase": 1390
+    },
+    "colw2_n12": {
+     "heights": [
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      16,
+      19,
+      24,
+      31,
+      38,
+      48
+     ],
+     "preShifted": 8240,
+     "onePhase": 1974
+    }
+   },
+   "32x32": {
+    "colw4_n6": {
+     "heights": [
+      8,
+      13,
+      22,
+      36,
+      58,
+      96
+     ],
+     "preShifted": 8792,
+     "onePhase": 4176
+    },
+    "colw4_n8": {
+     "heights": [
+      8,
+      11,
+      16,
+      23,
+      33,
+      47,
+      67,
+      96
+     ],
+     "preShifted": 10842,
+     "onePhase": 5278
+    },
+    "colw4_n12": {
+     "heights": [
+      8,
+      10,
+      13,
+      16,
+      20,
+      25,
+      31,
+      39,
+      49,
+      61,
+      77,
+      96
+     ],
+     "preShifted": 15302,
+     "onePhase": 7374
+    },
+    "colw2_n6": {
+     "heights": [
+      8,
+      13,
+      22,
+      36,
+      58,
+      96
+     ],
+     "preShifted": 18000,
+     "onePhase": 4292
+    },
+    "colw2_n8": {
+     "heights": [
+      8,
+      11,
+      16,
+      23,
+      33,
+      47,
+      67,
+      96
+     ],
+     "preShifted": 22192,
+     "onePhase": 5310
+    },
+    "colw2_n12": {
+     "heights": [
+      8,
+      10,
+      13,
+      16,
+      20,
+      25,
+      31,
+      39,
+      49,
+      61,
+      77,
+      96
+     ],
+     "preShifted": 31442,
+     "onePhase": 7468
+    }
+   },
+   "8x8": {
+    "colw4_n6": {
+     "heights": [
+      2,
+      3,
+      5,
+      9,
+      15,
+      24
+     ],
+     "preShifted": 628,
+     "onePhase": 290
+    },
+    "colw4_n8": {
+     "heights": [
+      2,
+      3,
+      4,
+      6,
+      8,
+      12,
+      17,
+      24
+     ],
+     "preShifted": 792,
+     "onePhase": 388
+    },
+    "colw4_n12": {
+     "heights": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      15,
+      19,
+      24
+     ],
+     "preShifted": 1066,
+     "onePhase": 510
+    },
+    "colw2_n6": {
+     "heights": [
+      2,
+      3,
+      5,
+      9,
+      15,
+      24
+     ],
+     "preShifted": 1332,
+     "onePhase": 308
+    },
+    "colw2_n8": {
+     "heights": [
+      2,
+      3,
+      4,
+      6,
+      8,
+      12,
+      17,
+      24
+     ],
+     "preShifted": 1656,
+     "onePhase": 388
+    },
+    "colw2_n12": {
+     "heights": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      15,
+      19,
+      24
+     ],
+     "preShifted": 2282,
+     "onePhase": 510
+    }
+   }
+  },
+  "vaults": {
+   "colw4_n6": {
+    "frames": 10,
+    "preShifted": 16456,
+    "onePhase": 7628
+   },
+   "colw4_n8": {
+    "frames": 10,
+    "preShifted": 20928,
+    "onePhase": 9892
+   },
+   "colw4_n12": {
+    "frames": 10,
+    "preShifted": 28060,
+    "onePhase": 13320
+   },
+   "colw2_n6": {
+    "frames": 10,
+    "preShifted": 33960,
+    "onePhase": 7700
+   },
+   "colw2_n8": {
+    "frames": 10,
+    "preShifted": 42576,
+    "onePhase": 9892
+   },
+   "colw2_n12": {
+    "frames": 10,
+    "preShifted": 58568,
+    "onePhase": 13884
+   }
+  }
+ },
+ "png": {
+  "files": [
+   "approach-colw4.png",
+   "approach-colw2.png"
+  ],
+  "heights": {
+   "6": [
+    4,
+    7,
+    11,
+    18,
+    29,
+    48
+   ],
+   "8": [
+    4,
+    6,
+    8,
+    12,
+    17,
+    24,
+    34,
+    48
+   ],
+   "12": [
+    4,
+    5,
+    6,
+    8,
+    10,
+    12,
+    16,
+    19,
+    24,
+    31,
+    38,
+    48
+   ]
+  }
+ },
+ "proj": {
+  "one 16x16 in view (2.3 cells), angle changed": {
+   "t": 7005,
+   "n": 1,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 133,
+    "gen_mul": 58,
+    "gen_mul.new": 104,
+    "gen_mul.hd": 132,
+    "gen_mul.z": 86,
+    "gen_mul.one": 486,
+    "gen_mul.rl": 746,
+    "gen_mul.bit": 157,
+    "gen_mul.sh": 130,
+    "gen_mul.end": 40,
+    "ray_bb.p": 120,
+    "bb_project": 456,
+    "tm_sn": 132,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 726,
+    "tm_sg": 84,
+    "tm_cs": 156,
+    "bb_project.far": 313,
+    "bb_project.fok": 117,
+    "bb_project.f0": 540,
+    "recip_a": 146,
+    "bb_project.uw": 1053,
+    "bb_project.um": 11,
+    "mul8x16": 282,
+    "mul_p": 152,
+    "bb_project.ts": 24,
+    "bb_project.cpos": 19,
+    "bb_project.cset": 200,
+    "bb_sort": 31,
+    "ray_bb.d": 88,
+    "bb_draw": 10
+   }
+  },
+  "one 16x16 in view, angle unchanged (the multiplies kept)": {
+   "t": 5158,
+   "n": 1,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 133,
+    "gen_mul": 92,
+    "ray_bb.p": 120,
+    "bb_project": 456,
+    "tm_sn": 132,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 726,
+    "tm_sg": 84,
+    "tm_cs": 156,
+    "bb_project.far": 313,
+    "bb_project.fok": 117,
+    "bb_project.f0": 540,
+    "recip_a": 146,
+    "bb_project.uw": 1053,
+    "bb_project.um": 11,
+    "mul8x16": 282,
+    "mul_p": 152,
+    "bb_project.ts": 24,
+    "bb_project.cpos": 19,
+    "bb_project.cset": 200,
+    "bb_sort": 31,
+    "ray_bb.d": 88,
+    "bb_draw": 10
+   }
+  },
+  "three 16x16 in view, angle changed": {
+   "t": 17544,
+   "n": 3,
+   "nvis": 3,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 367,
+    "abs_hl": 327,
+    "gen_mul": 58,
+    "gen_mul.new": 104,
+    "gen_mul.hd": 132,
+    "gen_mul.z": 86,
+    "gen_mul.one": 486,
+    "gen_mul.rl": 746,
+    "gen_mul.bit": 157,
+    "gen_mul.sh": 130,
+    "gen_mul.end": 40,
+    "ray_bb.p": 238,
+    "bb_project": 1368,
+    "tm_sn": 396,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 2178,
+    "tm_sg": 252,
+    "tm_cs": 468,
+    "bb_project.far": 939,
+    "bb_project.fok": 351,
+    "bb_project.f0": 1620,
+    "recip_a": 438,
+    "bb_project.uw": 3141,
+    "bb_project.um": 33,
+    "mul8x16": 846,
+    "mul_p": 456,
+    "bb_project.ts": 72,
+    "bb_project.cpos": 57,
+    "bb_project.cset": 600,
+    "neg_hl": 34,
+    "bb_project.tn": 19,
+    "bb_sort": 32,
+    "bb_sort.k": 166,
+    "bb_tx": 380,
+    "bb_sort.j": 388,
+    "bb_sort.place": 119,
+    "ray_bb.d": 254,
+    "bb_draw": 30
+   }
+  },
+  "three 16x16 in view, angle unchanged": {
+   "t": 15697,
+   "n": 3,
+   "nvis": 3,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 367,
+    "abs_hl": 327,
+    "gen_mul": 92,
+    "ray_bb.p": 238,
+    "bb_project": 1368,
+    "tm_sn": 396,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 2178,
+    "tm_sg": 252,
+    "tm_cs": 468,
+    "bb_project.far": 939,
+    "bb_project.fok": 351,
+    "bb_project.f0": 1620,
+    "recip_a": 438,
+    "bb_project.uw": 3141,
+    "bb_project.um": 33,
+    "mul8x16": 846,
+    "mul_p": 456,
+    "bb_project.ts": 72,
+    "bb_project.cpos": 57,
+    "bb_project.cset": 600,
+    "neg_hl": 34,
+    "bb_project.tn": 19,
+    "bb_sort": 32,
+    "bb_sort.k": 166,
+    "bb_tx": 380,
+    "bb_sort.j": 388,
+    "bb_sort.place": 119,
+    "ray_bb.d": 254,
+    "bb_draw": 30
+   }
+  },
+  "one visible, behind the viewer (projected, rejected)": {
+   "t": 1666,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 84,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 442,
+    "tm_sn": 66,
+    "neg_hl": 136,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 363,
+    "tm_sg": 50,
+    "tm_cs": 78
+   }
+  },
+  "one visible, in front but off the view to the side (projected, rejected)": {
+   "t": 4352,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 141,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 456,
+    "tm_sn": 132,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 726,
+    "tm_sg": 92,
+    "tm_cs": 156,
+    "neg_hl": 136,
+    "bb_project.far": 313,
+    "bb_project.fok": 117,
+    "bb_project.f0": 540,
+    "recip_a": 146,
+    "bb_project.uw": 505,
+    "bb_project.um": 11,
+    "mul8x16": 282,
+    "mul_p": 152
+   }
+  },
+  "one visible, behind the viewer, T(dx, cs) <= 0 < T(dy, sn), |T(dy, sn)| >= 64 (rejected)": {
+   "t": 1590,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 80,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 442,
+    "tm_sn": 66,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 363,
+    "tm_sg": 46,
+    "tm_cs": 78,
+    "neg_hl": 68
+   }
+  },
+  "one visible, behind the viewer, T(dx, cs) <= 0 < T(dy, sn), |T(dy, sn)| < 64 (rejected)": {
+   "t": 1590,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 80,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 442,
+    "tm_sn": 66,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 363,
+    "tm_sg": 46,
+    "tm_cs": 78,
+    "neg_hl": 68
+   }
+  },
+  "one visible, behind the viewer, T(dy, sn) <= 0 < T(dx, cs) (rejected)": {
+   "t": 1590,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 80,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 442,
+    "tm_sn": 66,
+    "neg_hl": 68,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 363,
+    "tm_sg": 46,
+    "tm_cs": 78
+   }
+  },
+  "one hidden": {
+   "t": 550,
+   "n": 0,
+   "nvis": 0,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 38,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 65
+   }
+  },
+  "one outside the map": {
+   "t": 682,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 38,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 197
+   }
+  },
+  "sixteen visible, eight in view, angle unchanged": {
+   "t": 56096,
+   "n": 8,
+   "nvis": 16,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 1212,
+    "abs_hl": 1182,
+    "gen_mul": 92,
+    "ray_bb.p": 1005,
+    "bb_project": 7184,
+    "tm_sn": 1584,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 8712,
+    "tm_sg": 1072,
+    "tm_cs": 1872,
+    "bb_project.far": 2504,
+    "bb_project.fok": 916,
+    "bb_project.f0": 4320,
+    "recip_a": 1168,
+    "bb_project.uw": 8330,
+    "bb_project.um": 44,
+    "mul8x16": 2256,
+    "neg_hl": 1224,
+    "mul_p": 1216,
+    "bb_project.tn": 76,
+    "bb_project.ts": 192,
+    "bb_project.cpos": 152,
+    "bb_project.cset": 1600,
+    "bb_project.fm": 88,
+    "bb_sort": 32,
+    "bb_sort.k": 581,
+    "bb_tx": 2660,
+    "bb_sort.j": 3633,
+    "bb_sort.place": 404,
+    "ray_bb.d": 669,
+    "bb_draw": 80
+   }
+  },
+  "random": {
+   "scenes": 3000,
+   "visible": 23185,
+   "drawable": 5139,
+   "mismatches": 0
+  }
+ },
+ "sizes": {
+  "K0": {
+   "rom": 575,
+   "ram": 97,
+   "shared": 102,
+   "ramBuffers": "RAY_BCODE 1,280"
+  },
+  "A1": {
+   "rom": 848,
+   "ram": 185,
+   "shared": 102
+  },
+  "A2": {
+   "rom": 1157,
+   "ram": 227,
+   "shared": 102
+  },
+  "Q": {
+   "rom": 716,
+   "ram": 143,
+   "shared": 102
+  },
+  "QM": {
+   "rom": 732,
+   "ram": 143,
+   "shared": 102
+  }
+ },
+ "projB1": {
+  "one 16x16 in view (2.3 cells), angle changed": {
+   "t": 6542,
+   "n": 1,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 95,
+    "gen_mul": 58,
+    "gen_mul.new": 104,
+    "gen_mul.hd": 132,
+    "gen_mul.z": 86,
+    "gen_mul.one": 486,
+    "gen_mul.rl": 746,
+    "gen_mul.bit": 157,
+    "gen_mul.sh": 130,
+    "gen_mul.end": 40,
+    "ray_bb.p": 90,
+    "bb_project": 566,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 726,
+    "bb_project.t2": 33,
+    "bb_project.far": 188,
+    "mul_p": 152,
+    "bb_project.y2": 690,
+    "bb_project.ts": 105,
+    "bb_project.cpos": 19,
+    "bb_project.cset": 132,
+    "bb_project.fok": 117,
+    "bb_project.f0": 228,
+    "bb_project.h16": 20,
+    "bb_project.hd": 220,
+    "recip_a": 146,
+    "bb_project.uw": 359,
+    "bb_project.um": 11,
+    "mul8x16": 282,
+    "bb_project.ins": 23,
+    "bb_project.put": 30,
+    "ray_bb.d": 88,
+    "bb_draw": 10
+   }
+  },
+  "one 16x16 in view, angle unchanged (the multiplies kept)": {
+   "t": 4695,
+   "n": 1,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 95,
+    "gen_mul": 92,
+    "ray_bb.p": 90,
+    "bb_project": 566,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 726,
+    "bb_project.t2": 33,
+    "bb_project.far": 188,
+    "mul_p": 152,
+    "bb_project.y2": 690,
+    "bb_project.ts": 105,
+    "bb_project.cpos": 19,
+    "bb_project.cset": 132,
+    "bb_project.fok": 117,
+    "bb_project.f0": 228,
+    "bb_project.h16": 20,
+    "bb_project.hd": 220,
+    "recip_a": 146,
+    "bb_project.uw": 359,
+    "bb_project.um": 11,
+    "mul8x16": 282,
+    "bb_project.ins": 23,
+    "bb_project.put": 30,
+    "ray_bb.d": 88,
+    "bb_draw": 10
+   }
+  },
+  "three 16x16 in view, angle changed": {
+   "t": 15571,
+   "n": 3,
+   "nvis": 3,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 367,
+    "abs_hl": 213,
+    "gen_mul": 58,
+    "gen_mul.new": 104,
+    "gen_mul.hd": 132,
+    "gen_mul.z": 86,
+    "gen_mul.one": 486,
+    "gen_mul.rl": 746,
+    "gen_mul.bit": 157,
+    "gen_mul.sh": 130,
+    "gen_mul.end": 40,
+    "ray_bb.p": 208,
+    "bb_project": 1698,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 2178,
+    "bb_project.t2": 99,
+    "bb_project.far": 564,
+    "mul_p": 456,
+    "bb_project.y2": 2052,
+    "bb_project.ts": 315,
+    "bb_project.cpos": 57,
+    "bb_project.cset": 396,
+    "bb_project.fok": 351,
+    "bb_project.f0": 684,
+    "bb_project.h16": 60,
+    "bb_project.hd": 660,
+    "recip_a": 438,
+    "bb_project.uw": 1077,
+    "bb_project.um": 33,
+    "mul8x16": 846,
+    "bb_project.ins": 417,
+    "bb_project.put": 90,
+    "neg_hl": 34,
+    "bb_project.tn": 19,
+    "ray_bb.d": 254,
+    "bb_draw": 30
+   }
+  },
+  "three 16x16 in view, angle unchanged": {
+   "t": 13724,
+   "n": 3,
+   "nvis": 3,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 367,
+    "abs_hl": 213,
+    "gen_mul": 92,
+    "ray_bb.p": 208,
+    "bb_project": 1698,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 2178,
+    "bb_project.t2": 99,
+    "bb_project.far": 564,
+    "mul_p": 456,
+    "bb_project.y2": 2052,
+    "bb_project.ts": 315,
+    "bb_project.cpos": 57,
+    "bb_project.cset": 396,
+    "bb_project.fok": 351,
+    "bb_project.f0": 684,
+    "bb_project.h16": 60,
+    "bb_project.hd": 660,
+    "recip_a": 438,
+    "bb_project.uw": 1077,
+    "bb_project.um": 33,
+    "mul8x16": 846,
+    "bb_project.ins": 417,
+    "bb_project.put": 90,
+    "neg_hl": 34,
+    "bb_project.tn": 19,
+    "ray_bb.d": 254,
+    "bb_draw": 30
+   }
+  },
+  "one visible, behind the viewer (projected, rejected)": {
+   "t": 1039,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 84,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 440,
+    "neg_hl": 68
+   }
+  },
+  "one visible, in front but off the view to the side (projected, rejected)": {
+   "t": 2390,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 99,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 475,
+    "neg_hl": 34,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 726,
+    "bb_project.s1": 101,
+    "bb_project.t2": 33,
+    "bb_project.far": 157,
+    "mul_p": 152,
+    "bb_project.y1": 11,
+    "bb_project.y2": 155
+   }
+  },
+  "one visible, behind the viewer, T(dx, cs) <= 0 < T(dy, sn), |T(dy, sn)| >= 64 (rejected)": {
+   "t": 1519,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 80,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 475,
+    "neg_hl": 34,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 363,
+    "bb_project.s1": 101,
+    "bb_project.t2": 19
+   }
+  },
+  "one visible, behind the viewer, T(dx, cs) <= 0 < T(dy, sn), |T(dy, sn)| < 64 (rejected)": {
+   "t": 1238,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 80,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 475,
+    "neg_hl": 34,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 176,
+    "bb_project.s1": 26
+   }
+  },
+  "one visible, behind the viewer, T(dy, sn) <= 0 < T(dx, cs) (rejected)": {
+   "t": 1522,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 80,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 548,
+    "neg_hl": 34,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 363,
+    "bb_project.s2": 31,
+    "bb_project.t2": 19
+   }
+  },
+  "one hidden": {
+   "t": 550,
+   "n": 0,
+   "nvis": 0,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 38,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 65
+   }
+  },
+  "one outside the map": {
+   "t": 682,
+   "n": 0,
+   "nvis": 1,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 237,
+    "abs_hl": 38,
+    "gen_mul": 92,
+    "ray_bb.p": 82,
+    "bb_project": 197
+   }
+  },
+  "sixteen visible, eight in view, angle unchanged": {
+   "t": 43944,
+   "n": 8,
+   "nvis": 16,
+   "prof": {
+    "ray_bb": 36,
+    "ray_bb.c": 1212,
+    "abs_hl": 878,
+    "gen_mul": 92,
+    "ray_bb.p": 975,
+    "bb_project": 8048,
+    "RAY_MULC / RAY_MULS (generated multiplies)": 5808,
+    "bb_project.t2": 264,
+    "bb_project.far": 1504,
+    "mul_p": 1216,
+    "bb_project.y2": 5490,
+    "neg_hl": 680,
+    "bb_project.tn": 76,
+    "bb_project.ts": 840,
+    "bb_project.cpos": 152,
+    "bb_project.cset": 1056,
+    "bb_project.fok": 916,
+    "bb_project.f0": 1824,
+    "bb_project.h16": 332,
+    "bb_project.hd": 1760,
+    "recip_a": 1168,
+    "bb_project.uw": 2808,
+    "bb_project.um": 44,
+    "mul8x16": 2256,
+    "bb_project.ins": 3432,
+    "bb_project.put": 240,
+    "bb_project.fm": 88,
+    "ray_bb.d": 669,
+    "bb_draw": 80
+   }
+  },
+  "random": {
+   "scenes": 3000,
+   "visible": 23185,
+   "drawable": 5139,
+   "mismatches": 0
+  }
+ }
+}

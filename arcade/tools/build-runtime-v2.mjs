@@ -99,7 +99,7 @@ export function buildRuntime({ quiet = true } = {}) {
  * @returns {{ bytes: Uint8Array, syms: Record<string, number> }} bytes = the image from GAME_BASE
  */
 export function assembleGame(asmFile, { name = basename(asmFile, '.asm'), defines = {} } = {}) {
-  const dir = join(WORK, 'game-' + name);
+  const dir = join(WORK, 'game-' + name + (process.env.ARCADE_JOB_TAG ? '-' + process.env.ARCADE_JOB_TAG : ''));   // run-all --jobs: one directory per step
   mkdirSync(dir, { recursive: true });
   const args = ['--nologo', `--lst=${join(dir, 'game.lst')}`, `--sym=${join(dir, 'game.sym')}`, `-I${BUILD}`, `-I${RUNTIME_DIR}`];
   for (const [k, v] of Object.entries(defines)) args.push(`-D${k}=${v}`);

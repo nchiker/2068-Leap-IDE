@@ -309,6 +309,28 @@ draw_all:
     ld a,h
     pop hl                      ; H = its high byte (from A)
     ld l,a                      ; HL = the frame's FTAB entry
+    call blit_frame             ; the blit (shared with win_draw_all, scroll.asm)
+.done:
+    ld a,(V_I)
+    ld b,a
+.next:
+    ld a,b
+    add a,4
+    ld b,a
+    ld hl,V_END
+    cp (hl)
+    jp nz,.loop
+    ret
+
+; ---------------------------------------------------------------------------------------------------------------
+; blit_frame: draw one frame of a sprite into the hidden file; the end of draw_all's and win_draw_all's (scroll.asm) loop body.
+; In: HL = the frame's FTAB entry, B = the window bytes (shift 0: wb, else wb + 1), C = the low byte of PHASE_OFF[asset][shift] (0 = shift 0),
+; DE = the screen address of the first byte of the first row, V_H = rows, V_Y = the sprite's y.  Shift 0 is drawn from the frame's rows in the game
+; image (FTAB rom), any other shift from the frame's slot (FTAB slot + PHASE_OFF[asset][shift]); a frame without a slot is built into one first
+; (fc_miss, assets.asm; with no victim nothing is drawn, which the erase handles like any record).  Every blitter is a tail jump: CALL blit_frame +
+; JP blitter costs what CALL blitter + JP back cost.  Clobbers AF, BC, DE, HL.
+; ---------------------------------------------------------------------------------------------------------------
+blit_frame:
     ld a,c
     or a
     jr nz,.shifted
@@ -317,20 +339,13 @@ draw_all:
     ld h,(hl)
     ld l,a
     ld a,b
-    cp 1
-    jr nz,.r24
-    call blitp1                 ; (8 wide: a row is one mask, image pair)
-    jp .done
-.r24:
-    cp 3
-    jr nz,.r4
-    call blitr3
-    jp .done
-.r4:
-    cp 4
-    jr nz,.r2
-    call blitr4
-    jp .done
+    dec a
+    jp z,blitp1                 ; (8 wide: a row is one mask, image pair)
+    dec a
+    jp z,blitr2                 ; 16 wide
+    dec a
+    jp z,blitr3                 ; 24 wide
+    jp blitr4
 .shifted:                       ; ---- a pre-shifted copy in the frame's slot, wb + 1 (B) bytes a row ----
     inc hl
     inc hl
@@ -348,33 +363,29 @@ draw_all:
     cp 3
     jr nz,.p2
     PHASE_ADD
-    call blitp3                 ; 16 wide
-    jp .done
+    jp blitp3                   ; 16 wide
 .p2:
     cp 2
     jr nz,.p4
     PHASE_ADD
-    call blitp2                 ; 8 wide
-    jp .done
+    jp blitp2                   ; 8 wide
 .p4:
     cp 4
     jr nz,.p5
     PHASE_ADD
-    call blitp4                 ; 24 wide
-    jp .done
+    jp blitp4                   ; 24 wide
 .p5:
     PHASE_ADD
-    call blitp5                 ; 32 wide
-    jp .done
-.miss:                          ; the frame has no slot: build it into one (the record is written; with no victim nothing is drawn, which the
-    dec hl                      ; erase handles like any record)
+    jp blitp5                   ; 32 wide
+.miss:                          ; the frame has no slot: build it into one
+    dec hl
     dec hl
     dec hl
     ld (V_FTE),hl
     push bc
     push de
     ld a,c
-    sub PHASE_OFF&$FF
+    ASSERT (PHASE_OFF&$FF) == 0 ; (so C = 16 a + 2 shift as it is)
     rrca
     rrca
     rrca
@@ -385,19 +396,6 @@ draw_all:
     pop bc
     ld a,h
     or l
-    jr nz,.slot
-    jr .done
-.r2:
-    call blitr2                 ; 16 wide, shift 0 (falls into .done)
-.done:
-    ld a,(V_I)
-    ld b,a
-.next:
-    ld a,b
-    add a,4
-    ld b,a
-    ld hl,V_END
-    cp (hl)
-    jp nz,.loop
-    ret
+    jr nz,.slot                 ; built: draw it
+    ret                         ; no victim: nothing is drawn
 M_MAIN_E:
