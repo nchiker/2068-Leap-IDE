@@ -182,7 +182,7 @@ Programs without `WIRE3D`, `COSA`, `SINA`, `FXMUL` compile to the same code byte
   matrix + projection <= 50,000 T; the PUSH clear of 20 rows <= 31,000 T.
 * Per `DRAWMODEL` overhead (the eye transform, arguments, setup) <= 3,000 T beyond the projection and the lines.
 * `LINE` (40 px, inside) <= 4,000 T.
-* The sample game (section 9): `FRAMERATE 20` (3 refreshes) holds in >= 99 % of the ticks of its recorded runs; report median,
+* The sample game (section 9): its `FRAMERATE` (20, or 15: section 9) holds in >= 99 % of the ticks of its recorded runs; report median,
   95th percentile, worst and ticks over budget (`tests/arcade-codegen-perf.mjs` style).
 
 ## 7. Slices (each ends with the suites green and a commit on `arcade-wire`)
@@ -213,9 +213,12 @@ Programs without `WIRE3D`, `COSA`, `SINA`, `FXMUL` compile to the same code byte
 ## 9. Sample game: "Orbit Gates" (W5)
 An original first-person flight through a ring of gates in space (v2, `FRAMERATE 20`), designed to show every part:
 * **Play scene (`WIRE3D ROWS 2 TO 21`):** the player steers (`EYE` heading with left / right, speed with up / down) through
-  gates (`gate`: an 8-sided ring, 16 points, 24 edges, `SCALE 4`, turning slowly with `YAW`), while tumbling rocks (`rock`: a
-  12-point shape, `YAW` + `PITCH`) drift across. A gate passed scores; a rock hit costs a shield. At most 3 gates and 2 rocks
-  drawn per tick (the budget of section 6). `LINE` draws the gunsight and a horizon tick; a 2-D sprite (an explosion /
+  gates (`gate`: a flat octagon, 8 points, 8 edges, `SCALE 4`, turning slowly with `YAW`), while tumbling rocks (`rock`: an
+  octahedron, 6 points, 12 edges, `YAW` + `PITCH`) drift across. A gate passed scores; a rock hit costs a shield. At most 2
+  gates and 2 rocks drawn per tick. Budget (spike figures, *derived*): 28 points about 90,000 T, 40 edges (near gates clip)
+  about 40,000-60,000 T, clear 30,481, logic: about 165,000-185,000 T against 176,064 at 20 fps. **`FRAMERATE 20` if the
+  measured worst tick allows, else 15** (235,000 T); the As built notes give the figure and section 6's target follows the
+  rate chosen. (The first sketch had 16-point gates: 3 of them alone cost about 139,000 T.) `LINE` draws the gunsight and a horizon tick; a 2-D sprite (an explosion /
   shield flash) over the play area shows that sprites draw over lines.
 * **HUD** (rows 0-1, 22-23): score, shields, gate count, in cells (`PRINT AT`), outside the play area.
 * **Title and game-over scenes `NOVIEW`:** the full cell screen (no play area, so no 3D there): the logo in tiles, a new

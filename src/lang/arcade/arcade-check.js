@@ -76,6 +76,11 @@
  *     declarations are "too many songs (at most 8)". `PLAY name` is a song when a MUSIC of that name is declared and no SFX is; a name that is BOTH an SFX and a MUSIC is an error at the PLAY
  *     ("'x' is both an SFX and a MUSIC: PLAY cannot tell which to start; rename one of them") -- the declarations alone are legal, as for any two kinds. Songs have no index form: `PLAY (x)`
  *     and `PLAY 0` stay effect indexes. A song never PLAYed is "MUSIC 'x' is never used". NOMUSIC takes nothing (the parser); NOMUSIC in a game without MUSIC is a warning ("does nothing").
+ *   - (wireframe 3D, docs/ARCADE_WIREFRAME_CONTRACT.md section 1 items 9 and 10) WIRE3D ROWS r0 TO r1 [INK] [PAPER] [BRIGHT]: once, at the top level, constant rows with 0 <= r0 and r0 + 3 <= r1 <= 23, colours 0..7 (BRIGHT 0..1),
+ *     not together with a WINDOW or a VIEW3D, and only for the v2 runtime (check(ast, {version}) with another known version is an error naming the v2 runtime). MODEL name = "asset" (at most 32), EYE, DRAWMODEL and LINE need a WIRE3D;
+ *     DRAWMODEL names a declared MODEL and its SCALE is a constant 1, 2, 4 or 8; `SCENE name NOVIEW` is legal in a game with a VIEW3D or a WIRE3D (an error in one with neither). COSA SINA FXMUL no longer need v4: the v2 and the v4
+ *     runtime have them, v3 refuses them. Warnings: DRAWMODEL / LINE directly in a scene's PROC INIT (the tick clears the play area: draw in FRAME); PRINT AT / TILE with a constant row inside the play area, in a scene that has it
+ *     (a scene's own PROCs only: a game-level PROC may be called from a NOVIEW scene), because it is not shown while the play area is on; a MODEL never used.
  *   - Warnings (optional in the brief): variable never used, SPRITE / SFX / MUSIC never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
@@ -89,7 +94,9 @@ import { ratioCode, RATIO_TEXT } from './arcade-window.js';
 /** Functions of language batch 2 that need a WINDOW (and the v3 runtime). */
 const WINDOW_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);
 /** Functions of language batch 3 (the v4 runtime); WALL SEEN DEPTH also need a VIEW3D (the code generator checks that, like the WINDOW functions). */
-const V4_FUNCS = new Set(['COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']);
+const V4_FUNCS = new Set(['WALL', 'SEEN', 'DEPTH']);
+/** COSA SINA FXMUL: the v2 runtime has them since the wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10) and the v4 runtime since batch 3; v3 has neither. */
+const V24_FUNCS = new Set(['COSA', 'SINA', 'FXMUL']);
 
 /** Value of a literal operand (`5` or `-5`), else undefined. */
 const literal = (e) => (e?.type === 'Number' ? e.value : e?.type === 'Unary' && e.op === '-' && e.operand?.type === 'Number' ? -e.operand.value : undefined);
@@ -138,6 +145,8 @@ class Checker {
     this.hasWindow = this.windows.length > 0;
     this.views = (ast?.views ?? []);
     this.hasView = this.views.length > 0;
+    this.wires = (ast?.wires ?? []);                       // wireframe 3D: the WIRE3D items
+    this.hasWire = this.wires.length > 0;
     this.worldStmts = [];             // the banked cartridge map: every WORLD statement of the program (found by a walk of the tree, before the bodies are checked)
     (function walk(n, out) {
       if (Array.isArray(n)) { n.forEach((x) => walk(x, out)); return; }
@@ -198,13 +207,17 @@ class Checker {
 
     // Hoisted: assets, scenes, top-level PROCs and DEF FNs.
     const mapCount = (ast.assets ?? []).filter((a) => a.kind === 'MAP').length;
-    let mapNo = 0, songNo = 0;
+    let mapNo = 0, songNo = 0, modelNo = 0;
     for (const a of ast.assets ?? []) {
       const kind = a.kind.toLowerCase();
       const key = `${kind}:${up(a.name)}`;
       const prev = this.assets.get(key);
       if (kind === 'map' && ++mapNo > LIMITS.maxMaps) this.err(a.namePos ?? a, `at most ${LIMITS.maxMaps} MAPs per game (this is the ${mapNo}th of ${mapCount})`);
       if (prev) { this.err(a.namePos, `'${a.name}' is already declared (line ${prev.pos.line})`); continue; }
+      if (kind === 'model') {                                            // wireframe 3D
+        if (!this.hasWire) this.err(a.namePos ?? a, `MODEL '${a.name}' needs a WIRE3D: declare the play area first, e.g. WIRE3D ROWS 2 TO 21`);
+        if (++modelNo > LIMITS.maxModels) this.err(a.namePos ?? a, `too many models (at most ${LIMITS.maxModels})`);
+      }
       if (kind === 'music' && ++songNo > LIMITS.maxSongs) this.err(a.namePos ?? a, `too many songs (at most ${LIMITS.maxSongs})`);      // only a new song counts: a repeated name is the error above
       if (a.count !== null && a.count !== undefined && (a.count < 1 || a.count > LIMITS.maxPool)) {
         this.err(a.countPos ?? a, `a pool of ${a.count} sprites is out of range (1..${LIMITS.maxPool})`);
@@ -256,6 +269,7 @@ class Checker {
         case 'Scene': this.checkScene(item); break;
         case 'Window': this.checkWindow(item); break;
         case 'View3d': this.checkView3d(item); break;
+        case 'Wire3d': this.checkWire3d(item); break;
         case 'Band': this.checkBand(item); break;
         default: break;
       }
@@ -271,7 +285,7 @@ class Checker {
     // Warnings
     for (const a of this.assets.values()) {
       if (a.used) continue;
-      if (a.kind === 'sprite' || a.kind === 'sfx' || a.kind === 'music') this.warn(a.pos, `${a.kind.toUpperCase()} '${a.name}' is never used`);
+      if (a.kind === 'sprite' || a.kind === 'sfx' || a.kind === 'music' || a.kind === 'model') this.warn(a.pos, `${a.kind.toUpperCase()} '${a.name}' is never used`);
       else if (a.kind === 'map' && a.index > 0) this.warn(a.pos, `MAP '${a.name}' is never used (only the first MAP is loaded at the start; use LOADMAP ${a.name})`);
     }
     for (const sc of this.scopes) {
@@ -319,10 +333,15 @@ class Checker {
     const at = sc.modePos ?? sc.namePos ?? sc;
     const word = sc.mode === 'nowindow' ? 'NOWINDOW' : 'NOVIEW';
     const want = sc.mode === 'nowindow' ? 'WINDOW' : 'VIEW3D', other = sc.mode === 'nowindow' ? 'VIEW3D' : 'WINDOW', otherWord = sc.mode === 'nowindow' ? 'NOVIEW' : 'NOWINDOW';
-    const has = sc.mode === 'nowindow' ? this.hasWindow : this.hasView, hasOther = sc.mode === 'nowindow' ? this.hasView : this.hasWindow;
+    const has = sc.mode === 'nowindow' ? this.hasWindow : (this.hasView || this.hasWire), hasOther = sc.mode === 'nowindow' ? (this.hasView || this.hasWire) : this.hasWindow;
     if (has) return;
-    if (hasOther) this.err(at, `SCENE '${sc.name}' ${word}: ${word} is for a game with a ${want}, and this game has a ${other} (line ${(sc.mode === 'nowindow' ? this.views : this.windows)[0].line}): use ${otherWord}`);
-    else this.err(at, `SCENE '${sc.name}' ${word}: ${word} needs a ${want} in the game (a scene without the ${sc.mode === 'nowindow' ? 'window' : '3D view'} only makes sense where the other scenes have one)`);
+    if (hasOther) {
+      const first = sc.mode === 'nowindow' ? (this.hasView ? this.views : this.wires)[0] : this.windows[0];
+      const otherName = sc.mode === 'nowindow' ? (this.hasView ? 'VIEW3D' : 'WIRE3D') : other;
+      this.err(at, `SCENE '${sc.name}' ${word}: ${word} is for a game with a ${want}, and this game has a ${otherName} (line ${first.line}): use ${otherWord}`);
+    }
+    else if (sc.mode === 'nowindow') this.err(at, `SCENE '${sc.name}' ${word}: ${word} needs a ${want} in the game (a scene without the window only makes sense where the other scenes have one)`);
+    else this.err(at, `SCENE '${sc.name}' ${word}: ${word} needs a VIEW3D or a WIRE3D in the game (a scene without the 3D view only makes sense where the other scenes have one)`);
   }
 
   checkScene(sc) {
@@ -372,6 +391,45 @@ class Checker {
   /** The words of language batch 3: the v4 runtime (the raycaster). */
   needV4(node, what) {
     if (this.versionKnown && this.version < 4) this.err(node, `${what} needs the v4 runtime (the raycaster runtime): build with --runtime v4`);
+  }
+  /** The words of the wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md): only the v2 runtime has them. */
+  needV2Only(node, what) {
+    if (this.versionKnown && this.version !== 2) this.err(node, `${what} needs the v2 runtime (the v${this.version} runtime has no wireframe 3D): build with --runtime v2`);
+  }
+  /** `WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]` (contract section 1 items 1, 9). */
+  checkWire3d(w) {
+    this.needV2Only(w, 'WIRE3D');
+    const k = this.wires.indexOf(w);
+    if (k > 0) this.err(w, `WIRE3D may appear only once (the first is on line ${this.wires[0].line})`);
+    if (this.hasWindow) this.err(w, `WIRE3D cannot be used in a program with a WINDOW (line ${this.windows[0].line}): the play area is the wireframe view, the window the scrolling world`);
+    if (this.hasView) this.err(w, `WIRE3D cannot be used in a program with a VIEW3D (line ${this.views[0].line}): a game has one 3D mode`);
+    const val = (e, what, lo, hi) => {
+      if (!e) return undefined;
+      const x = this.constOf(e, this.global, what);
+      if (x !== undefined && (x < lo || x > hi)) { this.err(e, `${what} is ${x}: it must be ${lo}..${hi}`); return undefined; }
+      return x;
+    };
+    const r0 = this.constOf(w.r0, this.global, 'the WIRE3D first row'), r1 = this.constOf(w.r1, this.global, 'the WIRE3D last row');
+    if (r0 !== undefined && (r0 < 0 || r0 > 20)) this.err(w.r0, `the WIRE3D first row is ${r0}: it must be 0..20 (the play area has at least 4 rows and the screen 24)`);
+    else if (r1 !== undefined && r1 > 23) this.err(w.r1, `the WIRE3D last row is ${r1}: it must be at most 23 (the screen has rows 0..23)`);
+    else if (r0 !== undefined && r1 !== undefined && r1 < r0 + 3) this.err(w.r1, `WIRE3D ROWS ${r0} TO ${r1}: the play area needs at least 4 rows (the last row must be at least ${r0 + 3})`);
+    const ink = val(w.ink, 'the WIRE3D INK', 0, 7), paper = val(w.paper, 'the WIRE3D PAPER', 0, 7), bright = val(w.bright, 'the WIRE3D BRIGHT', 0, 1);
+    w.vals = { r0, r1, ink, paper, bright };
+  }
+  /** The rows of the play area when they are known good constants, else null. */
+  wireRows() {
+    const v = this.wires[0]?.vals;
+    return v && v.r0 !== undefined && v.r1 !== undefined && v.r0 >= 0 && v.r1 <= 23 && v.r1 >= v.r0 + 3 ? [v.r0, v.r1] : null;
+  }
+  /** PRINT AT / TILE with a constant row inside the play area, in a scene that has it: not shown (contract section 2.5). */
+  wireRowWarn(rowExpr, what, ctx) {
+    if (!this.hasWire || !this.curScene || this.curScene.mode === 'noview') return;
+    const rows = this.wireRows(), r = this.lit(rowExpr);
+    if (rows && r !== undefined && r >= rows[0] && r <= rows[1]) this.warn(rowExpr, `${what} row ${r} is inside the WIRE3D play area (rows ${rows[0]}..${rows[1]}): it is not shown while the play area is on (use a row outside it, or a SCENE ... NOVIEW)`);
+  }
+  /** DRAWMODEL / LINE directly in a scene's PROC INIT: the tick's clear wipes it. */
+  wireInitWarn(s, what, ctx) {
+    if (this.curScene && ctx.proc && ctx.proc.name && up(ctx.proc.name) === 'INIT' && (this.curScene.procs ?? []).includes(ctx.proc)) this.warn(s, `${what} in PROC INIT is wiped by the clear at the start of the tick: draw in PROC FRAME`);
   }
   checkView3d(v) {
     this.needV4(v, 'VIEW3D');
@@ -816,6 +874,7 @@ class Checker {
           this.numArg(s.at.row, ctx, 'the AT row'); this.numArg(s.at.col, ctx, 'the AT column');
           this.range(s.at.row, 0, LIMITS.maxRow, 'the AT row');
           this.range(s.at.col, 0, LIMITS.maxCol, 'the AT column');
+          this.wireRowWarn(s.at.row, 'PRINT AT', ctx);
         }
         if (s.tab) this.numArg(s.tab, ctx, 'the TAB column');
         (s.items ?? []).forEach((it, i) => {
@@ -882,6 +941,7 @@ class Checker {
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.value, ctx, 'the tile');
         this.range(s.x, 0, LIMITS.maxCol, 'TILE x (the column)');
         this.range(s.y, 0, LIMITS.maxRow, 'TILE y (the row)');
+        this.wireRowWarn(s.y, 'TILE', ctx);
         this.range(s.value, 0, LIMITS.maxTile, 'the tile index');
         return;
       case 'Color': {
@@ -893,7 +953,24 @@ class Checker {
       case 'Border': this.numArg(s.value, ctx, 'the value'); this.range(s.value, 0, 7, 'BORDER (0..7)'); return;
       case 'Randomise': if (s.value) this.numArg(s.value, ctx, 'the value'); return;
       case 'Plot': this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); return;
+      case 'Eye':
+        if (!this.hasWire) this.err(s, 'EYE needs a WIRE3D: declare the play area first, e.g. WIRE3D ROWS 2 TO 21');
+        this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.z, ctx, 'z'); this.numArg(s.a, ctx, 'the heading');
+        return;
+      case 'DrawModel': {
+        if (!this.hasWire) this.err(s, 'DRAWMODEL needs a WIRE3D: declare the play area first, e.g. WIRE3D ROWS 2 TO 21');
+        this.assetRef(s.model, 'model', ctx);
+        for (const [k, w] of [['x', 'x'], ['y', 'y'], ['z', 'z'], ['yaw', 'the YAW'], ['pitch', 'the PITCH']]) if (s[k]) this.numArg(s[k], ctx, w);
+        if (s.scale) {
+          const v = this.constOf(s.scale, ctx.scope, 'SCALE');
+          if (v !== undefined && ![1, 2, 4, 8].includes(v)) this.err(s.scale, `SCALE is ${v}: it must be a constant 1, 2, 4 or 8`);
+        }
+        this.wireInitWarn(s, 'DRAWMODEL', ctx);
+        return;
+      }
       case 'Line':
+        if (!this.hasWire) this.err(s, 'LINE needs a WIRE3D: declare the play area first, e.g. WIRE3D ROWS 2 TO 21');
+        this.wireInitWarn(s, 'LINE', ctx);
         this.numArg(s.x0, ctx, 'x0'); this.numArg(s.y0, ctx, 'y0'); this.numArg(s.x1, ctx, 'x1'); this.numArg(s.y1, ctx, 'y1');
         return;
       case 'Poke': this.numArg(s.addr, ctx, 'the address'); this.numArg(s.value, ctx, 'the value'); return;
@@ -1020,7 +1097,7 @@ class Checker {
     const sym = this.assets.get(`${kind}:${key}`);
     if (!sym) {
       const v = ctx.scope.lookup('vars', key);
-      const other = ['sprite', 'sfx', 'tileset', 'map', 'music'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean);
+      const other = ['sprite', 'sfx', 'tileset', 'map', 'music', 'model'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean);
       if (v) this.err(node, `'${node.name}' is a ${v.kind === 'const' ? 'CONST' : 'variable'}, not a ${kind.toUpperCase()}`);
       else if (other) this.err(node, `'${node.name}' is a ${other.kind.toUpperCase()}, not a ${kind.toUpperCase()}`);
       else this.err(node, `'${node.name}' is not a declared ${kind.toUpperCase()}: add ${kind.toUpperCase()} ${node.name} = "..."`);
@@ -1036,7 +1113,7 @@ class Checker {
   }
 
   /** An asset of any kind with this (upper-case) name, or undefined. */
-  anyAsset(key) { return ['sprite', 'sfx', 'tileset', 'map', 'music'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean); }
+  anyAsset(key) { return ['sprite', 'sfx', 'tileset', 'map', 'music', 'model'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean); }
 
   // ── expressions: return 'num' | 'str' | '?' ──
   undeclared(node, ctx, what = 'variable') {
@@ -1180,6 +1257,10 @@ class Checker {
     }
     if (WINDOW_FUNCS.has(entry.name) && !this.windowWord(e, `${entry.name}()`)) this.needV3(e, `${entry.name}()`);
     if (V4_FUNCS.has(entry.name)) this.needV4(e, `${entry.name}()`);
+    if (V24_FUNCS.has(entry.name) && this.versionKnown) {
+      if (this.version === 3) this.err(e, `${entry.name}() needs the v2 or v4 runtime (the v3 runtime has no fixed-point trigonometry): build with --runtime v2 or v4`);
+      else if (this.version < 2) this.needV4(e, `${entry.name}()`);                    // v0 / v1: as before the wireframe 3D
+    }
     if (entry.name === 'KEYDOWN' || entry.name === 'KEYPRESS') {
       if (args.length === 1) this.keyArg(args[0], ctx, entry.name);
       return 'num';

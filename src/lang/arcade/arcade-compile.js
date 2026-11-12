@@ -35,11 +35,13 @@ import { assetTables, lookupAsset } from './arcade-assets.js';
 import { sceneDisplayPlan } from './arcade-display.js';
 
 const V3_WORDS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);
-const V4_WORDS = new Set(['COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']);        // language batch 3 (the raycaster runtime)
+const V4_WORDS = new Set(['WALL', 'SEEN', 'DEPTH']);        // language batch 3 (the raycaster runtime); COSA SINA FXMUL moved out: the v2 runtime has them too (wireframe 3D)
 
 /**
  * Which runtime does a program need? (language batch 2, contract D1: v3 when the program uses WINDOW, FLIP, a sprite wider or taller than 16 pixels,
- * or a FRAME other than the literal 0; language batch 3, raycaster contract section 6: v4 when it uses VIEW3D, VIEW, SETWALL, COSA, SINA, FXMUL, WALL, SEEN or DEPTH.)
+ * or a FRAME other than the literal 0; language batch 3, raycaster contract section 6: v4 when it uses VIEW3D, VIEW, SETWALL, WALL, SEEN or DEPTH. Wireframe 3D
+ * (docs/ARCADE_WIREFRAME_CONTRACT.md item 10): WIRE3D, MODEL, EYE, DRAWMODEL and LINE are v2 (the least there is, so they add no reason), and COSA, SINA and FXMUL no longer force v4:
+ * v2 and v4 have them, so a program that uses them alone is v2; with a v3 word the program is v3 and the checker refuses them ("needs the v2 or v4 runtime"), as it refuses WIRE3D next to a v3 or v4 word.)
  * Returns {version: 2 | 3 | 4, reasons: string[]} (the reasons of the version chosen); v2 is the least the language needs now. A program that mixes the words of v3 (WINDOW ...)
  * and of v4 gets version 4 and the checker refuses it. A caller that has both
  * runtimes (the CLI's --runtime auto, the Studio) compiles with the one this names. Parse errors are ignored (the program is read as far as it goes).

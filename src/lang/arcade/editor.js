@@ -46,7 +46,7 @@ let assetSource = () => [];
 /** fn(kind) -> asset names of that kind ('sprites' | 'tilesets' | 'maps' | 'sfx' | 'music'), for the completion inside quotes. */
 export function setAssetSource(fn) { assetSource = typeof fn === 'function' ? fn : () => []; }
 
-const ASSET_KIND_OF = { SPRITE: 'sprites', TILESET: 'tilesets', MAP: 'maps', SFX: 'sfx', MUSIC: 'music' };
+const ASSET_KIND_OF = { SPRITE: 'sprites', TILESET: 'tilesets', MAP: 'maps', SFX: 'sfx', MUSIC: 'music', MODEL: 'models' };
 
 // ── Language mode ─────────────────────────────────────────────────
 // One line is tokenized by arcade-parse.js's tokenizer (no token spans lines: REM and strings end with the line).
@@ -82,6 +82,9 @@ function classify(toks, i, atStart) {
     if ((t.value === 'FRAME' || t.value === 'FLIP') && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'SHOW')) return 'packageKeyword';
     // the clauses of VIEW3D (COLW CEIL FLOOR PATTERNS) are words there, ordinary names elsewhere (language batch 3)
     if (['COLW', 'CEIL', 'FLOOR', 'PATTERNS'].includes(t.value) && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'VIEW3D')) return 'packageKeyword';
+    // the clauses of WIRE3D (ROWS) and DRAWMODEL (YAW PITCH SCALE) are words there, ordinary names elsewhere (wireframe 3D)
+    if (t.value === 'ROWS' && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'WIRE3D')) return 'packageKeyword';
+    if (['YAW', 'PITCH', 'SCALE'].includes(t.value) && toks.slice(0, i).some((x) => x.type === 'keyword' && x.value === 'DRAWMODEL')) return 'packageKeyword';
     // SCENE name NOWINDOW / NOVIEW (language batch 7): a word only as the third token of a SCENE line, an ordinary name elsewhere
     if ((t.value === 'NOWINDOW' || t.value === 'NOVIEW') && i >= 2 && toks[i - 2]?.type === 'keyword' && toks[i - 2].value === 'SCENE' && toks[i - 1]?.type !== 'punct') return 'packageKeyword';
     // PRINT item USING "pattern" (language batch 5): a word before a string literal inside a PRINT, an ordinary name elsewhere
@@ -234,7 +237,7 @@ function arcadeComplete(context) {
   const text = state.doc.toString();
 
   // Inside the quotes of  SPRITE x = "  : the project's asset names
-  const decl = /^\s*(SPRITE|TILESET|MAP|SFX|MUSIC)\b[^=]*=\s*"([A-Za-z0-9_]*)$/i.exec(before);
+  const decl = /^\s*(SPRITE|TILESET|MAP|SFX|MUSIC|MODEL)\b[^=]*=\s*"([A-Za-z0-9_]*)$/i.exec(before);
   if (decl) {
     const names = assetSource(ASSET_KIND_OF[decl[1].toUpperCase()]);
     return { from: pos - decl[2].length, options: names.map((n) => ({ label: n, type: 'constant', detail: decl[1].toLowerCase() })), validFor: /^\w*$/ };

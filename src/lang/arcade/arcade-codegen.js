@@ -249,7 +249,10 @@ const V1_STMT = new Set(['Print', 'Tile', 'Play', 'Silence', 'Cls', 'Color']);  
 const UNSUPPORTED_STMT = {
   Print: 'PRINT', Tile: 'TILE', Play: 'PLAY', Silence: 'SILENCE', Cls: 'CLS', End: 'END', Color: null, Border: 'BORDER',
   Randomise: 'RANDOMISE', Plot: 'PLOT', Poke: 'POKE', Out: 'OUT', Line: 'LINE', Enter: 'ENTER', Dim: 'DIM inside a PROC',
+  Eye: 'EYE', DrawModel: 'DRAWMODEL',
 };
+/** Wireframe 3D statements (docs/ARCADE_WIREFRAME_CONTRACT.md): parsed and checked, not generated yet (slice W3 is the front end only); refused cleanly instead of "internal: unexpected". */
+const WIRE_STMT = new Set(['Eye', 'DrawModel', 'Line']);
 const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK', 'BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
 const V1_FUNCS = new Set(['HIT', 'TILEAT']);
 const V2_FUNCS = new Set(['KEYDOWN']);
@@ -317,6 +320,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const scenes = ast.scenes ?? [];
   const multi = scenes.length > 1;
   if (scenes.length === 0) err(ast, 'the game has no SCENE');
+  for (const w of ast.wires ?? []) err(w, 'not implemented yet: WIRE3D (the wireframe 3D code generator is a later slice of docs/ARCADE_WIREFRAME_CONTRACT.md)');
   if (multi && !v2) err(scenes[1], `a second SCENE (M2 has exactly one) is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
   /** Language batch 4: does the tree hold a node of this type (an ENTER anywhere)? */
   const containsType = (n, t) => {
@@ -437,6 +441,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       if ((winDecl || viewDecl) && worldNameKeys.has(up(a.name)) && !worldOnlyDecls.has(up(a.name))) { worldOnlyDecls.set(up(a.name), a); continue; }     // a WORLD's map: kept apart too
       if (mapList.length >= LIMITS.maxMaps) { err(a, `at most ${LIMITS.maxMaps} MAPs per game`); continue; }
       mapList.push({ node: a });
+    } else if (a.kind === 'MODEL') { err(a, `not implemented yet: MODEL (${a.name}) (the wireframe 3D code generator is a later slice of docs/ARCADE_WIREFRAME_CONTRACT.md)`);
     } else { notYet(a, `${a.kind} (${a.name})`); }
   }
   /** PLAY by index (batch 5): neither a declared SFX nor a declared song is named, so the operand is an expression (a bare name is a variable). */
@@ -948,7 +953,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       }
       if (!SIMPLE_STMT.has(s.type)) {
         const what = UNSUPPORTED_STMT[s.type];
-        if (what === undefined) err(s, `internal: unexpected ${s.type} statement`);
+        if (WIRE_STMT.has(s.type)) err(s, `not implemented yet: ${what} (the wireframe 3D code generator is a later slice of docs/ARCADE_WIREFRAME_CONTRACT.md)`);
+        else if (what === undefined) err(s, `internal: unexpected ${s.type} statement`);
         else if (s.type === 'Color') notYet(s, s.which);
         else notYet(s, what);
         continue;
