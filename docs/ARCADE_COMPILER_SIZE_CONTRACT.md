@@ -187,6 +187,8 @@ every example; the as-built notes list each example's bytes before and after.
 
 ## 11. Decisions taken by Claude, for review
 
+**Approved by the owner on 2026-11-12** (all of them).
+
 1. Batch 1 = F1-F8 (smaller and faster) plus F9 (arrays: **owner's decision**); `cmpv`, `shr` and routine LOCAL clearing are out. F9 keeps the
    inline form for arrays with a single run-time-index site and for constant indexes; the time bound of section 5 (median not higher, worst / 95th
    within 0.25 % of the budget, no new tick over budget) is Claude's.

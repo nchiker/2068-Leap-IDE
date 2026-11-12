@@ -7,8 +7,11 @@ Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured tar
   (perf tool, 0 breaches). Also fixed: 2-D array routines shared between same-named arrays of two scenes (pre-existing bug; m9-differential section 5),
   and m4's real-runtime harness now places a PLAY cut by an interrupt at entry or return refresh. Full run-all after C2 running (14:55).
 * **C3 DONE** (9458d80, c774b7a); run-all 80/80. **C4 DONE** (0ef7803): m16c 70/70 killed + 1 equivalent; perf faster everywhere.
-* **C5 in progress** (15:55): a Sonnet agent adds Leap Runner's in-game song `rn_run` (play scene; pause / game over / win stop it); checkpoints in
-  `arcade/spike/codegen/wip-c5.patch`. Then **C6**: a fresh `/code-review` of the branch, then HANDOFF + PR (owner merges after listening).
+* **C5 DONE** (dc189ef): Leap Runner's in-game song `rn_run` (owner: "sounds good"). **C6** code review running; full battery running (16:15).
+* **Owner, 2026-11-12:** approves every decision left for review (this contract's section 11, MUSIC 6a, the song editor's envelopes / default
+  song); **Claude merges this PR** once the review is fixed and the suites pass. **New backlog**, after the wireframe game: (5) a thorough review and
+  completion of the game IDE (Leap Arcade Studio): the web interface is incomplete, New project gives a starter for one game type only (wants one
+  per game type), the sprite editors lack colours, and the like; (6) one more sample game that shows off all the new features.
 * **C3 tool DONE** (d499775): `regen-baselines.mjs --accept-codegen-change 9b7969c` (dry run: 23 / 23 programs identical over 300 ticks; negative control
   refused). Run it for real only after C2 is final and run-all passes except the hash checks; then rewrite the 45+ pinned checks (C3 proper).
 * C1 alone measured faster on every run (contract section 13).
