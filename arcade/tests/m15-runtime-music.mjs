@@ -293,7 +293,10 @@ for (const v of VERS) {
   const held = { patterns: [{ ticks: Array.from({ length: 30 }, () => T(400, 12)), ticksB: Array.from({ length: 30 }, (_, k) => T(800, 9 - (k >> 3))), ticksC: Array.from({ length: 30 }, () => T(600, 10)) },
     { ticks: Array.from({ length: 8 }, (_, k) => T(300 + k, 13, 6)), ticksB: [T(200, 0, 7)], ticksC: Array.from({ length: 8 }, (_, k) => T(150, 8, k & 1 ? 2 : 0, 5 + k)) }], order: [0, 1, 0], loop: 1 };
   const once = { patterns: [{ ticks: [T(100, 5), T(100, 5), T(101, 6)], ticksB: [T(90, 4)], ticksC: [T(80, 3, 6)] }], order: [0, 0], loop: null };
-  const songs = [held, once].map(convertMusic);
+  // song 2: hand-made items with n = 0 (one refresh, no change: the encoder writes waits instead, but the format allows it); song 3: a one-refresh
+  // pattern that loops, so every refresh ends a pattern (the order list moves at every refresh: the interrupt-boundary test needs that)
+  const raw = { patterns: [{ bytes: [11, 0, 10, 1, 0, 2, 20, 3, 0, 4, 30, 5, 0, 6, 5, 7, 0x38, 8, 9, 9, 8, 10, 7, 0, 0, 1, 8, 12, 0x81, 0, 2, 3, 1, 9, 4, 0xFF] }], order: [0], loop: 0 };
+  const songs = [...[held, once].map(convertMusic), raw, convertMusic({ patterns: [{ ticks: [T(500, 7)], ticksB: [T(700, 5)] }], order: [0], loop: 0 })];
   const effs = [effC(12, false), effC(9, true), eff3(10), eff1(7), effC(1, false), eff3(1)];
   const scenarios = [
     ['a song alone: waits, pattern changes, the loop to order position 1', [[0, { music: 0 }]], 200],
@@ -314,6 +317,8 @@ for (const v of VERS) {
     ['MUSIC while a channel-C effect plays: A and B at once, C after it', [[0, { play: 0 }], [2, { music: 0 }]], 40],
     ['a one-refresh C effect and a one-refresh three-channel effect', [[0, { music: 0 }], [2, { play: 4 }], [5, { play: 5 }]], 20],
     ['effects with no song (C, then 3, then C, then SILENCE): the volumes they do not own go to 0', [[0, { play: 0 }], [3, { play: 2 }], [5, { play: 1 }], [8, {}]], 30],
+    ['a song with items of n = 0 (one refresh with no change each) and pairs after them', [[0, { music: 2 }]], 30],
+    ['a song whose pattern is one refresh long: the order list moves at every refresh', [[0, { music: 3 }], [7, { play: 0 }], [12, {}]], 24],
     ['MUSIC twice in the same refresh, NOMUSIC twice, SILENCE twice', [[0, { music: 0 }, { music: 0 }], [3, { nomusic: true }, { nomusic: true }], [4, {}, {}], [5, { music: 1 }]], 30],
   ];
   let sOk = 0, sFirst = '';
@@ -355,12 +360,18 @@ for (const v of VERS) {
       ['RT_SILENCE of a C effect', [{ music: 0 }, { play: 0 }], {}], ['RT_SILENCE of a 3 effect', [{ music: 0 }, { play: 2 }], {}],
       ['RT_MUSIC over a song and a C effect', [{ music: 0 }, { play: 1 }], { music: 1 }], ['RT_MUSIC with nothing', [], { music: 0 }],
       ['RT_NOMUSIC with a C effect', [{ music: 0 }, { play: 0 }], { nomusic: true }], ['RT_NOMUSIC alone', [{ music: 0 }], { nomusic: true }],
+      ['RT_MUSIC over a song that ends a pattern at every refresh', [{ music: 3 }], { music: 0 }], ['RT_PLAY over a C effect and a one-refresh song', [{ music: 3 }, { play: 1 }], { play: 0 }],
     ];
+    // the state an interrupt in the middle must not disturb: for RT_MUSIC the new song's position, for RT_PLAY the new effect's; it must equal a run without
+    // the interrupt, or that run one refresh later (an interrupt after the last SET counts as a refresh of the new song / effect)
+    const keyOf = (r, op) => 'music' in op ? [rd16(r.m, S.V_MUS_ORD), rd16(r.m, S.V_MUS_PTR), rd8(r.m, S.V_MUS_WAIT), ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_SHADOW + k))].join()
+      : 'play' in op ? [rd16(r.m, S.V_SFX_PTR), rd8(r.m, S.V_SFX_CH), ...Array.from({ length: 11 }, (_, k) => rd8(r.m, S.MUS_OWN + k))].join() : null;
     for (const [name, setup, op] of cases) {
       // the routine's length in instructions, from a run without interrupts
       const probe = rig(vv, effs, songs);
       const doOp = (r, o) => ('play' in o ? callRoutine(r.m, S.RT_PLAY, { a: o.play }) : 'music' in o ? callRoutine(r.m, S.RT_MUSIC, { hl: r.songAt[o.music] }) : o.nomusic ? callRoutine(r.m, S.RT_NOMUSIC, {}) : callRoutine(r.m, S.RT_SILENCE, {}));
       for (const o of setup) { doOp(probe, o); frame(probe); frame(probe); }
+      const refs = [2, 3].map((nf) => { const q = rig(vv, effs, songs); for (const o of setup) { doOp(q, o); frame(q); frame(q); } readyForIrq(q.m); doOp(q, op); for (let k = 0; k < nf; k++) frame(q); return keyOf(q, op); });
       const name2 = 'play' in op ? 'RT_PLAY' : 'music' in op ? 'RT_MUSIC' : op.nomusic ? 'RT_NOMUSIC' : 'RT_SILENCE';
       const steps = 3000;                                    // (the loop stops at the first trial whose interrupt comes after the routine has returned)
       for (let at = 0; at < steps; at += QUICK ? 3 : 1) {
@@ -406,6 +417,7 @@ for (const v of VERS) {
           }
           if (!why && !(flags & SB_MUS) && !(flags & SB_FX)) for (let k = 8; k <= 10 && !why; k++) if (m.ay.regs[k]) why = `R${k} = ${m.ay.regs[k]} with nothing playing`;
         }
+        if (!why && done) { const k = keyOf(r, op); if (k !== null && !refs.includes(k)) why = `the ${'music' in op ? 'song' : 'effect'} is not where a run without the interrupt has it (${k} vs ${refs[0]})`; }
         if (why) { bad++; first ||= `${name}, interrupt after ${at} instructions: ${why}`; }
         if (!fired) break;                                    // past the routine's end
       }

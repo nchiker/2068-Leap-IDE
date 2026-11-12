@@ -110,7 +110,10 @@ The same `sound.asm` in v2, v3 and v4 (v4 adds its `KEY_ROWSEL` tail, as before)
 * **Tests**: `arcade/tests/m15-runtime-music.mjs` (a model of the shared chip written from this contract, after every call and refresh: 19 hand
   scenarios, random scripts, an interrupt at every instruction boundary of the four routines with a song playing, registers, stack, costs) on v2,
   v3, v4; `m10-runtime-sound.mjs` rewritten where it measured the old tick's layout; `arcade/tests/m15-mutations.mjs` (83 mutants, the new code and
-  the effect tick; it replaces `m10-mutations.mjs`, whose patterns were the old tick): MUTATION_RESULT.
+  the effect tick; it replaces `m10-mutations.mjs`, whose patterns were the old tick): **83 killed, 0 survived** (4 shards, 10.6 minutes). The first run
+  left two survivors that showed gaps in the test, both closed: an interrupt inside `RT_MUSIC` could leave the song at the wrong order entry with no check
+  noticing (the boundary test now compares the song's and the effect's position with a run without the interrupt, over a song that ends a pattern
+  at every refresh), and no song had an item of 0 pairs (a hand-made song has them now).
 
 ## 6. Interpreter (`arcade-interp.js`)
 
