@@ -377,6 +377,112 @@ console.log('\n4. Billboards against the reference column scaler');
 }
 
 // ==================================================================================================================
+// 4b. The projection's own outputs (B1, docs/ARCADE_BILLBOARDS_CONTRACT.md section 5): for every drawable billboard its record in RAY_BREC and its
+// place in RAY_BLIST (R_BN entries, far to near, equal depths in instance order), besides the picture and BB_TAB; at the edges of the early
+// behind-the-viewer reject (tx = 63 / 64 / 65 with the products at the threshold), off = 191 / 192, every power-of-two height and others.
+console.log('\n4b. Billboard records and the draw list against the reference projection');
+{
+  const r = rng(806);
+  /** The expected list [{ i, p }] (reference projection, sorted far to near, ties by instance) and the record bytes of each. */
+  function expectList(m, insts, assets, pose, mw, mh) {
+    const list = [];
+    insts.forEach((s, i) => { if (s.visible) { const p = R.projectBB(s, assets[s.asset], pose, mw, mh); if (p) list.push({ i, p }); } });
+    list.sort((u, v) => v.p.tx - u.p.tx || u.i - v.i);
+    return list.map(({ i, p }) => {
+      const s = insts[i], ast = S.AST + 16 * m.ram[S.SPR_TAB + 8 * i + 1], nf = m.ram[ast + 1], f = Math.min(s.frame, nf - 1);
+      const frame = (rd16(m, ast + 2) + f * rd16(m, ast + 12)) & 0xFFFF, a = assets[s.asset];
+      return { i, tx: p.tx, rec: [p.tx, p.L & 0xFFFF, p.wpx, p.hpx, p.hgt, p.col, frame, a.wb, a.h, p.ustep, p.vstep] };
+    });
+  }
+  const recOf = (m, i) => { const b = S.RAY_BREC + 16 * i; return [rd16(m, b), rd16(m, b + 2), m.ram[b + 4], m.ram[b + 5], m.ram[b + 6], m.ram[b + 7], rd16(m, b + 8), m.ram[b + 10], m.ram[b + 11], rd16(m, b + 12), rd16(m, b + 14)]; };
+  /** Render one pose with the instances placed; compare the picture, BB_TAB, R_BN, RAY_BLIST and the records.  Returns null (equal) or the first difference. */
+  function probe(env, pose, k) {
+    const { m, model, map, mw, mh } = env;
+    model.insts.forEach((s, i) => { const b = S.SPR_TAB + 8 * i; m.ram[b] = s.visible ? 1 : 0; R.wr16(m, b + 2, s.x); R.wr16(m, b + 4, s.y); m.ram[b + 6] = s.frame; });
+    const gb = garbage(k + 1300), file = k & 1;
+    m.ram.set(gb, file ? 0x6000 : 0x4000);
+    const got = R.renderAt(m, S, pose, file), exp = gb.slice(), cast = R.castFrame(map, pose, env.colw);
+    R.drawWalls(exp, cast);
+    const bb = R.drawBillboards(exp, cast, model.insts, model.assets, pose, mw, mh);
+    const d = R.diffCount(exp, got.bitmap);
+    if (d) return `${d} picture bytes`;
+    for (let i = 0; i < 16; i++) if (rd16(m, S.BB_TAB + 4 * i) !== bb[i].depth || rd16(m, S.BB_TAB + 4 * i + 2) !== bb[i].col) return `BB_TAB ${i}`;
+    const list = expectList(m, model.insts, model.assets, pose, mw, mh);
+    if (m.ram[S.R_BN] !== list.length) return `R_BN ${m.ram[S.R_BN]}, expected ${list.length}`;
+    for (let k2 = 0; k2 < list.length; k2++) {
+      if (m.ram[S.RAY_BLIST + k2] !== list[k2].i) return `RAY_BLIST[${k2}] = ${m.ram[S.RAY_BLIST + k2]}, expected ${list[k2].i}`;
+      const got2 = recOf(m, list[k2].i);
+      if (got2.join() !== list[k2].rec.join()) return `record ${list[k2].i}: ${got2.join()} expected ${list[k2].rec.join()}`;
+    }
+    env.listed += list.length; env.drawn += bb.filter((b) => b.depth).length;
+    return null;
+  }
+  for (const colw of [4, 2]) {
+    // every power-of-two height 1..32 and two others (48, 13); 3 frames each (the frame clamp); 8 assets (MAX_ASSETS)
+    const sizes = [[16, 1], [8, 2], [24, 4], [8, 8], [16, 16], [32, 32], [16, 48], [24, 13]];
+    const assets = sizes.map(([w, h]) => R.randomAsset(r, w, h, 1, 3));
+    const insts = [0, 1, 2, 3, 4, 5, 6, 7, 4, 4, 5, 3, 6, 4, 2, 7];
+    const mw = 20, mh = 20, open = new Uint8Array(mw * mh);
+    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) open[y * mw + x] = x === 0 || y === 0 || x === mw - 1 || y === mh - 1 ? 1 + ((x + y) & 3) : (x % 6 === 3 && y % 7 === 3 ? 2 : 0);
+    const g = R.rayGame({ view: { colw, mw, mh, cells: open }, assets, insts }), m = R.bootIdle(g, 3);
+    const model = new R.Model8({ view: { colw, mw, mh, cells: open }, assets, insts });
+    const env = { m, model, map: model.map, mw, mh, colw, listed: 0, drawn: 0 };
+    // (1) random scenes: positions around the viewer (every direction: behind, beside, ahead), duplicated positions (equal depths), frames past the end
+    let ok = 0, first = null, n = QUICK ? 40 : 120;
+    for (let k = 0; k < n; k++) {
+      const pose = R.randomPose(r, model.map, mw, mh), spread = r.pick([300, 800, 1500, 3000]);
+      model.insts.forEach((s, i) => {
+        const prev = model.insts[i - 1];
+        let x = pose.x + r.int(-spread, spread), y = pose.y + r.int(-spread, spread);
+        if (i && r.chance(0.2)) { x = prev.x; y = prev.y; }                          // the same depth as the previous instance
+        Object.assign(s, { visible: r.chance(0.9), x: Math.max(0, Math.min(mw * 256 - 1, x)), y: Math.max(0, Math.min(mh * 256 - 1, y)), frame: r.int(0, 4) });
+      });
+      const e = probe(env, pose, k);
+      if (e) first ??= `scene ${k}: ${e}`; else ok++;
+    }
+    check(`colw ${colw}: ${ok}/${n} random scenes (heights 1, 2, 4, 8, 16, 32 and 48, 13; equal depths): the picture, BB_TAB, R_BN, RAY_BLIST and every drawable record equal the reference`,
+      ok === n && env.listed > n * 2, first ?? `${env.listed} records checked, ${env.drawn} billboards drawn`);
+    // (2) the edges, one instance at a time (instance 4: 16 x 16), the others hidden; the cast position at cell (5, 10).  [angle, dx, dy, drawable]
+    //   a = 2: cs = 256, sn = 13; a = 62: cs = 13, sn = 256; a = 0: cs = 256, sn = 0; a = 32: cs = sn = 181.
+    const EDGES = [
+      [2, 64, -10, true], [2, 63, -10, false], [2, 65, -10, true], [2, 64, -20, false], [2, 65, -20, true], [2, 66, -20, true],   // s2 = 1: P1 = 63 / 64 / 65; P2 = 0 / 1
+      [2, 64, 10, true], [2, 63, 10, false], [2, 64, 0, true], [2, 63, 0, false],                                                 // s2 = 0
+      [62, -10, 64, true], [62, -20, 64, false], [62, -20, 65, true], [62, 0, 63, false], [62, -10, 63, false],                     // s1 = 1, s2 = 0: tx = P2 - P1
+      [0, 64, -1, true], [0, 63, -1, false], [0, 64, 1, true], [0, -64, -1, false], [0, -1, 0, false], [0, 0, -1, false],         // sn = 0
+      [32, 91, -1, true], [32, 90, -1, false], [32, 91, -2, false], [32, 92, -2, true], [32, -100, -100, false], [32, 100, -91, false], [32, 182, -91, false], [32, 60, 60, true],   // P1, P2 near 64; P1 = P2 = 42 (tx 84)
+      [2, -100, -100, false], [2, -100, 5, false], [130, 100, 100, false], [130, -64, 10, true], [130, -63, 10, false], [194, -10, -64, true], [194, -10, -63, false],
+      [0, 600, 1037, true], [0, 600, 1038, false], [0, 600, -1037, true], [0, 600, -1038, false],                                  // off = 191 / 192 (q = 346)
+      [0, 600, 1383, false], [0, 600, 1384, false], [0, 64, 34, true], [0, 64, -34, true], [0, 64, 110, true], [0, 64, 111, false], // off 255 / 256; off 190 / 192 at tx = 64 (q = 37)
+    ];
+    let eOk = 0, eFirst = null, eDrawable = 0;
+    EDGES.forEach(([a, dx, dy, drawable], k) => {
+      const pose = { x: 5 * 256 + 100, y: 10 * 256 + 60, a }, cp = R.castPos(pose);
+      model.insts.forEach((s, i) => { Object.assign(s, { visible: i === 4, x: cp.x + dx, y: cp.y + dy, frame: 0 }); });
+      const p = R.projectBB(model.insts[4], model.assets[model.insts[4].asset], pose, mw, mh);
+      if (!!p !== drawable) { eFirst ??= `edge ${k} (a ${a}, dx ${dx}, dy ${dy}): the reference says ${p ? 'drawable' : 'not drawable'} (tx ${p?.tx})`; return; }
+      if (p) eDrawable++;
+      const e = probe(env, pose, 500 + k);
+      if (e) eFirst ??= `edge ${k} (a ${a}, dx ${dx}, dy ${dy}): ${e}`; else eOk++;
+    });
+    check(`colw ${colw}: ${eOk}/${EDGES.length} edge scenes (tx = 63 / 64 / 65 with P1 or P2 at 63 / 64, both signs; off = 191 / 192; behind the viewer) equal the reference, ${eDrawable} of them drawable`,
+      eOk === EDGES.length, eFirst ?? '');
+    // (3) equal depths and the insertion: 16 instances at 4 depths, each depth in a scattered instance order, all in view
+    let tOk = 0, tFirst = null;
+    for (let k = 0; k < (QUICK ? 6 : 16); k++) {
+      const a = r.int(0, 255), pose = { x: 11 * 256 + 128, y: 12 * 256 + 128, a }, cs = R.cosa8(a), sn = R.sina8(a), cp = R.castPos(pose);
+      const order = Array.from({ length: 16 }, (_, i) => i).sort(() => r.int(-1, 1));
+      model.insts.forEach((s, i) => {
+        const d = [900, 1300, 900, 1700][order[i] & 3], lat = ((order[i] >> 2) - 1.5) * 60;   // (far: 16 drawn billboards stay well inside the step cap of renderAt)
+        Object.assign(s, { visible: true, x: (cp.x + ((d * cs - lat * sn) >> 8)) & 0xFFFF, y: (cp.y + ((d * sn + lat * cs) >> 8)) & 0xFFFF, frame: 0 });
+      });
+      const e = probe(env, pose, 900 + k);
+      if (e) tFirst ??= `scene ${k}: ${e}`; else tOk++;
+    }
+    check(`colw ${colw}: 16 instances at a few depths in scattered order: the list is far to near, equal depths in instance order (${tOk} scenes)`, tFirst === null, tFirst ?? '');
+  }
+}
+
+// ==================================================================================================================
 console.log('\n5. Whole games: the picture after every refresh');
 {
   const r = rng(805);

@@ -2,7 +2,7 @@
 
 Item 5 of `docs/ARCADE_SPACE_PLAN.md` section 4 (owner's order, 2026-11-11: the v3 shrink pass, then this, then `MUSIC`, then a
 wireframe game). **Status: B0 done (`arcade/spike/bb/RESULTS.md`, re-run by the main thread: same output, 0 mismatches). Owner's decision
-(2026-11-11): neither draw candidate is built; B1, the projection reorder (section 5), is the contract.**
+(2026-11-11): neither draw candidate is built; B1, the projection reorder (section 5), is the contract. B1 done (2026-11-11): section 5a.**
 
 ## 1. Why
 
@@ -109,6 +109,17 @@ tx sort ties). Compiled games are the same bytes unless `RT_*` addresses move (t
 
 **Sample game:** Vaults is the game that uses it (no source change: the saving is in the runtime). Re-measure its win and lose runs and
 record them in `ARCADE_RUNTIME_API_V4.md` beside today's (median, 95th percentile, worst, ticks over budget).
+
+## 5a. B1's result (2026-11-11)
+
+Built: changes 1, 2 (both conservative rejects: both terms <= 0 with no multiply; T(dx, cs) <= 0 with P2 <= 63 after one), 3 and 4. Change 5 is
+built differently: each drawable instance is inserted into `RAY_BLIST` as it is projected (the depth read from its record), which replaces
+`bb_sort` and `bb_tx`. Every output is the same (`m8-runtime.mjs` 4b; the spike's 3,000 random scenes and `proj-cases.mjs`' 40,000 instances: 0
+mismatches). Every target is met: one in view 4,695 T (<= 4,800), off the view sideways 2,390 (<= 3,000), behind the viewer 1,039 (<= 1,100);
+Vaults' win run: mean `ray_bb` 16,879 -> 14,773, ticks over budget 9 -> 8 (measured against the runtime before B1 with today's game: the figures
+of section 1 predate its title scene), worst picture lower; +10 bytes. One case is slower: hpx = 0 (a source under 16 rows, far away), found
+after ty and off instead of right after tx (about +1,400 T, still under a drawn instance; no game has it). Figures and tests:
+`ARCADE_RUNTIME_API_V4.md` "As built: the billboard projection reorder".
 
 ## 6. Later (not planned)
 
