@@ -64,6 +64,7 @@ const suites = [
   'tests/arcade-m15-compiler.mjs',
   'tests/arcade-m17-compiler.mjs',
   'tests/arcade-m17-interp.mjs',
+  'tests/arcade-orbit.mjs',                      // the wireframe sample game "Orbit Gates" on the reference interpreter (the runtime part is a TODO in the file)
   'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
   'tests/arcade-codegen-exhaustive.mjs',        // compiler size pass: F1 / F3 / F6 / F8 / F9 for every 16-bit value
   'tests/arcade-m15-differential.mjs',
