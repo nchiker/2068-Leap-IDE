@@ -380,7 +380,8 @@ const BREAKOUT = bm ? bm[1] : '';
   check('words: every entry has a class, a syntax and a description', [...W.ARCADE_WORDS.values()].every(e => e.cls && e.syntax && e.desc));
   check('words: FRAME and INIT are contextual, not reserved', !W.RESERVED.has('FRAME') && !W.RESERVED.has('INIT') && W.wordEntry('frame').cls === 'game');
   check('words: MOD and DIV are operators', W.wordEntry('mod').cls === 'operator' && W.wordEntry('div').cls === 'operator');
-  check('words: nothing invented beyond the doc plus WHILE/WEND and SELECT/CASE/ENDSEL', !['GOTO', 'GOSUB', 'LET', 'INPUT', 'MUSIC', 'SCROLL'].some(w => W.RESERVED.has(w)));
+  check('words: nothing invented beyond the doc plus WHILE/WEND and SELECT/CASE/ENDSEL', !['GOTO', 'GOSUB', 'LET', 'INPUT', 'SCROLL'].some(w => W.RESERVED.has(w)));
+  check('words: MUSIC and NOMUSIC are reserved since the MUSIC item (docs/ARCADE_MUSIC_CONTRACT.md section 2)', W.RESERVED.has('MUSIC') && W.RESERVED.has('NOMUSIC'));
 }
 
 // ── 8. speed ──

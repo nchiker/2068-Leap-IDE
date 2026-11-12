@@ -72,7 +72,11 @@
  *     JOYPRESS(n) needs the literal 1 or 2 (a CONST works too). PRINT item USING "pattern": the item must be a number, the pattern is # and 0 only, 1 to 8 characters. PLAY by index: a bare name
  *     is an SFX when one has that name (else a variable's value, else an error); any other expression, and PLAY (name), is an effect index; a literal or CONST index outside 0..count-1 is
  *     an error ("PLAY 9: there are only 3 sound effects (0..2)"); an index that is not a literal counts as using every SFX (no "never used" warning for them).
- *   - Warnings (optional in the brief): variable never used, SPRITE / SFX never used, PROC never called (INIT and
+ *   - (MUSIC, docs/ARCADE_MUSIC_CONTRACT.md section 2) `MUSIC name = "asset"` declares a song in its own asset name space (`music:KEY`, apart from SFX); at most 8: the 9th and later
+ *     declarations are "too many songs (at most 8)". `PLAY name` is a song when a MUSIC of that name is declared and no SFX is; a name that is BOTH an SFX and a MUSIC is an error at the PLAY
+ *     ("'x' is both an SFX and a MUSIC: PLAY cannot tell which to start; rename one of them") -- the declarations alone are legal, as for any two kinds. Songs have no index form: `PLAY (x)`
+ *     and `PLAY 0` stay effect indexes. A song never PLAYed is "MUSIC 'x' is never used". NOMUSIC takes nothing (the parser); NOMUSIC in a game without MUSIC is a warning ("does nothing").
+ *   - Warnings (optional in the brief): variable never used, SPRITE / SFX / MUSIC never used, PROC never called (INIT and
  *     FRAME exempt), statement after END / EXIT in the same block. TILESET and MAP have no use syntax in v0, so
  *     they are never reported unused.
  */
@@ -194,12 +198,13 @@ class Checker {
 
     // Hoisted: assets, scenes, top-level PROCs and DEF FNs.
     const mapCount = (ast.assets ?? []).filter((a) => a.kind === 'MAP').length;
-    let mapNo = 0;
+    let mapNo = 0, songNo = 0;
     for (const a of ast.assets ?? []) {
       const kind = a.kind.toLowerCase();
       const key = `${kind}:${up(a.name)}`;
       const prev = this.assets.get(key);
       if (kind === 'map' && ++mapNo > LIMITS.maxMaps) this.err(a.namePos ?? a, `at most ${LIMITS.maxMaps} MAPs per game (this is the ${mapNo}th of ${mapCount})`);
+      if (kind === 'music' && ++songNo > LIMITS.maxSongs) this.err(a.namePos ?? a, `too many songs (at most ${LIMITS.maxSongs})`);
       if (prev) { this.err(a.namePos, `'${a.name}' is already declared (line ${prev.pos.line})`); continue; }
       if (a.count !== null && a.count !== undefined && (a.count < 1 || a.count > LIMITS.maxPool)) {
         this.err(a.countPos ?? a, `a pool of ${a.count} sprites is out of range (1..${LIMITS.maxPool})`);
@@ -266,7 +271,7 @@ class Checker {
     // Warnings
     for (const a of this.assets.values()) {
       if (a.used) continue;
-      if (a.kind === 'sprite' || a.kind === 'sfx') this.warn(a.pos, `${a.kind.toUpperCase()} '${a.name}' is never used`);
+      if (a.kind === 'sprite' || a.kind === 'sfx' || a.kind === 'music') this.warn(a.pos, `${a.kind.toUpperCase()} '${a.name}' is never used`);
       else if (a.kind === 'map' && a.index > 0) this.warn(a.pos, `MAP '${a.name}' is never used (only the first MAP is loaded at the start; use LOADMAP ${a.name})`);
     }
     for (const sc of this.scopes) {
@@ -905,6 +910,9 @@ class Checker {
         this.checkFn(ctx.scope, s);
         return;
       }
+      case 'NoMusic':
+        if (![...this.assets.values()].some((a) => a.kind === 'music')) this.warn(s, 'NOMUSIC does nothing in a game without MUSIC (no song can be playing)');
+        return;
       default: return;   // Rem, Cls, End, Silence, Error
     }
   }
@@ -916,6 +924,12 @@ class Checker {
   playStmt(s, ctx) {
     if (s.sfx) {
       const key = up(s.sfx.name);
+      const song = this.assets.get(`music:${key}`);                 // MUSIC: a song is started by its name only
+      if (song) {
+        song.used = true;
+        if (this.assets.has(`sfx:${key}`)) { this.assets.get(`sfx:${key}`).used = true; this.err(s.sfx, `'${s.sfx.name}' is both an SFX and a MUSIC: PLAY cannot tell which to start; rename one of them`); }
+        return undefined;
+      }
       if (this.assets.has(`sfx:${key}`) || !ctx.scope.lookup('vars', key)) return this.assetRef(s.sfx, 'sfx', ctx);
     }
     const e = s.sfx ?? s.index;
@@ -1006,7 +1020,7 @@ class Checker {
     const sym = this.assets.get(`${kind}:${key}`);
     if (!sym) {
       const v = ctx.scope.lookup('vars', key);
-      const other = ['sprite', 'sfx', 'tileset', 'map'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean);
+      const other = ['sprite', 'sfx', 'tileset', 'map', 'music'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean);
       if (v) this.err(node, `'${node.name}' is a ${v.kind === 'const' ? 'CONST' : 'variable'}, not a ${kind.toUpperCase()}`);
       else if (other) this.err(node, `'${node.name}' is a ${other.kind.toUpperCase()}, not a ${kind.toUpperCase()}`);
       else this.err(node, `'${node.name}' is not a declared ${kind.toUpperCase()}: add ${kind.toUpperCase()} ${node.name} = "..."`);
@@ -1022,7 +1036,7 @@ class Checker {
   }
 
   /** An asset of any kind with this (upper-case) name, or undefined. */
-  anyAsset(key) { return ['sprite', 'sfx', 'tileset', 'map'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean); }
+  anyAsset(key) { return ['sprite', 'sfx', 'tileset', 'map', 'music'].map((k) => this.assets.get(`${k}:${key}`)).find(Boolean); }
 
   // ── expressions: return 'num' | 'str' | '?' ──
   undeclared(node, ctx, what = 'variable') {

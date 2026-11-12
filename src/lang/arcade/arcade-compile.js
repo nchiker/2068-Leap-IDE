@@ -99,6 +99,7 @@ export function usageLines(u) {
   if (u.noviewPhaseRam) lines.push(`phase memory of a NOVIEW scene: at least ${u.noviewPhaseRam.needed} of ${u.noviewPhaseRam.available} bytes; frame slots per asset: ${u.noviewPhaseRam.perAsset.map((a) => `${a.K}/${a.nframes}`).join(' ')}`);
   if (u.phaseRam) lines.push(`phase memory: at least ${u.phaseRam.needed} of ${u.phaseRam.available} bytes (frame tables and one slot per instance); frame slots per asset: ${u.phaseRam.perAsset.map((a) => `${a.K}/${a.nframes}`).join(' ')}`);
   if (u.gameVars) lines.push(`GAME_VARS: ${u.gameVars.used} of ${u.gameVars.available} bytes`);
+  if (u.data?.music !== undefined) lines.push(`music: ${u.data.music} bytes of songs (mapped: the frame interrupt plays them)`);      // MUSIC (docs/ARCADE_MUSIC_CONTRACT.md section 4)
   if (u.tables !== undefined) {                              // bankable per-level tables (docs/ARCADE_TABLES_CONTRACT.md): the mapped records; a banked one is listed with the other banked assets
     const banked = (u.banked?.assets ?? []).filter((b) => b.kind === 'table');
     lines.push(`tables: ${u.tables} bytes mapped${banked.length ? `, ${banked.length} banked (${banked.map((b) => `${b.name} ${b.bytes}`).join(', ')})` : ''}`);

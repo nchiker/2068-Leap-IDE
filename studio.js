@@ -555,6 +555,7 @@ function renderSizes() {
     ['Tiles', d.tileset],
     ['Map', d.map],
     ['Sound', d.sfx],
+    ['Music', d.music],                                            // (the songs' bytes, docs/ARCADE_MUSIC_CONTRACT.md; only when the game has MUSIC)
     ['Scenes', (good.scenes?.length ?? 0) >= 2 ? plural(good.scenes.length, 'scene') : undefined],     // (of the build on show)
     ['Tables', u.tables],                                          // (mapped bytes of the TABLE records, docs/ARCADE_TABLES_CONTRACT.md; only when the game has tables)
     ['Header and tables', (u.header ?? 0) + (u.descriptors ?? 0)],

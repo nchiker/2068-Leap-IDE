@@ -7,8 +7,8 @@
    "runtime": 2,
    "bytes": 8986,
    "dckBytes": 32777,
-   "dckSha256": "940727c9913e3697c448f261c209af36cb979dcdcf4f86372de80a5e8031d6c5",
-   "areaSha256": "7479e6fd6e55da4bb7162610cfcb142024fb5e793094301eb6518e913dc2f72c"
+   "dckSha256": "850de13921567df99902db2ecfbb6c521294f924f1d30a28856340d2763981b7",
+   "areaSha256": "c9cd270098ff2a699ad7722b0c03dcd771678f8da24d0db8cf03eec74019e0ea"
   },
   {
    "src": "arcade/examples/breakout.arc",
@@ -16,8 +16,8 @@
    "runtime": 2,
    "bytes": 1505,
    "dckBytes": 32777,
-   "dckSha256": "cdba5a4b056eb1df9de7c5ad2eb223986ae7d8a6a2c39e61ff6fdb901834a530",
-   "areaSha256": "3b993be6b1acc16b2222c108569737441a5e504b585a0533664bac7a0cd201c5"
+   "dckSha256": "494aaa10d5a7ec4e38cd81ffb6257c8cbe352c737f3c3c877877fd94631301df",
+   "areaSha256": "6c346fad9286cda0db75aea1db7ca3e901f1b70203c6a6d78e0a6299a483a2d2"
   },
   {
    "src": "arcade/examples/blockfall.arc",
@@ -25,8 +25,8 @@
    "runtime": 2,
    "bytes": 7809,
    "dckBytes": 32777,
-   "dckSha256": "1f74dda84f0aa338050b90f3eb5100a4885e891e17b71be18a511ed3c5924f89",
-   "areaSha256": "2a2eba5c01fdb7d0c5c6642cae443db4a1d237246ea086d56f89aaeb2edcddc6"
+   "dckSha256": "94387cf530ee5812ab0aa451da8485ab794b1a0fc0d1f913e4a9b2e9c6170a2b",
+   "areaSha256": "1c07697f97eb2865a09b6a3a482bcee18c8fed808ae26249656c7b74463c0070"
   },
   {
    "src": "arcade/examples/bounce.arc",
@@ -34,8 +34,8 @@
    "runtime": 2,
    "bytes": 465,
    "dckBytes": 32777,
-   "dckSha256": "9cc4f0852445cb5319d8613cdf4e44693c53373499b61a485571fce1c7e1e14c",
-   "areaSha256": "a6814209d6d164b305bb3a6509691e65f7933597f5177f83ea922f4ccaa16b63"
+   "dckSha256": "3161fa171036d2d866e762dc7250c2a7c4888e87cad8d3eea48189df4f8f48a3",
+   "areaSha256": "fe8fc21bf476915bb7da5b203cfb324a6e368a054abef69ee184c827f14c4468"
   },
   {
    "src": "arcade/tests/fixtures/blockfall-v0.arc",
@@ -43,8 +43,8 @@
    "runtime": 2,
    "bytes": 7848,
    "dckBytes": 32777,
-   "dckSha256": "248ad5a72d6966e111cf6bad4e09537ed944f18b728c881554094da9df282bbb",
-   "areaSha256": "19ec4b4b4aee31aad31ef38a0e4d8dfd0540befa08f7f6ce16bdda115f67e634"
+   "dckSha256": "7dbd2e95b6e9770ae3419606d5f7d9404ba72870f0a9218c499073bc78d1a180",
+   "areaSha256": "acb19b4048502fac7eb970b7ed3a971f67dcb9f70826203f7c1bf3b61329f848"
   }
  ]
 }

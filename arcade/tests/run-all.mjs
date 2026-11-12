@@ -25,7 +25,7 @@ const EXCLUSIVE = new Set(['tests/arcade-blockfall.mjs']);
 // The slowest steps (sequential run, 2026-11-11: 270, 198, 139, 114, 53, 44, 42, 37 s) start first, so none of them is the tail.
 const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m11-differential.mjs',
   'arcade/tests/m7-runtime-perf.mjs', 'tests/arcade-m12-differential.mjs', 'arcade/tests/m10-runtime-sound.mjs', 'arcade/tests/m15-runtime-music.mjs', 'tests/arcade-m5.mjs',
-  'arcade/tests/m7-runtime.mjs'];
+  'arcade/tests/m7-runtime.mjs', 'tests/arcade-m15-differential.mjs'];
 
 const builds = [
   'arcade/tools/build-runtime.mjs',
@@ -60,6 +60,8 @@ const suites = [
   'tests/arcade-m13-differential.mjs',
   'tests/arcade-m14-compiler.mjs',
   'tests/arcade-m14-differential.mjs',
+  'tests/arcade-m15-compiler.mjs',
+  'tests/arcade-m15-differential.mjs',
   'arcade/tests/m1.mjs',
   'tests/arcade-m8-vaults.mjs',
   'arcade/tests/m1-overrun.mjs',
@@ -105,7 +107,7 @@ const suites = [
   'arcade/tests/m12-runtime-table.mjs',
   'arcade/tests/m14-runtime-mode.mjs',
   'arcade/tests/m15-runtime-music.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs'] : []),
+  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m15c-mutations.mjs'] : []),
 ];
 
 function finish(file, isBuild, t0, status, out) {
