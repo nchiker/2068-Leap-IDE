@@ -228,6 +228,12 @@ Starfall (new suite `tests/arcade-starfall.mjs`, 1,340 ticks: title, play, game 
 songs): median 54,348 T unchanged, 95th 99,608 -> 100,200 T (+592); the only ticks over 176,064 T are the two map-drawing ticks of each scene change,
 before and after alike.
 
+**Across emulators** (after the code review fix, every mode rerun, `arcade/tools/xemu/*-compare.mjs`): Leap Runner (905 ticks), Vaults (250) and the
+platformer (170): TSRun, ZEsarUX 13.0 and Fuse 1.9.1 match on every compared byte and tick. Starfall: screen and state match; its AY check compares the
+title's fanfare register by register (420 states, the same in the same order; the compare script now drops TSRun's leading silent state and allows one
+extra state at the last tick, the two logs' sampling windows). Open: Starfall's cross-emulator scripts send no input, so only its title is compared there
+(its play scene and effects are compared with the interpreter on TSRun by `tests/arcade-starfall.mjs`).
+
 **Sound tests.** Every game with songs now has its sound compared with the interpreter at song level on the real runtime (V_SFX_ACTIVE, AY_SHADOW and
 the chip, every sample; each comparison requires samples with a song and, where the game does it, with a channel-C effect over a song): Leap Runner
 (the play-through, the retry, the title / demo flow, fire in title and demo: 2,688 samples, 638 with the song, 76 with an effect over it), Vaults (four
