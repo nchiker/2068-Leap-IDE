@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { Emitter, L, M, P } from '../src/lang/arcade/z80-emit.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { NO_TAIL } from '../src/lang/arcade/arcade-codegen.js';
+import { win3, ASSETS11 } from './arcade-m11-common.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -429,6 +430,60 @@ export function emitterOptChecks(check_) {
     ];
     const wrong = controls.filter(([, items, want]) => (run(items) > 0 ? 1 : 0) !== want).map(([name]) => name);
     check_(`the HL model refuses wrong listings and accepts right ones (${controls.length} controls)`, wrong.length === 0, wrong.join('; '));
+  }
+
+  // ── B2. the guards no example game reaches (found by arcade/tests/m16c-mutations.mjs: these mutants survived the example-based checks) ──
+  console.log('  B2. guards the example games do not reach');
+  {
+    // F5: NO_TAIL names the scene driver's and the entries' labels (no example has a CALL to one of them followed by a RET, so only the list itself can be checked)
+    const driver = ['scn$enter', 'scn$reset', 'frame$entry', 'frame$tm$0', 'entry$init'];
+    check_('F5: NO_TAIL excludes every scene-driver and entry label (scn$enter, scn$reset, frame$entry, frame$tm$k, entry$init) and the runtime\'s boot entries, and no ordinary routine',
+      driver.every((l) => NO_TAIL.labels.test(l)) && ['ENTRY', 'NMI', 'RST_EVEN', 'RST_ODD', 'FILL_EARLY'].every((n) => NO_TAIL.runtime.includes(n)) && !['P$FRAME', 'lib$fmt', 'lib$tabidx', 'P$s0$GO'].some((l) => NO_TAIL.labels.test(l)),
+      `labels ${NO_TAIL.labels}, runtime ${NO_TAIL.runtime.join(' ')}`);
+    // the patched loads of the named forms WORLD name / LOADTABLE name (the examples use the indexed forms): a small v3 game with both (tests/arcade-m11-common.mjs)
+    const text = win3('    WORLD second\n    LOADTABLE tb\n', 'MAP second = "w60"\n', '', 'DIM g\nTABLE tb\n  g = 5\nENDTABLE\n');
+    const assets = ASSETS11;
+    const res = compile(text, { ...rt(3), assets });
+    let ok = false, detail = '';
+    if (res.errors.length) detail = JSON.stringify(res.errors.slice(0, 2));
+    else {
+      const items = res.gen.emitter.listing().filter((x) => !x.dead), fx = res.gen.fixups;
+      const ldOf = (f) => items.find((x) => f.at >= x.addr && f.at < x.addr + x.bytes.length);
+      const named = fx.map(ldOf).filter((x) => x && !x.data);
+      ok = named.length >= 2 && named.every((x) => x.mn === 'ld' && x.args[0] === 'hl' && typeof x.args[1]?.patch === 'number');
+      detail = `${named.length} patched loads in code: ${named.map((x) => `${x.mn} ${x.args[0]},${JSON.stringify(x.args[1])}`).join('; ')}`;
+    }
+    check_('F4: WORLD name and LOADTABLE name load their patched operand with LD HL,P(0) (never taken as the constant 0)', ok, detail);
+    // F2: a size taken over code that the optimisations shorten: PRINT ... USING's routine (it has a JP that becomes JR) and a game TIMER's prologue
+    const src = `GAME "t"
+FRAMERATE 30
+SCENE s
+  DIM v
+  PROC INIT()
+    v = 1234
+  ENDP
+  PROC FRAME()
+    PRINT AT 0, 0; v USING "#####";
+    v = v + 1
+  ENDP
+ENDSCENE
+`;
+    const r2 = compile(src, { ...rt(2), assets: ASSETS11 });
+    let ok2 = false, d2 = '';
+    if (r2.errors.length) d2 = JSON.stringify(r2.errors.slice(0, 2));
+    else {
+      const items = r2.gen.emitter.listing(), cg = r2.usage.codegen;
+      const i0 = items.findIndex((x) => x.labels.includes('lib$fmt'));
+      let n = 0, relaxed = 0;
+      for (let i = i0; i >= 0 && i < items.length; i++) {
+        if (i > i0 && items[i].labels.some((l) => !l.startsWith('fmt$'))) break;
+        n += items[i].bytes.length;
+        if (items[i].was === 'jp') relaxed++;
+      }
+      ok2 = i0 >= 0 && cg.fmtBytes === n && relaxed > 0;
+      d2 = `usage.fmtBytes ${cg.fmtBytes}, listing ${n}, ${relaxed} jump(s) shortened in lib$fmt`;
+    }
+    check_('F2: usage.fmtBytes is the size of lib$fmt after the optimisations (it contains a JP that became JR)', ok2, d2);
   }
 
   // ── C. every example game ──

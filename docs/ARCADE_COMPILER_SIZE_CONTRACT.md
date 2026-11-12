@@ -354,3 +354,26 @@ the same ones, three more fail:
   So the check depends on where a PLAY falls relative to the frame interrupt. The harness needs a look in C3 (take the refresh when the
   effect is posted, not when RT_PLAY is entered).
 Every differential suite (m6, m8 to m15), the platformer, Vaults, Starfall and Blockfall suites pass.
+
+### As built: C3 and C4 (2026-11-12; main thread, verified)
+
+**C3.** Baselines: `regen-baselines.mjs --accept-codegen-change <ref>` accepts a code-generation change only when the old and the new build of every
+baseline program each equal the reference interpreter tick for tick (300 ticks, a fixed LCG input) on their own recorded clock; old-vs-new direct is
+an INFO line, because a faster build legitimately changes timing-dependent programs (Blockfall-v1 seeds RANDOMISE from the frame counter, so it picks
+other pieces). 23/23 programs passed against 9b7969c; the negative control (`REGEN_PERTURB=ret`) is refused; `batch1/2/3-baseline.json` carry the
+new hashes with `prev*` and `acceptedFrom: 9b7969c`. `CODEGEN_OFF` (arcade-compile.js) switches every fix off and gives exactly the old bytes
+(27/27 builds of the examples and fixtures against 9b7969c): the identity checks against older compilers (m11 section 7, m15's 30 builds) use it,
+and gained default-build checks (same diagnostics, never more code, smaller for most). Pinned shapes rewritten in m3, m4 (array read 86 -> 83 T,
+`r = x(i)` / `x(i) = v` 118 -> 115 T: the benchmark has one site per array, so the inline form with JR NC), m9-m15 compiler suites (tail JP / JR
+forms; CODEGEN_OFF controls assert the old shapes), and arcade-runner (the smaller game banks less: its banked-world checks force the four worlds
+banked). Two harness / compiler faults found on the way: m4's real-runtime harness placed a PLAY cut by a frame interrupt at its entry refresh only
+(fixed as the m5 harness does it); 2-D array routines of same-named arrays in two scenes were shared (a bug since batch 4; fixed, regression case in
+m9-differential section 5). `run-all.mjs`: 80/80 (adds `tests/arcade-emitter-opt.mjs` and `tests/arcade-codegen-exhaustive.mjs`).
+
+**C4.** `arcade/tests/m16c-mutations.mjs`: 71 mutants (F4 invalidations, F5 exclusions and conditions, F2 reach and remapping, F1 edges and
+forms, F6, F3, F7, F8, F9, the 2-D key). First run: 66 killed, 1 equivalent (named), 4 survived: guards the example games never reach (the
+patched `LD HL,0` of the named WORLD / LOADTABLE forms, NO_TAIL's scene-driver labels, a size span over a shortened jump). `arcade-emitter-opt.mjs`
+section B2 now reaches them (a small game with `WORLD name` / `LOADTABLE name`, NO_TAIL's list, `PRINT ... USING`'s `lib$fmt` size): all four
+killed, so **70 / 70 killed + 1 equivalent**. Perf (`tests/arcade-codegen-perf.mjs --compare`, before = 9b7969c): every run faster, with F9
+(medians -70 .. -1,930 T, worst -276 .. -3,432 T) and without it (every median / 95th / worst lower by 154 .. 4,590 T); ticks over budget
+unchanged (Vaults 8 / 6, Starfall 6 at scene switches).
