@@ -43,10 +43,10 @@ ENDSCENE
 
 // ── Asset names from the project (set by the Studio) ──────────────
 let assetSource = () => [];
-/** fn(kind) -> asset names of that kind ('sprites' | 'tilesets' | 'maps' | 'sfx'), for the completion inside quotes. */
+/** fn(kind) -> asset names of that kind ('sprites' | 'tilesets' | 'maps' | 'sfx' | 'music'), for the completion inside quotes. */
 export function setAssetSource(fn) { assetSource = typeof fn === 'function' ? fn : () => []; }
 
-const ASSET_KIND_OF = { SPRITE: 'sprites', TILESET: 'tilesets', MAP: 'maps', SFX: 'sfx' };
+const ASSET_KIND_OF = { SPRITE: 'sprites', TILESET: 'tilesets', MAP: 'maps', SFX: 'sfx', MUSIC: 'music' };
 
 // ── Language mode ─────────────────────────────────────────────────
 // One line is tokenized by arcade-parse.js's tokenizer (no token spans lines: REM and strings end with the line).
@@ -172,7 +172,7 @@ function definitionOf(text, name) {
   d = s.fns.find((f) => same(f.name)); if (d) return { kind: 'function', ...d };
   d = s.scenes.find((x) => same(x.name)); if (d) return { kind: 'scene', ...d };
   d = (s.tables ?? []).find((t) => same(t.name)); if (d) return { kind: 'table', ...d };
-  d = s.assets.find((a) => same(a.name)); if (d) return { kind: a.kind.toLowerCase(), ...d };
+  d = s.assets.find((a) => same(a.name)); if (d) return { ...d, kind: d.kind.toLowerCase() };
   d = (s.consts ?? []).find((c) => same(c.name)); if (d) return { kind: 'constant', ...d };
   d = s.vars.find((v) => same(v.name)); if (d) return { kind: d.dims ? 'array' : 'variable', ...d };
   return undefined;
@@ -234,7 +234,7 @@ function arcadeComplete(context) {
   const text = state.doc.toString();
 
   // Inside the quotes of  SPRITE x = "  : the project's asset names
-  const decl = /^\s*(SPRITE|TILESET|MAP|SFX)\b[^=]*=\s*"([A-Za-z0-9_]*)$/i.exec(before);
+  const decl = /^\s*(SPRITE|TILESET|MAP|SFX|MUSIC)\b[^=]*=\s*"([A-Za-z0-9_]*)$/i.exec(before);
   if (decl) {
     const names = assetSource(ASSET_KIND_OF[decl[1].toUpperCase()]);
     return { from: pos - decl[2].length, options: names.map((n) => ({ label: n, type: 'constant', detail: decl[1].toLowerCase() })), validFor: /^\w*$/ };
@@ -260,7 +260,7 @@ function arcadeComplete(context) {
   if (prevWord === 'FN') return only(s.fns.map((f) => ({ label: f.name, type: 'function', detail: `DEF FN · line ${f.line}`, apply: f.name + '(' })));
   if (prevWord === 'LOADTABLE') return only(visibleTables(s, line.number).map((t) => ({ label: t.name, type: 'constant', detail: `table · line ${t.line}` })));
   if (prevWord === 'SHOW' || prevWord === 'HIDE') return only(s.assets.filter((a) => a.kind === 'SPRITE').map((a) => ({ label: a.name, type: 'constant', detail: a.count ? `sprite pool (${a.count})` : 'sprite' })));
-  if (prevWord === 'PLAY') return { from: word.from, options: [...s.assets.filter((a) => a.kind === 'SFX').map((a) => ({ label: a.name, type: 'constant', detail: 'sound effect' })), ...s.vars.filter((v) => v.dims === 0).map((v) => ({ label: v.name, type: 'variable', detail: `effect index · line ${v.line}` }))], validFor: /^\w*$/ };
+  if (prevWord === 'PLAY') return { from: word.from, options: [...s.assets.filter((a) => a.kind === 'SFX' || a.kind === 'MUSIC').map((a) => ({ label: a.name, type: 'constant', detail: a.kind === 'MUSIC' ? 'song' : 'sound effect' })), ...s.vars.filter((v) => v.dims === 0).map((v) => ({ label: v.name, type: 'variable', detail: `effect index · line ${v.line}` }))], validFor: /^\w*$/ };
   // language batch 6: WORLD expr OF a, b, c: after OF and after each comma of the list, the MAP names (inWorldList, arcade-scan.js)
   const worldList = inWorldList(head);
   if (prevWord === 'LOADMAP' || prevWord === 'WORLD' || worldList) return only(s.assets.filter((a) => a.kind === 'MAP').map((a) => ({ label: a.name, type: 'constant', detail: 'map' })));
@@ -386,7 +386,7 @@ function occurrences(state, name) {
 function rename(view, say) {
   const w = wordAt(view.state, view.state.selection.main.head);
   const def = w && definitionOf(view.state.doc.toString(), w.text);
-  if (!def || def.kind === 'sprite' || def.kind === 'tileset' || def.kind === 'map' || def.kind === 'sfx') {
+  if (!def || def.kind === 'sprite' || def.kind === 'tileset' || def.kind === 'map' || def.kind === 'sfx' || def.kind === 'music') {
     say('Put the cursor on a procedure, function, scene or variable this file defines to rename it', 'error');
     return true;
   }

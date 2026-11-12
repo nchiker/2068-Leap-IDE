@@ -146,6 +146,20 @@
  *   is a declared SFX plays it; otherwise the value (a variable's, or any expression's) is an effect index: 0 <= v < number of SFX starts that effect, anything else changes nothing; with
  *   opts.clock a PLAY whose value is 0..255 counts as a call of RT_PLAY (the compiled code makes it and RT_PLAY ignores an index past its table), outside 0..255 no call is made.
  *
+ * ── MUSIC (docs/ARCADE_MUSIC_CONTRACT.md sections 2, 5a and 6) ─────────────────────────────────────────────────────────────────────────────────────────────
+ *   A game with at least one MUSIC declaration ("a game with songs"; the v2 runtime or later) models the SOUND CHIP itself, refresh by refresh: arcade-sound.js (createSoundChip) is given
+ *   the effect images exactly as the compiler stores them in such a game (a one-channel effect as a channel-C stream, convertSfxC; three channels as before) and the songs (convertMusic),
+ *   and runs the runtime's rules: effects and songs share the AY, a channel-C effect borrows R4 R5 R10 (and R6 with noise, R7 bits $24) while the song plays on A and B, a three-channel
+ *   effect pauses the song (position kept), PLAY / SILENCE / NOMUSIC give registers back at once when nothing else is pending and else at the next refresh (V_SFX_ACTIVE bit 2).
+ *   - PLAY name with a declared song (and no SFX of that name) starts the song from its first order entry (a song that plays is replaced). Songs are named only: PLAY expr / PLAY (x) are
+ *     effect indexes as in batch 5. NOMUSIC stops the song. SILENCE and ENTER's reset stop the effect only: a song plays on across a scene switch.
+ *   - Timing: without opts.clock every call happens at the refresh count of its tick (INIT at 0, FRAME of tick t at t * frameDiv) and the snapshot of a tick sees the chip after those
+ *     refreshes; with opts.clock each call is placed after the refresh the machine showed when it was made: clock.play(tick, n) for the n-th RT_PLAY / RT_SILENCE call (as before),
+ *     clock.music(tick, n) for the n-th RT_MUSIC / RT_NOMUSIC call of that tick (RT_NOMUSIC is called in a game without songs too: it counts), and clock.sample(tick) is the refresh the
+ *     snapshot shows (null: not advanced). The chip is run refresh by refresh up to each of those points, in program order.
+ *   - Records of a game with songs also have `music` {active, index (the last song PLAYed, -1 before any)} and `ay` {flags: V_SFX_ACTIVE, regs: [R0..R10] = AY_SHADOW}; their `sfx` comes from the
+ *     chip (active = an effect plays; played = refreshes since its PLAY; rec as before). A game without songs has neither key and keeps the old effect model above, unchanged.
+ *
  * Records: {tick, vars: {NAME: value}, sprites: [{visible, x, y} x 4], events: [{op: 'show' | 'hide', sprite, x?, y?}],
  *           cells: Uint8Array(768), attrs: Uint8Array(768), cursor: {row, col}, textAttr, sfx: {active, index, played, rec}}
  * `init` is the state after PROC INIT, `ticks[k]` the state after the (k+1)th PROC FRAME. `events` hold the raw
@@ -156,7 +170,8 @@
 
 "use strict";
 
-import { assetTables, lookupAsset, convertTileset, convertSfx, convertMap, compiledFrameCount, BLANK_CELL, TILE_CELL } from './arcade-assets.js';
+import { assetTables, lookupAsset, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, compiledFrameCount, BLANK_CELL, TILE_CELL } from './arcade-assets.js';
+import { createSoundChip } from './arcade-sound.js';
 import { convertViewMap, cosa as viewCosa, sina as viewSina, fxmul as viewFxmul, wallAt, setWallAt, clampPose, billboardRadius } from './arcade-view.js';
 import { convertWorldMap, scanSpriteUse, ratioCode, camMax as camMaxOf, buildTileFlags, worldTile as winWorldTile, tileFlags as winTileFlags, tileHit as winTileHit } from './arcade-window.js';
 
@@ -233,6 +248,8 @@ export function interpret(ast, opts = {}) {
   const boxes = [];                         // collision box [hx, hy, hw, hh] per instance
   const instAsset = [], assetObjs = [], assetPhases = [], assetDims = [], assetSrcFrames = [];
   const sfxNames = [], sfxIndex = new Map(), sfxLen = [];
+  const songMode = (ast.assets ?? []).some((a) => a.kind === 'MUSIC');                      // MUSIC: a game with songs models the chip (arcade-sound.js)
+  const sfxImages = [], songNames = [], songIndex = new Map(), songParts = [];
   let tileset = null;
   const mapDecls = [];
   const tabs = assetTables(opts.assets);
@@ -272,7 +289,15 @@ export function interpret(ast, opts = {}) {
       sfxIndex.set(up(a.name), sfxNames.length);
       sfxNames.push(a.name);
       const as = lookupAsset(tabs.sfx, a.asset, a.name);
-      sfxLen.push(as ? convertSfx(as).records : 0);
+      const c = as ? convertSfx(as) : null;
+      sfxLen.push(c ? c.records : 0);
+      if (songMode) sfxImages.push(!c ? Uint8Array.of(0, 0xFF, 0, 0) : c.channels === 1 ? convertSfxC(as).bytes : c.bytes);      // the image a game with songs stores
+    } else if (a.kind === 'MUSIC') {
+      if (!V2) throw new Unsupported('MUSIC before the v2 runtime', a);
+      songIndex.set(up(a.name), songNames.length);
+      songNames.push(a.name);
+      const as = lookupAsset(tabs.music, a.asset, a.name);
+      songParts.push(as ? convertMusic(as) : null);
     } else if (a.kind === 'TILESET') {
       if (tileset) throw new Unsupported('a second TILESET', a);
       const as = lookupAsset(tabs.tilesets, a.asset, a.name);
@@ -345,6 +370,14 @@ export function interpret(ast, opts = {}) {
   let win = null;
   let view = null;                          // language batch 3: {mapW, mapH, ram: Uint8Array(1024), pose: {x, y, a}}
   const sfx = { active: false, index: -1, played: 0 };
+  // MUSIC: the chip of a game with songs and the refresh it has been run to (null with a clock until the first call or sample)
+  const chip = songMode ? createSoundChip(sfxImages, songParts) : null;
+  let soundAt = opts.clock ? null : 0, lastSong = -1;
+  const soundTo = (f) => {
+    if (f === null || f === undefined) return;
+    if (soundAt === null) { soundAt = f; return; }
+    for (; soundAt < f; soundAt++) chip.refresh();
+  };
   const putChar = (code) => {
     const i = curRow * 32 + curCol;
     cells[i] = code & 0x7F; attrs[i] = textAttr;
@@ -352,6 +385,7 @@ export function interpret(ast, opts = {}) {
   };
   const putText = (str) => { for (let i = 0; i < str.length; i++) putChar(str.charCodeAt(i)); };
   const advanceRefreshes = (n) => {
+    if (chip) for (let k = 0; k < n; k++) { chip.refresh(); soundAt++; }
     for (let k = 0; k < n && sfx.active; k++) {
       sfx.played++;
       if (sfx.played > sfxLen[sfx.index]) sfx.active = false;
@@ -372,12 +406,22 @@ export function interpret(ast, opts = {}) {
   let screenOnly = !!sceneList[0]?.mode;
   const fnTable = new Map(), procTable = new Map();
   const clock = opts.clock ?? null;
-  let playN = 0;
+  let playN = 0, musicN = 0;
+  /** The refresh at which the n-th RT_MUSIC / RT_NOMUSIC call of this tick was made (the harness must time them in a game with songs). */
+  const musicClock = () => {
+    if (typeof clock.music !== 'function') throw new Unsupported('PLAY of a song or NOMUSIC with a clock that has no music(tick, n)');
+    return clock.music(tick, ++musicN);
+  };
+  /** An RT_PLAY / RT_SILENCE call that changes the sound: counted for the clock; in a game with songs the chip is first run up to the refresh it was made at. */
+  const playCall = () => { if (!clock) return undefined; if (!chip) { ++playN; return undefined; } const f = clock.play(tick, ++playN); soundTo(f); return f; };
   let rndN = 0;
   // (the declarations are processed below, once ev() and the helpers it needs exist)
   const snapshot = (events) => {
     const st = { active: sfx.active, index: sfx.index, played: sfx.played };
-    if (clock && sfx.index >= 0) { st.played = Math.max(0, clock.sample(tick) - sfx.t0); st.active = sfx.active && st.played <= sfxLen[sfx.index]; }
+    if (chip) {                                                     // MUSIC: the chip, run to the sample
+      if (clock) soundTo(clock.sample(tick));
+      st.active = chip.effect() >= 0; st.played = sfx.index >= 0 && soundAt !== null ? soundAt - sfx.at : 0;
+    } else if (clock && sfx.index >= 0) { st.played = Math.max(0, clock.sample(tick) - sfx.t0); st.active = sfx.active && st.played <= sfxLen[sfx.index]; }
     const vars = {};
     for (const r of nameRecs) if (r.kind === 'v') vars[r.key] = cellOf(r).v;
     const arrays = {};
@@ -388,6 +432,7 @@ export function interpret(ast, opts = {}) {
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
       sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
+      ...(chip ? { music: { active: chip.song() >= 0, index: lastSong }, ay: { flags: chip.flags(), regs: chip.regs() } } : {}),
     };
   };
 
@@ -908,6 +953,12 @@ export function interpret(ast, opts = {}) {
       }
       case 'Play': {
         let i = s.sfx ? sfxIndex.get(up(s.sfx.name)) : undefined;           // a bare name that is a declared SFX
+        if (i === undefined && s.sfx && songIndex.has(up(s.sfx.name))) {    // MUSIC: a song, by name (RT_MUSIC)
+          const k = songIndex.get(up(s.sfx.name));
+          if (clock) soundTo(musicClock());
+          chip.music(k); lastSong = k;
+          return null;
+        }
         if (i === undefined) {                                               // batch 5: an effect index (a variable's value, or any expression)
           const v = ev(s.index ?? s.sfx, sc);
           if (v < 0 || v > 255) return null;                                 // no call of RT_PLAY at all
@@ -916,6 +967,7 @@ export function interpret(ast, opts = {}) {
         }
         sfx.active = true; sfx.index = i; sfx.played = 0;
         if (clock) sfx.t0 = clock.play(tick, ++playN);
+        if (chip) { if (clock) soundTo(sfx.t0); chip.play(i); sfx.at = soundAt; }
         return null;
       }
       case 'LoadTable': {
@@ -941,7 +993,10 @@ export function interpret(ast, opts = {}) {
         }
         return null;
       }
-      case 'Silence': sfx.active = false; if (clock) ++playN; return null;
+      case 'Silence': sfx.active = false; playCall(); if (chip) chip.silence(); return null;
+      case 'NoMusic':                                                        // MUSIC: RT_NOMUSIC (called in a game without songs too, where it does nothing)
+        if (chip) { if (clock) soundTo(musicClock()); chip.nomusic(); } else if (clock) musicN++;
+        return null;
       default: throw new Unsupported(`statement ${s.type}`, s);
     }
   }
@@ -957,7 +1012,7 @@ export function interpret(ast, opts = {}) {
   const border0 = opts.border0 ?? 1;
   /** The machine back to the state the game started in (contract section 3): sound, sprites, text state, border, screen, first map. */
   const resetMachine = () => {
-    sfx.active = false; if (clock) ++playN;                                                   // SILENCE
+    sfx.active = false; playCall(); if (chip) chip.silence();                                 // SILENCE (the song plays on)
     for (let i = 0; i < spr.length; i++) spr[i] = V3 ? { visible: 0, asset: instAsset[i] ?? 0, x: 0, y: 0, frame: 0 } : { ...spr[i], visible: 0 };
     textAttr = (textAttr & ~0x7F) | BG_ATTR;                                                  // INK 0, PAPER 7, BRIGHT 0
     border = border0;
@@ -987,18 +1042,18 @@ export function interpret(ast, opts = {}) {
 
   tick = 0;
   events = [];
-  playN = 0; rndN = 0;
+  playN = 0; musicN = 0; rndN = 0;
   execute('INIT'); settle();
   const init = snapshot(events);
   const ticks = [];
   for (let t = 1; t <= nTicks; t++) {
     tick = t;
     events = [];
-    playN = 0; rndN = 0;
+    playN = 0; musicN = 0; rndN = 0;
     if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
     countTimers(); takeEdges(t);              // batch 5: the timers count down, then the key and stick edges are taken (the tick prologue of the compiled game)
     execute('FRAME'); settle();
     ticks.push(snapshot(events));
   }
-  return { init, ticks, varNames, arrNames, scenes: sceneList.map((n) => n.name), spriteNames: sprites, sfxNames, frameDiv, instAsset, assetPhases };
+  return { init, ticks, varNames, arrNames, scenes: sceneList.map((n) => n.name), spriteNames: sprites, sfxNames, ...(songMode ? { songNames } : {}), frameDiv, instAsset, assetPhases };
 }

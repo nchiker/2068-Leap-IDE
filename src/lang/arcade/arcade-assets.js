@@ -5,7 +5,7 @@
  *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: a register delta stream (batch 5)
  *   convertMap(asset, n)    -> {w, h, cells, bytes}    bytes = the 768 CELL_TILE bytes (tile = 128 + index, blank = 32)
  *   lookupAsset(table, ...names) -> asset | undefined  exact name first, then case-insensitive
- *   assetTables(assets)     -> {sprites, tilesets, sfx, maps}   see below
+ *   assetTables(assets)     -> {sprites, tilesets, sfx, maps, music}   see below
  *
  * Asset shapes (docs/ARCADE_ASSETS.md, as extended here where that file is silent):
  *   tileset {tiles: [{rows: [8 x {bits, ink, paper, bright}], flags}]}   bits = 8-bit number or 1..2 hex digits, MSB = left pixel;
@@ -17,8 +17,8 @@
  *   map     {w, h, cells}  w <= 32, h <= 24; cells = array (or hex string, 2 digits per cell) of w*h values, each a tile index
  *           0..127 or blank (-1, null, or 255 / "FF"); placed at the top-left of the 32 x 24 cell map, the other cells are font
  *           spaces. (docs/ARCADE_ASSETS.md says "hex or run-length"; run-length is not implemented.)
- * `assets` passed to compile() is {sprites, tilesets, sfx, maps} (each a name -> asset object). For compatibility with M2 a
- * value that has none of those four keys is taken to be the sprites table itself.
+ * `assets` passed to compile() is {sprites, tilesets, sfx, maps, music} (each a name -> asset object; `music`: the songs, docs/ARCADE_MUSIC_CONTRACT.md section 3).
+ * For compatibility with M2 a value that has none of those five keys is taken to be the sprites table itself.
  */
 
 "use strict";
@@ -31,11 +31,11 @@ export const TILE_CELL = 128;               // cell value of tile 0
 
 export function assetTables(assets) {
   const a = assets ?? {};
-  const named = ['sprites', 'tilesets', 'sfx', 'maps'];
+  const named = ['sprites', 'tilesets', 'sfx', 'maps', 'music'];
   if (named.some((k) => k in a)) {
-    return { sprites: a.sprites ?? {}, tilesets: a.tilesets ?? {}, sfx: a.sfx ?? {}, maps: a.maps ?? {} };
+    return { sprites: a.sprites ?? {}, tilesets: a.tilesets ?? {}, sfx: a.sfx ?? {}, maps: a.maps ?? {}, music: a.music ?? {} };
   }
-  return { sprites: a, tilesets: {}, sfx: {}, maps: {} };
+  return { sprites: a, tilesets: {}, sfx: {}, maps: {}, music: {} };
 }
 
 export function lookupAsset(table, ...names) {

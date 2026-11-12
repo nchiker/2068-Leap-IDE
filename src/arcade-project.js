@@ -361,7 +361,7 @@ export function renameAsset(project, kind, oldName, newName) {
 
 /** Source references to an asset name that has no asset: [{line, name}] (the Studio warns after a rename). */
 export function assetReferences(project, kind, name) {
-  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX' }[kind];
+  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX', music: 'MUSIC' }[kind];
   if (!word) return [];
   const re = new RegExp(`^\\s*${word}\\s+[A-Za-z]\\w*\\s*(\\(\\s*\\d+\\s*\\))?\\s*=\\s*"${name.replace(/[^\w]/g, '\\$&')}"`, 'i');
   const out = [];

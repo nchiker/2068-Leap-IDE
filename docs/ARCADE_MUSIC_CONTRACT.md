@@ -117,6 +117,43 @@ The same `sound.asm` in v2, v3 and v4 (v4 adds its `KEY_ROWSEL` tail, as before)
 Models the song state (order position, pattern position, wait, ownership) and produces the AY register values per refresh exactly as the runtime
 writes them, so the differential harness of batch 4 compares sound with music as it does effects.
 
+## 6a. As built: the language, compiler and interpreter (M3, 2026-11-12)
+
+* **Words** (`arcade-words.js`): `MUSIC` and `NOMUSIC` are reserved and listed in `BATCH11_WORDS` (reserved for variables, legal as an asset name, like
+  `WORLD`); `ASSET_KINDS.MUSIC = 'music'`, `LIMITS.maxSongs = 8`; Help lines for both; `PLAY` lists the `PLAY song` form, `SILENCE` says the song plays on.
+* **Parser**: `MUSIC name = "asset"` is an `Asset` node like `SFX` (top level only, the usual messages). `PLAY name` keeps the node `Play {sfx: Ident}`;
+  the checker, the interpreter and the code generator read the name as a song when a MUSIC has it. A word of `BATCH11_WORDS` alone after `PLAY` is read as
+  a name (`SFX music = "m"` ... `PLAY music`; this also makes `PLAY world` work for an effect called `world`, which was a parse error before). `NOMUSIC`
+  is node `NoMusic`; anything after it: `NOMUSIC takes nothing: write NOMUSIC alone (PLAY name starts a song)`.
+* **Checker**: songs have their own name space (`music:KEY`). The 9th and later MUSIC: `too many songs (at most 8)` at the name. **Decision (Claude):** a
+  name that is both an SFX and a MUSIC is legal as a declaration (the kinds are separate, as for every two kinds) and an **error at `PLAY name`**:
+  `'x' is both an SFX and a MUSIC: PLAY cannot tell which to start; rename one of them`. `PLAY tune` with a variable `tune` too plays the song (an asset
+  name wins, as for SFX); `PLAY (tune)` is an index and a song there is `'tune' is a MUSIC, not a variable`; literal `PLAY k` counts the SFX only.
+  Warnings: `MUSIC 'x' is never used`; **(Claude)** `NOMUSIC does nothing in a game without MUSIC (no song can be playing)` (a warning, not an error: the
+  call is harmless). An undeclared asset is the generator's, as for SFX: `song asset "x" is not in the project`; a broken one `song "x": <convertMusic's message>`.
+* **Code generator** (header notes MU-1..MU-3 of `arcade-codegen.js`): each song is data after the effects: `song$i: DB loop, DW song$i$k` per order
+  entry, `DW 0`, then **every** pattern stream of the asset once (a pattern the order never names is stored too: the bytes equal `convertMusic(...).bytes`).
+  `PLAY song` = `LD HL,song$i / CALL RT_MUSIC` (6 bytes), `NOMUSIC` = `CALL RT_NOMUSIC` (also in a game without songs). In a game with at least one MUSIC every
+  one-channel SFX is `convertSfxC`; three-channel effects are unchanged. ENTER's reset is unchanged (RT_SILENCE only). `usage.data.music` (the songs' bytes),
+  `symbols.songs` ({NAME: address}) and a `music:` line of `usageLines` exist only in a game with songs; the Studio's size panel shows a "Music" row then.
+  A v0 / v1 runtime refuses MUSIC / NOMUSIC (`... is not supported yet in M3 (build with --runtime v2)`), a build without the routines says
+  `MUSIC needs RT_MUSIC and RT_NOMUSIC, which this runtime does not provide: rebuild the runtime (this build predates music)`. **Games without MUSIC compile
+  to the same bytes**: every example and fixture on v2 / v3 / v4 equals the compiler of `237b18a` (`tests/arcade-m15-compiler.mjs` section 3, 27 builds).
+* **Interpreter**: a game with songs models the chip itself (`src/lang/arcade/arcade-sound.js`, `createSoundChip`: the effect images as the compiler stores
+  them, the songs as `convertMusic` gives them; written from this contract and the `sound.asm` header). Calls are placed after the refresh they were made at:
+  without a clock at the tick's refresh count; with one, `clock.play(tick, n)` (RT_PLAY / RT_SILENCE, as before), the new `clock.music(tick, n)` (RT_MUSIC /
+  RT_NOMUSIC) and `clock.sample(tick)`. Records of such a game get `music {active, index}` and `ay {flags: V_SFX_ACTIVE, regs: R0..R10}`; a game without
+  songs has neither and keeps the old effect model. **The level of the comparison:** the older suites compare `V_SFX_ACTIVE` (0 / 1) with `sfx.active`
+  leaving out the refresh at an effect's end (m9, m10), or AY_SHADOW with the record the interpreter says the last refresh output (m3, Blockfall); with songs
+  every sample compares all of `V_SFX_ACTIVE` (effect, song, request), AY_SHADOW R0..R10 and the chip, exactly. A call that a frame interrupt cut in two would
+  not be placeable; the harness detects it (V_FRAMES at the call's return) and compares sound up to it only: in the runs so far no call was cut.
+* **Tests**: `tests/arcade-m15-compiler.mjs` (parser / checker messages, the image, the code, byte identity, the interpreter against hand values and against
+  `expectChip`, an independent row-level expectation in `tests/arcade-m15-common.mjs`, and the chip model against it on random scripts),
+  `tests/arcade-m15-differential.mjs` (end to end on v2 / v3 / v4: every refresh of a FRAMERATE 60 game against `expectChip` and the interpreter; random
+  programs with songs on v2; v3 / v4 spot programs; negative controls), `arcade/tests/m15c-mutations.mjs` (49 mutants: 43 killed, 6 equivalent with the
+  reason in their names). The hash baselines `batch2/3-baseline.json` were regenerated (`regen-baselines.mjs --old 237b18a`: the runtime of M2 had moved
+  them; the compiler gives the same bytes as before).
+
 ## 7. Studio (the sound editor extended, **(owner)**)
 
 A `music` asset opens in the sound editor with: the **pattern list** (add, duplicate, delete, rename by index), each pattern edited by the existing
