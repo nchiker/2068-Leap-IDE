@@ -183,6 +183,10 @@
  *  9. SHOW passes BC = x and DE = y as the raw 16-bit values; clamping is the runtime's job (the interpreter models it).
  * 10. A literal 32768..65535 is the wrapped signed value; -32768 DIV -1 = -32768, -32768 MOD -1 = 0.
  * 11. Names are case-insensitive (upper-cased as keys); a parameter hides a variable of the same name.
+ * 12. Wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md, v2 runtime only): `WIRE3D` makes the header 20 bytes (frame_div | DIV_EXT | DIV_WIRE, +18 DW wire_desc = DB r0, DB r1, DB attr, DB 0, in the code area); each MODEL's image
+ *     (DB npts, DB nedges, points, edges) is data in the code area too, never banked. EYE x, y, z, a and LINE x0, y0 TO x1, y1 store their operands in order into RA_W0..RA_W3 and CALL RT_EYE / RT_LINE; DRAWMODEL stores x, y, z, YAW, PITCH
+ *     (that order, whatever the order of its clauses; an absent clause is 0) into RA_W0..RA_W4, then HL = the model, A = log2 SCALE, CALL RT_DRAWMODEL. A program with a NOVIEW scene calls RT_WIREMODE (A = 0 / 1) in every ENTER sequence
+ *     and at the boot only when the first scene is NOVIEW; ENTER's reset ends with the eye back to 0, 0, 0, 0 (RT_EYE). COSA / SINA / FXMUL are the same calls on v2 as on v4. The linker refuses more than 45 sprite phases in a WIRE3D game.
  */
 
 "use strict";
@@ -194,7 +198,8 @@ import { Emitter, L, M, P } from './z80-emit.js';
  * SP, or are not entered by CALL at all): the scene driver and the entries of the compiled code (labels), and what is in the runtimes' boot.asm besides RT_BORDER (runtime symbols).
  */
 export const NO_TAIL = { labels: /^(scn\$|frame\$|entry\$)/, runtime: ['ENTRY', 'NMI', 'RST_EVEN', 'RST_ODD', 'FILL_EARLY'] };
-import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, convertSpriteV3, MAX_SFX, MAX_SONGS } from './arcade-assets.js';
+import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, convertSpriteV3, convertModel, MAX_SFX, MAX_SONGS } from './arcade-assets.js';
+import { areaOf as wireAreaOf, SCALES as WIRE_SCALES } from './arcade-wire.js';
 import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, noviewPoolPieces, buildFrameT } from './arcade-window.js';
 import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
 import { LIMITS } from './arcade-words.js';
@@ -249,16 +254,19 @@ const V1_STMT = new Set(['Print', 'Tile', 'Play', 'Silence', 'Cls', 'Color']);  
 const UNSUPPORTED_STMT = {
   Print: 'PRINT', Tile: 'TILE', Play: 'PLAY', Silence: 'SILENCE', Cls: 'CLS', End: 'END', Color: null, Border: 'BORDER',
   Randomise: 'RANDOMISE', Plot: 'PLOT', Poke: 'POKE', Out: 'OUT', Line: 'LINE', Enter: 'ENTER', Dim: 'DIM inside a PROC',
-  Eye: 'EYE', DrawModel: 'DRAWMODEL',
 };
-/** Wireframe 3D statements (docs/ARCADE_WIREFRAME_CONTRACT.md): parsed and checked, not generated yet (slice W3 is the front end only); refused cleanly instead of "internal: unexpected". */
+/** Wireframe 3D statements (docs/ARCADE_WIREFRAME_CONTRACT.md, slice W3b): EYE, DRAWMODEL and LINE go through the runtime argument block (RT_ARGS: RA_W0..RA_W4) and RT_EYE / RT_DRAWMODEL / RT_LINE of the v2 runtime. */
 const WIRE_STMT = new Set(['Eye', 'DrawModel', 'Line']);
+const WIRE_RT = { Eye: 'RT_EYE', DrawModel: 'RT_DRAWMODEL', Line: 'RT_LINE' };
+const WIRE_WORD = { Eye: 'EYE', DrawModel: 'DRAWMODEL', Line: 'LINE' };
+const WIRE_RA = ['RA_W0', 'RA_W1', 'RA_W2', 'RA_W3', 'RA_W4'];
 const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK', 'BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
 const V1_FUNCS = new Set(['HIT', 'TILEAT']);
 const V2_FUNCS = new Set(['KEYDOWN']);
 const V3_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);        // language batch 2 (v3 runtime, need a WINDOW)
 const V4_FUNCS = new Set(['COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']);             // language batch 3 (v4 runtime; WALL SEEN DEPTH need a VIEW3D)
 const V4_VIEW_FUNCS = new Set(['WALL', 'SEEN', 'DEPTH']);
+const WIRE_FUNCS = new Set(['COSA', 'SINA', 'FXMUL']);                                     // the v2 runtime has these too since the wireframe 3D (v4's values; the v3 runtime has none)
 const RT_OF_V4 = { COSA: 'RT_COSA', SINA: 'RT_SINA', FXMUL: 'RT_FXMUL', WALL: 'RT_WALL', SEEN: null, DEPTH: null };
 const RT_OF = { CAMX: null, WORLDTILE: 'RT_WORLDTILE', TILEFLAGS: 'RT_TILEFLAGS', TILEHIT: 'RT_TILEHIT', SOLID: 'RT_TILEHIT' };
 /** A string-valued PRINT item: a literal, STR$(n), or those joined with +. */
@@ -320,7 +328,10 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const scenes = ast.scenes ?? [];
   const multi = scenes.length > 1;
   if (scenes.length === 0) err(ast, 'the game has no SCENE');
-  for (const w of ast.wires ?? []) err(w, 'not implemented yet: WIRE3D (the wireframe 3D code generator is a later slice of docs/ARCADE_WIREFRAME_CONTRACT.md)');
+  // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md): the v2 runtime only; the checker has judged the rows, the colours and the "once" rule, the values are folded below (section 2d)
+  const wireDecl = (ast.wires ?? [])[0] ?? null;
+  const wireOk = v2 && !v3;
+  if (wireDecl && !wireOk) err(wireDecl, 'WIRE3D needs the v2 runtime (build with --runtime v2)');
   if (multi && !v2) err(scenes[1], `a second SCENE (M2 has exactly one) is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
   /** Language batch 4: does the tree hold a node of this type (an ENTER anywhere)? */
   const containsType = (n, t) => {
@@ -363,6 +374,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const songList = [], songIndex = new Map();       // MUSIC: {name, node, patterns, order, loop, refreshes, bytes} per declared song, declaration order
   const songKeys = new Set((ast.assets ?? []).filter((a) => a.kind === 'MUSIC').map((a) => up(a.name)));     // every declared song (also one whose asset failed: no cascade of "unknown variable")
   const hasSongs = v2 && songKeys.size > 0;         // MU-3: one-channel effects become channel-C streams
+  const modelList = [], modelIndex = new Map();     // WIRE3D: {name, node, points, edges, bytes} per declared model, declaration order
+  const modelKeys = new Set((ast.assets ?? []).filter((a) => a.kind === 'MODEL').map((a) => up(a.name)));     // every declared model (also one whose asset failed: no cascade)
   let tileset = null;                               // {node, count, bytes}
   const mapList = [];                               // batch 1: {node, w, h, cells, bytes} per MAP in declaration order (at most 8)
   for (const a of ast.assets ?? []) {
@@ -441,7 +454,15 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       if ((winDecl || viewDecl) && worldNameKeys.has(up(a.name)) && !worldOnlyDecls.has(up(a.name))) { worldOnlyDecls.set(up(a.name), a); continue; }     // a WORLD's map: kept apart too
       if (mapList.length >= LIMITS.maxMaps) { err(a, `at most ${LIMITS.maxMaps} MAPs per game`); continue; }
       mapList.push({ node: a });
-    } else if (a.kind === 'MODEL') { err(a, `not implemented yet: MODEL (${a.name}) (the wireframe 3D code generator is a later slice of docs/ARCADE_WIREFRAME_CONTRACT.md)`);
+    } else if (a.kind === 'MODEL') {
+      if (!wireDecl || !wireOk) continue;                                  // (WIRE3D is refused above, or the checker has refused the MODEL)
+      const asset = lookupIn(tabs.models, a.asset, a.name);
+      if (asset === undefined) { err(a, `model asset "${a.asset}" is not in the project`); continue; }
+      try {
+        const c = convertModel(asset);
+        modelIndex.set(up(a.name), modelList.length);
+        modelList.push({ name: a.name, node: a, ...c });
+      } catch (ex) { err(a, `model "${a.asset}": ${ex.message}`); }
     } else { notYet(a, `${a.kind} (${a.name})`); }
   }
   /** PLAY by index (batch 5): neither a declared SFX nor a declared song is named, so the operand is an expression (a bare name is a variable). */
@@ -727,6 +748,22 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       }
     }
   }
+  // ── 2d. the wireframe play area (docs/ARCADE_WIREFRAME_CONTRACT.md section 1): WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n] ──
+  let wire = null;                                  // {r0, r1, ink, paper, bright, attr, area}
+  if (wireDecl && wireOk) {
+    const pick = (node, dflt, lo, hi, what) => {
+      if (!node) return dflt;
+      const v = fold(node);
+      if (v === undefined || v < lo || v > hi) throw new Error(`${what} must be a constant ${lo}..${hi}`);
+      return v;
+    };
+    try {
+      const r0 = pick(wireDecl.r0, 0, 0, 20, 'the first row'), r1 = pick(wireDecl.r1, 0, 0, 23, 'the last row');
+      if (r1 < r0 + 3) throw new Error(`ROWS ${r0} TO ${r1}: the play area needs at least 4 rows`);
+      const ink = pick(wireDecl.ink, 7, 0, 7, 'INK'), paper = pick(wireDecl.paper, 0, 0, 7, 'PAPER'), bright = pick(wireDecl.bright, 1, 0, 1, 'BRIGHT');
+      wire = { r0, r1, ink, paper, bright, attr: (bright << 6) | (paper << 3) | ink, area: wireAreaOf(r0, r1) };
+    } catch (ex) { err(wireDecl, `WIRE3D: ${ex.message}`); }
+  }
   /** Does evaluating the expression use the runtime's argument block (TILEHIT / SOLID, also through DEF FN)? */
   const raMemo = new Map();
   const usesRA = (x) => {
@@ -768,8 +805,10 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           else if (sym[rt] === undefined) err(e, `${e.name}(...) needs ${rt}, which this runtime does not provide`);
           return;
         }
-        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name)) && !(v3 && V3_FUNCS.has(e.name)) && !(v4 && V4_FUNCS.has(e.name))) {
-          if (V4_FUNCS.has(e.name)) err(e, `${e.name}() needs the v4 runtime (build with --runtime v4)`); else notYet(e, `${e.name}(...)`);
+        if (!SUPPORTED_FUNCS.has(e.name) && !(v1 && V1_FUNCS.has(e.name)) && !(v2 && V2_FUNCS.has(e.name)) && !(v3 && V3_FUNCS.has(e.name)) && !(v4 && V4_FUNCS.has(e.name)) && !(wireOk && WIRE_FUNCS.has(e.name))) {
+          if (WIRE_FUNCS.has(e.name)) err(e, `${e.name}() needs the v2 or v4 runtime (build with --runtime v2 or v4)`);
+          else if (V4_FUNCS.has(e.name)) err(e, `${e.name}() needs the v4 runtime (build with --runtime v4)`);
+          else notYet(e, `${e.name}(...)`);
           return;
         }
         if (V4_FUNCS.has(e.name)) {
@@ -898,6 +937,23 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         else for (const k of s.type === 'View' ? ['x', 'y', 'a'] : ['x', 'y', 'value']) scanExpr(s[k]);
         continue;
       }
+      if (WIRE_STMT.has(s.type)) {                   // wireframe 3D: arguments in RT_ARGS, then the runtime's entry
+        const what = WIRE_WORD[s.type], rt = WIRE_RT[s.type];
+        if (!wireDecl) err(s, `${what} needs a WIRE3D: declare the play area first, e.g. WIRE3D ROWS 2 TO 21`);
+        else if (!wireOk) err(s, `${what} needs the v2 runtime (build with --runtime v2)`);
+        else if (sym[rt] === undefined) err(s, `${what} needs ${rt}, which this runtime does not provide: rebuild the runtime (this build predates the wireframe 3D)`);
+        else if (!WIRE_RA.every((k) => cst[k] !== undefined)) err(s, `${what} needs the runtime argument words RA_W0..RA_W4, which this runtime does not provide`);
+        else if (!wire) { /* the WIRE3D itself failed: already reported */ }
+        else {
+          for (const k of s.type === 'Eye' ? ['x', 'y', 'z', 'a'] : s.type === 'Line' ? ['x0', 'y0', 'x1', 'y1'] : ['x', 'y', 'z', 'yaw', 'pitch']) if (s[k]) scanExpr(s[k]);
+          if (s.type === 'DrawModel') {
+            const k = s.scale ? fold(s.scale) : 1;
+            if (k === undefined || !WIRE_SCALES.includes(k)) err(s.scale ?? s, 'SCALE must be a constant 1, 2, 4 or 8');
+            if (!modelKeys.has(up(s.model.name))) err(s.model, `DRAWMODEL: unknown model '${s.model.name}'`);
+          }
+        }
+        continue;
+      }
       if (s.type === 'Enter') {
         if (!v2) err(s, `ENTER is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
         continue;
@@ -953,8 +1009,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       }
       if (!SIMPLE_STMT.has(s.type)) {
         const what = UNSUPPORTED_STMT[s.type];
-        if (WIRE_STMT.has(s.type)) err(s, `not implemented yet: ${what} (the wireframe 3D code generator is a later slice of docs/ARCADE_WIREFRAME_CONTRACT.md)`);
-        else if (what === undefined) err(s, `internal: unexpected ${s.type} statement`);
+        if (what === undefined) err(s, `internal: unexpected ${s.type} statement`);
         else if (s.type === 'Color') notYet(s, s.which);
         else notYet(s, what);
         continue;
@@ -983,7 +1038,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   for (const f of allFns) { useCtx(f.ctx); scanExpr(f.node.body); }
   useCtx(globalCtx);
   if (driver) {                                     // the machine reset of an ENTER is made of ordinary runtime routines (contract section 3)
-    const needed = ['RT_SILENCE', 'RT_HIDE', 'RT_INK', 'RT_BRIGHT', 'RT_PAPER', 'RT_BORDER', 'RT_CLS', ...(mapList.length ? ['RT_LOADMAP'] : [])];
+    const needed = ['RT_SILENCE', 'RT_HIDE', 'RT_INK', 'RT_BRIGHT', 'RT_PAPER', 'RT_BORDER', 'RT_CLS', ...(mapList.length ? ['RT_LOADMAP'] : []), ...(wireDecl ? ['RT_EYE'] : [])];
     for (const n of needed) if (sym[n] === undefined) err(scenes[0], `scenes need ${n}, which this runtime does not provide`);
     if (sym.BORDER_COLOUR === undefined && cst.BORDER_COLOUR === undefined) err(scenes[0], 'scenes need BORDER_COLOUR, which this runtime does not provide');
   }
@@ -991,7 +1046,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   // the boot entry (before the first scene's INIT) call the runtime's mode routine with A = 0 (the target has the clause) or 1; a program without the clause emits nothing of it.
   const sceneModes = scenes.map((sc) => sc.mode ?? null);
   const hasModes = sceneModes.some(Boolean);
-  const modeRoutine = (m) => (m === 'nowindow' ? 'RT_WINMODE' : 'RT_VIEWMODE');
+  const modeRoutine = (m) => (m === 'nowindow' ? 'RT_WINMODE' : wireDecl ? 'RT_WIREMODE' : 'RT_VIEWMODE');      // (wireframe 3D: a WIRE3D game's NOVIEW scene switches the play area)
   const modeRt = hasModes ? modeRoutine(sceneModes.find(Boolean)) : null;       // (the checker keeps the clause to the kind of the game: one routine serves every scene)
   if (hasModes) {
     const asked = new Set();
@@ -1000,7 +1055,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       const rt = modeRoutine(sceneModes[k]);
       if (sym[rt] !== undefined || asked.has(rt)) return;
       asked.add(rt);
-      err(sc.modePos ?? sc, `SCENE '${sc.name}' ${sceneModes[k] === 'nowindow' ? 'NOWINDOW' : 'NOVIEW'} needs ${rt}, which this runtime does not provide (build with a runtime of language batch 7)`);
+      err(sc.modePos ?? sc, `SCENE '${sc.name}' ${sceneModes[k] === 'nowindow' ? 'NOWINDOW' : 'NOVIEW'} needs ${rt}, which this runtime does not provide (${rt === 'RT_WIREMODE' ? 'rebuild the v2 runtime: this build predates the wireframe tick integration' : 'build with a runtime of language batch 7'})`);
     });
   }
   if (cst.MAX_MAPS !== undefined && mapList.length > cst.MAX_MAPS) err(mapList[cst.MAX_MAPS].node, `this runtime build holds at most ${cst.MAX_MAPS} maps in its map table (MAX_MAPS); the game has ${mapList.length}`);
@@ -1013,6 +1068,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   }
   if (win) HEADER_BYTES = 20;                       // B2-1: DIV_WIN says the header continues +18 DW window_desc (it requires DIV_EXT)
   if (view) HEADER_BYTES = 20;                      // B3-1: DIV_VIEW (the same bit) says the header continues +18 DW view_desc
+  if (wire) HEADER_BYTES = 20;                      // wireframe 3D: DIV_WIRE (the same bit again) says the header continues +18 DW wire_desc (DB r0, DB r1, DB attr, DB 0)
   if (errors.length) return fail();
 
   function fail() { return { errors, warnings, code: null }; }
@@ -1048,6 +1104,9 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'SetWorld': ex(s.x); ex(s.y); ex(s.value); break;
           case 'View': ex(s.x); ex(s.y); ex(s.a); break;
           case 'SetWall': ex(s.x); ex(s.y); ex(s.value); break;
+          case 'Eye': ex(s.x); ex(s.y); ex(s.z); ex(s.a); break;
+          case 'DrawModel': ex(s.x); ex(s.y); ex(s.z); ex(s.yaw); ex(s.pitch); break;
+          case 'Line': ex(s.x0); ex(s.y0); ex(s.x1); ex(s.y1); break;
           case 'Hide': ex(s.sprite); break;
           case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
@@ -1119,6 +1178,9 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'SetWorld': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
           case 'View': ex(s.x, active); ex(s.y, active); ex(s.a, active); break;
           case 'SetWall': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
+          case 'Eye': ex(s.x, active); ex(s.y, active); ex(s.z, active); ex(s.a, active); break;
+          case 'DrawModel': ex(s.x, active); ex(s.y, active); ex(s.z, active); ex(s.yaw, active); ex(s.pitch, active); break;
+          case 'Line': ex(s.x0, active); ex(s.y0, active); ex(s.x1, active); ex(s.y1, active); break;
           case 'Hide': ex(s.sprite, active); break;
           case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } s.items.forEach((x) => ex(x, active)); break;
           case 'Tile': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
@@ -1961,6 +2023,25 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.label(skip);
   }
 
+  /** EYE x, y, z, a / LINE x0, y0 TO x1, y1: four argument words in source order (RA_W0..RA_W3), then the runtime's entry. */
+  function wireArgsStmt(s) {
+    const rt = need(WIRE_RT[s.type]);
+    (s.type === 'Eye' ? [s.x, s.y, s.z, s.a] : [s.x0, s.y0, s.x1, s.y1]).forEach((x, i) => setArg(WIRE_RA[i], x));
+    e.call(rt);
+  }
+  /**
+   * DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]: RA_W0..RA_W4 = x, y, z, yaw, pitch (evaluated in that order, whatever the order of the clauses; an absent clause is 0), HL = the model's image, A = log2 SCALE,
+   * CALL RT_DRAWMODEL. The word arguments are written one after the other, so none of them can use the argument block itself (TILEHIT / SOLID need a WINDOW, which a WIRE3D game cannot have).
+   */
+  function drawModelStmt(s) {
+    const rt = need('RT_DRAWMODEL');
+    const mi = modelIndex.get(up(s.model.name)), k = s.scale ? fold(s.scale) : 1;
+    if (mi === undefined) throw new GenError(s.model, `DRAWMODEL: the model '${s.model.name}' has no image`);
+    if (!WIRE_SCALES.includes(k)) throw new GenError(s.scale ?? s, 'SCALE must be a constant 1, 2, 4 or 8');
+    [s.x, s.y, s.z, s.yaw, s.pitch].forEach((x, i) => { if (x) setArg(WIRE_RA[i], x); else { e.ld('hl', 0); e.ld(M(raAddr(WIRE_RA[i])), 'hl'); } });
+    e.ld('hl', L(`model$${mi}`)); e.ld('a', WIRE_SCALES.indexOf(k)); e.call(rt);
+  }
+
   function copyStmt(s) {
     const rt = need('RT_COPY');
     const names = ['RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_DX', 'RA_DY'], exprs = [s.x, s.y, s.w, s.h, s.dx, s.dy];
@@ -2207,6 +2288,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         return;
       }
       case 'Fill': fillStmt(s); return;
+      case 'Eye': case 'Line': wireArgsStmt(s); return;
+      case 'DrawModel': drawModelStmt(s); return;
       case 'Copy': copyStmt(s); return;
       case 'LoadMap': loadMapStmt(s); return;
       case 'Camera': gen(s.value); e.call(need('RT_CAMERA')); return;
@@ -2418,8 +2501,9 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   }
 
   /** Language batch 7: A = 0 (the scene has NOWINDOW / NOVIEW) or 1, then the runtime's mode routine. Nothing at all in a program without the clause. */
-  function emitSceneMode(k) {
+  function emitSceneMode(k, boot = false) {
     if (!hasModes) return;
+    if (boot && wireDecl && !sceneModes[k]) return;                              // wireframe 3D: the boot turns the play area on from the header, so only a NOVIEW first scene needs the call
     e.ld('a', sceneModes[k] ? 0 : 1);
     e.call(need(modeRt));
   }
@@ -2462,6 +2546,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.ld('a', sym.BORDER_COLOUR ?? cst.BORDER_COLOUR); e.call(need('RT_BORDER'));
     e.call(need('RT_CLS'));
     if (mapList.length) { e.xor('a'); e.call(need('RT_LOADMAP')); }
+    if (wire) { e.ld('hl', 0); for (const k of WIRE_RA.slice(0, 4)) e.ld(M(raAddr(k)), 'hl'); e.call(need('RT_EYE')); }      // wireframe 3D: the viewer back to 0, 0, 0, 0
     e.ret();
   }
 
@@ -2474,7 +2559,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.ld('hl', L('vars$base')); e.ld('de', L('vars$base', 1)); e.ld('bc', L('vars$len1'));
     e.ld('(hl)', 0); e.ldir();
     for (const seg of initSegments) { if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
-    emitSceneMode(0);                                                            // batch 7: the first scene's display mode, before its INIT
+    emitSceneMode(0, true);                                                      // batch 7: the first scene's display mode, before its INIT
     if (!driver) e.jp('P$INIT');
     else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }          // the stack pointer the runtime called us with: ENTER cuts the stack back to it
     if (driver) emitDriver();
@@ -2701,6 +2786,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         dataSize.map = mapList[0] && mapList[0].bytes ? 768 : 0;
       }
     }
+    if (wire) {                                     // wireframe 3D: the header's wire_desc (DB r0, DB r1, DB attr, DB 0), then each model's image once, in the mapped game area (never banked)
+      e.label('wire$desc'); e.db(wire.r0, wire.r1, wire.attr, 0);
+      modelList.forEach((m, i) => { e.label(`model$${i}`); for (const b of m.bytes) e.db(b); });
+      dataSize.wire = 4; dataSize.models = modelList.reduce((n, m) => n + m.bytes.length, 0);
+    }
     if (initSegments.length) {
       const m0 = e.size;
       for (const seg of initSegments) { e.label(seg.label); for (const v of seg.values) e.dw(v & 0xFFFF); }
@@ -2814,10 +2904,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     code, base,
     entries: { init: entry('entry$init'), frame: entry(driver || hasPrologue ? 'frame$entry' : 'P$FRAME') },
     frameDiv: 60 / rate,
-    mapFlag: (extMaps || win || view ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0) | (view ? (cst.DIV_VIEW ?? 0x40) : 0),
+    mapFlag: (extMaps || win || view || wire ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0) | (view ? (cst.DIV_VIEW ?? 0x40) : 0) | (wire ? (cst.DIV_WIRE ?? 0x40) : 0),
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,
     window: win,
     view,
+    ...(wire ? { wire: { r0: wire.r0, r1: wire.r1, attr: wire.attr, ink: wire.ink, paper: wire.paper, bright: wire.bright, descAt: e.addressOf('wire$desc'), models: modelList.map((m, i) => ({ name: m.name, at: e.addressOf(`model$${i}`), points: m.points.length, edges: m.edges.length, bytes: m.bytes.length })) } } : {}),
     sprites,
     symbols,
     srcMap,

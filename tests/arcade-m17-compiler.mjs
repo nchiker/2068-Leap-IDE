@@ -1,18 +1,23 @@
 #!/usr/bin/env node
 "use strict";
-// arcade-m17-compiler.mjs -- tests for the FRONT END of the wireframe 3D (slice W3): docs/ARCADE_WIREFRAME_CONTRACT.md section 1 (the language), items 9 (errors and warnings) and 10 (the runtime choice).
+// arcade-m17-compiler.mjs -- tests for the compiler side of the wireframe 3D (slices W3a and W3b): docs/ARCADE_WIREFRAME_CONTRACT.md section 1 (the language), items 9 (errors and warnings) and 10 (the runtime choice), then
+// the code generator and the linker (sections 3.2, 3.3, 4, 5).
 //
-//   node tests/arcade-m17-compiler.mjs
+//   node tests/arcade-m17-compiler.mjs          (ARCADE_M17_OLD=<git ref> ARCADE_M17_GIT=<repository> change the compiler section 6 compares with; default 82b1cab, the tree before the code generator)
 //
-// No machine is booted and no code is generated: the parser, the checker, the word tables, requiredRuntime, and the code generator's clean refusal of the new statements (it is a later slice). Sections
+// No machine is booted. Sections
 //   1  parser: every form, its node shape, clauses in any order, contextual words as variable names, reserved words naming assets, parse errors
 //   2  checker: every error and warning of item 9 with its line, NOVIEW in a WIRE3D / VIEW3D / plain game, COSA SINA FXMUL on v2, v3 and v4, WIRE3D on v2 only
 //   3  word tables: the new entries, the help text of COSA SINA FXMUL, scan
 //   4  requiredRuntime: the examples (unchanged) and small programs
-//   5  the code generator refuses the new words with a clear message
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+//   5  code generation and the linker: the header (DIV_WIRE, wire_desc), the model images, the argument order of EYE / DRAWMODEL / LINE, the NOVIEW switch calls, COSA SINA FXMUL on v2, asset
+//      errors at the MODEL line, a runtime without the entries, the 45-phase limit (on a mock of the W2 runtime where RT_WIREMODE is needed)
+//   6  byte identity: every example and fixture compiles to the bytes of the compiler before the code generator (git archive)
+import { readFileSync, existsSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse, tokenize } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
@@ -300,29 +305,240 @@ console.log('\n4. requiredRuntime');
 }
 
 // =================================================================================================================
-// 5. The code generator (a later slice) refuses the new words cleanly
+// 5. The code generator and the linker (slice W3b): docs/ARCADE_WIREFRAME_CONTRACT.md sections 3.2 and 3.3, 4 and 5
 // =================================================================================================================
-console.log('\n5. code generator: a clean refusal');
+console.log('\n5. code generator and linker');
 {
   const p = join(ROOT, 'arcade/build/v2/runtime.json');
-  if (!existsSync(p)) skip_('the code generator refuses WIRE3D / MODEL / EYE / DRAWMODEL / LINE', 'arcade/build/v2 is not built');
+  if (!existsSync(p)) skip_('code generation of WIRE3D / MODEL / EYE / DRAWMODEL / LINE', 'arcade/build/v2 is not built');
   else {
     const rt = JSON.parse(readFileSync(p, 'utf8'));
     const image = new Uint8Array(readFileSync(join(dirname(p), rt.image ?? 'runtime.bin')));
-    const build = (src) => compile(src, { runtime: rt, image, assets: { sprites: {} } });
+    // the runtime of slice W2 (RT_WIREMODE, DIV_WIRE) is not in every tree: a mock is the real runtime with the two names added (the code generator only needs them to exist)
+    const MOCK_WIREMODE = 0x3B00;
+    const mock = JSON.parse(JSON.stringify(rt));
+    mock.symbols.RT_WIREMODE = MOCK_WIREMODE; mock.constants.DIV_WIRE = 0x40;
+    const cst = rt.constants, sym = rt.symbols;
+    const MODELS = {
+      gate: { points: [[-10, 0, 0], [10, 0, 0], [0, 10, 0]], edges: [[0, 1], [1, 2], [2, 0]] },
+      rock: { points: [[0, 0, 0], [5, 5, 5], [-64, 64, -64]], edges: [[0, 1], [1, 2]] },
+    };
+    const u16 = (m, a) => m[a] | (m[a + 1] << 8);
+    const build = (src, { runtime = rt, assets = { models: MODELS }, ...more } = {}) => compile(src, { runtime, image, assets, ...more });
     const texts = (r) => r.errors.map((e) => e.message).join(' | ');
-    const base = 'GAME "w"\nWIRE3D ROWS 2 TO 21\n';
-    const frame = (s) => `${base}SCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n${s}  ENDP\nENDSCENE\n`;
-    for (const [what, src] of [['EYE', frame('    EYE 0, 0, 0, 0\n')], ['LINE', frame('    LINE 0, 0 TO 5, 5\n')]]) {
-      const r = build(src);
-      check_(`${what}: no output, an error "not implemented yet: ${what}"`, r.dck === null && texts(r).includes(`not implemented yet: ${what}`), texts(r) || 'no errors');
+    // the emitter turns a final `call X` + `ret` into `jp X`: written back as a call, so a test reads the same whatever the statement stands before
+    const norm = (r) => r.gen.emitter.asm().split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith(';')).join(';').replace(/;jp (\d+)(?=;)/g, ';call $1;ret');
+    const R = (n) => cst[`RA_W${n}`];
+    const wprog = (frame, { head = 'GAME "w"\nFRAMERATE 20\nWIRE3D ROWS 2 TO 21\nMODEL gate = "gate"\nMODEL rock = "rock"\nDIM t, x\n', init = '' } = {}) => `${head}SCENE s\n  PROC INIT()\n${init}  ENDP\n  PROC FRAME()\n${frame}  ENDP\nENDSCENE\n`;
+    const setW = (n, v) => `ld hl,${v};ld (${R(n)}),hl`;
+
+    console.log('  -- the header, wire_desc and the model images');
+    {
+      const r = build(wprog('    DRAWMODEL gate AT 1, 2, 3\n    DRAWMODEL rock AT 1, 2, 3\n'));
+      check_('a WIRE3D game compiles and links on the real v2 runtime (no NOVIEW scene needs nothing new)', r.errors.length === 0 && !!r.dck, texts(r));
+      const m = r.memory, G = cst.GAME_BASE ?? 0x8000, div = (cst.DIV_WIRE ?? 0x40) | (cst.DIV_EXT ?? 0x80);
+      check_('the header is 20 bytes: frame_div | DIV_EXT | DIV_WIRE (bit 6), the sprite descriptors and the code follow', r.gen.headerLen === 20 && m[G + 4] === (3 | div) && r.gen.base === G + 20, `frame_div byte ${m[G + 4]}, base ${r.gen.base}`);
+      check_('DIV_WIRE is bit 6 ($40) in the real runtime (or the constant is absent: $40 is assumed)', (cst.DIV_WIRE ?? 0x40) === 0x40);
+      const d = u16(m, G + 18);
+      check_('+18 is DW wire_desc: DB r0, DB r1, DB attr, DB 0 (defaults INK 7 PAPER 0 BRIGHT 1 = $47)', d === r.gen.wire.descAt && Array.from(m.slice(d, d + 4)).join() === '2,21,71,0', Array.from(m.slice(d, d + 4)).join());
+      check_('+16 (the map table) is 0 when the game has no maps', u16(m, G + 16) === 0);
+      const c = build(wprog('    DRAWMODEL gate AT 1, 2, 3\n    DRAWMODEL rock AT 1, 2, 3\n', { head: 'GAME "w"\nFRAMERATE 30\nWIRE3D ROWS 0 TO 23 INK 5 PAPER 1 BRIGHT 0\nMODEL gate = "gate"\nMODEL rock = "rock"\nDIM t, x\n' }));
+      const d2 = u16(c.memory, G + 18);
+      check_('wire_desc of ROWS 0 TO 23 INK 5 PAPER 1 BRIGHT 0: 0, 23, 13, 0; FRAMERATE 30', Array.from(c.memory.slice(d2, d2 + 4)).join() === '0,23,13,0' && c.memory[G + 4] === (2 | div), Array.from(c.memory.slice(d2, d2 + 4)).join());
+      const e1 = build(wprog('', { head: 'GAME "w"\nWIRE3D ROWS 4 TO 7 BRIGHT 1 INK 2\nMODEL gate = "gate"\n' }).replace('MODEL gate = "gate"\n', 'MODEL gate = "gate"\n'));
+      const d3 = u16(e1.memory, G + 18);
+      check_('the clauses come in any order and a missing one takes its default: BRIGHT 1 INK 2 -> $42', Array.from(e1.memory.slice(d3, d3 + 4)).join() === '4,7,66,0', Array.from(e1.memory.slice(d3, d3 + 4)).join());
+      const mods = r.gen.wire.models;
+      const { modelBytes } = await import('../src/lang/arcade/arcade-wire.js');
+      check_('each model image (DB npts, DB nedges, points, edges) is in the game image, once, in declaration order', mods.length === 2 && mods.every((x) => Array.from(r.memory.slice(x.at, x.at + x.bytes)).join() === modelBytes(MODELS[x.name]).join()) && mods[1].at === mods[0].at + mods[0].bytes, JSON.stringify(mods));
+      check_('... inside the mapped game area ($8000-$BFFF), after the code (never in the bank window)', mods.every((x) => x.at >= r.gen.base && x.at + x.bytes <= G + 0x4000) && (r.gen.bank?.banked ?? []).length === 0);
+      const ba = build(wprog('    DRAWMODEL gate AT 1, 2, 3\n'), { bankAll: true });
+      check_('bankAll (the test option that banks everything bankable) leaves the models mapped', ba.errors.length === 0 && ba.gen.wire.models.every((x) => x.at < 0xC000 && x.at >= 0x8000) && (ba.gen.bank?.banked ?? []).length === 0, texts(ba));
+      check_('usage.codegen reports the wire bytes: wire 4, models 2 + 2 + 3 * 3 + 3 * 2 ... as the images say', r.usage.codegen.dataBytes.wire === 4 && r.usage.codegen.dataBytes.models === mods.reduce((n, x) => n + x.bytes, 0));
+      // a game with maps too: the map table stays at +16, wire_desc at +18
+      const tiles = { tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: 0x55, ink: 2, paper: 7 })) }] };
+      const mp = build(wprog('    DRAWMODEL gate AT 1, 2, 3\n    LOADMAP m\n', { head: 'GAME "w"\nWIRE3D ROWS 2 TO 21\nTILESET ts = "ts"\nMAP m = "m"\nMODEL gate = "gate"\n' }), { assets: { models: MODELS, tilesets: { ts: tiles }, maps: { m: { w: 2, h: 2, cells: [0, 0, 0, 0] } } } });
+      check_('a LOADMAP in a WIRE3D game: the map table at +16 and wire_desc at +18 are both set', mp.errors.length === 0 && u16(mp.memory, G + 16) !== 0 && u16(mp.memory, G + 18) === mp.gen.wire.descAt, texts(mp));
     }
-    const r1 = build(`${base}MODEL gate = "gate"\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    DRAWMODEL gate AT 0, 0, 0\n  ENDP\nENDSCENE\n`);
-    check_('DRAWMODEL: an error "not implemented yet: DRAWMODEL"', r1.dck === null && texts(r1).includes('not implemented yet: DRAWMODEL'), texts(r1) || 'no errors');
-    check_('MODEL: an error "not implemented yet: MODEL"', texts(r1).includes('not implemented yet: MODEL'), texts(r1));
-    check_('WIRE3D: an error "not implemented yet: WIRE3D"', texts(r1).includes('not implemented yet: WIRE3D'), texts(r1));
-    check_('no "internal" error for the new nodes', !texts(r1).includes('internal'), texts(r1));
+
+    console.log('  -- the statements');
+    {
+      const r = build(wprog('    DRAWMODEL gate AT 1, 2, 3 YAW 4 PITCH 5 SCALE 4\n'));
+      const a = norm(r);
+      const want = [setW(0, 1), setW(1, 2), setW(2, 3), setW(3, 4), setW(4, 5), `ld hl,L_model_0;ld a,2;call ${sym.RT_DRAWMODEL}`].join(';');       // (consecutive equal values would share one LD HL: the emitter drops the repeat)
+      check_('DRAWMODEL m AT x, y, z YAW a PITCH p SCALE 4: x, y, z, yaw, pitch into RA_W0..RA_W4, HL = the model, A = log2 SCALE, CALL RT_DRAWMODEL', a.includes(want), a.slice(a.indexOf('L_P_FRAME'), a.indexOf('L_P_FRAME') + 400));
+      const r2 = build(wprog('    DRAWMODEL rock AT 1, 2, 3\n'));
+      check_('absent YAW / PITCH are stored as 0, SCALE defaults to 1 (A = 0); the second model is L_model_1', norm(r2).includes([setW(0, 1), setW(1, 2), setW(2, 3), setW(3, 0), `ld (${R(4)}),hl`, `ld hl,L_model_1;ld a,0;call ${sym.RT_DRAWMODEL}`].join(';')));
+      for (const [s, k] of [[1, 0], [2, 1], [4, 2], [8, 3]]) check_(`SCALE ${s}: A = ${k}`, norm(build(wprog(`    DRAWMODEL gate AT 1, 2, 3 SCALE ${s}\n`))).includes(`ld hl,L_model_0;ld a,${k};call ${sym.RT_DRAWMODEL}`));
+      const ord = (src) => build(src).gen.code;
+      const sameCode = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      check_('the clauses may come in any order: the same bytes', sameCode(ord(wprog('    DRAWMODEL gate AT 1, 2, 3 YAW 4 PITCH 5 SCALE 2\n')), ord(wprog('    DRAWMODEL gate AT 1, 2, 3 SCALE 2 PITCH 5 YAW 4\n'))) && sameCode(ord(wprog('    DRAWMODEL gate AT 1, 2, 3 PITCH 5 YAW 4\n')), ord(wprog('    DRAWMODEL gate AT 1, 2, 3 YAW 4 PITCH 5\n'))));
+      // evaluation order: x, y, z, yaw, pitch, each stored as soon as it is evaluated
+      const e = norm(build(wprog('    DRAWMODEL gate AT t + 1, t + 2, t + 3 PITCH t + 5 YAW t + 4\n')));
+      const at = [0, 1, 2, 3, 4].map((n) => e.indexOf(`ld (${R(n)}),hl`));
+      check_('non-constant operands: stored in the order x, y, z, yaw, pitch (the pitch clause written first is still stored last)', at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1])) && e.indexOf('ld hl,(', e.indexOf('inc hl')) >= 0, JSON.stringify(at));
+      const ey = norm(build(wprog('    EYE t, 0, t + 1, 3\n')));
+      check_('EYE x, y, z, a: four words in order into RA_W0..RA_W3, then CALL RT_EYE', ey.includes(`ld (${R(0)}),hl;ld hl,0;ld (${R(1)}),hl;`) && ey.includes(`${setW(3, 3)};call ${sym.RT_EYE}`), ey.slice(ey.indexOf('L_P_FRAME'), ey.indexOf('L_P_FRAME') + 300));
+      const ln = norm(build(wprog('    LINE 1, 2 TO 3, 4\n')));
+      check_('LINE x0, y0 TO x1, y1: four words in order into RA_W0..RA_W3, then CALL RT_LINE', ln.includes([setW(0, 1), setW(1, 2), setW(2, 3), setW(3, 4), `call ${sym.RT_LINE}`].join(';')));
+      const nested = norm(build(wprog('    LINE t, COSA(t) TO FXMUL(t, SINA(t)), 4\n')));
+      check_('a COSA / SINA / FXMUL inside an argument does not disturb the words already stored (they use no RA_W word)', nested.includes(`call ${sym.RT_COSA}`) && nested.includes(`call ${sym.RT_SINA}`) && nested.includes(`call ${sym.RT_FXMUL}`) && nested.includes(`ld (${R(3)}),hl;call ${sym.RT_LINE}`));
+      // reachability: the statements reach their procs' calls, and a PROC call inside an operand's DEF FN is generated
+      const f = build(wprog('    EYE FN k(t), 0, 0, 0\n', { head: 'GAME "w"\nWIRE3D ROWS 2 TO 21\nDIM t\nDEF FN k(a) = a * 2\n' }));
+      check_('a DEF FN used only inside an EYE operand is reachable and generated', f.errors.length === 0 && Object.keys(f.map.fns).length === 1, texts(f));
+      const lc = build(wprog('    EYE 1, 2, 3, 4\n', { head: 'GAME "w"\nWIRE3D ROWS 2 TO 21\nDIM t\n' }));
+      check_('EYE and LINE need no MODEL (a WIRE3D game with no MODEL compiles)', lc.errors.length === 0 && Object.keys(lc.gen.wire).includes('models') && lc.gen.wire.models.length === 0, texts(lc));
+      // locals: an implicit FOR variable used in an operand is a local of the PROC
+      const fl = build(wprog('    FOR i = 0 TO 3\n      LINE i, i TO 9, 9\n      DRAWMODEL gate AT i, i, i YAW i PITCH i\n      EYE i, i, i, i\n    NEXT i\n'));
+      check_('an implicit FOR variable used in EYE / LINE / DRAWMODEL operands gets its slot', fl.errors.length === 0 && !!fl.dck, texts(fl));
+    }
+
+    console.log('  -- COSA / SINA / FXMUL on v2');
+    {
+      const c = (call) => `GAME "c"\nDIM a, t\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    a = ${call}\n  ENDP\nENDSCENE\n`;
+      const a = norm(build(c('COSA(t)'), { assets: {} })), b = norm(build(c('SINA(t + 1)'), { assets: {} })), d = norm(build(c('FXMUL(t, 7)'), { assets: {} }));
+      check_('COSA(t) on a v2 game with no WIRE3D compiles to ld hl,(t); call RT_COSA', build(c('COSA(t)'), { assets: {} }).errors.length === 0 && a.includes(`call ${sym.RT_COSA};`), texts(build(c('COSA(t)'), { assets: {} })));
+      check_('SINA(t + 1) calls RT_SINA, FXMUL(t, 7) calls RT_FXMUL with HL = t, DE = 7 (v4\'s register contract)', b.includes(`call ${sym.RT_SINA};`) && d.includes(`ld de,7;`) && d.includes(`call ${sym.RT_FXMUL};`), d);
+      const noSym = JSON.parse(JSON.stringify(rt)); delete noSym.symbols.RT_COSA;
+      check_('a runtime without RT_COSA says so (no "needs the v4 runtime")', texts(build(c('COSA(t)'), { runtime: noSym, assets: {} })).includes('COSA(...) needs RT_COSA, which this runtime does not provide'), texts(build(c('COSA(t)'), { runtime: noSym, assets: {} })));
+    }
+
+    console.log('  -- NOVIEW scenes: the switch calls');
+    {
+      const sc = (name, mode, body) => `SCENE ${name}${mode}\n  PROC INIT()\n    t = 0\n  ENDP\n  PROC FRAME()\n${body}  ENDP\nENDSCENE\n`;
+      const head = 'GAME "w"\nFRAMERATE 20\nWIRE3D ROWS 2 TO 21\nMODEL gate = "gate"\nDIM t\n';
+      const slice = (a, from, to) => { const i = a.indexOf(from), j = a.indexOf(to, i + 1); return a.slice(i, j < 0 ? a.length : j); };
+      const MODE = `call ${MOCK_WIREMODE}`;
+      // the first scene shows the play area: the boot makes no call; every ENTER sequence has one per scene
+      const p1 = head + sc('play', '', '    DRAWMODEL gate AT 0, 0, 100\n    IF t > 9 THEN\n      ENTER title\n    ENDIF\n') + sc('title', ' NOVIEW', '    DRAWMODEL gate AT 0, 0, 100\n    ENTER play\n');
+      const r1 = build(p1, { runtime: mock });
+      check_('first scene with the play area, one NOVIEW scene: compiles on the mock runtime', r1.errors.length === 0 && !!r1.dck, texts(r1));
+      const a1 = norm(r1);
+      const boot = slice(a1, 'L_entry_init:', 'L_frame_entry:');
+      check_('boot: no RT_WIREMODE call (the header turns the play area on)', !boot.includes(MODE), boot);
+      const go0 = slice(a1, 'L_scn_go_0:', 'L_scn_go_1:'), go1 = slice(a1, 'L_scn_go_1:', 'L_scn_reset:');
+      check_('ENTER sequence of the play scene: ld a,1; call RT_WIREMODE, then its INIT', new RegExp(`ld a,1;${MODE};j[pr] L_P_`).test(go0), go0);
+      check_('ENTER sequence of the NOVIEW scene: ld a,0; call RT_WIREMODE, then its INIT', new RegExp(`ld a,0;${MODE};j[pr] L_P_`).test(go1), go1);
+      check_('exactly two RT_WIREMODE calls in the whole program', a1.split(MODE).length - 1 === 2);
+      const reset = slice(a1, 'L_scn_reset:', 'L_P_');
+      check_('the machine reset of ENTER ends with the eye back to 0, 0, 0, 0 (four zero words into RA_W0..RA_W3, CALL RT_EYE)', reset.includes(`${setW(0, 0)};ld (${R(1)}),hl;ld (${R(2)}),hl;ld (${R(3)}),hl;call ${sym.RT_EYE};ret`), reset);
+      check_('DRAWMODEL in a NOVIEW scene is still emitted (the runtime ignores it while the play area is off)', a1.split(`call ${sym.RT_DRAWMODEL}`).length - 1 === 2);
+      // the first scene is NOVIEW: the boot call with A = 0
+      const p2 = head + sc('title', ' NOVIEW', '    ENTER play\n') + sc('play', '', '    DRAWMODEL gate AT 0, 0, 100\n    ENTER title\n');
+      const r2 = build(p2, { runtime: mock }), a2 = norm(r2);
+      const boot2 = slice(a2, 'L_entry_init:', 'L_frame_entry:');
+      check_('first scene NOVIEW: the boot sets the mode first: ld a,0; call RT_WIREMODE before its INIT', r2.errors.length === 0 && boot2.includes(`ld a,0;${MODE};`), texts(r2) || boot2);
+      check_('... and the ENTER sequences have one call each: three in all', a2.split(MODE).length - 1 === 3);
+      // no NOVIEW scene: no call at all, even on a runtime that has RT_WIREMODE; the eye reset stays for ENTER
+      const p3 = head + sc('a', '', '    ENTER b\n') + sc('b', '', '    DRAWMODEL gate AT 0, 0, 100\n    ENTER a\n');
+      const r3 = build(p3, { runtime: mock }), a3 = norm(r3);
+      check_('no NOVIEW scene: no RT_WIREMODE call, with scenes or without', r3.errors.length === 0 && !a3.includes(MODE) && !norm(build(wprog('    DRAWMODEL gate AT 0, 0, 100\n'), { runtime: mock })).includes(MODE));
+      check_('... but ENTER still resets the eye', a3.includes(`call ${sym.RT_EYE};ret`));
+      check_('a program without ENTER or scenes has no eye reset code at all (the boot starts the eye at 0)', !norm(build(wprog('    DRAWMODEL gate AT 0, 0, 100\n'), { runtime: mock })).includes(`call ${sym.RT_EYE};`));
+      // the real runtime of this tree has no RT_WIREMODE yet: a NOVIEW scene fails cleanly, naming it
+      const rr = build(p1);
+      check_('a NOVIEW scene on a runtime without RT_WIREMODE: a clean error naming RT_WIREMODE, at the SCENE line', rr.dck === null && (sym.RT_WIREMODE !== undefined || rr.errors.some((x) => x.message.includes('needs RT_WIREMODE, which this runtime does not provide') && x.line === 1 + p1.slice(0, p1.indexOf('SCENE title')).split('\n').length - 1)), texts(rr));
+    }
+
+    console.log('  -- asset errors, missing runtime parts');
+    {
+      const src = wprog('    DRAWMODEL gate AT 1, 2, 3\n');
+      const at = (needle) => src.slice(0, src.indexOf(needle)).split('\n').length;
+      const none = build(src, { assets: {} });
+      check_('a MODEL whose asset is not in the project: an error at the MODEL line', none.dck === null && none.errors.some((e) => e.message === 'model asset "gate" is not in the project' && e.line === at('MODEL gate')) && none.errors.some((e) => e.message === 'model asset "rock" is not in the project' && e.line === at('MODEL rock')), texts(none));
+      check_('... and no cascade at the DRAWMODEL', none.errors.length === 2, texts(none));
+      const bad = (model) => build(src, { assets: { models: { gate: model, rock: MODELS.rock } } });
+      for (const [what, model, msg] of [
+        ['a coordinate beyond 64', { points: [[65, 0, 0]], edges: [[0, 0]] }, 'a point is three integers -64..64'],
+        ['no points', { points: [], edges: [[0, 1]] }, 'a model has 1..128 points'],
+        ['no edges', { points: [[0, 0, 0]], edges: [] }, 'a model has 1..255 edges'],
+        ['129 points', { points: Array.from({ length: 129 }, () => [0, 0, 0]), edges: [[0, 1]] }, 'a model has 1..128 points'],
+        ['256 edges', { points: [[0, 0, 0], [1, 1, 1]], edges: Array.from({ length: 256 }, () => [0, 1]) }, 'a model has 1..255 edges'],
+        ['an edge to a point that does not exist', { points: [[0, 0, 0]], edges: [[0, 3]] }, 'an edge joins two different points of the model'],
+        ['an edge from a point to itself', { points: [[0, 0, 0], [1, 1, 1]], edges: [[1, 1]] }, 'an edge joins two different points of the model'],
+        ['a fractional coordinate', { points: [[0.5, 0, 0]], edges: [[0, 0]] }, 'a point is three integers -64..64'],
+      ]) {
+        const r = bad(model);
+        check_(`${what}: an error "model "gate": ${msg}" at the MODEL line`, r.dck === null && r.errors.some((e) => e.message === `model "gate": ${msg}` && e.line === at('MODEL gate')), texts(r));
+      }
+      const ok = bad({ points: Array.from({ length: 128 }, (_, i) => [i % 64, -(i % 64), 64]), edges: Array.from({ length: 255 }, (_, i) => [i % 128, (i + 1) % 128]) });
+      check_('128 points and 255 edges at the limits compile', ok.errors.length === 0 && ok.gen.wire.models[0].bytes === 2 + 128 * 3 + 255 * 2, texts(ok));
+      const lower = build(src, { assets: { models: { GATE: MODELS.gate, Rock: MODELS.rock } } });
+      check_('the model asset is found ignoring case (as every asset)', lower.errors.length === 0, texts(lower));
+      for (const name of ['RT_EYE', 'RT_DRAWMODEL', 'RT_LINE']) {
+        const no = JSON.parse(JSON.stringify(rt)); delete no.symbols[name];
+        const stmt = { RT_EYE: 'EYE 1, 2, 3, 4', RT_DRAWMODEL: 'DRAWMODEL gate AT 1, 2, 3', RT_LINE: 'LINE 1, 2 TO 3, 4' }[name];
+        const r = build(wprog(`    ${stmt}\n`), { runtime: no });
+        check_(`a runtime without ${name}: a clean error "needs ${name}, which this runtime does not provide"`, r.dck === null && r.errors.some((e) => e.message.includes(`needs ${name}, which this runtime does not provide`)), texts(r));
+      }
+      const nra = JSON.parse(JSON.stringify(rt)); delete nra.constants.RA_W4;
+      check_('a runtime without the argument words RA_W0..RA_W4: a clean error', texts(build(wprog('    LINE 1, 2 TO 3, 4\n'), { runtime: nra })).includes('needs the runtime argument words RA_W0..RA_W4'));
+      check_('no "internal" error anywhere above', !texts(none).includes('internal'));
+    }
+
+    console.log('  -- the linker: at most 45 sprite phases in a WIRE3D game');
+    {
+      const sp = (ph) => ({ w: 8, h: 8, phases: ph, frames: [{ rows: Array.from({ length: 8 }, () => ({ bits: 'FF', mask: 'FF' })) }] });
+      const mk = (phases) => {
+        const sprites = {}; phases.forEach((ph, i) => { sprites[`s${i}`] = sp(ph); });
+        const decl = phases.map((_, i) => `SPRITE q${i} = "s${i}"\n`).join('');
+        return { sprites, src: (wire) => `GAME "w"\n${wire ? 'WIRE3D ROWS 2 TO 21\nMODEL gate = "gate"\n' : ''}${decl}DIM t\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n${phases.map((_, i) => `    SHOW q${i} AT t, ${8 * i}\n`).join('')}${wire ? '    DRAWMODEL gate AT 0, 0, 100\n' : ''}  ENDP\nENDSCENE\n` };
+      };
+      const a45 = mk([8, 8, 8, 8, 8, 4, 1]), a46 = mk([8, 8, 8, 8, 8, 4, 2]), a64 = mk([8, 8, 8, 8, 8, 8, 8, 8]);
+      const b = (g, wire) => build(g.src(wire), { assets: { sprites: g.sprites, models: MODELS } });
+      const r45 = b(a45, true), r46 = b(a46, true);
+      check_('45 phases in all (5 x 8 + 4 + 1): links', r45.errors.length === 0 && !!r45.dck, texts(r45));
+      check_('46 phases in all: the exact error "sprite art too large for a WIRE3D game: 46 phases, at most 45; use fewer phases"', r46.dck === null && r46.errors.length === 1 && r46.errors[0].message === 'sprite art too large for a WIRE3D game: 46 phases, at most 45; use fewer phases', texts(r46));
+      const r64 = b(a64, true);
+      check_('eight assets of 8 phases (64): refused with the count', r64.errors.some((e) => e.message === 'sprite art too large for a WIRE3D game: 64 phases, at most 45; use fewer phases'), texts(r64));
+      const c46 = b(a46, false), c64 = b(a64, false);
+      check_('the same sprites in a game without WIRE3D: no such limit (46 and 64 phases link)', c46.errors.length === 0 && !!c46.dck && c64.errors.length === 0 && !!c64.dck, texts(c46) + texts(c64));
+      check_('two instances of one asset count its phases once (a pool of 8 of a 8-phase asset: 8 phases)', (() => { const r = build(`GAME "w"\nWIRE3D ROWS 2 TO 21\nMODEL gate = "gate"\nSPRITE q(8) = "a"\nDIM t\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    SHOW q(0) AT 1, 2\n    DRAWMODEL gate AT 0, 0, 100\n  ENDP\nENDSCENE\n`, { assets: { sprites: { a: sp(8) }, models: MODELS } }); return r.errors.length === 0; })());
+    }
   }
+}
+
+// =================================================================================================================
+// 6. Byte identity: a program without WIRE3D / COSA / SINA / FXMUL compiles to the bytes of the compiler before slice W3b
+// =================================================================================================================
+console.log('\n6. byte identity with the compiler before the code generator (contract section 5)');
+{
+  const ref = process.env.ARCADE_M17_OLD ?? '82b1cab';
+  let tmp = null, oldCompile = null;
+  try {
+    tmp = mkdtempSync(join(tmpdir(), 'm17old-'));
+    execFileSync('sh', ['-c', `git -C "${process.env.ARCADE_M17_GIT ?? ROOT}" archive ${ref} src | tar -x -C "${tmp}"`], { stdio: 'ignore' });
+    ({ compile: oldCompile } = await import(pathToFileURL(join(tmp, 'src/lang/arcade/arcade-compile.js')).href));
+  } catch (e) { oldCompile = null; console.log(`  (the compiler of ${ref} could not be extracted: ${e.message.split('\n')[0]})`); }
+  if (!oldCompile) skip_('byte identity', `git archive ${ref} failed`);
+  else {
+    const RT = {};
+    for (const v of [2, 3, 4]) {
+      const q = join(ROOT, `arcade/build/v${v}/runtime.json`);
+      if (existsSync(q)) { const j = JSON.parse(readFileSync(q, 'utf8')); RT[v] = { runtime: j, image: new Uint8Array(readFileSync(join(dirname(q), j.image ?? 'runtime.bin'))) }; }
+    }
+    let n = 0, bad = '', built = 0;
+    const same = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+    for (const dir of ['arcade/examples', 'arcade/tests/fixtures']) for (const f of readdirSync(join(ROOT, dir))) {
+      if (!f.endsWith('.arc')) continue;
+      const base = f.replace(/\.arc$/, '');
+      const ap = [`${base}.assets.json`, `${base.replace(/-.*$/, '')}.assets.json`].map((a) => join(ROOT, dir, a)).find((q) => existsSync(q)) ?? join(ROOT, 'arcade/examples', `${base.replace(/-.*$/, '')}.assets.json`);
+      const assets = existsSync(ap) ? JSON.parse(readFileSync(ap, 'utf8')) : {}, text = readFileSync(join(ROOT, dir, f), 'utf8');
+      for (const v of [2, 3, 4]) {
+        if (!RT[v]) continue;
+        if ((v === 2 || v === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(text)) continue;      // COSA / SINA / FXMUL changed on v2 (allowed) and v3 (new message) on purpose
+        for (const variant of [{}, { bankAll: true }]) {
+          const a = oldCompile(text, { ...RT[v], assets, ...variant }), b = compile(text, { ...RT[v], assets, ...variant });
+          n++;
+          if (a.errors.length || b.errors.length) { if (JSON.stringify(a.errors) !== JSON.stringify(b.errors)) bad += `${dir}/${f} v${v}: errors differ; `; continue; }
+          built++;
+          if (!same(a.dck, b.dck) || !same(a.memory, b.memory) || JSON.stringify(a.warnings) !== JSON.stringify(b.warnings)) bad += `${dir}/${f} v${v}${variant.bankAll ? ' bankAll' : ''}: bytes differ; `;
+        }
+      }
+    }
+    check_(`${n} compilations of every example and fixture on v2 / v3 / v4 (${built} built a cartridge): DCK, memory image and warnings identical to the compiler of ${ref}`, bad === '' && built >= 15, bad || `${built} builds`);
+  }
+  if (tmp) rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log(`\n${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ''}`);

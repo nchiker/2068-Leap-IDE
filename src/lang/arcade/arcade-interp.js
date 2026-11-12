@@ -126,6 +126,18 @@
  *   kept world / camera / pose / walls exactly as in any scene. The mode is set by every scene entry after the machine reset (so after the sprites are hidden) and before INIT, and for the first scene at
  *   the start. A program with at least one clause gets `show` ('window' | 'view' | 'screen') in every record: what the scene shows; programs without the clause have no such key.
  *
+ * ── Wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md sections 2.2 to 2.6; arcade-wire.js is the bit-exact drawing) ──────────────────────────────────────────────────────────────
+ *   A game with WIRE3D keeps the play area's pixels as ONE bitmap (`bits`, the 6,144 bytes of a display file in the ZX layout; only the play rows, character rows r0..r1, are ever written), the eye {x, y, z, a} (0, 0, 0, 0 at the
+ *   start and after every ENTER; EYE stores x, y, z as signed 16 bits and the heading AND 255) and `on` (the play area is shown: every scene but a NOVIEW one; set after the reset of every scene entry, the first one at the start).
+ *   - Every tick starts, while `on`, by clearing the play rows of `bits` (the runtime clears the hidden file there); DRAWMODEL and LINE then draw at once (OR) as arcade-wire.js does, clipped to the play area, and do nothing while
+ *     not `on`. x, y, z, YAW, PITCH of a DRAWMODEL are evaluated in that order whatever the order of its clauses (an absent clause is 0); the model's asset is `assets.models.<asset>` (checked by modelError); SCALE is a constant.
+ *   - Switching on (a scene entry into a scene that is not NOVIEW, when it was off) empties `bits` and says nothing was cleared in that tick (`fresh` false); switching off empties it. A scene entry into a scene that is on while it is
+ *     on changes nothing (the runtime does not clear then either).
+ *   - The record has `wire` {on, fresh, eye: {x, y, z, a}, r0, r1, attr (bright << 6 | paper << 3 | ink of the declaration), bits (a copy)}: `bits` holds the lines drawn since the tick's clear (or since the switch on); `fresh` is false in
+ *     the tick that switched the play area on (the clear did not run in it: what else the play rows of the file hold is the previous scene's cells) and in `init` (INIT runs before any clear). What the machine SHOWS of the
+ *     play rows while `on` is `bits` with the attribute `attr`; the cell map (`cells`, `attrs`, which PRINT, TILE, FILL, LOADMAP keep updating as ever) is not shown there, and is shown again, all of it, when the play area is off
+ *     (arcade-display.js `wireLayer` is that rule; sprites are drawn over it by the caller). A game with a NOVIEW scene has `show: 'wire'` (the play area is shown) or 'screen' in every record.
+ *
  * ── Language batch 4: scenes (docs/ARCADE_LANGUAGE_BATCH4.md) ──────────────────────────────────────────────────────────────────────────────
  *   Any number of SCENEs. The first starts the game: its variables are 0 and its array initialisers applied (the game-level ones too); the other
  *   scenes' variables are 0 until entered. `ENTER name` abandons the running PROCs at once (an exception caught where INIT / FRAME was called) and
@@ -173,6 +185,7 @@
 import { assetTables, lookupAsset, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, compiledFrameCount, BLANK_CELL, TILE_CELL } from './arcade-assets.js';
 import { createSoundChip } from './arcade-sound.js';
 import { convertViewMap, cosa as viewCosa, sina as viewSina, fxmul as viewFxmul, wallAt, setWallAt, clampPose, billboardRadius } from './arcade-view.js';
+import { areaOf as wireAreaOf, clearArea as wireClear, drawModel as wireDrawModel, drawLine as wireDrawLine, EYE0 as WIRE_EYE0, modelError as wireModelError } from './arcade-wire.js';
 import { convertWorldMap, scanSpriteUse, ratioCode, camMax as camMaxOf, buildTileFlags, worldTile as winWorldTile, tileFlags as winTileFlags, tileHit as winTileHit } from './arcade-window.js';
 
 export const wrap16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -308,6 +321,8 @@ export function interpret(ast, opts = {}) {
       if ((winMapKey !== null || viewMapKey !== null) && worldNameKeys.has(up(a.name)) && !worldDecls.has(up(a.name))) { worldDecls.set(up(a.name), a); continue; }     // a WORLD's map
       if (mapDecls.length >= 64) throw new Unsupported('more than 64 MAPs', a);
       mapDecls.push(a);
+    } else if (a.kind === 'MODEL') {
+      // wireframe 3D: checked and kept below, once the constants can be evaluated (the WIRE3D block)
     } else throw new Unsupported(`${a.kind} declaration`, a);
   }
   const nSprSlots = V2 ? (opts.maxInstances ?? MAX_INSTANCES) : MAX_SPRITES;      // opts.maxInstances: tests with a mock runtime that has more than 16
@@ -369,6 +384,7 @@ export function interpret(ast, opts = {}) {
   // language batch 2: the window's world (filled in once the CONSTs are known, below)
   let win = null;
   let view = null;                          // language batch 3: {mapW, mapH, ram: Uint8Array(1024), pose: {x, y, a}}
+  let wire = null;                          // wireframe 3D: {area, r0, r1, attr, on, fresh, eye, bm: Uint8Array(6144), models: Map KEY -> {points, edges}}
   const sfx = { active: false, index: -1, played: 0 };
   // MUSIC: the chip of a game with songs and the refresh it has been run to (null with a clock until the first call or sample)
   const chip = songMode ? createSoundChip(sfxImages, songParts) : null;
@@ -427,9 +443,10 @@ export function interpret(ast, opts = {}) {
     const arrays = {};
     for (const r of nameRecs) if (r.kind === 'a') arrays[r.key] = cellOf(r).arr.slice();
     return {
-      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : 'screen' } : {}), vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
+      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : wire ? 'wire' : 'screen' } : {}), vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
+      ...(wire ? { wire: { on: wire.on, fresh: wire.fresh, eye: { ...wire.eye }, r0: wire.r0, r1: wire.r1, attr: wire.attr, bits: wire.bm.slice() } } : {}),
       cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
       sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
       ...(chip ? { music: { active: chip.song() >= 0, index: lastSong }, ay: { flags: chip.flags(), regs: chip.regs() } } : {}),
@@ -556,6 +573,32 @@ export function interpret(ast, opts = {}) {
       view = { mapW: m.w, mapH: m.h, ram: m.ram.slice(), pose: { x: 0, y: 0, a: 0 } };
     }
   }
+
+  // wireframe 3D: the play area and the models
+  {
+    const wd = (ast.wires ?? [])[0];
+    if (wd) {
+      if ((opts.version ?? 2) !== 2) throw new Unsupported('WIRE3D outside the v2 runtime', wd);
+      const r0 = evConst(wd.r0), r1 = evConst(wd.r1);
+      const ink = wd.ink ? evConst(wd.ink) : 7, paper = wd.paper ? evConst(wd.paper) : 0, bright = wd.bright ? evConst(wd.bright) : 1;
+      const models = new Map();
+      for (const a of ast.assets ?? []) {
+        if (a.kind !== 'MODEL') continue;
+        const as = lookupAsset(tabs.models, a.asset, a.name);
+        if (!as) throw new Unsupported(`a MODEL whose asset "${a.asset}" is not in the project`, a);
+        const why = wireModelError(as);
+        if (why) throw new Unsupported(`a MODEL with a bad asset "${a.asset}": ${why}`, a);
+        models.set(up(a.name), as);
+      }
+      wire = { area: wireAreaOf(r0, r1), r0, r1, attr: (bright << 6) | (paper << 3) | ink, on: !sceneList[0]?.mode, fresh: false, eye: { ...WIRE_EYE0 }, bm: new Uint8Array(6144), models };
+    }
+  }
+  /** The play area's mode (A = 1 on, 0 off) as RT_WIREMODE sets it: switching on from off empties the bitmap and nothing has been cleared in this tick; switching off empties it. */
+  const wireMode = (on) => {
+    if (!wire) return;
+    if (!on || !wire.on) { wire.bm.fill(0); if (on) wire.fresh = false; }
+    wire.on = on;
+  };
 
   /** The absolute instance a SHOW / HIDE / HIT operand names (index evaluated now), or -1 when its index is outside the pool. */
   function instOf(node, sc) {
@@ -861,6 +904,26 @@ export function interpret(ast, opts = {}) {
         view.pose = clampPose(view.mapW, view.mapH, x, y, a);
         return null;
       }
+      case 'Eye': {
+        if (!wire) throw new Unsupported('EYE without a WIRE3D', s);
+        const x = ev(s.x, sc), y = ev(s.y, sc), z = ev(s.z, sc), a = ev(s.a, sc);
+        wire.eye = { x, y, z, a: a & 255 };
+        return null;
+      }
+      case 'DrawModel': {
+        if (!wire) throw new Unsupported('DRAWMODEL without a WIRE3D', s);
+        const x = ev(s.x, sc), y = ev(s.y, sc), z = ev(s.z, sc), yaw = s.yaw ? ev(s.yaw, sc) : 0, pitch = s.pitch ? ev(s.pitch, sc) : 0, scale = s.scale ? ev(s.scale, sc) : 1;
+        const model = wire.models.get(up(s.model.name));
+        if (!model) throw new Unsupported(`DRAWMODEL of ${s.model.name}, which is not a MODEL`, s);
+        if (wire.on) wireDrawModel(wire.bm, model, { x, y, z, yaw, pitch, scale }, wire.eye, wire.area);
+        return null;
+      }
+      case 'Line': {
+        if (!wire) throw new Unsupported('LINE without a WIRE3D', s);
+        const x0 = ev(s.x0, sc), y0 = ev(s.y0, sc), x1 = ev(s.x1, sc), y1 = ev(s.y1, sc);
+        if (wire.on) wireDrawLine(wire.bm, x0, y0, x1, y1, wire.area);
+        return null;
+      }
       case 'SetWall': {
         if (!view) throw new Unsupported('SETWALL without a VIEW3D', s);
         const x = ev(s.x, sc), y = ev(s.y, sc), t = ev(s.value, sc);
@@ -1018,6 +1081,7 @@ export function interpret(ast, opts = {}) {
     border = border0;
     cells.fill(BLANK_CELL); attrs.fill(((textAttr >> 3) & 7) << 3); curRow = 0; curCol = 0;   // CLS
     if (maps.length) loadMap(maps[0], 0, 0);
+    if (wire) wire.eye = { ...WIRE_EYE0 };                                                    // wireframe 3D: the viewer back to 0, 0, 0, 0
   };
   /** The scene becomes the current one with a fresh scope: its variables 0, its initialisers applied. */
   const enterScene = (k) => {
@@ -1025,6 +1089,7 @@ export function interpret(ast, opts = {}) {
     info.scope = new Scope(globalScope);
     collect(info.scope, info.node, info.fns, info.procs, 'scene', k);
     screenOnly = !!info.node.mode;                                                            // batch 7: the target's display mode (after the reset, before its INIT)
+    if (hasModes) wireMode(!screenOnly);                                                      // wireframe 3D: RT_WIREMODE (only a program with a NOVIEW scene calls it)
     curScene = k; sceneScope = info.scope; sceneFns = info.fns; sceneProcs = info.procs;
   };
   let pending = null;
@@ -1051,6 +1116,7 @@ export function interpret(ast, opts = {}) {
     events = [];
     playN = 0; musicN = 0; rndN = 0;
     if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
+    if (wire) { wire.fresh = false; if (wire.on) { wireClear(wire.bm, wire.area); wire.fresh = true; } }     // wireframe 3D: the play area of the hidden file is cleared as the tick starts
     countTimers(); takeEdges(t);              // batch 5: the timers count down, then the key and stick edges are taken (the tick prologue of the compiled game)
     execute('FRAME'); settle();
     ticks.push(snapshot(events));

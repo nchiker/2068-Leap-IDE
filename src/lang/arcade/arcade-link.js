@@ -33,6 +33,9 @@
  * min(nframes, instances) frame slots per asset, first fit over POOL_A / B / C of runtime.json) does not fit: exactly when the runtime would stop at boot with
  * the magenta border. The code generator warns for each asset whose frames do not all stay cached.
  *
+ * Wireframe 3D (gen.wire set; docs/ARCADE_WIREFRAME_CONTRACT.md 3.3): the header is 20 bytes (frame_div | DIV_EXT | DIV_WIRE, map_table at +16, wire_desc at +18); wire_desc (4 bytes) and every model's image
+ * are inside the code area (gen.wire.descAt, gen.wire.models[].at). The linker refuses a game whose sprite assets have more than 45 phases in all.
+ *
  * Language batch 3 (gen.view set; docs/ARCADE_RAYCASTER_CONTRACT.md section 2): the header is 20 bytes (frame_div | DIV_EXT | DIV_VIEW, map_table at +16, view_desc at +18) and the image gets,
  * after the sprite data, map_src (the w x h map, row stride w, byte-RLE encoded as world_src), the 16 wall pattern bytes when the program has a PATTERNS clause, and view_desc (10 bytes).
  * There are no scroll tables and no phase pool in ray mode; the ray tables are the runtime's own memory.
@@ -49,6 +52,8 @@ import { buildViewDesc, VIEW_DESC_BYTES, VIEW_RAM_BYTES } from './arcade-view.js
 import { layoutOf, shippedChunks, BANK_BASE, BANK_BYTES, GAME_AREA_BYTES, CHUNK } from './arcade-bank.js';
 
 export { CHUNK };
+/** A WIRE3D game's sprite assets may have this many phases in all (contract 3.2): above it the phase slots would reach the runtime's wireframe RAM. */
+export const WIRE_MAX_PHASES = 45;
 /** The chunks every build ships; a build with banked assets also ships chunk 2 (and 3 past 8,192 banked bytes): see shippedChunks() in arcade-bank.js and `link().shipped`. */
 export const SHIPPED_CHUNKS = [0, 1, 4, 5];
 
@@ -109,6 +114,12 @@ export function link(gen, runtime, image) {
   }
   const addrOf = new Map(banked.map((b) => [b.key, b.at]));      // where each world / plan is: the window, or (below) the mapped part
   const warnings = [];
+  // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md 3.2): the runtime keeps the projected points in W_REC $F500-$F9FF and its variables in $FA00-$FA7F, which is the top of the phase pool POOL_B; the boot hands out the
+  // phase slots in order (slot n = the n-th phase of all the assets), and slot 44 ends at $F4DF, so a game with at most WIRE_MAX_PHASES phases in all never writes there
+  if (gen.wire) {
+    const phases = gen.sprites.reduce((a, sp) => a + (sp.phases ?? 8), 0);
+    if (phases > WIRE_MAX_PHASES) return fail(`sprite art too large for a WIRE3D game: ${phases} phases, at most ${WIRE_MAX_PHASES}; use fewer phases`);
+  }
   if (gen.phase && !gen.phase.ok) {
     return fail(`${gen.phase.miss} bytes of sprite art do not fit in the phase pool (${runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0)} bytes): the runtime would stop at boot with a magenta border; use fewer phases, fewer instances or smaller sprites (the frame tables and one frame slot per instance must fit)`);
   }
@@ -128,6 +139,7 @@ export function link(gen, runtime, image) {
   }
   if (headerLen >= 16) w16(GAME_BASE + 14, gen.v2?.instTable ?? 0);      // v2: inst_table -> DB ninst, ninst x DB asset
   if (headerLen >= 18) w16(GAME_BASE + (gen.mapTableAt ? gen.mapTableAt - GAME_BASE : 16), gen.v2?.mapTable ?? 0);   // batch 1: map_table -> DB count, count x DW map (DB w, DB h, cells)
+  if (gen.wire) w16(GAME_BASE + 18, gen.wire.descAt);                          // wireframe 3D: wire_desc -> DB r0, DB r1, DB attr, DB 0 (inside the code area, with the models' images)
   let dataAt = codeEnd;
   gen.sprites.forEach((s, i) => {
     const d = GAME_BASE + headerLen + (gen.descLen ?? 6) * i;

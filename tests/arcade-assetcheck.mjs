@@ -525,10 +525,11 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'v3/runtime.json')
     && /edge 1 joins a point to itself/.test(shapeMsgs({ points: sq.points, edges: [[0, 1], [2, 2]] }))
     && /edge 0 names a point that does not exist \(the points are 0\.\.3\)/.test(shapeMsgs({ points: sq.points, edges: [[0, 4]] }))
     && eq(cm({ points: sq.points, edges: [[0, 1], [3, 3], [9, 0]] }).filter((f) => f.id === 'model-shape').map((f) => f.positions), [[1], [2]]));
-  check('models: a malformed point / edge or a missing array is asset-malformed; a point on no edge is a warning; every finding is shown (compilerAlso false)',
+  check('models: a malformed point / edge or a missing array is asset-malformed; a point on no edge is a warning; an error is one the compiler also reports (compilerAlso true: the Studio does not show it twice), a warning is the Studio\'s alone (false)',
     has(cm({ edges: [] }), 'asset-malformed', 'm') && has(cm({ points: [[0, 0]], edges: [] }), 'asset-malformed') && has(cm({ points: sq.points, edges: [[0, 'x']] }), 'asset-malformed')
     && cm({ points: [...sq.points, [5, 5, 5]], edges: sq.edges }).some((f) => f.id === 'model-unused-point' && f.severity === 'warning' && eq(f.points, [4]))
-    && cm({ points: [[0, 0, 0], [100, 0, 0]], edges: [[0, 0]] }).every((f) => f.compilerAlso === false && f.kind === 'models' && f.asset === 'm'));
+    && cm({ points: [[0, 0, 0], [100, 0, 0]], edges: [[0, 0]] }).every((f) => f.compilerAlso === (f.severity === 'error') && f.kind === 'models' && f.asset === 'm')
+    && cm({ points: [...sq.points, [5, 5, 5]], edges: sq.edges }).every((f) => f.compilerAlso === false));
   check('models: checkAssets never throws on junk', (() => { try { for (const m of [null, 5, 'x', [], { points: null }, { points: [null], edges: [null] }]) checkAssets(mkProject({ models: { m } }), null); return true; } catch { return false; } })());
 }
 

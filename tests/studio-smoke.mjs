@@ -376,11 +376,13 @@ try {
     let best = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && Math.abs(d[i] - w[0]) < 4 && Math.abs(d[i + 1] - w[1]) < 4 && Math.abs(d[i + 2] - w[2]) < 4) best++; return best; })()`);
   check('the preview line colour is the theme variable --blue-fg', col > 5, String(col));
   await b.shot('studio-model');
-  // a bad model is a problem (the compiler does not judge models yet, so the Studio does)
-  await evaluate(`(leapStudio.makeHost('smoke-model').setAsset('models', 'broken', { points: [[0, 0, 0], [99, 0, 0]], edges: [[0, 0], [0, 5]] }), true)`);
-  const modelBad = await waitFor(`(() => { const r = [...document.querySelectorAll('#problems .problem[data-asset="models/broken"]')]; return r.length >= 3 ? r.map((x) => x.textContent) : null; })()`, 8000);
-  check('a bad model (a coordinate of 99, an edge i = j, an edge to a missing point) gives problems that name it',
-    !!modelBad && modelBad.some((t) => /beyond \+-64/.test(t)) && modelBad.some((t) => /joins a point to itself/.test(t)) && modelBad.some((t) => /does not exist/.test(t)) && modelBad.filter((t) => /^error/.test(t)).length === 3 && modelBad.some((t) => /^warning.*on no edge/.test(t)), JSON.stringify(modelBad));
+  // a bad model: the compiler judges a model its game DECLARES (an error at its MODEL line: modelError), so the asset check marks its errors compilerAlso and the problem list does not show them twice (as for a sprite);
+  // this game declares no MODEL, so only the Studio's own finding (a warning: a point on no edge) is listed
+  await evaluate(`(leapStudio.makeHost('smoke-model').setAsset('models', 'broken', { points: [[0, 0, 0], [99, 0, 0], [5, 5, 5]], edges: [[0, 0], [0, 1]] }), true)`);
+  const modelBad = await waitFor(`(() => { const r = [...document.querySelectorAll('#problems .problem[data-asset="models/broken"]')]; return r.length >= 1 ? r.map((x) => x.textContent) : null; })()`, 8000);
+  const modelFindings = await evaluate(`JSON.stringify(leapStudio.makeHost('smoke-model').assetWarnings('models', 'broken').map((w) => [w.severity, w.compilerAlso]))`);
+  check('a bad model (a coordinate of 99, an edge i = j): its errors are the compiler\'s (compilerAlso, not listed twice), the Studio lists only its warning (a point on no edge)',
+    !!modelBad && modelBad.length === 1 && /^warning.*on no edge/.test(modelBad[0]) && JSON.parse(modelFindings).filter(([sev]) => sev === 'error').length === 2 && JSON.parse(modelFindings).every(([sev, c]) => c === (sev === 'error')), JSON.stringify([modelBad, modelFindings]));
   await evaluate(`document.querySelector('#problems .problem[data-asset="models/broken"]').click()`);
   check('clicking the model problem selects the model', await waitFor(`leapStudio.selected?.kind === 'models' && leapStudio.selected?.name === 'broken'`, 5000) !== null);
   await evaluate(`(window.confirm = () => true, document.querySelector('.proj-row[data-asset="models/broken"] .proj-act:last-of-type').click(), true)`);

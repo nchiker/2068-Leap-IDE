@@ -367,7 +367,7 @@ function checkMusic(name, asset, out) {
 export const MODEL_LIMITS = Object.freeze({ points: 128, edges: 255, coord: 64 });
 
 function checkModel(name, asset, out) {
-  const mk = (id, severity, message, extra = {}) => out.push({ id, severity, kind: 'models', asset: name, message, compilerAlso: false, ...extra });   // the compiler does not judge models yet (WIRE3D is W2/W3): the Studio shows every finding
+  const mk = (id, severity, message, extra = {}) => out.push({ id, severity, kind: 'models', asset: name, message, compilerAlso: severity === 'error', ...extra });   // the compiler judges a declared model (modelError, at its MODEL line): its errors are not shown twice; the warning is the Studio's alone
   const pts = isObj(asset) ? asset.points : null, edges = isObj(asset) ? asset.edges : null;
   if (!Array.isArray(pts)) { mk('asset-malformed', 'error', `model "${name}" has no "points" array`); return; }
   if (!Array.isArray(edges)) { mk('asset-malformed', 'error', `model "${name}" has no "edges" array`); return; }
