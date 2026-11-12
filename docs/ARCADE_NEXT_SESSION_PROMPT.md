@@ -6,9 +6,11 @@ Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured tar
 * **C2 DONE** and verified (5b7aa2d): F1, F3, F6, F7, F8, F9; all 7 examples 57,260 -> 47,680 code bytes; every run faster with and without F9
   (perf tool, 0 breaches). Also fixed: 2-D array routines shared between same-named arrays of two scenes (pre-existing bug; m9-differential section 5),
   and m4's real-runtime harness now places a PLAY cut by an interrupt at entry or return refresh. Full run-all after C2 running (14:55).
-* **NEXT: C3 proper.** Rewrite the pinned checks (C1's 45 in 11 compiler suites + m3 "RT_AT B = 1, C = 2" + m4's two T-state figures +
-  `tests/arcade-runner.mjs` "usage.banked: the four worlds", which no longer banks level3: force banking, e.g. assets override, keep its negative control),
-  then `node arcade/tools/regen-baselines.mjs --accept-codegen-change 9b7969c` (its slot-layout check must allow the SELECT slot F3 removed: compare by name).
+* **C3 proper in progress** (15:10). run-all after C2: 65/78, all behaviour suites pass; 13 suites fail on pinned checks only.
+  `CODEGEN_OFF` (b18679a) = every fix off = the old bytes (27/27 builds): identity checks keep their meaning with it.
+  Agent 1 (the tool's author): the accept guard becomes "old and new build each equal the interpreter on their own clock" (Blockfall seeds from
+  the frame counter, so old-vs-new differs legitimately), then runs the real regen of the fixtures. Agent 2: rewrites the pinned checks of m3, m4,
+  m9-m15 compiler suites and arcade-runner's banked check. Uncommitted work checkpointed to `arcade/spike/codegen/wip-c3.patch`.
 * **C3 tool DONE** (d499775): `regen-baselines.mjs --accept-codegen-change 9b7969c` (dry run: 23 / 23 programs identical over 300 ticks; negative control
   refused). Run it for real only after C2 is final and run-all passes except the hash checks; then rewrite the 45+ pinned checks (C3 proper).
 * C1 alone measured faster on every run (contract section 13).
