@@ -63,10 +63,11 @@ for (const [v, rt, fix, fix2] of [[3, RT3, { at: S3.RT_WORLDLOAD + 1, len: 5 }, 
   const moved = Object.entries(dist.symbols).filter(([k, a]) => k !== 'RT_END' && syms[k] !== a).map(([k, a]) => `${k} ${hex(a)} -> ${syms[k] === undefined ? 'gone' : hex(syms[k])}`);
   // v3 since its size pass after batch 7 (2026-11-11): the code of DOCK chunks 0-1 moved on purpose (compiled games take every address from runtime.json), so for v3 the
   // guarantee is the part that a size pass must keep: every published symbol at or above $4000 (the RAM layout, the game header: what games and tests address as data)
-  // keeps its address, and every published RT_* routine still exists.  v4 is as before: nothing moved.
+  // keeps its address, and every published RT_* routine still exists.  v4 the same since billboards B1 (2026-11-11: bb_project grew by 10 bytes, so the RT_* entries
+  // after raybb.asm moved; docs/ARCADE_BILLBOARDS_CONTRACT.md 5a).
   const movedData = Object.entries(dist.symbols).filter(([k, a]) => a >= 0x4000 && syms[k] !== a).map(([k, a]) => `${k} ${hex(a)} -> ${syms[k] === undefined ? 'gone' : hex(syms[k])}`);
   const goneRt = Object.keys(dist.symbols).filter((k) => k.startsWith('RT_') && syms[k] === undefined);
-  if (v === 3) check(`v3 (after the size pass): every symbol of the published runtime at or above $4000 (${Object.values(dist.symbols).filter((a) => a >= 0x4000).length} of ${Object.keys(dist.symbols).length}) keeps its address and every RT_* symbol exists (the code below $4000 moved: RT_END ${hex(dist.symbols.RT_END)} -> ${hex(syms.RT_END)})`,
+  if (v === 3 || v === 4) check(`v${v} (after ${v === 3 ? 'the size pass' : 'billboards B1'}): every symbol of the published runtime at or above $4000 (${Object.values(dist.symbols).filter((a) => a >= 0x4000).length} of ${Object.keys(dist.symbols).length}) keeps its address and every RT_* symbol exists (the code below $4000 moved: RT_END ${hex(dist.symbols.RT_END)} -> ${hex(syms.RT_END)})`,
     movedData.length === 0 && goneRt.length === 0, movedData.concat(goneRt).slice(0, 5).join(', '));
   else check(`v${v}: every symbol of the published runtime (arcade/dist/v${v}, ${Object.keys(dist.symbols).length}) keeps its address (RT_END aside: ${hex(dist.symbols.RT_END)} -> ${hex(syms.RT_END)})`,
     moved.length === 0, moved.slice(0, 5).join(', '));
@@ -78,7 +79,7 @@ for (const [v, rt, fix, fix2] of [[3, RT3, { at: S3.RT_WORLDLOAD + 1, len: 5 }, 
   const newRt = v === 3 ? syms.RT_WINMODE : syms.RT_VIEWMODE;
   const diffs = [];
   for (let a = 0; a < 0x4000; a++) if (rt.img[a] !== distImg[a] && !(a >= fix.at && a < fix.at + fix.len) && !(a >= fix2.at && a < fix2.at + fix2.len) && !(a >= dist.symbols.RT_END && a < syms.RT_END)) diffs.push(hex(a));
-  if (v === 3) console.log('      v3: the byte comparison with the runtime published before batch 7 is retired (size pass 2026-11-11: every routine moved)');
+  if (v === 3 || v === 4) console.log(`      v${v}: the byte comparison with the runtime published before batch 7 is retired (${v === 3 ? 'size pass 2026-11-11: every routine moved' : 'billboards B1 2026-11-11: the routines after raybb.asm moved'})`);
   else check(`v${v}: the runtime's bytes equal the published ones except the ${fix.len} bytes of ${v === 3 ? 'RT_WORLDLOAD' : 'RT_PLANLOAD'}'s test (same size)${v === 4 ? ', ray_tick\'s first CALL (ray_mask_dirty -> vm_pre, same size)' : ''} and the appended module ${hex(newRt)}-${hex(syms.RT_END - 1)} (${syms.RT_END - newRt} bytes)`,
     diffs.length === 0 && newRt === dist.symbols.RT_END, diffs.slice(0, 6).join(' '));
   console.log(`      v${v}: RT_END ${hex(syms.RT_END)}, ${fmt(0x4000 - syms.RT_END)} bytes after it`);

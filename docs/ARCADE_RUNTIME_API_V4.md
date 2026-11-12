@@ -218,3 +218,40 @@ Contract: `docs/ARCADE_BANKING_CONTRACT.md` sections 2 and 3. **The common part*
 **`RT_PLANLOAD`**: HL = the new plan's RLE stream (mapped or banked), B = map_w, C = map_h (each 4..32, **not checked here: the compiler does**); clobbers AF, BC, DE, HL (IX, IY and the alternates kept; `ray_map` does not use IX). Ray mode only (`V_RAY` = 1): otherwise it returns at once. It sets `VD_MAPW`, `VD_MAPH`, `VD_XMAX`, `VD_YMAX`, rebuilds the 32 x 32 array as the boot does (all 1, the plan, every 0 of the outer ring made 1) and clamps the pose (`RV_X`, `RV_Y`) into the new map exactly as `RT_VIEW` does (the angle stays). `RAY_RAM` and the display files are not touched by the call (the next tick draws the new plan).
 **Size**: +88 bytes (`runtime (chunks 0-1)` 14,511 -> 14,599 of 16,384: **1,785 free**, was 1,873): the common part 26, `ray_dims` 23, `ray_map_load` 16, `RT_PLANLOAD` 38, less 15 bytes that `ray_boot` and `ray_map` no longer need (the dimensions are set by `ray_dims`; `ray_map` no longer reads IX).
 Tests: `arcade/tests/m11-runtime-bank.mjs` on v4: the common tests; `ray_boot` with a banked plan = the mapped boot (the array against the JavaScript loader, `VD_*`, `RAY_RAM`, both display files; the window mapped once, only the stream read) and the high-byte check of `map_src`; `RT_PLANLOAD` from the window and mapped for four plans (8 x 12, 32 x 32, 4 x 4, 24 x 20) with two poses each (one clamped) = the boot's array and picture; the stream edges; an interrupt at every instruction boundary (about 19,000); outside ray mode; `arcade/tests/m11-mutations.mjs`. `m8-runtime.mjs`: the refused `map_src` is now `$3F00` (`$4000` is the window).
+
+## As built: the billboard projection reorder (billboards B1, 2026-11-11)
+
+Contract: `docs/ARCADE_BILLBOARDS_CONTRACT.md` section 5 (B0, the spike, found neither a two-pass draw nor pre-scaled sets worth building; the
+owner kept today's draw and asked for this). **Every output is the same**: the picture, `BB_TAB`, `R_BN`, `RAY_BLIST` and the record of every
+drawable billboard in `RAY_BREC`, byte for byte; the register contract of `ray_bb` / `ray_render` is unchanged. `bb_project` (`raybb.asm`) now:
+* tests in this order: hidden, outside the map, the signs, tx (behind the viewer: tx < 64), ty, q, off (>= 192), and only then the size work
+  (hgt, hpx, wpx, ustep, vstep, the record); every test depends on the instance and the pose alone, so the drawable set does not depend on the order;
+* computes the four products with their signs once per pair (`tx = (-1)^s1 (P1 +- P2)`, `ty = (-1)^s3 (P3 -+ P4)`, exact, within +-16,382);
+* rejects behind the viewer before the products where that is provable: both terms <= 0 (no multiply), or T(dx, cs) <= 0 with P2 <= 63 (one multiply);
+* takes hpx = (h hgt) >> 4 by shifts when h is a power of two (every Vaults asset), the shift-add otherwise;
+* inserts each drawable instance into `RAY_BLIST` as it is projected (the stable insertion by depth, far to near, equal depths in instance order:
+  the order of the sort that ran over the whole list before), so `bb_sort` / `bb_tx` are gone.
+
+**Measured** (TSRun; `node arcade/spike/bb/run-bb.mjs proj`, the angle unchanged, before -> after; 0 mismatches over 3,000 random scenes):
+one billboard in view 5,158 -> **4,695** (target 4,800); one off the view sideways 4,352 -> **2,390** (3,000); one behind the viewer 1,666 ->
+**1,039** (1,100), the mixed-sign cases 1,590 -> 1,238-1,522; sixteen visible with eight in view 56,096 -> 43,944. `arcade/tests/m8-runtime-perf.mjs`:
+projection and sort of one 16 x 16 billboard 4,520 -> 4,053. Every path, 40,000 random single instances (`node arcade/spike/bb/proj-cases.mjs`):
+faster or equal in every case but one, worst single instance 5,729 -> 5,385. **The one slower case:** hpx = 0 (a source under 16 rows high far
+away: h < 8 beyond 3 cells, h = 8 beyond 24) costs 2,420 -> about 3,800 T, because it is now found after ty and off; testing it early again would
+cost every far instance 70-130 T for a case no game has. It stays under the cost of a drawn instance.
+
+**`vaults.arc`** (`node tests/arcade-m8-vaults-perf.mjs`, the same recorded runs and compiler on the runtime before and after; the game now has its
+title scene, so the figures differ from the 2026-11-10 ones above): win run 1,433 ticks: mean `ray_bb` 16,879 -> **14,773**, mean `ray_render`
+136,781 -> 134,674, median tick 158,943 -> 156,814, 95th percentile 188,433 -> 185,546, ticks over the 4 refreshes **9 -> 8** (tick 997 is no longer
+over; two of the 8 are the scene switch at ticks 17-18, about 1.05 M T, not billboards), worst picture 226,058 -> 222,788 (billboards 96,805 ->
+94,495). Lose run 389 ticks: mean `ray_bb` 9,789 -> 8,883, median 150,753 -> 149,463, the same 6 ticks over (all scene switches).
+
+**Size:** `runtime (chunks 0-1)` 15,069 -> **15,079** bytes (+10; 1,305 free). The `RT_*` entries after `raybb.asm` moved by 10 bytes (`RT_VIEW`,
+`RT_SINA`, `RT_COSA`, `RT_FXMUL`, `RT_WALL`, `RT_SETWALL`, `RT_TABLELOAD`, `RT_VIEWMODE`, `RT_END`): compiled v4 games change bytes; no hash baseline
+covers a v4 program (batch 1-3 baselines are v2 / v3).
+
+**Tests:** `m8-runtime.mjs` section 4b (new): the records and the list against the reference projection on 120 random scenes per colw (heights 1, 2, 4,
+8, 16, 32 and 48, 13; equal depths), 46 edge scenes (tx = 63 / 64 / 65 with P1 or P2 at 63 / 64 and both signs, off = 191 / 192, off 255 / 256)
+and 16 scenes of 16 instances at four depths in scattered order. `m8-mutations.mjs` (4 shards): 90 mutants, **86 killed, 4 equivalent** (each with its reason in the file), 0 survivors; the new ones cover the early behind-the-viewer rejects, the sign handling of tx and ty, the power-of-two heights and the insertion into the list. `arcade/tests/m14-runtime-mode.mjs` compared v4 byte for
+byte with the runtime published before batch 7; since B1 moved code on purpose, v4 now has v3's rule from its size pass (every published symbol at or
+above `$4000` keeps its address and every published `RT_*` routine exists; the byte comparison is retired). `arcade/dist/v4` is republished.

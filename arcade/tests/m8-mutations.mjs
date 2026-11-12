@@ -37,7 +37,8 @@ const MUTANTS = [
   ['patterns: colw 2 masks start at $F0', [E(RA, '    ld c,$F0\n    jr z,.m\n    ld c,$C0', '    ld c,$F0\n    jr z,.m\n    ld c,$F0')]],
   ['attrs: the bottom half gets attr_top', [E(RA, '    call .half\n    ld a,(ix+4)', '    call .half\n    ld a,(ix+3)')]],
   // ---- the tick ----
-  ['tick: the window\'s dirty bytes are not masked (cells drawn into the window)', [E(RA, 'ray_tick:\n    call ray_mask_dirty', 'ray_tick:\n    nop\n    nop\n    nop')]],
+  // (the tick reaches ray_mask_dirty through vm_pre since language batch 7: the mutant returns at its start)
+  ['tick: the window\'s dirty bytes are not masked (cells drawn into the window)', [E(RA, 'ray_mask_dirty:\n    ld a,(V_HIDDEN)', 'ray_mask_dirty:\n    ret\n    ld a,(V_HIDDEN)')]],
   ['tick: 11 rows masked', [E(RA, '    ld l,VIEW_CY*4+1\n    ld b,12', '    ld l,VIEW_CY*4+1\n    ld b,11')]],
   ['render: IY not restored', [E(RA, '    pop af\n    ex af,af\'\n    pop iy\n    pop ix\n    ret', '    pop af\n    ex af,af\'\n    pop hl\n    pop ix\n    ret')]],
   // ---- setup ----
@@ -83,14 +84,28 @@ const MUTANTS = [
   // ---- billboards ----
   ['bb: the 1/4-cell cull at 32', [E(BB, '    ld a,l\n    cp 64\n    ret c                       ; closer than 1/4 cell', '    ld a,l\n    cp 32\n    ret c                       ; closer than 1/4 cell')]],
   ['bb: an instance outside the map in x is drawn', [E(BB, '    ld hl,(VD_XMAX)\n    or a\n    sbc hl,de\n    ret c                       ; x outside the map', '    ld hl,(VD_XMAX)\n    or a\n    sbc hl,de\n    nop                         ; x outside the map')]],
-  ['bb: ty = T(dy, cs) + T(dx, sn)', [E(BB, '    pop hl\n    or a\n    sbc hl,de                   ; HL = ty', '    pop hl\n    or a\n    add hl,de                   ; HL = ty')]],
+  ['bb: ty = T(dy, cs) + T(dx, sn)', [E(BB, '    ld a,b\n    xor c\n    jp m,.y1', '    ld a,b\n    xor c\n    jp p,.y1')]],
+  ['bb: the sign of ty ignores s2 (s3 wrong)', [E(BB, '    xor e\n    xor c\n    xor h', '    xor e\n    nop\n    xor h')]],
+  ['bb: tx = P1 + P2 when T(dy, sn) <= 0', [E(BB, '    bit 7,c\n    jr nz,.s2', '    bit 7,c\n    nop\n    nop')]],
+  ['bb: tx = P1 - P2 when T(dx, cs) <= 0 (not P2 - P1)', [E(BB, '    ex de,hl\n    pop hl\n    or a\n    sbc hl,de                   ; tx = P2 - P1', '    pop de\n    nop\n    or a\n    sbc hl,de                   ; tx = P2 - P1')]],
+  // B1's early behind-the-viewer reject (docs/ARCADE_BILLBOARDS_CONTRACT.md section 5): each mutant rejects drawable instances
+  ['bb: the early reject at P2 <= 127 (tx = 64..127 lost)', [E(BB, '    and $C0\n    or h\n    ret z                       ; P2 <= 63', '    and $80\n    or h\n    ret z                       ; P2 <= 63')]],
+  ['bb: every sign case takes the T(dx, cs) <= 0 path (and its early reject)', [E(BB, '    bit 7,b\n    jr nz,.s1', '    bit 7,b\n    jr .s1')]],
+  ['bb: the sign reject when only T(dx, cs) <= 0', [E(BB, '    and c\n    ret m                       ; s1 = s2 = 1', '    or a\n    ret m                       ; s1 = s2 = 1')]],
   ['bb: wpx without the hpx >> 5 term', [E(BB, '    ld c,a\n    srl a\n    srl a\n    add a,c\n    add a,b\n    ld (iy+BR_WPX),a', '    ld c,a\n    srl a\n    srl a\n    ld a,c\n    add a,b\n    ld (iy+BR_WPX),a')]],
-  // EQUIVALENT: a column needs |xc - sxc| < wpx / 2 <= 83 with xc in 1..127, so |sxc - 64| < 147: any limit from 147 to 255 culls only billboards with no
-  // column (nothing drawn, BB_TAB 'not drawn' either way).
-  ['EQUIVALENT bb: the screen offset limit 192 is 255', [E(BB, '    cp 192\n    ret nc                      ; off >= 192: not drawn', '    cp 255\n    ret nc                      ; off >= 192: not drawn')]],
+  // (the picture and BB_TAB are the same: a column needs |xc - sxc| < wpx / 2 <= 83 with xc in 1..127, so |sxc - 64| < 147; R_BN, RAY_BLIST and the
+  // records differ: m8-runtime.mjs 4b checks them since B1)
+  ['bb: the screen offset limit 192 is 255 (only the list differs)', [E(BB, '    cp 192\n    ret nc                      ; off >= 192: not drawn', '    cp 255\n    ret nc                      ; off >= 192: not drawn')]],
   ['bb: the BB_TAB column not clamped at 127', [E(BB, '    cp 128\n    jr c,.cset\n    ld a,127', '    cp 128\n    jr .cset\n    ld a,127')]],
-  ['bb: the sort is not stable (equal depths swapped)', [E(BB, '    sbc hl,de                   ; depth[j - 1] - depth[key]: carry when depth[j - 1] < depth[key] (both 64..32767)\n    pop hl\n    jr nc,.place',
-    '    sbc hl,de                   ; depth[j - 1] - depth[key]: carry when depth[j - 1] < depth[key] (both 64..32767)\n    pop hl\n    jr z,.swp\n    jr nc,.place\n.swp:')]],
+  ['bb: the sort is not stable (equal depths swapped)', [E(BB, '    ld a,(bc)\n    sub e', '    ld a,(bc)\n    scf\n    sbc a,e')]],
+  ['bb: the sort compares only the depths\' high bytes', [E(BB, '    ld a,(bc)\n    sub e', '    ld a,(bc)\n    cp a')]],
+  ['bb: the list is not sorted (each instance appended)', [E(BB, '    jr nc,.at', '    jr .at')]],
+  // the power-of-two heights (hpx by shifts)
+  ['bb: h = 32 draws hgt rows (no doubling)', [E(BB, '    add a,a                     ; h = 32: 2 hgt (<= 96)', '    nop                         ; h = 32: 2 hgt (<= 96)')]],
+  ['bb: h < 16 shifts one step too few', [E(BB, '    bit 4,b\n    jr nz,.hd', '    bit 3,b\n    jr nz,.hd')]],
+  ['bb: h = 48 taken as a power of two', [E(BB, '    ld a,b\n    dec a\n    and b\n', '    ld a,b\n    and $07\n    nop\n')]],
+  // EQUIVALENT: AST_H is 1..48 (layout.inc; the compiler's and ray_assets' limit), so the loop never meets h = 0, 64 or 128.
+  ['EQUIVALENT bb: h = 0 / 64 / 128 not mapped to hpx = 0', [E(BB, '    xor a                       ; (h = 0, 64, 128: 0)', '    nop                         ; (h = 0, 64, 128: 0)')]],
   ['bb: equal depth draws over the wall', [E(BB, '    sbc hl,de\n    jp nc,.next                 ; hidden by the wall (equal: the wall wins)', '    sbc hl,de\n    jp z,.dvis\n    jp nc,.next                 ; hidden by the wall (equal: the wall wins)\n.dvis:')]],
   ['bb: the image bit is read from the mask byte (+ wb missing)', [E(BB, '    ld a,(R_T0+15)              ; mo + wb\n    add a,e', '    ld a,0                      ; mo + wb\n    add a,e')]],
   ['bb: the source bit is u AND 7 (not 7 - u AND 7)', [E(BB, '    and 7\n    xor 7\n    add a,a\n    add a,a\n    add a,a\n    add a,$46', '    and 7\n    nop\n    add a,a\n    add a,a\n    add a,a\n    add a,$46')]],

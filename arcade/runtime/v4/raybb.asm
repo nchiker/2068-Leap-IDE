@@ -73,11 +73,9 @@ ray_bb:
     pop bc
     inc c
     djnz .p
-    ld a,(R_BN)
+    ld a,(R_BN)                 ; (bb_project keeps the list in draw order)
     or a
     ret z
-    call bb_sort
-    ld a,(R_BN)
     ld b,a
     ld hl,RAY_BLIST
 .d:
@@ -91,7 +89,21 @@ ray_bb:
     djnz .d
     ret
 
-; bb_project: A = instance (< ninst) -> when it is visible and drawable: its record and an entry at the end of RAY_BLIST.  Clobbers everything but IX.
+; bb_project: A = instance (< ninst) -> when it is visible and drawable: its record, and its index inserted into RAY_BLIST (far to near).
+; Clobbers everything but IX.  (B1, docs/ARCADE_BILLBOARDS_CONTRACT.md section 5: the same outputs as before, cheaper.)  The order: the map
+; bounds, tx and its tests, ty, q, off and its tests, and only then the size work (hgt, hpx, wpx, ustep, vstep); every test is a condition of
+; the instance and the pose alone, so the drawable set and their records do not depend on the order (a rejected instance's record is scratch).
+; Scratch: R_T0 +0 the asset, +1 the frame, +2 |dx|, +4 |dy|, +8 tx, +10 sxc; q on the stack while ty is computed.
+;
+; The four products, signs once per pair: with s(v) = bit 7 of v's high byte, T(a, c) = (-1)^(s(a) xor s(c)) P, P = floor(|a| |c| / 256) from
+; RAY_MULC / RAY_MULS (|a| <= 8191, so P <= 8191; when a or c is 0, P = 0 and the sign does not matter).  With s1 = s(dx) xor s(cs),
+; s2 = s(dy) xor s(sn), s3 = s(dy) xor s(cs), s4 = s(dx) xor s(sn) (so s3 xor s4 = s1 xor s2):
+;   tx = (-1)^s1 (P1 + (-1)^(s1 xor s2) P2)   P1 = |T(dx, cs)|, P2 = |T(dy, sn)|
+;   ty = (-1)^s3 (P3 - (-1)^(s1 xor s2) P4)   P3 = |T(dy, cs)|, P4 = |T(dx, sn)|
+; exactly the integers of the signed sums (every value within +-16,382: no overflow).
+; Behind the viewer without the full products, conservative (it rejects only instances with tx < 64, which are never drawn):
+;   * s1 = s2 = 1: both terms are <= 0, so tx <= 0: rejected before any multiply;
+;   * s1 = 1 (then s2 = 0): tx = P2 - P1 <= P2, so P2 <= 63 proves tx <= 63: rejected before P1.  P2 = 64 with P1 = 0 is tx = 64 (drawn).
 bb_project:
     ld (R_BI),a
     add a,a
@@ -126,20 +138,56 @@ bb_project:
     ret c
     ld hl,(R_PX)                ; dx, dy (from the cast's position)
     ex de,hl
-    sbc hl,de                   ; (carry 0)
+    sbc hl,de                   ; (carry 0) HL = dx
+    ld e,h                      ; E = s(dx)
+    call abs_hl
     ld (R_T0+2),hl
     ld h,b
     ld l,c
-    ld de,(R_PY)
+    ld bc,(R_PY)
     or a
-    sbc hl,de
+    sbc hl,bc                   ; HL = dy
+    ld d,h                      ; D = s(dy)
+    call abs_hl
     ld (R_T0+4),hl
-    call tm_sn                  ; tx = T(dx, cs) + T(dy, sn)
+    ld a,(R_SN+1)               ; the signs
+    xor d
+    ld c,a                      ; C = s2: T(dy, sn) <= 0
+    ld a,(R_CS+1)
+    xor e
+    ld b,a                      ; B = s1: T(dx, cs) <= 0
+    and c
+    ret m                       ; s1 = s2 = 1: tx <= 0, behind the viewer
+    ; tx (the generated multiplies use only HL and DE: B, C stay)
+    ex de,hl                    ; DE = |dy|
+    call RAY_MULS+2             ; HL = P2
+    bit 7,b
+    jr nz,.s1
     push hl
-    ld hl,(R_T0+2)
-    call tm_cs
-    pop de
-    add hl,de
+    ld de,(R_T0+2)
+    call RAY_MULC+2             ; HL = P1
+    pop de                      ; DE = P2
+    bit 7,c
+    jr nz,.s2
+    add hl,de                   ; s1 = s2 = 0: tx = P1 + P2
+    jr .t2
+.s2:
+    or a
+    sbc hl,de                   ; s1 = 0, s2 = 1: tx = P1 - P2
+    jr .t2
+.s1:
+    ld a,l                      ; s1 = 1 (s2 = 0): tx = P2 - P1 <= P2
+    and $C0
+    or h
+    ret z                       ; P2 <= 63: tx <= 63, not drawn
+    push hl
+    ld de,(R_T0+2)
+    call RAY_MULC+2             ; HL = P1
+    ex de,hl
+    pop hl
+    or a
+    sbc hl,de                   ; tx = P2 - P1
+.t2:                            ; HL = tx
     bit 7,h
     ret nz                      ; behind the viewer
     ld a,h
@@ -149,31 +197,94 @@ bb_project:
     cp 64
     ret c                       ; closer than 1/4 cell
 .far:
-    ex de,hl                    ; DE = tx
+    ld (R_T0+8),hl
+    call mul_p                  ; HL = q = mulP(tx) (>= 37; B, C stay)
+    push hl
+    ; ty
+    ld de,(R_T0+2)
+    call RAY_MULS+2             ; HL = P4
+    push hl
+    ld de,(R_T0+4)
+    call RAY_MULC+2             ; HL = P3
+    pop de                      ; DE = P4
+    ld a,b
+    xor c
+    jp m,.y1
+    or a
+    sbc hl,de                   ; s1 = s2: V = P3 - P4
+    jr .y2
+.y1:
+    add hl,de                   ; s1 <> s2: V = P3 + P4
+.y2:
+    ld a,(R_CS+1)               ; ty = (-1)^s3 V, s3 = s2 xor s(cs) xor s(sn): its sign s3 xor s(V) (ty = 0 gives off = 0: either sign), |ty| = |V|
+    ld e,a
+    ld a,(R_SN+1)
+    xor e
+    xor c
+    xor h
+    ld b,a                      ; B = the sign of ty
+    call abs_hl
+    pop de                      ; DE = q
+    ; off = floor(64 |ty| / q): n = 64 |ty| = (|ty| >> 2) : ((|ty| AND 3) << 6); the quotient's top 12 bits are 0 when |ty| >> 2 < q
+    ld a,l
+    rrca
+    rrca
+    and $C0
+    ld c,a                      ; C = n's low byte
+    srl h
+    rr l
+    srl h
+    rr l                        ; HL = n >> 8
+    ld a,l
+    sub e
+    ld a,h
+    sbc a,d
+    ret nc                      ; n >> 8 >= q: off >= 256, not drawn
+    xor a                       ; A = the complemented quotient bits
+    REPT 8
+    sla c
+    adc hl,hl
+    sbc hl,de                   ; (carry was 0: HL < 2^14)
+    jr nc,$+3
+    add hl,de                   ; restore: carry 1
+    rla
+    ENDR
+    cpl                         ; A = off
+    cp 192
+    ret nc                      ; off >= 192: not drawn
+    ld e,a
+    ld d,0
+    ld hl,64
+    bit 7,b
+    jr nz,.tn
+    add hl,de
+    jr .ts
+.tn:
+    or a
+    sbc hl,de
+.ts:                            ; HL = sxc (-127..255)
+    ld (R_T0+10),hl
     ld a,(R_BI)                 ; IY = the record
     add a,a
     add a,a
     add a,a
     add a,a
-    ld l,a
-    ld h,RAY_BREC>>8
-    push hl
+    ld e,a
+    ld d,RAY_BREC>>8
+    push de
     pop iy
-    ld (iy+BR_TX),e
-    ld (iy+BR_TX+1),d
-    ld h,d                      ; hgt = HGT[tx >> 3] (tx <= 11,585: no clamp needed)
-    ld l,e
-    srl h
-    rr l
-    srl h
-    rr l
-    srl h
-    rr l
-    ld a,h
-    add a,RAY_HGT>>8
-    ld h,a
-    ld a,(hl)
-    ld (iy+BR_HGT),a
+    ld a,h                      ; the column for BB_TAB: 0..127
+    or a
+    ld a,l
+    jr z,.cpos
+    xor a                       ; negative
+    jr .cset
+.cpos:
+    cp 128
+    jr c,.cset
+    ld a,127
+.cset:
+    ld (iy+BR_COL),a
     ; the asset: h, wb, the frame's rows
     ld a,(R_T0)
     add a,a
@@ -185,6 +296,7 @@ bb_project:
     ld h,AST>>8
     ld a,(hl)                   ; AST_H
     ld (iy+BR_H),a
+    ld b,a                      ; B = h
     inc l
     ld a,(R_T0+1)               ; the frame, clamped to nframes - 1
     cp (hl)
@@ -218,10 +330,43 @@ bb_project:
 .f0:
     ld (iy+BR_FRAME),l
     ld (iy+BR_FRAME+1),h
-    ; hpx = (h hgt) >> 4, wpx = hpx + hpx >> 3 + hpx >> 5
-    ld e,(iy+BR_HGT)
+    ld hl,(R_T0+8)
+    ld (iy+BR_TX),l
+    ld (iy+BR_TX+1),h
+    srl h                       ; hgt = HGT[tx >> 3] (tx <= 11,585: no clamp needed)
+    rr l
+    srl h
+    rr l
+    srl h
+    rr l
+    ld a,h
+    add a,RAY_HGT>>8
+    ld h,a
+    ld a,(hl)
+    ld (iy+BR_HGT),a
+    ; hpx = (h hgt) >> 4: h a power of two (1..32) by shifts; h = 0, 64, 128 give 0 as the shift-add did ((h << 2) AND $FF = 0); else the shift-add
+    ld c,a
+    ld a,b
+    dec a
+    and b
+    ld a,c                      ; A = hgt
+    jr nz,.hg
+    bit 5,b
+    jr z,.h16
+    add a,a                     ; h = 32: 2 hgt (<= 96)
+    jr .hd
+.h16:
+    bit 4,b
+    jr nz,.hd                   ; h = 16: hgt
+    srl a                       ; h < 16: hgt >> (4 - log2 h)
+    sla b
+    jr nz,.h16
+    xor a                       ; (h = 0, 64, 128: 0)
+    jr .hd
+.hg:
+    ld e,a
     ld d,0
-    ld a,(iy+BR_H)
+    ld a,b
     add a,a
     add a,a                     ; (h <= 48: six bits)
     ld hl,0
@@ -244,8 +389,10 @@ bb_project:
     rlca
     rlca
     or l
+.hd:
+    or a
     ret z                       ; hpx = 0
-    ld (iy+BR_HPX),a
+    ld (iy+BR_HPX),a            ; wpx = hpx + hpx >> 3 + hpx >> 5
     ld b,a
     srl a
     srl a
@@ -285,76 +432,7 @@ bb_project:
     call mul8x16
     ld (iy+BR_VSTEP),l
     ld (iy+BR_VSTEP+1),h
-    ; ty = T(dy, cs) - T(dx, sn)
-    ld hl,(R_T0+4)
-    call tm_cs
-    push hl
-    ld hl,(R_T0+2)
-    call tm_sn
-    ex de,hl
-    pop hl
-    or a
-    sbc hl,de                   ; HL = ty
-    ld a,h
-    ld (R_T0+6),a               ; its sign
-    call abs_hl                 ; |ty|
-    push hl
-    ld l,(iy+BR_TX)
-    ld h,(iy+BR_TX+1)
-    call mul_p
-    ex de,hl                    ; DE = q = mulP(tx) (>= 37)
-    pop hl
-    ; off = floor(64 |ty| / q): n = 64 |ty| = (|ty| >> 2) : ((|ty| AND 3) << 6); the quotient's top 12 bits are 0 when |ty| >> 2 < q
-    ld a,l
-    rrca
-    rrca
-    and $C0
-    ld c,a                      ; C = n's low byte
-    srl h
-    rr l
-    srl h
-    rr l                        ; HL = n >> 8
-    push hl
-    or a
-    sbc hl,de
-    pop hl
-    ret nc                      ; off >= 256: not drawn
-    xor a                       ; A = the complemented quotient bits
-    REPT 8
-    sla c
-    adc hl,hl
-    sbc hl,de                   ; (carry was 0: HL < 2^14)
-    jr nc,$+3
-    add hl,de                   ; restore: carry 1
-    rla
-    ENDR
-    cpl                         ; A = off
-    cp 192
-    ret nc                      ; off >= 192: not drawn
-    ld e,a
-    ld d,0
-    ld hl,64
-    ld a,(R_T0+6)
-    bit 7,a
-    jr nz,.tn
-    add hl,de
-    jr .ts
-.tn:
-    or a
-    sbc hl,de
-.ts:                            ; HL = sxc (-127..255)
-    ld a,h                      ; the column for BB_TAB: 0..127
-    or a
-    ld a,l
-    jr z,.cpos
-    xor a                       ; negative
-    jr .cset
-.cpos:
-    cp 128
-    jr c,.cset
-    ld a,127
-.cset:
-    ld (iy+BR_COL),a
+    ld hl,(R_T0+10)             ; L = sxc - (wpx >> 1)
     ld a,(iy+BR_WPX)
     srl a
     ld e,a
@@ -363,16 +441,43 @@ bb_project:
     sbc hl,de
     ld (iy+BR_L),l
     ld (iy+BR_L+1),h
-    ld a,(R_BN)                 ; the list
-    ld e,a
-    inc a
-    ld (R_BN),a
-    ld d,RAY_BLIST>>8
-    ld a,e
+    ; the list: the instance goes after every entry whose depth is >= tx.  Instances arrive in index order, so this is the stable insertion
+    ; sort by depth descending (equal depths: lower instance first) that ran over the whole list before; the depths come from the records.
+    ld de,(R_T0+8)              ; DE = tx
+    ld hl,R_BN
+    ld a,(hl)
+    inc (hl)
     add a,RAY_BLIST&$FF
-    ld e,a
+    ld l,a
+    ld h,RAY_BLIST>>8           ; HL -> BLIST[n]
+    ld b,RAY_BREC>>8
+.ins:
+    ld a,l
+    cp RAY_BLIST&$FF
+    jr z,.put                   ; j = 0
+    dec l
+    ld a,(hl)                   ; BC -> the depth of BLIST[j - 1]
+    add a,a
+    add a,a
+    add a,a
+    add a,a
+    ld c,a
+    ld a,(bc)
+    sub e
+    inc c
+    ld a,(bc)
+    sbc a,d                     ; carry when depth[j - 1] < tx (both 64..11,585)
+    jr nc,.at
+    ld a,(hl)                   ; BLIST[j] = BLIST[j - 1]
+    inc l
+    ld (hl),a
+    dec l
+    jr .ins
+.at:
+    inc l                       ; depth[j - 1] >= tx: the place is j
+.put:
     ld a,(R_BI)
-    ld (de),a
+    ld (hl),a
     ret
 
 ; recip_a: A -> DE = RECIP[A].  Clobbers HL.
@@ -387,89 +492,11 @@ recip_a:
     ld d,(hl)
     ret
 
-; tm_cs / tm_sn: HL = a (|a| <= 8191) -> HL = T(a, cs) / T(a, sn) = sign(a c) floor(|a| |c| / 256) (RAY_MULC / RAY_MULS multiply by |c|).
-; Clobbers AF, DE.
-tm_cs:
-    ld a,(R_CS+1)
-    xor h
-    push af
-    call abs_hl
-    ex de,hl
-    call RAY_MULC+2
-    jr tm_sg
-tm_sn:
-    ld a,(R_SN+1)
-    xor h
-    push af
-    call abs_hl
-    ex de,hl
-    call RAY_MULS+2
-tm_sg:
-    pop af
-    ret p
-    jp neg_hl
 ; abs_hl: HL = |HL|.  Clobbers AF.
 abs_hl:
     bit 7,h
     ret z
     jp neg_hl
-
-; bb_sort: RAY_BLIST (R_BN instance indexes) by depth descending; equal depths keep their order (insertion sort).  Clobbers everything but IX.
-bb_sort:
-    ld a,(R_BN)
-    cp 2
-    ret c
-    ld c,1                      ; C = k
-.k:
-    ld a,c
-    add a,RAY_BLIST&$FF
-    ld l,a
-    ld h,RAY_BLIST>>8
-    ld a,(hl)
-    ld (R_T0+7),a               ; the key's instance
-    call bb_tx
-    ld (R_T0+8),de              ; its depth
-    ld b,c                      ; j = k
-.j:
-    dec l                       ; HL -> BLIST[j - 1]
-    ld a,(hl)
-    push hl
-    call bb_tx                  ; DE = depth of BLIST[j - 1]
-    ld hl,(R_T0+8)
-    ex de,hl
-    or a
-    sbc hl,de                   ; depth[j - 1] - depth[key]: carry when depth[j - 1] < depth[key] (both 64..32767)
-    pop hl
-    jr nc,.place
-    ld a,(hl)                   ; BLIST[j] = BLIST[j - 1]
-    inc l
-    ld (hl),a
-    dec l
-    djnz .j
-    dec l                       ; (j = 0: the place is BLIST[0])
-.place:
-    inc l
-    ld a,(R_T0+7)
-    ld (hl),a
-    inc c
-    ld a,(R_BN)
-    cp c
-    jr nz,.k
-    ret
-; bb_tx: A = instance -> DE = its depth (the record's BR_TX).  Clobbers AF.
-bb_tx:
-    push hl
-    add a,a
-    add a,a
-    add a,a
-    add a,a
-    ld l,a
-    ld h,RAY_BREC>>8
-    ld e,(hl)
-    inc l
-    ld d,(hl)
-    pop hl
-    ret
     ASSERT (RAY_BREC&$FF) == 0 && (RAY_BLIST&$FF)+MAX_SPRITES <= 256 && (BB_TAB&$FF) == 0
 
 ; bb_draw: A = instance (projected): generate its row code for the visible columns, run it, BB_TAB.  Clobbers everything (IX, IY, the alternates).
