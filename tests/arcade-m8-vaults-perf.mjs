@@ -65,7 +65,7 @@ export function profile(src, { ticks, stick, assets = VAULTS_ASSETS, runtimeDir 
     const end = m.frameStart + FRAME_T;
     while (m.tstates < end) {
       const cpu = m.cpu, pc = cpu.pc;
-      const isr = (pc >= S.ISR && pc < S.ISR_END) || (pc >= S.SND_S && pc < S.SND_E);
+      const isr = (pc >= S.ISR && pc < S.ISR_END) || (pc >= S.SND_S && pc < S.SND_E) || (inIsr && pc >= S.SND_XS && pc < S.SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
       if (isr && !inIsr) { inIsr = true; isrT0 = m.tstates - 13; } else if (!isr && inIsr) { inIsr = false; isrAcc += m.tstates - isrT0; }
       if (!inIsr) {
         if (pc === S.WORK_START) { w0 = { t0: m.tstates, i0: isrAcc }; for (const k of Object.keys(sub)) sub[k].t = 0; }

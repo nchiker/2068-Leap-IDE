@@ -174,6 +174,9 @@ RT_NOMUSIC:
 ; ---------------------------------------------------------------------------------------------------------------
 ; SND_OWNSET: A = effect type (1, 3, 4, 5) -> MUS_OWN[0..10] (no effect: SND_OWNCLR).  Clobbers AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------------------------------------------
+; SND_XS: from here to SND_E is every instruction the frame interrupt runs in this module (SND_OWNCLR, SND_OWNSET, SND_SYNC, SND_TICK): the tests
+; that time the interrupt by its program counter count [SND_XS, SND_E) once they are inside it (the main thread calls SND_OWNCLR / SND_SYNC too).
+SND_XS:
 SND_OWNCLR:                     ; (no effect owns anything: SND_OWNSET with A = 0, faster; clobbers AF, B, HL)
     ld hl,MUS_OWN
     ld b,11

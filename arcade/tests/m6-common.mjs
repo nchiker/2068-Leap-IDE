@@ -330,7 +330,7 @@ export function observe6(game, nframes, { script = null, checkPicture = true, pi
     if (pc === S.MAIN) armed = true;
     if (sp < st.spMin) st.spMin = sp;
     if (sp > st.spMax) st.spMax = sp;
-    const inRange = (pc >= ISR && pc < ISR_END) || (pc >= SND_S && pc < SND_E);
+    const inRange = (pc >= ISR && pc < ISR_END) || (pc >= SND_S && pc < SND_E) || (inIsr && pc >= S.SND_XS && pc < SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
     if (inRange) { if (!inIsr) { inIsr = true; isrT0 = m.tstates - 13; isrSync = rd8(m, S.V_SYNC); } }
     else if (inIsr) { inIsr = false; isrAcc += m.tstates - isrT0; }
     for (const [addr, name] of trackers) if (pc === addr && !inIsr) spans.push({ name, sp, ret: rd16(m, sp), t0: m.tstates, i0: isrAcc });

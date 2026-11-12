@@ -243,7 +243,7 @@ export function observe(game, nframes, { script = null, checkPicture = true, pix
     if (pc === S.MAIN) armed = true;
     if (sp < st.spMin) st.spMin = sp;
     if (sp > st.spMax) st.spMax = sp;
-    const inRange = (pc >= ISR && pc < ISR_END) || (pc >= SND_S && pc < SND_E);
+    const inRange = (pc >= ISR && pc < ISR_END) || (pc >= SND_S && pc < SND_E) || (inIsr && pc >= S.SND_XS && pc < SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
     if (inRange) {
       if (!inIsr) { inIsr = true; isrT0 = m.tstates - 13; isrSync = rd8(m, S.V_SYNC); }
       if (pc === SND_S) sndEntryT = m.tstates;
