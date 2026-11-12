@@ -46,7 +46,7 @@ import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, FUNCTIONS, NOT_IN_ARCADE } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
-import { real, compileReal, runReal, interpFor, diffRecords, differential, errText, XS, s16, hex, ROOT } from './arcade-m5-harness.mjs';
+import { real, compileReal, runReal, interpFor, diffRecords, compareSoundRun, differential, errText, XS, s16, hex, ROOT } from './arcade-m5-harness.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const QUICK = !!process.env.ARCADE_QUICK;
@@ -1063,8 +1063,10 @@ console.log('\n9. Blockfall (batch 1 version) in brief');
     check_('the shipped blockfall.arc compiles with no errors and no warnings', shipped.errors.length === 0 && shipped.warnings.length === 0, errText(shipped));
     const got = runReal(shipped, { ticks: NT, keys });
     const want = interpFor(neu, bfa, got)(NT, { keys: (t, c) => keys(t).includes(c) });
-    const d = got.error ?? diffRecords(got.ticks, want, {});
+    const d = got.error ?? diffRecords(got.ticks, want, { skip: ['sound'] });
     check_(`the shipped blockfall.arc (RANDOMISE from the frame counter, BORDER, FILL, COPY) equals its interpreter on ${NT} real-runtime ticks`, d === null, d ?? `${got.rnd.flat().length} RANDOMISE seed(s)`);
+    const sw = got.error ? { ok: false, d: got.error } : compareSoundRun(got, NT, (clock, n) => interpFor(neu, bfa, got)(n, { keys: (t, c) => keys(t).includes(c), clock }));
+    check_(`the shipped blockfall.arc: the sound at song level on every sample of the same ${NT} ticks (V_SFX_ACTIVE all bits, AY_SHADOW R0..R10 and the chip against the interpreter's chip model)`, sw.ok, sw.d ?? sw.text);
   }
 }
 

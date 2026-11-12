@@ -83,7 +83,8 @@ const SRC_NEW = readFileSync(join(ROOT, 'arcade/examples/blockfall.arc'), 'utf8'
 const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/blockfall-v0.assets.json'), 'utf8'));
 const ASSETS_EX = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/blockfall.assets.json'), 'utf8'));
 check_('blockfall.assets.json is what blockfall.assets.gen.mjs makes', JSON.stringify(ASSETS_EX) === JSON.stringify(JSON.parse(JSON.stringify(GEN_ASSETS))), 'run: node arcade/examples/blockfall.assets.gen.mjs');
-check_('the fixture\'s assets (blockfall-v0.assets.json) are the example\'s', JSON.stringify(ASSETS) === JSON.stringify(ASSETS_EX));
+{ const { music: song, ...exNoMusic } = ASSETS_EX;      // the example has the song (its `music` key) since MUSIC (slice M5); the fixture is the game before songs
+  check_('the fixture\'s assets (blockfall-v0.assets.json) are the example\'s without the `music` key (the song)', JSON.stringify(ASSETS) === JSON.stringify(exNoMusic) && !!song && Object.keys(song).length >= 1); }
 const res = compile(SRC, { runtime: rt, image: img, assets: ASSETS });
 const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
 check_('blockfall-v0.arc compiles for runtime v2 with no errors and no warnings', rt.version === 2 && res.errors.length === 0 && res.warnings.length === 0, errText(res) + res.warnings.map((w) => w.message).join(' | '));
@@ -759,7 +760,7 @@ else {
   console.log('\n5. The compiled game on the real v2 runtime (TSRun, stock ROMs)');
   const M_ = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
   const SYM = rt.symbols;
-  const need = ['CELL_TILE', 'CELL_ATTR', 'V_TEXT_ATTR', 'V_CUR_ROW', 'V_CUR_COL', 'V_SFX_ACTIVE', 'AY_SHADOW', 'V_TICKS', 'V_FRAMES', 'V_SYNC', 'HO_MARK', 'HO_MARK_VALUE', 'V_SHADOW_FF', 'DFILE0', 'DATTR0', 'DFILE1', 'DATTR1', 'RT_PLAY', 'RT_SILENCE'];
+  const need = ['SND_XS', 'RT_PLAY', 'CELL_TILE', 'CELL_ATTR', 'V_TEXT_ATTR', 'V_CUR_ROW', 'V_CUR_COL', 'V_SFX_ACTIVE', 'AY_SHADOW', 'V_TICKS', 'V_FRAMES', 'V_SYNC', 'HO_MARK', 'HO_MARK_VALUE', 'V_SHADOW_FF', 'DFILE0', 'DATTR0', 'DFILE1', 'DATTR1', 'RT_PLAY', 'RT_SILENCE'];
   const missing = need.filter((n) => SYM[n] === undefined);
   check_('runtime.json has version 2 and every symbol this test uses', rt.version === 2 && missing.length === 0, missing.join(' '));
   const ROMDIR = join(TSRUN, 'roms');
@@ -837,6 +838,14 @@ else {
         else if (a === ie) { cur = 0; out.plays[0] = []; }
         else if (a === SYM.RT_PLAY || a === SYM.RT_SILENCE) out.plays[cur].push(rd16(SYM.V_FRAMES));
         return origRead.call(this, a);
+      }; }
+    // ... and the refresh counts from the moment the routine starts or stops the effect (its last write to V_SFX_ACTIVE), not from its entry: since music
+    // RT_PLAY sets the owners and synchronises the chip between clearing and setting SB_FX, so a frame interrupt in that window starts the effect one
+    // refresh later (runtime writes from the interrupt, at SND_XS and above, are not the call's)
+    { const origW = m.bus.write;
+      m.bus.write = function (a, v) {
+        if (a === SYM.V_SFX_ACTIVE && m.cpu.pc >= SYM.RT_PLAY && m.cpu.pc < SYM.SND_XS && out.plays[cur]?.length) out.plays[cur][out.plays[cur].length - 1] = rd16(SYM.V_FRAMES);
+        return origW.call(this, a, v);
       }; }
     for (let f = 0; f < maxFrames && out.ticks.length < ticks; f++) {
       const k = out.ticks.length + 1;
@@ -996,8 +1005,12 @@ console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on t
       let dr = null;
       for (let t = 0; t < NT && !dr; t++) dr = sameAs(`tick ${t + 1}`, OLD_REAL.got.ticks[t], gotNew.ticks[t]);
       check_(`real runtime: cell maps, attribute maps and score of the rewrite equal the old version's on all ${NT} ticks`, dr === null, dr ?? '');
-      const dw = H.diffRecords(gotNew.ticks, wantNew, {});
+      // the variant has the song: the state of every tick, then the sound at song level (the interpreter models the chip, with the refresh each call and each sample was made at as the machine showed them; a call a
+      // frame interrupt cut is placed at the refresh it was entered at or the one it returned at, see compareSoundRun)
+      const dw = H.diffRecords(gotNew.ticks, interpNew(variantSrc, NT), { skip: ['sound'] });
       check_('real runtime: the rewrite equals its own interpreter run on every tick (variables, the 336-cell board, cells, attributes, cursor, border)', dw === null, dw ?? '');
+      const sw = H.compareSoundRun(gotNew, NT, (clock, n) => interpNew(variantSrc, n, { clock }));
+      check_('real runtime: the rewrite\'s sound at song level on every sample of the whole run (V_SFX_ACTIVE all bits, AY_SHADOW R0..R10 and the chip against the interpreter\'s chip model; calls timed by the frame counter)', sw.ok, sw.d ?? sw.text);
       // tick costs, before and after
       const stats = (costs, recs) => {
         const cs = costs.slice(2), sorted = [...cs].sort((a, b) => a - b);
@@ -1020,9 +1033,11 @@ console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on t
     if (gotS.error) check_('the shipped version (FREESEED = 1) runs on the real runtime', false, gotS.error);
     else {
       const wantS = H.interpFor(SRC_NEW, ASSETS_EX, gotS)(NS, { keys: keysFn, stick: stickFn });
-      const dS = H.diffRecords(gotS.ticks, wantS, {});
+      const dS = H.diffRecords(gotS.ticks, wantS, { skip: ['sound'] });
+      const sS = H.compareSoundRun(gotS, NS, (clock, n) => H.interpFor(SRC_NEW, ASSETS_EX, gotS)(n, { keys: keysFn, stick: stickFn, clock }));
       const seeds = gotS.rnd.flat().length;
       check_(`the shipped version (FREESEED = 1) equals its interpreter on ${NS} ticks of the same script (open loop: the pieces differ from the old game's, ${seeds} RANDOMISE seeded from the frame counter at ${gotS.rnd.map((x, i) => (x.length ? i : -1)).filter((x) => x >= 0).join(', ')})`, dS === null && seeds >= 1, dS ?? `${seeds} seeds`);
+      check_(`the shipped version (FREESEED = 1): the sound at song level on every sample of the same ${NS} ticks (V_SFX_ACTIVE all bits, AY_SHADOW, the chip)`, sS.ok, sS.d ?? sS.text);
     }
   }
 }

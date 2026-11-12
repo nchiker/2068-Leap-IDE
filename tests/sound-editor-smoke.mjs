@@ -592,6 +592,167 @@ try {
   check('choosing another effect returns to channel A', !!otherName && (await state()).track === 0 && (await state()).name === otherName, JSON.stringify({ t: (await state()).track, n: (await state()).name, otherName }));
   await resetWork();
 
+  // ── songs (docs/ARCADE_MUSIC_CONTRACT.md section 7): the editor's song mode ──
+  {
+  const song = (nm = 'tune') => evaluate(`t.host.getAsset('music', ${JSON.stringify(nm)})`);
+  const songSets = () => evaluate("t.log.sets.length");
+  const chips = (role) => evaluate(`[...document.querySelectorAll('[data-role=${role}] .sfxed-chip')].map((c) => c.className.replace('sfxed-chip', '').trim() + ':' + c.textContent)`);
+  await click('[data-role=mode-music]');
+  let ss = await state();
+  check('Songs: the mode switch shows an empty song list ("No songs ... Press New"), the song panel hidden, Song disabled', ss.kind === 'music' && ss.name === null && /No songs/.test(await text('[data-role=empty]'))
+    && !(await evaluate("document.querySelector('[data-role=empty]').hidden")) && (await evaluate("document.querySelector('[data-role=song]').hidden && document.querySelector('[data-role=play-song]').disabled")));
+  await evaluate("(window.__names = ['tune'], true)");
+  await click('[data-role=new]');
+  ss = await state();
+  let sg = await song();
+  check('New makes a song with the default: one pattern, order [0], loop 0, valid, stored in assets.music', ss.name === 'tune' && ss.kind === 'music' && sg && sg.patterns.length === 1 && same(sg.order, [0]) && sg.loop === 0
+    && (await evaluate("t.MM.validateSong(t.MM.fromSong(t.host.getAsset('music', 'tune'))).ok")) && same(sg, await evaluate('t.MM.toSong(t.MM.newSong())')) && (await evaluate("t.log.refused.length")) === 0);
+  check('the song panel shows pattern 0 and order entry 0 (the loop mark on it); the preset select is hidden; Song shows',
+    same(await chips('patterns'), ['on:0']) && same(await chips('order'), ['on cur loop:0']) && !(await evaluate("document.querySelector('[data-role=song]').hidden"))
+    && (await evaluate("document.querySelector('[data-role=preset]').hidden && !document.querySelector('[data-role=play-song]').hidden")) && (await text('[data-role=play]')) === '▶ Pattern', JSON.stringify(await chips('order')));
+  await shot('10-song-new');
+  // edit a pattern with the effect editor's tools
+  let w0 = await songSets();
+  await paintClick('vol', 2, 3);
+  sg = await song();
+  check('painting the volume lane edits the pattern: one host write of the whole song', sg.patterns[0].ticks[2].vol === 3 && (await songSets()) === w0 + 1 && sg.patterns[0].ticks[1].vol !== 3);
+  // the pattern list
+  await click('[data-role=pat-add]');
+  ss = await state(); sg = await song();
+  check('Add: a silent pattern 1 as long as pattern 0 (32), shown; not in the order list (dashed chip, a warning)', sg.patterns.length === 2 && ss.pattern === 1 && sg.patterns[1].ticks.length === 32 && sg.patterns[1].ticks.every((x) => x.vol === 0)
+    && same(sg.order, [0]) && same(await chips('patterns'), [':0', 'on unused:1']) && /pattern 1 is not in the order list/.test(await text('[data-role=warnings]')));
+  await click('[data-role=ord-append]');
+  sg = await song(); ss = await state();
+  check('Append puts pattern 1 in the order list (position 1 selected); the warning goes', same(sg.order, [0, 1]) && ss.orderPos === 1 && same(await chips('order'), ['loop:0', 'on cur:1']) && (await evaluate("document.querySelectorAll('[data-role=warnings] li').length")) === 0);
+  // note entry on channel C of pattern 1
+  await click(tab('c'));
+  await setField('[data-role=note-name]', 'E'); await setField('[data-role=note-oct]', 5); await setField('[data-role=note-len]', 6); await setField('[data-role=note-inst]', 'pluck');
+  await setField('[data-role=note-at]', 0);
+  await click('[data-role=note-enter]');
+  await setField('[data-role=note-name]', 'G');
+  await click('[data-role=note-enter]');
+  await setField('[data-role=note-len]', 4);
+  await click('[data-role=note-rest]');
+  sg = await song(); ss = await state();
+  const e5 = await evaluate("t.M.toneOfNote('E5')"), g5 = await evaluate("t.M.toneOfNote('G5')");
+  check('note entry: E5 then G5 (6 refreshes, pluck) then a rest of 4 on channel C, one after the other (the tick moves on: 16)',
+    sg.patterns[1].ticksC.length === 16 && sg.patterns[1].ticksC.slice(0, 6).every((x) => x.tone === e5) && sg.patterns[1].ticksC.slice(6, 12).every((x) => x.tone === g5)
+    && same(sg.patterns[1].ticksC.slice(0, 6).map((x) => x.vol), [14, 11, 9, 7, 6, 5]) && sg.patterns[1].ticksC.slice(12).every((x) => x.vol === 0) && ss.noteAt === 16 && ss.track === 2, JSON.stringify(sg.patterns[1].ticksC.map((x) => x.tone + '/' + x.vol)));
+  await setField('[data-role=note-inst]', 'drum'); await setField('[data-role=note-len]', 3); await setField('[data-role=note-at]', 30);
+  await click('[data-role=note-enter]');
+  sg = await song();
+  check('a drum note at tick 30 pads C to 30 and extends the pattern to 33 refreshes (noise only)', sg.patterns[1].ticksC.length === 33 && sg.patterns[1].ticksC.slice(30).every((x) => x.mix === 5) && (await state()).trackLengths.join() === '32,0,33');
+  // a note below the AY's lowest (octave 0 below A0) is refused with a plain message and writes nothing; A0 is accepted
+  const lowC = JSON.stringify(await song()), lowSets = await songSets();
+  await setField('[data-role=note-inst]', 'organ'); await setField('[data-role=note-name]', 'C'); await setField('[data-role=note-oct]', 0);
+  const lowMsg = await status();
+  check('choosing C0 shows "C0 is below the AY\'s lowest note, A0" in the status line at once', lowMsg === "C0 is below the AY's lowest note, A0", lowMsg);
+  await setField('[data-role=note-at]', 0);
+  await click('[data-role=note-enter]');
+  check('Enter with C0 is refused (same message), the song is not changed and the host is not written', (await status()) === "C0 is below the AY's lowest note, A0" && JSON.stringify(await song()) === lowC && (await songSets()) === lowSets, await status());
+  await setField('[data-role=note-name]', 'A'); await click('[data-role=note-enter]');
+  check('A0 is accepted: one write, a tone of 4009 on channel C from tick 0', (await songSets()) === lowSets + 1 && (await song()).patterns[(await state()).pattern].ticksC[0].tone === 4009, await status());
+  await click('[data-role=undo]');
+  check('... and its undo restores the song', JSON.stringify(await song()) === lowC);
+  const setsBeforeDrum = await songSets();
+  await setField('[data-role=note-inst]', 'drum'); await setField('[data-role=note-name]', 'C'); await setField('[data-role=note-at]', 0); await click('[data-role=note-enter]');
+  check('a drum takes C0 (it plays noise, the note only picks the noise period): written', (await songSets()) === setsBeforeDrum + 1 && (await song()).patterns[(await state()).pattern].ticksC[0].mix === 5, await status());
+  await click('[data-role=undo]');
+  // note entry's start tick after a switch of pattern: the cursor is at tick 0 in both, so the tick must still go back to 0
+  await click('[data-role=pat-0]');
+  await setField('[data-role=note-inst]', 'pluck'); await setField('[data-role=note-name]', 'C'); await setField('[data-role=note-oct]', 4); await setField('[data-role=note-len]', 5); await setField('[data-role=note-at]', 0);
+  await click('[data-role=note-enter]');
+  ss = await state();
+  check('a note at tick 0 of pattern 0: the cursor is on tick 0 and the next note goes to 5', ss.cur === 0 && ss.noteAt === 5, JSON.stringify({ cur: ss.cur, noteAt: ss.noteAt }));
+  await click('[data-role=undo]');
+  await click('[data-role=pat-1]');
+  ss = await state();
+  check('switching to pattern 1 (the cursor was already at 0) puts the note entry back at tick 0, not at 5', ss.pattern === 1 && ss.noteAt === 0 && (await evaluate("document.querySelector('[data-role=note-at]').value")) === '0', JSON.stringify({ pattern: ss.pattern, noteAt: ss.noteAt }));
+  // the order list and the loop
+  await click('[data-role=ord-0]');
+  ss = await state();
+  check('clicking order entry 0 selects it and shows its pattern (0)', ss.orderPos === 0 && ss.pattern === 0);
+  await click('[data-role=ord-insert]');
+  sg = await song();
+  check('Insert at position 0: order [0, 0, 1], the loop follows its entry to 1', same(sg.order, [0, 0, 1]) && sg.loop === 1);
+  await click('[data-role=ord-remove]');
+  sg = await song();
+  check('Remove: order [0, 1], loop back on position 0', same(sg.order, [0, 1]) && sg.loop === 0);
+  await setField('[data-role=loop]', '1');
+  check('the loop select sets the loop (position 1)', (await song()).loop === 1);
+  await setField('[data-role=loop]', 'none');
+  check('... and "none" removes it (null)', (await song()).loop === null);
+  await click('[data-role=ord-0]');
+  await click('[data-role=ord-right]');
+  sg = await song();
+  check('▶ moves the selected order entry later: order [1, 0]', same(sg.order, [1, 0]) && (await state()).orderPos === 1);
+  await click('[data-role=pat-0]');
+  await click('[data-role=pat-right]');
+  sg = await song();
+  check('moving pattern 0 after pattern 1 renumbers the order list so the song plays the same: order [0, 1], the C notes now in pattern 0', same(sg.order, [0, 1]) && sg.patterns[0].ticksC.length === 33 && (await state()).pattern === 1);
+  await click('[data-role=undo]');
+  sg = await song();
+  check('Undo takes back the pattern move (one step, the whole song)', same(sg.order, [1, 0]) && sg.patterns[1].ticksC.length === 33);
+  await click('[data-role=redo]');
+  check('Redo does it again', same((await song()).order, [0, 1]));
+  // size and length
+  const sizes = await evaluate(`(() => { const s = t.host.getAsset('music', 'tune'); const tl = t.MM.songTimeline(t.MM.fromSong(s)); return { info: document.querySelector('[data-role=info]').textContent, song: document.querySelector('[data-role=song-info]').textContent,
+    bytes: ${'t.MM.songInfo(t.MM.fromSong(s)).bytes'}, secs: (tl.refreshes / t.M.REFRESH_HZ).toFixed(2) }; })()`);
+  const conv = await evaluate("(async () => (await import('../src/lang/arcade/arcade-assets.js')).convertMusic(t.host.getAsset('music', 'tune')).bytes)()");
+  check(`the size on the cartridge is convertMusic's (${conv} bytes) in the readout and the song panel, with the length in seconds (${sizes.secs} s)`,
+    sizes.bytes === conv && sizes.info.includes(`${conv} bytes on the cartridge`) && sizes.song.includes(`${conv} bytes on the cartridge`) && sizes.song.includes(`${sizes.secs} s`), JSON.stringify(sizes));
+  // preview
+  let nb = await evaluate('t.audio.buffers.length');
+  await click('[data-role=play-song]');
+  const prev = await evaluate(`(() => { const s = t.MM.fromSong(t.host.getAsset('music', 'tune')), want = t.MM.renderSong(s, { rate: 22050 }), got = t.audio.buffers.at(-1); let d = 0; for (let i = 0; i < want.length; i++) d = Math.max(d, Math.abs(want[i] - got.data[i]));
+    return { n: t.audio.buffers.length, len: got.length, want: want.length, d, refreshes: t.MM.songTimeline(s).refreshes, what: t.editor.getState().playWhat }; })()`);
+  check('Song plays the whole song: one buffer, sample for sample renderSong (the order list; no loop here)', prev.n === nb + 1 && prev.len === prev.want && prev.d === 0 && prev.what === 'song' && prev.len === Math.round(prev.refreshes * 22050 / (await evaluate('t.M.REFRESH_HZ'))), JSON.stringify(prev));
+  await sleep(120);
+  check('while the song plays, an order entry is marked as playing', (await chips('order')).some((c) => /playing/.test(c)), JSON.stringify(await chips('order')));
+  await click('[data-role=stop]');
+  await setField('[data-role=loop]', '0');
+  nb = await evaluate('t.audio.buffers.length');
+  await click('[data-role=play-song]');
+  const looped = await evaluate("({ len: t.audio.buffers.at(-1).length, want: Math.round(t.MM.songTimeline(t.MM.fromSong(t.host.getAsset('music', 'tune'))).refreshes * 22050 / t.M.REFRESH_HZ), n: t.audio.buffers.length, one: t.MM.songInfo(t.MM.fromSong(t.host.getAsset('music', 'tune'))).refreshes })");
+  check('with a loop the preview plays it once more (twice the one-pass length here)', looped.n === nb + 1 && looped.len === looped.want && looped.want === Math.round(2 * looped.one * 22050 / (await evaluate('t.M.REFRESH_HZ'))), JSON.stringify(looped));
+  await click('[data-role=stop]');
+  await click('[data-role=play]');
+  check('Pattern plays the pattern shown only', (await evaluate("t.audio.buffers.at(-1).length")) === (await evaluate(`Math.round(t.M.effectLength(t.host.getAsset('music', 'tune').patterns[t.editor.getState().pattern]) * 22050 / t.M.REFRESH_HZ)`)) && (await state()).playWhat === 'pattern');
+  await click('[data-role=stop]');
+  await shot('11-song-edited');
+  // an unstorable record in a song (written by somebody else): the warning names pattern and channel, a click goes there
+  await evaluate("(() => { const s = t.host.getAsset('music', 'tune'); s.patterns[0].ticksB = [{ tone: 100, vol: 5, noise: 0, mix: 6 }, { tone: 3900, vol: 15, noise: 0, mix: 6 }]; t.externalSetSong('tune', s); return true; })()");
+  const swl = await evaluate("[...document.querySelectorAll('[data-role=warnings] li')].map((l) => l.textContent)");
+  check('a song with an unstorable record: the warning names pattern 0 channel B tick 1', swl.length === 1 && /^pattern 0: channel B tick 1: tone 3840/.test(swl[0]), JSON.stringify(swl));
+  await click('[data-role=warnings] li');
+  ss = await state();
+  check('clicking it shows pattern 0, channel B, tick 1, marked', ss.pattern === 0 && ss.track === 1 && ss.cur === 1 && same(ss.marks, [1]), JSON.stringify({ p: ss.pattern, t: ss.track, c: ss.cur, m: ss.marks }));
+  await evaluate("(() => { const s = t.host.getAsset('music', 'tune'); s.patterns[0].ticksB[1].vol = 14; t.externalSetSong('tune', s); return true; })()");
+  // duplicate, then delete a song
+  await evaluate("(window.__names = ['tune_b'], true)");
+  await click('[data-role=dup]');
+  check('Duplicate copies the song under a new name and shows it', (await state()).name === 'tune_b' && same(await song('tune_b'), await song('tune')));
+  await evaluate("(window.confirm = () => true, true)");
+  await click('[data-role=delete]');
+  check('Delete removes it and shows the other song', (await evaluate("t.host.listAssets('music')")).join() === 'tune' && (await state()).name === 'tune');
+  // modes: back to effects and to the song by the host's selection
+  await click('[data-role=mode-sfx]');
+  ss = await state();
+  check('Effects: back to the effect shown before (work), the song panel hidden', ss.kind === 'sfx' && ss.name === 'work' && (await evaluate("document.querySelector('[data-role=song]').hidden")));
+  await evaluate("(t.host.selectAsset('music', 'tune'), true)");
+  check('the host selecting a song switches the editor to it', (await state()).kind === 'music' && (await state()).name === 'tune');
+  // save and reload: the project as stored (JSON), a new editor on it
+  const storedSong = await song();
+  await evaluate("(t.replaceProject(JSON.parse(JSON.stringify(t.project))), t.remount(), true)");
+  await evaluate("(t.editor.select('tune', 'music'), true)");
+  ss = await state();
+  check('after a reload (the project through JSON, a new editor) the song is the same, opened in song mode with no undo history', ss.kind === 'music' && same(ss.song, storedSong) && same(await song(), storedSong) && !ss.canUndo && (await evaluate("t.host.listAssets('music').length")) === 1);
+  check('songs: every write was accepted by validateAsset, none unstorable', (await evaluate('t.log.refused.length')) === 0);
+  await click('[data-role=mode-sfx]');
+  await evaluate(`(t.editor.select('work'), true)`);
+  check('songs: no page errors', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
+  }
+
   // ── a host with only the required members ──
   await evaluate('t.mountBare()');
   check('a host without assetWarnings, soundCount, events or status still works: the effect shows, no count line', await evaluate("!!document.querySelector('#bare .sfxed [data-role=body]') && !document.querySelector('#bare [data-role=count]')"));

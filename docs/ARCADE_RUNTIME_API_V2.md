@@ -225,7 +225,7 @@ identical); three channels by the pairs of the entry: **n = 0: 260, n = 1: 395, 
 (item 18: no change 250, typical 3 to 6 changes 600, 11 changes 900, at most 100 bytes): code 50 bytes met; n = 3 (539) met, n = 4 (611) **missed by 11 T**, n = 5, 6 (683, 755) **missed**; n = 0 (260) **missed by 10 T**; n = 11 (1,115) **missed by 215 T**. The floors: for n = 0 the idle interrupt (151) + the entry test taken (32) + HL saved, the pointer read and stored (21 + 32) + the read and test of `n` (17); for a pair 72 T. **`AY_SHADOW` is page aligned** (`$E000`, 2026-11-10: it and the 16 bytes `V_FRAMES`..`RT_SEED` swapped places in `layout.inc`, so those variables moved by +`$70`: `V_FRAMES` `$E070`, `V_SYNC` `$E072`, `V_TICKS` `$E078`, `RT_SEED` `$E07E`; nothing else moved), so a pair's shadow address is `LD D,hi` once and `LD E,reg`: 7 T a pair saved (the first delta tick: 79). `RT_PLAY` 291 T for a stream (269 before the stream starts after the header: +22 T; one-channel effects unchanged), 539 T when it silences B and C; `RT_SILENCE` 270 T (234 T when already silent).
 Tests: `arcade/tests/m10-runtime-sound.mjs` (a model of every refresh's writes on v2, v3 and v4 with streams built by hand, by the test's own encoder and by `convertSfx`; the chip against `sfxRefreshRegisters` after every refresh; RT_PLAY over RT_PLAY in
 every 1 / 3-channel combination; an interrupt at every instruction of RT_PLAY / RT_SILENCE; register discipline; costs; one-channel code identical; **end to end**: a compiled game plays a three-channel asset on each build's cartridge) and
-`arcade/tests/m10-mutations.mjs` (37 deliberate bugs).
+`arcade/tests/m15-mutations.mjs` (83 deliberate bugs in the sound code, all killed; it replaced `m10-mutations.mjs`)
 
 ## As built: banking (B1, 2026-11-10)
 
@@ -234,3 +234,9 @@ Contract: `docs/ARCADE_BANKING_CONTRACT.md` sections 2 and 3 (slice B1); v3 and 
 **`MAX_MAPS` 64**: `maps_boot` cuts the table's count byte to 64 (`V_NMAP`); the table is indexed with `ADD A,A` (fine below 128). An index at or above `V_NMAP` still loads nothing.
 **Size**: +26 bytes (`runtime (chunks 0-1)` 9,337 -> 9,363 of 16,384 bytes by `build-runtime-v2.mjs`: **7,021 free**, was 7,047): the checking entry 14, `bank_on` / `bank_off` / the shared store 12. Cost: a mapped call pays the entry test, +28 T (`LD A,H` 4, `SUB` 7, `CP` 7, `JP NC` 10; counted from the instructions); a banked call costs **128 T** more than the same map mapped (measured by `m11-runtime-bank.mjs`: the two `OUT`s, the helpers and the calls).
 Tests: `arcade/tests/m11-runtime-bank.mjs` (RT_LOADMAPPTR from the window = the same map mapped, 11 cases x 2 places against a JavaScript model; the four boundary high bytes `$3F`, `$40`, `$7F`, `$80`; a record ending at `$7FFF`; every access audited (no write to `$4000-$7FFF`, reads there only inside the source and only with the window mapped); an interrupt at every instruction boundary; a 64-map table, banked and mapped mixed, count 100 cut to 64; map 0 banked at boot) and `arcade/tests/m11-mutations.mjs` (the new code of all three runtimes). `m5-*` follow `MAX_MAPS` 64 (`m5-common.mjs` layout: the maps start at `$9890`, after a table that can hold 64 entries; `m5-runtime.mjs`: count 65 is read as 64).
+
+## As built: music (MUSIC M2, 2026-11-12)
+
+The song player is in `sound.asm` of v2, v3 and v4 alike: `RT_MUSIC` (HL = the song's address; 0 is ignored) and `RT_NOMUSIC`; songs play from
+the frame interrupt, a one-channel effect borrows channel C while a song plays and a three-channel effect pauses it. State at `$FF00-$FF2A`. Costs,
+bytes, the register discipline and the tests: `docs/ARCADE_MUSIC_CONTRACT.md` section 5a; the games that use it: section 8a.

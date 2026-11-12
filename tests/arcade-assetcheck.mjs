@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import * as P from '../src/arcade-project.js';
 import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
 import { checkAssets, tileAttr, isForeground, tileUsesBlack, effectiveTileset, mapRole, readCells } from '../src/lang/arcade/arcade-assetcheck.js';
-import { convertSfx } from '../src/lang/arcade/arcade-assets.js';
+import { convertSfx, convertMusic } from '../src/lang/arcade/arcade-assets.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 let failed = 0;
@@ -232,6 +232,30 @@ const plain = (extra = {}) => tile({ paper: 6, ink: 1, bits: 'AA', ...extra }); 
     }
     return true;
   })());
+
+  // songs (docs/ARCADE_MUSIC_CONTRACT.md section 7): music-unstorable per pattern and channel, music-shape, music-unused-pattern; agrees with convertMusic
+  {
+    const T = (tone, vol = 10) => ({ tone, vol, noise: 0, mix: 6 });
+    const ms = (song) => checkAssets(mkProject({ music: { m: song } }), null);
+    let g = ms({ patterns: [{ ticks: [T(100), T(3840, 15)], ticksB: [T(4095, 15)] }, { ticks: [T(1)] }], order: [0, 1], loop: 0 });
+    check('music-unstorable: one finding per pattern and channel, with pattern / channel / ticks, an error the compiler also gives',
+      g.length === 2 && g.every((x) => x.id === 'music-unstorable' && x.kind === 'music' && x.asset === 'm' && x.severity === 'error' && x.compilerAlso === true && x.pattern === 0)
+      && g[0].channel === 'A' && eq(g[0].ticks, [1]) && g[1].channel === 'B' && eq(g[1].ticks, [0]) && /pattern 0 channel A tick 1 has a tone of 3840/.test(g[0].message), JSON.stringify(g));
+    g = ms({ patterns: [{ ticks: [T(1)] }, { ticks: [T(2)] }], order: [0, 0], loop: null });
+    check('music-unused-pattern: a warning of the Studio only (pattern 1 never played)', g.length === 1 && g[0].id === 'music-unused-pattern' && g[0].severity === 'warning' && g[0].compilerAlso === false && g[0].pattern === 1);
+    g = ms({ patterns: [{ ticks: [T(1)] }], order: [0, 3], loop: 5 });
+    check('music-shape: an order entry naming no pattern and a loop outside the list', g.filter((x) => x.id === 'music-shape').length === 2 && /order position 1 names no pattern/.test(g[0].message) && /the loop 5/.test(g[1].message), JSON.stringify(g));
+    check('music-shape: an empty order list; asset-malformed: no patterns', ms({ patterns: [{ ticks: [T(1)] }], order: [] }).some((x) => x.id === 'music-shape' && /empty order list/.test(x.message)) && ms({ order: [0] })[0]?.id === 'asset-malformed');
+    check('songs: an error finding exactly when convertMusic refuses (records over the tone / vol boundary, orders, loops)', (() => {
+      for (const tone of [0, 3839, 3840, 4095]) for (const vol of [14, 15]) for (const order of [[0], [1], []]) for (const loop of [null, 0, 1]) {
+        const song = { patterns: [{ ticks: [T(tone, vol)] }], order, loop };
+        const mine = ms(song).some((x) => x.severity === 'error');
+        let theirs = false; try { convertMusic(song); } catch { theirs = true; }
+        if (mine !== theirs) return false;
+      }
+      return true;
+    })());
+  }
 
   // sfx-unstorable on channels B and C (language batch 5): one finding per channel, the message names it, `ticks` are that channel's
   const sx3 = (extra) => checkAssets(mkProject({ sfx: { s: { ticks: [{ tone: 100, vol: 15, noise: 0, mix: 6 }], ...extra } } }), null).filter((x) => x.id === 'sfx-unstorable');

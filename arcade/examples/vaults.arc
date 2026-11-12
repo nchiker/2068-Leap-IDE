@@ -65,6 +65,8 @@ SFX door = "vl_door"
 SFX hurt = "vl_hurt"
 SFX win = "vl_win"
 SFX lose = "vl_lose"
+REM The title song (docs/ARCADE_MUSIC_CONTRACT.md): it starts with the title, plays on through the attract mode (the demo) and stops when a game starts.
+MUSIC depths = "vl_depths"
 
 VIEW3D level COLW 4 INK 5 CEIL 0 FLOOR 1
 
@@ -232,6 +234,7 @@ SCENE title NOVIEW
   DIM tgy(5) = 12, 11, 13, 13, 11, 12
 
   PROC INIT():
+    PLAY depths
     BORDER 0
     LOADMAP splash
     tm = 0
@@ -331,6 +334,7 @@ SCENE play
   REM first tick (the reset of ENTER cleared the screen and loaded the panel; the stages are the demo's, less the tagline and the prompt, and the tagline's row is blank) and the view shows the start at once.
   PROC INIT():
     LOCAL k
+    NOMUSIC
     WORLD level
     BORDER 0
     st = 1 : tt = 0 : bt = 0

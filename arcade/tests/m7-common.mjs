@@ -346,7 +346,7 @@ export function timeRun(game, nframes, routines) {
     const end = m.frameStart + C.FRAME_T;
     while (m.tstates < end) {
       const cpu = m.cpu, pc = cpu.pc;
-      const isr = (pc >= S.ISR && pc < S.ISR_END) || (pc >= S.SND_S && pc < S.SND_E);
+      const isr = (pc >= S.ISR && pc < S.ISR_END) || (pc >= S.SND_S && pc < S.SND_E) || (inIsr && pc >= S.SND_XS && pc < S.SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
       if (isr && !inIsr) { inIsr = true; isrT0 = m.tstates - 13; } else if (!isr && inIsr) { inIsr = false; isrAcc += m.tstates - isrT0; }
       if (!inIsr) {
         const name = byAddr.get(pc);

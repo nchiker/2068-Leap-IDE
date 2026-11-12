@@ -229,7 +229,7 @@ V_ANYSKIP       EQU VARS+$60    ; byte: 1 when the skip analysis marked an insta
 V_FTE           EQU VARS+$55    ; word: draw_all: the FTAB entry of the frame being built (a cache miss)
 V_HBASE         EQU VARS+$5A    ; byte: draw_all: $40 + the hidden file's offset (the high byte of its first row)
 AY_SHADOW       EQU VARS+$00    ; 16 bytes, PAGE ALIGNED ($E000: the delta tick addresses it as D = $E0, E = register; it and the 16 bytes of V_FRAMES..RT_SEED swapped places): what the sound code last wrote to AY registers 0..15 (boot zeroes the AY and this)
-V_SFX_CH        EQU VARS+$80    ; byte: channels of the playing effect, set by RT_PLAY from byte 3 of its first record (3 = groups of three records, else 1; boot 0 = 1)
+V_SFX_CH        EQU VARS+$80    ; byte: channels of the playing effect, set by RT_PLAY from byte 3 of its first record (3 = three channels, 4 / 5 = a channel-C stream (5 with noise), else 1; boot 0 = 1)
 ; Scratch of the cell renderer, the text routines and RT_HIT (all in chunk 7; none is used by the ISR)
 E_NR            EQU VARS+$82    ; byte: erase: rows left
 E_NC            EQU VARS+$83    ; byte: erase: columns per row
@@ -251,6 +251,24 @@ HO_F4           EQU HO_BASE+$03 ; byte: port $F4 at hand-off
 HO_FF           EQU HO_BASE+$04 ; byte: port $FF at hand-off
 HO_SP           EQU HO_BASE+$05 ; word: SP at hand-off
 HO_MARK_VALUE   EQU $5AA5
+
+; Music (docs/ARCADE_MUSIC_CONTRACT.md; sound.asm): the page above the stack top, below the hand-off record ($FF00-$FFDF was unused; a push can
+; never reach it, and it is RAM chunk 7, which the interrupt may touch).  NOT zeroed by the boot: RT_MUSIC sets every V_MUS_* field and MUS_SHADOW
+; before it sets SB_MUS, and MUS_OWN is set by RT_PLAY, RT_SILENCE, RT_MUSIC (no effect playing) and the end of an effect before anything reads it.
+MUS_SHADOW      EQU $FF00       ; 11 bytes, PAGE ALIGNED: the song's values of R0-R10 (whether or not the chip has them)
+MUS_OWN         EQU $FF20       ; 11 bytes: per register 0 = the song's, 1 = the effect's, 2 = R7 shared with a channel-C effect (the effect's bits $24)
+V_MUS_PTR       EQU $FF10       ; word: the song's next item
+V_MUS_ORD       EQU $FF12       ; word: the current order entry
+V_MUS_LOOP      EQU $FF14       ; word: the order entry to continue from after the last one (0: the song ends)
+V_MUS_WAIT      EQU $FF16       ; byte: refreshes still to hold with no change
+MUS_NO_LOOP     EQU $FF         ; a song's loop byte when it does not loop
+SB_FX           EQU 0           ; V_SFX_ACTIVE bits: an effect plays (RRA tests it: keep it bit 0)
+SB_MUS          EQU 1           ;   a song plays
+SB_SYNC         EQU 2           ;   the interrupt must first bring the chip back (SND_SYNC)
+SB_NEW          EQU 3           ;   RT_PLAY / RT_SILENCE posted an effect (V_SFX_NCH, V_SFX_NPTR) while a song plays: the interrupt takes it first
+V_SFX_NPTR      EQU $FF18       ; word: the posted effect's stream / first record
+V_SFX_NCH       EQU $FF1A       ; byte: its type (1, 3, 4, 5), or 0 = RT_SILENCE posted (no effect)
+    ASSERT MUS_OWN+11 <= HO_BASE && V_MUS_WAIT < V_SFX_NPTR && V_SFX_NCH < MUS_OWN && MUS_SHADOW+11 <= V_MUS_PTR && MUS_SHADOW >= STACK_TOP
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; Tables in RAM chunk 6 ($C000-$DFFF; chunk 6 is RAM because $F4 bit 6 is 0).  v3 map:

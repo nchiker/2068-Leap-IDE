@@ -21,9 +21,9 @@ export const VAULTS_SRC = readFileSync(join(EX, 'vaults.arc'), 'utf8');
 export const VAULTS_ASSETS = JSON.parse(readFileSync(join(EX, 'vaults.assets.json'), 'utf8'));
 export const s16 = (v) => ((v & 0xFFFF) ^ 0x8000) - 0x8000;
 
-// stubs for the routines the mock lacks (RT_VIEWMODE: the title scene's switch): address of each, and its bytes (RET, or LD HL,0 / RET for the ones that return a value)
+// stubs for the routines the mock lacks (RT_VIEWMODE: the title scene's switch; RT_MUSIC / RT_NOMUSIC since the game has songs, they only return like RT_PLAY / RT_SILENCE): address of each, and its bytes (RET, or LD HL,0 / RET for the ones that return a value)
 const STUB_AT = 0xC900, PLANLOAD_AT = 0xC9C0;
-const STUB_NAMES = ['RT_VIEWMODE', 'RT_PLAY', 'RT_SILENCE', 'RT_TILE', 'RT_TILEAT', 'RT_KEYDOWN', 'RT_PRINTN', 'RT_PRINTS', 'RT_AT', 'RT_INK', 'RT_PAPER', 'RT_BRIGHT', 'RT_CLS', 'RT_BORDER', 'RT_RANDOMISE', 'RT_FILLC', 'RT_FILL', 'RT_COPY', 'RT_LOADMAP'];
+const STUB_NAMES = ['RT_VIEWMODE', 'RT_PLAY', 'RT_SILENCE', 'RT_MUSIC', 'RT_NOMUSIC', 'RT_TILE', 'RT_TILEAT', 'RT_KEYDOWN', 'RT_PRINTN', 'RT_PRINTS', 'RT_AT', 'RT_INK', 'RT_PAPER', 'RT_BRIGHT', 'RT_CLS', 'RT_BORDER', 'RT_RANDOMISE', 'RT_FILLC', 'RT_FILL', 'RT_COPY', 'RT_LOADMAP'];
 const RETURNS_VALUE = new Set(['RT_TILEAT', 'RT_KEYDOWN']);
 function extended() {
   const base = mockRuntime4();

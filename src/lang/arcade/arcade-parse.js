@@ -103,6 +103,10 @@
  *        {pattern, line, col, endCol}); without any USING the node has no `usings` at all. A USING that is not followed by a string literal is an error.
  *      - `PLAY expr`: a bare Ident (not in brackets) stays `Play {sfx: Ident}`; the checker, the interpreter and the code generator read it as an effect NAME when an SFX of that name
  *        is declared, else as a variable (`PLAY n`). Any other expression, and `PLAY (name)`, is `Play {sfx: null, index: expr}`.
+ *  19. (MUSIC, docs/ARCADE_MUSIC_CONTRACT.md section 2) `MUSIC name = "asset"` is an asset declaration like SFX (node Asset {kind: 'MUSIC'}; top level only). `PLAY name` keeps the shape
+ *      `Play {sfx: Ident}`: the checker, the interpreter and the code generator read the name as a SONG when a MUSIC of that name is declared (and no SFX: a name that is both is a checker
+ *      error). A word that may name an asset (BATCH11_WORDS: WORLD, MUSIC, NOMUSIC, TABLE, LOADTABLE) standing alone after PLAY is read as a name. `NOMUSIC` is node NoMusic {}; anything
+ *      after it in the statement is an error.
  */
 
 "use strict";
@@ -781,12 +785,20 @@ class Parser {
         this.next();
         const a = this.peek();
         if (isEnd(a) || isBlockWord(a)) this.fail(a, `expected a sound effect name or number but found ${describe(a)}`);
+        // MUSIC (docs/ARCADE_MUSIC_CONTRACT.md section 2): a word that may name an asset (BATCH11_WORDS: WORLD, MUSIC, ...) standing alone is a name (`SFX music = "m"` ... `PLAY music`)
+        if (a.type === 'keyword' && BATCH11_WORDS.has(a.value) && (isEnd(this.peek(1)) || isBlockWord(this.peek(1)))) { this.next(); return this.close(this.mk('Play', t, { sfx: this.mk('Ident', a, { name: a.text }) })); }
         const arg = this.expr();
         if (arg.type === 'Ident' && !arg.parens) return this.close(this.mk('Play', t, { sfx: arg }));      // a bare name: an SFX (or, if none has that name, a variable: the checker decides)
         return this.close(this.mk('Play', t, { sfx: null, index: arg }));
       }
       case 'ENTER': { this.next(); return this.close(this.mk('Enter', t, { scene: this.nameRef('a scene name', true) })); }
       case 'SILENCE': this.next(); return this.mk('Silence', t, {});
+      case 'NOMUSIC': {                                   // MUSIC (docs/ARCADE_MUSIC_CONTRACT.md section 2): stop the song; it takes nothing
+        this.next();
+        const a = this.peek();
+        if (!isEnd(a) && !isBlockWord(a)) this.fail(a, 'NOMUSIC takes nothing: write NOMUSIC alone (PLAY name starts a song)');
+        return this.mk('NoMusic', t, {});
+      }
       case 'CLS': this.next(); return this.mk('Cls', t, {});
       case 'END': this.next(); return this.mk('End', t, {});
       case 'EXIT': {

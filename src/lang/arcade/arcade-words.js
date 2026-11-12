@@ -53,6 +53,9 @@
  *   - (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md) TIMER KEYPRESS JOYPRESS are RESERVED (a variable called `timer` must be renamed). `TIMER a, b` declares variables the game counts
  *     down by itself (top level or directly in a SCENE, like DIM); KEYPRESS(c) / JOYPRESS(n) are the edge versions of KEYDOWN / STICK: 1 / the bits that went down in this tick. USING is
  *     contextual (`PRINT score USING "00000"`; an ordinary name elsewhere). PLAY takes an expression: a bare name of a declared SFX plays that effect, anything else is the effect's index.
+ *   - (MUSIC, docs/ARCADE_MUSIC_CONTRACT.md section 2) MUSIC and NOMUSIC are RESERVED (a variable called `music` must be renamed); like WORLD they may still NAME AN ASSET (BATCH11_WORDS:
+ *     `SFX music = "music"`). `MUSIC name = "asset"` declares a song (at most 8, game level); `PLAY name` with the name of a declared song starts that song (songs have no index form:
+ *     `PLAY expr` stays an effect index); NOMUSIC stops the song. SILENCE stops the effect only.
  */
 
 "use strict";
@@ -78,6 +81,7 @@ export const LIMITS = Object.freeze({
   maxRow: 23,         // y and row 0..23
   maxTile: 127,       // tile index 0..127
   maxSfx: 8,          // SFX declarations
+  maxSongs: 8,        // MUSIC declarations (docs/ARCADE_MUSIC_CONTRACT.md section 2)
   maxPrintChar: 127,  // string literals printed with PRINT: character codes 32..127
   // language batch 2 (the scrolling window, docs/ARCADE_PLATFORMER_CONTRACT.md)
   winCols: 24,        // the window is 24 x 16 cells
@@ -100,7 +104,7 @@ export const LIMITS = Object.freeze({
 export const VALID_FRAMERATES = Object.freeze([60, 30, 20, 15, 12, 10, 6, 5, 4, 3, 2, 1]);
 
 /** Asset declarations: keyword -> the asset type name used in argument lists. */
-export const ASSET_KINDS = Object.freeze({ SPRITE: 'sprite', SFX: 'sfx', TILESET: 'tileset', MAP: 'map' });
+export const ASSET_KINDS = Object.freeze({ SPRITE: 'sprite', SFX: 'sfx', TILESET: 'tileset', MAP: 'map', MUSIC: 'music' });
 
 // ── The word list ─────────────────────────────────────────────────
 function parseArgs(specs = []) {
@@ -130,6 +134,7 @@ const WORD_LIST = [
   W('FRAMERATE', 'game', 'FRAMERATE n', 'Target updates per second: 60 / n must be a whole number of refreshes (60, 30, 20, 15, 12, 10, 6, 5, 4, 3, 2, 1). Once, at the top level.'),
   W('SPRITE', 'game', 'SPRITE name = "asset"  /  SPRITE name(n) = "asset"', 'Declare a sprite made in the Studio. SPRITE name(n) makes a pool of n instances (name(0)..name(n-1)) that share the art; at most 16 instances in all and 8 different assets (v2 runtime). Declaration order is draw order: a later instance appears on top. The asset may say "phases": 8 (default), 4, 2 or 1: fewer phases use less memory, and the x position is then drawn rounded down to a multiple of 2, 4 or 8.'),
   W('SFX', 'game', 'SFX name = "asset"', 'Declare a sound effect made in the Studio (up to 8; PLAY starts one by name).'),
+  W('MUSIC', 'game', 'MUSIC name = "asset"', 'Declare a song made in the Studio (up to 8, at the top level): three-channel music the game plays by itself, every refresh, while it runs. PLAY name starts the song from its beginning (replacing the song that plays), NOMUSIC stops it. A song keeps playing across ENTER until PLAY or NOMUSIC changes it. In a game with a song a one-channel sound effect plays on channel C while the song goes on on A and B; a three-channel effect pauses the song until it ends. Needs a v2 runtime.'),
   W('TILESET', 'game', 'TILESET name = "asset"', 'Declare the tile set made in the Studio (up to 128 tiles of 8 x 8 pixels; TILE needs one).'),
   W('MAP', 'game', 'MAP name = "asset"', 'Declare a tile map made in the Studio; it fills the top-left of the 32 x 24 screen cells when the game starts.'),
   W('SCENE', 'game', 'SCENE name [NOWINDOW | NOVIEW] ... ENDSCENE', 'A game part with its own PROC INIT and PROC FRAME. May hold DIM, DEF FN and PROC. In a game with a WINDOW or a VIEW3D every scene shows the window / 3D view unless its SCENE line ends with NOWINDOW / NOVIEW.'),
@@ -138,8 +143,9 @@ const WORD_LIST = [
   W('SHOW', 'game', 'SHOW sprite AT x, y [FRAME f] [FLIP]  /  SHOW pool(i) AT x, y', 'Place a sprite (or the instance i of a pool) at a pixel position (y from the top). FRAME f picks the animation frame (0 is the first frame of the sprite asset; without FRAME the instance keeps the frame it had, 0 at the start); FLIP draws the frame mirrored left to right. FRAME, FLIP, sprites wider or taller than 16 pixels, and a WINDOW need the v3 runtime. In a WINDOW game x and y are world pixels (x from the left of the world, y from the top of the window) and are not clamped; a sprite that is not wholly inside the window is not drawn. An instance number outside the pool is ignored.'),
   W('AT', 'structure', 'AT row, col  (after PRINT) / AT x, y  (after SHOW)', 'A position: character row and column after PRINT, pixels after SHOW.'),
   W('HIDE', 'game', 'HIDE sprite  /  HIDE pool(i)', 'Remove a sprite (or the instance i of a pool) from the screen. An instance number outside the pool is ignored.'),
-  W('PLAY', 'game', 'PLAY sfx  /  PLAY index', 'Start a sound effect (it replaces the one playing): by its SFX name, or by a number, the effect\'s place in the SFX declarations (0 is the first). The number may be any expression and is checked when it runs: a value outside 0 .. number of effects - 1 does nothing. A bare name that is an SFX plays that effect; to use a variable that has the name of an effect, write PLAY (name).'),
-  W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing.'),
+  W('PLAY', 'game', 'PLAY sfx  /  PLAY index  /  PLAY song', 'Start a sound effect (it replaces the one playing): by its SFX name, or by a number, the effect\'s place in the SFX declarations (0 is the first). The number may be any expression and is checked when it runs: a value outside 0 .. number of effects - 1 does nothing. A bare name that is an SFX plays that effect; to use a variable that has the name of an effect, write PLAY (name). PLAY with the name of a MUSIC starts that song from its beginning (by name only; a song that plays, the same or another, is replaced).'),
+  W('SILENCE', 'game', 'SILENCE', 'Stop the sound effect that is playing (a song plays on: NOMUSIC stops it).'),
+  W('NOMUSIC', 'game', 'NOMUSIC', 'Stop the song that is playing (its channels go quiet; a sound effect plays on). Nothing happens when no song plays.'),
   W('WINDOW', 'game', 'WINDOW map [AT cx, cy]', 'Top level, once: use the declared MAP as a scrolling world shown in a window of 24 x 16 cells (192 x 128 pixels) at screen cell (cx, cy) (default 4, 4; both constants 0..8). The map is 24..128 cells wide and 1..16 tall and uses the tiles 0..31 of the TILESET (tile 0 should be blank: the sky). The cells of the screen outside the window stay yours (HUD text and tiles); cells inside it are repainted from the world every tick. SHOW uses world pixel coordinates. Needs the v3 runtime.'),
   W('CAMERA', 'game', 'CAMERA x', 'Set the camera: the world x (in pixels) at the left edge of the window. The value is clamped to 0..the largest value the world allows (the world width x 8 - 192, halved when a BAND scrolls at 2/1). CAMX() reads the clamped value. Needs a WINDOW.'),
   W('SETWORLD', 'game', 'SETWORLD x, y = t', 'Change one cell of the world: the cell that contains the world pixel (x, y) becomes tile t (0..31, a tile of the TILESET); a cell outside the world, or a tile outside the tileset, is ignored. The picture follows on the next tick. Collision words see the new tile at once. Needs a WINDOW.'),
@@ -273,7 +279,7 @@ export const BLOCK_WORDS = new Set(['ELSE', 'ENDIF', 'NEXT', 'WEND', 'CASE', 'EN
 export const BATCH3_WORDS = Object.freeze(new Set(['VIEW3D', 'VIEW', 'SETWALL', 'COSA', 'SINA', 'FXMUL', 'WALL', 'SEEN', 'DEPTH']));
 
 /** Words of the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): reserved like batch 3's, and like them they may still NAME AN ASSET (`MAP world = "w"`). */
-export const BATCH11_WORDS = Object.freeze(new Set(['WORLD', 'TABLE', 'LOADTABLE']));      // (TABLE and LOADTABLE: bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md; a project that named an asset `table` keeps building)
+export const BATCH11_WORDS = Object.freeze(new Set(['WORLD', 'TABLE', 'LOADTABLE', 'MUSIC', 'NOMUSIC']));      // (TABLE and LOADTABLE: bankable per-level tables, docs/ARCADE_TABLES_CONTRACT.md; a project that named an asset `table` keeps building; MUSIC and NOMUSIC: docs/ARCADE_MUSIC_CONTRACT.md)
 
 /** Entry for a word (any case), or null. */
 export function wordEntry(word) {

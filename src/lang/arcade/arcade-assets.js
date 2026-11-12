@@ -5,7 +5,7 @@
  *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: a register delta stream (batch 5)
  *   convertMap(asset, n)    -> {w, h, cells, bytes}    bytes = the 768 CELL_TILE bytes (tile = 128 + index, blank = 32)
  *   lookupAsset(table, ...names) -> asset | undefined  exact name first, then case-insensitive
- *   assetTables(assets)     -> {sprites, tilesets, sfx, maps}   see below
+ *   assetTables(assets)     -> {sprites, tilesets, sfx, maps, music}   see below
  *
  * Asset shapes (docs/ARCADE_ASSETS.md, as extended here where that file is silent):
  *   tileset {tiles: [{rows: [8 x {bits, ink, paper, bright}], flags}]}   bits = 8-bit number or 1..2 hex digits, MSB = left pixel;
@@ -17,11 +17,13 @@
  *   map     {w, h, cells}  w <= 32, h <= 24; cells = array (or hex string, 2 digits per cell) of w*h values, each a tile index
  *           0..127 or blank (-1, null, or 255 / "FF"); placed at the top-left of the 32 x 24 cell map, the other cells are font
  *           spaces. (docs/ARCADE_ASSETS.md says "hex or run-length"; run-length is not implemented.)
- * `assets` passed to compile() is {sprites, tilesets, sfx, maps} (each a name -> asset object). For compatibility with M2 a
- * value that has none of those four keys is taken to be the sprites table itself.
+ * `assets` passed to compile() is {sprites, tilesets, sfx, maps, music} (each a name -> asset object; `music`: the songs, docs/ARCADE_MUSIC_CONTRACT.md section 3).
+ * For compatibility with M2 a value that has none of those five keys is taken to be the sprites table itself.
  */
 
 "use strict";
+
+import { LIMITS } from './arcade-words.js';
 
 export const MAX_TILES = 128;
 export const MAX_SFX = 8;
@@ -31,11 +33,11 @@ export const TILE_CELL = 128;               // cell value of tile 0
 
 export function assetTables(assets) {
   const a = assets ?? {};
-  const named = ['sprites', 'tilesets', 'sfx', 'maps'];
+  const named = ['sprites', 'tilesets', 'sfx', 'maps', 'music'];
   if (named.some((k) => k in a)) {
-    return { sprites: a.sprites ?? {}, tilesets: a.tilesets ?? {}, sfx: a.sfx ?? {}, maps: a.maps ?? {} };
+    return { sprites: a.sprites ?? {}, tilesets: a.tilesets ?? {}, sfx: a.sfx ?? {}, maps: a.maps ?? {}, music: a.music ?? {} };
   }
-  return { sprites: a, tilesets: {}, sfx: {}, maps: {} };
+  return { sprites: a, tilesets: {}, sfx: {}, maps: {}, music: {} };
 }
 
 export function lookupAsset(table, ...names) {
@@ -176,6 +178,98 @@ export function convertSfx(asset) {
   });
   out.push(0xFF);
   return { records: regs.length, channels: 3, bytes: Uint8Array.from(out) };
+}
+
+// ── music (docs/ARCADE_MUSIC_CONTRACT.md sections 3 and 4) ──────────────────────────────────────────────────────────────────────────────────
+export const MAX_SONGS = LIMITS.maxSongs;           // the language's limit (arcade-words.js), the checker's "too many songs"
+export const MAX_PATTERNS = 32;
+export const MAX_ORDER = 64;
+export const MAX_PATTERN_TICKS = 1800;              // the effect editor's cap, per pattern
+export const MUSIC_WAIT = 0x80;                     // $80 + k: k + 1 refreshes with no change (k = 0..126)
+export const MUSIC_MAX_WAIT = 127;                  // refreshes one wait item can hold
+export const MUSIC_END = 0xFF;                      // the end of a pattern
+export const MUSIC_NO_LOOP = 0xFF;                  // the song's loop byte when it does not loop
+export const SFX_TYPE_C = 4;                        // header byte 3 of a channel-C effect stream (games with songs)
+/** The registers a channel-C effect stream may hold: tone C (R4, R5), noise (R6, only when the effect uses noise), the mixer (R7: bits 2 and 5 only), volume C (R10). */
+export const SFX_C_REGS = Object.freeze([4, 5, 6, 7, 10]);
+export const SFX_C_MIXER_BITS = 0x24;
+
+/** Items of a delta stream with waits from per-refresh register arrays: the first refresh writes all 11, a later one its changes (`n, pairs`), runs of
+ *  unchanged refreshes become `$80 + k` items (at most 127 refreshes each).  Returns the items as a byte array without the end byte. */
+function musicItems(regs) {
+  const out = [];
+  let wait = 0;
+  const flush = () => { while (wait > 0) { const r = Math.min(wait, MUSIC_MAX_WAIT); out.push(MUSIC_WAIT + r - 1); wait -= r; } };
+  regs.forEach((cur, i) => {
+    const pairs = [];
+    cur.forEach((v, k) => { if (i === 0 || v !== regs[i - 1][k]) pairs.push(k, v); });
+    if (i > 0 && pairs.length === 0) { wait++; return; }
+    flush();
+    out.push(pairs.length / 2, ...pairs);
+  });
+  flush();
+  return out;
+}
+
+/** One pattern ({ticks, ticksB?, ticksC?}, a three-channel effect's shape) -> its stream: items with waits, then $FF. */
+export function convertPattern(pattern, where = 'pattern') {
+  if (!pattern || typeof pattern !== 'object') throw new Error(`${where} is not an object`);
+  let regs;
+  try { regs = sfxRefreshRegisters(pattern); } catch (e) { throw new Error(`${where}: ${e.message}`); }
+  if (regs.length === 0) throw new Error(`${where} is empty (no ticks in any channel)`);
+  if (regs.length > MAX_PATTERN_TICKS) throw new Error(`${where} is ${regs.length} refreshes long (at most ${MAX_PATTERN_TICKS})`);
+  return { refreshes: regs.length, bytes: Uint8Array.from([...musicItems(regs), MUSIC_END]) };
+}
+
+/**
+ * Song asset -> its parts (the code generator lays them out: the song is `loop, DW pattern pointers in order, DW 0`, each pattern stream once).
+ *   asset = {patterns: [pattern...], order: [pattern index...], loop: order position | null}
+ *   -> {patterns: [{refreshes, bytes}], order, loop (0..order.length - 1 or MUSIC_NO_LOOP), refreshes (one pass of the order), bytes (all of it)}
+ */
+export function convertMusic(asset) {
+  const pats = asset?.patterns, order = asset?.order;
+  if (!Array.isArray(pats) || pats.length === 0) throw new Error('the song has no "patterns"');
+  if (pats.length > MAX_PATTERNS) throw new Error(`the song has ${pats.length} patterns (at most ${MAX_PATTERNS})`);
+  if (!Array.isArray(order) || order.length === 0) throw new Error('the song has an empty "order" list');
+  if (order.length > MAX_ORDER) throw new Error(`the song's order list has ${order.length} entries (at most ${MAX_ORDER})`);
+  order.forEach((p, i) => { if (!Number.isInteger(p) || p < 0 || p >= pats.length) throw new Error(`order entry ${i} is ${JSON.stringify(p)}: a pattern index 0..${pats.length - 1}`); });
+  let loop = asset?.loop ?? null;
+  if (loop === null) loop = MUSIC_NO_LOOP;
+  else if (!Number.isInteger(loop) || loop < 0 || loop >= order.length) throw new Error(`the song's loop is ${JSON.stringify(asset.loop)}: an order position 0..${order.length - 1}, or null`);
+  const patterns = pats.map((p, i) => convertPattern(p, `pattern ${i}`));
+  const refreshes = order.reduce((n, p) => n + patterns[p].refreshes, 0);
+  const bytes = 1 + 2 * (order.length + 1) + patterns.reduce((n, p) => n + p.bytes.length, 0);
+  return { patterns, order: order.slice(), loop, refreshes, bytes };
+}
+
+/**
+ * A one-channel effect as a channel-C stream (only in a game with songs, contract section 4): header `0, 0, noise, 4` (noise = 1 when any record has
+ * noise on), then one entry per refresh holding R4, R5, R6 (only with noise), R7 (only bits 2 and 5: tone C off, noise C off) and R10; the first
+ * entry all of them, later ones the changes; $FF ends it.  The records are channel A's of the stored effect (`ticks`).
+ */
+export function convertSfxC(asset) {
+  const [ticks, ...extra] = sfxChannels(asset);
+  if (extra[0].length || extra[1].length) throw new Error('convertSfxC takes a one-channel effect');
+  const recs = ticks.map((t, i) => sfxRecord(t, `tick ${i}`));
+  const noise = recs.some((r) => ((r[2] >> 5) & 2) === 0) ? 1 : 0;
+  const regsOf = (r) => {
+    const tone = r[0] | ((r[1] & 15) << 8), mix = r[2] >> 5, m = {};
+    m[4] = tone & 0xFF; m[5] = tone >> 8;
+    if (noise) m[6] = r[2] & 31;
+    m[7] = ((mix & 1) << 2) | (((mix >> 1) & 1) << 5);
+    m[10] = r[1] >> 4;
+    return m;
+  };
+  const out = [0, 0, noise, SFX_TYPE_C];
+  let prev = null;
+  recs.forEach((r) => {
+    const cur = regsOf(r), pairs = [];
+    for (const k of SFX_C_REGS) if (k in cur && (prev === null || cur[k] !== prev[k])) pairs.push(k, cur[k]);
+    out.push(pairs.length / 2, ...pairs);
+    prev = cur;
+  });
+  out.push(0xFF);
+  return { records: recs.length, channels: 1, noise, bytes: Uint8Array.from(out) };
 }
 
 export function convertMap(asset, tileCount = MAX_TILES) {

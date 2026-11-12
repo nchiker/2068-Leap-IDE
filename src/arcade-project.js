@@ -20,6 +20,8 @@
 
 "use strict";
 
+import { MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS } from './lang/arcade/arcade-assets.js';
+
 export const FORMAT = 1;
 export const MAIN_FILE = 'main.arc';
 export const ASSET_KINDS = Object.freeze(['sprites', 'tilesets', 'maps', 'sfx', 'music']);
@@ -54,6 +56,27 @@ function validateRows(rows, what, bytes) {
       if (r[k] !== undefined && !(Number.isInteger(r[k]) && r[k] >= 0 && r[k] <= hi)) return `${what} row ${i}: "${k}" must be 0..${hi}`;
     }
     if (r.bright !== undefined && !(r.bright === 0 || r.bright === 1 || typeof r.bright === 'boolean')) return `${what} row ${i}: "bright" must be 0 or 1`;
+  }
+  return null;
+}
+
+/** The limits of a song: the compiler's, arcade-assets.js MAX_PATTERNS / MAX_ORDER / MAX_PATTERN_TICKS (not repeated here). */
+export const MUSIC_LIMITS = Object.freeze({ patterns: MAX_PATTERNS, order: MAX_ORDER, ticks: MAX_PATTERN_TICKS });
+
+/** The shape of a sound effect (or a song's pattern): ticks = channel A, ticksB / ticksC (batch 5) = channels B and C, null or absent = none. */
+function validateSfxShape(value, where, maxTicks = 1800) {
+  const what = where ? 'a pattern' : 'a sound effect';
+  if (!Array.isArray(value.ticks)) return `${where}${what} needs "ticks": [...]`;
+  for (const [key, who] of [['ticks', ''], ['ticksB', 'channel B '], ['ticksC', 'channel C ']]) {
+    const list = value[key];
+    if (key !== 'ticks' && (list === undefined || list === null)) continue;
+    if (!Array.isArray(list)) return `${where}"${key}" must be an array of ticks (or null for none)`;
+    if (list.length > maxTicks) return `${where}${what} has at most ${maxTicks} ticks${who ? ` per channel (${who.trim()} has ${list.length})` : ''}`;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (!isObj(t)) return `${where}${who}tick ${i} is not an object`;
+      if (!(Number.isInteger(t.tone) && t.tone >= 0 && t.tone <= 4095)) return `${where}${who}tick ${i}: "tone" must be 0..4095`;
+    }
   }
   return null;
 }
@@ -112,24 +135,32 @@ export function validateAsset(kind, value) {
     } else return 'a map needs "cells" (an array, or a hex string)';
     return null;
   }
-  case 'sfx': {
-    if (!Array.isArray(value.ticks)) return 'a sound effect needs "ticks": [...]';
-    // ticks = channel A; ticksB / ticksC (batch 5) = channels B and C, null or absent = none
-    for (const [key, who] of [['ticks', ''], ['ticksB', 'channel B '], ['ticksC', 'channel C ']]) {
-      const list = value[key];
-      if (key !== 'ticks' && (list === undefined || list === null)) continue;
-      if (!Array.isArray(list)) return `"${key}" must be an array of ticks (or null for none)`;
-      if (list.length > 1800) return `a sound effect has at most 1800 ticks${who ? ` per channel (${who.trim()} has ${list.length})` : ''}`;
-      for (let i = 0; i < list.length; i++) {
-        const t = list[i];
-        if (!isObj(t)) return `${who}tick ${i} is not an object`;
-        if (!(Number.isInteger(t.tone) && t.tone >= 0 && t.tone <= 4095)) return `${who}tick ${i}: "tone" must be 0..4095`;
-      }
+  case 'sfx':
+    return validateSfxShape(value, '');
+  case 'music': {
+    // docs/ARCADE_MUSIC_CONTRACT.md section 3: {patterns: [three-channel effect...], order: [pattern index...], loop: order position | null}
+    const { patterns, order } = value;
+    if (!Array.isArray(patterns) || patterns.length < 1) return 'a song needs "patterns": [{"ticks": [...], "ticksB": [...], "ticksC": [...]}, ...]';
+    if (patterns.length > MUSIC_LIMITS.patterns) return `a song has at most ${MUSIC_LIMITS.patterns} patterns (this one has ${patterns.length})`;
+    for (let i = 0; i < patterns.length; i++) {
+      const p = patterns[i];
+      if (!isObj(p)) return `pattern ${i} is not an object`;
+      const bad = validateSfxShape(p, `pattern ${i}: `, MUSIC_LIMITS.ticks);
+      if (bad) return bad;
+      const len = Math.max(...['ticks', 'ticksB', 'ticksC'].map((k) => (Array.isArray(p[k]) ? p[k].length : 0)));
+      if (len === 0) return `pattern ${i} has no ticks`;
     }
+    if (!Array.isArray(order) || order.length < 1) return 'a song needs a non-empty "order" list of pattern indices';
+    if (order.length > MUSIC_LIMITS.order) return `a song's order list has at most ${MUSIC_LIMITS.order} entries (this one has ${order.length})`;
+    for (let i = 0; i < order.length; i++) {
+      if (!(Number.isInteger(order[i]) && order[i] >= 0 && order[i] < patterns.length)) return `order entry ${i} is ${JSON.stringify(order[i])}: a pattern index 0..${patterns.length - 1}`;
+    }
+    const loop = value.loop;
+    if (loop !== undefined && loop !== null && !(Number.isInteger(loop) && loop >= 0 && loop < order.length)) return `"loop" is ${JSON.stringify(loop)}: an order position 0..${order.length - 1}, or null for none`;
     return null;
   }
   default:
-    return null;      // music: no format yet (docs/ARCADE_ASSETS.md "later"); any object
+    return null;
   }
 }
 
@@ -361,7 +392,7 @@ export function renameAsset(project, kind, oldName, newName) {
 
 /** Source references to an asset name that has no asset: [{line, name}] (the Studio warns after a rename). */
 export function assetReferences(project, kind, name) {
-  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX' }[kind];
+  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX', music: 'MUSIC' }[kind];
   if (!word) return [];
   const re = new RegExp(`^\\s*${word}\\s+[A-Za-z]\\w*\\s*(\\(\\s*\\d+\\s*\\))?\\s*=\\s*"${name.replace(/[^\w]/g, '\\$&')}"`, 'i');
   const out = [];

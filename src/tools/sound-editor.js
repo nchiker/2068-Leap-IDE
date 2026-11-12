@@ -17,11 +17,20 @@
  * Three tracks (language batch 5): tabs A / B / C pick the AY channel being edited (B and C start empty and are stored only when they hold ticks); every
  * lane, operation and the row editor work on the selected track; the timeline is as long as the longest track and its tone lane shows all three
  * curves, the selected one bright; painting a track past its end extends it with silent ticks; Play mixes the channels.
+ *
+ * Songs (docs/ARCADE_MUSIC_CONTRACT.md section 7; the model is music-model.js): the buttons Effects / Songs switch the editor between the project's `sfx`
+ * and `music` assets.  A song is a list of patterns (each one a three-channel effect, edited here exactly as an effect is), an order list of pattern
+ * indices and a loop position.  In song mode a song panel above the lanes holds the pattern list (pick, add, duplicate, delete, move, label), the
+ * order list (append, insert, set, move, remove; the loop) and the song's size and length; Play plays the pattern shown, "Song" the whole song (the
+ * loop once more).  Note entry (both modes) writes a note of an instrument into the selected track at a tick.  One undo history per asset: in song mode
+ * it covers the whole song (a pattern edit and an order edit alike), and every edit writes the whole song with one host.setAsset('music', ...).
+ * The host's select(name, kind) / onSelectAsset({kind: 'music'}) open a song; select(name) alone keeps the mode.
  */
 
 "use strict";
 
 import * as M from './sound-model.js';
+import * as MM from './music-model.js';
 
 const PREF_KEY = 'leap-studio.sfxed';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -126,6 +135,17 @@ const CSS = `
 .sfxed-tab.t1.on { border-color: var(--blue-fg, #79c0ff); color: var(--blue-fg, #79c0ff); }
 .sfxed-tab.t2.on { border-color: var(--amber-fg, #e3b341); color: var(--amber-fg, #e3b341); }
 .sfxed-empty { color: var(--fg-muted, #768390); padding: 24px 8px; }
+.sfxed-song { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border: 1px solid var(--border, #2d333b); border-radius: 6px; background: var(--bg-surface, #1c2128); }
+.sfxed-song .sfxed-row b, .sfxed-notes b { font-weight: 600; font-size: 11px; min-width: 52px; }
+.sfxed-chips { display: flex; flex-wrap: wrap; gap: 3px; max-width: 100%; }
+.sfxed-chip { font: 11px var(--font-code, monospace); color: var(--fg, #cdd9e5); background: var(--bg, #0d1117); border: 1px solid var(--border-hi, #444c56); border-radius: 3px; padding: 1px 5px; cursor: pointer; }
+.sfxed-chip:hover { background: var(--bg-hover, #22292f); }
+.sfxed-chip.on { border-color: var(--amber-fg, #e3b341); color: var(--amber-fg, #e3b341); }
+.sfxed-chip.cur { box-shadow: inset 0 -2px 0 var(--blue-fg, #79c0ff); }
+.sfxed-chip.loop::before { content: '↻ '; color: var(--ok-fg, #8ddb8c); }
+.sfxed-chip.playing { background: var(--bg-active, #2d333b); border-color: var(--ok-fg, #8ddb8c); }
+.sfxed-chip.unused { color: var(--fg-muted, #768390); border-style: dashed; }
+.sfxed-notes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border, #2d333b); border-radius: 6px; background: var(--bg-surface, #1c2128); }
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -160,46 +180,55 @@ export function createSoundEditor(container, host) {
   const hostId = host?.id ?? 'sound-editor';
 
   // ── host access (every call guarded: a missing member degrades, it does not throw) ──
+  // `k` defaults to the editor's mode: 'sfx' (effects) or 'music' (songs)
   const H = {
-    list() {
+    list(k = kind) {
       try {
-        if (host.listAssets) return host.listAssets('sfx');
-        return Object.keys(host.getProject()?.assets?.sfx ?? {}).sort();
+        if (host.listAssets) return host.listAssets(k);
+        return Object.keys(host.getProject()?.assets?.[k] ?? {}).sort();
       } catch { return []; }
     },
-    get(name) {
+    get(name, k = kind) {
       try {
-        if (host.getAsset) return host.getAsset('sfx', name);
-        const a = host.getProject()?.assets?.sfx?.[name];
+        if (host.getAsset) return host.getAsset(k, name);
+        const a = host.getProject()?.assets?.[k]?.[name];
         return a ? deepCopy(a) : null;
       } catch { return null; }
     },
-    set(name, asset) { try { return host.setAsset('sfx', name, asset) ?? { ok: true }; } catch (e) { return { ok: false, error: e.message }; } },
-    del(name) { try { return host.deleteAsset ? host.deleteAsset('sfx', name) !== false : false; } catch { return false; } },
-    rename(a, b) {
+    set(name, asset, k = kind) { try { return host.setAsset(k, name, asset) ?? { ok: true }; } catch (e) { return { ok: false, error: e.message }; } },
+    del(name, k = kind) { try { return host.deleteAsset ? host.deleteAsset(k, name) !== false : false; } catch { return false; } },
+    rename(a, b, k = kind) {
       try {
-        if (host.renameAsset) return host.renameAsset('sfx', a, b) ?? { ok: true };
-        const v = H.get(a);
-        const r = H.set(b, v);
-        if (r.ok) H.del(a);
+        if (host.renameAsset) return host.renameAsset(k, a, b) ?? { ok: true };
+        const v = H.get(a, k);
+        const r = H.set(b, v, k);
+        if (r.ok) H.del(a, k);
         return r;
       } catch (e) { return { ok: false, error: e.message }; }
     },
     warnings(name) {
       if (typeof host?.assetWarnings !== 'function') return null;
-      try { const w = host.assetWarnings('sfx', name); return Array.isArray(w) ? w : null; } catch { return null; }
+      try { const w = host.assetWarnings(kind, name); return Array.isArray(w) ? w : null; } catch { return null; }
     },
     count() {
-      if (typeof host?.soundCount !== 'function') return null;
-      try { const n = host.soundCount(); return Number.isInteger(n) ? n : null; } catch { return null; }
+      const fn = kind === 'music' ? host?.songCount : host?.soundCount;
+      if (typeof fn !== 'function') return null;
+      try { const n = fn.call(host); return Number.isInteger(n) ? n : null; } catch { return null; }
     },
-    usedBy(name) { try { const u = host?.usedBy?.('sfx', name); return Array.isArray(u) ? u : []; } catch { return []; } },
+    usedBy(name) { try { const u = host?.usedBy?.(kind, name); return Array.isArray(u) ? u : []; } catch { return []; } },
   };
 
   // ── state ──
-  let name = null;                      // the effect being edited (an asset name) or null
-  let sfx = null;                       // its editing form (sound-model)
-  let hist = null;
+  let kind = 'sfx';                     // 'sfx': effects; 'music': songs (the pattern shown is edited as an effect)
+  let name = null;                      // the effect / song being edited (an asset name) or null
+  let sfx = null;                       // its editing form (sound-model); in song mode the pattern shown: song.patterns[pat] (the same object)
+  let song = null;                      // song mode: the song's editing form (music-model)
+  let pat = 0;                          // song mode: the pattern shown
+  let opos = 0;                         // song mode: the selected order position
+  const lastNames = { sfx: null, music: null };     // the asset last shown in each mode
+  let noteAt = 0, noteCur = -1, noteNext = null;     // note entry: the tick the next note goes to (follows the cursor, then the end of the last note)
+  let hist = null;                      // undo / redo of the effect, or of the whole song
+  let stats = {};                       // song mode: songInfo / validateSong of the song as of the last render, worked out once (they convert the whole song)
   let lastStored = '';                  // JSON of the asset as last read from / written to the host
   let track = 0;                        // the channel being edited: 0 = A, 1 = B, 2 = C
   let cur = 0;                          // the tick the row editor shows
@@ -216,6 +245,7 @@ export function createSoundEditor(container, host) {
 
   // playback
   let actx = null, src = null, playing = false, playStart = 0, playDur = 0, raf = 0, playX = -1;
+  let playWhat = 'effect', playPos = -1;        // what is playing: 'effect' | 'pattern' | 'song'; the order position playing (a song)
 
   const keepPrefs = () => savePrefs({ zoom });
 
@@ -225,26 +255,64 @@ export function createSoundEditor(container, host) {
   container.append(root);
 
   const bar = el('div', 'sfxed-bar');
+  const btnModeSfx = button('Effects', 'Edit the sound effects (SFX)', () => setMode('sfx'), 'sfxed-tab', 'mode-sfx');
+  const btnModeMusic = button('Songs', 'Edit the songs (MUSIC): patterns, an order list and a loop', () => setMode('music'), 'sfxed-tab', 'mode-music');
   const nameSel = el('select', 'sfxed-select', null, { 'aria-label': 'Sound effect' });
   nameSel.style.minWidth = '110px';
   nameSel.dataset.role = 'name';
   nameSel.addEventListener('change', () => { if (nameSel.value) loadEffect(nameSel.value); });
   const presetSel = select([['blank', 'blank'], ...M.PRESETS.map((p) => [p, PRESET_LABELS[p] ?? p])], 'beep', () => {}, 'The effect New starts from', 'preset');
+  const presetLabel = label('preset');
   const btnNew = button('New', 'Create an effect from the preset', () => newCmd(), '', 'new');
   const btnDup = button('Duplicate', 'Copy this effect under a new name', () => duplicateCmd(), '', 'dup');
   const btnRen = button('Rename', 'Rename this effect', () => renameCmd(), '', 'rename');
   const btnDel = button('Delete', 'Delete this effect', () => deleteCmd(), '', 'delete');
-  bar.append(nameSel, label('preset'), presetSel, btnNew, btnDup, btnRen, btnDel);
+  bar.append(btnModeSfx, btnModeMusic, sep(), nameSel, presetLabel, presetSel, btnNew, btnDup, btnRen, btnDel);
+
+  // the song panel (song mode only): patterns, the order list and the loop, the song's size and length
+  const songBox = el('div', 'sfxed-song');
+  songBox.dataset.role = 'song';
+  const patChips = el('div', 'sfxed-chips');
+  patChips.dataset.role = 'patterns';
+  const ordChips = el('div', 'sfxed-chips');
+  ordChips.dataset.role = 'order';
+  const loopSel = el('select', 'sfxed-select', null, { 'aria-label': 'Loop' });
+  loopSel.dataset.role = 'loop';
+  loopSel.title = 'Where the song continues after the last order entry (none: it stops)';
+  loopSel.addEventListener('change', () => edit(() => MM.setLoop(song, loopSel.value === 'none' ? null : Number(loopSel.value))));
+  const songInfoEl = label('', 'The size of the song on the cartridge (patterns, order list and loop) and its length');
+  songInfoEl.dataset.role = 'song-info';
+  const songRow = (...kids) => { const r = el('div', 'sfxed-row'); r.append(...kids); return r; };
+  songBox.append(
+    songRow(el('b', null, 'Patterns'), patChips),
+    songRow(el('b', null, ''),
+      button('Add', 'Add a silent pattern after this one (as long as this one)', () => edit(() => MM.addPattern(song, pat + 1, null, MM.patternLength(sfx) || MM.DEFAULT_PATTERN_TICKS)), 'sm', 'pat-add'),
+      button('Duplicate', 'Copy this pattern; the copy goes right after it', () => edit(() => MM.duplicatePattern(song, pat)), 'sm', 'pat-dup'),
+      button('Delete', 'Delete this pattern (its order entries go too)', () => edit(() => MM.deletePattern(song, pat)), 'sm', 'pat-del'),
+      button('◀', 'Move this pattern one place earlier in the list (the order list still plays the same music)', () => edit(() => MM.movePattern(song, pat, pat - 1)), 'sm', 'pat-left'),
+      button('▶', 'Move this pattern one place later in the list', () => edit(() => MM.movePattern(song, pat, pat + 1)), 'sm', 'pat-right'),
+      button('Label', 'Give this pattern a label (only for you: the game does not store it)', () => labelCmd(), 'sm', 'pat-label')),
+    songRow(el('b', null, 'Order'), ordChips),
+    songRow(el('b', null, ''),
+      button('Append', 'Play this pattern after the last order entry', () => edit(() => MM.orderAppend(song, pat)), 'sm', 'ord-append'),
+      button('Insert', 'Play this pattern before the selected order entry', () => edit(() => MM.orderInsert(song, opos, pat)), 'sm', 'ord-insert'),
+      button('Set', 'The selected order entry plays this pattern', () => edit(() => MM.orderSet(song, opos, pat)), 'sm', 'ord-set'),
+      button('◀', 'Move the selected order entry earlier', () => edit(() => MM.orderMove(song, opos, opos - 1)), 'sm', 'ord-left'),
+      button('▶', 'Move the selected order entry later', () => edit(() => MM.orderMove(song, opos, opos + 1)), 'sm', 'ord-right'),
+      button('Remove', 'Remove the selected order entry', () => edit(() => MM.orderRemove(song, opos)), 'sm', 'ord-remove'),
+      label('loop'), loopSel),
+    songRow(songInfoEl));
 
   const transport = el('div', 'sfxed-bar');
   const btnPlay = button('▶ Play', 'Play the effect (Space)', () => play(false), 'on', 'play');
+  const btnPlaySong = button('▶ Song', 'Play the whole song: the order list, then from the loop to the end once more', () => playSong(), '', 'play-song');
   const btnPlayR = button('▶ Range', 'Play the selected ticks only', () => play(true), '', 'play-range');
   const btnStop = button('■ Stop', 'Stop playing (Space)', () => stopPlay(), '', 'stop');
   const btnUndo = button('Undo', 'Undo (Ctrl+Z)', () => undo(), '', 'undo');
   const btnRedo = button('Redo', 'Redo (Ctrl+Y)', () => redo(), '', 'redo');
   const zoomLabel = label('', 'Pixels per tick');
   zoomLabel.dataset.role = 'zoom';
-  transport.append(btnPlay, btnPlayR, btnStop, sep(), btnUndo, btnRedo, sep(), button('−', 'Zoom out', () => setZoom(-1), 'sm', 'zoom-out'), zoomLabel,
+  transport.append(btnPlay, btnPlaySong, btnPlayR, btnStop, sep(), btnUndo, btnRedo, sep(), button('−', 'Zoom out', () => setZoom(-1), 'sm', 'zoom-out'), zoomLabel,
     button('+', 'Zoom in', () => setZoom(1), 'sm', 'zoom-in'), button('Fit', 'Fit the whole effect in the width', () => { zoom = 0; keepPrefs(); renderAll(); }, 'sm', 'zoom-fit'));
 
   const trackBar = el('div', 'sfxed-bar');
@@ -261,13 +329,13 @@ export function createSoundEditor(container, host) {
 
   const warnList = el('ul', 'sfxed-warn');
   warnList.dataset.role = 'warnings';
-  const emptyNote = el('div', 'sfxed-empty', 'No sound effects in this project yet. Pick a preset and press New.');
+  const emptyNote = el('div', 'sfxed-empty', '');
   emptyNote.dataset.role = 'empty';
   const body = el('div', 'sfxed-body');
   body.dataset.role = 'body';
   const msg = el('div', 'sfxed-msg');
   msg.dataset.role = 'message';
-  root.append(bar, transport, trackBar, warnList, emptyNote, body, msg);
+  root.append(bar, songBox, transport, trackBar, warnList, emptyNote, body, msg);
 
   // lanes: a label column and the scrolling canvas
   const lanesBox = el('div', 'sfxed-lanes');
@@ -323,17 +391,39 @@ export function createSoundEditor(container, host) {
   rowEd.append(label('tick'), button('◀', 'Previous tick (Left)', () => selectTick(cur - 1), 'sm', 'tick-prev'), tickIn, button('▶', 'Next tick (Right)', () => selectTick(cur + 1), 'sm', 'tick-next'),
     sep(), label('tone'), fIn.tone, noteOut, label('vol'), fIn.vol, label('noise'), fIn.noise, label('mix'), fIn.mix, mixOut);
 
+  // note entry: a note of an instrument into the selected track, from a tick (the cursor; after an entry, the tick after the note)
+  const notes = el('div', 'sfxed-notes');
+  notes.dataset.role = 'notes';
+  const noteSel = select(MM.NOTE_LETTERS.map((n) => [n, n]), 'C', () => {}, 'The note', 'note-name');
+  const noteOct = input(4, 'The octave (4 is the middle octave: C4 = middle C, A4 = 440 Hz)', 44, 'note-oct', 'number', { min: '0', max: '8', step: '1' });
+  const noteLen = input(8, 'How many refreshes the note lasts (60 a second)', 52, 'note-len', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
+  const noteInst = select(MM.INSTRUMENTS.map((x) => [x.id, x.label]), 'pluck', () => {}, 'The instrument: a volume envelope (the drum plays noise)', 'note-inst');
+  const noteVol = input('', 'The loudest volume 1..15 (empty: the instrument\'s own)', 44, 'note-vol', 'number', { min: '1', max: '15', step: '1' });
+  const noteAtIn = input(0, 'The tick the note starts at', 54, 'note-at', 'number', { min: '0', step: '1' });
+  noteAtIn.addEventListener('change', () => { const v = parseNum(noteAtIn.value); if (Number.isFinite(v)) noteAt = clamp(Math.round(v), 0, MM.MAX_PATTERN_TICKS - 1); noteAtIn.value = String(noteAt); });
+  /** Tell now (status line) when the note and octave chosen are below the AY's lowest note, instead of when Enter is pressed. */
+  const warnLowNote = () => {
+    const oct = parseNum(noteOct.value);
+    if (!(Number.isInteger(oct) && oct >= 0 && oct <= 8)) return;
+    const low = MM.noteRefusal(`${noteSel.value}${oct}`, noteInst.value);
+    if (low) say(low, 'err');
+  };
+  for (const c of [noteSel, noteOct, noteInst]) c.addEventListener('change', warnLowNote);
+  notes.append(el('b', null, 'Note'), noteSel, label('octave'), noteOct, label('length'), noteLen, noteInst, label('peak'), noteVol, label('at tick'), noteAtIn,
+    button('Enter', 'Write the note into the selected channel from that tick (it overwrites, and extends the channel when needed)', () => noteCmd(false), '', 'note-enter'),
+    button('Rest', 'Write silence of that length into the selected channel', () => noteCmd(true), '', 'note-rest'));
+
   // range operations
   const ops = el('div', 'sfxed-ops');
   ops.dataset.role = 'ops';
   const rangeLabel = label('', 'The ticks the operations below act on');
   rangeLabel.dataset.role = 'range';
-  const insN = input(1, 'How many ticks to insert (copies of the last selected tick)', 44, 'ins-n', 'number', { min: '1', max: '1800', step: '1' });
+  const insN = input(1, 'How many ticks to insert (copies of the last selected tick)', 44, 'ins-n', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
   const scaleF = input(0.5, 'Volume factor', 52, 'scale-f', 'number', { min: '0', step: '0.1' });
   const swFrom = input(0, 'First tone (a number, or a note name such as A4)', 58, 'sw-from', 'text');
   const swTo = input(0, 'Last tone (a number, or a note name such as A5)', 58, 'sw-to', 'text');
   const swMode = select([['tone', 'linear in tone'], ['semitones', 'linear in semitones']], 'semitones', () => {}, 'Linear in the period, or in pitch (musical)', 'sw-mode');
-  const repN = input(2, 'Play the range this many times in all', 44, 'rep-n', 'number', { min: '1', max: '1800', step: '1' });
+  const repN = input(2, 'Play the range this many times in all', 44, 'rep-n', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
   const setField = select(M.FIELD_NAMES.map((f) => [f, f]), 'vol', () => {}, 'The field to set', 'set-field');
   const setVal = input(8, 'The value', 52, 'set-val', 'number', { step: '1' });
   const rangeOf = () => [rng[0], rng[1]];
@@ -361,7 +451,7 @@ export function createSoundEditor(container, host) {
   const infoEl = el('pre', 'sfxed-info');
   infoEl.dataset.role = 'info';
   foot.append(wave, infoEl);
-  body.append(lanesBox, hint, rowEd, ops, foot);
+  body.append(lanesBox, hint, rowEd, notes, ops, foot);
 
   // ── messages ──
   function say(text, kind = '') {
@@ -414,10 +504,21 @@ export function createSoundEditor(container, host) {
     return { x, y, i, lane: laneAt(y) };
   }
 
-  // ── effect loading and saving ──
-  function setEffect(s) {
-    sfx = s;
-    hist = M.createHistory(sfx, UNDO_STEPS + 1);
+  // ── effect / song loading and saving ──
+  const doc = () => (kind === 'music' ? song : sfx);          // what the history and the host store
+  /** Take `d` (from the history or the host) as what is edited: the effect, or the song and its pattern `pat`. */
+  function adopt(d) {
+    stats = {};
+    if (kind === 'music') {
+      song = d;
+      pat = song ? clamp(pat, 0, song.patterns.length - 1) : 0;
+      opos = song ? clamp(opos, 0, song.order.length - 1) : 0;
+      sfx = song ? song.patterns[pat] : null;
+    } else sfx = d;
+  }
+  function setEffect(d) {
+    adopt(d);
+    hist = MM.createHistory(doc(), UNDO_STEPS + 1);      // music-model's: bounded by size too (a song's snapshot is large)
   }
   function clampSel() {
     const n = tickCount();
@@ -427,41 +528,53 @@ export function createSoundEditor(container, host) {
     if (rng[0] > rng[1]) rng = [rng[1], rng[0]];
     anchor = clamp(anchor, 0, n - 1);
   }
+  const what = () => (kind === 'music' ? 'song' : 'sound effect');
+  function clearAsset() { stopPlay(); name = null; sfx = null; song = null; hist = null; lastStored = ''; }
+  /** Load the effect (or song, in song mode) `n`; keepSel keeps the cursor, the range, the track and the pattern (a reload after an outside change). */
   function loadEffect(n, keepSel = false) {
     const asset = H.get(n);
-    if (asset === null || asset === undefined) { say(`Sound effect "${n}" is not in the project`, 'err'); return false; }
-    let s;
-    try { s = M.fromAsset(asset); } catch (e) { name = n; sfx = null; hist = null; lastStored = ''; say(`Cannot read sound effect "${n}": ${e.message}`, 'err'); renderAll(); return false; }
+    if (asset === null || asset === undefined) { say(`The ${what()} "${n}" is not in the project`, 'err'); return false; }
+    let d;
+    try { d = kind === 'music' ? MM.fromSong(asset) : M.fromAsset(asset); } catch (e) { name = n; sfx = null; song = null; hist = null; lastStored = ''; say(`Cannot read the ${what()} "${n}": ${e.message}`, 'err'); renderAll(); return false; }
     stopPlay();
     name = n;
+    lastNames[kind] = n;
     lastStored = JSON.stringify(asset);
-    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; track = 0; }
-    setEffect(s);
+    if (!keepSel) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; noteCur = -1; noteNext = null; track = 0; pat = 0; opos = 0; if (kind === 'music') pat = d.order[0] ?? 0; }
+    setEffect(d);
     clampSel();
     renderAll();
     return true;
   }
-  /** Write the effect to the host; false (with the host's reason in the status line) when it refuses. */
+  /** Write the effect (or the whole song) to the host; false (with the host's reason in the status line) when it refuses. */
   function save() {
-    if (!name || !sfx) return true;
-    const asset = M.toAsset(sfx);
+    if (!name || !doc()) return true;
+    const asset = kind === 'music' ? MM.toSong(song) : M.toAsset(sfx);
     const r = H.set(name, deepCopy(asset));
-    if (r && r.ok === false) { say(`The Studio did not accept the sound effect: ${r.error ?? 'unknown reason'}`, 'err'); return false; }
+    if (r && r.ok === false) { say(`The Studio did not accept the ${what()}: ${r.error ?? 'unknown reason'}`, 'err'); return false; }
     lastStored = JSON.stringify(asset);
     return true;
   }
   /**
-   * Apply an edit (fn mutates `sfx` and returns {message?, range?}), record it for undo, store it in the project and redraw.
+   * Apply an edit (fn mutates `sfx` or `song` and returns {message?, range?, pattern?, pos?}), record it for undo, store it in the project and redraw.
    * A refusal by the model (a message and no change) goes to the status line in red; a clamp (a message and a change) in amber.
+   * In song mode `pattern` / `pos` pick the pattern shown and the order position selected afterwards.
    */
   function edit(fn) {
     if (!sfx || stroke) return false;
     let res;
-    try { res = fn() ?? {}; } catch (e) { say(e.message, 'err'); sfx = hist.current; clampSel(); renderAll(); return false; }
+    const patBefore = pat;
+    try { res = fn() ?? {}; } catch (e) { say(e.message, 'err'); adopt(hist.current); clampSel(); renderAll(); return false; }
+    if (kind === 'music') {
+      if (Number.isInteger(res.pos)) opos = res.pos;
+      if (Number.isInteger(res.pattern)) pat = res.pattern;
+      adopt(song);
+      if (pat !== patBefore && !res.range) { cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; noteCur = -1; }
+    }
     if (res.range) { rng = [res.range[0], res.range[1]]; anchor = rng[0]; cur = rng[0]; }
     clampSel();
-    const changed = hist.commit(sfx);
-    if (changed && !save()) { sfx = hist.undo() ?? hist.current; clampSel(); renderAll(); return false; }
+    const changed = hist.commit(doc());
+    if (changed && !save()) { adopt(hist.undo() ?? hist.current); clampSel(); renderAll(); return false; }
     renderAll();
     if (res.message) say(res.message, changed ? 'warn' : 'err');
     else say('');
@@ -469,18 +582,61 @@ export function createSoundEditor(container, host) {
   }
   function undo() {
     if (!hist?.canUndo || stroke) return;
-    sfx = hist.undo();
+    adopt(hist.undo());
     clampSel();
     save();
     renderAll();
   }
   function redo() {
     if (!hist?.canRedo || stroke) return;
-    sfx = hist.redo();
+    adopt(hist.redo());
     clampSel();
-    if (!save()) sfx = hist.undo();
+    if (!save()) adopt(hist.undo());
     clampSel();
     renderAll();
+  }
+
+  // ── modes and patterns ──
+  /** Switch between effects ('sfx') and songs ('music'); shows the asset last shown in that mode, else the first. */
+  function setMode(k, show = null) {
+    if (k !== 'sfx' && k !== 'music') return;
+    if (k === kind && !show) return;
+    if (stroke) stroke = null;
+    if (k !== kind) { clearAsset(); kind = k; track = 0; }
+    const names = H.list();
+    const want = show ?? (names.includes(lastNames[k]) ? lastNames[k] : names[0]);
+    if (want && names.includes(want)) loadEffect(want);
+    else renderAll();
+  }
+  /** Song mode: show pattern i (the order position stays unless `pos` is given). */
+  function showPattern(i, pos = null) {
+    if (kind !== 'music' || !song || stroke) return;
+    if (Number.isInteger(pos)) opos = clamp(pos, 0, song.order.length - 1);
+    if (i !== pat) { pat = clamp(i, 0, song.patterns.length - 1); sfx = song.patterns[pat]; cur = 0; rng = [0, 0]; anchor = 0; prefillKey = ''; noteCur = -1; noteNext = null; }
+    renderAll();
+  }
+  function labelCmd() {
+    if (kind !== 'music' || !song) return;
+    const v = window.prompt?.(`Label of pattern ${pat} (empty: none)`, song.patterns[pat].name ?? '');
+    if (v === null || v === undefined) return;
+    edit(() => MM.labelPattern(song, pat, v));
+  }
+  /** Note entry: the note (or a rest) of the note row into the selected track from tick noteAt; the next entry goes after it. */
+  function noteCmd(rest) {
+    if (!sfx) return;
+    const len = parseNum(noteLen.value);
+    if (!Number.isFinite(len) || len < 1) { say('The length is a number of refreshes, 1 or more', 'err'); return; }
+    const oct = parseNum(noteOct.value);
+    if (!rest && !(Number.isInteger(oct) && oct >= 0 && oct <= 8)) { say('The octave is a whole number 0..8', 'err'); return; }
+    if (!rest) { const low = MM.noteRefusal(`${noteSel.value}${oct}`, noteInst.value); if (low) { say(low, 'err'); return; } }
+    const pk = parseNum(noteVol.value);
+    const opts = Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 1, 15) } : {};
+    const at = noteAt;
+    edit(() => {
+      const r = rest ? MM.enterRest(V(), at, len) : MM.enterNote(V(), at, `${noteSel.value}${oct}`, len, noteInst.value, opts);
+      noteNext = r.next;
+      return r;
+    });
   }
 
   // ── commands: new, duplicate, rename, delete ──
@@ -494,10 +650,19 @@ export function createSoundEditor(container, host) {
     const v = (window.prompt?.(question, dflt) ?? '').trim();
     if (!v) return null;
     if (!NAME_RE.test(v)) { say('A sound name is a letter followed by up to 30 letters, digits or _', 'err'); return null; }
-    if (v.toUpperCase() !== (name ?? '').toUpperCase() && H.list().some((n) => n.toUpperCase() === v.toUpperCase())) { say(`There is already a sound effect called "${v}"`, 'err'); return null; }
+    if (v.toUpperCase() !== (name ?? '').toUpperCase() && H.list().some((n) => n.toUpperCase() === v.toUpperCase())) { say(`There is already a ${what()} called "${v}"`, 'err'); return null; }
     return v;
   }
   function newCmd() {
+    if (kind === 'music') {
+      const n = askName('Name of the new song', uniqueName('song1'));
+      if (!n) return;
+      const r = H.set(n, MM.toSong(MM.newSong()));
+      if (r.ok === false) { say(r.error ?? 'The Studio did not accept the song', 'err'); return; }
+      loadEffect(n);
+      say(`New song "${n}": one pattern, played in a loop. Press Song to hear it, then enter notes or draw on the lanes`);
+      return;
+    }
     const preset = presetSel.value;
     const n = askName('Name of the new sound effect', uniqueName(preset === 'blank' ? 'sound1' : preset));
     if (!n) return;
@@ -511,8 +676,8 @@ export function createSoundEditor(container, host) {
     if (!sfx) return;
     const n = askName('Name of the copy', uniqueName(name + '2'));
     if (!n) return;
-    const r = H.set(n, M.toAsset(sfx));
-    if (r.ok === false) { say(r.error ?? 'The Studio did not accept the sound effect', 'err'); return; }
+    const r = H.set(n, kind === 'music' ? MM.toSong(song) : M.toAsset(sfx));
+    if (r.ok === false) { say(r.error ?? `The Studio did not accept the ${what()}`, 'err'); return; }
     loadEffect(n);
     say(`Copied to "${n}"`);
   }
@@ -523,19 +688,20 @@ export function createSoundEditor(container, host) {
     const r = H.rename(name, n);
     if (r.ok === false) { say(r.error ?? 'Could not rename', 'err'); return; }
     name = n;
-    lastStored = JSON.stringify(M.toAsset(sfx));
+    lastNames[kind] = n;
+    lastStored = JSON.stringify(kind === 'music' ? MM.toSong(song) : M.toAsset(sfx));
     renderAll();
-    say(`Renamed to "${n}". Source lines that name the old effect are not changed`);
+    say(`Renamed to "${n}". Source lines that name the old ${kind === 'music' ? 'song' : 'effect'} are not changed`);
   }
   function deleteCmd() {
     if (!sfx && !name) return;
     const users = H.usedBy(name);
     const extra = users.length ? ` The source still uses it (${users.slice(0, 3).join(', ')}).` : '';
-    if (window.confirm && !window.confirm(`Delete the sound effect "${name}"?${extra}`)) return;
+    if (window.confirm && !window.confirm(`Delete the ${what()} "${name}"?${extra}`)) return;
     const old = name;
     if (!H.del(old)) { say('Could not delete', 'err'); return; }
     const rest = H.list();
-    name = null; sfx = null; hist = null;
+    name = null; sfx = null; song = null; hist = null;
     if (rest.length) loadEffect(rest[0]); else renderAll();
     say(`Deleted "${old}"`);
   }
@@ -636,8 +802,8 @@ export function createSoundEditor(container, host) {
     if (s.mode === 'select') { renderAll(); return; }
     let changed = false;
     if (tracksJson() !== s.before) {
-      changed = hist.commit(sfx);
-      if (changed && !save()) { sfx = hist.undo() ?? hist.current; clampSel(); }
+      changed = hist.commit(doc());
+      if (changed && !save()) { adopt(hist.undo() ?? hist.current); clampSel(); }
     }
     renderAll();
     if (s.msg && changed) say(s.msg, 'warn');
@@ -789,6 +955,9 @@ export function createSoundEditor(container, host) {
   // ── controls ──
   function syncRow() {
     if (!sfx) return;
+    if (noteNext !== null) { noteAt = clamp(noteNext, 0, MM.MAX_PATTERN_TICKS - 1); noteNext = null; noteCur = cur; }      // after a note: the tick after it
+    else if (cur !== noteCur) { noteAt = cur; noteCur = cur; }                                                            // the cursor moved: from there
+    noteAtIn.value = String(noteAt);
     const t = tr()[cur];
     tickIn.value = String(cur);
     tickIn.max = String(Math.max(0, tickCount() - 1));
@@ -831,16 +1000,75 @@ export function createSoundEditor(container, host) {
     });
     btnClearTrack.disabled = !has || track === 0 || lens[track] === 0;
     trackNote.textContent = has ? `ticks: A ${lens[0]}, B ${lens[1]}, C ${lens[2]}; the effect lasts ${Math.max(...lens)}` : '';
-    btnPlay.textContent = playing ? '▶ Again' : '▶ Play';
+    const music = kind === 'music';
+    btnPlay.textContent = playing && playWhat !== 'song' ? '▶ Again' : music ? '▶ Pattern' : '▶ Play';
+    btnPlay.title = music ? 'Play the pattern shown (Space)' : 'Play the effect (Space)';
+    btnPlaySong.hidden = !music;
+    btnPlaySong.disabled = !has;
+    btnPlaySong.textContent = playing && playWhat === 'song' ? '▶ Again' : '▶ Song';
+    if (has) trackNote.textContent = `ticks: A ${lens[0]}, B ${lens[1]}, C ${lens[2]}; the ${music ? `pattern` : 'effect'} lasts ${Math.max(...lens)}`;
+    for (const [b, k] of [[btnModeSfx, 'sfx'], [btnModeMusic, 'music']]) { b.classList.toggle('on', kind === k); b.setAttribute('aria-pressed', String(kind === k)); }
+    presetLabel.hidden = presetSel.hidden = music;
+    nameSel.setAttribute('aria-label', music ? 'Song' : 'Sound effect');
+    btnNew.title = music ? 'Create a song (one pattern, played in a loop)' : 'Create an effect from the preset';
+    btnDup.title = `Copy this ${music ? 'song' : 'effect'} under a new name`;
+    btnRen.title = `Rename this ${music ? 'song' : 'effect'}`;
+    btnDel.title = `Delete this ${music ? 'song' : 'effect'}`;
     const names = H.list();
     nameSel.replaceChildren();
     for (const n of names) { const o = el('option', null, n); o.value = n; nameSel.append(o); }
     if (name && names.includes(name)) nameSel.value = name;
+    syncSong();
+  }
+  const songInfo = () => (stats.info ??= MM.songInfo(song));
+  const songValidation = () => (stats.val ??= MM.validateSong(song));
+  /** The song panel: pattern chips, order chips (the loop marked), the loop select, the song's size and length. */
+  function syncSong() {
+    songBox.hidden = !(kind === 'music' && song);
+    if (songBox.hidden) return;
+    const info = songInfo();
+    const played = new Set(song.order);
+    patChips.replaceChildren();
+    song.patterns.forEach((p, i) => {
+      const c = el('button', 'sfxed-chip' + (i === pat ? ' on' : '') + (played.has(i) ? '' : ' unused'), MM.patternTitle(song, i), { type: 'button' });
+      c.dataset.role = `pat-${i}`;
+      c.title = `pattern ${i}: ${info.lengths[i]} refreshes (${(info.lengths[i] / M.REFRESH_HZ).toFixed(2)} s), ${info.patternBytes[i]} bytes${played.has(i) ? '' : '; not in the order list'}`;
+      c.addEventListener('click', () => showPattern(i));
+      patChips.append(c);
+    });
+    ordChips.replaceChildren();
+    song.order.forEach((p, pos) => {
+      const playingHere = playWhat === 'song' && playing && playPos === pos;
+      const c = el('button', 'sfxed-chip' + (pos === opos ? ' on' : '') + (p === pat ? ' cur' : '') + (song.loop === pos ? ' loop' : '') + (playingHere ? ' playing' : ''), MM.patternTitle(song, p), { type: 'button' });
+      c.dataset.role = `ord-${pos}`;
+      c.title = `order position ${pos}: pattern ${p}${song.loop === pos ? ' (the loop starts here)' : ''}`;
+      c.addEventListener('click', () => showPattern(p, pos));
+      ordChips.append(c);
+    });
+    loopSel.replaceChildren();
+    const none = el('option', null, 'none (stop)'); none.value = 'none'; loopSel.append(none);
+    song.order.forEach((p, pos) => { const o = el('option', null, `position ${pos} (pattern ${p})`); o.value = String(pos); loopSel.append(o); });
+    loopSel.value = song.loop === null || song.loop === undefined ? 'none' : String(song.loop);
+    const loopText = song.loop === null || song.loop === undefined ? 'then stops' : `then loops from position ${song.loop} (${info.loopSeconds.toFixed(2)} s a loop)`;
+    songInfoEl.textContent = `${info.patterns} pattern${info.patterns === 1 ? '' : 's'}, order ${info.orderLength}: ${info.refreshes} refreshes, ${info.seconds.toFixed(2)} s, ${loopText}; ` +
+      (info.bytes === null ? 'size: not known (the song cannot be converted)' : `${info.bytes} bytes on the cartridge`);
   }
   function renderInfo() {
     if (!sfx) { infoEl.textContent = ''; return; }
-    const i = M.sfxInfo(sfx);
     infoEl.replaceChildren();
+    if (kind === 'music') {
+      const si = songInfo(), n = MM.patternLength(sfx);
+      infoEl.append(document.createTextNode(`pattern ${pat}: ${n} tick${n === 1 ? '' : 's'}, ${(n / M.REFRESH_HZ).toFixed(2)} s, ${si.patternBytes[pat]} bytes\n` +
+        `song: ${si.seconds.toFixed(2)} s a pass${si.loop === null ? '' : `, the loop ${si.loopSeconds.toFixed(2)} s`}\n${si.bytes === null ? '?' : si.bytes} bytes on the cartridge (patterns with waits, order list, loop)\n`));
+      const c = H.count();
+      if (c !== null) {
+        const line = el('span', c > MM.MAX_SONGS ? 'over' : '', `songs in this program: ${c} of ${MM.MAX_SONGS}`);
+        line.dataset.role = 'count';
+        infoEl.append(line);
+      }
+      return;
+    }
+    const i = M.sfxInfo(sfx);
     const sizeRule = i.channels === 3 ? '(delta stream: three channels)' : '((ticks + 1) × 4)';
     infoEl.append(document.createTextNode(`${i.ticks} tick${i.ticks === 1 ? '' : 's'}, ${i.seconds.toFixed(2)} s\n${i.bytes} bytes on the cartridge ${sizeRule}\n`));
     const c = H.count();
@@ -854,6 +1082,7 @@ export function createSoundEditor(container, host) {
     warnList.replaceChildren();
     hostMarks = new Set();
     if (!sfx) return;
+    if (kind === 'music') { renderSongWarnings(); return; }
     const items = [];
     const hw = H.warnings(name);
     const v = M.validateSfx(sfx);
@@ -886,10 +1115,33 @@ export function createSoundEditor(container, host) {
     }
     for (const t of v.byChannel[trackName()]) hostMarks.add(t);
   }
+  /** Song mode: the song's own validation (music-model validateSong: the compiler's rules); a click on an unstorable tick goes to its pattern and channel. */
+  function renderSongWarnings() {
+    const v = songValidation();
+    const items = [];
+    for (const u of v.unstorable) {
+      const first = `pattern ${u.pattern}: ${u.channel === 'A' && !M.isMulti(song.patterns[u.pattern]) ? '' : `channel ${u.channel} `}tick ${u.ticks[0]}:`;
+      items.push({ sev: 'err', text: v.errors.find((e) => e.startsWith(first)) ?? `pattern ${u.pattern} channel ${u.channel}: a tick cannot be stored`, go: u });
+      if (u.pattern === pat && u.channel === trackName()) for (const t of u.ticks) hostMarks.add(t);
+    }
+    for (const e of v.errors) if (!/\$FF/.test(e)) items.push({ sev: 'err', text: e });
+    for (const w of v.warnings) items.push({ sev: 'warn', text: w });
+    for (const it of items) {
+      const li = el('li', it.sev, it.text);
+      li.dataset.id = it.go ? 'music-unstorable' : 'local';
+      if (it.go) {
+        li.title = 'Click to go to the first marked tick';
+        li.addEventListener('click', () => { showPattern(it.go.pattern); const ch = TRACK_NAMES.indexOf(it.go.channel); if (ch >= 0 && ch !== track) setTrack(ch); selectTick(it.go.ticks[0]); });
+      }
+      warnList.append(li);
+    }
+  }
   function renderAll() {
     if (destroyed) return;
+    stats = {};                                         // the song may have changed: size and checks are worked out again, once, for this render
     const has = !!sfx;
     const names = H.list();
+    emptyNote.textContent = kind === 'music' ? 'No songs in this project yet. Press New to make one.' : 'No sound effects in this project yet. Pick a preset and press New.';
     emptyNote.hidden = has || names.length > 0 || !!name;
     body.hidden = !has;
     warnList.hidden = !has;
@@ -905,16 +1157,9 @@ export function createSoundEditor(container, host) {
   }
 
   // ── playback (Web Audio; the AudioContext is made on the first Play, which is a user gesture) ──
-  function play(rangeOnly) {
-    if (!sfx) return;
-    stopPlay();
-    const AC = window.AudioContext ?? window.webkitAudioContext;
-    if (!AC) { say('This browser has no Web Audio: the preview cannot play', 'err'); return; }
-    try { if (!actx) actx = new AC(); } catch (e) { say(`Could not start audio: ${e.message}`, 'err'); return; }
-    const asset = rangeOnly ? M.sliceRange(sfx, rng[0], rng[1]) : sfx;
-    const rate = actx.sampleRate || 44100;
-    const data = M.renderSfx(asset, { rate });
-    if (!data.length) { say('Nothing to play'); return; }
+  /** Play mono samples; `onFrame(f)` (0..1 of the way through) is called on every animation frame while they play. */
+  function startAudio(data, rate, onFrame) {
+    if (!data.length) { say('Nothing to play'); return false; }
     try { actx.resume?.(); } catch { /* the context may already run */ }
     const buf = actx.createBuffer(1, data.length, rate);
     if (typeof buf.copyToChannel === 'function') buf.copyToChannel(data, 0); else buf.getChannelData(0).set(data);
@@ -927,20 +1172,51 @@ export function createSoundEditor(container, host) {
     playing = true;
     playStart = performance.now();
     playDur = data.length / rate * 1000;
-    const x0 = rangeOnly ? rng[0] * colW : 0, x1 = rangeOnly ? (rng[1] + 1) * colW : tickCount() * colW;
     const tick = () => {
       if (!playing || destroyed) return;
       const f = (performance.now() - playStart) / playDur;
-      if (f >= 1) { playX = -1; drawLanes(); return; }
-      playX = x0 + (x1 - x0) * f;
-      drawLanes();
+      onFrame(Math.min(1, f));
+      if (f >= 1) return;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     syncControls();
+    return true;
+  }
+  function audioContext() {
+    const AC = window.AudioContext ?? window.webkitAudioContext;
+    if (!AC) { say('This browser has no Web Audio: the preview cannot play', 'err'); return false; }
+    try { if (!actx) actx = new AC(); } catch (e) { say(`Could not start audio: ${e.message}`, 'err'); return false; }
+    return true;
+  }
+  function play(rangeOnly) {
+    if (!sfx) return;
+    stopPlay();
+    if (!audioContext()) return;
+    const asset = rangeOnly ? M.sliceRange(sfx, rng[0], rng[1]) : sfx;
+    const rate = actx.sampleRate || 44100;
+    const x0 = rangeOnly ? rng[0] * colW : 0, x1 = rangeOnly ? (rng[1] + 1) * colW : tickCount() * colW;
+    playWhat = kind === 'music' ? 'pattern' : 'effect';
+    startAudio(M.renderSfx(asset, { rate }), rate, (f) => { playX = f >= 1 ? -1 : x0 + (x1 - x0) * f; drawLanes(); });
+  }
+  /** Song mode: the whole song (the order list, then from the loop to the end once more); the order entry playing is marked. */
+  function playSong() {
+    if (kind !== 'music' || !song) return;
+    stopPlay();
+    if (!audioContext()) return;
+    const rate = actx.sampleRate || 44100;
+    const tl = MM.songTimeline(song);
+    playWhat = 'song';
+    playPos = -1;
+    if (startAudio(M.renderSfx(tl.asset, { rate }), rate, (f) => {
+      const t = f * tl.refreshes;
+      const sec = f >= 1 ? null : tl.sections.find((x) => t >= x.start && t < x.start + x.length);
+      const pos = sec ? sec.pos : -1;
+      if (pos !== playPos) { playPos = pos; syncSong(); }
+    })) say(`Playing the song: ${tl.refreshes} refreshes, ${(tl.refreshes / M.REFRESH_HZ).toFixed(2)} s${song.loop === null ? '' : ' (the loop played once more)'}${tl.truncated ? ' (cut at 5 minutes)' : ''}`);
   }
   function endPlay() {
-    playing = false; src = null; playX = -1;
+    playing = false; src = null; playX = -1; playPos = -1;
     cancelAnimationFrame(raf);
     if (!destroyed) { syncControls(); if (sfx) drawLanes(); }
   }
@@ -975,13 +1251,13 @@ export function createSoundEditor(container, host) {
     const u = host?.onProjectChange?.((ev) => {
       if (destroyed || !ev || ev.source === hostId) return;
       if (ev.type === 'source') { if (sfx) renderInfo(); return; }
-      if (ev.type === 'asset' && ev.kind && ev.kind !== 'sfx') return;
+      if (ev.type === 'asset' && ev.kind && ev.kind !== kind) { if (ev.kind === 'sfx' || ev.kind === 'music') renderAll(); return; }    // the other mode's assets: only the lists
       outsideChange(ev);
     });
     if (typeof u === 'function') unsub.push(u);
   } catch { /* no change events */ }
   try {
-    const u = host?.onSelectAsset?.((ev) => { if (!destroyed && ev?.kind === 'sfx' && ev.name) select_(ev.name); });
+    const u = host?.onSelectAsset?.((ev) => { if (!destroyed && (ev?.kind === 'sfx' || ev?.kind === 'music') && ev.name) select_(ev.name, ev.kind); });
     if (typeof u === 'function') unsub.push(u);
   } catch { /* no selection events */ }
   // the colours come from CSS variables, so a theme switch needs a redraw
@@ -998,7 +1274,7 @@ export function createSoundEditor(container, host) {
       if (cur_ && JSON.stringify(cur_) !== lastStored) loadEffect(name, true);
       else renderAll();
     } else if (names.length) loadEffect(names[0]);
-    else { stopPlay(); name = null; sfx = null; hist = null; lastStored = ''; renderAll(); }
+    else { clearAsset(); renderAll(); }
   }
   function outsideChange(ev) {
     if (stroke) stroke = null;
@@ -1006,8 +1282,11 @@ export function createSoundEditor(container, host) {
     if (ev.type === 'asset' && ev.oldName && ev.oldName === name && names.includes(ev.name)) name = ev.name;
     reconcile();
   }
-  function select_(n) {
-    if (!n || !H.list().includes(n)) return;
+  /** Show the asset `n` of kind `k` ('sfx' or 'music'; default: the mode shown), switching the mode when needed. */
+  function select_(n, k = kind) {
+    if (k !== 'sfx' && k !== 'music') return;
+    if (!n || !H.list(k).includes(n)) return;
+    if (k !== kind) { setMode(k, n); return; }
     if (n === name && sfx) { renderAll(); return; }
     loadEffect(n);
   }
@@ -1031,8 +1310,9 @@ export function createSoundEditor(container, host) {
     refresh, render: refresh, destroy, select: select_,
     /** For tests and debugging: a copy of what is being edited. */
     getState: () => ({
-      name, track, trackLengths: sfx ? M.trackLengths(sfx) : [0, 0, 0], cur, range: [...rng], zoom: sfx ? colW : 0, colW, playing, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
+      kind, name, track, trackLengths: sfx ? M.trackLengths(sfx) : [0, 0, 0], cur, range: [...rng], zoom: sfx ? colW : 0, colW, playing, playWhat, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
       asset: sfx ? M.toAsset(sfx) : null, lanes: LANES, toneTop: TONE_TOP, labelWidth: LABEL_W, marks: [...hostMarks],
+      song: song ? MM.toSong(song) : null, pattern: pat, orderPos: opos, noteAt,
     }),
   };
 }

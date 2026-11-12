@@ -94,10 +94,18 @@ const seq = (lines, tCol, sCol, first) => {
 };
 const tsLog = readFileSync(`${TP}-log.txt`, 'utf8').trim().split('\n').slice(1);
 const zeLog = readFileSync(`${ZP}-log.txt`, 'utf8').trim().split('\n').slice(1);
-const tsAy = seq(tsLog, 1, 5, 7);
-const zeAy = seq(zeLog, 1, 5, 6);
-const eq = tsAy.length === zeAy.length && tsAy.every((x, i) => x.key === zeAy[i].key);
-console.log(`\n== AY registers (ticks 0..200): TSRun ${tsAy.length} distinct states, ZEsarUX ${zeAy.length}; ${eq ? 'the same states in the same order' : 'DIFFER'}`);
+// The two logs sample at different points (TSRun every refresh, before the interrupt counts the tick; ZEsarUX the runtime's AY_SHADOW after it): since the
+// title plays a song (MUSIC slice M5), TSRun's log starts with the all-zero chip of before the first write, and it may hold one more state in the last tick
+// sampled.  Both are a window effect, not a difference: a leading all-zero state is dropped from either side, and the sequences must then be equal, except
+// for at most one extra state, at the last tick (200), at the end of one of them.
+const SILENT = new Array(11).fill('00').join(' ');
+const trim = (a) => (a.length && a[0].key === SILENT ? a.slice(1) : a);
+const tsAy = trim(seq(tsLog, 1, 5, 7));
+const zeAy = trim(seq(zeLog, 1, 5, 6));
+const n = Math.min(tsAy.length, zeAy.length), longer = tsAy.length > zeAy.length ? tsAy : zeAy;
+const eq = tsAy.slice(0, n).every((x, i) => x.key === zeAy[i].key)
+  && (longer.length === n || (longer.length === n + 1 && longer[n].ticks === 200));
+console.log(`\n== AY registers (ticks 0..200; a leading silent state dropped): TSRun ${tsAy.length} distinct states, ZEsarUX ${zeAy.length}; ${eq ? `the same states in the same order${tsAy.length !== zeAy.length ? ' (one more at tick 200 on one side: the sampling window)' : ''}` : 'DIFFER'}`);
 const starts = (a) => a.map((x, i) => (i > 0 && x.sfx !== 0 && a[i - 1].sfx === 0 ? x.ticks : null)).filter((t) => t !== null);
 console.log(`sound effects start at ticks: TSRun ${starts(tsAy).slice(0, 12).join(' ')}; ZEsarUX ${starts(zeAy).slice(0, 12).join(' ')}`);
 

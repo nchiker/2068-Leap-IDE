@@ -1,6 +1,7 @@
 REM Starfall: acceptance game B for milestone M4a (docs/ARCADE_RUNTIME_API_V2.md): a vertical shooter for the v2 runtime.
-REM Assets (ship, bullet, scout, heavy, shot, the gfx tiles, the sky map, five sounds) are in shooter.assets.json,
-REM drawn by shooter.assets.gen.mjs.
+REM Assets (ship, bullet, scout, heavy, shot, the gfx tiles, the sky map, five sounds, two songs) are in shooter.assets.json,
+REM drawn and written by shooter.assets.gen.mjs.  Music (docs/ARCADE_MUSIC_CONTRACT.md): FANFARE on the title, DRIVE during play (on channels A
+REM and B only, so the effects, which borrow channel C, never cut into it); the game over stops the music for its own sound.
 REM   Keyboard: Q up, A down, O left, P right, SPACE fire.   Joystick 1: the stick and fire.   Fire starts the game and restarts it after GAME OVER.
 REM   Three scenes (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md): title -> play -> over -> play.  The score and the wave are game-level variables
 REM   (the over scene shows them); everything of the game itself lives in the play scene, whose variables ENTER zeroes at every start.  ENTER puts the screen
@@ -26,12 +27,15 @@ SFX boom = "boom"
 SFX hurt = "hurt"
 SFX wave = "wave"
 SFX over = "over"
+MUSIC fanfare = "fanfare"
+MUSIC drive = "drive"
 
 REM The score and the wave belong to the whole game: the over scene shows them.
 DIM score, wv
 
 SCENE title
   PROC INIT():
+    PLAY fanfare
     INK 6 : PAPER 0 : BRIGHT 1
     PRINT AT 8, 12; "STARFALL";
     INK 5 : PRINT AT 11, 7; "PRESS FIRE TO PLAY";
@@ -62,6 +66,7 @@ SCENE play
     wob(0) = 0 : wob(1) = 6 : wob(2) = 11 : wob(3) = 14 : wob(4) = 16 : wob(5) = 14 : wob(6) = 11 : wob(7) = 6
     wob(8) = 0 : wob(9) = -6 : wob(10) = -11 : wob(11) = -14 : wob(12) = -16 : wob(13) = -14 : wob(14) = -11 : wob(15) = -6
     CALL NEWGAME()
+    PLAY drive
   ENDP
 
   REM Start a game (the scene has just been entered: the sky is on the screen, no sprite is shown, the variables are 0).
@@ -358,6 +363,7 @@ ENDSCENE
 SCENE over
   DIM ow, rel, fire
   PROC INIT():
+    NOMUSIC
     PLAY over
     INK 6 : PAPER 0 : BRIGHT 1
     PRINT AT 0, 0; "SCORE "; score; "  ";

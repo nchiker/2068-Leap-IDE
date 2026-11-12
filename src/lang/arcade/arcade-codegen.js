@@ -157,6 +157,15 @@
  *        A list with the same names in the same order, in the same program, is emitted once. lib$worldidx (present only when used) compares HL with BC as UNSIGNED numbers (a negative index fails too),
  *        else computes the entry, loads the registers of RT_WORLDLOAD (HL, A, DE) or RT_PLANLOAD (HL, BC) and JPs to it. Every listed MAP is a world / plan as if `WORLD name` had named it.
  *
+ * ── MUSIC (docs/ARCADE_MUSIC_CONTRACT.md sections 2, 4 and 5a; v2 runtime or later, a runtime build with RT_MUSIC / RT_NOMUSIC) ─────────────────────────────────────────────────
+ *  MU-1. `MUSIC name = "asset"` (at most 8, declaration order): the song is DATA in the mapped code, after the sound effects: `song$i: DB loop ($FF = none), DW song$i$k (one word per
+ *        order entry, in play order), DW 0`, then every pattern stream of the asset once (`song$i$k`, k = the pattern index; a pattern the order list never names is still stored), all
+ *        bytes from convertMusic (arcade-assets.js); no song table and no header field (the runtime takes the song's address). dataBytes.music = the songs' bytes (only in a game with songs).
+ *  MU-2. PLAY name, where name is a declared MUSIC (and not an SFX: the checker refuses a name that is both): `LD HL,song$i / CALL RT_MUSIC` (6 bytes). NOMUSIC: `CALL RT_NOMUSIC`.
+ *        PLAY expr and PLAY (name) stay effect indexes (B5-4). ENTER's reset still calls RT_SILENCE only: a song plays on across a scene switch (contract section 2).
+ *  MU-3. In a game with at least one MUSIC declaration every ONE-channel SFX is compiled by convertSfxC (a channel-C stream, header `0, 0, noise, 4`); three-channel effects are unchanged.
+ *        A game without MUSIC compiles to exactly the bytes it gave before (the batch 1-3 baselines). symbols.songs = {NAME: address} (only in a game with songs).
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -179,7 +188,7 @@
 "use strict";
 
 import { Emitter, L, M } from './z80-emit.js';
-import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertMap, convertSpriteV3, MAX_SFX } from './arcade-assets.js';
+import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, convertSpriteV3, MAX_SFX, MAX_SONGS } from './arcade-assets.js';
 import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, noviewPoolPieces, buildFrameT } from './arcade-window.js';
 import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
 import { LIMITS } from './arcade-words.js';
@@ -341,6 +350,9 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   const worldFix = [];                              // {label, key}: the `LD HL,src` of each WORLD (the linker puts the stream's address in)
   let worldDecl = null;                             // the MAP node the window uses as its world (not part of mapList)
   const sfxList = [], sfxIndex = new Map();         // {name, node, bytes, records}
+  const songList = [], songIndex = new Map();       // MUSIC: {name, node, patterns, order, loop, refreshes, bytes} per declared song, declaration order
+  const songKeys = new Set((ast.assets ?? []).filter((a) => a.kind === 'MUSIC').map((a) => up(a.name)));     // every declared song (also one whose asset failed: no cascade of "unknown variable")
+  const hasSongs = v2 && songKeys.size > 0;         // MU-3: one-channel effects become channel-C streams
   let tileset = null;                               // {node, count, bytes}
   const mapList = [];                               // batch 1: {node, w, h, cells, bytes} per MAP in declaration order (at most 8)
   for (const a of ast.assets ?? []) {
@@ -392,10 +404,22 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       const asset = lookupIn(tabs.sfx, a.asset, a.name);
       if (asset === undefined) { err(a, `sound effect asset "${a.asset}" is not in the project`); continue; }
       try {
-        const c = convertSfx(asset);
+        let c = convertSfx(asset);
+        if (hasSongs && c.channels === 1) c = convertSfxC(asset);       // MU-3: in a game with songs a one-channel effect borrows channel C
         sfxIndex.set(up(a.name), sfxList.length);
         sfxList.push({ name: a.name, node: a, ...c });
       } catch (e) { err(a, `sound effect "${a.asset}": ${e.message}`); }
+    } else if (a.kind === 'MUSIC') {
+      if (!v2) { err(a, `MUSIC is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`); continue; }
+      if (sym.RT_MUSIC === undefined || sym.RT_NOMUSIC === undefined) { err(a, 'MUSIC needs RT_MUSIC and RT_NOMUSIC, which this runtime does not provide: rebuild the runtime (this build predates music)'); continue; }
+      if (songList.length >= MAX_SONGS) { err(a, `too many songs (at most ${MAX_SONGS})`); continue; }
+      const asset = lookupIn(tabs.music, a.asset, a.name);
+      if (asset === undefined) { err(a, `song asset "${a.asset}" is not in the project`); continue; }
+      try {
+        const c = convertMusic(asset);
+        songIndex.set(up(a.name), songList.length);
+        songList.push({ name: a.name, node: a, ...c });
+      } catch (e) { err(a, `song "${a.asset}": ${e.message}`); }
     } else if (v1 && a.kind === 'TILESET') {
       if (tileset) { notYet(a, 'a second TILESET (one per game)'); continue; }
       const asset = lookupIn(tabs.tilesets, a.asset, a.name);
@@ -409,6 +433,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       mapList.push({ node: a });
     } else { notYet(a, `${a.kind} (${a.name})`); }
   }
+  /** PLAY by index (batch 5): neither a declared SFX nor a declared song is named, so the operand is an expression (a bare name is a variable). */
+  const playIsIndex = (s) => !!s.index || (!!s.sfx && !sfxIndex.has(up(s.sfx.name)) && !songKeys.has(up(s.sfx.name)));
   const mapIndex = new Map();                       // KEY -> index in mapList (declaration order)
   mapList.forEach((m, i) => mapIndex.set(up(m.node.name), i));
   for (const m of mapList) {
@@ -865,6 +891,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         if (!v2) err(s, `ENTER is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
         continue;
       }
+      if (s.type === 'NoMusic') {                   // MU-2
+        if (!v2) err(s, `NOMUSIC is not supported yet in ${v1 ? 'M3' : 'M2'} (build with --runtime v2)`);
+        else if (sym.RT_NOMUSIC === undefined) err(s, 'NOMUSIC needs RT_NOMUSIC, which this runtime does not provide: rebuild the runtime (this build predates music)');
+        continue;
+      }
       if (s.type === 'LoadTable') {
         if (!v2) err(s, 'LOADTABLE needs the v2 runtime (or later)');
         else if (sym.RT_TABLELOAD === undefined) err(s, 'LOADTABLE needs RT_TABLELOAD, which this runtime does not provide: rebuild the runtime (this build predates bankable tables)');
@@ -904,7 +935,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
             scanExpr(s.x); scanExpr(s.y); scanExpr(s.value);
             break;
           case 'Color': scanExpr(s.value); break;
-          case 'Play': if (s.index || (s.sfx && !sfxIndex.has(up(s.sfx.name)))) scanExpr(s.index ?? s.sfx); break;      // batch 5: an effect index is an expression
+          case 'Play': if (playIsIndex(s)) scanExpr(s.index ?? s.sfx); break;      // batch 5: an effect index is an expression
           default: break;                     // Silence, Cls
         }
         continue;
@@ -1009,7 +1040,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
           case 'Color': ex(s.value); break;
-          case 'Play': if (s.index || (s.sfx && !sfxIndex.has(up(s.sfx.name)))) ex(s.index ?? s.sfx); break;
+          case 'Play': if (playIsIndex(s)) ex(s.index ?? s.sfx); break;
           default: break;
         }
       }
@@ -1080,7 +1111,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } s.items.forEach((x) => ex(x, active)); break;
           case 'Tile': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
           case 'Color': case 'Border': case 'Randomise': ex(s.value, active); break;
-          case 'Play': if (s.index || (s.sfx && !sfxIndex.has(up(s.sfx.name)))) ex(s.index ?? s.sfx, active); break;
+          case 'Play': if (playIsIndex(s)) ex(s.index ?? s.sfx, active); break;
           case 'Fill': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.value, active); break;
           case 'Copy': ex(s.x, active); ex(s.y, active); ex(s.w, active); ex(s.h, active); ex(s.dx, active); ex(s.dy, active); break;
           case 'LoadMap': ex(s.x, active); ex(s.y, active); break;
@@ -1967,9 +1998,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       case 'Tile': tileStmt(s); return;
       case 'Cls': e.call(need('RT_CLS')); return;
       case 'Silence': e.call(need('RT_SILENCE')); return;
+      case 'NoMusic': e.call(need('RT_NOMUSIC')); return;                               // MU-2
       case 'Enter': e.ld('a', scenes.findIndex((sc) => up(sc.name) === up(s.scene.name))); e.jp('scn$enter'); return;
       case 'Play': {
         if (s.sfx && sfxIndex.has(up(s.sfx.name))) { e.ld('a', sfxIndex.get(up(s.sfx.name))); e.call(need('RT_PLAY')); return; }
+        if (s.sfx && songIndex.has(up(s.sfx.name))) { e.ld('hl', L(`song$${songIndex.get(up(s.sfx.name))}`)); e.call(need('RT_MUSIC')); return; }      // MU-2: a song, by name
         const rt = need('RT_PLAY');                              // batch 5: an effect index (an expression; a bare variable name too)
         const x = s.index ?? s.sfx, k = fold(x);
         if (k !== undefined) { if (k >= 0 && k <= 255) { e.ld('a', k); e.call(rt); } return; }
@@ -2466,6 +2499,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       sfxList.forEach((sf, i) => { e.label(`sfx$${i}`); for (const b of sf.bytes) e.db(b); });
       if (sfxList.length) { e.label('sfx$table'); e.db(sfxList.length); sfxList.forEach((_, i) => e.dw(L(`sfx$${i}`))); }
       dataSize.sfx = sfxList.reduce((n, sf) => n + sf.bytes.length, 0) + (sfxList.length ? 1 + 2 * sfxList.length : 0);
+      // MU-1: each song = loop byte, the order list as pattern pointers, DW 0, then every pattern stream once
+      songList.forEach((sg, i) => {
+        e.label(`song$${i}`); e.db(sg.loop);
+        for (const k of sg.order) e.dw(L(`song$${i}$${k}`));
+        e.dw(0);
+        sg.patterns.forEach((pt, k) => { e.label(`song$${i}$${k}`); for (const b of pt.bytes) e.db(b); });
+      });
+      if (songList.length) dataSize.music = songList.reduce((n, sg) => n + sg.bytes, 0);
       if (extMaps) {
         const bankedAt = (m) => plan?.at.get(up(m.node.name));       // a banked map: its record is in the window, not in the game image
         mapList.forEach((m, i) => { if (bankedAt(m) !== undefined) return; e.label(`map$${i}`); e.db(m.w, m.h); for (let r = 0; r < m.h; r++) for (let c = 0; c < m.w; c++) e.db(m.bytes[r * 32 + c]); });
@@ -2523,6 +2564,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     ...(pressKeyInfo.size || pressJoyInfo.size ? { keys: { press: Object.fromEntries([...pressKeyInfo].map(([c, i]) => [c, { ...i }])), joy: Object.fromEntries([...pressJoyInfo].map(([n, i]) => [n, { ...i }])) } } : {}),
     sprites: v2 ? Object.fromEntries([...instRefs].map(([k, r]) => [k, r.first])) : Object.fromEntries(sprites.map((s, i) => [s.key, i])),
     sfx: Object.fromEntries(sfxList.map((s, i) => [up(s.name), i])),
+    ...(songList.length ? { songs: Object.fromEntries(songList.map((sg, i) => [up(sg.name), e.addressOf(`song$${i}`)])) } : {}),
   };
   // runtime v3: the phase pool plan the boot will make (a miss stops the runtime at boot: the linker fails), and a warning for each asset whose frames do not all stay cached
   let phasePlan = null;

@@ -1,7 +1,7 @@
 // run-all.mjs -- rebuild every Leap Arcade runtime and run every Arcade test suite, then print one summary.
 //
 //   node arcade/tests/run-all.mjs            all suites except the slow mutation runs
-//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3- to m14-mutations; several minutes each)
+//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3- to m15-mutations; several minutes each)
 //   node arcade/tests/run-all.mjs --quick    sets ARCADE_QUICK=1 (shorter fuzz runs in the compiler suites)
 //   node arcade/tests/run-all.mjs --jobs N   runs the suites N at a time (default 1).  The runtime builds and the steps in
 //                                            EXCLUSIVE (they write shared files under arcade/build) run first, alone; each
@@ -24,8 +24,8 @@ const jobs = Math.max(1, Number(jobsArg?.startsWith('--jobs=') ? jobsArg.slice(7
 const EXCLUSIVE = new Set(['tests/arcade-blockfall.mjs']);
 // The slowest steps (sequential run, 2026-11-11: 270, 198, 139, 114, 53, 44, 42, 37 s) start first, so none of them is the tail.
 const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m11-differential.mjs',
-  'arcade/tests/m7-runtime-perf.mjs', 'tests/arcade-m12-differential.mjs', 'arcade/tests/m10-runtime-sound.mjs', 'tests/arcade-m5.mjs',
-  'arcade/tests/m7-runtime.mjs'];
+  'arcade/tests/m7-runtime-perf.mjs', 'tests/arcade-m12-differential.mjs', 'arcade/tests/m10-runtime-sound.mjs', 'arcade/tests/m15-runtime-music.mjs', 'tests/arcade-m5.mjs',
+  'arcade/tests/m7-runtime.mjs', 'tests/arcade-m15-differential.mjs'];
 
 const builds = [
   'arcade/tools/build-runtime.mjs',
@@ -41,6 +41,7 @@ const suites = [
   'tests/arcade-m4.mjs',
   'tests/arcade-m5.mjs',
   'tests/arcade-blockfall.mjs',
+  'tests/arcade-starfall.mjs',
   'tests/arcade-m6-compiler.mjs',
   'tests/arcade-m6-platformer.mjs',
   'tests/arcade-runner.mjs',
@@ -60,6 +61,8 @@ const suites = [
   'tests/arcade-m13-differential.mjs',
   'tests/arcade-m14-compiler.mjs',
   'tests/arcade-m14-differential.mjs',
+  'tests/arcade-m15-compiler.mjs',
+  'tests/arcade-m15-differential.mjs',
   'arcade/tests/m1.mjs',
   'tests/arcade-m8-vaults.mjs',
   'arcade/tests/m1-overrun.mjs',
@@ -104,7 +107,8 @@ const suites = [
   'arcade/tests/m11-runtime-bank.mjs',
   'arcade/tests/m12-runtime-table.mjs',
   'arcade/tests/m14-runtime-mode.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs'] : []),
+  'arcade/tests/m15-runtime-music.mjs',
+  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m15c-mutations.mjs'] : []),
 ];
 
 function finish(file, isBuild, t0, status, out) {

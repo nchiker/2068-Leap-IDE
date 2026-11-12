@@ -12377,5 +12377,6174 @@
     2
    ]
   }
+ },
+ "music": {
+  "rn_hop": {
+   "patterns": [
+    {
+     "ticks": [
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      }
+     ],
+     "ticksB": [
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 893,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      }
+     ],
+     "name": "call"
+    },
+    {
+     "ticks": [
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 105,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 125,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 141,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 158,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 167,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 188,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 223,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 11,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 6,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 211,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      }
+     ],
+     "ticksB": [
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 669,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1263,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 1125,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 10,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 5,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      },
+      {
+       "tone": 843,
+       "vol": 0,
+       "noise": 0,
+       "mix": 6
+      }
+     ],
+     "name": "answer"
+    }
+   ],
+   "order": [
+    0,
+    1
+   ],
+   "loop": 0
+  }
  }
 }

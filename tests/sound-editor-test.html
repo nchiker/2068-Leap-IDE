@@ -15,6 +15,7 @@
 <script type="module">
 import { createSoundEditor } from '../src/tools/sound-editor.js';
 import * as M from '../src/tools/sound-model.js';
+import * as MM from '../src/tools/music-model.js';
 import { validateAsset } from '../src/arcade-project.js';
 import { scanArcade, scanRoles } from '../src/lang/arcade/arcade-scan.js';
 
@@ -75,7 +76,7 @@ const host = {
     const bad = validateAsset(kind, value);
     if (bad) { log.refused.push(bad); return { ok: false, error: bad }; }
     if (kind === 'sfx' && unstorable(value)) log.unstorable++;
-    project.assets[kind][name] = copy(value);
+    (project.assets[kind] ??= {})[name] = copy(value);
     log.sets.push(name);
     fire({ type: 'asset', kind, name, source: ID });
     return { ok: true };
@@ -96,14 +97,19 @@ const host = {
   roles,
   assetWarnings: (kind, name) => checkAssets(project, roles()).filter((w) => (kind === undefined || w.kind === kind) && (name === undefined || w.asset === name)),
   soundCount: () => scanArcade(project.files['main.arc']).assets.filter((a) => a.kind === 'SFX').length,
-  usedBy: (kind, name) => (kind === 'sfx' && new RegExp(`SFX\\s+\\w+\\s*=\\s*"${name}"`, 'i').test(project.files['main.arc']) ? [`main.arc: SFX "${name}"`] : []),
+  songCount: () => project.files['main.arc'].split('\n').filter((l) => /^\s*MUSIC\s+\w+\s*=\s*"/i.test(l)).length,
+  usedBy: (kind, name) => { const w = kind === 'music' ? 'MUSIC' : 'SFX'; return new RegExp(`${w}\\s+\\w+\\s*=\\s*"${name}"`, 'i').test(project.files['main.arc']) ? [`main.arc: ${w} "${name}"`] : []; },
 };
 const editor = createSoundEditor(document.getElementById('mount'), host);
 
 window.t = {
-  host, editor, project, log, M, audio, realChecks, example,
+  host, editor, project, log, M, MM, audio, realChecks, example,
   /** An asset change made by somebody else (another editor, an example, Open). */
   externalSet(name, asset) { project.assets.sfx[name] = copy(asset); fire({ type: 'asset', kind: 'sfx', name, source: 'other' }); },
+  /** The same for a song. */
+  externalSetSong(name, asset) { project.assets.music[name] = copy(asset); fire({ type: 'asset', kind: 'music', name, source: 'other' }); },
+  /** Destroy the editor and mount a new one on the same project (what the Studio does after a reload: the project comes back from storage). */
+  remount() { window.t.editor.destroy(); window.t.editor = createSoundEditor(document.getElementById('mount'), host); return true; },
   replaceProject(p) { project.assets = copy(p.assets); fire({ type: 'project', source: 'studio' }); },
   setSource(text) { project.files['main.arc'] = text; fire({ type: 'source', source: 'studio' }); },
   sourceFor,

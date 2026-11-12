@@ -334,6 +334,27 @@ try {
   const hostApi = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s3'); return { roles: !!h.roles(), w: Array.isArray(h.assetWarnings()), by: h.usedBy('tilesets', 'gfx').assets.join(), sfx: h.soundCount() }; })()`);
   check('host: roles(), assetWarnings(), usedBy() and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
 
+  // ── Music M4: songs in the project panel and the sound editor (docs/ARCADE_MUSIC_CONTRACT.md section 7) ──
+  await evaluate("(window.prompt = () => 'theme', document.querySelector('[data-new-asset=music]').click(), true)");
+  const songOpen = await waitFor(`(() => { const s = document.querySelector('#tool-sfx [data-role=sound-editor]'); return s && !document.getElementById('tool-sfx').hidden && document.querySelector('#tool-sfx [data-role=name]').value === 'theme'
+    && !document.querySelector('#tool-sfx [data-role=song]').hidden && document.querySelector('#tool-sfx [data-role=mode-music]').classList.contains('on'); })()`, 10000);
+  const songNew = await evaluate(`(() => { const a = leapStudio.project.assets.music.theme; const row = document.querySelector('.proj-row[data-asset="music/theme"]'); return { patterns: a?.patterns.length, order: a?.order, loop: a?.loop, row: !!row, meta: row?.querySelector('.proj-meta')?.textContent, active: row?.classList.contains('active') }; })()`);
+  check('"+" of Songs makes a song (one pattern, order [0], loop 0), lists it under Songs, and opens it in the sound editor in song mode',
+    !!songOpen && songNew.patterns === 1 && JSON.stringify(songNew.order) === '[0]' && songNew.loop === 0 && songNew.row && songNew.active && /1 pattern, 0\.5 s/.test(songNew.meta), JSON.stringify(songNew));
+  await b.shot('studio-song');
+  await evaluate("(document.querySelector('#tool-sfx [data-role=pat-add]').click(), true)");
+  const unused = await waitFor(`(() => { const r = [...document.querySelectorAll('#problems .problem[data-asset="music/theme"]')]; return r.length ? r.map((x) => x.textContent) : null; })()`, 8000);
+  check('a pattern the order list never plays is an asset warning in the problems list (song: theme)', !!unused && /pattern 1 is not in the order list/.test(unused[0]), JSON.stringify(unused));
+  await evaluate("(document.querySelector('.proj-row[data-asset=\"sfx/pew\"]').click(), true)");
+  const backSfx = await waitFor(`document.querySelector('#tool-sfx [data-role=name]').value === 'pew' && document.querySelector('#tool-sfx [data-role=mode-sfx]').classList.contains('on')`, 5000);
+  await evaluate(`document.querySelector('#problems .problem[data-asset="music/theme"]').click()`);
+  const backSong = await waitFor(`document.querySelector('#tool-sfx [data-role=name]').value === 'theme' && document.querySelector('#tool-sfx [data-role=mode-music]').classList.contains('on') && leapStudio.selected?.kind === 'music'`, 5000);
+  check('picking an effect switches the editor back to effects; clicking the song\'s warning opens the song again', !!backSfx && !!backSong);
+  // (the project open here is the Shooter example, which has two songs since slice M5: fanfare and drive; the count is also made independently from the project's files)
+  const songsHost = await evaluate(`(() => ({ n: leapStudio.makeHost('smoke-m4').songCount(), own: Object.values(leapStudio.project.files).join('\\n').split('\\n').filter((l) => /^\\s*MUSIC\\s+[A-Za-z]\\w*\\s*=\\s*"/i.test(l)).length }))()`);
+  check('host: songCount() answers (MUSIC lines in the source: the Shooter example declares 2, counted independently in the page too)', songsHost.n === 2 && songsHost.own === 2, JSON.stringify(songsHost));
+  await evaluate("(document.querySelector('#tool-sfx [data-role=pat-del]').click(), true)");
+
   // ── Project files: save, open, round trip ──
   await evaluate(`(() => {
     window.smokeDownloads = [];
@@ -481,12 +502,19 @@ try {
   await setSource('REM survives a reload\nGAME "Reload"\nFRAMERATE 30\nSCENE s\n  PROC INIT():\n  ENDP\n  PROC FRAME():\n  ENDP\nENDSCENE\n');
   await sleep(700);
   await evaluate(`(() => { const h = leapStudio.makeHost('t'); const v = h.getAsset('sprites','ball'); v.w = 8; h.setAsset('sprites', 'extra1', v); return true; })()`);
+  const savedSong = { patterns: [{ ticks: [{ tone: 300, vol: 9, noise: 0, mix: 6 }], ticksB: [{ tone: 400, vol: 7, noise: 0, mix: 6 }, { tone: 410, vol: 7, noise: 0, mix: 6 }], name: 'a' }, { ticks: [{ tone: 200, vol: 5, noise: 0, mix: 6 }] }], order: [1, 0, 1], loop: 1 };
+  const songOk = await evaluate(`leapStudio.makeHost('t').setAsset('music', 'keep', ${JSON.stringify(savedSong)}).ok`);
   await sleep(700);
   await b.open('about:blank'); await sleep(200);
   await b.open('studio.html');
   await waitFor('window.leapStudio?.lastCompile', 30000);
   const re = await evaluate(`({ src: leapEditor.getSource().split('\\n')[0], sprites: Object.keys(leapStudio.project.assets.sprites).join(), dirty: !document.getElementById('dirty-mark').hidden })`);
   check('auto-save restores the project after a reload (text, assets, unsaved mark)', re.src === 'REM survives a reload' && re.sprites === 'ball,extra1' && re.dirty, JSON.stringify(re));
+  const reSong = await evaluate(`JSON.stringify(leapStudio.project.assets.music)`);
+  check('a song survives the reload unchanged', songOk === true && reSong === JSON.stringify({ keep: savedSong }), reSong);
+  await evaluate(`document.querySelector('.proj-row[data-asset="music/keep"]').click()`);
+  const reOpen = await waitFor(`(() => { const s = document.querySelector('#tool-sfx [data-role=name]'); return s && s.value === 'keep' && [...document.querySelectorAll('#tool-sfx [data-role=order] .sfxed-chip')].map((c) => c.textContent).join() === '1,0 a,1'; })()`, 10000);
+  check('after the reload the song opens in the sound editor with its order list', !!reOpen);
   // blocked storage must not break the page
   check('no page errors', b.pageErrors.length === 0, b.pageErrors.join(' | '));
 } catch (err) {

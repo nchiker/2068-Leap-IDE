@@ -249,7 +249,7 @@ export function observe5(game, nframes, { script = null, hooks = null, pixels = 
     const cpu = m.cpu, pc = cpu.pc, sp = cpu.sp;
     if (pc === S.MAIN) armed = true;
     if (armed) { if (sp < st.spMin) st.spMin = sp; if (sp > st.spMax) st.spMax = sp; }
-    const inRange = pc >= S.ISR && pc < S.ISR_END || (pc >= S.SND_S && pc < S.SND_E);
+    const inRange = pc >= S.ISR && pc < S.ISR_END || (pc >= S.SND_S && pc < S.SND_E) || (inIsr && pc >= S.SND_XS && pc < S.SND_E);   // (the tick calls SND_SYNC / SND_OWNCLR below SND_S: music)
     if (inRange) { if (!inIsr) { inIsr = true; isrT0 = m.tstates - 13; isrSync = rd8(m, S.V_SYNC); } }
     else if (inIsr) { inIsr = false; isrAcc += m.tstates - isrT0; }
     if (pc === S.WORK_START) { workT0 = m.tstates; workIsr0 = isrAcc; }

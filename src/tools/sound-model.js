@@ -29,7 +29,7 @@
  *   newSfx(preset), PRESETS                 beep laser blip explosion powerup hurt
  *   clampField, setTick, MIX_FORMS, mixOf, toneOn, noiseOn
  *   insertTicks, deleteTicks, duplicateRange, reverseRange, scaleVolume, fade, sweep, repeatRange, setRange
- *   noteOfTone, toneOfNote                  tone period <-> note name and cents
+ *   noteOfTone, toneOfNote                  tone period <-> note name and cents; midiOfNote, noteNameOfMidi, noteTooLow (a note below A0)
  *   sfxInfo, validateSfx                    duration, bytes on the cartridge, the compiler's limits (all channels)
  *   renderSfx(asset, {rate, clock, refreshHz})   the AY model -> Float32Array (mono, -0.5..0.5; the channels mixed, one shared noise generator)
  *   createHistory                           undo / redo (the sprite editor's)
@@ -338,16 +338,30 @@ export function noteOfTone(tone, clock = AY_CLOCK) {
   const midi = Math.round(exact);
   return { name: NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1), midi, cents: Math.round((exact - midi) * 100), freq };
 }
-/** The tone period (whole, clamped 1..4095) of a note: a MIDI number (69 = A4) or a name such as 'A4', 'C#5', 'Bb3'. */
+/** The MIDI number of a note name ('A4' = 69, 'C#5', 'Bb3', octave -9..9) or of a whole number (returned as it is).  Throws an Error with a plain message for anything else. */
+export function midiOfNote(note) {
+  if (typeof note === 'number' && Number.isInteger(note)) return note;
+  const m = /^([A-Ga-g])([#b]?)(-?\d)$/.exec(String(note).trim());
+  if (!m) throw new Error(`"${note}" is not a note name such as A4, C#5 or Bb3`);
+  return { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12 * (Number(m[3]) + 1);
+}
+/** The name of a MIDI number, sharps only ('A4', 'C#5'). */
+export const noteNameOfMidi = (midi) => NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+/**
+ * The tone period (whole, clamped 1..4095) of a note: a MIDI number (69 = A4) or a name such as 'A4', 'C#5', 'Bb3'.  The clamp is silent: the notes below A0
+ * (27.5 Hz) all give 4095, one pitch.  noteTooLow tells them apart for note entry.
+ */
 export function toneOfNote(note, clock = AY_CLOCK) {
-  let midi = note;
-  if (typeof note === 'string') {
-    const m = /^([A-Ga-g])([#b]?)(-?\d)$/.exec(note.trim());
-    if (!m) throw new Error(`"${note}" is not a note name such as A4, C#5 or Bb3`);
-    midi = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12 * (Number(m[3]) + 1);
-  }
-  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  const freq = 440 * Math.pow(2, (midiOfNote(note) - 69) / 12);
   return Math.max(1, Math.min(4095, Math.round(clock / (16 * freq))));
+}
+/** The AY cannot play the note: its tone period (unclamped) is above 4095.  A string for a message ("C0 is below the AY's lowest note, A0"), else null. */
+export function noteTooLow(note, clock = AY_CLOCK) {
+  const midi = midiOfNote(note);
+  const raw = Math.round(clock / (16 * 440 * Math.pow(2, (midi - 69) / 12)));
+  if (raw <= 4095) return null;
+  const lowest = noteNameOfMidi(Math.ceil(69 + 12 * Math.log2(clock / (16 * 4095 * 440)) - 0.5));
+  return `${typeof note === 'string' ? note.trim().replace(/^./, (c) => c.toUpperCase()) : noteNameOfMidi(midi)} is below the AY's lowest note, ${lowest}`;
 }
 
 // ── presets ───────────────────────────────────────────────────────────────────────────────────────────────────

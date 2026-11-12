@@ -31,6 +31,7 @@ import { rleDecode, rleEncode, convertWorldMap, camMax } from '../src/lang/arcad
 import { convertViewMap, clampPose } from '../src/lang/arcade/arcade-view.js';
 import { ARCADE_WORDS, RESERVED, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { ASSETS, ASSETS11, withBank, mkMap, world, plan, screenMap, HEAD, scene, win3, view4, plain2, mapDecls } from './arcade-m11-common.mjs';
+import { stripMusic } from './arcade-m15-common.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -520,7 +521,9 @@ console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked comp
       // (the banked worlds, runner.arc), so such a program is left out (the banking has its own sections above).
       const srcText = readFileSync(join(ROOT, d, f), 'utf8');
       if (/^\s*WORLD\b/im.test(srcText)) continue;
-      progs.push({ src: `${d}/${f}`, text: srcText, assets: existsSync(aj) ? JSON.parse(readFileSync(aj, 'utf8')) : undefined });
+      // the examples with songs (slice M5) are compared on their text without MUSIC, NOMUSIC and PLAY <song> (the previous compiler cannot build songs)
+      const hasSongs = /^\s*MUSIC\s/im.test(srcText);
+      progs.push({ src: `${d}/${f}${hasSongs ? ' (stripMusic)' : ''}`, text: hasSongs ? stripMusic(srcText) : srcText, assets: existsSync(aj) ? JSON.parse(readFileSync(aj, 'utf8')) : undefined });
     }
     // the programs the batch tests are built from
     const { genV3, genV4 } = await import('./arcade-m9-common.mjs');
