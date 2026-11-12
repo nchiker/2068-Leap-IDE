@@ -8,7 +8,7 @@
 //     interrupts).  Streams are built three ways: by hand, by a small ENCODER IN THIS TEST from per-refresh register rows, and by `convertSfx` of src/lang/arcade/arcade-assets.js
 //     from random three-channel assets (the two encoders must give the same bytes, and after every refresh the chip's R0-R10 and AY_SHADOW must equal the row of
 //     `sfxRefreshRegisters(asset)`): hand-made effects (B / C padding, noise in one channel, tone 4095, every mixer combination, entries with no change, a terminator in the first
-//     entry, pairs in any order and repeated, an effect of 1,000 refreshes, byte 3 = 0..255) and random effects, with random RT_PLAY (also indices past the table) / RT_SILENCE
+//     entry, pairs in any order and repeated, an effect of 1,000 refreshes, byte 3 = 0..255 but 3 and 4) and random effects, with random RT_PLAY (also indices past the table) / RT_SILENCE
 //     calls: the (register, value) writes in ORDER (every pair of an entry is written, also when it equals the shadow; one-channel registers are written only when they
 //     differ), V_SFX_ACTIVE, V_SFX_CH, V_SFX_PTR, AY_SHADOW = the chip.
 //  2. the switches: a three-channel effect over a one-channel one and back; a one-channel effect that replaces a three-channel one writes volume 0 to B and C ONCE (RT_PLAY),
@@ -26,6 +26,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import * as C3 from './m3-common.mjs';
 import { rng } from './m3-scenes.mjs';
 import { convertSfx, sfxRefreshRegisters } from '../../src/lang/arcade/arcade-assets.js';
@@ -47,10 +48,10 @@ for (const v of VERS) {
 let R = rng(1010);
 const rec = (toneLo, toneHi, vol, noise, mix, b3 = 0) => [toneLo & 255, (toneHi & 15) | ((vol & 15) << 4), (noise & 31) | ((mix & 7) << 5), b3 & 255];
 const randRec = (b1ok = false) => { let r; do { r = rec(R.int(0, 255), R.int(0, 15), R.int(0, 15), R.int(0, 31), R.int(0, 7), R.int(0, 255)); } while (!b1ok && r[1] === 0xFF); return r; };
-/** One-channel effect: records (first byte 3 = anything but 3). */
+/** One-channel effect: records (first byte 3 = anything but 3 and 4: 4 is a channel-C stream since MUSIC). */
 function eff1(recs, tag = '') {
   const items = recs.map((r) => r.slice());
-  if (items.length && items[0][3] === 3) items[0][3] = 0;
+  if (items.length && (items[0][3] === 3 || items[0][3] === 4)) items[0][3] = 0;
   return { ch: 1, items, tag, bytes: items.flat().concat([0, 0xFF, 0, 0]) };
 }
 /** A terminator at once, byte 3 given: 3 = a three-channel effect whose stream is the single $FF; else a one-channel effect. */
@@ -112,9 +113,10 @@ const ODD = eff3([[[8, 5], [0, 1], [8, 7], [10, 3], [2, 9], [2, 4], [7, 0x38], [
 const LONG = eff3Rows(randRows(1000, 0.2), 'a long effect: 1,000 refreshes');
 const FULL = eff3Rows(randRows(200, 1), 'nearly every register changes at every refresh, 200 refreshes');
 const HAND2 = [STEADY, ODD, LONG, FULL];
-const EXTRA_B3 = [0, 1, 2, 4, 5, 7, 255];    // byte 3 of the first record of a one-channel effect: anything but 3
+const EXTRA_B3 = [0, 1, 2, 5, 7, 255];       // byte 3 of the first record of a one-channel effect: anything but 3 and 4 (4 = a channel-C stream since MUSIC:
+                                             // docs/ARCADE_MUSIC_CONTRACT.md section 4, tested in m15-runtime-music.mjs)
 /** The runtime image of `vv` with a game whose sfx table holds `effects` (at most 8). */
-function image(vv, effects, { patchEntry = false } = {}) {
+function image(vv, effects) {
   const img = Uint8Array.from(vv.rt.img);
   const TAB = 0x9000;
   const tab = [effects.length];
@@ -130,7 +132,6 @@ function image(vv, effects, { patchEntry = false } = {}) {
   img.set(tab, TAB);
   const g = vv.K.GAME_SFX;
   img[g] = TAB & 255; img[g + 1] = TAB >> 8;
-  if (patchEntry) { img[vv.S.SND_S] = 0x18; img[vv.S.SND_S + 1] = 0x05; }       // JR +5: over the entry test (7 bytes): the one-channel code of before
   return { img, dck: vv.mod.dckOf(img), starts };
 }
 
@@ -138,7 +139,7 @@ function image(vv, effects, { patchEntry = false } = {}) {
 const KEYS = ['a', 'f', 'b', 'c', 'd', 'e', 'h', 'l', 'a2', 'f2', 'b2', 'c2', 'd2', 'e2', 'h2', 'l2', 'xh', 'xl', 'yh', 'yl', 'sp', 'i', 'im', 'iff1'];
 const snap = (cpu) => Object.fromEntries(KEYS.map((k) => [k, cpu[k]]));
 function rig(vv, effects, opts = {}) {
-  const { img, dck, starts } = image(vv, effects, opts);
+  const { img, dck, starts } = image(vv, effects);
   const m = newMachine(dck);
   bootMachine(m, vv.S);
   readyForIrq(m);                                   // the boot ends inside an interrupt (pc = $0038: TSRun accepts the interrupt at the END of runFrame): let it finish
@@ -355,7 +356,7 @@ for (const v of VERS) {
     const rs = runScript(steady, o2, 30, 'steady');
     check(`v${v}: the entries after the first of a steady effect write nothing (only the first refresh and the end write)`, rs.fails.length === 0 && rs.nwrites === 11 + 3, `${rs.nwrites} writes`);
   }
-  // byte 3 of the first record: only 3 means three channels
+  // byte 3 of the first record: 3 means three channels, 4 a channel-C stream (MUSIC), anything else one channel
   {
     let bad = null;
     for (const b3 of [...EXTRA_B3, 3]) {
@@ -367,7 +368,7 @@ for (const v of VERS) {
       const res = runScript(r, ops, 20, 'byte3=' + b3);
       if (res.fails.length || rd8(r.m, r.S.V_SFX_CH) !== (b3 === 3 ? 3 : 1)) bad = res.fails[0] ?? { b3, ch: rd8(r.m, r.S.V_SFX_CH) };
     }
-    check(`v${v}: V_SFX_CH is 3 only when byte 3 of the first record is 3 (0, 1, 2, 4, 5, 7, 255 give one channel)`, bad === null, bad ? JSON.stringify(bad) : '');
+    check(`v${v}: V_SFX_CH is 3 only when byte 3 of the first record is 3 (0, 1, 2, 5, 7, 255 give one channel; 4 is a channel-C stream since MUSIC)`, bad === null, bad ? JSON.stringify(bad) : '');
   }
 
   // ---- 2. the switches, explicit -------------------------------------------------------------------------------------------------
@@ -546,16 +547,29 @@ function costEff(n) {
   }
   return eff3(entries, 'cost n=' + n);
 }
+// Since MUSIC (docs/ARCADE_MUSIC_CONTRACT.md) the tick is restructured (a pending SND_SYNC, the effect, the song, one register save): the reference for
+// "the same writes as before" is the RUNTIME BEFORE SONGS itself, taken from git (arcade/dist of BEFORE_MUSIC, main at the billboards B1 merge), and the
+// costs are reported as the difference to it.  (Until MUSIC this was the same build with batch 5's entry test jumped over.)
+const BEFORE_MUSIC = '8737bdd';
+const OLD = {};
 for (const v of VERS) {
-  const vv = BUILDS[v];
+  const show = (f) => execFileSync('git', ['-C', join(import.meta.dirname, '../..'), 'show', `${BEFORE_MUSIC}:arcade/dist/v${v}/${f}`], { maxBuffer: 1 << 24 });
+  const json = JSON.parse(show('runtime.json').toString('utf8'));
+  OLD[v] = { v, mod: BUILDS[v].mod, rt: { img: new Uint8Array(show('runtime.bin')), syms: json.symbols, json }, S: json.symbols, K: json.constants };
+}
+// regression bounds of the added cost per refresh, as built (2026-11-12: one channel +108, three channels +121..+168, an effect's last refresh +676: it
+// now gives the chip back with SND_SYNC); docs/ARCADE_RUNTIME_API_V2.md "As built: music"
+const ADD_MAX = { one: 120, three: 180, end: 700 };
+for (const v of VERS) {
+  const vv = BUILDS[v], ov = OLD[v];
   R = rng(909);
   const NS = [0, 1, 2, 3, 4, 5, 6, 8, 11];
   const costs = NS.map(costEff);
   const worst1 = eff1(Array.from({ length: 40 }, (_, k) => rec(k * 37, (k * 3) & 15, (k + 1) & 15, k % 32, k & 3)), 'one channel: everything changes');
   const same1 = eff1(Array.from({ length: 40 }, () => rec(0x80, 1, 12, 5, 0)), 'one channel: nothing changes');
   const mix1 = eff1(Array.from({ length: 60 }, () => randRec(false)), 'random one channel');
-  const run = (effect, n, patch = false) => {              // one effect in a table of its own
-    const r = rig(vv, [effect], { patchEntry: patch });
+  const run = (effect, n, build = vv) => {                 // one effect in a table of its own
+    const r = rig(build, [effect]);
     call(r, 'RT_PLAY', 0);
     const ts = [], ws = [], depth = [];
     let badRegs = 0;
@@ -567,38 +581,39 @@ for (const v of VERS) {
   // idle interrupt
   const idle = (() => { const r = rig(vv, [costs[0]]); const ts = []; for (let k = 0; k < 8; k++) ts.push(fireIrq(r, k).t); return stat(ts); })();
   // three channels: by the number of pairs of an entry (entries 1..40; the first one writes all 11 registers)
-  const runs = costs.map((e) => run(e, 42));
-  const byN = {};
-  NS.forEach((n, i) => { byN[n] = stat(runs[i].ts.slice(1, 41)); });
+  const runs = costs.map((e) => run(e, 42)), runsOld = costs.map((e) => run(e, 42, ov));
+  const byN = {}, byNOld = {};
+  NS.forEach((n, i) => { byN[n] = stat(runs[i].ts.slice(1, 41)); byNOld[n] = stat(runsOld[i].ts.slice(1, 41)); });
   const first = stat(runs.map((x) => x.ts[0]));
   const endT = run(effEmpty(3), 3), endT2 = run(effEmpty(0), 3);
   const modelOk = runs.every((x, i) => x.ws.slice(1, 41).every((w, k) => sameW(w, costs[i].items[k + 1])));
-  check(`v${v}: the three-channel tick writes exactly the pairs of every entry (n = ${NS.join(', ')}; 40 entries each) with every register kept: all registers, the alternates, IX, IY, SP, I, IM, IFF1 (also at the first entry and the $FF)`, modelOk && runs.every((x) => x.badRegs === 0) && endT.badRegs + endT2.badRegs === 0);
+  check(`v${v}: the three-channel tick writes exactly the pairs of every entry (n = ${NS.join(', ')}; 40 entries each) with every register kept: all registers, the alternates, IX, IY, SP, I, IM, IFF1 (also at the first entry and the $FF)`,
+    modelOk && runs.every((x) => x.badRegs === 0) && endT.badRegs === 0 && endT2.badRegs === 0);
   const dep3 = Math.max(...runs.flatMap((x) => x.depth), ...endT.depth);
-  // one channel, with the entry test, and the same build with it jumped over
+  // one channel, on this build and on the runtime before songs
   const o1 = run(worst1, 41), o2 = run(same1, 41), o3 = run(mix1, 61);
-  const p1 = run(worst1, 41, true), p2 = run(same1, 41, true), p3 = run(mix1, 61, true);
-  const pairs = [[o1, p1], [o2, p2], [o3, p3]];
-  const sameWrites = pairs.every(([x, y]) => JSON.stringify(x.ws) === JSON.stringify(y.ws));
-  const deltas = pairs.flatMap(([x, y]) => x.ts.map((t, i) => t - (y.ts[i] - 12)));            // the jumped-over build costs the old tick + the JR's 12 T
-  check(`v${v}: a one-channel effect writes exactly what it wrote before the change, in the same order, on every refresh (${o1.ws.length + o2.ws.length + o3.ws.length} refreshes against the build with the entry test jumped over); one-channel tick keeps every register`,
+  const p1 = run(worst1, 41, ov), p2 = run(same1, 41, ov), p3 = run(mix1, 61, ov);
+  const pairs = [[o1, p1], [o2, p2], [o3, p3]], pairs3 = runs.map((x, i) => [x, runsOld[i]]);
+  const sameWrites = [...pairs, ...pairs3].every(([x, y]) => JSON.stringify(x.ws) === JSON.stringify(y.ws));
+  const n1 = o1.ws.length + o2.ws.length + o3.ws.length, n3 = runs.reduce((s, x) => s + x.ws.length, 0);
+  check(`v${v}: every effect writes exactly what the runtime before songs (${BEFORE_MUSIC}) wrote, in the same order, on every refresh (one channel ${n1} refreshes, three channels ${n3})`,
     sameWrites && o1.badRegs + o2.badRegs + o3.badRegs === 0);
-  const dMin = Math.min(...deltas), dMax = Math.max(...deltas);
-  check(`v${v}: the added cost of the one-channel path is the entry test only: ${dMin}..${dMax} T per refresh (LD A,(nn) / CP 3 / JR Z, not taken = 27 T; the contract says about 25)`, dMin === 27 && dMax === 27);
+  // per record refresh (the last refresh of each one-channel run is its terminator: counted apart) and per three-channel entry
+  const d1 = pairs.flatMap(([x, y]) => x.ts.slice(0, -1).map((t, i) => t - y.ts[i])), dEnd = pairs.map(([x, y]) => x.ts[x.ts.length - 1] - y.ts[y.ts.length - 1]);
+  const d3 = pairs3.flatMap(([x, y]) => x.ts.slice(1, 41).map((t, i) => t - y.ts[i + 1]));
+  const [d1min, d1max, d3min, d3max] = [Math.min(...d1), Math.max(...d1), Math.min(...d3), Math.max(...d3)];
+  check(`v${v}: the added cost of an effect's refresh against the runtime before songs: one channel +${d1min}..+${d1max} T, three channels +${d3min}..+${d3max} T, the terminator's refresh +${Math.max(...dEnd)} T (bounds +${ADD_MAX.one} / +${ADD_MAX.three} / +${ADD_MAX.end})`,
+    d1max <= ADD_MAX.one && d3max <= ADD_MAX.three && Math.max(...dEnd) <= ADD_MAX.end);
   const t1 = [...o1.ts.slice(0, 40), ...o2.ts.slice(0, 40), ...o3.ts.slice(0, 60)];
   const s1 = stat(t1);
-  const pts = [...p1.ts.slice(0, 40), ...p2.ts.slice(0, 40), ...p3.ts.slice(0, 60)].map((t) => t - 12), sp = stat(pts);
+  const sp = stat([...p1.ts.slice(0, 40), ...p2.ts.slice(0, 40), ...p3.ts.slice(0, 60)]);
   const typ = stat([3, 4, 5, 6].flatMap((n) => runs[NS.indexOf(n)].ts.slice(1, 41)));
-  // the size of the three-channel code: .three .. .end (before the one-channel terminator) and .some .. SND_E
   const S = vv.S;
-  const bytes3 = (S['SND_S.end'] - S['SND_S.three']) + (S.SND_E - S['SND_S.some']);
-  stats[v] = { idle, s1, sp, byN, first, typ, dep3, dep1: Math.max(...o1.depth, ...o2.depth, ...o3.depth), bytes3, endT: endT.ts[1], endT0: endT.ts[0] };
-  console.log(`  v${v} whole interrupt (acceptance, flip, counter, sound; T-states): idle ${idle.min}..${idle.max};  one channel (new) median ${s1.med}, worst ${s1.max}, best ${s1.min};  one channel (before) median ${sp.med}, worst ${sp.max};  tick stack ${stats[v].dep1} bytes (one channel), ${dep3} (three channels), PC + AF of the interrupt included`);
-  console.log(`  v${v} three channels by the pairs of the entry (median / worst, T): ` + NS.map((n) => `n=${n}: ${byN[n].med}/${byN[n].max}`).join(', ') + `;  the first entry (all 11 registers) ${first.med};  the $FF (RT_SILENCE inside) ${stats[v].endT0};  the code: ${bytes3} bytes (the group tick it replaces: 142 + SND_W 14)`);
-  console.log(`  v${v} contract targets (item 18): no change <= ${TARGET.n0} T [${byN[0].max}], typical 3 to 6 changes <= ${TARGET.typical} T [median ${typ.med}, worst ${typ.max}], 11 changes <= ${TARGET.n11} T [${byN[11].max}], code <= ${TARGET.bytes} bytes [${bytes3}]   (the group tick: median 2,162)`);
-  // the numbers this design reaches: the cost is 323 + 72 n T (n >= 1) and 260 T (n = 0) (regression bounds; the contract's targets are in the line above)
-  check(`v${v}: cost bounds of the delta tick: n = 0 at most 260 T (${byN[0].max}), n = 3 at most 539 T (${byN[3].max}), n = 6 at most 755 T (${byN[6].max}), n = 11 at most 1,115 T (${byN[11].max}): every entry of at most 6 changes costs under 40% of the group tick's 2,162 median`, byN[0].max <= 260 && byN[3].max <= 539 && byN[6].max <= 755 && byN[11].max <= 1115 && byN[6].max < 0.4 * 2162);
-  check(`v${v}: the three-channel code is ${bytes3} bytes (target: at most ${TARGET.bytes}); SND_TICK3 and its gap placement are gone (no symbol SND_TICK3 / SND_W, nothing at $0068 but v4's KEY_ROWSEL)`, bytes3 <= TARGET.bytes && S.SND_TICK3 === undefined && S.SND_W === undefined && S.M_SND3_S === undefined);
+  const bytesSound = S.M_SOUND_E - S.M_SOUND_S, bytesOld = ov.S.M_SOUND_E !== undefined ? ov.S.M_SOUND_E - ov.S.M_SOUND_S : NaN;
+  stats[v] = { idle, s1, sp, byN, first, typ, dep3, dep1: Math.max(...o1.depth, ...o2.depth, ...o3.depth), bytesSound, endT: endT.ts[1], endT0: endT.ts[0] };
+  console.log(`  v${v} whole interrupt (acceptance, flip, counter, sound; T-states): idle ${idle.min}..${idle.max};  one channel median ${s1.med}, worst ${s1.max}, best ${s1.min};  before songs: median ${sp.med}, worst ${sp.max};  tick stack ${stats[v].dep1} / ${dep3} bytes (one / three channels)`);
+  console.log(`  v${v} three channels by the pairs of the entry (median / worst, T; before songs in brackets): ` + NS.map((n) => `n=${n}: ${byN[n].med}/${byN[n].max} [${byNOld[n].med}/${byNOld[n].max}]`).join(', ') + `;  the first entry ${first.med};  the $FF ${stats[v].endT}`);
+  console.log(`  v${v} the sound module: ${bytesSound} bytes (before songs ${bytesOld})`);
 
   // RT_PLAY / RT_SILENCE register discipline and their cost
   {

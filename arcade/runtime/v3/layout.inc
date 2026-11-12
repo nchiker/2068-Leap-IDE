@@ -241,6 +241,21 @@ HO_FF           EQU HO_BASE+$04 ; byte: port $FF at hand-off
 HO_SP           EQU HO_BASE+$05 ; word: SP at hand-off
 HO_MARK_VALUE   EQU $5AA5
 
+; Music (docs/ARCADE_MUSIC_CONTRACT.md; sound.asm): the page above the stack top, below the hand-off record ($FF00-$FFDF was unused; a push can
+; never reach it, and it is RAM chunk 7, which the interrupt may touch).  NOT zeroed by the boot: RT_MUSIC sets every V_MUS_* field and MUS_SHADOW
+; before it sets SB_MUS, and MUS_OWN is set by RT_PLAY, RT_SILENCE, RT_MUSIC (no effect playing) and the end of an effect before anything reads it.
+MUS_SHADOW      EQU $FF00       ; 11 bytes, PAGE ALIGNED: the song's values of R0-R10 (whether or not the chip has them)
+MUS_OWN         EQU $FF20       ; 11 bytes: per register 0 = the song's, 1 = the effect's, 2 = R7 shared with a channel-C effect (the effect's bits $24)
+V_MUS_PTR       EQU $FF10       ; word: the song's next item
+V_MUS_ORD       EQU $FF12       ; word: the current order entry
+V_MUS_LOOP      EQU $FF14       ; word: the order entry to continue from after the last one (0: the song ends)
+V_MUS_WAIT      EQU $FF16       ; byte: refreshes still to hold with no change
+MUS_NO_LOOP     EQU $FF         ; a song's loop byte when it does not loop
+SB_FX           EQU 0           ; V_SFX_ACTIVE bits: an effect plays (RRA tests it: keep it bit 0)
+SB_MUS          EQU 1           ;   a song plays
+SB_SYNC         EQU 2           ;   the interrupt must first bring the chip back (SND_SYNC)
+    ASSERT MUS_OWN+11 <= HO_BASE && V_MUS_WAIT < MUS_OWN && MUS_SHADOW+11 <= V_MUS_PTR && MUS_SHADOW >= STACK_TOP
+
 ; ---------------------------------------------------------------------------------------------------------------
 ; Tables in RAM chunk 6 ($C000-$DFFF; chunk 6 is RAM because $F4 bit 6 is 0).  v3 map:
 ;   $C000-$C07F  PHASE_OFF: 8 assets x 8 shifts x DW.  Asset a, x shift s (1..7, a multiple of the asset's granularity): the offset of that

@@ -46,7 +46,7 @@ gives the pattern's length). Limits: at most 32 patterns, an order list of at mo
 
 ## 4. The image (compiler, `arcade-assets.js`: `convertMusic`)
 
-**Song table:** `GAME_MUS` (a header word, like `GAME_SFX`): count, then one pointer per song.
+**No song table** (changed when built, section 5a): the code of `PLAY song` passes the song's address to `RT_MUSIC`, so the game header stays as it is.
 **Song:** `loop` (byte: an order position, `$FF` = none), then the order list as **pattern pointers** (words), ended by the word `0`.
 **Pattern:** a delta stream as for effects, with **waits**: each item is
 * `n` (0..11) and `n` pairs `reg, value` in ascending register order: one refresh, the registers that change (as effects);
@@ -84,6 +84,33 @@ paused. With no song playing, effects behave exactly as today. `RT_MUSIC` (A = s
 **Targets** (TSRun, whole interrupt): no sound unchanged; a music refresh in a wait at most 150 T; an item of 3 changes at most 650 T; a pattern
 change (11 pairs) at most 1,300 T; effect and music together in the same refresh at most 2,400 T worst. **Bytes:** at most 400 in v3 (1,289 free) and
 v4 (1,305 free); v2 has room.
+
+## 5a. As built: the runtime (M2, 2026-11-12)
+
+The same `sound.asm` in v2, v3 and v4 (v4 adds its `KEY_ROWSEL` tail, as before). Changes from section 5, each for a reason found while building:
+* **No song table in the game header.** `RT_MUSIC` takes **HL = the song's address** (the compiler knows its label), so the header of every game
+  is unchanged; HL = 0 is ignored.
+* **The state** is in the page above the stack top (`$FF00-$FFDF` was unused in all three runtimes; the hand-off record stays at `$FFE0`):
+  `MUS_SHADOW` `$FF00` (11 bytes, page aligned), `V_MUS_PTR` `$FF10`, `V_MUS_ORD` `$FF12`, `V_MUS_LOOP` `$FF14`, `V_MUS_WAIT` `$FF16`, `MUS_OWN`
+  `$FF20` (11 bytes: per register 0 the song's, 1 the effect's, 2 R7 shared). The boot does not clear that page: every field is set before it is
+  read (the tests fill it with junk after the boot).
+* **`V_SFX_ACTIVE` is a set of bits**: `SB_FX` (bit 0, an effect), `SB_MUS` (bit 1, a song), `SB_SYNC` (bit 2, a request). The ISR's test of it is
+  unchanged (its 46 bytes are full), so **an idle interrupt costs what it did (151 T)**.
+* **The main thread never writes the chip while a song or a request is pending**: an interrupt between its register select and its data write
+  would misdirect the write. `PLAY`, `SILENCE` and `NOMUSIC` then post `SB_SYNC`, and the interrupt's `SND_SYNC` gives the registers back at the
+  next refresh. With no song and nothing pending they write the chip themselves, exactly as before (`m10-runtime-sound.mjs`: every effect writes what
+  the runtime before songs wrote, in the same order, on every refresh, compared with the runtime of `8737bdd` taken from git).
+* **Byte 3 of an effect**: 3 = three channels, **exactly 4** = a channel-C stream, anything else one channel (the old rule was "anything but 3";
+  compiled effects always have 0 there).
+* **Costs** (TSRun, whole interrupt; idle 151): a song in a wait **216**; a pattern change (11 pairs) **1,827** (target 1,300: the song keeps two
+  shadows, about 101 T a pair); a song and a channel-C effect 975 median, 3,665 worst (an effect ending, with its hand-over, in the refresh of a
+  pattern change; target 2,400); effects without a song **+96..+108 T** a refresh with one channel, **+121..+168** with three, **+676** on an effect's
+  last refresh (it gives the chip back: `SND_SYNC`). The two targets missed are rare refreshes; the common ones (a wait, a held note) are cheap.
+* **Bytes**: **+431** in v3 (15,095 -> 15,526; 858 free) and v4 (15,079 -> 15,510; 874 free); the target was 400. v2 grows by the same code.
+* **Tests**: `arcade/tests/m15-runtime-music.mjs` (a model of the shared chip written from this contract, after every call and refresh: 19 hand
+  scenarios, random scripts, an interrupt at every instruction boundary of the four routines with a song playing, registers, stack, costs) on v2,
+  v3, v4; `m10-runtime-sound.mjs` rewritten where it measured the old tick's layout; `arcade/tests/m15-mutations.mjs` (83 mutants, the new code and
+  the effect tick; it replaces `m10-mutations.mjs`, whose patterns were the old tick): MUTATION_RESULT.
 
 ## 6. Interpreter (`arcade-interp.js`)
 
