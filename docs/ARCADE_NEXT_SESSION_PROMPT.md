@@ -6,11 +6,9 @@ Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured tar
 * **C2 DONE** and verified (5b7aa2d): F1, F3, F6, F7, F8, F9; all 7 examples 57,260 -> 47,680 code bytes; every run faster with and without F9
   (perf tool, 0 breaches). Also fixed: 2-D array routines shared between same-named arrays of two scenes (pre-existing bug; m9-differential section 5),
   and m4's real-runtime harness now places a PLAY cut by an interrupt at entry or return refresh. Full run-all after C2 running (14:55).
-* **C3 proper in progress** (15:10). run-all after C2: 65/78, all behaviour suites pass; 13 suites fail on pinned checks only.
-  `CODEGEN_OFF` (b18679a) = every fix off = the old bytes (27/27 builds): identity checks keep their meaning with it.
-  Agent 1 (the tool's author): the accept guard becomes "old and new build each equal the interpreter on their own clock" (Blockfall seeds from
-  the frame counter, so old-vs-new differs legitimately), then runs the real regen of the fixtures. Agent 2: rewrites the pinned checks of m3, m4,
-  m9-m15 compiler suites and arcade-runner's banked check. Uncommitted work checkpointed to `arcade/spike/codegen/wip-c3.patch`.
+* **C3 DONE** (9458d80 baselines through the interpreter guard, 23/23; c774b7a pinned checks rewritten, CODEGEN_OFF controls). Full run-all after C3
+  running (15:25). **C4:** `arcade/tests/m16c-mutations.mjs` written (71 mutants, patterns checked), not run yet: run it in 4 shards once run-all is green.
+  **C5** (Leap Runner in-game song) and **C6** (fresh /code-review of the branch) remain.
 * **C3 tool DONE** (d499775): `regen-baselines.mjs --accept-codegen-change 9b7969c` (dry run: 23 / 23 programs identical over 300 ticks; negative control
   refused). Run it for real only after C2 is final and run-all passes except the hash checks; then rewrite the 45+ pinned checks (C3 proper).
 * C1 alone measured faster on every run (contract section 13).
