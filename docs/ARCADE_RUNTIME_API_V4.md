@@ -255,3 +255,9 @@ covers a v4 program (batch 1-3 baselines are v2 / v3).
 and 16 scenes of 16 instances at four depths in scattered order. `m8-mutations.mjs` (4 shards): 90 mutants, **86 killed, 4 equivalent** (each with its reason in the file), 0 survivors; the new ones cover the early behind-the-viewer rejects, the sign handling of tx and ty, the power-of-two heights and the insertion into the list. `arcade/tests/m14-runtime-mode.mjs` compared v4 byte for
 byte with the runtime published before batch 7; since B1 moved code on purpose, v4 now has v3's rule from its size pass (every published symbol at or
 above `$4000` keeps its address and every published `RT_*` routine exists; the byte comparison is retired). `arcade/dist/v4` is republished.
+
+## As built: music (MUSIC M2, 2026-11-12)
+
+The song player is in `sound.asm` of v2, v3 and v4 alike: `RT_MUSIC` (HL = the song's address; 0 is ignored) and `RT_NOMUSIC`; songs play from
+the frame interrupt, a one-channel effect borrows channel C while a song plays and a three-channel effect pauses it. State at `$FF00-$FF2A`. Costs,
+bytes, the register discipline and the tests: `docs/ARCADE_MUSIC_CONTRACT.md` section 5a; the games that use it: section 8a.

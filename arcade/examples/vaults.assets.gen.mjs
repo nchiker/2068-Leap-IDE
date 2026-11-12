@@ -17,6 +17,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pattern, song, describe } from './songs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;      // false when a test imports LAYOUT and friends
@@ -248,6 +249,17 @@ const sfx = {
   lose: { ticks: ticks(30, (k) => ({ tone: 180 + 22 * k, vol: Math.max(2, 13 - (k >> 2)), noise: 0, mix: 6 })) },
 };
 
+// ── music: "Depths", the title (and the attract mode's) song (docs/ARCADE_MUSIC_CONTRACT.md section 8: title only, since the play scene has ticks
+// over budget; original music).  E minor, slow: a quaver = 16 refreshes, bars of 128.  A slow organ tune on A, held organ bass notes on B (a held
+// note changes the chip twice, so the song is small: Vaults has about 2.4 KB of its game area left), a low heartbeat of noise on C.
+const HEART = '@drum !8 ' + Array(4).fill('C2:6 -:10 C2:6 -:106').join(' | ');
+const music = {
+  depths: song([
+    pattern({ A: '@organ !10 L32 | E4:64 G4 F#4 | E4 B3 E4:64 | C5:64 B4 A4 | B4:96 -:32', B: '@organ !9 L128 | E2 | E2 | A2 | B1', C: HEART }, 'descent'),
+    pattern({ A: '@organ !10 L32 | G4:64 A4 B4 | C5 B4 A4:64 | F#4:64 G4 A4 | B3:96 -:32', B: '@organ !9 L128 | G2 | A2 | D2 | B1', C: HEART }, 'return'),
+  ], [0, 1], 0),
+};
+
 // ── assets ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export function buildAssets() {
   return {
@@ -262,6 +274,7 @@ export function buildAssets() {
     tilesets: { 'vl_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
     sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['vl_' + k, v])),
     maps: { 'vl_maze': { w: MAP_W, h: MAP_H, cells: CELLS }, 'vl_panel': buildPanel(), 'vl_title': buildTitle() },
+    music: Object.fromEntries(Object.entries(music).map(([k, v]) => ['vl_' + k, v])),
   };
 }
 
@@ -295,5 +308,5 @@ if (MAIN) {
   }
   const assets = buildAssets();
   writeFileSync(join(HERE, 'vaults.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-  console.log(`vaults.assets.json: ${Object.keys(assets.sprites).length} sprites (wraith ${assets.sprites['vl_wraith'].frames.length} frames), ${TILES.length} tiles, ${Object.keys(assets.sfx).length} sound effects, a ${MAP_W} x ${MAP_H} maze (${THINGS.E.length} wraiths, ${THINGS.G.length} gems, ${THINGS.H.length} potions) the HUD panel and the title screen`);
+  console.log(`vaults.assets.json: ${Object.keys(assets.sprites).length} sprites (wraith ${assets.sprites['vl_wraith'].frames.length} frames), ${TILES.length} tiles, ${Object.keys(assets.sfx).length} sound effects, a ${MAP_W} x ${MAP_H} maze (${THINGS.E.length} wraiths, ${THINGS.G.length} gems, ${THINGS.H.length} potions) the HUD panel and the title screen; ${Object.entries(assets.music).map(([k, v]) => describe(k, v)).join('; ')}`);
 }

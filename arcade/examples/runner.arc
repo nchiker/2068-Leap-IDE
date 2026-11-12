@@ -49,6 +49,8 @@ SFX stomp = "pf_stomp"
 SFX hurt = "pf_hurt"
 SFX win = "pf_win"
 SFX over = "pf_over"
+REM The title song (docs/ARCADE_MUSIC_CONTRACT.md): it starts with the title, plays on through the attract mode (the demo) and stops when a game starts.
+MUSIC hop = "rn_hop"
 
 WINDOW level
 BAND 2, 1, 4
@@ -163,18 +165,21 @@ REM starts (0 at power-on).  FC is the tick counter and CAM the camera the coin 
   REM six 8 x 8 sprites over the still tiles: 2,400 T each in the runtime's blitter, 14,000 T on a tick with six coins in view.)  The list is
   REM sorted by x: CF is the first coin not left of the camera.  A taken coin (cc) is left alone.
   PROC SPINCOINS():
-    LOCAL k, f
+    LOCAL k
     WHILE cf < ce AND cxs(cf) + 8 <= cam
       cf = cf + 1
     WEND
-    f = ct(BAND(SHR(fc, 3), 3))
     k = cf + BAND(fc, 7)
+    CALL SPIN(k)
+    CALL SPIN(k + 8)
+  ENDP
+
+  REM Coin k, when the list has it, it is not taken and it is in view, gets the spin frame of this tick.
+  PROC SPIN(k):
+    LOCAL x
     IF k < ce THEN
-      IF cc(k) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
-    ENDIF
-    k = k + 8
-    IF k < ce THEN
-      IF cc(k) = 0 AND cxs(k) < cam + 192 THEN SETWORLD cxs(k), cys(k) = f ENDIF
+      x = cxs(k)
+      IF cc(k) = 0 AND x < cam + 192 THEN SETWORLD x, cys(k) = ct(BAND(SHR(fc, 3), 3)) ENDIF
     ENDIF
   ENDP
 
@@ -187,6 +192,7 @@ SCENE title NOWINDOW
 
   REM The reset has put the title picture (the first MAP) on the screen: INIT adds the text on two black bars over the ground, and a fire still down from the game that sent us here must be let go first.
   PROC INIT():
+    PLAY hop
     CALL BAR(21)
     CALL BAR(22)
     INK 6 : PRINT AT 21, 13; "HI "; hi;
@@ -330,6 +336,7 @@ SCENE play
   REM The reset has put the title picture on the screen and the window is on: blank the cells (the rows around the window are the HUD's, built by the starting stages) and load a fresh level 1,
   REM so that every game starts on level 1 as it was made, whatever the last game left in the world.
   PROC INIT():
+    NOMUSIC
     CLS
     lv = 0
     CALL LOADWORLD()
@@ -364,7 +371,7 @@ SCENE play
     lf = KEYDOWN("O") OR BIT(js, 2)
     rg = KEYDOWN("P") OR BIT(js, 3)
     REM Q and A are read every other tick (a KEYDOWN is 250 T and a few hundred more to call): the jump key is read through SPACE and the stick every tick
-    IF BAND(fc, 1) = 1 THEN
+    IF BIT(fc, 0) THEN
       kq = KEYDOWN("Q") : ka = KEYDOWN("A")
     ENDIF
     up = kq OR BIT(js, 0)
@@ -469,15 +476,15 @@ SCENE play
       CALL SPINCOINS()
       IF inv > 0 THEN
         inv = inv - 1
-        IF inv <= 30 AND BAND(inv, 2) <> 0 THEN HIDE hero ENDIF
+        IF inv <= 30 AND BIT(inv, 1) THEN HIDE hero ENDIF
       ENDIF
       IF hud <> 0 AND BAND(fc, 3) = 3 THEN CALL SHOWHUD() ENDIF
     ENDIF
   ENDP
 
-  REM Game won (2) and game over (3): the world stays up; the end text is put up a piece a tick (EI); fire (after half a second) goes back to the title (the high score is set).
-  PROC ENDTICK():
-    IF st = 2 THEN
+  REM What the end of a game and the end of a level share, a piece a tick (EI): the hero cheers (when C is true), the coins go on turning, then 0 the HUD, 1 and 2 the two text rows cleared (BAR).
+  PROC ENDROWS(c):
+    IF c THEN
       SHOW hero AT px, py FRAME 5 + BAND(SHR(tt, 2), 1)
     ENDIF
     CALL SPINCOINS()
@@ -485,10 +492,16 @@ SCENE play
       CASE 0
         CALL FLUSHHUD()
       CASE 1
-        INK 7 : PAPER 0 : BRIGHT 1
-        FILLC 0, 21, 32, 1 = 32
+        CALL BAR(21)
       CASE 2
-        FILLC 0, 22, 32, 1 = 32
+        CALL BAR(22)
+    ENDSEL
+  ENDP
+
+  REM Game won (2) and game over (3): the world stays up; the end text is put up a piece a tick (EI); fire (after half a second) goes back to the title (the high score is set).
+  PROC ENDTICK():
+    CALL ENDROWS(st = 2)
+    SELECT CASE ei
       CASE 3
         IF st = 2 THEN
           INK 6 : PRINT AT 21, 3; "YOU FINISHED LEAP RUNNER!";
@@ -508,26 +521,15 @@ SCENE play
   REM Level complete (4): the message "LEVEL n" for the level to come (NL: the next one after a flag, the same after game over), then its world is loaded and
   REM played.  EI counts the ticks: 0 the HUD, 1 and 2 clear the end rows, 3 the message, 36 loads the world (one long tick), 37 clears the message, 38 starts.
   PROC LEVELTICK():
-    IF nl > lv THEN
-      SHOW hero AT px, py FRAME 5 + BAND(SHR(tt, 2), 1)
-    ENDIF
-    CALL SPINCOINS()
+    CALL ENDROWS(nl > lv)
     SELECT CASE ei
-      CASE 0
-        CALL FLUSHHUD()
-      CASE 1
-        INK 7 : PAPER 0 : BRIGHT 1
-        FILLC 0, 21, 32, 1 = 32
-      CASE 2
-        FILLC 0, 22, 32, 1 = 32
       CASE 3
         INK 6 : PRINT AT 21, 12; "LEVEL "; nl + 1;
       CASE 36
         lv = nl
         CALL LOADLEVEL()
       CASE 37
-        INK 7 : PAPER 0 : BRIGHT 1
-        FILLC 0, 21, 32, 1 = 32
+        CALL BAR(21)
       CASE 38
         CALL BEGINLEVEL()
     ENDSEL
@@ -536,7 +538,7 @@ SCENE play
 
   REM ---------------------------------------------------------------------------------------------------------------- the player
   PROC PLAYER():
-    LOCAL d, nx2, ny, r
+    LOCAL d, nx2, ny, r, lx, land
     d = rg - lf
     IF d <> 0 THEN
       vx = vx + d * ACC
@@ -544,24 +546,19 @@ SCENE play
       IF vx < -VMAX THEN vx = -VMAX ENDIF
       face = d
     ELSE
-      IF vx > 0 THEN
-        vx = vx - FRIC
-        IF vx < 0 THEN vx = 0 ENDIF
-      ENDIF
-      IF vx < 0 THEN
-        vx = vx + FRIC
-        IF vx > 0 THEN vx = 0 ENDIF
-      ENDIF
+      REM friction: FRIC nearer to 0, and not past it
+      IF ABS(vx) <= FRIC THEN vx = 0 ELSE vx = vx - SGN(vx) * FRIC ENDIF
     ENDIF
     REM horizontal: move, then if the box is inside a solid tile put its edge on the tile's face
     x8 = x8 + vx
     nx2 = SHR(x8, 3)
     IF nx2 <> px THEN
       IF SOLID(nx2 + BX, py + BY, BW, BH) THEN
+        REM (BAND(x, -8) is the left edge of the tile x is in)
         IF vx > 0 THEN
-          nx2 = SHR(nx2 + BX + BW - 1, 3) * 8 - BW - BX
+          nx2 = BAND(nx2 + BX + BW - 1, -8) - BW - BX
         ELSE
-          nx2 = SHR(nx2 + BX, 3) * 8 + 8 - BX
+          nx2 = BAND(nx2 + BX, -8) + 8 - BX
         ENDIF
         x8 = nx2 * 8 : vx = 0
       ENDIF
@@ -583,57 +580,47 @@ SCENE play
     ELSE
       IF dropt > 0 THEN dropt = dropt - 1 ENDIF
     ENDIF
-    REM vertical.  Standing on the ground and still over the same tiles as last tick (TC: the box's first and last tile column) nothing can have changed:
-    REM no query.  Otherwise: gravity, then land on a solid tile, on a plank the feet cross, or bump the head.
-    tc = SHL(SHR(px + BX, 3), 5) + SHR(px + BX + BW - 1, 3)
+    REM vertical.  Standing on the ground and still over the same tiles as last tick (TC: the box's first and last tile column, the first one times 32) nothing can have changed:
+    REM no query.  Otherwise: gravity, then land on a solid tile, on a plank the feet cross, or bump the head.  LX is the box's left edge; LAND: the box is in a solid tile, or the feet are on a plank.
+    lx = px + BX
+    tc = BAND(lx, -8) * 4 + SHR(lx + BW - 1, 3)
     IF gnd AND tc = ltc AND dropt = 0 THEN
       vy = 0
     ELSE
-    vy = vy + GRAV
-    IF vy > VFALL THEN vy = VFALL ENDIF
-    ny = py + vy
-    gnd = 0
-    IF vy > 0 THEN
-      IF SOLID(px + BX, ny + BY, BW, BH) THEN
-        r = SHR(ny + BY + BH - 1, 3)
-        ny = r * 8 - BY - BH : vy = 0 : gnd = 1
+      vy = vy + GRAV
+      IF vy > VFALL THEN vy = VFALL ENDIF
+      ny = py + vy
+      gnd = 0
+      IF vy <> 0 THEN land = SOLID(lx, ny + BY, BW, BH) ENDIF
+      IF vy > 0 THEN
+        REM falling: R is the top of the tile row the feet are in; a plank (flag 8) holds them only when they have just crossed into its row
+        r = BAND(ny + BY + BH - 1, -8)
+        IF land = 0 AND dropt = 0 AND r > BAND(py + BY + BH - 1, -8) THEN land = TILEHIT(lx, r, BW, 1, 8) ENDIF
+        IF land THEN ny = r - BY - BH : vy = 0 : gnd = 1 ENDIF
       ELSE
-        IF dropt = 0 THEN
-          r = SHR(ny + BY + BH - 1, 3)
-          IF r > SHR(py + BY + BH - 1, 3) THEN
-            IF TILEHIT(px + BX, r * 8, BW, 1, 8) THEN
-              ny = r * 8 - BY - BH : vy = 0 : gnd = 1
-            ENDIF
-          ENDIF
-        ENDIF
+        IF land THEN ny = BAND(ny + BY, -8) + 8 - BY : vy = 0 ENDIF
       ENDIF
-    ELSE
-      IF vy < 0 THEN
-        IF SOLID(px + BX, ny + BY, BW, BH) THEN
-          r = SHR(ny + BY, 3)
-          ny = r * 8 + 8 - BY : vy = 0
-        ENDIF
-      ENDIF
-    ENDIF
-    py = ny
+      py = ny
     ENDIF
     ltc = tc
     REM what the box touches: hazard (2), pickup (4), goal (16); asked every fourth tick (a query is 1,300 T; any box overlaps a coin, a spike or the flag for at least 4 ticks)
     fx = 0
-    IF BAND(fc, 3) = 0 THEN fx = TILEHIT(px + BX, py + BY, BW, BH, 22) ENDIF
+    IF BAND(fc, 3) = 0 THEN fx = TILEHIT(lx, py + BY, BW, BH, 22) ENDIF
     IF fx <> 0 THEN
-      IF BAND(fx, 16) <> 0 THEN
+      IF BIT(fx, 4) THEN
         CALL WIN()
       ELSE
-        IF BAND(fx, 4) <> 0 THEN pk = 1 ENDIF
-        IF BAND(fx, 2) <> 0 THEN CALL DIE() ENDIF
+        IF BIT(fx, 2) THEN pk = 1 ENDIF
+        IF BIT(fx, 1) THEN CALL HURT(1) ENDIF
       ENDIF
     ENDIF
-    IF st = 1 AND py > DEADY THEN CALL DIE() ENDIF
+    IF st = 1 AND py > DEADY THEN CALL HURT(1) ENDIF
     IF st = 1 THEN
       IF px >= cnx THEN
-        rx = ckx(ck) : ry = cky(ck) : ck = ck + 1
-        IF ck < 3 THEN cnx = ckx(ck) ELSE cnx = 32000 ENDIF
+        REM (CNX is ckx(ck) here)
+        rx = cnx : ry = cky(ck) : ck = ck + 1
+        cnx = 32000
+        IF ck < 3 THEN cnx = ckx(ck) ENDIF
       ENDIF
     ENDIF
   ENDP
@@ -692,25 +679,19 @@ SCENE play
   ENDP
 
   REM ---------------------------------------------------------------------------------------------------------------- life and death
-  PROC HURT():
-    lives = lives - 1 : hud = BOR(hud, 2)
-    IF lives <= 0 THEN
-      CALL GAMEOVER()
-    ELSE
-      inv = 40 : vy = -5 : vx = 0 - face * 16 : gnd = 0
-      PLAY hurt
-    ENDIF
-  ENDP
-
-  REM A hazard or the pit: a life, back to the last checkpoint.
-  PROC DIE():
+  REM A life is lost.  R = 0: an enemy's touch (thrown back, 40 ticks of invulnerability); R = 1: a hazard or the pit (back to the last checkpoint).
+  PROC HURT(r):
     lives = lives - 1 : hud = BOR(hud, 2)
     IF lives <= 0 THEN
       CALL GAMEOVER()
     ELSE
       PLAY hurt
-      inv = 30
-      CALL RESPAWN()
+      IF r THEN
+        inv = 30
+        CALL RESPAWN()
+      ELSE
+        inv = 40 : vy = -5 : vx = 0 - face * 16 : gnd = 0
+      ENDIF
     ENDIF
   ENDP
 
@@ -729,23 +710,28 @@ SCENE play
 
   REM The flag: after levels 1 to 3 the next level's message (NL), after the fourth the win screen.
   PROC WIN():
+    tt = 0 : ei = 0 : score = score + 500 : hud = BOR(hud, 1) : vx = 0 : vy = 0
     IF lv < 3 THEN
       st = 4 : nl = lv + 1
     ELSE
       st = 2
+      CALL SETHI()
     ENDIF
-    tt = 0 : ei = 0 : score = score + 500 : hud = BOR(hud, 1) : vx = 0 : vy = 0
     CALL CLEARENEMIES()
-    IF st = 2 THEN CALL SETHI() ENDIF
     PLAY win
   ENDP
 
   PROC CLEARENEMIES():
     LOCAL i
     FOR i = 0 TO 5
-      en(i) = 0
-      HIDE wk(i) : HIDE fl(i - 4)
+      CALL KILL(i)
     NEXT i
+  ENDP
+
+  REM Enemy slot i is free again and its sprite hidden (slots 0..3 are the walkers wk, 4..5 the bats fl: a HIDE with an index outside its pool does nothing).
+  PROC KILL(i):
+    en(i) = 0
+    HIDE wk(i) : HIDE fl(i - 4)
   ENDP
 
   PROC FLUSHHUD():
@@ -759,11 +745,11 @@ SCENE play
   REM the tick that asks for a coin and the one that takes it.
   PROC SHOWHUD():
     INK 6 : PAPER 0 : BRIGHT 1
-    IF BAND(hud, 1) <> 0 THEN
+    IF BIT(hud, 0) THEN
       PRINT AT 1, 8; score;
       hud = BAND(hud, 6)
     ELSE
-      IF BAND(hud, 2) <> 0 THEN
+      IF BIT(hud, 1) THEN
         PRINT AT 1, 22; lives;
         hud = BAND(hud, 5)
       ELSE
@@ -791,22 +777,17 @@ SCENE play
   REM At most one new enemy a tick: the next entry of the sorted list when it comes within 216 pixels of the camera
   REM (a walker needs a free walker slot, a bat a free bat slot; killed or passed entries are skipped).
   PROC SPAWNER():
-    LOCAL k, lo, hb, b
+    LOCAL k, lo, hb, d, x
     IF nx < se THEN
-      IF sx(nx) < cam + 216 THEN
-        IF sd(nx) = 0 AND sx(nx) > cam - 48 THEN
-          REM a bat is an entry with no turning points (WHI = 0)
-          b = 0
-          IF whi(nx) = 0 THEN b = 1 ENDIF
-          IF b = 0 THEN
-            lo = 0 : hb = 3
-          ELSE
-            lo = 4 : hb = 5
-          ENDIF
+      x = sx(nx)
+      IF x < cam + 216 THEN
+        IF sd(nx) = 0 AND x > cam - 48 THEN
+          REM a walker takes one of the slots 0..3 (LO is 0: a LOCAL starts at 0) and sets off to the left; a bat is an entry with no turning points (WHI = 0): slots 4..5, to the right
+          hb = 3 : d = -1
+          IF whi(nx) = 0 THEN lo = 4 : hb = 5 : d = 1 ENDIF
           FOR k = lo TO hb
             IF en(k) = 0 THEN
-              en(k) = 1 : ex(k) = sx(nx) : ey(k) = sy(nx) : ek(k) = nx : e0(k) = sx(nx)
-              ed(k) = -1 + b * 2
+              en(k) = 1 : ex(k) = x : ey(k) = sy(nx) : ek(k) = nx : e0(k) = x : ed(k) = d
               nx = nx + 1
               EXIT FOR
             ENDIF
@@ -821,27 +802,30 @@ SCENE play
   REM A walker patrols its ground 4 pixels every other tick (walkers on the even ticks, bats on the odd ones, which halves their cost per tick) between the two turning points of its spawn entry (WLO / WHI: where a wall or the edge of its
   REM ground is, worked out from the map by the generator and checked by the tests; no run-time query).
   PROC WALKER(i):
-    LOCAL f, x, d, k
+    LOCAL f, x, y, d, k, t
     d = ed(i) : k = ek(i)
     x = ex(i) + d * 4
     IF x < cam - 48 THEN
-      en(i) = 0
-      HIDE wk(i)
+      CALL KILL(i)
     ELSE
-      IF x <= wlo(k) THEN
-        x = wlo(k) : d = 1
+      t = wlo(k)
+      IF x <= t THEN
+        x = t : d = 1
       ELSE
-        IF x >= whi(k) THEN x = whi(k) : d = -1 ENDIF
+        t = whi(k)
+        IF x >= t THEN x = t : d = -1 ENDIF
       ENDIF
       ed(i) = d : ex(i) = x
       f = BAND(SHR(x, 3), 1)
+      y = ey(i)
       IF d > 0 THEN
-        SHOW wk(i) AT x, ey(i) FRAME f
+        SHOW wk(i) AT x, y FRAME f
       ELSE
-        SHOW wk(i) AT x, ey(i) FRAME f FLIP
+        SHOW wk(i) AT x, y FRAME f FLIP
       ENDIF
       REM (HIT only when the boxes can overlap, and when the touch can matter: falling onto it, or not blinking: HIT is 2,400 T)
-      IF ABS(x - px) < 13 AND ey(i) - py > -15 AND ey(i) - py < 21 AND (inv = 0 OR vy > 0) THEN
+      y = y - py
+      IF ABS(x - px) < 13 AND y > -15 AND y < 21 AND (inv = 0 OR vy > 0) THEN
         IF HIT(hero, wk(i)) THEN CALL TOUCH(i) ENDIF
       ENDIF
     ENDIF
@@ -849,19 +833,21 @@ SCENE play
 
   REM A bat flies to and fro 56 pixels either side of where it appeared and bobs on the sine table.
   PROC BAT(i):
-    LOCAL f, x, y
-    x = ex(i) + ed(i) * 4
+    LOCAL f, x, y, d
+    d = ed(i)
+    x = ex(i) + d * 4
     IF x < cam - 80 THEN
-      en(i) = 0
-      HIDE fl(i - 4)
+      CALL KILL(i)
     ELSE
-      IF ABS(x - e0(i)) > 56 THEN ed(i) = 0 - ed(i) ENDIF
+      IF ABS(x - e0(i)) > 56 THEN ed(i) = 0 - d ENDIF
       ex(i) = x
-      y = sy(ek(i)) + sn(BAND(SHR(fc, 1) + i * 5, 15))
+      f = SHR(fc, 1)
+      y = sy(ek(i)) + sn(BAND(f + i * 5, 15))
       ey(i) = y
-      f = BAND(SHR(fc, 1), 1)
+      f = BAND(f, 1)
       SHOW fl(i - 4) AT x, y FRAME f
-      IF ABS(x - px) < 12 AND y - py > -12 AND y - py < 22 AND (inv = 0 OR vy > 0) THEN
+      y = y - py
+      IF ABS(x - px) < 12 AND y > -12 AND y < 22 AND (inv = 0 OR vy > 0) THEN
         IF HIT(hero, fl(i - 4)) THEN CALL TOUCH(i) ENDIF
       ENDIF
     ENDIF
@@ -870,12 +856,12 @@ SCENE play
   REM The player met enemy slot i: falling onto it from above stomps it, anything else hurts.
   PROC TOUCH(i):
     IF vy > 0 AND py <= ey(i) - 12 THEN
-      en(i) = 0 : sd(ek(i)) = 1
-      HIDE wk(i) : HIDE fl(i - 4)
+      sd(ek(i)) = 1
+      CALL KILL(i)
       vy = -6 : gnd = 0 : score = score + 100 : hud = BOR(hud, 1)
       PLAY stomp
     ELSE
-      IF inv = 0 THEN CALL HURT() ENDIF
+      IF inv = 0 THEN CALL HURT(0) ENDIF
     ENDIF
   ENDP
 ENDSCENE

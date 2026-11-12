@@ -36,6 +36,7 @@ import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { diffV3 } from './arcade-m6-common.mjs';
+import { createSoundRecorder, soundOf, clockOf, compareSound, soundCoverage } from './arcade-m15-common.mjs';
 import { LEVELS, COLS, ROWS, levelTables, dataLines, buildRunnerAssets } from '../arcade/examples/runner.assets.gen.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -306,6 +307,7 @@ function runFramed(R, res, { ticks, stick, keys }) {
     ram4000: picture ? m.ram.slice(0x4000, 0x8000) : null,
     f4: SYM.V_SHADOW_F4 !== undefined ? m.ram[SYM.V_SHADOW_F4] : null,
     sfxActive: SYM.V_SFX_ACTIVE !== undefined ? m.ram[SYM.V_SFX_ACTIVE] : null,
+    ay: soundOf(m, SYM).ay, chip: soundOf(m, SYM).chip,      // (AY_SHADOW R0..R10 and the chip: the song-level comparison of `soundVs`)
   });
   const out = { snaps: [], error: null };
   for (let f = 0; f < 400 && rd16(SYM.HO_MARK) !== SYM.HO_MARK_VALUE; f++) M_.runFrame(m);
@@ -314,8 +316,10 @@ function runFramed(R, res, { ticks, stick, keys }) {
   const setInput = (k) => { m.joystick[0] = contact(stick ? stick(k) : 0); m.joystick[1] = contact(0); for (let r = 0; r < 8; r++) m.keyMatrix[r] = 0x1F; if (keys && keys(k)) m.keyMatrix[6] &= ~0x10; };    // H is bit 4 of half-row 6 (H J K L ENTER); a held key reads 0
   setInput(1);
   const origRead = m.bus.read;
+  const rec = out.rec = createSoundRecorder(m, SYM, res);      // times every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call (V_FRAMES at its entry) and sees the ones a frame interrupt cut
   m.bus.read = function (a) {
-    if (a === fe && out.snaps.length < ticks + 1 && m.cpu.pc === fe) { out.snaps.push(snap(R.picture)); setInput(out.snaps.length); }
+    rec.fetch(a);
+    if (a === fe && out.snaps.length < ticks + 1 && m.cpu.pc === fe) { out.snaps.push(snap(R.picture)); rec.sample(); setInput(out.snaps.length); }
     return origRead.call(this, a);
   };
   const div = res.memory[0x8004] & 0x3F;
@@ -326,6 +330,20 @@ function runFramed(R, res, { ticks, stick, keys }) {
 }
 
 const sameBuf = (x, y) => !!x && !!y && x.length === y.length && x.every((v, i) => v === y[i]);
+/**
+ * The sound of a run of a game with songs, at song level (docs/ARCADE_MUSIC_CONTRACT.md 6a; the level of tests/arcade-m15-differential.mjs): the interpreter runs the same script with the clock the machine
+ * showed (the refresh of every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call and of every sample) and every sample's V_SFX_ACTIVE (all bits), AY_SHADOW R0..R10 and the chip are compared with its
+ * `ay`, exactly; the comparison stops at the first call a frame interrupt cut.  `need` names the counts that must be above 0 (song, effect, cOver): a run that never plays music cannot pass.
+ * Returns {ok, detail}; the detail always has the sample counts.
+ */
+function soundVs(got, src, ticks, stickFn, keys, need) {
+  if (got.error) return { ok: false, detail: got.error };
+  const want = normRun(interpret(astFor(src), { version: 3, ticks, assets: ASSETS, stick: stickFn, keys, maxSteps: 4_000_000_000, clock: clockOf(got.rec) }));
+  const pairs = [];
+  for (let t = 0; t <= ticks; t++) { if (got.rec.straddle !== null && t >= got.rec.straddle) break; pairs.push({ at: t === 0 ? 'after INIT' : `after tick ${t}`, g: got.snaps[t], w: t === 0 ? want.init : want.ticks[t - 1] }); }
+  const { d, stats } = compareSound(pairs), cov = soundCoverage(stats, need, got.rec.cuts);
+  return { ok: d === null && cov.ok && got.rec.calls.length > 0, detail: d ?? `${cov.text}; ${got.rec.calls.length} sound calls${cov.ok ? '' : '; MISSING: a count that must be above 0 is 0'}` };
+}
 /** machine against interpreter at every tick: the first difference, or null */
 function vsInterp(got, want, ticks) {
   for (let t = 0; t <= ticks; t++) {
@@ -408,10 +426,15 @@ else {
     const lv = [...new Set(realRun.snaps.map((s) => s.vars.LV))];
     check_(`${REAL_TICKS} ticks of the recorded play-through (levels ${lv.map((x) => x + 1).join(', ')} entered; ${[1, 2, 3].filter((l) => realRun.snaps.some((s) => s.vars.LV === l)).length} banked worlds loaded through the window): variables, arrays, SPR_TAB, WORLD_RAM and camera equal to the interpreter at every tick`, d === null, `${d ?? ''} ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
+  {
+    const sv = soundVs(realRun, PLAY_SRC, REAL_TICKS, stickOf(script), undefined, ['song', 'effect', 'cOver']);
+    check_(`the recorded play-through, sound at song level (the title's song \`hop\`, NOMUSIC at the start of play, then the effects as channel-C streams): V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's chip model on every sample`, sv.ok, sv.detail);
+  }
   const rt = RETRY_TICKS;
   const rr = runFramed(R3, compile(RETRY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS }), { ticks: rt, stick: retryStick });
   const wantR = playInterp(RETRY_SRC, rt, retryStick);
   check_(`game over and back to the title (a variant with one life): ${rt} ticks equal to the interpreter`, !rr.error && vsInterp(rr, wantR, rt) === null, rr.error ?? vsInterp(rr, wantR, rt) ?? '');
+  { const sv = soundVs(rr, RETRY_SRC, rt, retryStick, undefined, ['song', 'effect', 'cOver']); check_(`game over and back to the title (a variant with one life), sound at song level: V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's on every sample`, sv.ok, sv.detail); }
 }
 
 // =================================================================================================================
@@ -659,7 +682,7 @@ const SCENE_AT = (t) => (t <= 170 ? 0 : t <= 341 ? 1 : 0);
   if (!realOk) skip_('the scenes on the real runtime', 'the banked build is missing');
   else {
     // the real runtime, tick by tick against the interpreter: variables, arrays, SPR_TAB, WORLD_RAM, camera, and the text cells; the scene index and V_WIN (0 in the title, 1 in the demo and the game)
-    const runScene = (label, ticks, stickFn) => {
+    const runScene = (label, ticks, stickFn, need = ['song', 'effect', 'cOver']) => {
       const t0 = Date.now();
       const g = runFramed(R9, normal, { ticks, stick: stickFn });
       const want = playInterp(SRC, ticks, stickFn);
@@ -671,6 +694,8 @@ const SCENE_AT = (t) => (t <= 170 ? 0 : t <= 341 ? 1 : 0);
         else if (!sameBuf(sn.cells, Uint8Array.from(w.cells)) || !sameBuf(sn.attrs, Uint8Array.from(w.attrs))) d = `sample ${t}: the text cells / attributes differ`;
       }
       check_(`${label}: ${ticks} ticks equal to the interpreter (variables, arrays, SPR_TAB, WORLD_RAM, camera, text cells, scene index, V_WIN)  (${((Date.now() - t0) / 1000).toFixed(0)} s)`, d === null, d ?? '');
+      const sv = soundVs(g, SRC, ticks, stickFn, undefined, need);
+      check_(`${label}: sound at song level (V_SFX_ACTIVE, AY_SHADOW, the chip against the interpreter's chip model, every sample)`, sv.ok, sv.detail);
       return { g, want };
     };
     const a = runScene('no input: title, demo, title', 350, () => 0);

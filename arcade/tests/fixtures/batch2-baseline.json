@@ -20,7 +20,7 @@
    "areaSha256": "6c346fad9286cda0db75aea1db7ca3e901f1b70203c6a6d78e0a6299a483a2d2"
   },
   {
-   "src": "arcade/examples/blockfall.arc",
+   "src": "arcade/tests/fixtures/blockfall-v1.arc",
    "assets": "arcade/examples/blockfall.assets.json",
    "runtime": 2,
    "bytes": 7809,

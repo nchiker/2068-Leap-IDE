@@ -12,6 +12,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pattern, song, describe } from './songs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -75,8 +76,37 @@ const sfx = {
   over: { ticks: ticks(36, (k) => ({ tone: 150 + 14 * k, vol: Math.max(2, 13 - (k >> 2)), noise: 0, mix: 6 })) },
 };
 
-export const ASSETS = { sprites: {}, tilesets: { gfx: { tiles } }, sfx };
+// ── music: "Stones", the in-game song (docs/ARCADE_MUSIC_CONTRACT.md section 8: the v2 showcase; original music).  A minor, a quaver = 12 refreshes
+// (about 150 beats a minute), bars of 96.  Melody on A (organ), bass on B, drums on C: a one-channel effect borrows C, so the drums are the part a move
+// or a line clear silences for a moment.  Two sections of eight bars (A minor, then a C major bridge), four patterns of four bars: A1 A2 A1 A2 B1 B2, loop.
+const DRUMS = '@drum !9 C2:4 -:20 G5:5 -:19 C2:4 -:20 G5:5 -:19 '.repeat(4);
+const music = {
+  stones: song([
+    pattern({
+      A: '@organ !11 L12 | A4:24 E5:24 D5 C5 B4:24 | C5 D5 E5:24 A4:48 | F5:24 E5 D5 C5:24 D5 E5 | B4:72 -:24',
+      B: '@bass !12 L24 | A2 E3 A2 E3 | A2 E3 A2 C3 | D3 A2 D3 A2 | E2 B2 E2 G#2',
+      C: DRUMS,
+    }, 'A1'),
+    pattern({
+      A: '@organ !11 L12 | C5:24 B4 A4 G4:24 A4 B4 | C5:24 E5:24 G5:24 F5 E5 | D5:24 F5 E5 D5:24 C5 B4 | A4:48 E4:24 -:24',
+      B: '@bass !12 L24 | C3 G3 G2 D3 | C3 G3 C3 E3 | D3 A2 E2 B2 | A2 E3 A2 E2',
+      C: DRUMS,
+    }, 'A2'),
+    pattern({
+      A: '@organ !11 L12 | E5 F5 G5:24 E5:24 C5:24 | D5 E5 F5:24 D5:48 | C5 D5 E5:24 C5:24 A4:24 | B4:24 G4:24 B4:24 D5:24',
+      B: '@bass !12 L24 | C3 G3 C3 G3 | D3 A2 D3 A2 | A2 E3 A2 E3 | G2 D3 G2 B2',
+      C: DRUMS,
+    }, 'B1'),
+    pattern({
+      A: '@organ !11 L12 | E5 F5 G5:24 A5:24 G5 F5 | E5:24 C5:24 A4:48 | B4 C5 D5:24 E5:24 G#4:24 | A4:72 -:24',
+      B: '@bass !12 L24 | C3 G3 F2 C3 | A2 E3 A2 E3 | E2 B2 E2 G#2 | A2 E3 A2 E2',
+      C: DRUMS,
+    }, 'B2'),
+  ], [0, 1, 0, 1, 2, 3], 0),
+};
+
+export const ASSETS = { sprites: {}, tilesets: { gfx: { tiles } }, sfx, music };
 if (MAIN) {
   writeFileSync(join(HERE, 'blockfall.assets.json'), JSON.stringify(ASSETS, null, 1) + '\n');
-  console.log(`blockfall.assets.json: ${tiles.length} tiles, ${Object.keys(sfx).length} sound effects, no sprites`);
+  console.log(`blockfall.assets.json: ${tiles.length} tiles, ${Object.keys(sfx).length} sound effects, no sprites; ${Object.entries(music).map(([k, v]) => describe(k, v)).join('; ')}`);
 }

@@ -71,7 +71,11 @@ The Studio's editors enforce the two-colours-per-row rule while drawing and prev
   what the interpreter's sound-length model uses. The size panel and the sound editor (`sfxInfo`) count the real encoded length
   (`sfxRefreshRegisters` and `sfxStreamLength` in `src/lang/arcade/arcade-assets.js` are the shared source). Tested by `tests/sfx-stream.mjs` with an
   independent stream player. The runtime half (`SND_TICK` reading the stream) is separate: the current runtimes cannot play a three-channel effect yet.
-* `music`: *later* (pattern/instrument format when game B needs it; the player runs in the interrupt).
+* `music` (**as built, 2026-11-12**, `docs/ARCADE_MUSIC_CONTRACT.md` sections 3, 4 and 8a): `{patterns: [three-channel effect shapes], order:
+  [pattern indices], loop: order position | null}`; at most 8 songs a game, 32 patterns, 64 order entries, 1,800 refreshes a pattern. Compiled by
+  `convertMusic` to pattern streams with waits (a held note costs one byte); edited in the Studio's song editor; the example games write theirs as
+  code with `arcade/examples/songs.mjs` and `node arcade/tools/song-wav.mjs <assets.json>` renders them to .wav. In a game with songs every
+  one-channel effect is stored as a channel-C stream (`convertSfxC`).
 
 ## Size accounting
 The Studio reports bytes by category (runtime modules, code, sprites, tiles, maps, sound) against the 64 KB DCK and

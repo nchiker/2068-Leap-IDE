@@ -82,7 +82,7 @@ ENDSCENE
 | `STICK(n)`, `KEYDOWN(code)` | joystick 1/2 bits (0-31, fire +16, as V2); held key test | input |
 | `TILE x, y = t`, `TILEAT(x, y)` | set / read a map cell | bricks, *and* game C |
 
-*Later* (not specified until a game needs them): `MUSIC`, `SCROLL`, sprite flip/animation words, `SELECT`/`CASE`,
+*Music is built* (2026-11-12): `MUSIC name = "asset"`, `PLAY song`, `NOMUSIC`; `docs/ARCADE_MUSIC_CONTRACT.md` sections 2 and 6a. *Later* (not specified until a game needs them): `SCROLL`, sprite flip/animation words, `SELECT`/`CASE`,
 `WHILE`/`WEND` (these two are likely early, for game B), `COLLIDE` against tiles, fixed-point, more string words,
 `ON COLLIDE`, a `TIMER`.
 

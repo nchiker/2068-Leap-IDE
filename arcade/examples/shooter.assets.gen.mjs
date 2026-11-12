@@ -11,6 +11,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pattern, song, describe } from './songs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const mirror = (half) => half + [...half].reverse().join('');
@@ -81,6 +82,33 @@ const sfx = {
   over: { ticks: ticks(22, (k) => ({ tone: 200 + 16 * k, vol: Math.max(2, 13 - Math.floor(k / 2)), noise: 0, mix: 6 })) },
 };
 
+// ── music (docs/ARCADE_MUSIC_CONTRACT.md section 8; original music): D minor, a quaver = 8 refreshes (about 225 beats a minute), bars of 64.
+//   fanfare  the title: a march on A (organ), an octave bass on B, drums on C; two four-bar patterns, looped.
+//   drive    the play scene: held chords on A and an octave pulse on B (organ, so a held note changes the chip twice: cheap in the tick), C left free
+//            for the effects (a shot borrows C many times a second); patterns: the pulse alone, the pulse and a tune, the tune an octave up.
+const bars = (s, n) => Array(n).fill(s).join(' | ');
+const PULSE = (lo, hi) => `${lo} ${hi} `.repeat(4).trim();
+const DRIVE_B = `@organ !10 L8 | ${PULSE('D2', 'D3')} | ${PULSE('Bb1', 'Bb2')} | ${PULSE('C2', 'C3')} | ${PULSE('A1', 'A2')}`;
+const music = {
+  fanfare: song([
+    pattern({
+      A: '@organ !12 L8 | D5 D5 D5 A4 D5:16 F5:16 | E5 E5 E5 C5 E5:16 G5:16 | F5:16 E5 D5 C5:16 A4:16 | D5:48 -:16',
+      B: '@bass !12 L16 | D2 D3 D2 D3 | C2 C3 C2 C3 | Bb1 Bb2 A1 A2 | D2 D3 D2 A1',
+      C: '@drum !10 ' + bars('C2:4 -:12 G5:4 -:12 C2:4 -:4 C2:4 -:4 G5:4 -:12', 4),
+    }, 'call'),
+    pattern({
+      A: '@organ !12 L8 | F5 F5 F5 E5 F5:16 A5:16 | G5 G5 G5 F5 E5:16 C5:16 | D5:16 E5 F5 E5:16 C#5:16 | D5:48 -:16',
+      B: '@bass !12 L16 | Bb1 Bb2 Bb1 Bb2 | C2 C3 C2 C3 | Bb1 Bb2 A1 A2 | D2 D3 D2 D3',
+      C: '@drum !10 ' + bars('C2:4 -:12 G5:4 -:12 C2:4 -:4 C2:4 -:4 G5:4 -:12', 4),
+    }, 'answer'),
+  ], [0, 1], 0),
+  drive: song([
+    pattern({ A: '@organ !9 L32 | A4 F4 | F4 D4 | G4 E4 | E4 C#4', B: DRIVE_B }, 'pulse'),
+    pattern({ A: '@organ !11 L16 | D5 C5 A4:32 | Bb4 A4 F4:32 | G4 A4 Bb4 C5 | A4:64', B: DRIVE_B }, 'tune'),
+    pattern({ A: '@organ !11 L16 | F5 E5 D5:32 | D5 C5 Bb4:32 | C5 D5 E5 G5 | E5:32 C#5:32', B: DRIVE_B }, 'tune up'),
+  ], [0, 1, 0, 2], 0),
+};
+
 const assets = {
   sprites: {
     ship: sprite(SHIP, { hot: [3, 3, 10, 11], phases: 8, ink: 7 }),
@@ -92,6 +120,7 @@ const assets = {
   tilesets: { gfx: { tiles } },
   sfx,
   maps: { sky: { w: 32, h: 24, cells } },
+  music,
 };
 writeFileSync(join(HERE, 'shooter.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-console.log(`shooter.assets.json: ${Object.keys(assets.sprites).length} sprites, ${tiles.length} tiles, ${Object.keys(sfx).length} sound effects, a 32 x 24 sky`);
+console.log(`shooter.assets.json: ${Object.keys(assets.sprites).length} sprites, ${tiles.length} tiles, ${Object.keys(sfx).length} sound effects, a 32 x 24 sky; ${Object.entries(music).map(([k, v]) => describe(k, v)).join('; ')}`);

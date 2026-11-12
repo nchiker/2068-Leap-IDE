@@ -11,6 +11,7 @@
 //   genProgram15(seed, opts)                     a random program with songs, effects (one channel, noise, three channels), PLAY by name / index / (x), SILENCE, NOMUSIC, ENTER of 1-3 scenes
 //   runGeneric(R, res, opts)                     boot the DCK on a stock TS2068 (TSRun), sample at every entry of PROC FRAME, time every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call
 //   loadRuntime(v)                               arcade/build/v<v>/runtime.json + runtime.bin, or null
+//   stripMusic(src), musicWordsIn(src)           the program without its songs (MUSIC declarations, NOMUSIC, PLAY <declared song>), for old-vs-new compiler comparisons; the MUSIC / NOMUSIC words left in the code (outside REM and strings)
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -239,4 +240,125 @@ export function runGeneric(R, res, { ticks, onRefresh = null } = {}) {
 export function runtimeRnd(seed) {
   let x = seed;
   return () => { if (x === 0) x = 1; x = (x ^ (x << 7)) & 0xFFFF; x ^= x >> 9; x = (x ^ (x << 8)) & 0xFFFF; return x & 0x7FFF; };
+}
+
+// ── the program without its songs ────────────────────────────────────────────────────────────────────────────────────────────────
+/** Split one source line into its statements at ':' outside strings; a REM runs to the end of the line.  Returns {parts: [text], rem} (rem = the trailing REM statement, which is kept as it is). */
+function statementsOf(line) {
+  const parts = [];
+  let cur = '', inStr = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inStr) { cur += c; if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; cur += c; continue; }
+    if (c === ':') { parts.push(cur); cur = ''; continue; }
+    if (cur.trim() === '' && /^REM\b/i.test(line.slice(i))) { cur += line.slice(i); break; }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts;
+}
+/**
+ * The program without its songs: every `MUSIC name = "asset"` declaration, every `NOMUSIC` and every `PLAY <declared song>` statement is removed (the line is left empty, so line numbers stay).
+ * A statement is recognised at the start of a line or after ':' (so `INK 1 : PLAY stones` loses only the PLAY).  Anything else that names a song or NOMUSIC (after THEN or ELSE on one line, as a
+ * variable-like use, in PLAY (x)) is refused loudly (throws), never left in.
+ */
+export function stripMusic(src) {
+  const songs = new Set([...src.matchAll(/^[ \t]*MUSIC[ \t]+([A-Za-z][A-Za-z0-9]*)[ \t]*=/gim)].map((m) => m[1].toUpperCase()));
+  const out = src.split('\n').map((line, n) => {
+    if (/^[ \t]*MUSIC\b/i.test(line)) {
+      if (!/^[ \t]*MUSIC[ \t]+[A-Za-z][A-Za-z0-9]*[ \t]*=[ \t]*"[^"]*"[ \t]*(\bREM\b.*)?$/i.test(line)) throw new Error(`stripMusic: line ${n + 1}: a MUSIC line it does not understand: ${line.trim()}`);
+      return '';
+    }
+    if (/^[ \t]*REM\b/i.test(line)) return line;
+    const parts = statementsOf(line), keep = [];
+    for (const p of parts) {
+      const t = p.trim();
+      if (/^NOMUSIC$/i.test(t)) continue;
+      const m = /^PLAY[ \t]+([A-Za-z][A-Za-z0-9]*)$/i.exec(t);
+      if (m && songs.has(m[1].toUpperCase())) continue;
+      keep.push(p);
+    }
+    const rest = keep.join(':');
+    const left = musicWordsIn(rest);
+    if (left.length) throw new Error(`stripMusic: line ${n + 1}: ${left.join(' ')} in a place it does not understand: ${line.trim()}`);
+    for (const s of songs) if (new RegExp(`\\bPLAY\\b[^"]*\\b${s}\\b`, 'i').test(rest.replace(/"[^"]*"/g, '""').replace(/\bREM\b.*$/i, ''))) throw new Error(`stripMusic: line ${n + 1}: PLAY of song ${s} in a place it does not understand: ${line.trim()}`);
+    return keep.length === 0 && parts.length > 0 && parts.some((p) => p.trim() !== '') ? '' : rest;
+  });
+  return out.join('\n');
+}
+/** The MUSIC / NOMUSIC words in the code of `src` (not in REM text or strings). */
+export function musicWordsIn(src) {
+  const found = [];
+  for (const line of src.split('\n')) {
+    if (/^[ \t]*REM\b/i.test(line)) continue;
+    for (const p of statementsOf(line)) {
+      if (/^[ \t]*REM\b/i.test(p)) continue;
+      const code = p.replace(/"[^"]*"/g, '""');
+      for (const m of code.matchAll(/\b(MUSIC|NOMUSIC)\b/gi)) found.push(m[1].toUpperCase());
+    }
+  }
+  return found;
+}
+
+// ── sound at song level on a real runtime, for the suites that run a game with songs (docs/ARCADE_MUSIC_CONTRACT.md 5a, 6a) ───────────────────────────────────────────────
+//   createSoundRecorder(m, SYM, res)   hooks nothing itself: the suite's bus.read hook calls rec.fetch(a) for EVERY fetch (it times the entry of RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC by V_FRAMES, and
+//                                      watches each call's return: V_FRAMES changed between entry and return = the call was cut by a frame interrupt, `rec.cuts`, `rec.straddle` = the first such tick) and rec.sample()
+//                                      when it takes a sample at the entry of PROC FRAME (sample k = after tick k, 0 = after INIT; calls made after sample k belong to tick k + 1, those before sample 0 to INIT)
+//   soundOf(m, SYM)                    {sfxActive, ay, chip} of the machine now (V_SFX_ACTIVE, AY_SHADOW R0..R10, the AY's R0..R10)
+//   clockOf(rec)                       the interpreter's opts.clock {play, music, sample} from the recorded timings
+//   compareSound(pairs)                pairs [{at, g: {sfxActive, ay, chip}, w: interpreter record}]: the level of tests/arcade-m15-differential.mjs (V_SFX_ACTIVE all bits = w.ay.flags, AY_SHADOW R0..R10 = w.ay.regs,
+//                                      the chip = AY_SHADOW), every pair, exactly; returns {d (first difference or null), stats {compared, song, effect, cOver, paused, calls}}
+//   soundCoverage(stats, need)         text, and ok when every count named in `need` (['song', 'cOver', ...]) is > 0 (and some samples were compared)
+export function createSoundRecorder(m, SYM, res) {
+  const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
+  const ie = res.map.entries.init;
+  const KIND = new Map([[SYM.RT_PLAY, ['plays', 'play']], [SYM.RT_SILENCE, ['plays', 'silence']], [SYM.RT_MUSIC, ['musics', 'music']], [SYM.RT_NOMUSIC, ['musics', 'nomusic']]]);
+  KIND.delete(undefined);
+  const rec = { plays: [[]], musics: [[]], S: [], calls: [], cuts: [], straddle: null, cur: -1, returns: 0 };
+  let open = [];
+  rec.fetch = (a) => {
+    if (m.cpu.pc !== a) return;
+    if (a === ie && rec.cur < 0) { rec.cur = 0; rec.plays[0] = []; rec.musics[0] = []; return; }
+    if (rec.cur < 0) return;
+    const k = KIND.get(a);
+    if (k) {
+      const f0 = rd16(SYM.V_FRAMES);
+      rec[k[0]][rec.cur].push(f0);
+      rec.calls.push({ t: rec.cur, f: f0, op: k[1] });
+      open.push({ ret: rd16(m.cpu.sp), sp: m.cpu.sp, f0, t: rec.cur, op: k[1] });
+    } else if (open.length) {
+      const o = open[open.length - 1];
+      if (a === o.ret && m.cpu.sp === ((o.sp + 2) & 0xFFFF)) {
+        open.pop(); rec.returns++;
+        if (rd16(SYM.V_FRAMES) !== o.f0) { rec.cuts.push(`tick ${o.t} ${o.op}: entered at refresh ${o.f0}, returned at ${rd16(SYM.V_FRAMES)}`); rec.straddle ??= o.t; }
+      }
+    }
+  };
+  rec.sample = () => { rec.S.push(rd16(SYM.V_FRAMES)); rec.cur = rec.S.length; rec.plays[rec.cur] = []; rec.musics[rec.cur] = []; };
+  return rec;
+}
+export function soundOf(m, SYM) {
+  return { sfxActive: m.ram[SYM.V_SFX_ACTIVE], ay: Array.from(m.ram.slice(SYM.AY_SHADOW, SYM.AY_SHADOW + 11)), chip: Array.from({ length: 11 }, (_, k) => m.ay.regs[k]) };
+}
+export const clockOf = (rec) => ({ play: (t, n) => rec.plays[t]?.[n - 1] ?? 0, music: (t, n) => rec.musics[t]?.[n - 1] ?? 0, sample: (t) => rec.S[t] });
+export function compareSound(pairs) {
+  const stats = { compared: 0, song: 0, effect: 0, cOver: 0, paused: 0 };
+  let d = null;
+  for (const { at, g, w } of pairs) {
+    if (!w.ay) return { d: `${at}: the interpreter's record has no \`ay\` (the game has no songs, or the interpreter ran without a clock model)`, stats };
+    stats.compared++;
+    if (g.sfxActive !== w.ay.flags) { d ??= `${at}: V_SFX_ACTIVE = ${g.sfxActive}, interpreter ${w.ay.flags}`; break; }
+    if (JSON.stringify(g.ay) !== JSON.stringify(w.ay.regs)) { d ??= `${at}: AY_SHADOW = ${g.ay}, interpreter ${w.ay.regs}`; break; }
+    if (JSON.stringify(g.chip) !== JSON.stringify(g.ay)) { d ??= `${at}: the chip ${g.chip} differs from AY_SHADOW ${g.ay}`; break; }
+    const fl = g.sfxActive;
+    if (fl & 2) stats.song++;
+    if (fl & 1) stats.effect++;
+    if ((fl & 3) === 3) stats.cOver++;      // (every effect of the examples is one-channel: a channel-C stream over the song)
+  }
+  return { d, stats };
+}
+export function soundCoverage(stats, need, cuts = []) {
+  const text = `${stats.compared} samples compared, ${stats.song} with a song playing, ${stats.effect} with an effect, ${stats.cOver} with a channel-C effect over a song${cuts.length ? `; a call was cut by a frame interrupt, so sound was compared up to it only (${cuts[0]})` : ''}`;
+  return { text, ok: stats.compared > 0 && need.every((k) => stats[k] > 0) };
 }

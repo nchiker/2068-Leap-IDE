@@ -27,6 +27,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { diffV4, rng } from './arcade-m8-common.mjs';
 import { compileOnMock, runOnMock, interpretVaults, traceDigest, VAULTS_SRC, VAULTS_ASSETS } from './arcade-m8-vaults-harness.mjs';
+import { stripMusic, createSoundRecorder, soundOf, clockOf, compareSound, soundCoverage } from './arcade-m15-common.mjs';
 import { WIN_RUNS, WIN_SIGHT, LOSE_RUNS } from './arcade-m8-vaults-script.mjs';
 import { CELLS, THINGS, DOOR, MAP_W, MAP_H, GEM_CELLS, GOBLET_CELL, T as TILE, buildAssets, buildTitle } from '../arcade/examples/vaults.assets.gen.mjs';
 
@@ -154,7 +155,10 @@ const res = compileOnMock();
   if (res.errors.length) { console.log(`\nFAIL: arcade-m8-vaults (${passed} checks passed, ${failed + 1} failed)`); process.exit(1); }
   const u = res.usage;
   info(`link report: code ${u.code} B (strings ${u.data.strings}, tileset ${u.data.tileset}, sfx ${u.data.sfx}, HUD map ${u.data.map}), sprite frames ${u.frames} B, view: map source ${u.view.mapSource} B (1,024 expanded) + descriptor ${u.view.descriptor} B => ${u.total} of 16384 B game area (${u.free} spare); variables ${u.gameVars.used} of ${u.gameVars.available} B`);
-  check_('the image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB), and nothing needs banking', u.free >= 2048 && u.banked.used === 0, `${u.free} bytes free of ${u.total + u.free}; mapped ${u.mapped.used} of ${u.mapped.available}, banked ${u.banked.used}`);
+  // the song (slice M5) takes bytes: the 2 KB of room is asked of the game as it was before songs (its text without MUSIC / NOMUSIC / PLAY <song>); the shipped game, song included, must keep 1 KB
+  const noSong = compileOnMock(stripMusic(VAULTS_SRC));
+  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
+  check_(`the shipped image, with the song (${u.data.music} bytes of song data), fits the 16 KB game area with room to spare (at least 1 KB), and nothing needs banking`, u.free >= 1024 && u.banked.used === 0, `${u.free} bytes free of ${u.total + u.free}; mapped ${u.mapped.used} of ${u.mapped.available}, banked ${u.banked.used}`);
   check_('16 sprite instances (the most there are), 6 assets of 8; the view is COLW 4; the header carries DIV_EXT | DIV_VIEW and the frame divisor 4 (15 a second)', u.codegen.instances === 16 && res.usage.view.colw === 4 && (res.memory[0x8004] & 0xC0) === 0xC0 && (res.memory[0x8004] & 0x3F) === 4);
   check_('three scenes: title (NOVIEW, the first, so the game starts in it), demo and play; the driver is built and the scene plan says so', u.codegen.scenes === 3 && u.codegen.driver === true && res.scenes.map((x) => x.name).join() === 'title,demo,play' && res.scenes[0].mode === 'noview' && !res.scenes[1].mode && !res.scenes[2].mode);
   const nv = u.noviewPhaseRam;
@@ -285,8 +289,13 @@ const wa = expandRuns(WIN_RUNS), la = expandRuns(LOSE_RUNS);
   // maps, text attribute, sound), recorded from vaults.arc as ONE scene (the title a state of it) at 3a22ea1 with the runs of that time (the same walk: its idle ticks after the fire are gone, so the
   // fire is at tick 17 and the first tick of play is 18 as it was). The recording is also a record of the maze's behaviour: wraith AI, pickups, shots, the HUD one change a tick.
   const WIN_DIGEST = '6b263f2f93ed608475e885207b0da256de1269d4026dc5219aff0695524d3912', LOSE_DIGEST = '08a33125e07419e5a121634c81a97bd7899947e07c363a9dfaa1c471e030cc26';
-  check_(`the play is tick for tick the one-scene game's: the WIN run's state of ticks ${PLAY0}..${WIN_N} (${WIN_N - PLAY0 + 1} ticks) has the digest recorded from the old game`, traceDigest(win.ticks, PLAY0, WIN_N) === WIN_DIGEST);
-  check_(`... and so is the LOSE run's, from tick ${PLAY0} to game over (tick ${g}) and the 24 ticks of its end text and HUD`, traceDigest(lose.ticks, PLAY0, g + 24) === LOSE_DIGEST);
+  // (the digest includes the sound record, which a game with songs models differently: it is taken of the game's text without its songs, as the old game was; the play is the same word for word)
+  const winNS = interpretVaults(WIN_N, winStick, { billboard: winBillboard, src: stripMusic(VAULTS_SRC) }), loseNS = interpretVaults(LOSE_N, loseStick, { src: stripMusic(VAULTS_SRC) });
+  check_(`the play is tick for tick the one-scene game's: the WIN run's state of ticks ${PLAY0}..${WIN_N} (${WIN_N - PLAY0 + 1} ticks) of the game without its songs has the digest recorded from the old game`, traceDigest(winNS.ticks, PLAY0, WIN_N) === WIN_DIGEST);
+  check_(`... and so is the LOSE run's, from tick ${PLAY0} to game over (tick ${g}) and the 24 ticks of its end text and HUD`, traceDigest(loseNS.ticks, PLAY0, g + 24) === LOSE_DIGEST);
+  // ... and with the songs the same state tick for tick except the sound record: every digest field but `sfx` equal
+  const noSfx = (rs) => rs.map((r) => ({ ...r, sfx: 0 }));
+  check_('... and the shipped game (with its songs) has the same state on every one of those ticks, the sound record apart (the digest with the sfx field left out is equal, WIN and LOSE)', traceDigest(noSfx(win.ticks), PLAY0, WIN_N) === traceDigest(noSfx(winNS.ticks), PLAY0, WIN_N) && traceDigest(noSfx(lose.ticks), PLAY0, g + 24) === traceDigest(noSfx(loseNS.ticks), PLAY0, g + 24));
 }
 
 // =================================================================================================================
@@ -353,6 +362,7 @@ function runReal(R, built, { ticks, stick, extra }) {
     wallRam: m.ram.slice(SYM.WORLD_RAM, SYM.WORLD_RAM + 1024),
     pose: SYM.V_POSE !== undefined ? { x: rd16(SYM.V_POSE), y: rd16(SYM.V_POSE + 2), a: m.ram[SYM.V_POSE + 4] } : null,
     bb: Array.from({ length: 16 }, (_, i) => ({ depth: rd16(SYM.BB_TAB + bbEnt * i), col: rd16(SYM.BB_TAB + bbEnt * i + 2) })),
+    ...soundOf(m, SYM),      // V_SFX_ACTIVE, AY_SHADOW R0..R10 and the chip: the song-level comparison below
     ...(extra ? { extra: extra(m, SYM) } : {}),
   });
   const out = { snaps: [], error: null };
@@ -362,8 +372,10 @@ function runReal(R, built, { ticks, stick, extra }) {
   const setInput = (k) => { const sv = stick(k); m.joystick[0] = contact(sv); m.joystick[1] = contact(0); for (let r = 0; r < 8; r++) m.keyMatrix[r] = 0x1F; };
   setInput(1);
   const origRead = m.bus.read;
+  const rec = out.rec = createSoundRecorder(m, SYM, built);      // the refresh of every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call and of every sample; calls a frame interrupt cut
   m.bus.read = function (a) {
-    if (a === fe && out.snaps.length < ticks + 1 && m.cpu.pc === fe) { out.snaps.push(snap()); setInput(out.snaps.length); }
+    rec.fetch(a);
+    if (a === fe && out.snaps.length < ticks + 1 && m.cpu.pc === fe) { out.snaps.push(snap()); rec.sample(); setInput(out.snaps.length); }
     return origRead.call(this, a);
   };
   const div = built.memory[0x8004] & 0x3F;
@@ -371,6 +383,9 @@ function runReal(R, built, { ticks, stick, extra }) {
   if (out.snaps.length < ticks + 1) out.error = `only ${out.snaps.length} of ${ticks + 1} samples`;
   return out;
 }
+// the counts a run's sound comparison must have above 0 (a run that never plays the song, or never an effect where it should, cannot pass)
+const NEED_SOUND = { WIN: ['song', 'effect'], LOSE: ['song', 'effect'], ALT: ['song'], FROM_DEMO: ['song'] };
+// (Vaults plays effects only in play, where the song is already stopped by NOMUSIC in the play scene's INIT: no run has a channel-C effect over a song, so that count is not asked of any of them)
 {
   const R = loadRuntime('arcade/build/v4');
   const needs = ['RT_VIEW', 'RT_COSA', 'RT_SINA', 'RT_FXMUL', 'RT_WALL', 'RT_SETWALL', 'RT_SHOWF', 'BB_TAB'];
@@ -390,6 +405,12 @@ function runReal(R, built, { ticks, stick, extra }) {
       for (let t = 1; !d && t <= n; t++) d = diffV4(got.snaps[t], want.ticks[t - 1], `after tick ${t}`);
       const f = want.ticks[n - 1].vars;
       check_(`${name}: ${n} ticks on the real runtime equal to the interpreter (variables, arrays, SPR_TAB, the map array${R.rt.symbols.V_POSE !== undefined ? ', the pose' : ''}; SEEN / DEPTH fed the runtime's BB_TAB)`, d === null, d ?? `${((Date.now() - t0) / 1000).toFixed(1)} s; ended in state ${f.ST}, kills ${f.KILLS}, health ${f.HP}`);
+      // the sound at song level (the title's / the demo's song `depths`, NOMUSIC at the start of play, then the effects as channel-C streams): the interpreter again, now with the machine's clock
+      const wantS = interpretVaults(n, stick, { billboard, clock: clockOf(got.rec) });
+      const pairs = [];
+      for (let t = 0; t <= n; t++) { if (got.rec.straddle !== null && t >= got.rec.straddle) break; pairs.push({ at: t === 0 ? 'after INIT' : `after tick ${t}`, g: got.snaps[t], w: t === 0 ? wantS.init : wantS.ticks[t - 1] }); }
+      const sc = compareSound(pairs), cov = soundCoverage(sc.stats, NEED_SOUND[name.split(' ')[0]] ?? ['song'], got.rec.cuts);
+      check_(`${name}: sound at song level (V_SFX_ACTIVE, AY_SHADOW and the chip against the interpreter's chip model, every sample)`, sc.d === null && cov.ok && got.rec.calls.length > 0, sc.d ?? `${cov.text}; ${got.rec.calls.length} sound calls${cov.ok ? '' : '; MISSING: a count that must be above 0 is 0'}`);
     }
   }
 }

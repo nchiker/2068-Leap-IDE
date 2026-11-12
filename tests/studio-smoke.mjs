@@ -350,7 +350,9 @@ try {
   await evaluate(`document.querySelector('#problems .problem[data-asset="music/theme"]').click()`);
   const backSong = await waitFor(`document.querySelector('#tool-sfx [data-role=name]').value === 'theme' && document.querySelector('#tool-sfx [data-role=mode-music]').classList.contains('on') && leapStudio.selected?.kind === 'music'`, 5000);
   check('picking an effect switches the editor back to effects; clicking the song\'s warning opens the song again', !!backSfx && !!backSong);
-  check('host: songCount() answers (MUSIC lines in the source)', (await evaluate(`leapStudio.makeHost('smoke-m4').songCount()`)) === 0);
+  // (the project open here is the Shooter example, which has two songs since slice M5: fanfare and drive; the count is also made independently from the project's files)
+  const songsHost = await evaluate(`(() => ({ n: leapStudio.makeHost('smoke-m4').songCount(), own: Object.values(leapStudio.project.files).join('\\n').split('\\n').filter((l) => /^\\s*MUSIC\\s+[A-Za-z]\\w*\\s*=\\s*"/i.test(l)).length }))()`);
+  check('host: songCount() answers (MUSIC lines in the source: the Shooter example declares 2, counted independently in the page too)', songsHost.n === 2 && songsHost.own === 2, JSON.stringify(songsHost));
   await evaluate("(document.querySelector('#tool-sfx [data-role=pat-del]').click(), true)");
 
   // ── Project files: save, open, round trip ──

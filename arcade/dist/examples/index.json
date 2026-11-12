@@ -14,7 +14,7 @@
  {
   "id": "shooter",
   "title": "Shooter",
-  "about": "A vertical shooter with pools of sprites, a sky map and sound, in three scenes (title, play, game over). Keys: Q A O P or the arrows move; Space fires.",
+  "about": "A vertical shooter with pools of sprites, a sky map and sound, in three scenes (title, play, game over), with a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.",
   "file": "shooter.leapgame"
  },
  {
@@ -32,13 +32,13 @@
  {
   "id": "vaults",
   "title": "Vaults (3D maze)",
-  "about": "A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot. Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.",
+  "about": "A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot; a title song (MUSIC). Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.",
   "file": "vaults.leapgame"
  },
  {
   "id": "blockfall",
   "title": "Blockfall",
-  "about": "A falling-blocks puzzle: tiles and text only, no sprites. Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.",
+  "about": "A falling-blocks puzzle: tiles and text only, no sprites; a three-channel song plays during the game (MUSIC: the effects borrow its drum channel). Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.",
   "file": "blockfall.leapgame"
  }
 ]

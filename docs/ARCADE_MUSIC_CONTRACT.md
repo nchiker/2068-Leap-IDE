@@ -173,6 +173,51 @@ outside the list, an empty order list). Symbols list songs with the effects.
   spare; the classic falling-blocks tune is not used: original music only). Vaults: title only unless the numbers allow (it has 8 ticks over budget).
 * The effects of these games become channel-C streams; each game is re-measured (median, 95th percentile, worst, ticks over budget) and recorded.
 
+## 8a. As built: the sample games (M5, 2026-11-12)
+
+Every song is original and written as code in the game's asset generator, in the note notation of `arcade/examples/songs.mjs` (a thin layer over the
+Studio's own note entry: `enterNote` and the instruments of `src/tools/music-model.js`, so each song opens in the song editor like one drawn there).
+A rest is the last note at volume 0 (only the volume register changes). `node arcade/tools/song-wav.mjs <assets.json>` renders every song of a game to
+`arcade/build/music/<game>-<song>.wav` (the Studio's preview renderer) for a quick listen; the real check is the Studio or the game in TSRun.
+
+| Game (runtime) | Song | Where it plays | Channels | One pass | Bytes |
+|---|---|---|---|---|---|
+| Blockfall (v2) | `stones`, A minor, 4 patterns, order A1 A2 A1 A2 B1 B2 | the whole game: `STARTGAME` starts it, game over and pause stop it, the end of a pause starts it again from the top | melody A (organ), bass B (bass), drums C | 38.3 s | 3,696 |
+| Starfall (v2) | `fanfare`, D minor march | the title | melody A, bass B (bass), drums C | 8.5 s | 1,853 |
+| Starfall (v2) | `drive`, D minor | the play scene; the game over stops it for its own sound | held chords / tune A, octave pulse B (organ); **C free** (the shots borrow C many times a second) | 17.0 s | 1,292 |
+| Leap Runner (v3) | `rn_hop`, C major | the title and the attract mode (demo); a game stops it | tune A, bass B (organ), C free | 8.5 s | 463 |
+| Vaults (v4) | `vl_depths`, E minor, slow | the title and the attract mode (demo); a game stops it | tune A, held bass B (organ), heartbeat of noise on C | 17.0 s | 625 |
+
+**Decisions (Claude), for review:** (1) the title song restarts each time the title scene starts (title and demo alternate by themselves, so it restarts
+every attract cycle) rather than a game-level flag that would let it run on: a flag is a new game-level variable, which would change the play scene's
+variable digests that prove the play itself unchanged; (2) Leap Runner and Vaults have **title music only**: Vaults' play scene has ticks over budget;
+Leap Runner's play would fit in time (the worst gameplay tick has about 15,000 T to spare) but its mapped area does not have the bytes for a second song;
+(3) Blockfall's pause stops the song (consistent with Leap Runner's silent pause) and the end of the pause restarts it from its beginning (there is no
+pause / resume of a song); (4) the bass instrument (a decay: a volume change every few refreshes) is used only where bytes are plentiful (Blockfall,
+Starfall's title); the tight games use organ notes (two chip changes a note).
+
+**Room.** Leap Runner had 117 bytes of its mapped area left, not enough for a song (and the effects grow by 37 bytes as channel-C streams). Its
+source was rewritten for size (by an agent, reviewed line by line; same variables, every runner test and the play-scene digest unchanged): code
+10,411 -> 9,384 bytes before the song (shared PROCs for duplicated blocks, array elements read once into LOCALs, `BIT` for bit tests). With the song
+the mapped part is 16,092 of 16,384 (the linker banks the level tables it needs to). Free after the songs: Blockfall 4,919, Starfall 4,694, Vaults 1,742.
+
+**Time** (TSRun, whole tick with the interrupt; before -> after): Leap Runner worst gameplay tick 160,456 -> 160,800 T (+183 the size rewrite, the
+rest the channel-C effects), 0 gameplay ticks over 176,064; Vaults unchanged (the same 8 ticks over budget, the median and worst picture equal; its play
+scene has no song, the channel-C effects cost +2 T on the mean PROC FRAME); Blockfall (the song plays through the whole game, 3,593 ticks of
+`tests/arcade-blockfall.mjs`) median 11,132 T unchanged, 95th 43,831 T unchanged, worst 93,921 -> 94,258 T (+337), 0 ticks over 117,376 T.
+Starfall (new suite `tests/arcade-starfall.mjs`, 1,340 ticks: title, play, game over, a new game; the same script on the game with and without its
+songs): median 54,348 T unchanged, 95th 99,608 -> 100,200 T (+592); the only ticks over 176,064 T are the two map-drawing ticks of each scene change,
+before and after alike.
+
+**Sound tests.** Every game with songs now has its sound compared with the interpreter at song level on the real runtime (V_SFX_ACTIVE, AY_SHADOW and
+the chip, every sample; each comparison requires samples with a song and, where the game does it, with a channel-C effect over a song): Leap Runner
+(the play-through, the retry, the title / demo flow, fire in title and demo: 2,688 samples, 638 with the song, 76 with an effect over it), Vaults (four
+runs, 2,532 samples, 629 with the song; its effects only play after NOMUSIC), Starfall (1,340 / 1,224 / 781), Blockfall (3,595 / 3,112 / 1,092, and the
+shipped seed 1,500 / 1,435 / 472). A sound call cut by a frame interrupt (one in Blockfall's run) is placed at its entry refresh or the next, the two
+the runtime allows (`m15-runtime-music.mjs` section 4): the comparison then continues to the end of the run, exact everywhere else.
+The examples with songs are compared old-vs-new compiler on their text without songs (`stripMusic`, `tests/arcade-m15-common.mjs`);
+`arcade/tests/fixtures/blockfall-v1.arc` keeps Blockfall without its song for the batch 2 / 3 hash baselines.
+
 ## 9. Tests
 
 * **Encoder:** `convertMusic` against an independent JavaScript player on >= 3,000 random songs (patterns, orders, loops, waits up to 127 and beyond,
@@ -189,7 +234,7 @@ outside the list, an empty order list). Symbols list songs with the effects.
 ## 10. Slices
 
 M0 this contract; **M1** encoder + reference player + tests; **M2** runtime v2 / v3 / v4 + tests + mutants + costs; **M3** language, compiler,
-interpreter; **M4** Studio; **M5** songs for the sample games, measurements, docs (`ARCADE_RUNTIME_API_V2/3/4.md` "As built: music",
+interpreter; **M4** Studio; **M5** (done 2026-11-12, section 8a) songs for the sample games, measurements, docs (`ARCADE_RUNTIME_API_V2/3/4.md` "As built: music",
 `ARCADE_ASSETS.md`, `ARCADE_LANGUAGE.md`). Branch `arcade-music`, not merged until the owner has listened.
 
 ## 11. Decisions taken by Claude, for review

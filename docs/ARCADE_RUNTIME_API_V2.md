@@ -234,3 +234,9 @@ Contract: `docs/ARCADE_BANKING_CONTRACT.md` sections 2 and 3 (slice B1); v3 and 
 **`MAX_MAPS` 64**: `maps_boot` cuts the table's count byte to 64 (`V_NMAP`); the table is indexed with `ADD A,A` (fine below 128). An index at or above `V_NMAP` still loads nothing.
 **Size**: +26 bytes (`runtime (chunks 0-1)` 9,337 -> 9,363 of 16,384 bytes by `build-runtime-v2.mjs`: **7,021 free**, was 7,047): the checking entry 14, `bank_on` / `bank_off` / the shared store 12. Cost: a mapped call pays the entry test, +28 T (`LD A,H` 4, `SUB` 7, `CP` 7, `JP NC` 10; counted from the instructions); a banked call costs **128 T** more than the same map mapped (measured by `m11-runtime-bank.mjs`: the two `OUT`s, the helpers and the calls).
 Tests: `arcade/tests/m11-runtime-bank.mjs` (RT_LOADMAPPTR from the window = the same map mapped, 11 cases x 2 places against a JavaScript model; the four boundary high bytes `$3F`, `$40`, `$7F`, `$80`; a record ending at `$7FFF`; every access audited (no write to `$4000-$7FFF`, reads there only inside the source and only with the window mapped); an interrupt at every instruction boundary; a 64-map table, banked and mapped mixed, count 100 cut to 64; map 0 banked at boot) and `arcade/tests/m11-mutations.mjs` (the new code of all three runtimes). `m5-*` follow `MAX_MAPS` 64 (`m5-common.mjs` layout: the maps start at `$9890`, after a table that can hold 64 entries; `m5-runtime.mjs`: count 65 is read as 64).
+
+## As built: music (MUSIC M2, 2026-11-12)
+
+The song player is in `sound.asm` of v2, v3 and v4 alike: `RT_MUSIC` (HL = the song's address; 0 is ignored) and `RT_NOMUSIC`; songs play from
+the frame interrupt, a one-channel effect borrows channel C while a song plays and a three-channel effect pauses it. State at `$FF00-$FF2A`. Costs,
+bytes, the register discipline and the tests: `docs/ARCADE_MUSIC_CONTRACT.md` section 5a; the games that use it: section 8a.

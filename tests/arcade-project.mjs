@@ -303,7 +303,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
     // its source and assets are those of arcade/examples/
     const arc = readFileSync(ROOT + `arcade/examples/${ex.id}.arc`, 'utf8').replace(/\r\n?/g, '\n');   // (the sources have CRLF line ends)
     const assets = JSON.parse(readFileSync(ROOT + `arcade/examples/${ex.id}.assets.json`, 'utf8'));
-    check(`example ${ex.id}: identical to arcade/examples/${ex.id}.arc and its assets`, doc.ok && doc.project.files['main.arc'] === arc && eq(doc.project.assets.sprites, assets.sprites ?? {}) && eq(doc.project.assets.sfx, assets.sfx ?? {}));
+    check(`example ${ex.id}: identical to arcade/examples/${ex.id}.arc and its assets (sprites, sfx and songs)`, doc.ok && doc.project.files['main.arc'] === arc && eq(doc.project.assets.sprites, assets.sprites ?? {}) && eq(doc.project.assets.sfx, assets.sfx ?? {}) && eq(doc.project.assets.music, assets.music ?? {}));
   }
   // an error in the second file comes back with that file's name and line
   const two = P.newProject();

@@ -30,7 +30,7 @@ import { ARCADE_WORDS, RESERVED, ASSET_KINDS, LIMITS, BATCH11_WORDS } from '../s
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
 import { convertSfx, convertSfxC, convertMusic, sfxRefreshRegisters, assetTables } from '../src/lang/arcade/arcade-assets.js';
 import { createSoundChip, SB_FX, SB_MUS, SB_SYNC } from '../src/lang/arcade/arcade-sound.js';
-import { ASSETS15, T, expectChip, songRow, rng, ROOT } from './arcade-m15-common.mjs';
+import { ASSETS15, T, expectChip, songRow, rng, ROOT, stripMusic, musicWordsIn } from './arcade-m15-common.mjs';
 
 const QUICK = !!process.env.ARCADE_QUICK;
 let passed = 0, failed = 0, skipped = 0;
@@ -282,9 +282,16 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
       const assets = [`${base}.assets.json`, `${base.replace(/-.*$/, '')}.assets.json`].map((a) => join(ROOT, dir, a)).find((p) => existsSync(p)) ?? join(ROOT, 'arcade/examples', `${base.replace(/-.*$/, '')}.assets.json`);
       progs.push({ src: join(dir, f), assets: existsSync(assets) ? assets : null });
     }
-    let n = 0, bad = '';
+    let n = 0, bad = '', songGames = 0, strayBad = '';
     for (const p of progs) {
-      const text = readFileSync(join(ROOT, p.src), 'utf8'), assets = p.assets ? JSON.parse(readFileSync(p.assets, 'utf8')) : {};
+      const full = readFileSync(join(ROOT, p.src), 'utf8'), assets = p.assets ? JSON.parse(readFileSync(p.assets, 'utf8')) : {};
+      // an example with songs (slice M5) is compared on its text without them: the old compiler cannot build MUSIC, and every other word of the game is the same
+      const hasSongs = /^\s*MUSIC\s/im.test(full), text = hasSongs ? stripMusic(full) : full;
+      if (hasSongs) {
+        songGames++;
+        const left = musicWordsIn(text), Rq = RT[requiredRuntime(text, assets).version] ?? RT[2], w = compile(text, { runtime: Rq.rt, image: Rq.img, assets });
+        if (left.length || w.errors.length || w.warnings.length) strayBad += `${p.src}: ${left.length ? left.join(' ') + ' left; ' : ''}${w.errors.length ? 'errors ' + errText(w) + '; ' : ''}${w.warnings.length ? 'warnings ' + w.warnings.map((x) => x.message).join(' | ') + '; ' : ''}`;
+      }
       for (const v of [2, 3, 4]) {
         if (!RT[v]) continue;
         const a = oldCompile(text, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets });
@@ -293,7 +300,8 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
         if (!same(a.dck, b.dck)) bad += `${p.src} v${v}: DCK differs; `;
       }
     }
-    check_(`${n} builds (every example and fixture that compiles, on v2 / v3 / v4) give a DCK byte-identical to the compiler of ${ref}`, bad === '' && n >= 15, bad || `${n} builds`);
+    check_(`${n} builds (every example and fixture that compiles, on v2 / v3 / v4; the examples with songs on their text without MUSIC, NOMUSIC and PLAY <song>) give a DCK byte-identical to the compiler of ${ref}`, bad === '' && n >= 15, bad || `${n} builds`);
+    check_(`stripMusic of each of the ${songGames} examples with songs leaves no MUSIC / NOMUSIC word in the code and compiles (on the runtime it needs) with no errors and no warnings`, songGames >= 4 && strayBad === '', strayBad || `${songGames} examples`);
   }
   if (tmp) rmSync(tmp, { recursive: true, force: true });
 }

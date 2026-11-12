@@ -404,3 +404,9 @@ changed; compiled games are the same bytes apart from the moved RT_* addresses (
   m14 232 killed + 7 equivalent, 0 survivors; `tests/arcade-runner-perf.mjs --check` PASS, `tests/arcade-m6-platformer-perf.mjs`; m6-runtime-perf
   boot 19 frames (bound 20: one frame of margin left); Leap Runner on TSRun, ZEsarUX and Fuse: all 905 ticks' screens and the sampled state
   identical (real keys, script-driven reads, joystick).
+
+## As built: music (MUSIC M2, 2026-11-12)
+
+The song player is in `sound.asm` of v2, v3 and v4 alike: `RT_MUSIC` (HL = the song's address; 0 is ignored) and `RT_NOMUSIC`; songs play from
+the frame interrupt, a one-channel effect borrows channel C while a song plays and a three-channel effect pauses it. State at `$FF00-$FF2A`. Costs,
+bytes, the register discipline and the tests: `docs/ARCADE_MUSIC_CONTRACT.md` section 5a; the games that use it: section 8a.

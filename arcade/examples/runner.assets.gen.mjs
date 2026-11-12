@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildAssets, LEVEL as LEVEL1, T } from './platformer.assets.gen.mjs';
+import { pattern, song, describe } from './songs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -376,6 +377,18 @@ export function titleMap() {
   return g;
 }
 
+// ── music: "Hop", the title song (docs/ARCADE_MUSIC_CONTRACT.md section 8; original music).  C major, a quaver = 8 refreshes, bars of 64: a bouncy
+// tune on A and a bass on B, both organ (a held organ note changes the chip twice, so the song is small: the game area is nearly full), C left free.
+// Two four-bar patterns, the call and the answer, looped; it plays in the title and the attract mode (the demo) and stops when a game starts.
+export const MUSIC = {
+  rn_hop: song([
+    pattern({ A: '@organ !11 L8 | C5 E5 G5 E5 C6:16 G5:16 | A5 G5 F5 E5 D5:32 | B4 D5 G5 F5 E5:16 D5:16 | C5:48 -:16',
+      B: '@organ !10 L32 | C3 G2 | F2 G2 | G2 B2 | C3:48 -:16' }, 'call'),
+    pattern({ A: '@organ !11 L8 | E5 G5 C6 G5 E5:16 C5:16 | F5 A5 G5 F5 E5:32 | D5 F5 E5 D5 C5:16 B4:16 | C5:48 -:16',
+      B: '@organ !10 L32 | C3 E3 | F2 C3 | G2:64 | C3:48 -:16' }, 'answer'),
+  ], [0, 1], 0),
+};
+
 export function buildRunnerAssets() {
   const a = JSON.parse(JSON.stringify(BASE));
   a.maps = {};
@@ -385,6 +398,7 @@ export function buildRunnerAssets() {
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) cells.push(L.g[r][c]);
     a.maps[i === 0 ? 'pf_world' : `rn_world${i + 1}`] = { w: COLS, h: ROWS, cells };
   });
+  a.music = JSON.parse(JSON.stringify(MUSIC));
   return a;
 }
 
@@ -431,5 +445,5 @@ if (MAIN) {
   }
   const assets = buildRunnerAssets();
   writeFileSync(join(HERE, 'runner.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-  console.log(`runner.assets.json: ${Object.keys(assets.sprites).length} sprites, ${Object.keys(assets.sfx).length} sound effects, ${Object.keys(assets.maps).length - 1} worlds and the title picture (${LEVELS.map((L) => `${L.coins.length} coins ${L.spawns.length} enemies`).join('; ')})`);
+  console.log(`runner.assets.json: ${Object.keys(assets.sprites).length} sprites, ${Object.keys(assets.sfx).length} sound effects, ${Object.keys(assets.maps).length - 1} worlds and the title picture (${LEVELS.map((L) => `${L.coins.length} coins ${L.spawns.length} enemies`).join('; ')}); ${Object.entries(assets.music).map(([k, v]) => describe(k, v)).join('; ')}`);
 }

@@ -1,5 +1,7 @@
 REM Blockfall: a falling-blocks puzzle game for the v2 runtime (an original game; no sprites, the whole game is tiles and text).
-REM Assets (12 tiles, 8 sound effects) are in blockfall.assets.json, drawn by blockfall.assets.gen.mjs.
+REM Assets (12 tiles, 8 sound effects, the song) are in blockfall.assets.json, drawn and written by blockfall.assets.gen.mjs.
+REM   Music (docs/ARCADE_MUSIC_CONTRACT.md): the song STONES plays while a game is on (a game starts it, the game over and the pause stop it; the
+REM   end of a pause starts it again from its beginning); the effects borrow its channel C (the drums) while they sound.
 REM   Keys: O left, P right, Q turn, A soft drop, SPACE hard drop, H pause.   Joystick 1: left, right, up = turn, down = soft drop, fire = hard drop.
 REM   Holding left or right moves at once, then after 8 ticks repeats every 2 ticks; holding A drops a row every 2 ticks.
 REM   Ten columns by twenty rows, seven pieces in four turns each, dealt from a 7-bag; the next piece is shown; every 10 lines make a level
@@ -25,6 +27,7 @@ SFX clear3 = "clear3"
 SFX clear4 = "clear4"
 SFX lvlup = "lvlup"
 SFX over = "over"
+MUSIC stones = "stones"
 
 REM The well: BW x BH cells, its first cell at screen column WX, row WY.  The board has a 2-cell wall each side and a floor of 4 rows (BX0 = the wall).
 CONST BW = 10
@@ -373,6 +376,7 @@ SCENE play
   REM ---- game over ----
   PROC GAMEOVER():
     st = 6 : gor = BH - 1
+    NOMUSIC
     PLAY over
     BORDER 2
     IF shi > hhi OR (shi = hhi AND slo > hlo) THEN hhi = shi : hlo = slo : hud = 1 ENDIF
@@ -384,6 +388,7 @@ SCENE play
     hdir = 0 : hcnt = 0 : scnt = 0
     st = 1 : wr = 0
     BORDER 0
+    PLAY stones
   ENDP
 
   REM ---- the states ----
@@ -478,6 +483,7 @@ SCENE play
   PROC FALLTICK():
     IF eh THEN
       st = 7
+      NOMUSIC
       INK 2 : BRIGHT 1 : PAPER 0 : PRINT AT 16, 0; "PAUSED";
     ELSE
       CALL HANDLEINPUT()
@@ -489,6 +495,7 @@ SCENE play
     IF eh THEN
       PRINT AT 16, 0; "      ";
       st = 3
+      PLAY stones
     ENDIF
   ENDP
 
