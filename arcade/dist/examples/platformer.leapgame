@@ -5449,7 +5449,8 @@
     ]
    }
   },
-  "music": {}
+  "music": {},
+  "models": {}
  },
  "scenes": {}
 }

@@ -285,3 +285,105 @@ RA_V            EQU RT_ARGS+8   ; RT_FILL: tile; RT_FILLC: character code
 RA_DX           EQU RT_ARGS+8   ; RT_COPY: destination x
 RA_DY           EQU RT_ARGS+10  ; RT_COPY: destination y
 TO_VARS         EQU RT_ARGS+12  ; $FACC.. scratch of the tile operations (tileops.asm)
+
+; ---------------------------------------------------------------------------------------------------------------
+; Wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md sections 2, 3; wire.asm).  ADDITIVE: nothing above changed.
+; The RAM is the top of POOL_B: a WIRE3D game has at most 45 phases in all (the linker checks), so phase slots 45..59 ($F4E0-$FA7F)
+; are never handed out and $F500-$FA7F is the wireframe's.  In a game without WIRE3D this RAM is phase slots: nothing here may be
+; trusted there (W_ON included) unless wire_setup ran.
+; ---------------------------------------------------------------------------------------------------------------
+W_REC           EQU $F500       ; five 256-byte pages: per projected point i (i < 128) at offset i:
+W_SXL           EQU W_REC       ;   screen x, low byte
+W_SXH           EQU W_REC+$100  ;   screen x, high byte
+W_SYL           EQU W_REC+$200  ;   screen y, low byte
+W_SYH           EQU W_REC+$300  ;   screen y, high byte
+W_FLG           EQU W_REC+$400  ;   0 = inside the clip rectangle; bits 0-3 outcode (1 x < 0, 2 x > 255, 4 above, 8 below); $80 near; $40 too far
+W_REC_LEN       EQU $0500
+W_VARS          EQU $FA00       ; the wireframe's variables (128 bytes at most; $FA80 up is T3)
+W_VARS_LEN      EQU $0080
+W_MAXPTS        EQU 128         ; model limits (contract 2.1): 1..128 points, 1..255 edges, |c| <= 64
+W_NEAR          EQU 16          ; a point with Zc < W_NEAR is "near" (its edges are not drawn)
+W_QMAX          EQU 16000       ; |projected offset| > W_QMAX is "too far" (keeps the line drawer's -16384..16383 input range)
+W_DMAX          EQU 16000       ; an object with |d| or |T| > W_DMAX is not drawn
+; The argument words of RT_EYE / RT_DRAWMODEL / RT_LINE in RT_ARGS:
+RA_W0           EQU RT_ARGS+0   ; EYE x; DRAWMODEL x; LINE x0
+RA_W1           EQU RT_ARGS+2   ; EYE y; DRAWMODEL y; LINE y0
+RA_W2           EQU RT_ARGS+4   ; EYE z; DRAWMODEL z; LINE x1
+RA_W3           EQU RT_ARGS+6   ; EYE heading; DRAWMODEL yaw; LINE y1
+RA_W4           EQU RT_ARGS+8   ; DRAWMODEL pitch
+; W_VARS fields
+W_LX0           EQU W_VARS+0    ; word: line ends (draw_line), |v| <= 16383
+W_LY0           EQU W_VARS+2
+W_LX1           EQU W_VARS+4
+W_LY1           EQU W_VARS+6
+W_CXMIN         EQU W_VARS+8    ; clip rectangle, inclusive (bytes): x 0..255 always, y 8 r0 .. 8 r1 + 7
+W_CXMAX         EQU W_VARS+9
+W_CYMIN         EQU W_VARS+10
+W_CYMAX         EQU W_VARS+11
+W_HIDHI         EQU W_VARS+12   ; high byte of the file drawn into: $40 + V_HOFF (set by every entry)
+W_ON            EQU W_VARS+13   ; 1 = the play area is on (RT_DRAWMODEL, RT_LINE and wire_clear work), 0 = off
+W_ATTR          EQU W_VARS+14   ; the play area's attribute (wire_setup stores it; the switch writes it)
+W_K             EQU W_VARS+15   ; DRAWMODEL: log2 SCALE (0..3)
+W_CENY          EQU W_VARS+16   ; word: projection centre row c = 4 (r0 + r1 + 1)
+W_STX           EQU W_VARS+18   ; line state left by the clip: first visible pixel x, y
+W_STY           EQU W_VARS+19
+W_STN           EQU W_VARS+20   ;   pixels to draw, mod 256
+W_STOCT         EQU W_VARS+21   ;   bit 0 y-major, bit 1 minor coordinate decreasing
+W_STDU          EQU W_VARS+22   ;   word: |major delta|
+W_STDV          EQU W_VARS+24   ;   word: |minor delta|
+W_STACC         EQU W_VARS+26   ;   word: Bresenham accumulator at the first visible pixel
+W_SU0           EQU W_VARS+28   ; clip scratch (words, then bytes)
+W_SV0           EQU W_VARS+30
+W_SU1           EQU W_VARS+32
+W_SV1           EQU W_VARS+34
+W_SUMIN         EQU W_VARS+36
+W_SUMAX         EQU W_VARS+38
+W_SVMIN         EQU W_VARS+40
+W_SVMAX         EQU W_VARS+42
+W_SKLO          EQU W_VARS+44
+W_SKHI          EQU W_VARS+46
+W_SNEG          EQU W_VARS+48
+W_SYMAJ         EQU W_VARS+49
+W_SSX           EQU W_VARS+50
+W_SSY           EQU W_VARS+51
+W_SADX          EQU W_VARS+52
+W_SADY          EQU W_VARS+54
+W_SM            EQU W_VARS+56
+W_CLR0          EQU W_VARS+58   ; the clear's first and last character rows (r0, r1)
+W_CLR1          EQU W_VARS+59
+W_SAVESP        EQU W_VARS+60   ; word: the clear's saved SP
+W_CPROWS        EQU W_VARS+62   ; word: the clear's row pair
+W_YAW           EQU W_VARS+64   ; DRAWMODEL: yaw - eye heading (AND 255), pitch
+W_PITCH         EQU W_VARS+65
+W_MAT           EQU W_VARS+66   ; 3 rows of 5 bytes: m0, m1, m2 (int8, 1.0 = 64), then the row's camera-space offset T (word)
+W_TX            EQU W_MAT+3
+W_TY            EQU W_MAT+8
+W_TZ            EQU W_MAT+13
+W_NSH           EQU W_VARS+81   ; 2 + log2 SCALE (the rounding's shift)
+W_RC            EQU W_VARS+82   ; word: 32 >> log2 SCALE (the rounding's constant)
+W_NPTS          EQU W_VARS+84   ; points of the model being drawn
+W_NEDG          EQU W_VARS+85   ; its edges (W_NPTS, W_NEDG are stored as one word)
+W_PSRC          EQU W_VARS+86   ; word: the model's first point
+W_EPTR          EQU W_VARS+88   ; word: the model's first edge
+W_PCX           EQU W_VARS+90   ; words: camera-space X, Y, Z of the point being projected
+W_PCY           EQU W_VARS+92
+W_PCZ           EQU W_VARS+94
+W_PE            EQU W_VARS+96   ; P2: exponent (signed byte), reciprocal R
+W_PR            EQU W_VARS+97
+W_EYEX          EQU W_VARS+98   ; words: the eye (EYE); boot / wire_setup value 0, 0, 0, 0
+W_EYEY          EQU W_VARS+100
+W_EYEZ          EQU W_VARS+102
+W_EYEA          EQU W_VARS+104  ; byte: heading
+W_G1            EQU W_VARS+105  ; 3 bytes each: |m| low byte, bit 8 of |m|, sign ($80 / 0) of the eye transform's multipliers:
+W_G2            EQU W_VARS+108  ;   W_G1 = C = COSA(heading), W_G2 = S - C, W_G3 = C + S (S = SINA(heading))
+W_G3            EQU W_VARS+111
+W_PIDX          EQU W_VARS+114  ; the record being written
+W_DX            EQU W_VARS+115  ; words: d = position - eye (x, z)
+W_DZ            EQU W_VARS+117
+W_ACC           EQU W_VARS+119  ; 3 bytes: the eye transform's 24-bit product
+W_SY            EQU W_VARS+122  ; matrix scratch: sin yaw', sin pitch
+W_SP            EQU W_VARS+123
+W_VARS_END      EQU W_VARS+124
+    ASSERT W_VARS_END <= W_VARS+W_VARS_LEN && W_VARS+W_VARS_LEN <= T3 && W_REC+W_REC_LEN <= W_VARS
+    ASSERT POOL_B+45*PHASE_LEN-POOL_A_SLOTS*PHASE_LEN <= W_REC    ; phase slots 32..44 end below W_REC
+    ASSERT (W_REC & $FF) == 0

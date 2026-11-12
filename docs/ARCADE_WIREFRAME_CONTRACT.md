@@ -182,7 +182,8 @@ Programs without `WIRE3D`, `COSA`, `SINA`, `FXMUL` compile to the same code byte
 * Kernels as the spike measured, within 5 %: `draw_fast` 40 px 45° <= 4,460 T; one 12-point ship, yaw + pitch, generic P2:
   matrix + projection <= 50,000 T; the PUSH clear of 20 rows <= 31,000 T.
 * Per `DRAWMODEL` overhead (the eye transform, arguments, setup) <= 3,000 T beyond the projection and the lines.
-* `LINE` (40 px, inside) <= 4,000 T.
+* `LINE` (40 px, inside): at most 400 T over `draw_fast` for the same line. (Amended after W1: the first figure, <= 4,000 T at
+  every angle, was wrong: `draw_fast` alone takes 4,222 / 4,548 T at 45° / 60°, the spike's own figures.)
 * The sample game (section 9): its `FRAMERATE` (20, or 15: section 9) holds in >= 99 % of the ticks of its recorded runs; report median,
   95th percentile, worst and ticks over budget (`tests/arcade-codegen-perf.mjs` style).
 
@@ -199,6 +200,21 @@ Programs without `WIRE3D`, `COSA`, `SINA`, `FXMUL` compile to the same code byte
   Studio Examples list (`publish-runtime.mjs` `EXAMPLES`).
 * **W6 verification** (Haiku agents run, I check): run-all, mutations (`m17-mutations.mjs`, 4 shards: every new branch has a
   killing test), perf, cross-emulator (ZEsarUX, Fuse) for the sample game, docs, `HANDOFF.md`.
+
+### 7a. W1 as built (2026-11-12; Opus agent, verified by the main thread)
+`arcade/runtime/v2/wire.asm` (included last, before `RT_END`), `src/lang/arcade/arcade-wire.js` (the reference),
+`arcade/tests/m17-runtime-wire.mjs`, `layout.inc` (the W_ section), the build's `CONSTANTS`. **+5,058 bytes** (`RT_END` `$27E4` ->
+`$3BA6`; **1,114 free**); all 621 earlier labels keep their addresses (only `RT_END` moved; checked against the old `runtime.sym`).
+m17: 73 checks, 0 mismatches: 2,000 scenes (4,089 `DRAWMODEL`s, 150 large models up to 128 points / 255 edges, 2,032 `LINE`s),
+2,000 random `LINE`s, `COSA` / `SINA` for every angle and 10,324 `FXMUL` pairs against v4's values, the matrix for all 65,536
+yaw / pitch pairs, the W1 guards, and 60 scenes with the real interrupt handler (636 interrupts: registers and pictures unchanged).
+Figures (TSRun, exact): `draw_fast` 40 px 45° 4,222 T; 12-point ship yaw + pitch, matrix + projection max 47,419 (whole
+`DRAWMODEL` mean 71,927 with its 18 edges); clear 20 rows 30,544, 24 rows 36,107 (interrupts off); per-`DRAWMODEL` overhead max
+2,761; `RT_LINE` adds 298 T to `draw_fast`. Deviations: the eye transform uses three products instead of four with the same results
+(the reference keeps the contract's four; equality is shown through the pictures: W6 adds a direct test of T over all 256 headings at
+|d| = 16,000); a `LINE` with a coordinate outside -16384..16383 draws nothing (the exact clip's range; the reference does the same);
+`wire_clear` does nothing while `W_ON` = 0, and `W_ON` is meaningful only after `wire_setup` (the RAM is phase slots in a game
+without `WIRE3D`): W2 must call neither in such a game; SIN8 is stored as a 65-entry quarter table.
 
 ## 8. Tests (beyond the slices' files)
 * Reference vs runtime: >= 2,000 random scenes (random eye, models, poses, scales, lines across and outside the play area,

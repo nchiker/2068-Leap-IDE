@@ -67,7 +67,9 @@ const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITE
   'SPR_TAB', 'INST_ASSET', 'SPR_DRAWN', 'T2_FREE', 'T2_FREE_LEN', 'T3', 'T3_LEN', 'SD_W', 'SD_H', 'SD_PHASES', 'VBUF',
   // language batch 1 (tile operations)
   'RT_ARGS', 'RA_X', 'RA_Y', 'RA_W', 'RA_H', 'RA_V', 'RA_DX', 'RA_DY', 'GAME_MAPTAB', 'GAME_HEADER_EXT_LEN', 'DIV_EXT', 'MAX_MAPS', 'V_BORDER', 'V_NMAP', 'V_MAPTAB',
-  'TO_BUFT', 'TO_BUFA', 'TO_VARS', 'RT_SEED', 'V_FRAMES'];
+  'TO_BUFT', 'TO_BUFA', 'TO_VARS', 'RT_SEED', 'V_FRAMES',
+  // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md section 3)
+  'W_REC', 'W_REC_LEN', 'W_VARS', 'W_VARS_LEN', 'W_ON', 'W_MAXPTS', 'W_NEAR', 'W_QMAX', 'W_DMAX', 'RA_W0', 'RA_W1', 'RA_W2', 'RA_W3', 'RA_W4'];
 
 export function buildRuntime({ quiet = true } = {}) {
   mkdirSync(WORK, { recursive: true });

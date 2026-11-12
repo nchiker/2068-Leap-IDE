@@ -580,6 +580,9 @@ ENDSCENE
   {
     const problems = [];
     let found = 0;
+    // Stack-neutral SP uses that a tail call cannot break (docs/ARCADE_WIREFRAME_CONTRACT.md 7a): w_accline's EX (SP),HL swaps a word it pushed itself
+    // (a computed jump), never the caller's return address; wire_clear (the PUSH clear, called by the tick, never by compiled code) saves SP and puts it back.
+    const STACK_NEUTRAL = { 'v2/wire.asm': ['w_accline', 'wire_clear'] };
     for (const v of ['v2', 'v3', 'v4']) {
       const dir = join(ROOT, 'arcade/runtime', v);
       for (const f of readdirSync(dir).filter((x) => x.endsWith('.asm') && !/^test_|^game_placeholder/.test(x))) {      // (the test_*.asm drivers are not part of the runtime)
@@ -591,6 +594,7 @@ ENDSCENE
           const code = line.replace(/^[A-Za-z_.][A-Za-z0-9_.]*:/, '');
           if (/(^|[\s,(])sp([\s,)]|$)/i.test(code) && /^\s*(ld|ex|add|adc|sbc|inc|dec)\b/i.test(code)) {
             found++;
+            if (STACK_NEUTRAL[`${v}/${f}`]?.includes(label)) continue;
             if (f !== 'boot.asm') problems.push(`${v}/${f}: ${raw.trim()}`);
             else if (!NO_TAIL.runtime.includes(label)) problems.push(`${v}/boot.asm under ${label}: ${raw.trim()}`);
           }
