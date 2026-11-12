@@ -77,9 +77,9 @@ m3('.file: the row step is 3 bytes (the next row\'s byte 0 is byte 3)', ['    or
 m3('win_has: V_WINOFF is not looked at (a switched-off window counts as none)', ['win_has:\n    ld a,(V_WIN)\n    or a\n    ret nz\n    ld a,(V_WINOFF)', 'win_has:\n    ld a,(V_WIN)\n    or a\n    ret nz\n    xor a\n    nop\n    nop']);
 m3('win_has: V_WIN is not looked at (an active window counts as none)', ['win_has:\n    ld a,(V_WIN)\n    or a\n    ret nz\n', 'win_has:\n    xor a\n    nop\n    nop\n    nop\n    nop\n']);
 m3('win_has: the first test returns Z for a window on (RET NZ -> RET Z)', ['win_has:\n    ld a,(V_WIN)\n    or a\n    ret nz', 'win_has:\n    ld a,(V_WIN)\n    or a\n    ret z']);
-add('RT_WORLDLOAD: the old test (V_WIN only): no new world while the window is switched off', 3, E('scroll.asm', '    call win_has                ; (mode.asm) Z: no window.  The six bytes of the old LD A,(V_WIN) / OR A / RET Z test: no address after it moves\n    ret z\n    nop', '    ld a,(V_WIN)\n    or a\n    ret z'));
-add('RT_WORLDLOAD: the test is gone (a game without a window decodes the world)', 3, E('scroll.asm', '    call win_has                ; (mode.asm) Z: no window.  The six bytes of the old LD A,(V_WIN) / OR A / RET Z test: no address after it moves\n    ret z\n    nop', NOP(5)));
-add('RT_WORLDLOAD: the test is inverted (RET Z -> RET NZ)', 3, E('scroll.asm', '    call win_has                ; (mode.asm) Z: no window.  The six bytes of the old LD A,(V_WIN) / OR A / RET Z test: no address after it moves\n    ret z', '    call win_has                ; (mode.asm) Z: no window.  The six bytes of the old LD A,(V_WIN) / OR A / RET Z test: no address after it moves\n    ret nz'));
+add('RT_WORLDLOAD: the old test (V_WIN only): no new world while the window is switched off', 3, E('scroll.asm', '    call win_has                ; (mode.asm) Z: no window\n    ret z', '    ld a,(V_WIN)\n    or a\n    ret z'));
+add('RT_WORLDLOAD: the test is gone (a game without a window decodes the world)', 3, E('scroll.asm', '    call win_has                ; (mode.asm) Z: no window\n    ret z', NOP(4)));
+add('RT_WORLDLOAD: the test is inverted (RET Z -> RET NZ)', 3, E('scroll.asm', '    call win_has                ; (mode.asm) Z: no window\n    ret z', '    call win_has                ; (mode.asm) Z: no window\n    ret nz'));
 
 // =====================================================================================================================================
 // drawn_dirty (the same text in v3 and v4)

@@ -36,7 +36,7 @@ RT_SHOW:
 show_f:                         ; A = index (< ninst), BC = x, DE = y; the frame on the stack (low byte)
     ld hl,V_WIN
     bit 0,(hl)
-    jr nz,show_w                ; window mode (v3 part 2, scroll.asm): x, y stored signed and unclamped (29 T on the non-window path)
+    jp nz,show_win              ; window mode (v3 part 2, scroll.asm): x, y stored signed and unclamped
     add a,a
     add a,a
     add a,a
@@ -56,9 +56,7 @@ show_f:                         ; A = index (< ninst), BC = x, DE = y; the frame
     ld a,192
     sub (hl)                    ; y max = 192 - h (AST_H; 144..191)
     push af
-    ld a,l
-    add a,AST_WB-AST_H
-    ld l,a
+    set 2,l                     ; AST_WB = AST_H + 4 (the records are 16-aligned: bit 2 of L is clear at AST_H)
     ld a,(hl)
     add a,a
     add a,a
@@ -139,8 +137,6 @@ show_f:                         ; A = index (< ninst), BC = x, DE = y; the frame
     ld h,V_CHG>>8
     ld (hl),2
     ret
-show_w:
-    jp show_win
     ASSERT (SPR_TAB&7) == 0
 
 ; ---------------------------------------------------------------------------------------------------------------
@@ -302,9 +298,8 @@ RT_RND:
     ld l,a
     ld a,h
     xor b
-    ld h,a
-    ld a,h                      ; x ^= x >> 9:  low ^= high >> 1
-    srl a
+    ld h,a                      ; x ^= x >> 9:  low ^= high >> 1  (A = H still, and XOR cleared the carry: RRA is the shift)
+    rra
     xor l
     ld l,a
     ld a,h                      ; x ^= x << 8:  high ^= low

@@ -27,7 +27,7 @@ const SC = 'scroll.asm';
 const MUTANTS = [
   // ---- window_boot ----
   // (the window fast path's mutants are after the boot's and carry the prefix 'fast:')
-  ['boot: cx 9 accepted', [E(SC, '    cp 9\n    ret nc                      ; cx 0..8', '    cp 10\n    ret nc                      ; cx 0..8')]],
+  ['boot: cx 9 accepted', [E(SC, '    DB 0, 8                     ; cx 0..8', '    DB 0, 9                     ; cx 0..8')]],
   ['boot: the rows need not add up to 16', [E(SC, '    cp 16\n    ret nz                      ; the rows must add up to 16', '    cp 16\n    nop                         ; the rows must add up to 16')]],
   ['boot: a ratio-2 band does not halve cam_max', [E(SC, '    jr z,.c1\n    srl h\n    rr l\n.c1:', '    jr z,.c1\n    nop\n    nop\n    nop\n    nop\n.c1:')]],
   ['boot: cam_max is always the descriptor\'s (not clamped)', [E(SC, '    pop hl\n    jr c,.c2\n    ex de,hl\n.c2:', '    pop hl\n    jr .c2\n    ex de,hl\n.c2:\n    ex de,hl')]],
@@ -37,7 +37,7 @@ const MUTANTS = [
   ['boot: the flags go to the attribute page (inc d missing)', [E(SC, '    ld (de),a                   ; W_ATTRT\n    inc d\n    ld a,(hl)', '    ld (de),a                   ; W_ATTRT\n    nop\n    ld a,(hl)')]],
   ['boot: dirty byte 3 masked like byte 0 (no CPL)', [E(SC, '    ld (W_DMASK0),a\n    cpl', '    ld (W_DMASK0),a\n    nop')]],
   ['boot: the attribute caches start at 0 instead of $FF (win_ac_clear)', [E(SC, 'win_ac_clear:\n    ld hl,$FFFF', 'win_ac_clear:\n    ld hl,$0000')]],
-  ['boot: the attribute base ignores cx', [E(SC, '    ld a,(W_CX)\n    ld e,a\n    ld d,DATTR0>>8', '    xor a\n    ld e,a\n    ld d,DATTR0>>8')]],
+  ['boot: the attribute base ignores cx', [E(SC, '    or DATTR0>>8\n    ld h,a\n    ld (W_ATBASE),hl', '    or DATTR0>>8\n    ld h,a\n    ld a,l\n    and $E0\n    ld l,a\n    ld (W_ATBASE),hl')]],
   // ---- window_repaint and the row loops ----
   ['repaint: ratio 2 is not doubled', [E(SC, '    jr c,.sh\n    add hl,hl\n    ret', '    jr c,.sh\n    nop\n    ret')]],
   ['repaint: ratio 1/4 shifts once', [E(SC, '    cp 2\n    ret z\n    srl h\n    rr l\n    ret', '    cp 2\n    ret z\n    nop\n    nop\n    ret')]],
@@ -77,9 +77,9 @@ const MUTANTS = [
   ['draw: a footprint crossing the right window edge gets no ring record', [E(SC, '    ld a,d\n    inc l                       ; W_SX1 (HL was W_SY)\n    cp (hl)\n    jr c,.ring', '    ld a,d\n    inc l                       ; W_SX1 (HL was W_SY)\n    cp (hl)\n    nop\n    nop')]],
   ['draw: the ring record\'s c1 is c0', [E(SC, '    inc e\n    inc l\n    inc l\n    ld a,(hl)                   ; c1 = (sx + w - 1) >> 3', '    inc e\n    nop\n    nop\n    ld a,(hl)                   ; c1 = (sx + w - 1) >> 3')]],
   ['draw: the frame is not clamped', [E(SC, '    ld a,(W_FR)                 ; the frame, clamped to nframes - 1\n    cp (hl)\n    jr c,.fok', '    ld a,(W_FR)                 ; the frame, clamped to nframes - 1\n    cp (hl)\n    jr .fok')]],
-  ['draw: a 16-wide aligned sprite takes the 24-wide game-image blitter', [E(SC, '    cp 2\n    jr nz,.r3\n    call blitr2', '    cp 2\n    jr nz,.r3\n    call blitr3')]],
+  ['draw: a 16-wide aligned sprite takes the 24-wide game-image blitter', [E('main.asm', '    dec a\n    jp z,blitr2', '    dec a\n    jp z,blitr3')]],
   ['draw: PHASE_OFF indexed from the AST record', [E(SC, '    ld a,(W_AREC)\n    sub (AST&$FF)-(PHASE_OFF&$FF)', '    ld a,(W_AREC)\n    nop\n    nop')]],
-  ['draw: a miss builds the frame of asset 0', [E(SC, '    ld a,(W_AREC)\n    sub AST&$FF\n    rrca', '    xor a\n    nop\n    nop\n    rrca')]],
+  ['draw: a miss builds the frame of asset 0', [E('main.asm', '    ld a,c\n    ASSERT (PHASE_OFF&$FF) == 0 ; (so C = 16 a + 2 shift as it is)\n    rrca', '    xor a\n    rrca')]],
   ['draw: sy takes 8 cx', [E(SC, '    ld a,(W_WY0)                ; sy = y + 8 cy', '    ld a,(W_WX0)                ; sy = y + 8 cy')]],
   // ---- ring repair ----
   ['ring: the window\'s last row counts as outside', [E(SC, '    sub b\n    cp 16\n    jr c,rr_inrow', '    sub b\n    cp 15\n    jr c,rr_inrow')]],
@@ -130,11 +130,11 @@ const MUTANTS = [
   ['fast: boot: the flags page is filled at 8 t only (the other 7 bytes 0)', [E(SC, '    ld a,(hl)\n    ld (de),a                   ; W_FLAGT = W_ATTRT + $100', '    ld a,e\n    and 7\n    ld a,(hl)\n    jr z,.t8b\n    xor a\n.t8b:\n    ld (de),a                   ; W_FLAGT = W_ATTRT + $100')]],
   ['fast: boot: the blank flag of every tile is 0 (W_BLANKT)', [E(SC, '    inc e\n    pop af\n    ld (de),a', '    inc e\n    pop af\n    xor a\n    ld (de),a')]],
   ['fast: boot: the attribute copy in W_BLANKT is missing', [E(SC, '    inc d\n    inc d\n    ld a,(bc)\n    ld (de),a\n    inc e\n    pop af', '    inc d\n    inc d\n    ld a,(bc)\n    nop\n    inc e\n    pop af')]],
-  ['fast: boot: a tile with a non-zero row 7 only counts as blank (the OR of 7 rows)', [E(SC, '    DUP 8\n    or (hl)\n    inc l\n    EDUP\n    pop hl\n    sub 1', '    DUP 7\n    or (hl)\n    inc l\n    EDUP\n    pop hl\n    sub 1')]],
+  ['fast: boot: a tile with a non-zero row 7 only counts as blank (the OR of 7 rows)', [E(SC, '    ld b,8\n.tr:\n    or (hl)', '    ld b,7\n.tr:\n    or (hl)')]],
   // ---- SHOW / CAMERA / collision / HIT ----
   ['show: window mode keeps the y high byte at 0', [E(SC, '    ld (hl),e\n    inc l\n    ld (hl),d\n    inc l\n    pop de', '    ld (hl),e\n    inc l\n    ld (hl),0\n    inc l\n    pop de')]],
   ['show: window mode does not store the frame', [E(SC, '    pop de\n    ld (hl),e\n    ret', '    pop de\n    nop\n    ret')]],
-  ['api: show_f has no window branch (positions clamped)', [E('api.asm', '    jr nz,show_w ', '    nop\n    nop ')]],
+  ['api: show_f has no window branch (positions clamped)', [E('api.asm', '    jp nz,show_win ', '    nop\n    nop\n    nop ')]],
   ['camera: a negative request is not 0', [E(SC, 'RT_CAMERA:\n    bit 7,h\n    jr z,.pos', 'RT_CAMERA:\n    bit 7,h\n    jr .pos')]],
   ['camera: cam_max itself is refused (cam_max - 1 is the maximum ... or more)', [E(SC, '    pop hl\n    jr c,.st\n    ex de,hl', '    pop hl\n    jr c,.st\n    ex de,hl\n    dec hl')]],
   ['world_cell: rows 16..31 (y 128..255) count as above (1)', [E(SC, '    bit 7,e\n    jr nz,.below                ; y 128..255', '    bit 7,e\n    jr nz,.side                 ; y 128..255')]],
@@ -155,7 +155,7 @@ const MUTANTS = [
   // and the other way round, so the axis test (both comparisons true) is false either way: RT_HIT's result never changes.
   ['EQUIVALENT HIT: lt24 takes the low bit for the sign (the axis result cannot change)', [E(SC, '    rla                         ; carry = the sign of the difference', '    rra                         ; carry = the sign of the difference')]],
   ['HIT: no sign extension (24-bit edges of negative positions)', [E(SC, '    rla\n    sbc a,a\n    ld (WH_T),a                 ; the sign extension', '    rla\n    xor a\n    ld (WH_T),a                 ; the sign extension')]],
-  ['HIT: text.asm has no window branch (16-bit wrapped boxes)', [E('text.asm', '    jr nz,hit_w ', '    nop\n    nop ')]],
+  ['HIT: text.asm has no window branch (16-bit wrapped boxes)', [E('text.asm', '    jp nz,win_hit ', '    nop\n    nop\n    nop ')]],
   ['main: no window branch (the part 1 tick in window mode)', [E('main.asm', '    jp nz,win_tick', '    nop\n    nop\n    nop')]],
 ];
 

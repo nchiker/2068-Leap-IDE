@@ -60,12 +60,12 @@ add('v4 maps_boot calls loadmap_core directly', 4, E(T, '    call RT_LOADMAPPTR 
 add('v4 MAX_MAPS 63', 4, E('layout.inc', 'MAX_MAPS        EQU 64 ', 'MAX_MAPS        EQU 63 '));
 // ---- v3: window_boot's checks, world_load, RT_WORLDLOAD ----
 const S3 = 'scroll.asm';
-add('window_boot: world_src must be in $8000-$BFFF as before (the window refused)', 3, E(S3, '    ld a,(ix+11)\n    sub BANK_LO\n    cp $80', '    ld a,(ix+11)\n    sub $80\n    cp $40'));
-add('window_boot: world_src accepted from $3F', 3, E(S3, '    ld a,(ix+11)\n    sub BANK_LO\n', '    ld a,(ix+11)\n    sub BANK_LO-1\n'));
-add('window_boot: world_src accepted up to $C0', 3, E(S3, '    cp $80\n    ret nc                      ; world_src', '    cp $81\n    ret nc                      ; world_src'));
-add('window_boot: tile_flags accepted in the window', 3, E(S3, '    ld a,(ix+9)\n    sub $80\n', '    ld a,(ix+9)\n    sub BANK_LO\n'));
-add('window_boot: tilerows accepted in the window', 3, E(S3, '    ld a,(ix+13)\n    sub $80\n', '    ld a,(ix+13)\n    sub BANK_LO\n'));
-add('window_boot: tile_flags no longer checked', 3, E(S3, '    ld a,(ix+9)\n    sub $80\n    cp $40\n    ret nc                      ; tile_flags (+9) and tilerows (+13): inside the game image\n', '    ld a,(ix+9)\n    sub $80\n    cp $40\n    nop                         ; tile_flags (+9) and tilerows (+13): inside the game image\n'));
+add('window_boot: world_src must be in $8000-$BFFF as before (the window refused)', 3, E(S3, '    DB BANK_LO, $7F             ; world_src (+11)', '    DB $80, $3F                 ; world_src (+11)'));
+add('window_boot: world_src accepted from $3F', 3, E(S3, '    DB BANK_LO, $7F             ; world_src (+11)', '    DB BANK_LO-1, $7F           ; world_src (+11)'));
+add('window_boot: world_src accepted up to $C0', 3, E(S3, '    DB BANK_LO, $7F             ; world_src (+11)', '    DB BANK_LO, $80             ; world_src (+11)'));
+add('window_boot: tile_flags accepted in the window', 3, E(S3, '    DB $80, $3F                 ; tile_flags (+9)', '    DB BANK_LO, $3F             ; tile_flags (+9)'));
+add('window_boot: tilerows accepted in the window', 3, E(S3, '    DB $80, $3F                 ; tilerows (+13)', '    DB BANK_LO, $3F             ; tilerows (+13)'));
+add('window_boot: tile_flags no longer checked', 3, E(S3, '    DB $80, $3F                 ; tile_flags (+9)', '    DB 0, 255                   ; tile_flags (+9)'));
 add('window_boot decodes without the window (call world_decode)', 3, E(S3, '    ld h,(ix+11)\n    call world_load', '    ld h,(ix+11)\n    call world_decode'));
 add('world_load: the test inverted', 3, E(S3, '    jr nc,world_decode          ; mapped: as before', '    jr c,world_decode           ; mapped: as before'));
 add('world_load: the window starts at $41', 3, E(S3, 'world_load:\n    ld a,h\n    sub BANK_LO', 'world_load:\n    ld a,h\n    sub BANK_LO+1'));
@@ -74,8 +74,7 @@ add('world_load: the window ends at $7E', 3, E(S3, '    cp BANK_HI-BANK_LO\n    
 add('world_load: the window ends at $80', 3, E(S3, '    cp BANK_HI-BANK_LO\n    jr nc,world_decode', '    cp BANK_HI-BANK_LO+1\n    jr nc,world_decode'));
 add('world_load: the window is never mapped', 3, E(S3, '    call bank_on\n    call world_decode\n    jp bank_off', NOP(3) + '\n    call world_decode\n    jp bank_off'));
 add('world_load: the window is never unmapped', 3, E(S3, '    call world_decode\n    jp bank_off', '    call world_decode\n    ret'));
-add('RT_WORLDLOAD: no window-mode test', 3, E(S3, 'RT_WORLDLOAD:\n    ld c,a\n    ld a,(V_WIN)\n    or a\n    ret z', 'RT_WORLDLOAD:\n    ld c,a\n    ld a,(V_WIN)\n    or a\n    nop'));
-add('RT_WORLDLOAD: the window-mode test inverted', 3, E(S3, 'RT_WORLDLOAD:\n    ld c,a\n    ld a,(V_WIN)\n    or a\n    ret z', 'RT_WORLDLOAD:\n    ld c,a\n    ld a,(V_WIN)\n    or a\n    ret nz'));
+// (RT_WORLDLOAD's mode test moved into win_has in batch 7: its mutants -- test gone, inverted, the old V_WIN-only test -- are in m14-mutations.mjs)
 add('RT_WORLDLOAD: the world width is not stored', 3, E(S3, '    ld a,c\n    ld (W_WW),a', '    ld a,c\n' + NOP(3)));
 add('RT_WORLDLOAD: the width is taken from B (0)', 3, E(S3, '    ld a,c\n    ld (W_WW),a', '    ld a,b\n    ld (W_WW),a'));
 add('RT_WORLDLOAD: cam_max is not stored', 3, E(S3, '    ld (W_CAMMAX),de', NOP(4)));
@@ -83,9 +82,9 @@ add('RT_WORLDLOAD: 4 world_w instead of 8', 3, E(S3, '    ld l,c\n    add hl,hl\
 add('RT_WORLDLOAD: 8 world_w not stored', 3, E(S3, '    ld (W_WXR),hl\n    ld l,b', NOP(3) + '\n    ld l,b'));
 add('RT_WORLDLOAD: the camera is not reset', 3, E(S3, '    ld (V_CAM),hl               ; camera 0', NOP(3) + '                          ; camera 0'));
 add('RT_WORLDLOAD: the camera becomes the width', 3, E(S3, '    ld l,b\n    ld h,b\n    ld (V_CAM),hl', '    ld l,c\n    ld h,b\n    ld (V_CAM),hl'));
-add('RT_WORLDLOAD: the attribute caches are not invalidated', 3, E(S3, '    call win_ac_clear\n    pop hl\n    jr world_load', NOP(3) + '\n    pop hl\n    jr world_load'));
-add('RT_WORLDLOAD: the source is lost (no PUSH / POP)', 3, E(S3, '    push hl                     ; the stream', '    nop                         ; the stream'), E(S3, '    call win_ac_clear\n    pop hl\n    jr world_load', '    call win_ac_clear\n    nop\n    jr world_load'));
-add('RT_WORLDLOAD: the world is not decoded (RET instead of JR)', 3, E(S3, '    pop hl\n    jr world_load', '    pop hl\n    ret'));
+add('RT_WORLDLOAD: the attribute caches are not invalidated', 3, E(S3, '    call win_ac_clear\n    pop hl\n    call world_load', NOP(3) + '\n    pop hl\n    call world_load'));
+add('RT_WORLDLOAD: the source is lost (no PUSH / POP)', 3, E(S3, '    push hl                     ; the stream', '    nop                         ; the stream'), E(S3, '    call win_ac_clear\n    pop hl\n    call world_load', '    call win_ac_clear\n    nop\n    call world_load'));
+add('RT_WORLDLOAD: the world is not decoded (RET instead of the CALL)', 3, E(S3, '    pop hl\n    call world_load', '    pop hl\n    ret\n    nop\n    nop'));
 // ---- v4: ray_check, ray_boot, ray_map_load, ray_dims, RT_PLANLOAD ----
 const R4 = 'ray.asm';
 add('ray_check: map_src must be in $8000-$BFFF as before', 4, E(R4, '    ld a,(ix+6)\n    sub BANK_LO\n    cp $80', '    ld a,(ix+6)\n    sub $80\n    cp $40'));
@@ -107,8 +106,8 @@ add('ray_dims: VD_YMAX not stored', 4, E(R4, '    ld (VD_YMAX),de\n    ret', NOP
 add('ray_dims: VD_MAPH not stored', 4, E(R4, '    ld (VD_MAPH),a', NOP(3)));
 add('ray_dims: VD_MAPW not stored', 4, E(R4, 'ray_dims:\n    ld a,b\n    ld (VD_MAPW),a', 'ray_dims:\n    ld a,b\n' + NOP(3)));
 add('ray_dims: VD_XMAX = map_w * 256 (no DEC)', 4, E(R4, '    ld (VD_MAPW),a\n    dec a\n    ld d,a', '    ld (VD_MAPW),a\n    nop\n    ld d,a'));
-add('RT_PLANLOAD: no ray-mode test', 4, E(R4, 'RT_PLANLOAD:\n    ld a,(V_RAY)\n    or a\n    ret z', 'RT_PLANLOAD:\n    ld a,(V_RAY)\n    or a\n    nop'));
-add('RT_PLANLOAD: the dimensions are not set', 4, E(R4, '    ret z\n    call ray_dims\n    call ray_map_load\n    ld hl,(RV_X)', '    ret z\n' + NOP(3) + '\n    call ray_map_load\n    ld hl,(RV_X)'));
+// (RT_PLANLOAD's mode test moved into view_has in batch 7: its mutants are in m14-mutations.mjs)
+add('RT_PLANLOAD: the dimensions are not set', 4, E(R4, '    ret z\n    nop\n    call ray_dims\n    call ray_map_load\n    ld hl,(RV_X)', '    ret z\n    nop\n' + NOP(3) + '\n    call ray_map_load\n    ld hl,(RV_X)'));
 add('RT_PLANLOAD: the array is not rebuilt', 4, E(R4, '    call ray_dims\n    call ray_map_load\n    ld hl,(RV_X)', '    call ray_dims\n' + NOP(3) + '\n    ld hl,(RV_X)'));
 add('RT_PLANLOAD: x is not clamped', 4, E(R4, '    ld de,(VD_XMAX)\n    call clamp_hl\n    ld (RV_X),hl', '    ld de,(VD_XMAX)\n' + NOP(3) + '\n    ld (RV_X),hl'));
 add('RT_PLANLOAD: y is not clamped', 4, E(R4, '    ld de,(VD_YMAX)\n    call clamp_hl\n    ld (RV_Y),hl\n    ret', '    ld de,(VD_YMAX)\n' + NOP(3) + '\n    ld (RV_Y),hl\n    ret'));

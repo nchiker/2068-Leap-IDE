@@ -318,9 +318,7 @@ sk_entrect:
     ld l,a
     ld h,AST>>8
     ld e,(hl)                   ; AST_H
-    ld a,l
-    add a,AST_WB-AST_H
-    ld l,a
+    set 2,l                     ; AST_WB = AST_H + 4 (the records are 16-aligned: bit 2 of L is clear at AST_H)
     ld c,(hl)                   ; AST_WB
     ld a,b
     rrca

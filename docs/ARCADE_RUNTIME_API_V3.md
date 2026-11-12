@@ -375,3 +375,32 @@ baselines regenerated for the moved addresses with `regen-baselines.mjs --old 0e
   every window test compares with them; a de Bruijn world gives every case at every phase 1..7; class bits after boot, SETWORLD (edges included)
   and RT_WORLDLOAD (`m11-runtime-bank.mjs`, whose poisoning now spares `$5B00-$5EFF` in window games); interrupts at every instruction of the stubs,
   handlers, class pass and SETWORLD (`m7-runtime-regs.mjs` section 4); `m7-mutations.mjs` 111 mutants (35 new, 2 proved equivalent).
+
+## As built: size pass 2 (2026-11-11, branch `arcade-v3-shrink`)
+
+Run by a Fable 5.2 agent following the shrink-z80 skill in a disposable worktree, one change at a time (each built and quick-tested), then
+verified by the main thread in the primary tree. **15,728 -> 15,095 bytes (-633); free 656 -> 1,289** (builder's figures). No RT_* contract
+changed; compiled games are the same bytes apart from the moved RT_* addresses (6 hashes of `batch3-baseline.json` regenerated with
+`regen-baselines.mjs --old b81f8fd`, old and new compiler agreeing).
+
+* **`blit_frame`** (main.asm): the identical ends of `draw_all` and `win_draw_all` are one subroutine; every blitter is a tail jump (-176;
+  shift 0 dispatch 10-29 T faster, shifted unchanged). The miss path keeps the 26-byte stack bound (`fc_miss` keeps the slot in `V_PTR`).
+* **The font is packed** (-222): `font.inc` (the 768 bytes the tests' models read) is unchanged; `runtime.asm` assembles it outside the
+  image and stores rows 0..6 of the 96 glyphs as 6 bits each plus `(code, row 7)` for the six glyphs with a row 7 (`, g j p q y`; both
+  facts asserted); `cells_init` unpacks it. The symbol `FONT_GLYPHS` now points at the assembly-time copy (`$6000`, nothing reads it).
+  **The boot takes about 140,000 T longer**; the chunk 6 clear no longer zeroes the cell map it fills anyway (-32,000 T, +5 bytes), so the
+  worst-case boot is **19 frames** (17 before; the test's bound is 20).
+* **`hit_box` serves both modes** (-94): `wbox` is gone; `win_hit` calls `hit_box` with its `WH_*` destination (told apart by the page).
+* Smaller (-141): blitter / erase dispatch, RT_SHOW / RT_HIT trampolines as `jp nz`, RT_RND, RT_TILEAT, `maps_boot`, `cells_init`,
+  `draw_cell` falling into `cell_rows`, `window_boot`'s tile loop and descriptor checks as a table (`WB_CHK`), `plan_pool` as four steps over
+  one iterator. Rejected: `win_ac_clear` as a loop (RT_SETWORLD 1,124 T against its 1,000 T bound).
+* Not touched (hot or shared text): `window_repaint` and its rows / stubs, `skip_analysis`, the 8 blitters' group loops, tileops.asm, sound.asm,
+  isr.asm, mode.asm.
+* Tests: mutation patterns re-pointed, none deleted (m6 4 + 1 new, m7 7, m11 6, m14 3); `m7-runtime-regs.mjs` follows the removed labels;
+  `m14-runtime-mode.mjs` section 1 for v3 now checks that every published symbol at or above `$4000` keeps its address and every RT_* exists
+  (the "same bytes as published" check cannot hold after a size pass; v4's checks unchanged).
+* **Verified (main thread, 2026-11-11):** `run-all.mjs --jobs 4` 74/74; mutations in 4 shards: m6 49 killed, m7 107 killed + 4 equivalent,
+  m11 78 killed (its 7 patterns stale since batch 7 fixed: 4 re-pointed, 3 duplicates of m14's mode-test mutants dropped with a note),
+  m14 232 killed + 7 equivalent, 0 survivors; `tests/arcade-runner-perf.mjs --check` PASS, `tests/arcade-m6-platformer-perf.mjs`; m6-runtime-perf
+  boot 19 frames (bound 20: one frame of margin left); Leap Runner on TSRun, ZEsarUX and Fuse: all 905 ticks' screens and the sampled state
+  identical (real keys, script-driven reads, joystick).

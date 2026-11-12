@@ -59,12 +59,12 @@ function makeGame(nticks, seed, { div = 3 } = {}) {
 // script (no world load; SETWORLD at random cells) and are covered by section 4's direct calls.
 const labels = ['win_tick', 'win_mask_dirty', 'window_repaint', 'band_pos', 'rows_pn', 'rpn_stub0', 'H_UP_OR', 'H_UP_S', 'H_UP_S.r', 'H_UP_S.z', 'H_DN_S', 'H_DN_S.r', 'H_DN_S.z', 'rows_p0',
   'attr_rows', 'win_draw_all', 'ring_repair', 'show_win', 'RT_CAMERA', 'world_cell', 'RT_WORLDTILE', 'RT_TILEFLAGS', 'RT_SETWORLD', 'RT_SETWORLD.d1', 'RT_SETWORLD.x0', 'RT_SETWORLD.a0',
-  'RT_SETWORLD.d2', 'RT_SETWORLD.a3', 'RT_SETWORLD.a4', 'win_ac_clear', 'RT_TILEHIT', 'th_zero', 'win_hit', 'lt24', 'wbox', 'axis24',
+  'RT_SETWORLD.d2', 'RT_SETWORLD.a3', 'RT_SETWORLD.a4', 'win_ac_clear', 'RT_TILEHIT', 'win_hit', 'lt24', 'axis24',
   'cls_world', 'cls_run0', 'cls_g0', 'cls_g0.same', 'cls_g0.b', 'cls_g0.o', 'cls_g1', 'cls_g1e', 'cls_g1e.same', 'cls_g1e.b', 'cls_g1e.o', 'cls_zr', 'cls_zr.d']
   .map((k) => { if (S[k] === undefined) throw new Error(`no symbol ${k}`); return [k, S[k]]; }).sort((a, b) => a[1] - b[1]);
 const isDirect = (k) => k.startsWith('cls_') || k === 'RT_SETWORLD.x0' || k === 'RT_SETWORLD.a3';
 const ranges = labels.map(([k, a], i) => [k, a, i + 1 < labels.length ? labels[i + 1][1] : S.M_SCROLL_E, isDirect(k)]);
-ranges.push(['main: AFTER_FRAME', S.AFTER_FRAME, S.SKIP_CALL, false], ['api: show_f window test', S.show_f, S.show_f + 7, false], ['api: show_w', S.show_w, S.show_w + 3, false], ['text: RT_HIT window test', S.RT_HIT, S.RT_HIT + 7, false], ['text: hit_w', S.hit_w, S.hit_w + 3, false]);
+ranges.push(['main: AFTER_FRAME', S.AFTER_FRAME, S.SKIP_CALL, false], ['api: show_f window test', S.show_f, S.show_f + 8, false], ['text: RT_HIT window test', S.RT_HIT, S.RT_HIT + 8, false], ['text: hit_box (also the box builder of the window)', S.hit_box, S.box_axis, false]);   // (v3 size pass: wbox is hit_box, the hit_w trampoline is a JP NZ)
 if (!(S.rpn_stub0 < S.rpn_stubs_end && S.H_UP_OR >= S.rpn_stubs_end - 0 && S.H_END <= S.rows_p0)) throw new Error('the stubs and handlers are not between rows_pn and rows_p0');
 const inRanges = (pc) => ranges.findIndex(([, a, b]) => pc >= a && pc < b);
 
