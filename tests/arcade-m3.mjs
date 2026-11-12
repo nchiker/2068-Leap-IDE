@@ -276,9 +276,9 @@ console.log('\n3. Linker: v1 header, string pool, hot boxes');
   const find = (txt) => { const pat = [txt.length, ...[...txt].map((c) => c.charCodeAt(0))]; for (let i = r.gen.base; i < r.gen.base + r.gen.code.length; i++) if (pat.every((v, k) => mem[i + k] === v)) return i; return -1; };
   const hello = find('Hello'), comma = find(', 7');
   check_('string pool: length-prefixed "Hello" and ", 7" (comma space and STR$(7) merged)', hello > 0 && comma > 0, `${hello} ${comma}`);
-  check_('the PRINT code calls RT_AT with B = 1, C = 2 then RT_PRINTS with HL = the string', (() => {
+  check_('the PRINT code calls RT_AT with B = 1, C = 2 (one LD BC,$0102: B high, C low) then RT_PRINTS with HL = the string', (() => {
     const c = r.gen.code, b = r.gen.base;
-    const at = [...c].findIndex((v, i) => v === 0x06 && c[i + 1] === 1 && c[i + 2] === 0x0E && c[i + 3] === 2 && c[i + 4] === 0xCD && (c[i + 5] | (c[i + 6] << 8)) === TRAPS.RT_AT);
+    const at = [...c].findIndex((v, i) => v === 0x01 && c[i + 1] === 2 && c[i + 2] === 1 && c[i + 3] === 0xCD && (c[i + 4] | (c[i + 5] << 8)) === TRAPS.RT_AT);
     const ph = [...c].findIndex((v, i) => v === 0x21 && (c[i + 1] | (c[i + 2] << 8)) === hello && c[i + 3] === 0xCD && (c[i + 4] | (c[i + 5] << 8)) === TRAPS.RT_PRINTS);
     return at >= 0 && ph > at;
   })());

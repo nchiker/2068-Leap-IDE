@@ -815,9 +815,12 @@ const costs = {};
   costs.writeTotal = (write - empty) / N;
   costs.writeOverBase = (write - baseW) / N;
   costs.writeExpr = (writeExpr - baseE) / N;
-  console.log(`  INFO  r = x(i): ${(read - empty) / N} T per iteration incl. the loop-free statement; the array part (index in HL -> value in HL) = ${costs.read} T; x(i) = v: ${(write - empty) / N} T (index load 16 + address 64 + value load 20 + store 18 = 118)`);
-  check_('measured: an array read (index already in HL -> element in HL) costs 86 T, in range', Math.abs(costs.read - 86) < 0.01, `${costs.read}`);
-  check_('measured: r = x(i) is 118 T (index 16 + read 86 + store 16); x(i) = v is 118 T (index 16 + address 64 + value 20 + store 18)', Math.abs((read - empty) / N - 118) < 0.01 && Math.abs((write - empty) / N - 118) < 0.01, `${(read - empty) / N} / ${(write - empty) / N}`);
+  console.log(`  INFO  r = x(i): ${(read - empty) / N} T per iteration incl. the loop-free statement; the array part (index in HL -> value in HL) = ${costs.read} T; x(i) = v: ${(write - empty) / N} T (index load 16 + address 61 + value load 20 + store 18 = 115)`);
+  // The measured path is the inline form (one site per array here, so no lib$ar / lib$aw routine): LD A,L / SUB n / LD A,H / SBC A,0 /
+  // JR NC,aoob (compiler size pass F2: was JP NC, 10 T not taken; JR NC not taken is 7 T) / ADD HL,HL / LD DE,base / ADD HL,DE / LD A,(HL) /
+  // INC L / LD H,(HL) / LD L,A: 86 - 3 = 83 T; the write 64 - 3 = 61 T of address.
+  check_('measured: an array read (index already in HL -> element in HL) costs 83 T, in range (was 86 with JP NC; the inline form now has JR NC)', Math.abs(costs.read - 83) < 0.01, `${costs.read}`);
+  check_('measured: r = x(i) is 115 T (index 16 + read 83 + store 16); x(i) = v is 115 T (index 16 + address 61 + value 20 + store 18)', Math.abs((read - empty) / N - 115) < 0.01 && Math.abs((write - empty) / N - 115) < 0.01, `${(read - empty) / N} / ${(write - empty) / N}`);
   // out of range: the stub path
   const oob = bench('        r = x(i + 10)'), oobW = bench('        x(i + 10) = v');
   console.log(`  INFO  out of range: r = x(i + 10) ${(oob - empty) / N} T, x(i + 10) = v ${(oobW - empty) / N} T`);

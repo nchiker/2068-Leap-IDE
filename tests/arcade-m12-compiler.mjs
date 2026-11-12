@@ -24,7 +24,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
-import { compile, usageLines } from '../src/lang/arcade/arcade-compile.js';
+import { compile, usageLines, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { layoutOf } from '../src/lang/arcade/arcade-bank.js';
 import { ARCADE_WORDS, RESERVED, BLOCK_WORDS, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { ASSETS11, HEAD, win3, plain2, mapDecls } from './arcade-m11-common.mjs';
@@ -458,7 +458,14 @@ console.log('\n5. LOADTABLE: the code, the index form, the scopes, the messages'
   const prog = (stmt) => G(T, stmt);
   const o = cmp(prog('    LOADTABLE t1\n'));
   const fx = o.gen.fixups;
-  check_('LOADTABLE name = LD HL,record / CALL RT_TABLELOAD: one fixup at the operand, the call to the runtime symbol', o.errors.length === 0 && fx.length === 1 && fx[0].key === 'table:game.T1' && o.memory[fx[0].at - 1] === 0x21 && o.memory[fx[0].at + 2] === 0xCD && rd16(o.memory, fx[0].at + 3) === TABLELOAD, errText(o));
+  // Compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md F5): the last statement's `CALL RT_TABLELOAD / RET` is `JP RT_TABLELOAD`; a LOADTABLE that something follows keeps the CALL.
+  check_('LOADTABLE name = LD HL,record / JP RT_TABLELOAD when it is the last statement of the PROC (the tail call of `CALL RT_TABLELOAD / RET`): one fixup at the operand, the jump to the runtime symbol', o.errors.length === 0 && fx.length === 1 && fx[0].key === 'table:game.T1' && o.memory[fx[0].at - 1] === 0x21 && o.memory[fx[0].at + 2] === 0xC3 && rd16(o.memory, fx[0].at + 3) === TABLELOAD, errText(o));
+  {
+    const two = cmp(prog('    LOADTABLE t1\n    LOADTABLE t0\n')), f2 = two.gen.fixups;
+    check_('LOADTABLE name followed by another statement is LD HL,record / CALL RT_TABLELOAD (CD), the last one the tail JP (C3): two fixups, each at its operand', two.errors.length === 0 && f2.length === 2 && f2.every((f) => two.memory[f.at - 1] === 0x21 && rd16(two.memory, f.at + 3) === TABLELOAD) && two.memory[f2[0].at + 2] === 0xCD && two.memory[f2[1].at + 2] === 0xC3, errText(two));
+    const off = cmp(prog('    LOADTABLE t1\n'), 2, ASSETS11, { opts: CODEGEN_OFF }), fo = off.gen.fixups;
+    check_('CODEGEN_OFF: LOADTABLE name = LD HL,record / CALL RT_TABLELOAD / RET (the original shape)', off.errors.length === 0 && fo.length === 1 && off.memory[fo[0].at - 1] === 0x21 && off.memory[fo[0].at + 2] === 0xCD && rd16(off.memory, fo[0].at + 3) === TABLELOAD && off.memory[fo[0].at + 5] === 0xC9, errText(off));
+  }
   check_('... the operand is the address the linker gave the record', rd16(o.memory, fx[0].at) >= o.gen.base + o.gen.code.length, hex(rd16(o.memory, fx[0].at)));
   const sizes = (stmt) => cmp(prog(stmt)).gen.code.length;
   const base0 = sizes('');
@@ -472,14 +479,22 @@ console.log('\n5. LOADTABLE: the code, the index form, the scopes, the messages'
   // the call site: ... LD DE,list / LD BC,3 / CALL lib$tabidx, and lib$tabidx's bytes
   const code = idx.gen.code, base = idx.gen.base;
   const listAddr = ptrs[0];
-  let site = -1;
-  for (let i = 0; i + 8 < code.length; i++) if (code[i] === 0x11 && (code[i + 1] | (code[i + 2] << 8)) === listAddr && code[i + 3] === 0x01 && code[i + 4] === 3 && code[i + 5] === 0 && code[i + 6] === 0xCD) { site = i; break; }
-  check_('the call site is LD DE,list / LD BC,count / CALL lib$tabidx', site >= 0, site < 0 ? 'not found' : '');
-  const lib = site >= 0 ? (code[site + 7] | (code[site + 8] << 8)) - base : -1;
+  // the call site: ... LD DE,list / LD BC,3 / then lib$tabidx is CALLed, or, as the last statement of the PROC, jumped to (`CALL / RET` is a tail jump, JR when lib$tabidx is in reach)
+  const tailTo = (i) => (code[i] === 0xCD || code[i] === 0xC3 ? { len: 3, to: code[i + 1] | (code[i + 2] << 8), how: code[i] === 0xCD ? 'CALL' : 'JP' } : code[i] === 0x18 ? { len: 2, to: base + i + 2 + ((code[i + 1] << 24) >> 24), how: 'JR' } : null);
+  let site = -1, hop = null;
+  for (let i = 0; i + 8 < code.length; i++) if (code[i] === 0x11 && (code[i + 1] | (code[i + 2] << 8)) === listAddr && code[i + 3] === 0x01 && code[i + 4] === 3 && code[i + 5] === 0 && (hop = tailTo(i + 6))) { site = i; break; }
+  check_('the call site is LD DE,list / LD BC,count / then lib$tabidx (the last statement of the PROC: the tail jump JR lib$tabidx)', site >= 0 && hop.how === 'JR', site < 0 ? 'not found' : hop.how);
+  const lib = site >= 0 ? hop.to - base : -1;
   const tab = [0xE5, 0xB7, 0xED, 0x42, 0xE1, 0xD0, 0x29, 0x19, 0x7E, 0x23, 0x66, 0x6F, 0xC3, TABLELOAD & 255, TABLELOAD >> 8];
   check_('lib$tabidx = PUSH HL / OR A / SBC HL,BC / POP HL / RET NC / ADD HL,HL / ADD HL,DE / LD A,(HL) / INC HL / LD H,(HL) / LD L,A / JP RT_TABLELOAD (15 bytes)', lib >= 0 && sameBytes([...code.slice(lib, lib + 15)], tab), lib < 0 ? '' : [...code.slice(lib, lib + 15)].map((x) => x.toString(16)).join(' '));
   const sizeIdx = sizes('    LOADTABLE v\n') - base0;
-  check_('the index form costs the call site (LD HL,(v) 3 + 9) + the helper (15) + the list (6) = 33 bytes', sizeIdx === 3 + 9 + 15 + 6, `${sizeIdx}`);
+  check_('the index form costs the call site (LD HL,(v) 3 + LD DE 3 + LD BC 3 + the JR 2 = 11) + the helper (15) + the list (6) = 32 bytes (33 with a 3-byte CALL / JP, the form when something follows or lib$tabidx is out of reach)', sizeIdx === 3 + 8 + 15 + 6, `${sizeIdx}`);
+  {
+    const io = cmp(prog('    LOADTABLE v\n'), 2, ASSETS11, { opts: CODEGEN_OFF }), co = io.gen.code, lp = io.gen.fixups[0].at;
+    let so = -1; for (let i = 0; i + 8 < co.length; i++) if (co[i] === 0x11 && (co[i + 1] | (co[i + 2] << 8)) === lp && co[i + 3] === 0x01 && co[i + 4] === 3 && co[i + 5] === 0 && co[i + 6] === 0xCD) { so = i; break; }
+    const lo = so >= 0 ? (co[so + 7] | (co[so + 8] << 8)) - io.gen.base : -1;
+    check_('CODEGEN_OFF: the original call site LD DE,list / LD BC,count / CALL lib$tabidx / RET, lib$tabidx the same 15 bytes, and the index form costs 33 bytes', so >= 0 && sameBytes([...co.slice(lo, lo + 15)], tab) && co[so + 9] === 0xC9 && io.gen.code.length - cmp(prog(''), 2, ASSETS11, { opts: CODEGEN_OFF }).gen.code.length === 3 + 9 + 15 + 6 + 0, `${so} ${io.gen.code.length}`);
+  }
   const two = sizes('    LOADTABLE v\n    LOADTABLE v + 1\n') - base0;
   check_('lib$tabidx and the list are shared by every index LOADTABLE of the scope (the second costs the call site only)', two - sizeIdx > 0 && two - sizeIdx <= 3 + 3 + 9 + 3 + 3, `${two - sizeIdx}`);
   const direct2 = cmp(prog('    LOADTABLE t0\n    LOADTABLE 1\n'));

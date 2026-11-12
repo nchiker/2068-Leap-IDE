@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import * as INTERP from '../src/lang/arcade/arcade-interp.js';
-import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
+import { compile, requiredRuntime, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, FUNCTIONS } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
 import { ASSETS, HAND10, USING_PATTERNS, modelUsing, edgeModel, rowText, genProgram10, genV3x, genV4x, rng, sweepProgram, foldProgram } from './arcade-m10-common.mjs';
@@ -658,19 +658,34 @@ else {
     const e = build(cl('DIM x', '  PLAY (x + 1)\n  PLAY x MOD 2\n')), ec = code(e);
     check_('PLAY (expression) and PLAY x MOD 2 use the same sequence (two copies)', count(ec, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...w(S.RT_PLAY)]) === 2, `${count(ec, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...w(S.RT_PLAY)])}`);
     const n = build(cl('DIM x', '  PLAY sndb\n')), nc = code(n);
-    check_('PLAY by name (an effect): no range-check sequence', find(nc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...w(S.RT_PLAY)]) < 0 && count(nc, [0xCD, ...w(S.RT_PLAY)]) === 1);
+    // Compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md F5): a CALL RT_PLAY that is the last instruction of its PROC (`CALL x / RET`, no label
+    // between) is `JP RT_PLAY`; a call the range-check sequence jumps over (its skip label follows the call) stays a CALL. A "call" below is a CALL or a tail JP.
+    const PL = [...w(S.RT_PLAY)];
+    const playCalls = (cc) => count(cc, [0xCD, ...PL]) + count(cc, [0xC3, ...PL]);
+    const playSeq = (cc) => count(cc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...PL]) + count(cc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xC3, ...PL]);
+    const offOf = (src) => { const q = compile(src, { runtime: RT2.rt, image: RT2.img, assets: ASSETS, ...CODEGEN_OFF }); if (q.errors.length) throw new Error(errText(q)); return code(q); };
+    check_('PLAY by name (an effect): no range-check sequence, one call to RT_PLAY, as the PROC\'s tail call: LD A,k / JP RT_PLAY (3E k C3 nn nn)', find(nc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...PL]) < 0 && playSeq(nc) === 0 && playCalls(nc) === 1 && count(nc, [0xC3, ...PL]) === 1 && nc[find(nc, [0xC3, ...PL]) - 2] === 0x3E);
+    {
+      const oc = offOf(cl('DIM x', '  PLAY sndb\n'));
+      check_('CODEGEN_OFF: PLAY by name is LD A,k / CALL RT_PLAY / RET (the original shape, no range-check sequence, one CALL)', count(oc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...PL]) === 0 && count(oc, [0xCD, ...PL]) === 1 && count(oc, [0xC3, ...PL]) === 0 && oc[find(oc, [0xCD, ...PL]) - 2] === 0x3E && oc[find(oc, [0xCD, ...PL]) + 3] === 0xC9);
+    }
     const lit = build(cl('DIM x', '  PLAY 1\n')), lc = code(lit);
-    check_('PLAY with a literal index in range plays (a CALL RT_PLAY is generated)', count(lc, [0xCD, ...w(S.RT_PLAY)]) >= 1);
+    check_('PLAY with a literal index in range plays (a call of RT_PLAY is generated: JP RT_PLAY as the PROC\'s last statement)', playCalls(lc) >= 1 && count(lc, [0xC3, ...PL]) === 1);
+    check_('CODEGEN_OFF: PLAY with a literal index in range is a CALL RT_PLAY', count(offOf(cl('DIM x', '  PLAY 1\n')), [0xCD, ...PL]) >= 1);
     const par = build(cl('DIM snda\nDIM y', '  snda = y\n  PLAY (snda)\n  PLAY snda\n')), pc = code(par);
     // a folded index outside 0..255 that the checker does not fold (a sum of literals) plays nothing: no RT_PLAY call at all ("PLAY: constant 256 still calls", m10c mutation run)
     for (const expr of ['100 + 156', '200 + 100', '0 - 1']) {
       const o = cmp(cl('DIM x', `  PLAY ${expr}\n  x = 1\n`), RT2);
       if (o.errors.length) { check_(`PLAY ${expr}: compiles (the checker does not fold a sum of literals)`, false, errText(o)); continue; }
-      check_(`PLAY ${expr} (a constant outside 0..255): no RT_PLAY call at all`, count(code(o), [0xCD, ...w(S.RT_PLAY)]) === 0, `${count(code(o), [0xCD, ...w(S.RT_PLAY)])} calls`);
+      check_(`PLAY ${expr} (a constant outside 0..255): no RT_PLAY call at all (neither CALL nor tail JP)`, playCalls(code(o)) === 0, `${playCalls(code(o))} calls`);
     }
     const inR = cmp(cl('DIM x', '  PLAY 100 + 55\n  x = 1\n'), RT2);
-    check_('PLAY 100 + 55 (= 155, in 0..255 though past the table): the call is generated, the runtime ignores the index', !inR.errors.length && count(code(inR), [0xCD, ...w(S.RT_PLAY)]) === 1, inR.errors.length ? errText(inR) : '');
-    check_('PLAY (snda) with a variable snda is the index form; PLAY snda is the effect: one range-check sequence and two RT_PLAY calls', count(pc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...w(S.RT_PLAY)]) === 1 && count(pc, [0xCD, ...w(S.RT_PLAY)]) === 2, `${count(pc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...w(S.RT_PLAY)])} / ${count(pc, [0xCD, ...w(S.RT_PLAY)])}`);
+    check_('PLAY 100 + 55 (= 155, in 0..255 though past the table): the call is generated, the runtime ignores the index', !inR.errors.length && playCalls(code(inR)) === 1, inR.errors.length ? errText(inR) : '');
+    check_('PLAY (snda) with a variable snda is the index form; PLAY snda is the effect: one range-check sequence and two RT_PLAY calls (the index form\'s CALL stays, its skip label follows it; the effect, the last statement, is LD A,k / JP RT_PLAY)', playSeq(pc) === 1 && count(pc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...PL]) === 1 && playCalls(pc) === 2 && count(pc, [0xC3, ...PL]) === 1, `${playSeq(pc)} / ${playCalls(pc)}`);
+    {
+      const oc = offOf(cl('DIM snda\nDIM y', '  snda = y\n  PLAY (snda)\n  PLAY snda\n'));
+      check_('CODEGEN_OFF: PLAY (snda) / PLAY snda: one range-check sequence and two CALL RT_PLAY (the original shape)', count(oc, [0x7C, 0xB7, 0x20, 0x04, 0x7D, 0xCD, ...PL]) === 1 && count(oc, [0xCD, ...PL]) === 2 && count(oc, [0xC3, ...PL]) === 0, `${count(oc, [0xCD, ...PL])}`);
+    }
   }
 }
 

@@ -12,7 +12,8 @@
 // Sections
 //   1  the level data: runner.assets.json is what runner.assets.gen.mjs makes, the DIM lines of runner.arc are what it prints, every level is 128 x 16 with the start, the flag, the coins and the
 //      walkers' turning points that the arrays claim (the turning points worked out again here by a second, separate rule)
-//   2  the build: the game compiles with its four worlds banked (usage.mapped within 16,384, usage.banked the four MAPs) and does NOT build with every map forced `mapped` (the does-not-fit error)
+//   2  the build: the game compiles as the linker places it (usage.mapped within 16,384; the banker banks only what the mapped part needs: the title picture and some worlds), and with its four worlds
+//      forced `banked` (usage.banked the four worlds), and does NOT build with every map forced `mapped` (the does-not-fit error)
 //   3  the play-through on the reference interpreter (arcade/examples/runner.script.json: the title, level 1 to its flag, "LEVEL 2", level 2, ... the win screen): each level is entered in turn,
 //      each coin / enemy table is read, the game ends at state 2; and game over, retry of the same level with three lives (a variant with one life), on the interpreter
 //   4  the REAL runtime on a stock TS2068 in TSRun (arcade/build/v3, which must hold RT_WORLDLOAD): the same play-throughs tick by tick against the interpreter (variables, arrays, SPR_TAB, WORLD_RAM,
@@ -47,6 +48,11 @@ const QUICK = !!process.env.ARCADE_QUICK;
 const SRC = readFileSync(join(EX, 'runner.arc'), 'utf8');
 const ASSETS_TEXT = readFileSync(join(EX, 'runner.assets.json'), 'utf8');
 const ASSETS = JSON.parse(ASSETS_TEXT);
+// The banker banks only what the mapped part needs, and since the compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md) the game's code is smaller, so the build as the linker
+// places it (ASSETS: every map `auto`) keeps level3 in the mapped part. The banked worlds themselves are tested on this build: the same assets with the four worlds' maps set to
+// `banked` (assets.maps.<name>.bank, docs/ARCADE_BANKING_CONTRACT.md; pf_world / rn_world2 / rn_world3 / rn_world4 are the maps of level / level2 / level3 / level4).
+const WORLD_MAPS = ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'];
+const ASSETS_BANKED = JSON.parse(ASSETS_TEXT); for (const k of WORLD_MAPS) ASSETS_BANKED.maps[k].bank = 'banked';
 const s16 = (v) => ((v & 0xFFFF) ^ 0x8000) - 0x8000;
 
 // ── the level starts: the one place the source is changed for a test (a variant of GSTAGE 0, "lv = 0", and of the lives) ─────────────────────────────────────
@@ -256,7 +262,7 @@ function loadRuntime(v) {
 }
 const R3 = loadRuntime(3);
 const bankNeeds = R3 ? ['RT_LOADMAPPTR', 'RT_WORLDLOAD'].filter((n) => R3.rt.symbols[n] === undefined && R3.rt.constants?.[n] === undefined) : ['everything'];
-let normal = null;
+let normal = null, bankedFour = null;
 if (!R3 || bankNeeds.length) skip_('the banked build', !R3 ? 'arcade/build/v3/runtime.json is missing' : `arcade/build/v3/runtime.json lacks ${bankNeeds.join(' ')} (slice B1 not built)`);
 else {
   normal = compile(SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
@@ -265,7 +271,14 @@ else {
   check_(`usage.mapped ${u.mapped.used} of ${u.mapped.available} bytes (fits)`, u.mapped.used <= u.mapped.available);
   const names = u.banked.assets.map((x) => x.name).sort().join(',');
   const worlds = u.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
-  check_(`usage.banked: the four worlds, and nothing but tables and the title picture besides (${names}), ${u.banked.used} bytes, in the window`, worlds === 'level,level2,level3,level4' && u.banked.assets.every((x) => x.kind === 'world' || x.kind === 'table' || (x.kind === 'map' && x.name === 'titlepic')));
+  const bankedKinds = (b) => b.assets.every((x) => x.kind === 'world' || x.kind === 'table' || (x.kind === 'map' && x.name === 'titlepic'));
+  check_(`usage.banked as the linker places it: the title picture and ${worlds.split(',').length} worlds (${names}), ${u.banked.used} bytes, in the window; nothing but worlds, tables and the title picture; the banker banks only what the mapped part needs (the smaller code of the compiler size pass leaves ${['level', 'level2', 'level3', 'level4'].filter((n) => !worlds.split(',').includes(n)).join(', ') || 'none'} mapped)`, worlds.split(',').length >= 1 && bankedKinds(u.banked) && u.banked.assets.some((x) => x.name === 'titlepic'));
+  const b4 = compile(SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS_BANKED });
+  check_('the game compiles with the four worlds forced banked (assets.maps.<name>.bank = "banked"), no errors and no warnings', b4.errors.length === 0 && b4.warnings.length === 0, errText(b4));
+  const names4 = b4.usage.banked.assets.map((x) => x.name).sort().join(','), worlds4 = b4.usage.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
+  check_(`usage.banked with the four worlds banked: the four worlds, and nothing but tables and the title picture besides (${names4}), ${b4.usage.banked.used} bytes, in the window; usage.mapped ${b4.usage.mapped.used} of ${b4.usage.mapped.available}`, worlds4 === 'level,level2,level3,level4' && bankedKinds(b4.usage.banked) && b4.usage.mapped.used <= b4.usage.mapped.available);
+  check_(`the cartridge ships chunks ${b4.shipped.join(' ')} with the four worlds banked too`, JSON.stringify(b4.shipped) === '[0,1,2,4,5]');
+  bankedFour = b4;
   check_('the three scenes are there: title (the first), demo and play, with the title picture as the game\'s first screen MAP', JSON.stringify(normal.gen.symbols.scene.names) === '["title","demo","play"]' && u.banked.assets.some((x) => x.name === 'titlepic'));
   check_(`the cartridge ships chunks ${normal.shipped.join(' ')} (0 1 runtime, 2 the banked worlds, 4 5 the mapped part)`, JSON.stringify(normal.shipped) === '[0,1,2,4,5]');
   const forced = JSON.parse(ASSETS_TEXT); for (const k of Object.keys(forced.maps)) forced.maps[k].bank = 'mapped';
@@ -411,8 +424,10 @@ const RETRY_TICKS = retryOver + 60;
 // =================================================================================================================
 console.log('\n4. The real runtime on a stock TS2068 (TSRun): tick by tick against the interpreter, through the level changes');
 // =================================================================================================================
-const realOk = !!normal && normal.errors.length === 0;
-const play = !realOk ? null : PLAY_SRC === SRC ? normal : compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
+const realOk = !!normal && normal.errors.length === 0 && !!bankedFour && bankedFour.errors.length === 0;
+// `play`: the build whose four worlds are banked (every level change loads one through the window: sections 4 and 6); `playAuto`: the build as the linker places it (section 5)
+const play = !realOk ? null : PLAY_SRC === SRC ? bankedFour : compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS_BANKED });
+const playAuto = !realOk ? null : PLAY_SRC === SRC ? normal : compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
 const FIRST_CHANGE = full ? full.ticks.findIndex((x, k) => x.vars.ST === 4 && (k === 0 || full.ticks[k - 1].vars.ST === 1)) + 1 : 0;
 const REAL_TICKS = script ? (QUICK ? Math.min(script.length, FIRST_CHANGE + 60) : script.length) : 0;
 let realRun = null;
@@ -445,7 +460,7 @@ else {
   const ticks = QUICK ? Math.min(REAL_TICKS, FIRST_CHANGE + 60) : Math.min(script.length, 900);
   const all = compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS, bankAll: true });
   const RP = { ...R3, picture: true };
-  const a = runFramed(RP, play, { ticks, stick: stickOf(script) }), b = runFramed(RP, all, { ticks, stick: stickOf(script) });
+  const a = runFramed(RP, playAuto, { ticks, stick: stickOf(script) }), b = runFramed(RP, all, { ticks, stick: stickOf(script) });
   let d = a.error ?? b.error ?? null;
   for (let t = 0; !d && t <= ticks; t++) {
     const x = a.snaps[t], y = b.snaps[t], at = t === 0 ? 'after INIT' : `after tick ${t}`;

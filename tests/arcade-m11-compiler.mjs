@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
-import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
+import { compile, requiredRuntime, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { generate } from '../src/lang/arcade/arcade-codegen.js';
 import { link, buildDck, CHUNK } from '../src/lang/arcade/arcade-link.js';
 import { layoutOf, bankOrder, assignAt, shippedChunks, rleOf } from '../src/lang/arcade/arcade-bank.js';
@@ -507,7 +507,7 @@ console.log('\n6. The code is generated for the placement: boot map, the one-map
 // =================================================================================================================
 // 7. Byte identity with the previous compiler
 // =================================================================================================================
-console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked compile to exactly the bytes of the previous compiler');
+console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked compile to exactly the bytes of the previous compiler (the new compiler with CODEGEN_OFF: the compiler size pass, docs/ARCADE_COMPILER_SIZE_CONTRACT.md, is a deliberate change of the default build\'s bytes)');
 {
   // The previous compiler is the compiler of git 9f36c51^ (the commit before "Banked cartridge map, slices B0-B5", which added WORLD and the banking): `git archive` of its src/ into a
   // temporary directory, so the comparison is reproducible.  ARCADE_OLD=<dir of a src/lang/arcade/ copy> or ARCADE_OLD_REF=<git ref> choose another one.
@@ -543,21 +543,26 @@ console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked comp
     const NAMES = ['RT_SHOW', 'RT_HIDE', 'RT_HIT', 'RT_KEYDOWN', 'RT_AT', 'RT_PRINTS', 'RT_PRINTN', 'RT_PRINTC', 'RT_INK', 'RT_PAPER', 'RT_BRIGHT', 'RT_CLS', 'RT_TILE', 'RT_TILEAT', 'RT_PLAY', 'RT_SILENCE', 'RT_MUL', 'RT_DIV', 'RT_MOD', 'RT_RND', 'RT_STICK', 'V_CUR_ROW', 'V_CUR_COL', 'V_TICKS'];
     const stand = (version) => ({ rt: { version, symbols: Object.fromEntries(NAMES.map((n) => [n, 0xC000 + (fnv(n) % 0x2000)])), constants: { GAME_BASE: 0x8000, GAME_VARS_BASE: 0xE100, GAME_VARS_LIMIT: 0xEFFF, MAX_SPRITES: version >= 2 ? 16 : 4, MAX_ASSETS: 8 } }, img: new Uint8Array(65536) });
     const targets = [['stand-in v0', stand(0)], ['stand-in v1', stand(1)], ['real v2', REAL[2]], ['real v3', REAL[3]], ['real v4', REAL[4]]].filter(([, R]) => R);
-    let n = 0, same = 0, built = 0, bad = '';
+    let n = 0, same = 0, built = 0, bad = '', nd = 0, sameD = 0, smaller = 0, badD = '';
     const eqb = (x, y) => (!x && !y) || (!!x && !!y && sameBytes(x, y));
     for (const p of progs) for (const [tn, R] of targets) {
-      const o = oldCompile(p.text, { runtime: R.rt, image: R.img, assets: p.assets }), w = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets });
+      const o = oldCompile(p.text, { runtime: R.rt, image: R.img, assets: p.assets }), w = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets, ...CODEGEN_OFF }), wd = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets });
       n++;
+      // the default build (every size-pass fix on) against the previous compiler: the same diagnostics, a cartridge exactly when the previous one built one, and never more code
+      nd++;
+      if (JSON.stringify(o.errors) === JSON.stringify(wd.errors) && JSON.stringify(o.warnings) === JSON.stringify(wd.warnings) && !!o.memory === !!wd.memory && (!o.gen || wd.gen.code.length <= o.gen.code.length)) { sameD++; if (o.gen && wd.gen.code.length < o.gen.code.length) smaller++; } else badD += `${p.src} on ${tn}; `;
       const ok = eqb(o.memory, w.memory) && eqb(o.dck, w.dck) && JSON.stringify(o.errors) === JSON.stringify(w.errors) && JSON.stringify(o.warnings) === JSON.stringify(w.warnings) && (!o.gen || sameBytes(o.gen.code, w.gen.code)) && (!o.usage || JSON.stringify({ ...o.usage, codegen: undefined }) === JSON.stringify(Object.fromEntries(Object.entries({ ...w.usage, codegen: undefined }).filter(([k]) => !['mapped', 'banked', 'shippedChunks'].includes(k)))));
       if (ok) { same++; if (w.memory) built++; } else bad += `${p.src} on ${tn}; `;
     }
     check_(`${progs.length} programs (every example, every fixture, the batch 4 / 5 generated v3 / v4 programs) on ${targets.length} runtime tables: ${n} compilations, the image, the DCK, the code, the errors, the warnings and the usage fields are identical`, same === n && n > 0, bad);
     info(`byte identity: ${n} compilations compared, ${same} identical, ${built} of them built a cartridge (the others are the same error lists, e.g. a v4 program on the v2 runtime)`);
     check_('and a good number of them built a cartridge (the comparison is not all errors)', built >= 20, `${built}`);
+    check_(`the default build against the previous compiler on the same ${nd} compilations: identical errors and warnings, a cartridge exactly when the previous compiler built one, and never more code`, sameD === nd && nd > 0, badD);
+    check_('... and the default build\'s code is smaller for a good number of them (the size pass does something on these programs)', smaller >= 20, `${smaller}`);
     // a program with several maps (9 is over the old limit; up to 8 is old territory): 8 maps that fit
     const eight = plain2(mapDecls(Array.from({ length: 8 }, (_, i) => i), 'm', (i) => `s${i}`), Array.from({ length: 8 }, (_, i) => `    LOADMAP m${i}`).join('\n') + '\n');
-    const o8 = oldCompile(eight, { runtime: REAL[2].rt, image: REAL[2].img, assets: ASSETS11 }), w8 = compile(eight, { runtime: REAL[2].rt, image: REAL[2].img, assets: ASSETS11 });
-    check_('8 maps of 770 bytes (they fit): identical image and DCK', o8.errors.length === 0 && w8.errors.length === 0 && sameBytes(o8.memory, w8.memory) && sameBytes(o8.dck, w8.dck));
+    const o8 = oldCompile(eight, { runtime: REAL[2].rt, image: REAL[2].img, assets: ASSETS11 }), w8 = compile(eight, { runtime: REAL[2].rt, image: REAL[2].img, assets: ASSETS11, ...CODEGEN_OFF });
+    check_('8 maps of 770 bytes (they fit): identical image and DCK (CODEGEN_OFF)', o8.errors.length === 0 && w8.errors.length === 0 && sameBytes(o8.memory, w8.memory) && sameBytes(o8.dck, w8.dck));
   }
   if (oldTmp) rmSync(oldTmp, { recursive: true, force: true });
 }

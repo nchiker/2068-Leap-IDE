@@ -24,7 +24,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse, tokenize } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
-import { compile, usageLines } from '../src/lang/arcade/arcade-compile.js';
+import { compile, usageLines, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { planPhasePool, noviewPoolPieces, NOVIEW_POOL_PIECES, poolPieces } from '../src/lang/arcade/arcade-window.js';
 import { sceneDisplayPlan, sceneModes } from '../src/lang/arcade/arcade-display.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
@@ -164,24 +164,27 @@ console.log('\n2. SCENE name NOWINDOW / NOVIEW: the checker');
 // 3. Code generation: the call
 // =================================================================================================================
 console.log('\n3. Code generation: the mode routine is called in every ENTER sequence and at boot, only when a clause exists');
-/** the offsets of every `CALL addr` in the code */
-const callsTo = (code, addr) => { const out = []; for (let i = 0; i + 2 < code.length; i++) if (code[i] === 0xCD && code[i + 1] === (addr & 255) && code[i + 2] === addr >> 8) out.push(i); return out; };
+/** the offsets of every `CALL addr` in the code; since the compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md F5) also of every `JP addr` (`CALL x / RET` is `JP x`): `forms` = [0xCD, 0xC3] by default, [0xCD] for CALL only */
+const callsTo = (code, addr, forms = [0xCD, 0xC3]) => { const out = []; for (let i = 0; i + 2 < code.length; i++) if (forms.includes(code[i]) && code[i + 1] === (addr & 255) && code[i + 2] === addr >> 8) out.push(i); return out; };
+/** the target address of the jump at offset i: JP nn (C3) or, since the size pass, JR d (18) in reach; -1 when there is no jump */
+const jmpAt = (code, base, i) => (code[i] === 0xC3 ? code[i + 1] | (code[i + 2] << 8) : code[i] === 0x18 ? base + i + 2 + ((code[i + 1] << 24) >> 24) : -1);
 const procAddr = (res, key) => res.map.procs[key];
 const hx = (v) => v.toString(16);
 {
   // three scenes: nowindow, window, nowindow; each enters the next (a ring), so every one is entered
-  const ring = W3(sc('a', 'NOWINDOW', '    SHOW ship AT 8, 8\n', '    ENTER b\n') + sc('b', '', '', '    ENTER c\n') + sc('c', 'NOWINDOW', '', '    ENTER a\n'));
+  // every scene has a body in INIT here: an INIT that is only RET makes `JP INIT` a RET, and the mode call before it a tail jump (checked separately below, `ringE`)
+  const ring = W3(sc('a', 'NOWINDOW', '    SHOW ship AT 8, 8\n', '    ENTER b\n') + sc('b', '', '    CLS\n', '    ENTER c\n') + sc('c', 'NOWINDOW', '    CLS\n', '    ENTER a\n'));
   const res = cmp(ring, FAKE3);
   check_('the ring of three scenes (NOWINDOW, window, NOWINDOW) builds on a runtime with RT_WINMODE', res.errors.length === 0 && !!res.dck, errText(res));
   const code = res.gen.code, base = res.gen.base;
   const calls = callsTo(code, WINMODE);
-  check_('exactly four calls: one at boot and one per scene in the ENTER dispatch', calls.length === 4, `${calls.length}`);
+  check_('exactly four calls: one at boot and one per scene in the ENTER dispatch (CALL RT_WINMODE each: the INIT jump follows it)', calls.length === 4 && callsTo(code, WINMODE, [0xCD]).length === 4, `${calls.length}`);
   const aOf = calls.map((i) => (code[i - 2] === 0x3E ? code[i - 1] : -1));
   check_('each is `LD A,n / CALL RT_WINMODE`, with A = 0 for the scenes with the clause and 1 for the other, in the order boot, a, b, c', aOf.join() === '0,0,1,0', aOf.join());
   const init = (k) => procAddr(res, `${'ABC'[k]}.INIT`);
-  const jpAfter = (i) => (code[i + 3] === 0xC3 ? code[i + 4] | (code[i + 5] << 8) : -1);
-  check_('the call of scene k in the dispatch is followed at once by `JP INIT` of that scene (after the slot clear and the initialiser copies: "after the reset and before INIT")', [1, 2, 3].every((n) => jpAfter(calls[n]) === init(n - 1)), calls.slice(1).map((i) => hx(jpAfter(i))).join());
-  check_('the boot call comes just before the first scene\'s INIT: `LD A,0 / CALL RT_WINMODE / LD (scene.sp),SP / JP INIT`', code[calls[0] + 3] === 0xED && code[calls[0] + 4] === 0x73 && code[calls[0] + 7] === 0xC3 && (code[calls[0] + 8] | (code[calls[0] + 9] << 8)) === init(0), `${hx(code[calls[0] + 3])} ${hx(code[calls[0] + 4])}`);
+  const jpAfter = (i) => jmpAt(code, base, i + 3);
+  check_('the call of scene k in the dispatch is followed at once by `JP INIT` of that scene (JR INIT when in reach; after the slot clear and the initialiser copies: "after the reset and before INIT")', [1, 2, 3].every((n) => jpAfter(calls[n]) === init(n - 1)), calls.slice(1).map((i) => hx(jpAfter(i))).join());
+  check_('the boot call comes just before the first scene\'s INIT: `LD A,0 / CALL RT_WINMODE / LD (scene.sp),SP / JP INIT` (JR INIT in reach)', code[calls[0] + 3] === 0xED && code[calls[0] + 4] === 0x73 && jmpAt(code, base, calls[0] + 7) === init(0), `${hx(code[calls[0] + 3])} ${hx(code[calls[0] + 4])}`);
   // after the reset: the ENTER sequence is `LD SP,(sp) / PUSH AF / CALL scn$reset / POP AF / LD (cur),A / <go blocks>`; scn$reset itself is emitted after the go blocks
   let enterAt = -1;
   for (let i = 0; i + 8 < code.length && enterAt < 0; i++) if (code[i] === 0xED && code[i + 1] === 0x7B && code[i + 4] === 0xF5 && code[i + 5] === 0xCD && code[i + 8] === 0xF1) enterAt = i;
@@ -194,6 +197,16 @@ const hx = (v) => v.toString(16);
   check_('the same program without the clauses has no call at all and is exactly 4 x 5 bytes shorter', plain.errors.length === 0 && callsTo(plain.gen.code, WINMODE).length === 0 && res.gen.code.length - plain.gen.code.length === 20, `${res.gen.code.length} / ${plain.gen.code.length}`);
   check_('a program without a clause never needs the routine: it builds on the real runtime of this tree (no RT_WINMODE) and equals the build on the fake one, byte for byte', (() => { const r0 = cmp(ring.replace(/ NOWINDOW/g, ''), REAL[3]); return r0.errors.length === 0 && sameBytes(r0.memory, plain.memory) && sameBytes(r0.dck, plain.dck); })());
   check_('usage.codegen / symbols are unchanged in shape: the scene symbols and procs are keyed as in any multi-scene game', Object.keys(res.map.procs).join() === 'A.INIT,A.FRAME,B.INIT,B.FRAME,C.INIT,C.FRAME');
+  {
+    // scenes whose INIT is only RET: `JP INIT` is a RET (the INIT's own return goes to the runtime), so the mode call that comes before it is the tail jump `LD A,n / JP RT_WINMODE`
+    const ringE = W3(sc('a', 'NOWINDOW', '    SHOW ship AT 8, 8\n', '    ENTER b\n') + sc('b', '', '', '    ENTER c\n') + sc('c', 'NOWINDOW', '', '    ENTER a\n'));
+    const re = cmp(ringE, FAKE3), ce = callsTo(re.gen.code, WINMODE), form = ce.map((i) => (re.gen.code[i] === 0xCD ? 'CALL' : 'JP'));
+    check_('scenes with an empty INIT (b, c): four mode calls in all, A = 0, 0, 1, 0; boot and scene a are CALLs (INIT jump follows), b and c are the tail jump LD A,n / JP RT_WINMODE', re.errors.length === 0 && ce.length === 4 && ce.map((i) => re.gen.code[i - 1]).join() === '0,0,1,0' && form.join() === 'CALL,CALL,JP,JP', form.join());
+    // the original shapes, exactly (CODEGEN_OFF)
+    const ro = cmp(ring, FAKE3, ASSETS11, CODEGEN_OFF), co = ro.gen.code, bo = ro.gen.base, cc = callsTo(co, WINMODE);
+    check_('CODEGEN_OFF: four CALL RT_WINMODE, each followed at once by JP INIT (C3 nn nn) of its scene, boot: LD A,0 / CALL / LD (sp),SP / JP INIT; and the program without the clauses is exactly 4 x 5 bytes shorter', ro.errors.length === 0 && cc.length === 4 && callsTo(co, WINMODE, [0xCD]).length === 4 && [1, 2, 3].every((n) => co[cc[n] + 3] === 0xC3 && (co[cc[n] + 4] | (co[cc[n] + 5] << 8)) === procAddr(ro, `${'ABC'[n - 1]}.INIT`)) && co[cc[0] + 3] === 0xED && co[cc[0] + 7] === 0xC3 && ro.gen.code.length - cmp(ring.replace(/ NOWINDOW/g, ''), FAKE3, ASSETS11, CODEGEN_OFF).gen.code.length === 20, `${cc.length}`);
+    void bo;
+  }
 
   // the first scene without the clause: boot A = 1
   const second = W3(sc('a', '', '', '    ENTER b\n') + sc('b', 'NOWINDOW', '', '    ENTER a\n'));
@@ -203,7 +216,7 @@ const hx = (v) => v.toString(16);
   // one scene with the clause, no ENTER: no driver, the call at boot only
   const solo = W3(sc('only', 'NOWINDOW', '    CLS\n'));
   const r3 = cmp(solo, FAKE3), c3 = callsTo(r3.gen.code, WINMODE);
-  check_('a one-scene game with NOWINDOW and no ENTER: no driver, one call at boot (A = 0) followed by JP INIT', r3.errors.length === 0 && !r3.gen.usage.driver && c3.length === 1 && r3.gen.code[c3[0] - 1] === 0 && r3.gen.code[c3[0] + 3] === 0xC3 && (r3.gen.code[c3[0] + 4] | (r3.gen.code[c3[0] + 5] << 8)) === procAddr(r3, 'INIT'), `${c3.length} calls, driver ${r3.gen.usage.driver}`);
+  check_('a one-scene game with NOWINDOW and no ENTER: no driver, one call at boot (A = 0) followed by JP INIT (JR INIT)', r3.errors.length === 0 && !r3.gen.usage.driver && c3.length === 1 && r3.gen.code[c3[0] - 1] === 0 && jmpAt(r3.gen.code, r3.gen.base, c3[0] + 3) === procAddr(r3, 'INIT'), `${c3.length} calls, driver ${r3.gen.usage.driver}`);
   const solo2 = W3(sc('only', 'NOWINDOW', '', '    ENTER only\n'));
   const r4 = cmp(solo2, FAKE3), c4 = callsTo(r4.gen.code, WINMODE);
   check_('a one-scene NOWINDOW game with ENTER of itself: the driver, so a call at boot and one in the dispatch, both A = 0', r4.errors.length === 0 && c4.length === 2 && c4.every((i) => r4.gen.code[i - 1] === 0), `${c4.length}`);
@@ -214,19 +227,29 @@ const hx = (v) => v.toString(16);
   check_('the call goes to whatever address runtime.json gives RT_WINMODE', r5.errors.length === 0 && callsTo(r5.gen.code, 0x3FAA).length === 4 && callsTo(r5.gen.code, WINMODE).length === 0);
 
   // v4: RT_VIEWMODE
-  const ring4 = V4(sc('a', 'NOVIEW', '', '    ENTER b\n') + sc('b', '', '', '    ENTER a\n'));
+  // (with a body in each INIT: see `ringE` above for what an INIT that is only RET does to the call)
+  const ring4 = V4(sc('a', 'NOVIEW', '    CLS\n', '    ENTER b\n') + sc('b', '', '    CLS\n', '    ENTER a\n'));
   const q = cmp(ring4, FAKE4), qc = callsTo(q.gen?.code ?? [], VIEWMODE);
   check_('v4: NOVIEW calls RT_VIEWMODE (boot, a, b: A = 0, 0, 1) and never RT_WINMODE', q.errors.length === 0 && qc.length === 3 && qc.map((i) => q.gen.code[i - 1]).join() === '0,0,1' && callsTo(q.gen.code, WINMODE).length === 0, errText(q) + qc.length);
   const q0 = cmp(ring4.replace(' NOVIEW', ''), FAKE4);
   check_('v4: without the clause no call and 15 bytes less', q0.errors.length === 0 && callsTo(q0.gen.code, VIEWMODE).length === 0 && q.gen.code.length - q0.gen.code.length === 15, `${q.gen.code.length} / ${q0.gen.code.length}`);
+  {
+    const qo = cmp(ring4, FAKE4, ASSETS11, CODEGEN_OFF), q0o = cmp(ring4.replace(' NOVIEW', ''), FAKE4, ASSETS11, CODEGEN_OFF);
+    check_('CODEGEN_OFF v4: three CALL RT_VIEWMODE, exactly 15 bytes more than without the clause', qo.errors.length === 0 && callsTo(qo.gen.code, VIEWMODE, [0xCD]).length === 3 && qo.gen.code.length - q0o.gen.code.length === 15, `${qo.gen.code.length - q0o.gen.code.length}`);
+  }
   check_('v4: the program without the clause equals the build on the tree\'s real runtime, byte for byte', (() => { const r0 = cmp(ring4.replace(' NOVIEW', ''), REAL[4]); return r0.errors.length === 0 && sameBytes(r0.memory, q0.memory); })());
 
   // ENTER sequences are the same size per scene (5 bytes), whatever the scene count
   for (const n of [2, 4, 8]) {
     const names = Array.from({ length: n }, (_, k) => `s${k}`);
-    const body = (cl) => W3(names.map((nm, k) => sc(nm, k === 0 && cl ? 'NOWINDOW' : '', '', `    ENTER ${names[(k + 1) % n]}\n`)).join(''));
+    const body = (cl) => W3(names.map((nm, k) => sc(nm, k === 0 && cl ? 'NOWINDOW' : '', '    CLS\n', `    ENTER ${names[(k + 1) % n]}\n`)).join(''));
     const a = cmp(body(true), FAKE3), b = cmp(body(false), FAKE3);
-    check_(`${n} scenes, one with the clause: ${n + 1} calls, ${5 * (n + 1)} bytes more than without`, a.errors.length === 0 && callsTo(a.gen.code, WINMODE).length === n + 1 && a.gen.code.length - b.gen.code.length === 5 * (n + 1), `${a.gen.code.length - b.gen.code.length}`);
+    // 5 bytes a call (LD A,n / CALL), as before; the dispatch grows by that much, so the compiler size pass's JR in reach turns back into a JP for a jump or two when the
+    // scenes are far apart: 15, 26 and 48 bytes for 2, 4 and 8 scenes (5 x (n + 1) = 15, 25, 45, plus 0, 1 and 3 jumps that no longer reach)
+    const wantBytes = { 2: 15, 4: 26, 8: 48 }[n];
+    check_(`${n} scenes, one with the clause: ${n + 1} calls, ${wantBytes} bytes more than without (5 x ${n + 1} = ${5 * (n + 1)}, plus ${wantBytes - 5 * (n + 1)} JR that became JP: out of reach)`, a.errors.length === 0 && callsTo(a.gen.code, WINMODE).length === n + 1 && a.gen.code.length - b.gen.code.length === wantBytes, `${a.gen.code.length - b.gen.code.length}`);
+    const ao = cmp(body(true), FAKE3, ASSETS11, CODEGEN_OFF), bo = cmp(body(false), FAKE3, ASSETS11, CODEGEN_OFF);
+    check_(`CODEGEN_OFF: ${n} scenes, one with the clause: ${n + 1} calls, exactly ${5 * (n + 1)} bytes more than without (5 per call)`, ao.errors.length === 0 && callsTo(ao.gen.code, WINMODE, [0xCD]).length === n + 1 && ao.gen.code.length - bo.gen.code.length === 5 * (n + 1), `${ao.gen.code.length - bo.gen.code.length}`);
   }
 }
 

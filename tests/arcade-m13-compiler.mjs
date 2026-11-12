@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse, tokenize } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
-import { compile } from '../src/lang/arcade/arcade-compile.js';
+import { compile, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { camMax } from '../src/lang/arcade/arcade-window.js';
 import { scanArcade, inWorldList } from '../src/lang/arcade/arcade-scan.js';
 import { ARCADE_WORDS, RESERVED } from '../src/lang/arcade/arcade-words.js';
@@ -276,8 +276,8 @@ console.log('\n3. The reference interpreter: signed index, in range, negative, p
 console.log('\n4. Code: constant index = WORLD name, the list entries, lib$worldidx');
 {
   const only = (frame, table) => table.filter(([n]) => new RegExp(`\\b${n}\\b`).test(frame)).map(([n, a]) => `MAP ${n} = "${a}"\n`).join('');
-  const base3 = (frame) => cmp(g3(frame, '', only(frame, [['second', 'w60'], ['third', 'w24'], ['fourth', 'w128']])), 3);
-  const base4 = (frame) => cmp(g4(frame, '', only(frame, [['other', 'p8'], ['bigger', 'p20'], ['huge', 'p32']])), 4);
+  const base3 = (frame, opts = {}) => cmp(g3(frame, '', only(frame, [['second', 'w60'], ['third', 'w24'], ['fourth', 'w128']])), 3, undefined, opts);
+  const base4 = (frame, opts = {}) => cmp(g4(frame, '', only(frame, [['other', 'p8'], ['bigger', 'p20'], ['huge', 'p32']])), 4, undefined, opts);
   const o0 = base3('    v = 1'), n0 = o0.gen.code.length;
   // a constant index in range compiles to the WORLD name code
   for (const [v, mk, base, names] of [[3, g3, base3, ['level', 'second', 'third', 'fourth']], [4, g4, base4, ['level', 'other', 'bigger', 'huge']]]) {
@@ -304,8 +304,17 @@ console.log('\n4. Code: constant index = WORLD name, the list entries, lib$world
   const idxOf = (hay, needle) => { for (let i = 0; i + needle.length <= hay.length; i++) { let k = 0; while (k < needle.length && hay[i + k] === needle[k]) k++; if (k === needle.length) return i; } return -1; };
   const hAt = idxOf(code, helper3);
   check_('v3: lib$worldidx = PUSH HL / OR A / SBC HL,BC / POP HL / RET NC / LD B,H / LD C,L / ADD HL,HL / ADD HL,HL / ADD HL,BC / ADD HL,DE / LD E,(HL) / INC HL / LD D,(HL) / INC HL / LD A,(HL) / INC HL / PUSH DE / LD E,(HL) / INC HL / LD D,(HL) / POP HL / JP RT_WORLDLOAD (26 bytes)', hAt >= 0 && rd16(code, hAt + 24) === REAL[3].rt.symbols.RT_WORLDLOAD, hAt < 0 ? 'helper not found' : `${hex(rd16(code, hAt + 24))} vs ${hex(REAL[3].rt.symbols.RT_WORLDLOAD)}`);
-  const callAt = hAt < 0 ? -1 : idxOf(code, [0xCD, (one.gen.base + hAt) & 255, ((one.gen.base + hAt) >> 8) & 255]);
-  check_('... called once as LD HL,(v) / LD DE,list / LD BC,3 / CALL lib$worldidx (index in HL, list in DE, count in BC)', callAt >= 9 && code[callAt - 3] === 0x01 && code[callAt - 2] === 3 && code[callAt - 1] === 0 && code[callAt - 6] === 0x11 && code[callAt - 9] === 0x2A, callAt < 0 ? 'call not found' : [...code.slice(callAt - 9, callAt + 3)].map((x) => x.toString(16)).join(' '));
+  // Compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md): the call site is LD HL,(v) / LD DE,list / LD BC,3 and then lib$worldidx is reached by a CALL, or, as the last
+  // statement of the PROC (`CALL x / RET` is a tail jump), by a JR (lib$worldidx is in reach; a JP when it is not)
+  const hop = (cc, base_, i) => (cc[i] === 0xCD || cc[i] === 0xC3 ? { len: 3, to: cc[i + 1] | (cc[i + 2] << 8), how: cc[i] === 0xCD ? 'CALL' : 'JP' } : cc[i] === 0x18 ? { len: 2, to: base_ + i + 2 + ((cc[i + 1] << 24) >> 24), how: 'JR' } : null);
+  const siteOf = (cc, base_, target) => { for (let i = 0; i + 9 < cc.length; i++) if (cc[i] === 0x2A && cc[i + 3] === 0x11 && cc[i + 6] === 0x01 && cc[i + 7] === 3 && cc[i + 8] === 0) { const h = hop(cc, base_, i + 9); if (h && h.to === target) return { at: i, how: h.how, len: h.len }; } return null; };
+  const st = hAt < 0 ? null : siteOf(code, one.gen.base, one.gen.base + hAt);
+  check_('... called once as LD HL,(v) / LD DE,list / LD BC,3 / then lib$worldidx: the last statement of the PROC, so the tail jump JR lib$worldidx (index in HL, list in DE, count in BC)', !!st && st.how === 'JR' && [...code.keys()].filter((i) => code[i] === 0x2A && code[i + 3] === 0x11 && code[i + 6] === 0x01 && code[i + 7] === 3 && code[i + 8] === 0 && hop(code, one.gen.base, i + 9)?.to === one.gen.base + hAt).length === 1, !st ? 'call not found' : `${st.how}`);
+  {
+    const oo = base3('    WORLD v OF level, second, third', CODEGEN_OFF), noo = base3('    v = v', CODEGEN_OFF), ho = idxOf(oo.gen.code, helper3);
+    const so = ho < 0 ? null : siteOf(oo.gen.code, oo.gen.base, oo.gen.base + ho);
+    check_('CODEGEN_OFF: the original call site LD HL,(v) / LD DE,list / LD BC,3 / CALL lib$worldidx / RET, and the first list statement costs 12 + 26 + 15 - 6 = 47 bytes over `v = v`', !!so && so.how === 'CALL' && oo.gen.code[so.at + 12] === 0xC9 && oo.gen.code.length - noo.gen.code.length === 12 + 26 + 15 - 6, so ? `${so.how} ${oo.gen.code.length - noo.gen.code.length}` : 'helper / site not found');
+  }
   const entries3 = one.gen.fixups.length;
   check_('the list has one entry per name: 3 fixups (the DW src of each, nothing else)', entries3 === 3, `${entries3}`);
   const stride = one.gen.fixups[1].at - one.gen.fixups[0].at;
@@ -323,7 +332,7 @@ console.log('\n4. Code: constant index = WORLD name, the list entries, lib$world
   check_('v3: each entry in the image holds world_w and cam_max of its map (camMax(world_w, bands)), and a source address in the mapped part', entryOk, entryWhy);
   // the size: the list statement costs 3 + 3 + 3 + 3 = 12 at the call site, once the helper (26) and the list (5 per name)
   const d1 = one.gen.code.length - noStmt.gen.code.length;
-  check_('v3: the first list statement costs LD HL,(v) 3 + LD DE 3 + LD BC 3 + CALL 3 + helper 26 + list 15 = 50 bytes over `v = v` (which costs LD HL,(v) 3 + LD (v),HL 3: 6 bytes, so 44 + 6)', d1 === 12 + 26 + 15 - 6, `${d1}`);
+  check_('v3: the first list statement costs LD HL,(v) 3 + LD DE 3 + LD BC 3 + JR 2 (the tail jump: no CALL, no RET after it) + helper 26 + list 15 = 52 bytes, over `v = v` (LD HL,(v) 3 + LD (v),HL 3 + the PROC\'s RET 1 = 7 bytes) 45', d1 === 11 + 26 + 15 - 7, `${d1}`);
   const two = v3('    WORLD v OF level, second, third\n    WORLD v + 1 OF level, second, third');
   const dd = two.gen.code.length - one.gen.code.length;
   check_('v3: a second statement with the SAME list shares the helper and the list: it costs only its call site (index expression + 9 bytes)', dd > 0 && dd <= 9 + 8 && two.gen.fixups.length === 3, `${dd}, ${two.gen.fixups.length} fixups`);
@@ -348,7 +357,11 @@ console.log('\n4. Code: constant index = WORLD name, the list entries, lib$world
   ['level', 'other', 'bigger'].forEach((nm, i) => { const f = o4.gen.fixups[i]; if (o4.memory[f.at + 2] !== plans[nm][0] || o4.memory[f.at + 3] !== plans[nm][1]) { pOk = false; pWhy += `${nm}: ${o4.memory[f.at + 2]}x${o4.memory[f.at + 3]}; `; } });
   check_('v4: each entry holds map_w and map_h of its plan (12 x 12, 8 x 6, 20 x 14)', pOk, pWhy);
   const d4 = o4.gen.code.length - n4.gen.code.length;
-  check_('v4: the first list statement costs 12 + 20 + 12 - 6 = 38 bytes over `v = v`', d4 === 12 + 20 + 12 - 6, `${d4}`);
+  check_('v4: the first list statement costs 11 + 20 + 12 - 7 = 36 bytes over `v = v` (the call site is LD HL,(v) 3 + LD DE 3 + LD BC 3 + JR 2, the PROC\'s RET is not needed after the tail jump; 38 with CALL and RET)', d4 === 11 + 20 + 12 - 7, `${d4}`);
+  {
+    const d4o = base4('    WORLD v OF level, other, bigger', CODEGEN_OFF).gen.code.length - base4('    v = v', CODEGEN_OFF).gen.code.length;
+    check_('CODEGEN_OFF v4: the first list statement costs 12 + 20 + 12 - 6 = 38 bytes over `v = v` (CALL lib$worldidx / RET, the original)', d4o === 12 + 20 + 12 - 6, `${d4o}`);
+  }
   // no helper without the form, in a program with WORLD name
   const plainW = base3('    WORLD second');
   check_('a program with only `WORLD name` has no lib$worldidx (the helper is present only when used)', idxOf(plainW.gen.code, helper3) < 0);

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
-import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
+import { compile, requiredRuntime, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { ASSETS, HAND, genProgram, genV3, genV4, sceneKeys, rng } from './arcade-m9-common.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -789,9 +789,9 @@ else {
   const C = RT2.rt.constants, S = RT2.rt.symbols;
   const rd16 = (m, a) => m[a] | (m[a + 1] << 8);
   /** n scenes with the same names; scene k enters scene (k + 1) mod n from its FRAME; the first has `extra` too */
-  const nScenes = (n, { vars = true, maps = false } = {}) => {
+  const nScenes = (n, { vars = true, maps = false, init = '' } = {}) => {
     let s = `GAME "n"\nFRAMERATE 30\nSPRITE ship = "orb"\n${maps ? 'TILESET ts = "ts"\nMAP ma = "m1"\n' : ''}DIM g\n`;
-    for (let k = 0; k < n; k++) s += scene('s' + k, { decl: vars ? `DIM x, y, z\nDIM q(${k + 1})` : '', procs: '  PROC UPDATE()\n    g = g + ' + (k + 1) + '\n  ENDP\n', frame: `    CALL UPDATE()\n    ENTER s${(k + 1) % n}` });
+    for (let k = 0; k < n; k++) s += scene('s' + k, { decl: vars ? `DIM x, y, z\nDIM q(${k + 1})` : '', init: k === 0 ? init : '', procs: '  PROC UPDATE()\n    g = g + ' + (k + 1) + '\n  ENDP\n', frame: `    CALL UPDATE()\n    ENTER s${(k + 1) % n}` });
     return s;
   };
   const build = (src) => { const r = cmp(src, RT2); if (r.errors.length) throw new Error(errText(r)); return r; };
@@ -861,59 +861,96 @@ else {
     info(`hidden driver slots: ${hidden / 2} (${hidden} bytes; section 4.5 of the contract says 3, section 14 says 2 were built)`);
     check_('the variables count in GAME_VARS like any variable: usage.varBytes covers the named slots plus at least the 2 hidden ones (scene index, saved SP)', hidden >= 4, `varBytes ${r.usage.varBytes}, named ${named}`);
   }
-  // -- the bytes of the driver (contract section 5's listing)
-  {
+  // -- the bytes of the driver (contract section 5's listing). Compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md): the same listing in its
+  //    NEW shape on the default build (a JP in reach is a JR, an INIT that is only RET makes `JP INIT` a RET, `CALL RT_CLS / RET` is `JP RT_CLS`),
+  //    and again with CODEGEN_OFF, where the listing is exactly the original one (JP only, CALL RT_CLS).
+  for (const off of [false, true]) {
+    const T = off ? 'CODEGEN_OFF: ' : '';
     const N = 3, src = nScenes(N);
-    const r = build(src), c = code(r), base = r.gen.base;
+    const bldO = (s2) => { const r = compile(s2, { runtime: RT2.rt, image: RT2.img, assets: ASSETS, ...(off ? CODEGEN_OFF : {}) }); if (r.errors.length) throw new Error(errText(r)); return r; };
+    const r = bldO(src), c = code(r), base = r.gen.base;
     const sy = sym(r), p = r.map.procs;
     const o = (a) => a - base;
     const w = (a) => [a & 255, a >> 8];
-    // frame$entry: LD (scn$sp),SP ; LD A,(scn$cur) ; OR A ; JP Z,s0 ; DEC A ; JP Z,s1 ... ; JP s(n-1)
+    // A jump at offset i: the long form (JP nn, JP Z,nn, JP NZ,nn: C3 / CA / C2) or, on the default build only, its relaxed JR form (18 / 28 / 20 d).
+    // Returns {len, to} with `to` the target address, or null.
+    const LONG = { jmp: 0xC3, jz: 0xCA, jnz: 0xC2 }, SHORT = { jmp: 0x18, jz: 0x28, jnz: 0x20 };
+    const decJump = (cc, i, kind) => {
+      if (cc[i] === LONG[kind]) return { len: 3, to: cc[i + 1] | (cc[i + 2] << 8) };
+      if (!off && cc[i] === SHORT[kind]) return { len: 2, to: base + i + 2 + ((cc[i + 1] << 24) >> 24) };
+      return null;
+    };
+    // items: byte arrays (compared exactly) or {k: 'jmp' | 'jz' | 'jnz', to: address}; returns the offset after the match, or -1
+    const matchSeq = (cc, i, items) => {
+      for (const it of items) {
+        if (Array.isArray(it)) { if (!it.every((b, k) => cc[i + k] === b)) return -1; i += it.length; }
+        else { const j = decJump(cc, i, it.k); if (!j || j.to !== it.to) return -1; i += j.len; }
+      }
+      return i;
+    };
+    const findSeq = (cc, from, items, lim = 400) => { for (let i = from; i < Math.min(cc.length - 1, from + lim); i++) if (matchSeq(cc, i, items) >= 0) return i; return -1; };
+    // frame$entry: LD (scn$sp),SP ; LD A,(scn$cur) ; OR A ; JP Z,s0 ; DEC A ; JP Z,s1 ... ; JP s(n-1)   (JR for the jumps in reach on the default build)
     const fe = o(r.map.entries.frame);
     const spAddr = c[fe + 2] | (c[fe + 3] << 8);
-    check_('frame$entry begins LD (scn$sp),SP (ED 73 nn nn) with nn a hidden slot', c[fe] === 0xED && c[fe + 1] === 0x73 && spAddr >= C.GAME_VARS_BASE && spAddr <= C.GAME_VARS_LIMIT, `${c[fe].toString(16)} ${c[fe + 1].toString(16)} -> 0x${spAddr.toString(16)}`);
+    check_(T + 'frame$entry begins LD (scn$sp),SP (ED 73 nn nn) with nn a hidden slot', c[fe] === 0xED && c[fe + 1] === 0x73 && spAddr >= C.GAME_VARS_BASE && spAddr <= C.GAME_VARS_LIMIT, `${c[fe].toString(16)} ${c[fe + 1].toString(16)} -> 0x${spAddr.toString(16)}`);
     if (sy) {
-      const want = [0xED, 0x73, ...w(spAddr), 0x3A, ...w(sy.cur), 0xB7, 0xCA, ...w(p['S0.FRAME']), 0x3D, 0xCA, ...w(p['S1.FRAME']), 0xC3, ...w(p['S2.FRAME'])];
-      check_('frame$entry dispatch (contract listing for 3 scenes): LD A,(scn$cur); OR A; JP Z,s0; DEC A; JP Z,s1; JP s2 -- tail jumps to each scene\'s FRAME', want.every((b, i) => c[fe + i] === b), `got ${Array.from(c.slice(fe, fe + want.length), (b) => b.toString(16)).join(' ')}`);
-      check_('scn$sp and scn$cur are different slots', spAddr !== sy.cur);
+      const want = [[0xED, 0x73, ...w(spAddr), 0x3A, ...w(sy.cur), 0xB7], { k: 'jz', to: p['S0.FRAME'] }, [0x3D], { k: 'jz', to: p['S1.FRAME'] }, { k: 'jmp', to: p['S2.FRAME'] }];
+      check_(T + 'frame$entry dispatch (contract listing for 3 scenes): LD A,(scn$cur); OR A; JP Z,s0; DEC A; JP Z,s1; JP s2 -- tail jumps to each scene\'s FRAME' + (off ? '' : ' (a JR where the scene is in reach)'), matchSeq(c, fe, want) >= 0, `got ${Array.from(c.slice(fe, fe + 20), (b) => b.toString(16)).join(' ')}`);
+      check_(T + 'scn$sp and scn$cur are different slots', spAddr !== sy.cur);
     }
-    // entry$init: ... LD (scn$sp),SP ; JP P$s0$INIT
-    const ie = o(r.map.entries.init);
-    const tail = [0xED, 0x73, ...w(spAddr), 0xC3, ...w(p['S0.INIT'])];
-    let found = -1;
-    for (let i = ie; i < Math.min(c.length - tail.length, ie + 400); i++) if (tail.every((b, k) => c[i + k] === b)) { found = i; break; }
-    check_('entry$init ends with LD (scn$sp),SP ; JP P$s0$INIT (the INIT\'s RET returns to the runtime)', found >= 0, 'sequence not found within 400 bytes of the init entry');
-    // ENTER k = LD A,k ; JP scn$enter (5 bytes)
+    // entry$init: ... LD (scn$sp),SP ; JP P$s0$INIT. With an INIT that has a body the jump stays (JR in reach); with an INIT that is only RET, `JP INIT` is a RET
+    // on the default build (the INIT's RET returns to the runtime either way).
+    {
+      const ri = bldO(nScenes(N, { init: '    g = 1' })), ci = code(ri), pi = ri.map.procs, ie = ri.map.entries.init - ri.gen.base;
+      const found = findSeq(ci, ie, [[0xED, 0x73, ...w(spAddr)], { k: 'jmp', to: pi['S0.INIT'] }]);
+      check_(T + 'entry$init ends with LD (scn$sp),SP ; JP P$s0$INIT (the INIT\'s RET returns to the runtime), INIT with a body' + (off ? '' : ' (a JR when in reach)'), found >= 0, 'sequence not found within 400 bytes of the init entry');
+      const ie0 = o(r.map.entries.init);
+      const bare = findSeq(c, ie0, [[0xED, 0x73, ...w(spAddr)], off ? { k: 'jmp', to: p['S0.INIT'] } : [0xC9]]);
+      check_(T + (off ? 'entry$init with an empty INIT: LD (scn$sp),SP ; JP P$s0$INIT (the original shape)' : 'entry$init with an empty INIT: LD (scn$sp),SP ; RET (the JP to an INIT that is only RET became a RET: the same return to the runtime)'), bare >= 0, 'sequence not found within 400 bytes of the init entry');
+    }
+    // ENTER k = LD A,k ; JP scn$enter (5 bytes; 4 with a JR in reach on the default build)
     const targets = new Set(), seen = [];
     for (let k = 0; k < N; k++) {
-      let at_ = -1;
-      for (let i = 0; i < c.length - 4; i++) if (c[i] === 0x3E && c[i + 1] === k && c[i + 2] === 0xC3 && (c[i + 3] | (c[i + 4] << 8)) >= base && (c[i + 3] | (c[i + 4] << 8)) < base + c.length) { at_ = i; break; }
+      let at_ = -1, tgt = 0;
+      for (let i = 0; i < c.length - 4 && at_ < 0; i++) {
+        if (c[i] !== 0x3E || c[i + 1] !== k) continue;
+        const j = decJump(c, i + 2, 'jmp');
+        if (j && j.to >= base && j.to < base + c.length) { at_ = i; tgt = j.to; }
+      }
       seen.push(at_);
-      if (at_ >= 0) targets.add(c[at_ + 3] | (c[at_ + 4] << 8));
+      if (at_ >= 0) targets.add(tgt);
     }
-    check_('each ENTER k is LD A,k ; JP scn$enter (3E k C3 nn nn): found for k = 0, 1, 2, all jumping to ONE routine', seen.every((x) => x >= 0) && targets.size === 1, `positions ${seen}, targets ${[...targets].map((t) => t.toString(16))}`);
+    check_(T + 'each ENTER k is LD A,k ; JP scn$enter (3E k C3 nn nn, or 3E k 18 d on the default build): found for k = 0, 1, 2, all jumping to ONE routine', seen.every((x) => x >= 0) && targets.size === 1, `positions ${seen}, targets ${[...targets].map((t) => t.toString(16))}`);
     if (targets.size === 1) {
       const e = o([...targets][0]);
       const sp2 = c[e + 2] | (c[e + 3] << 8);
-      check_('scn$enter begins LD SP,(scn$sp) (ED 7B nn nn, the same slot) ; PUSH AF ; CALL scn$reset ; POP AF ; LD (scn$cur),A', c[e] === 0xED && c[e + 1] === 0x7B && sp2 === spAddr && c[e + 4] === 0xF5 && c[e + 5] === 0xCD && c[e + 8] === 0xF1 && c[e + 9] === 0x32 && sy && (c[e + 10] | (c[e + 11] << 8)) === sy.cur, `got ${Array.from(c.slice(e, e + 12), (b) => b.toString(16)).join(' ')}`);
+      check_(T + 'scn$enter begins LD SP,(scn$sp) (ED 7B nn nn, the same slot) ; PUSH AF ; CALL scn$reset ; POP AF ; LD (scn$cur),A', c[e] === 0xED && c[e + 1] === 0x7B && sp2 === spAddr && c[e + 4] === 0xF5 && c[e + 5] === 0xCD && c[e + 8] === 0xF1 && c[e + 9] === 0x32 && sy && (c[e + 10] | (c[e + 11] << 8)) === sy.cur, `got ${Array.from(c.slice(e, e + 12), (b) => b.toString(16)).join(' ')}`);
       const reset = o(c[e + 6] | (c[e + 7] << 8));
       // scn$reset: CALL RT_SILENCE ; hide loop (CALL RT_HIDE) ; XOR A / CALL RT_INK ; XOR A / CALL RT_BRIGHT ; LD A,7 / CALL RT_PAPER ; LD A,BORDER_COLOUR / CALL RT_BORDER ; CALL RT_CLS ; RET
+      // (the last `CALL RT_CLS / RET` is `JP RT_CLS` on the default build: a tail call; RT_CLS returns with a plain RET)
       const seqAt = (from, bytes, lim = 400) => { for (let i = from; i < Math.min(c.length - bytes.length, from + lim); i++) if (bytes.every((b, k) => c[i + k] === b)) return i; return -1; };
       const bc = C.BORDER_COLOUR ?? S.BORDER_COLOUR ?? 1;
       const callAt = (a) => seqAt(reset, [0xCD, ...w(a)]);
       const iSil = callAt(S.RT_SILENCE), iHide = callAt(S.RT_HIDE);
       const iInk = seqAt(reset, [0xAF, 0xCD, ...w(S.RT_INK)]), iBr = seqAt(reset, [0xAF, 0xCD, ...w(S.RT_BRIGHT)]), iPap = seqAt(reset, [0x3E, 0x07, 0xCD, ...w(S.RT_PAPER)]);
-      const iBor = seqAt(reset, [0x3E, bc, 0xCD, ...w(S.RT_BORDER)]), iCls = callAt(S.RT_CLS), iMap = callAt(S.RT_LOADMAP);
-      check_('scn$reset: every routine of contract section 3 is called: RT_SILENCE, RT_HIDE, XOR A/RT_INK, XOR A/RT_BRIGHT, LD A,7/RT_PAPER, LD A,BORDER_COLOUR/RT_BORDER, RT_CLS', [iSil, iHide, iInk, iBr, iPap, iBor, iCls].every((x) => x >= 0), JSON.stringify({ iSil, iHide, iInk, iBr, iPap, iBor, iCls }));
-      check_('... in the order sound, sprites, text state, border, screen (RT_INK / RT_BRIGHT / RT_PAPER among themselves in either order: section 3 and 5 list them differently)', iSil < iHide && iHide < Math.min(iInk, iBr, iPap) && Math.max(iInk, iBr, iPap) < iBor && iBor < iCls, JSON.stringify({ iSil, iHide, iInk, iBr, iPap, iBor, iCls }));
-      check_('no map declared: RT_LOADMAP is not called by the reset', iMap < 0, `at ${iMap}`);
-      check_('the reset does not call RT_SHOWF on the v2 runtime (no frames)', S.RT_SHOWF === undefined);
+      const iBor = seqAt(reset, [0x3E, bc, 0xCD, ...w(S.RT_BORDER)]);
+      const iClsCall = callAt(S.RT_CLS), iClsTail = off ? -1 : seqAt(reset, [0xC3, ...w(S.RT_CLS)]);
+      const iCls = iClsCall >= 0 ? iClsCall : iClsTail, iMap = Math.max(callAt(S.RT_LOADMAP), off ? -1 : seqAt(reset, [0xC3, ...w(S.RT_LOADMAP)]));
+      check_(T + 'scn$reset: every routine of contract section 3 is called: RT_SILENCE, RT_HIDE, XOR A/RT_INK, XOR A/RT_BRIGHT, LD A,7/RT_PAPER, LD A,BORDER_COLOUR/RT_BORDER, RT_CLS (CALL, or JP as the last statement of the routine)', [iSil, iHide, iInk, iBr, iPap, iBor, iCls].every((x) => x >= 0), JSON.stringify({ iSil, iHide, iInk, iBr, iPap, iBor, iCls }));
+      check_(T + '... in the order sound, sprites, text state, border, screen (RT_INK / RT_BRIGHT / RT_PAPER among themselves in either order: section 3 and 5 list them differently)', iSil < iHide && iHide < Math.min(iInk, iBr, iPap) && Math.max(iInk, iBr, iPap) < iBor && iBor < iCls, JSON.stringify({ iSil, iHide, iInk, iBr, iPap, iBor, iCls }));
+      check_(T + (off ? 'RT_CLS is called (CALL), not jumped to, in the original code' : 'RT_CLS is the reset\'s tail call (JP RT_CLS: the last call of the routine, not a CALL / RET pair)'), off ? iClsCall >= 0 : iClsTail >= 0 && iClsCall < 0, JSON.stringify({ iClsCall, iClsTail }));
+      check_(T + 'no map declared: RT_LOADMAP is not called by the reset', iMap < 0, `at ${iMap}`);
+      check_(T + 'the reset does not call RT_SHOWF on the v2 runtime (no frames)', S.RT_SHOWF === undefined);
       // with a map
-      const rm = build(nScenes(2, { maps: true })), cm_ = code(rm), em = rm.map.entries.frame - rm.gen.base;
+      const rm = bldO(nScenes(2, { maps: true })), cm_ = code(rm);
+      const em = cm_.length;
       void em;
-      const loadmapCalls = []; for (let i = 0; i < cm_.length - 2; i++) if (cm_[i] === 0xCD && (cm_[i + 1] | (cm_[i + 2] << 8)) === S.RT_LOADMAP) loadmapCalls.push(i);
-      check_('a game with a screen MAP: the reset calls RT_LOADMAP (XOR A before it: map 0 at the first map) after RT_CLS', loadmapCalls.length >= 1 && cm_[loadmapCalls[0] - 1] === 0xAF, `calls at ${loadmapCalls}`);
-      check_('... and the image uses the extended header and map table (as if the program had a LOADMAP): header length 20; the same game with ONE scene and no ENTER has the 16-byte header', rm.usage.header === C.GAME_HEADER_EXT_LEN && build(`GAME "n"\nFRAMERATE 30\nSPRITE ship = "orb"\nTILESET ts = "ts"\nMAP ma = "m1"\n` + scene('s0')).usage.header === C.GAME_HEADER_LEN, `${rm.usage.header} / ext ${C.GAME_HEADER_EXT_LEN}`);
+      // the reset of this game: ... CALL RT_CLS ; XOR A ; (CALL | JP) RT_LOADMAP -- the map is loaded after the screen is cleared, with map 0
+      const mapSeq = (cc, tailForm) => { for (let i = 0; i < cc.length - 8; i++) if (cc[i] === 0xCD && (cc[i + 1] | (cc[i + 2] << 8)) === S.RT_CLS && cc[i + 3] === 0xAF && cc[i + 4] === (tailForm ? 0xC3 : 0xCD) && (cc[i + 5] | (cc[i + 6] << 8)) === S.RT_LOADMAP) return i; return -1; };
+      const loadmapCalls = []; for (let i = 0; i < cm_.length - 2; i++) if ((cm_[i] === 0xCD || (!off && cm_[i] === 0xC3)) && (cm_[i + 1] | (cm_[i + 2] << 8)) === S.RT_LOADMAP) loadmapCalls.push(i);
+      check_(T + 'a game with a screen MAP: the reset calls RT_LOADMAP (XOR A before it: map 0 at the first map) after RT_CLS' + (off ? '' : ' (as its tail call: JP RT_LOADMAP)'), loadmapCalls.length >= 1 && cm_[loadmapCalls[0] - 1] === 0xAF, `calls at ${loadmapCalls}`);
+      check_(T + '... exactly CALL RT_CLS ; XOR A ; ' + (off ? 'CALL' : 'JP') + ' RT_LOADMAP, in this order', mapSeq(cm_, !off) >= 0, `calls at ${loadmapCalls}`);
+      check_(T + '... and the image uses the extended header and map table (as if the program had a LOADMAP): header length 20; the same game with ONE scene and no ENTER has the 16-byte header', rm.usage.header === C.GAME_HEADER_EXT_LEN && bldO(`GAME "n"\nFRAMERATE 30\nSPRITE ship = "orb"\nTILESET ts = "ts"\nMAP ma = "m1"\n` + scene('s0')).usage.header === C.GAME_HEADER_LEN, `${rm.usage.header} / ext ${C.GAME_HEADER_EXT_LEN}`);
     }
   }
   // -- qualified labels: two scenes with PROC UPDATE call their own
