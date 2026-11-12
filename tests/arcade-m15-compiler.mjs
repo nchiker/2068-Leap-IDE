@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url';
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { check } from '../src/lang/arcade/arcade-check.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
-import { compile, requiredRuntime, usageLines } from '../src/lang/arcade/arcade-compile.js';
+import { compile, requiredRuntime, usageLines, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, ASSET_KINDS, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
 import { convertSfx, convertSfxC, convertMusic, sfxRefreshRegisters, assetTables } from '../src/lang/arcade/arcade-assets.js';
@@ -197,8 +197,19 @@ else {
   const code = res.gen.code, base = res.gen.base;
   const count = (seq) => { let n = 0; for (let i = 0; i + seq.length <= code.length; i++) if (seq.every((b, k) => code[i + k] === b)) n++; return n; };
   const ldhl = (a) => [0x21, a & 255, a >> 8], call = (a) => [0xCD, a & 255, a >> 8];
-  check_('PLAY tune (in INIT) is LD HL,song / CALL RT_MUSIC: once for tune, once for jingle, once for hold', ['TUNE', 'JINGLE', 'HOLD'].every((k) => count([...ldhl(songs[k]), ...call(S.RT_MUSIC)]) === 1));
-  check_('CALL RT_MUSIC appears exactly three times, CALL RT_NOMUSIC exactly once (the one NOMUSIC)', count(call(S.RT_MUSIC)) === 3 && count(call(S.RT_NOMUSIC)) === 1, `${count(call(S.RT_MUSIC))} / ${count(call(S.RT_NOMUSIC))}`);
+  // Compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md F5): a CALL that is the last instruction of its PROC (`CALL x / RET`, no label between) is `JP x`. PLAY tune is
+  // INIT's only statement, so it is `LD HL,song / JP RT_MUSIC`; PLAY jingle / PLAY hold sit in an IF (a label follows the call) and keep the CALL.
+  const jp = (a) => [0xC3, a & 255, a >> 8];
+  const callAny = (seq, a) => count([...seq, ...call(a)]) + count([...seq, ...jp(a)]);
+  check_('PLAY tune (in INIT) is LD HL,song / CALL RT_MUSIC (JP RT_MUSIC when it is the last statement of the PROC): once for tune, once for jingle, once for hold', ['TUNE', 'JINGLE', 'HOLD'].every((k) => callAny(ldhl(songs[k]), S.RT_MUSIC) === 1));
+  check_('... tune is the tail jump LD HL,song / JP RT_MUSIC, jingle and hold are CALLs (an IF ... ENDIF label follows them)', count([...ldhl(songs.TUNE), ...jp(S.RT_MUSIC)]) === 1 && count([...ldhl(songs.JINGLE), ...call(S.RT_MUSIC)]) === 1 && count([...ldhl(songs.HOLD), ...call(S.RT_MUSIC)]) === 1);
+  check_('RT_MUSIC is called exactly three times (CALL or tail JP), RT_NOMUSIC exactly once (the one NOMUSIC)', count(call(S.RT_MUSIC)) + count(jp(S.RT_MUSIC)) === 3 && count(call(S.RT_NOMUSIC)) + count(jp(S.RT_NOMUSIC)) === 1, `${count(call(S.RT_MUSIC)) + count(jp(S.RT_MUSIC))} / ${count(call(S.RT_NOMUSIC)) + count(jp(S.RT_NOMUSIC))}`);
+  {
+    const ro = compile(src, { runtime: R.rt, image: R.img, assets: ASSETS15, ...CODEGEN_OFF }), co = ro.gen.code;
+    const cnt = (seq) => { let n = 0; for (let i = 0; i + seq.length <= co.length; i++) if (seq.every((b, k) => co[i + k] === b)) n++; return n; };
+    const sg = ro.gen.symbols.songs;
+    check_('CODEGEN_OFF: PLAY tune is LD HL,song / CALL RT_MUSIC once for tune, jingle and hold (CALL RT_MUSIC three times, no JP), CALL RT_NOMUSIC once', ro.errors.length === 0 && ['TUNE', 'JINGLE', 'HOLD'].every((k) => cnt([...ldhl(sg[k]), ...call(S.RT_MUSIC)]) === 1) && cnt(call(S.RT_MUSIC)) === 3 && cnt(jp(S.RT_MUSIC)) === 0 && cnt(call(S.RT_NOMUSIC)) === 1, errText(ro));
+  }
   void base;
   // the effects: channel C in a game with songs
   const tabAt = rd16(0x8000 + 10), n = mem[tabAt];
@@ -221,7 +232,7 @@ else {
   }
   // NOMUSIC alone in a game without songs: RT_NOMUSIC is still called (it does nothing there)
   const nmOnly = cmp(game('    NOMUSIC\n', '', 'GAME "t"\n'), R);
-  check_('NOMUSIC in a game without MUSIC compiles to CALL RT_NOMUSIC (with the checker\'s warning)', nmOnly.errors.length === 0 && (() => { const c = nmOnly.gen.code; for (let i = 0; i + 3 <= c.length; i++) if (c[i] === 0xCD && c[i + 1] === (S.RT_NOMUSIC & 255) && c[i + 2] === S.RT_NOMUSIC >> 8) return true; return false; })() && nmOnly.warnings.some((w) => /NOMUSIC does nothing/.test(w.message)), errText(nmOnly));
+  check_('NOMUSIC in a game without MUSIC compiles to CALL RT_NOMUSIC (JP RT_NOMUSIC: it is the last statement of FRAME) (with the checker\'s warning)', nmOnly.errors.length === 0 && (() => { const c = nmOnly.gen.code; for (let i = 0; i + 3 <= c.length; i++) if ((c[i] === 0xCD || c[i] === 0xC3) && c[i + 1] === (S.RT_NOMUSIC & 255) && c[i + 2] === S.RT_NOMUSIC >> 8) return true; return false; })() && nmOnly.warnings.some((w) => /NOMUSIC does nothing/.test(w.message)), errText(nmOnly));
   // ENTER keeps the song: the reset calls RT_SILENCE, never RT_NOMUSIC
   const ent = cmp(`${TOP}DIM t\nSCENE a\n  PROC INIT()\n    PLAY tune\n  ENDP\n  PROC FRAME()\n    ENTER b\n  ENDP\nENDSCENE\nSCENE b\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    t = t + 1\n    ENTER a\n  ENDP\nENDSCENE\n`, R);
   if (check_('a two-scene game with a song compiles', ent.errors.length === 0, errText(ent))) {
@@ -261,14 +272,14 @@ else {
     const r = cmp(src, RT[v]);
     if (!check_(`v${v}: the same game compiles`, r.errors.length === 0, errText(r))) continue;
     const a = r.gen.symbols.songs.TUNE, c = convertMusic(ASSETS15.music.tune), m = r.memory;
-    check_(`v${v}: tune's patterns are stored after its order list as on v2, and RT_MUSIC is called three times`, same(m.slice(a + 1 + 2 * (c.order.length + 1), a + c.bytes), [...c.patterns.flatMap((p) => [...p.bytes])]) && (() => { let k = 0; const cd = r.gen.code, x = RT[v].rt.symbols.RT_MUSIC; for (let i = 0; i + 3 <= cd.length; i++) if (cd[i] === 0xCD && cd[i + 1] === (x & 255) && cd[i + 2] === x >> 8) k++; return k === 3; })());
+    check_(`v${v}: tune's patterns are stored after its order list as on v2, and RT_MUSIC is called three times (CALL, or the tail JP)`, same(m.slice(a + 1 + 2 * (c.order.length + 1), a + c.bytes), [...c.patterns.flatMap((p) => [...p.bytes])]) && (() => { let k = 0; const cd = r.gen.code, x = RT[v].rt.symbols.RT_MUSIC; for (let i = 0; i + 3 <= cd.length; i++) if ((cd[i] === 0xCD || cd[i] === 0xC3) && cd[i + 1] === (x & 255) && cd[i + 2] === x >> 8) k++; return k === 3; })());
   }
 }
 
 // =================================================================================================================
 // 3. Byte identity: games without MUSIC compile to the bytes of the compiler before M3
 // =================================================================================================================
-console.log('\n3. Byte identity: every example and fixture (no MUSIC) against the compiler before M3');
+console.log('\n3. Byte identity: every example and fixture (no MUSIC) against the compiler before M3 (the new compiler with CODEGEN_OFF: the compiler size pass deliberately changes the default build\'s bytes)');
 {
   const ref = process.env.ARCADE_M15_OLD ?? '237b18a';
   let tmp = null, oldCompile = null;
@@ -286,7 +297,7 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
       const assets = [`${base}.assets.json`, `${base.replace(/-.*$/, '')}.assets.json`].map((a) => join(ROOT, dir, a)).find((p) => existsSync(p)) ?? join(ROOT, 'arcade/examples', `${base.replace(/-.*$/, '')}.assets.json`);
       progs.push({ src: join(dir, f), assets: existsSync(assets) ? assets : null });
     }
-    let n = 0, bad = '', songGames = 0, strayBad = '';
+    let n = 0, bad = '', songGames = 0, strayBad = '', nd = 0, smaller = 0, badD = '';
     for (const p of progs) {
       const full = readFileSync(join(ROOT, p.src), 'utf8'), assets = p.assets ? JSON.parse(readFileSync(p.assets, 'utf8')) : {};
       // an example with songs (slice M5) is compared on its text without them: the old compiler cannot build MUSIC, and every other word of the game is the same
@@ -298,13 +309,17 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
       }
       for (const v of [2, 3, 4]) {
         if (!RT[v]) continue;
-        const a = oldCompile(text, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets });
+        const a = oldCompile(text, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets, ...CODEGEN_OFF }), d = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets });
         if (a.errors.length || b.errors.length) { if (a.errors.length !== b.errors.length) bad += `${p.src} v${v}: errors ${a.errors.length} vs ${b.errors.length}; `; continue; }
+        nd++;
+        // the default build: no errors either, a DCK, and no more code than the old compiler's
+        if (d.errors.length === 0 && !!d.dck && d.gen.code.length <= a.gen.code.length) { if (d.gen.code.length < a.gen.code.length) smaller++; } else badD += `${p.src} v${v}; `;
         n++;
         if (!same(a.dck, b.dck)) bad += `${p.src} v${v}: DCK differs; `;
       }
     }
-    check_(`${n} builds (every example and fixture that compiles, on v2 / v3 / v4; the examples with songs on their text without MUSIC, NOMUSIC and PLAY <song>) give a DCK byte-identical to the compiler of ${ref}`, bad === '' && n >= 15, bad || `${n} builds`);
+    check_(`${n} builds (every example and fixture that compiles, on v2 / v3 / v4; the examples with songs on their text without MUSIC, NOMUSIC and PLAY <song>) give a DCK byte-identical to the compiler of ${ref} (CODEGEN_OFF)`, bad === '' && n >= 15, bad || `${n} builds`);
+    check_(`the default build of the same ${nd} programs compiles with no errors, gives a DCK and never has more code than the compiler of ${ref}; most have less`, badD === '' && nd === n && smaller >= n / 2, badD || `${smaller} of ${nd} smaller`);
     check_(`stripMusic of each of the ${songGames} examples with songs leaves no MUSIC / NOMUSIC word in the code and compiles (on the runtime it needs) with no errors and no warnings`, songGames >= 4 && strayBad === '', strayBad || `${songGames} examples`);
   }
   if (tmp) rmSync(tmp, { recursive: true, force: true });

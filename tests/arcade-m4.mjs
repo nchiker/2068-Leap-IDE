@@ -815,9 +815,12 @@ const costs = {};
   costs.writeTotal = (write - empty) / N;
   costs.writeOverBase = (write - baseW) / N;
   costs.writeExpr = (writeExpr - baseE) / N;
-  console.log(`  INFO  r = x(i): ${(read - empty) / N} T per iteration incl. the loop-free statement; the array part (index in HL -> value in HL) = ${costs.read} T; x(i) = v: ${(write - empty) / N} T (index load 16 + address 64 + value load 20 + store 18 = 118)`);
-  check_('measured: an array read (index already in HL -> element in HL) costs 86 T, in range', Math.abs(costs.read - 86) < 0.01, `${costs.read}`);
-  check_('measured: r = x(i) is 118 T (index 16 + read 86 + store 16); x(i) = v is 118 T (index 16 + address 64 + value 20 + store 18)', Math.abs((read - empty) / N - 118) < 0.01 && Math.abs((write - empty) / N - 118) < 0.01, `${(read - empty) / N} / ${(write - empty) / N}`);
+  console.log(`  INFO  r = x(i): ${(read - empty) / N} T per iteration incl. the loop-free statement; the array part (index in HL -> value in HL) = ${costs.read} T; x(i) = v: ${(write - empty) / N} T (index load 16 + address 61 + value load 20 + store 18 = 115)`);
+  // The measured path is the inline form (one site per array here, so no lib$ar / lib$aw routine): LD A,L / SUB n / LD A,H / SBC A,0 /
+  // JR NC,aoob (compiler size pass F2: was JP NC, 10 T not taken; JR NC not taken is 7 T) / ADD HL,HL / LD DE,base / ADD HL,DE / LD A,(HL) /
+  // INC L / LD H,(HL) / LD L,A: 86 - 3 = 83 T; the write 64 - 3 = 61 T of address.
+  check_('measured: an array read (index already in HL -> element in HL) costs 83 T, in range (was 86 with JP NC; the inline form now has JR NC)', Math.abs(costs.read - 83) < 0.01, `${costs.read}`);
+  check_('measured: r = x(i) is 115 T (index 16 + read 83 + store 16); x(i) = v is 115 T (index 16 + address 61 + value 20 + store 18)', Math.abs((read - empty) / N - 115) < 0.01 && Math.abs((write - empty) / N - 115) < 0.01, `${(read - empty) / N} / ${(write - empty) / N}`);
   // out of range: the stub path
   const oob = bench('        r = x(i + 10)'), oobW = bench('        x(i + 10) = v');
   console.log(`  INFO  out of range: r = x(i + 10) ${(oob - empty) / N} T, x(i + 10) = v ${(oobW - empty) / N} T`);
@@ -1001,13 +1004,23 @@ if (existsSync(RT_JSON)) {
       if (rd16(SYM.HO_MARK) !== SYM.HO_MARK_VALUE) { out.error = 'the runtime did not boot'; return out; }
       // V_FRAMES at INIT's and each FRAME's first instruction fetch: the sound model needs to know in which refresh a PLAY happened
       const fe = res.map.entries.frame, ie = res.map.entries.init;
-      out.R = [null]; out.S = [null]; out.plays = [[]];
+      // A call that a frame interrupt cut in two (entered at refresh f0, returned at f1 = f0 + 1) may take effect at either refresh (the runtime's contract,
+      // arcade/tests/m15-runtime-music.mjs section 4: an effect is posted and installed by the next refresh): out.cuts lists them, the comparison below tries both
+      // (as tests/arcade-m5-harness.mjs compareSoundRun does). out.plays[t][n] is the refresh the n-th call of tick t is placed at (its entry, f0, by default).
+      out.R = [null]; out.S = [null]; out.plays = [[]]; out.cuts = [];
       let cur = 0;
+      const open = [];
       const origRead = m.bus.read;
       m.bus.read = function (a) {
         if (a === fe) { out.R.push(rd16(SYM.V_FRAMES)); out.plays[++cur] = []; }
         else if (a === ie) { cur = 0; out.plays[0] = []; }
-        else if (a === SYM.RT_PLAY || a === SYM.RT_SILENCE) out.plays[cur].push(rd16(SYM.V_FRAMES));
+        else if (a === SYM.RT_PLAY || a === SYM.RT_SILENCE) {
+          out.plays[cur].push(rd16(SYM.V_FRAMES));
+          open.push({ t: cur, n: out.plays[cur].length - 1, f0: rd16(SYM.V_FRAMES), ret: rd16(m.cpu.sp), sp: m.cpu.sp });
+        } else if (open.length) {
+          const o = open[open.length - 1];
+          if (a === o.ret && m.cpu.sp === ((o.sp + 2) & 0xFFFF)) { open.pop(); const f1 = rd16(SYM.V_FRAMES); if (f1 !== o.f0) out.cuts.push({ t: o.t, n: o.n, f0: o.f0, f1 }); }
+        }
         return origRead.call(this, a);
       };
       for (let f = 0; f < maxFrames && out.ticks.length < ticks; f++) {
@@ -1046,10 +1059,25 @@ if (existsSync(RT_JSON)) {
         const got = runReal(res, { ticks: c.ticks, stick: c.stick, keys: c.keys, pictures: !!c.pictures, measure: !!c.measure });
         if (got.error) throw new Error(got.error);
         if (process.env.ARCADE_DEBUG && c.name.includes(process.env.ARCADE_DEBUG)) { const a = +(process.env.ARCADE_FROM ?? 1); console.log('   R', got.R.slice(a, a + 14).join(','), ' S', got.S.slice(a, a + 14).join(','), ' active', got.ticks.slice(a - 1, a + 13).map((q) => q.sfxActive + ':' + q.ay[0]).join(',')); }
-        const clock = { play: (t, n) => got.plays[t][n - 1] ?? 0, sample: (t) => got.S[t] };
-        const want = interpret(parse(c.src).ast, { version: 2, ticks: c.ticks, assets, maxSteps: 200_000_000, rnd: shRnd(rt), keys: c.keys ? (t, k) => c.keys(t).includes(k) : undefined, stick: c.stick ?? undefined, clock });
         const ctx = ctxFor(c.src, assets, c.skip ?? []);
-        let d = diffRun({ init: null, ticks: got.ticks }, want, ctx);
+        const runWith = () => {
+          const clock = { play: (t, n) => got.plays[t][n - 1] ?? 0, sample: (t) => got.S[t] };
+          const w = interpret(parse(c.src).ast, { version: 2, ticks: c.ticks, assets, maxSteps: 200_000_000, rnd: shRnd(rt), keys: c.keys ? (t, k) => c.keys(t).includes(k) : undefined, stick: c.stick ?? undefined, clock });
+          const dd = diffRun({ init: null, ticks: got.ticks }, w, ctx);
+          return { want: w, d: dd, at: dd === null ? Infinity : +(/tick (\d+)/.exec(dd)?.[1] ?? 0) };
+        };
+        // the cut calls in order: each at its entry refresh, else at its return refresh, whichever agrees up to the next cut call's tick (the last one: the whole run)
+        let r = runWith();
+        const cuts = got.cuts.sort((a, b) => a.t - b.t || a.n - b.n), placedLate = [];
+        for (let i = 0; i < cuts.length && r.d !== null; i++) {
+          const q = cuts[i], limit = i + 1 < cuts.length ? cuts[i + 1].t : Infinity;
+          if (r.at >= limit) continue;                                        // this cut call agrees at its entry refresh as far as it can be judged
+          got.plays[q.t][q.n] = q.f1;
+          const r1 = runWith();
+          if (r1.at > r.at) { r = r1; placedLate.push(`tick ${q.t}`); } else got.plays[q.t][q.n] = q.f0;
+        }
+        const want = r.want;
+        let d = r.d;
         let pics = 0;
         if (d === null && c.pictures) for (const [k, pic] of got.pictures) {
           d = diffPicture(`picture after tick ${k} (file ${pic.file})`, pic, want.ticks[k - 1], compose(want.ticks[k - 1], ctx, res));
@@ -1058,7 +1086,7 @@ if (existsSync(RT_JSON)) {
         }
         if (d && process.env.ARCADE_DEBUG2) { const m = d.match(/after tick (\d+)/); if (m) { const k = +m[1]; for (const kk of [k - 1, k, k + 1]) console.log('   tick', kk, 'R/S', got.R[kk], got.S[kk], 'sprites', want.ticks[kk - 1].sprites.map((q, i) => (q.visible ? `${i}@${q.x},${q.y}` : '')).filter(Boolean).join(' '), ' real', got.ticks[kk - 1].sprites.map((q, i) => (q.visible ? `${i}@${q.x},${q.y}` : '')).filter(Boolean).join(' ')); } }
         ok = d === null;
-        detail = d ?? `${c.ticks} ticks${c.pictures ? `, ${pics} displayed pictures compared with the compositor (x rounded for phases)` : ''}`;
+        detail = d ?? `${c.ticks} ticks${c.pictures ? `, ${pics} displayed pictures compared with the compositor (x rounded for phases)` : ''}${cuts.length ? `; ${cuts.length} sound call(s) cut by a frame interrupt${placedLate.length ? `, placed at their return refresh: ${placedLate.join(', ')}` : ''}` : ''}`;
         if (ok && c.measure) {
           const cs = got.costs.slice(2).sort((a, b) => a - b);        // the first two ticks draw the whole map into both files
           const frame = 58688, div = res.memory[0x8004];

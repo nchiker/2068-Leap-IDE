@@ -12,7 +12,8 @@
 // Sections
 //   1  the level data: runner.assets.json is what runner.assets.gen.mjs makes, the DIM lines of runner.arc are what it prints, every level is 128 x 16 with the start, the flag, the coins and the
 //      walkers' turning points that the arrays claim (the turning points worked out again here by a second, separate rule)
-//   2  the build: the game compiles with its four worlds banked (usage.mapped within 16,384, usage.banked the four MAPs) and does NOT build with every map forced `mapped` (the does-not-fit error)
+//   2  the build: the game compiles as the linker places it (usage.mapped within 16,384; the banker banks only what the mapped part needs: the title picture and some worlds), and with its four worlds
+//      forced `banked` (usage.banked the four worlds), and does NOT build with every map forced `mapped` (the does-not-fit error)
 //   3  the play-through on the reference interpreter (arcade/examples/runner.script.json: the title, level 1 to its flag, "LEVEL 2", level 2, ... the win screen): each level is entered in turn,
 //      each coin / enemy table is read, the game ends at state 2; and game over, retry of the same level with three lives (a variant with one life), on the interpreter
 //   4  the REAL runtime on a stock TS2068 in TSRun (arcade/build/v3, which must hold RT_WORLDLOAD): the same play-throughs tick by tick against the interpreter (variables, arrays, SPR_TAB, WORLD_RAM,
@@ -47,6 +48,11 @@ const QUICK = !!process.env.ARCADE_QUICK;
 const SRC = readFileSync(join(EX, 'runner.arc'), 'utf8');
 const ASSETS_TEXT = readFileSync(join(EX, 'runner.assets.json'), 'utf8');
 const ASSETS = JSON.parse(ASSETS_TEXT);
+// The banker banks only what the mapped part needs, and since the compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md) the game's code is smaller, so the build as the linker
+// places it (ASSETS: every map `auto`) keeps level3 in the mapped part. The banked worlds themselves are tested on this build: the same assets with the four worlds' maps set to
+// `banked` (assets.maps.<name>.bank, docs/ARCADE_BANKING_CONTRACT.md; pf_world / rn_world2 / rn_world3 / rn_world4 are the maps of level / level2 / level3 / level4).
+const WORLD_MAPS = ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'];
+const ASSETS_BANKED = JSON.parse(ASSETS_TEXT); for (const k of WORLD_MAPS) ASSETS_BANKED.maps[k].bank = 'banked';
 const s16 = (v) => ((v & 0xFFFF) ^ 0x8000) - 0x8000;
 
 // ── the level starts: the one place the source is changed for a test (a variant of GSTAGE 0, "lv = 0", and of the lives) ─────────────────────────────────────
@@ -256,7 +262,7 @@ function loadRuntime(v) {
 }
 const R3 = loadRuntime(3);
 const bankNeeds = R3 ? ['RT_LOADMAPPTR', 'RT_WORLDLOAD'].filter((n) => R3.rt.symbols[n] === undefined && R3.rt.constants?.[n] === undefined) : ['everything'];
-let normal = null;
+let normal = null, bankedFour = null;
 if (!R3 || bankNeeds.length) skip_('the banked build', !R3 ? 'arcade/build/v3/runtime.json is missing' : `arcade/build/v3/runtime.json lacks ${bankNeeds.join(' ')} (slice B1 not built)`);
 else {
   normal = compile(SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
@@ -265,7 +271,14 @@ else {
   check_(`usage.mapped ${u.mapped.used} of ${u.mapped.available} bytes (fits)`, u.mapped.used <= u.mapped.available);
   const names = u.banked.assets.map((x) => x.name).sort().join(',');
   const worlds = u.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
-  check_(`usage.banked: the four worlds, and nothing but tables and the title picture besides (${names}), ${u.banked.used} bytes, in the window`, worlds === 'level,level2,level3,level4' && u.banked.assets.every((x) => x.kind === 'world' || x.kind === 'table' || (x.kind === 'map' && x.name === 'titlepic')));
+  const bankedKinds = (b) => b.assets.every((x) => x.kind === 'world' || x.kind === 'table' || (x.kind === 'map' && x.name === 'titlepic'));
+  check_(`usage.banked as the linker places it: the title picture and ${worlds.split(',').length} worlds (${names}), ${u.banked.used} bytes, in the window; nothing but worlds, tables and the title picture; the banker banks only what the mapped part needs (the smaller code of the compiler size pass leaves ${['level', 'level2', 'level3', 'level4'].filter((n) => !worlds.split(',').includes(n)).join(', ') || 'none'} mapped)`, worlds.split(',').length >= 1 && bankedKinds(u.banked) && u.banked.assets.some((x) => x.name === 'titlepic'));
+  const b4 = compile(SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS_BANKED });
+  check_('the game compiles with the four worlds forced banked (assets.maps.<name>.bank = "banked"), no errors and no warnings', b4.errors.length === 0 && b4.warnings.length === 0, errText(b4));
+  const names4 = b4.usage.banked.assets.map((x) => x.name).sort().join(','), worlds4 = b4.usage.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
+  check_(`usage.banked with the four worlds banked: the four worlds, and nothing but tables and the title picture besides (${names4}), ${b4.usage.banked.used} bytes, in the window; usage.mapped ${b4.usage.mapped.used} of ${b4.usage.mapped.available}`, worlds4 === 'level,level2,level3,level4' && bankedKinds(b4.usage.banked) && b4.usage.mapped.used <= b4.usage.mapped.available);
+  check_(`the cartridge ships chunks ${b4.shipped.join(' ')} with the four worlds banked too`, JSON.stringify(b4.shipped) === '[0,1,2,4,5]');
+  bankedFour = b4;
   check_('the three scenes are there: title (the first), demo and play, with the title picture as the game\'s first screen MAP', JSON.stringify(normal.gen.symbols.scene.names) === '["title","demo","play"]' && u.banked.assets.some((x) => x.name === 'titlepic'));
   check_(`the cartridge ships chunks ${normal.shipped.join(' ')} (0 1 runtime, 2 the banked worlds, 4 5 the mapped part)`, JSON.stringify(normal.shipped) === '[0,1,2,4,5]');
   const forced = JSON.parse(ASSETS_TEXT); for (const k of Object.keys(forced.maps)) forced.maps[k].bank = 'mapped';
@@ -376,6 +389,11 @@ else {
   check_(`the flag of level 1, 2 and 3 starts the level change (state 4 at ticks ${msgs.join(', ')}), the world of the next level is loaded 39 ticks later`, msgs.every((x, i) => x > 0 && lvAt[i + 1] - x >= 36 && lvAt[i + 1] - x <= 44));
   const fin = recs.at(-1);
   check_(`the game ends at the win screen (ST ${fin.ST}, LV ${fin.LV}, score ${fin.SCORE}, lives ${fin.LIVES}; ${script.length} ticks)`, fin.ST === 2 && fin.LV === 3);
+  // C5: the in-game song (run) starts with the play scene, plays through the level changes (state 4) and is stopped by the win (state 2), so that the jingle is heard alone
+  { const play0 = full.ticks.findIndex((x) => x.scene === 2), winAt = recs.findIndex((v) => v.ST === 2) + 1;
+    const during = full.ticks.slice(play0, winAt - 1), after = full.ticks.slice(winAt - 1);
+    check_(`the in-game song: playing from the play scene's first tick (${play0 + 1}) to the tick before the win (${winAt}), through the ${msgs.length} level changes (${during.filter((x) => x.vars.ST === 4).length} ticks in state 4), song index ${during[0]?.music.index}; silent from the win (${after.length} ticks)`,
+      play0 >= 0 && winAt > 0 && during.length > 0 && during.every((x) => x.music.active && x.music.index === during[0].music.index) && during.some((x) => x.vars.ST === 4) && after.every((x) => !x.music.active)); }
   // the world is the right one: WORLD_RAM of the interpreter at the start of each level holds that level's map
   let worldsOk = true;
   for (let l = 0; l < 4; l++) { const w = full.ticks[lvAt[l] - 1].worldRam; const m = ASSETS.maps[['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'][l]]; for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const x = w[r * 128 + c] >> 3, y = m.cells[r * COLS + c], coin = (t) => t === 6 || t === 18 || t === 19; if (x !== y && !(coin(x) && coin(y))) worldsOk = false; } }     // WORLD_RAM holds the tile in its high five bits; a coin may be in any frame of its spin
@@ -405,14 +423,18 @@ const RETRY_TICKS = retryOver + 60;
   const over = retryOver, back = r.findIndex((x, k) => k >= over && x.scene === 0) + 1;
   check_(`one life: the hero is hit (game over at tick ${over}: ST ${r[over - 1]?.vars.ST}, END text up by tick ${over + 5}), fire at tick ${over + 16} goes back to the title (scene 0 from tick ${back}, the window off: ${r[back - 1]?.show}), HI kept (${r[back - 1]?.vars.HI} = the game's score ${r[over - 1]?.vars.SCORE})`,
     over > 0 && r[over - 1].vars.ST === 3 && back === over + 16 && r[back - 1].show === 'screen' && r[back - 1].vars.HI === r[over - 1].vars.SCORE && r.slice(over, back - 1).every((x) => x.scene === 2));
+  { const play0 = r.findIndex((x) => x.scene === 2), songRun = r.slice(play0, over - 1).every((x) => x.music.active), silentOver = r.slice(over - 1, back - 1).every((x) => !x.music.active);
+    check_(`one life: the in-game song plays from the play scene's first tick (${play0 + 1}) to the tick before game over (${over}) and is stopped by the game over (silent from tick ${over} to the title at ${back}), the title starts its own song again (${r[back - 1]?.music.active ? 'playing' : 'SILENT'} at tick ${back})`, play0 >= 0 && songRun && silentOver && r[back - 1].music.active); }
   check_(`the title that game over returns to waits for a new press of fire (the fire still down is let go first): the ${RETRY_TICKS - retryOver - 16} ticks after it are all the title`, r.slice(back - 1).every((x) => x.scene === 0));
 }
 
 // =================================================================================================================
 console.log('\n4. The real runtime on a stock TS2068 (TSRun): tick by tick against the interpreter, through the level changes');
 // =================================================================================================================
-const realOk = !!normal && normal.errors.length === 0;
-const play = !realOk ? null : PLAY_SRC === SRC ? normal : compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
+const realOk = !!normal && normal.errors.length === 0 && !!bankedFour && bankedFour.errors.length === 0;
+// `play`: the build whose four worlds are banked (every level change loads one through the window: sections 4 and 6); `playAuto`: the build as the linker places it (section 5)
+const play = !realOk ? null : PLAY_SRC === SRC ? bankedFour : compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS_BANKED });
+const playAuto = !realOk ? null : PLAY_SRC === SRC ? normal : compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
 const FIRST_CHANGE = full ? full.ticks.findIndex((x, k) => x.vars.ST === 4 && (k === 0 || full.ticks[k - 1].vars.ST === 1)) + 1 : 0;
 const REAL_TICKS = script ? (QUICK ? Math.min(script.length, FIRST_CHANGE + 60) : script.length) : 0;
 let realRun = null;
@@ -428,7 +450,7 @@ else {
   }
   {
     const sv = soundVs(realRun, PLAY_SRC, REAL_TICKS, stickOf(script), undefined, ['song', 'effect', 'cOver']);
-    check_(`the recorded play-through, sound at song level (the title's song \`hop\`, NOMUSIC at the start of play, then the effects as channel-C streams): V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's chip model on every sample`, sv.ok, sv.detail);
+    check_(`the recorded play-through, sound at song level (the title's song \`hop\`, then \`run\` from the start of play, pause, game over and win stop it, the effects as channel-C streams): V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's chip model on every sample`, sv.ok, sv.detail);
   }
   const rt = RETRY_TICKS;
   const rr = runFramed(R3, compile(RETRY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS }), { ticks: rt, stick: retryStick });
@@ -445,7 +467,7 @@ else {
   const ticks = QUICK ? Math.min(REAL_TICKS, FIRST_CHANGE + 60) : Math.min(script.length, 900);
   const all = compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS, bankAll: true });
   const RP = { ...R3, picture: true };
-  const a = runFramed(RP, play, { ticks, stick: stickOf(script) }), b = runFramed(RP, all, { ticks, stick: stickOf(script) });
+  const a = runFramed(RP, playAuto, { ticks, stick: stickOf(script) }), b = runFramed(RP, all, { ticks, stick: stickOf(script) });
   let d = a.error ?? b.error ?? null;
   for (let t = 0; !d && t <= ticks; t++) {
     const x = a.snaps[t], y = b.snaps[t], at = t === 0 ? 'after INIT' : `after tick ${t}`;
@@ -518,7 +540,13 @@ else {
   }
   check_(`interpreter: H at tick ${P} pauses: for the ${Q - P} paused ticks (${P}..${Q - 1}, the stick held at right + fire) every variable, array, sprite, the world, the camera and the text equal the state after tick ${P - 1}, except PAUSED = 1 and the word PAUSED in row 21`, d === null, d ?? '');
   const sfxRef = rec[P - 2].sfx.active && rec[P - 1].sfx.active, sfxNow = A(P).sfx.active;
-  check_(`interpreter: the sound that was playing (${sfxRef ? 'it goes on in the unpaused run' : 'NO SOUND PLAYING'}) is silenced by the pause (${sfxNow ? 'still playing' : 'silent'}) and stays silent while paused`, sfxRef && !sfxNow && pr.slice(P - 1, Q).every((x) => !x.sfx.active));
+  // C5 (in-game song): the pause stops the effect (SILENCE) and the song (NOMUSIC), and going on starts the song again from its top (PLAY run).  The clockless interpreter's chip model sees the
+  // effect's end one sample after the call (the call is placed at the tick's refresh count; the real machine's V_SFX_ACTIVE is 0 right after tick P, checked below with the cartridge), so the effect is
+  // required silent from tick P + 1; the song, which NOMUSIC stops at once, from tick P.  (Before C5 the check was `!sfx.active` from tick P on and there was no song in the play scene.)
+  const songRef = rec[P - 2].music.active, songNow = A(P).music.active;
+  check_(`interpreter: the sound that was playing (${sfxRef ? 'it goes on in the unpaused run' : 'NO SOUND PLAYING'}; the song ${songRef ? 'plays' : 'DOES NOT PLAY'}) is silenced by the pause (the effect ${sfxNow ? 'ends one sample later' : 'silent'}, the song ${songNow ? 'still playing' : 'silent'}) and both stay silent while paused`,
+    sfxRef && songRef && !songNow && pr.slice(P, Q).every((x) => !x.sfx.active) && pr.slice(P - 1, Q - 1).every((x) => !x.music.active));
+  check_(`interpreter: H again at tick ${Q} starts the song again (music.active after tick ${Q}: ${A(Q).music.active})`, A(Q).music.active === true);
   const eq = sameRec(A(Q), ref, { skipVars: [] });
   check_(`interpreter: H again at tick ${Q} unpauses: PAUSED = ${A(Q).vars.PAUSED}, the PAUSED text is gone, everything is the state after tick ${P - 1} again`, A(Q).vars.PAUSED === 0 && eq === null, eq ?? '');
   d = null;
@@ -565,6 +593,7 @@ else {
   for (let t = Q + 1; t <= N && !d; t++) if (!sameBuf(a.snaps[t].ram4000, b.snaps[t - D].ram4000)) d = `sample ${t}: the display files differ from the unpaused run's sample ${t - D}`;
   check_(`after the unpause both display files equal the unpaused run's shifted by ${D} ticks (samples ${Q + 1}..${N} against ${Q + 1 - D}..${N - D}): the text was cleared and the game went on where it was`, d === null, d ?? '');
   check_(`the sound is silenced on the machine: V_SFX_ACTIVE is ${a.snaps[P].sfxActive} after tick ${P} and while paused (the unpaused run: ${b.snaps[P].sfxActive})`, a.snaps[P - 1].sfxActive !== 0 && a.snaps[P].sfxActive === 0 && b.snaps[P].sfxActive !== 0 && a.snaps.slice(P, Q).every((x) => x.sfxActive === 0));
+  check_(`the song starts again when the pause ends: V_SFX_ACTIVE is ${a.snaps[Q + 3].sfxActive} three ticks after tick ${Q}`, a.snaps[Q + 3].sfxActive !== 0);
 }
 
 // =================================================================================================================

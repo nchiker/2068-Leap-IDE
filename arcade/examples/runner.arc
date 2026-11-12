@@ -51,6 +51,9 @@ SFX win = "pf_win"
 SFX over = "pf_over"
 REM The title song (docs/ARCADE_MUSIC_CONTRACT.md): it starts with the title, plays on through the attract mode (the demo) and stops when a game starts.
 MUSIC hop = "rn_hop"
+REM The in-game song (the room the compiler size pass freed): INIT of the play scene starts it (replacing the title song).  Pausing stops it and going on starts it again from the top
+REM (the runtime has no song resume); game over and the win stop it so that their jingles are heard alone; the level change keeps it playing.
+MUSIC run = "rn_run"
 
 WINDOW level
 BAND 2, 1, 4
@@ -336,7 +339,7 @@ SCENE play
   REM The reset has put the title picture on the screen and the window is on: blank the cells (the rows around the window are the HUD's, built by the starting stages) and load a fresh level 1,
   REM so that every game starts on level 1 as it was made, whatever the last game left in the world.
   PROC INIT():
-    NOMUSIC
+    PLAY run
     CLS
     lv = 0
     CALL LOADWORLD()
@@ -359,9 +362,11 @@ SCENE play
     IF paused = 0 THEN
       paused = 1
       SILENCE
+      NOMUSIC
       PRINT AT 21, 13; "PAUSED";
     ELSE
       paused = 0
+      PLAY run
       PRINT AT 21, 13; "      ";
     ENDIF
   ENDP
@@ -700,6 +705,7 @@ SCENE play
     HIDE hero
     CALL CLEARENEMIES()
     CALL SETHI()
+    NOMUSIC
     PLAY over
   ENDP
 
@@ -715,6 +721,7 @@ SCENE play
       st = 4 : nl = lv + 1
     ELSE
       st = 2
+      NOMUSIC
       CALL SETHI()
     ENDIF
     CALL CLEARENEMIES()

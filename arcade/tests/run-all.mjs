@@ -1,7 +1,7 @@
 // run-all.mjs -- rebuild every Leap Arcade runtime and run every Arcade test suite, then print one summary.
 //
 //   node arcade/tests/run-all.mjs            all suites except the slow mutation runs
-//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3- to m15-mutations; several minutes each)
+//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3- to m16c-mutations; several minutes each)
 //   node arcade/tests/run-all.mjs --quick    sets ARCADE_QUICK=1 (shorter fuzz runs in the compiler suites)
 //   node arcade/tests/run-all.mjs --jobs N   runs the suites N at a time (default 1).  The runtime builds and the steps in
 //                                            EXCLUSIVE (they write shared files under arcade/build) run first, alone; each
@@ -62,6 +62,8 @@ const suites = [
   'tests/arcade-m14-compiler.mjs',
   'tests/arcade-m14-differential.mjs',
   'tests/arcade-m15-compiler.mjs',
+  'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
+  'tests/arcade-codegen-exhaustive.mjs',        // compiler size pass: F1 / F3 / F6 / F8 / F9 for every 16-bit value
   'tests/arcade-m15-differential.mjs',
   'arcade/tests/m1.mjs',
   'tests/arcade-m8-vaults.mjs',
@@ -108,7 +110,7 @@ const suites = [
   'arcade/tests/m12-runtime-table.mjs',
   'arcade/tests/m14-runtime-mode.mjs',
   'arcade/tests/m15-runtime-music.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m15c-mutations.mjs'] : []),
+  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m15c-mutations.mjs', 'arcade/tests/m16c-mutations.mjs'] : []),
 ];
 
 function finish(file, isBuild, t0, status, out) {

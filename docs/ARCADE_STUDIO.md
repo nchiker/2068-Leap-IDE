@@ -235,7 +235,7 @@ In song mode the pattern shown is edited exactly as an effect is: the same lanes
 
 **Note entry** (a row under the row editor; effects have it too): note, octave, length in refreshes, instrument, an optional peak volume and the tick to start at; Enter
 writes `noteRecords` into the selected track from that tick (overwriting, padding a short track with silent records, extending the pattern), Rest writes silence. The
-tick follows the cursor and moves to the end of each note entered, so notes typed one after another make a melody. Instruments (volume envelopes; `toneOfNote` for the
+tick follows the cursor and moves to the end of each note entered, so notes typed one after another make a melody. (The instrument envelopes and the default song were approved by the owner on 2026-11-12.) Instruments (volume envelopes; `toneOfNote` for the
 tone): **pluck** (from the peak, falling by a fifth every refresh), **organ** (held; the last refresh at half, so repeated notes are heard apart), **bass** (two refreshes at
 the peak, falling to 60 %, the last refresh silent from 4 refreshes on), **drum** (noise only, falling by 30 %, the note picks the noise period). A record that would be
 unstorable (tone 3840+ at volume 15: the lowest notes of octave 0) gets volume 14.

@@ -2,8 +2,15 @@
 "use strict";
 // breakout-tsrun.mjs -- run an Arcade cartridge on TSRun's stock TS2068 (tsrun/roms, no input) and record, at every
 // refresh, the runtime state that the cross-emulator check needs.  Adapted from tsrun-run.mjs and tsrun-screens.mjs;
-// the symbols are those of the v1 runtime the cartridge was built against (arcade/build/v1/runtime.json).
-//   node arcade/tools/xemu/breakout-tsrun.mjs <cart.dck> [--out arcade/build/xemu] [--refreshes 1500] [--ticks 300]
+// the symbols are those of the runtime the cartridge was built against: v2 (arcade/build/v2/runtime.json), since breakout.arc uses KEYDOWN, which
+// the v1 runtime refuses (v1's addresses differ: V_TICKS 57352, v2's 57464).  --runtime vN reads another build's runtime.json.
+// Order of the commands (the three scripts and the compare):
+//   node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v2     -> arcade/build/breakout.dck
+//   node arcade/tools/xemu/breakout-tsrun.mjs arcade/build/breakout.dck [--out DIR]             -> <out>/breakout-tsrun-*
+//   python3 arcade/tools/xemu/breakout-zesarux.py arcade/build/breakout.dck [--out DIR]         -> <out>/breakout-zesarux-*
+//   sh arcade/tools/xemu/breakout-fuse.sh [CART] [OUTDIR]                                       -> <out>/fuse-breakout/frame-*.scr (OUTDIR must be new)
+//   node arcade/tools/xemu/breakout-compare.mjs [--dir DIR] [--fuse DIR]                        (the verdict lines)
+//   node arcade/tools/xemu/breakout-tsrun.mjs <cart.dck> [--out arcade/build/xemu] [--refreshes 1500] [--ticks 300] [--runtime v2]
 //
 // Definitions (the same in the ZEsarUX and Fuse checks):
 //   displayed tick = V_TICKS when V_SYNC < 2 (the flip of the last tick has happened: the ISR sets V_SYNC = 1 when it
@@ -25,20 +32,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = resolve(HERE, '../..');
 const TSRUN = join(ARCADE, '../tsrun');
 const M = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
-const rt = JSON.parse(readFileSync(join(ARCADE, 'build/v1/runtime.json'), 'utf8'));
-const S = rt.symbols, C = rt.constants;
 
 const args = process.argv.slice(2);
-const opt = { dck: null, out: join(ARCADE, 'build/xemu'), refreshes: 1500, ticks: 300 };
+const opt = { dck: null, out: join(ARCADE, 'build/xemu'), refreshes: 1500, ticks: 300, runtime: 'v2' };
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--out') opt.out = resolve(args[++i]);
+  else if (a === '--runtime') opt.runtime = args[++i];
   else if (a === '--refreshes') opt.refreshes = Number(args[++i]);
   else if (a === '--ticks') opt.ticks = Number(args[++i]);
   else opt.dck = a;
 }
 if (!opt.dck) { console.error('usage: breakout-tsrun.mjs <cart.dck> [--out DIR]'); process.exit(2); }
 mkdirSync(opt.out, { recursive: true });
+const rt = JSON.parse(readFileSync(join(ARCADE, 'build', opt.runtime, 'runtime.json'), 'utf8'));
+const S = rt.symbols, C = rt.constants;
 
 const rd8 = (m, a) => m.ram[a];
 const rd16 = (m, a) => m.ram[a] | (m.ram[a + 1] << 8);

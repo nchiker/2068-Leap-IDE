@@ -20,6 +20,7 @@ import { join } from 'node:path';
 
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
+import { keysOf, stickOf, FULL_TICKS, QUICK_TICKS } from './arcade-starfall-script.mjs';
 import { real, compileReal, runReal, interpFor, diffRecords, compareSoundRun, errText, ROOT } from './arcade-m5-harness.mjs';
 
 const QUICK = !!process.env.ARCADE_QUICK;
@@ -32,27 +33,7 @@ const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/shooter.asset
 const R = real();
 if (!R.ok) { console.log(`  SKIP  Starfall on the real runtime (${R.why})`); console.log('\nPASS: arcade-starfall (0 checks, 1 skipped)'); process.exit(0); }
 
-const TICKS = QUICK ? 700 : 1340;
-const T0 = 40;      // the title lasts this many ticks; fire is down from tick T0 + 1
-const input = (t) => {
-  const keys = [];
-  let stick = 0;
-  if (t > T0) keys.push(32);      // fire, to leave the title (the play script below fires on its own)
-  const s = t - T0;
-  if (s < 1) return { keys: [], stick: 0 };
-  const playing = s < 680 || s >= 1010;
-  const out = [];
-  if (s >= 940 && s < 1000) out.push(32);
-  if (playing) {
-    const useStick = (s >= 120 && s < 200) || (s >= 1100 && s < 1200);
-    const ph = Math.floor(s / 23) % 4, left = ph === 0 || ph === 3, right = ph === 1 || ph === 2;
-    const up = Math.floor(s / 61) % 3 === 0, dn = Math.floor(s / 97) % 3 === 1;
-    if (useStick) stick = (left ? 4 : 0) | (right ? 8 : 0) | (up ? 1 : 0) | (dn ? 2 : 0) | 16;
-    else { out.push(32); if (left) out.push(79); if (right) out.push(80); if (up) out.push(81); if (dn) out.push(65); }
-  }
-  return { keys: out, stick };
-};
-const keysOf = (t) => input(t).keys, stickOf = (t) => input(t).stick;
+const TICKS = QUICK ? QUICK_TICKS : FULL_TICKS;
 
 console.log('1. The build');
 let res;

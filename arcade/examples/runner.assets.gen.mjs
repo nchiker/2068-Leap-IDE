@@ -387,6 +387,18 @@ export const MUSIC = {
     pattern({ A: '@organ !11 L8 | E5 G5 C6 G5 E5:16 C5:16 | F5 A5 G5 F5 E5:32 | D5 F5 E5 D5 C5:16 B4:16 | C5:48 -:16',
       B: '@organ !10 L32 | C3 E3 | F2 C3 | G2:64 | C3:48 -:16' }, 'answer'),
   ], [0, 1], 0),
+  // "Run", the in-game song (the compiler size pass, slice C5, gave the room): G major, the same tempo and organ voices as "Hop" but a different
+  // tune: stepwise runs and repeated notes, where Hop arpeggiates.  Four phrases of four bars (bar = 64 refreshes, 17.0 s): A (theme, ends on D, the
+  // dominant), A' (the same with a closing run on G), B (the bridge: C G Am D, higher and longer notes) and A again, whose ending on D leads back into
+  // the top of the loop.  Tune on A, bass on B (root and fifth, a note to every half bar), C left free: the game's effects borrow it.
+  rn_run: song([
+    pattern({ A: '@organ !11 L8 | D5:8 D5:8 G5:16 F#5 G5 A5:16 | B5:16 G5 E5 G5:16 B4:16 | E5 E5 C6:16 B5 A5 G5:16 | A5:16 F#5 D5 F#5:16 A4:16',
+      B: '@organ !10 L32 | G2 D3 | E2 B2 | C3 G2 | D3 A2' }, 'theme'),
+    pattern({ A: '@organ !11 L8 | D5:8 D5:8 G5:16 F#5 G5 B5:16 | B5:16 G5 E5 B5:16 G5:16 | E5 E5 C6:16 B5 A5 G5:16 | B5:16 A5 F#5 G5:32',
+      B: '@organ !10 L32 | G2 D3 | E2 B2 | C3 G2 | D3 G2' }, 'theme-close'),
+    pattern({ A: '@organ !11 L8 | C6:24 B5 A5:16 G5:16 | B5:24 A5 G5:16 D5:16 | A5 A5 C6:16 B5 A5 E5:16 | F#5 A5 D6:16 C6 A5 F#5:16',
+      B: '@organ !10 L32 | C3 G2 | G2 D3 | A2 E3 | D3 A2' }, 'bridge'),
+  ], [0, 1, 2, 0], 0),
 };
 
 export function buildRunnerAssets() {

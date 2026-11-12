@@ -532,6 +532,11 @@ const SCRIPT = PLAN.script, TRACE = PLAN.trace, META = PLAN.meta, NT = SCRIPT.le
 console.log('\n4. The reference interpreter on the script, tick by tick against the model');
 const scriptKeys = SCRIPT.map((i) => new Set(toKeys(i).keys)), scriptStick = SCRIPT.map((i) => toKeys(i).stick);
 const keysFn = (t, c) => scriptKeys[t - 1]?.has(c) ?? false, stickFn = (t) => scriptStick[t - 1] ?? 0;
+// --dump-script <file>: write the script (the keys and the joystick value of every tick) as JSON and stop, for tests/arcade-codegen-perf.mjs (which measures the tick costs on it)
+if (process.argv.includes('--dump-script')) {
+  writeFileSync(process.argv[process.argv.indexOf('--dump-script') + 1], JSON.stringify({ ticks: NT, keys: scriptKeys.map((k) => [...k]), stick: scriptStick }));
+  process.exit(0);
+}
 const WANT = interp(NT, keysFn, stickFn);
 check_(`interpreter ran ${WANT.ticks.length} ticks`, WANT.ticks.length === NT);
 {
