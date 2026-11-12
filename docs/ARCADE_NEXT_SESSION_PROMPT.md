@@ -1,3 +1,18 @@
+# RESUME HERE (in-progress checkpoint, updated during the session of 2026-11-12)
+
+The compiler size pass is under way on branch **`arcade-codegen-size`** (not pushed until the session ends).
+* **C0 done** (commit 9b7969c): spike re-measured on main 0a453b9 (`arcade/spike/codegen/sizes-remeasured.md`), contract section 5 targets updated.
+* **C1 in progress** (11:50): a Fable 5.2 agent implements F2 / F4 / F5 in the emitter in a disposable worktree
+  `/tmp/claude-1000/-home-charlie-day-Projects-Leap-IDE/b7ac98c7-63bb-4ff8-8d85-b824b0b8adba/scratchpad/wt-c1` (detached at 9b7969c).
+  Checkpoints of its uncommitted work are saved as `arcade/spike/codegen/wip-c1.patch` on the branch (apply with `git apply`). If the session
+  ended mid-C1: check whether the worktree still exists (`git worktree list`); if not, apply the newest patch to a fresh worktree and continue
+  from the contract; the patch is unreviewed until this note says otherwise.
+* Baseline `node arcade/tests/run-all.mjs --jobs 4` on 9b7969c: result recorded here when it finishes.
+* Next after C1: review, C2 (F1, F3, F6, F7, F8, then F9) by the same agent; a Sonnet agent writes the C4 perf tool (all five games, before / after
+  bounds of contract section 5); then C3, C4, C5, C6.
+
+---
+
 # Prompt for the next session (written 2026-11-11, updated 2026-11-12 when MUSIC was merged)
 
 Suggested setup: main thread on the strongest model available (Opus 5.5 or Fable 5.2) at high effort, because it writes the contracts and reviews every agent's work; agents on Opus for cycle-critical Z80 kernels, Sonnet 5.5 for routine implementation and tests, Haiku 5.5 for running test suites (the prompt below says so).
