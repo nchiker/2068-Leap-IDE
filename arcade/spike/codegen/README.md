@@ -6,4 +6,4 @@ patch (each fix behind `CSPIKE_OPT=<switches>`: hl, jr, cmpc, cmpv, sel, arr, sh
 `src/lang/arcade/`; with no switch it compiles every example to the same bytes as the compiler it was made from (commit 94d3b9a).
 Scripts: `instr.mjs` (the generated assembly with source lines per game), `hist.mjs`, `patterns.mjs`, `sizes-proto.mjs` / `size1.mjs`,
 `perf-table.mjs`, `example.mjs`; `common.mjs` compiles every example with the compiler under `CSPIKE_ROOT` (default: this repository).
-The figures were taken before MUSIC M5 changed the examples (Leap Runner's size rewrite, the songs): re-measure before relying on them.
+The figures were taken before MUSIC M5 changed the examples (Leap Runner's size rewrite, the songs): re-measure before relying on them. **Re-measured 2026-11-12** on `main` 0a453b9: `sizes-remeasured.md` (the contract's section 5 targets now come from it).

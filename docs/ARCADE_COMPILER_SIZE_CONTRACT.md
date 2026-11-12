@@ -1,6 +1,6 @@
 # Compiler size pass 1: smaller, faster code from the same programs
 
-**Status: contract, 2026-11-12, not started.** It starts after `arcade-music` is merged, on its own branch from `main` (`arcade-codegen-size`).
+**Status: contract, 2026-11-12; C0 done (figures re-measured, section 5), C1 started on branch `arcade-codegen-size`.** It starts after `arcade-music` is merged, on its own branch from `main` (`arcade-codegen-size`).
 Decisions marked **(owner)** are the owner's; **(Claude)** were taken alone and are listed again in section 11 for review.
 
 ## 1. What and why
@@ -118,9 +118,15 @@ its effects) and `BXOR(x, k) = 0` means x = k (both bytes: left as it is).
 
 ## 5. Targets (all measured in TSRun with the existing suites)
 
-* Bytes: F1-F5 at least the prototype's figures within 5 % (Runner -1,067, Vaults -1,055, all 7 examples -4,440); F6-F8 each saves bytes in at
-  least one example and costs none anywhere.
-* Bytes with F9: Runner at least -1,820, Vaults -1,990, all 7 examples -8,690 (the prototype's F1-F5 + F9 within 5 %).
+* **Re-measured 2026-11-12 (C0, `main` 0a453b9, after MUSIC M5; `arcade/spike/codegen/sizes-remeasured.md`).** The examples changed since the
+  spike (Leap Runner's size rewrite, the songs), so the targets below are the prototype re-applied to today's examples (`apply-proto.py` applies
+  unchanged: the code generator did not change since 94d3b9a). The `ret` prototype's patch was not kept, so F5 has no re-measured figure.
+  Code bytes now: Runner 9,893, Vaults 13,513, all 7 57,260. Prototype `hl,jr,cmpc,sel` (F1-F4): Runner -959, Vaults -1,035, all 7 -4,243;
+  with `arr` (F9): Runner -1,386, Vaults -2,022, all 7 -8,355. (Runner's array saving fell from -829 to -463: the M5 rewrite removed array sites.)
+* Bytes: F1-F5 together at least the re-measured F1-F4 figures within 5 % (Runner -911, Vaults -983, all 7 examples -4,031): F5's saving
+  covers F4's narrower rule. F5 alone saves bytes in every example that has a tail call or a jump to a RET. F6-F8 each saves bytes in at least
+  one example and costs none anywhere.
+* Bytes with F9: Runner at least -1,317, Vaults -1,921, all 7 examples -7,937 (the re-measured prototype F1-F4 + F9 within 5 %).
 * Time (F9 makes it about break-even, owner's choice): for every recorded run of Leap Runner, the platformer, Vaults, Starfall and Blockfall, the
   **median tick is not higher** than before, the **worst and 95th percentile ticks rise by at most 0.25 %** of the budget (440 T at 3 refreshes,
   587 T at 4), **no gameplay tick that was within budget goes over it** (Vaults stays at 8 ticks over, the others at 0), and F1-F8 without F9 is
