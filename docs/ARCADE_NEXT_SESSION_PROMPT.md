@@ -1,18 +1,15 @@
-# RESUME HERE (in-progress checkpoint, updated during the session of 2026-11-12)
+# RESUME HERE (usage limit hit 2026-11-12 ~12:30; both agents stopped mid-work)
 
-The compiler size pass is under way on branch **`arcade-codegen-size`** (not pushed until the session ends).
-* **C0 done** (commit 9b7969c): spike re-measured on main 0a453b9 (`arcade/spike/codegen/sizes-remeasured.md`), contract section 5 targets updated.
-* **C1 in progress** (11:50): a Fable 5.2 agent implements F2 / F4 / F5 in the emitter in a disposable worktree
-  `/tmp/claude-1000/-home-charlie-day-Projects-Leap-IDE/b7ac98c7-63bb-4ff8-8d85-b824b0b8adba/scratchpad/wt-c1` (detached at 9b7969c).
-  Checkpoints of its uncommitted work are saved as `arcade/spike/codegen/wip-c1.patch` on the branch (apply with `git apply`). If the session
-  ended mid-C1: check whether the worktree still exists (`git worktree list`); if not, apply the newest patch to a fresh worktree and continue
-  from the contract; the patch is unreviewed until this note says otherwise.
-* Baseline `node arcade/tests/run-all.mjs --jobs 4` on 9b7969c: **78/78 passed, 573 s**.
-* **C4 perf tool in progress** (12:05): a Sonnet agent writes `tests/arcade-codegen-perf.mjs` in the PRIMARY tree (five games, `--old <ref>`,
-  `--save`, `--compare` with the section 5 bounds) and saves `arcade/spike/codegen/perf-before.json` (the figures before any compiler change).
-  Unreviewed until this note says otherwise; if lost, re-brief from contract sections 5 and 10.
-* Next after C1: review, C2 (F1, F3, F6, F7, F8, then F9) by the same agent; a Sonnet agent writes the C4 perf tool (all five games, before / after
-  bounds of contract section 5); then C3, C4, C5, C6.
+Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured targets, contract section 5). Baseline run-all on 9b7969c: 78/78, 573 s.
+* **C1 (emitter F2 / F4 / F5), Fable agent, STOPPED before reporting**: its unreviewed work is `arcade/spike/codegen/wip-c1.patch` (1,469 lines,
+  from worktree `.../scratchpad/wt-c1`, which may still exist: `git worktree list`). Resume: new worktree from this branch (see traps for the tsrun
+  symlink and arcade/build copy), `git apply` the patch, read its "As built: C1" notes if present, finish F2/F4/F5 per contract sections 4-7, run
+  `node tests/arcade-compile.mjs` and run-all (pinned-byte failures expected, behaviour failures must be 0), then review before C2.
+* **C4 perf tool, Sonnet agent, STOPPED unfinished** (its last note: a duplicate keysOf/stickOf line and unused imports to remove):
+  `arcade/spike/codegen/wip-perf.patch` = new `tests/arcade-codegen-perf.mjs`, `tests/arcade-starfall-script.mjs`, a partial
+  `perf-before.json`, and export edits to five perf/game suites (reverted in the tree; check each suite's output is unchanged before keeping them).
+  `perf-before.json` must be regenerated with the finished tool on the compiler of 9b7969c (`--old 9b7969c`).
+* Then: C2 (F1, F3, F6, F7, F8, then F9), C3, C4, C5, C6 as the contract's section 10.
 
 ---
 
