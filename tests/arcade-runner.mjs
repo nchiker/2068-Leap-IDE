@@ -389,6 +389,11 @@ else {
   check_(`the flag of level 1, 2 and 3 starts the level change (state 4 at ticks ${msgs.join(', ')}), the world of the next level is loaded 39 ticks later`, msgs.every((x, i) => x > 0 && lvAt[i + 1] - x >= 36 && lvAt[i + 1] - x <= 44));
   const fin = recs.at(-1);
   check_(`the game ends at the win screen (ST ${fin.ST}, LV ${fin.LV}, score ${fin.SCORE}, lives ${fin.LIVES}; ${script.length} ticks)`, fin.ST === 2 && fin.LV === 3);
+  // C5: the in-game song (run) starts with the play scene, plays through the level changes (state 4) and is stopped by the win (state 2), so that the jingle is heard alone
+  { const play0 = full.ticks.findIndex((x) => x.scene === 2), winAt = recs.findIndex((v) => v.ST === 2) + 1;
+    const during = full.ticks.slice(play0, winAt - 1), after = full.ticks.slice(winAt - 1);
+    check_(`the in-game song: playing from the play scene's first tick (${play0 + 1}) to the tick before the win (${winAt}), through the ${msgs.length} level changes (${during.filter((x) => x.vars.ST === 4).length} ticks in state 4), song index ${during[0]?.music.index}; silent from the win (${after.length} ticks)`,
+      play0 >= 0 && winAt > 0 && during.length > 0 && during.every((x) => x.music.active && x.music.index === during[0].music.index) && during.some((x) => x.vars.ST === 4) && after.every((x) => !x.music.active)); }
   // the world is the right one: WORLD_RAM of the interpreter at the start of each level holds that level's map
   let worldsOk = true;
   for (let l = 0; l < 4; l++) { const w = full.ticks[lvAt[l] - 1].worldRam; const m = ASSETS.maps[['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'][l]]; for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) { const x = w[r * 128 + c] >> 3, y = m.cells[r * COLS + c], coin = (t) => t === 6 || t === 18 || t === 19; if (x !== y && !(coin(x) && coin(y))) worldsOk = false; } }     // WORLD_RAM holds the tile in its high five bits; a coin may be in any frame of its spin
@@ -418,6 +423,8 @@ const RETRY_TICKS = retryOver + 60;
   const over = retryOver, back = r.findIndex((x, k) => k >= over && x.scene === 0) + 1;
   check_(`one life: the hero is hit (game over at tick ${over}: ST ${r[over - 1]?.vars.ST}, END text up by tick ${over + 5}), fire at tick ${over + 16} goes back to the title (scene 0 from tick ${back}, the window off: ${r[back - 1]?.show}), HI kept (${r[back - 1]?.vars.HI} = the game's score ${r[over - 1]?.vars.SCORE})`,
     over > 0 && r[over - 1].vars.ST === 3 && back === over + 16 && r[back - 1].show === 'screen' && r[back - 1].vars.HI === r[over - 1].vars.SCORE && r.slice(over, back - 1).every((x) => x.scene === 2));
+  { const play0 = r.findIndex((x) => x.scene === 2), songRun = r.slice(play0, over - 1).every((x) => x.music.active), silentOver = r.slice(over - 1, back - 1).every((x) => !x.music.active);
+    check_(`one life: the in-game song plays from the play scene's first tick (${play0 + 1}) to the tick before game over (${over}) and is stopped by the game over (silent from tick ${over} to the title at ${back}), the title starts its own song again (${r[back - 1]?.music.active ? 'playing' : 'SILENT'} at tick ${back})`, play0 >= 0 && songRun && silentOver && r[back - 1].music.active); }
   check_(`the title that game over returns to waits for a new press of fire (the fire still down is let go first): the ${RETRY_TICKS - retryOver - 16} ticks after it are all the title`, r.slice(back - 1).every((x) => x.scene === 0));
 }
 
@@ -443,7 +450,7 @@ else {
   }
   {
     const sv = soundVs(realRun, PLAY_SRC, REAL_TICKS, stickOf(script), undefined, ['song', 'effect', 'cOver']);
-    check_(`the recorded play-through, sound at song level (the title's song \`hop\`, NOMUSIC at the start of play, then the effects as channel-C streams): V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's chip model on every sample`, sv.ok, sv.detail);
+    check_(`the recorded play-through, sound at song level (the title's song \`hop\`, then \`run\` from the start of play, pause, game over and win stop it, the effects as channel-C streams): V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's chip model on every sample`, sv.ok, sv.detail);
   }
   const rt = RETRY_TICKS;
   const rr = runFramed(R3, compile(RETRY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS }), { ticks: rt, stick: retryStick });
@@ -533,7 +540,13 @@ else {
   }
   check_(`interpreter: H at tick ${P} pauses: for the ${Q - P} paused ticks (${P}..${Q - 1}, the stick held at right + fire) every variable, array, sprite, the world, the camera and the text equal the state after tick ${P - 1}, except PAUSED = 1 and the word PAUSED in row 21`, d === null, d ?? '');
   const sfxRef = rec[P - 2].sfx.active && rec[P - 1].sfx.active, sfxNow = A(P).sfx.active;
-  check_(`interpreter: the sound that was playing (${sfxRef ? 'it goes on in the unpaused run' : 'NO SOUND PLAYING'}) is silenced by the pause (${sfxNow ? 'still playing' : 'silent'}) and stays silent while paused`, sfxRef && !sfxNow && pr.slice(P - 1, Q).every((x) => !x.sfx.active));
+  // C5 (in-game song): the pause stops the effect (SILENCE) and the song (NOMUSIC), and going on starts the song again from its top (PLAY run).  The clockless interpreter's chip model sees the
+  // effect's end one sample after the call (the call is placed at the tick's refresh count; the real machine's V_SFX_ACTIVE is 0 right after tick P, checked below with the cartridge), so the effect is
+  // required silent from tick P + 1; the song, which NOMUSIC stops at once, from tick P.  (Before C5 the check was `!sfx.active` from tick P on and there was no song in the play scene.)
+  const songRef = rec[P - 2].music.active, songNow = A(P).music.active;
+  check_(`interpreter: the sound that was playing (${sfxRef ? 'it goes on in the unpaused run' : 'NO SOUND PLAYING'}; the song ${songRef ? 'plays' : 'DOES NOT PLAY'}) is silenced by the pause (the effect ${sfxNow ? 'ends one sample later' : 'silent'}, the song ${songNow ? 'still playing' : 'silent'}) and both stay silent while paused`,
+    sfxRef && songRef && !songNow && pr.slice(P, Q).every((x) => !x.sfx.active) && pr.slice(P - 1, Q - 1).every((x) => !x.music.active));
+  check_(`interpreter: H again at tick ${Q} starts the song again (music.active after tick ${Q}: ${A(Q).music.active})`, A(Q).music.active === true);
   const eq = sameRec(A(Q), ref, { skipVars: [] });
   check_(`interpreter: H again at tick ${Q} unpauses: PAUSED = ${A(Q).vars.PAUSED}, the PAUSED text is gone, everything is the state after tick ${P - 1} again`, A(Q).vars.PAUSED === 0 && eq === null, eq ?? '');
   d = null;
@@ -580,6 +593,7 @@ else {
   for (let t = Q + 1; t <= N && !d; t++) if (!sameBuf(a.snaps[t].ram4000, b.snaps[t - D].ram4000)) d = `sample ${t}: the display files differ from the unpaused run's sample ${t - D}`;
   check_(`after the unpause both display files equal the unpaused run's shifted by ${D} ticks (samples ${Q + 1}..${N} against ${Q + 1 - D}..${N - D}): the text was cleared and the game went on where it was`, d === null, d ?? '');
   check_(`the sound is silenced on the machine: V_SFX_ACTIVE is ${a.snaps[P].sfxActive} after tick ${P} and while paused (the unpaused run: ${b.snaps[P].sfxActive})`, a.snaps[P - 1].sfxActive !== 0 && a.snaps[P].sfxActive === 0 && b.snaps[P].sfxActive !== 0 && a.snaps.slice(P, Q).every((x) => x.sfxActive === 0));
+  check_(`the song starts again when the pause ends: V_SFX_ACTIVE is ${a.snaps[Q + 3].sfxActive} three ticks after tick ${Q}`, a.snaps[Q + 3].sfxActive !== 0);
 }
 
 // =================================================================================================================

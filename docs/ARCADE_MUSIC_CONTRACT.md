@@ -204,13 +204,13 @@ A rest is the last note at volume 0 (only the volume register changes). `node ar
 | Blockfall (v2) | `stones`, A minor, 4 patterns, order A1 A2 A1 A2 B1 B2 | the whole game: `STARTGAME` starts it, game over and pause stop it, the end of a pause starts it again from the top | melody A (organ), bass B (bass), drums C | 38.3 s | 3,696 |
 | Starfall (v2) | `fanfare`, D minor march | the title | melody A, bass B (bass), drums C | 8.5 s | 1,853 |
 | Starfall (v2) | `drive`, D minor | the play scene; the game over stops it for its own sound | held chords / tune A, octave pulse B (organ); **C free** (the shots borrow C many times a second) | 17.0 s | 1,292 |
-| Leap Runner (v3) | `rn_hop`, C major | the title and the attract mode (demo); a game stops it | tune A, bass B (organ), C free | 8.5 s | 463 |
+| Leap Runner (v3) | `rn_hop`, C major | the title and the attract mode (demo); the play scene's start replaces it | tune A, bass B (organ), C free | 8.5 s | 463 |
+| Leap Runner (v3) | `rn_run`, G major, 3 patterns in the order A A' B A (added after the compiler size pass, slice C5) | the play scene: `INIT` starts it, the pause stops it and the end of the pause starts it again from the top, game over and the win stop it (`NOMUSIC`) before their jingles, the level change keeps it | tune A, bass B (organ), C free | 17.0 s | 787 |
 | Vaults (v4) | `vl_depths`, E minor, slow | the title and the attract mode (demo); a game stops it | tune A, held bass B (organ), heartbeat of noise on C | 17.0 s | 625 |
 
 **Decisions (Claude), for review:** (1) the title song restarts each time the title scene starts (title and demo alternate by themselves, so it restarts
 every attract cycle) rather than a game-level flag that would let it run on: a flag is a new game-level variable, which would change the play scene's
-variable digests that prove the play itself unchanged; (2) Leap Runner and Vaults have **title music only**: Vaults' play scene has ticks over budget;
-Leap Runner's play would fit in time (the worst gameplay tick has about 15,000 T to spare) but its mapped area does not have the bytes for a second song;
+variable digests that prove the play itself unchanged; (2) Vaults has **title music only**: its play scene has ticks over budget. Leap Runner had title music only at M5 (its play would fit in time, but its mapped area had no bytes for a second song); **the in-game song `rn_run` was added after the compiler size pass** (slice C5, `docs/ARCADE_COMPILER_SIZE_CONTRACT.md`: the pass freed about 1,600 bytes of its code) with the Blockfall conventions: pause stops it and the end of the pause restarts it, game over and the win stop it, the level change keeps it; the mapped part is then 16,323 of 16,384 bytes and `level3` is banked again, the worst gameplay tick 160,590 -> 160,622 T (0 over 176,064);
 (3) Blockfall's pause stops the song (consistent with Leap Runner's silent pause) and the end of the pause restarts it from its beginning (there is no
 pause / resume of a song); (4) the bass instrument (a decay: a volume change every few refreshes) is used only where bytes are plentiful (Blockfall,
 Starfall's title); the tight games use organ notes (two chip changes a note).

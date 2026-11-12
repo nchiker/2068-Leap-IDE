@@ -377,3 +377,33 @@ section B2 now reaches them (a small game with `WORLD name` / `LOADTABLE name`, 
 killed, so **70 / 70 killed + 1 equivalent**. Perf (`tests/arcade-codegen-perf.mjs --compare`, before = 9b7969c): every run faster, with F9
 (medians -70 .. -1,930 T, worst -276 .. -3,432 T) and without it (every median / 95th / worst lower by 154 .. 4,590 T); ticks over budget
 unchanged (Vaults 8 / 6, Starfall 6 at scene switches).
+
+### As built: C5 (2026-11-12; Leap Runner's in-game song, section 9)
+
+**The song** `rn_run` (`arcade/examples/runner.assets.gen.mjs`, original; organ voices like `rn_hop`, tune on A, bass on B, **C free** for the effects): G major, 3 patterns in the
+order A A' B A (*theme*, ending on the dominant D; *theme-close*, the same with a closing run on G; *bridge*, C G Am D, higher and in longer notes; then the theme again, whose D leads back into
+the top of the loop), four bars of 64 refreshes to a phrase, 17.0 s a pass, **787 bytes** on the cartridge (`describe()`). WAVs: `arcade/build/music/runner-rn_run.wav` (and `runner-rn_hop.wav`).
+**The game** (`runner.arc`): `MUSIC run = "rn_run"` next to `hop`; the play scene's `INIT` has `PLAY run` where `NOMUSIC` was (it replaces the title song); `PAUSETOGGLE` stops the song
+(`NOMUSIC` after `SILENCE`) and starts it again on going on (`PLAY run`, from the top); `GAMEOVER` and the final win (`WIN`'s `ELSE` branch, state 2) call `NOMUSIC` before `PLAY over` / `PLAY win`;
+the level change (`WIN` with `lv < 3`) keeps the song, the level-complete jingle sounding over it on channel C. No other line changed: no variable was added, the play digests pass unchanged.
+
+**Sizes** (`arcadec --runtime auto`; before = the tree at the start of C5):
+
+| | code | mapped part | banked part | game total | DCK |
+|---|---|---|---|---|---|
+| before (title song only) | 8,290 | 15,957 of 16,384 (427 free) | 2,197 (titlepic 770, level4 499, level2 465, level 463) | 12,373 | 40,969 |
+| after | 9,095 (+805) | 16,323 of 16,384 (61 free) | 2,636 (+ level3 439: the linker banks it again) | 12,739 | 40,969 |
+
+**Perf** (`tests/arcade-runner-perf.mjs --check`, 1,730 ticks that are not world loads, T-states, interrupt included; budget 176,064): median 129,457 -> 130,046, 95th 145,324 -> 145,665,
+99th 152,132 -> 152,861, worst 160,590 -> 160,622 (tick 190), mean 126,493 -> 126,923; 7 ticks over budget before and after, all of them world loads or scene starts, **0 gameplay ticks over**.
+`tests/arcade-codegen-perf.mjs --games runner` prints the same row (130,046 / 145,665 / 160,622, 0 over); the song player runs in the frame interrupt, so the whole-tick figures
+carry its cost (about +590 T on the median).
+
+**Tests.** `tests/arcade-runner.mjs` 107 passed (one check was rewritten, four added: 103 before the edit, of which one failed after the game change), 0 failed. The play digests (variables, arrays, sprites, camera; world) and every state comparison
+on TSRun pass **unchanged**. Changed: the pause check "interpreter: the sound that was playing is silenced by the pause" pinned the old sound behaviour of the play scene (an effect only, `!sfx.active` from tick P)
+and failed; it now requires the effect silent from tick P + 1 (the clockless interpreter's chip model sees the effect's end one sample after the call; the machine check below it, V_SFX_ACTIVE 0 right after
+tick P, is unchanged and passes), the song silent from tick P and from then to the unpause, and the labels of the play-through's song-level comparison name the new behaviour. Added: the in-game song plays from the play
+scene's start to the win with the level changes in between and is silent from the win; game over stops it and the title starts its own again; the unpause starts the song (interpreter) and V_SFX_ACTIVE is non-zero again three ticks
+after it (TSRun). The song-level sound comparisons (V_SFX_ACTIVE, AY_SHADOW and the chip on every sample, the real runtime against the interpreter's chip model) pass: play-through 1,739 samples (1,738 with a song,
+425 with a channel-C effect over it), game over and back 146, the title / demo flow 351 and 331, fire in the title 121. `node tests/arcade-runner-perf.mjs --check` PASS, `node tests/studio-smoke.mjs` all checks passed
+(twice, the second after `publish-runtime.mjs`), `node arcade/examples/runner.assets.gen.mjs --check` all limits hold, `node tests/arcade-emitter-opt.mjs` 90 passed, 0 failed.

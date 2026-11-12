@@ -16,7 +16,7 @@ The compiler names the play scene's variables `PLAY.X`; `HI`, `FC`, `CAM`, `CF`,
 (`docs/ARCADE_BANKING_CONTRACT.md` section 10). The game is larger than the 16 KB game area of a cartridge: the four 128 x 16 worlds are `MAP`s that
 `WORLD` loads, so the linker puts them in the **banked part** of the cartridge (DOCK chunk 2, read through the window at `$4000`), and the mapped part
 (code, data, sprites, the window's tables) is what stays in the 16 KB. The game is not a toy of the banking: with every map forced `mapped` it does
-**not build** (18,903 of 16,384 bytes); banked it builds as one DCK of chunks 0 1 2 4 5 (40,969 bytes) whose mapped part is 16,267 of 16,384 bytes (117 to spare; with the three scenes the linker also banks the four tables and the title picture). Banked part 4,008 bytes (the four worlds 499 / 465 / 463 / 439, `lv1` .. `lv4` 343 each and `titlepic` 770).
+**not build** (18,903 of 16,384 bytes); banked it builds as one DCK of chunks 0 1 2 4 5 (40,969 bytes) whose mapped part was 16,267 of 16,384 bytes (117 to spare) when it was written (since the compiler size pass and the in-game song, see Music: 16,323 with the song, banked part 2,636 bytes with `level3` banked again; with the three scenes the linker also banks the four tables and the title picture). Banked part 4,008 bytes (the four worlds 499 / 465 / 463 / 439, `lv1` .. `lv4` 343 each and `titlepic` 770).
 Since slice T5 of the bankable tables (`docs/ARCADE_TABLES_CONTRACT.md`) the level data are four `TABLE`s, not initialisers in the code: the linker banks the
 worlds and then, as far as the mapped part needs it, the tables (here `lv1`; with `bankAll` all four), and a fifth level costs one more table record, which is bankable.
 Before T5 the mapped part was 16,342 of 16,384 (42 to spare) with only the four worlds banked (1,670 bytes), and the program's variable block held 711 slots (1,422 bytes) against 376 (752 bytes) now.
@@ -83,11 +83,11 @@ leaves 3 free rows under it or is a plank).
 
 ## Tests and checks
 
-`node tests/arcade-runner.mjs` (about 25 s; `ARCADE_QUICK=1` stops the runtime runs after the first level change; 95 checks): the data (assets, the `DIM` and `TABLE` lines, the maps against the lists, the walkers' turning points by a second rule), the build (mapped part,
+`node tests/arcade-runner.mjs` (about 25 s; `ARCADE_QUICK=1` stops the runtime runs after the first level change; 107 checks): the data (assets, the `DIM` and `TABLE` lines, the maps against the lists, the walkers' turning points by a second rule), the build (mapped part,
 the four banked worlds, the does-not-fit error with every map forced `mapped`), the recorded play-through of all four levels on the reference interpreter,
 the same on the real runtime in TSRun tick by tick through every level change, the normal build against `bankAll` (state and picture), and a negative control. Sections 7 and 8 test the two additions on the interpreter and on TSRun tick by tick:
 the pause (H pressed at tick 75 while a jump sound plays, the stick held at right + fire while paused, H again 11 ticks later: the state, the text cells and both display files stand still but for the PAUSED cells, the sound is
-silent, and after the unpause the run equals the unpaused one shifted by 12 ticks in state and in both display files; the shift is even, because the runtime draws into the two display files in turn; H on the title does nothing)
+silent (the effect and the in-game song both; the song starts again from its top when the pause ends), and after the unpause the run equals the unpaused one shifted by 12 ticks in state and in both display files; the shift is even, because the runtime draws into the two display files in turn; H on the title does nothing)
 and the high score (one session with a one-life variant: game over with score 40 makes HI 40, game over returns to the title with HI kept, a new game from it, the recorded route wins with 5,030 and HI 5,030, the title shows `HI 5030`, a new game is over with score 0 and HI stays). Section 9 tests the scenes: the title shows no window (`V_WIN` = 0) and draws its sprites, title -> demo -> title alternate, fire in either starts the game, the whole flow on TSRun tick by tick against the interpreter, and the play itself is the pre-scenes game's from tick 21 on (a digest of its variables, arrays, sprites, camera and world).
 `arcade/tools/xemu/runner-*` compare the cartridge on TSRun, ZEsarUX 13.0 and Fuse 1.9.1 over a scenario with level changes (the order of the commands is in
 the header of `runner-compare.mjs`).
@@ -104,6 +104,19 @@ The `KEYPRESS` prologue reads H on every tick (about 500 T); the title's HI stag
 `LOADLEVEL` names) is over the budget as before.
 
 With the three scenes (`node tests/arcade-runner-perf.mjs --check`): the scene starts (the first two ticks of the title, which draw its 768 cells in both display files, and the ENTER tick with the two after it) are reported as loads; the worst tick that is not a load is 158,403 T, median 129,845 (the ENTER from the title to the game, with its `WORLD`, is 1,214,163 T).
+
+## Music
+
+Two original songs, written as code in `runner.assets.gen.mjs` (the note notation of `songs.mjs`; each opens in the Studio's song editor), both on the organ instrument (the cheapest in bytes), the tune on channel A and the bass on B, **channel C left free** (the game's effects borrow it):
+
+| Song | Where | Key, structure | One pass | Cartridge bytes |
+|---|---|---|---|---|
+| `rn_hop` (`MUSIC hop`) | the title and the attract mode (the demo) | C major, 2 patterns (call, answer) | 8.5 s | 463 |
+| `rn_run` (`MUSIC run`) | the play scene | G major, 3 patterns in the order A A' B A: *theme* (ends on the dominant D), *theme-close* (the same with a closing run on G), *bridge* (C G Am D, higher, longer notes), then the theme again, whose D leads back into the top of the loop; four bars of 64 refreshes to a phrase, the bass a root and a fifth to every half bar | 17.0 s | 787 |
+
+The play scene's `INIT` starts `run` (`PLAY run`, which replaces the title song). **Pausing stops it** (`NOMUSIC` after `SILENCE`: the game is silent while paused) and **going on starts it again from its beginning** (the runtime has no song resume; Blockfall does the same). **Game over** and **the win** stop it (`NOMUSIC`) so that their jingles are heard alone; **the level change keeps it playing**, the level-complete jingle sounding over it on channel C. The song is the room the compiler size pass freed
+(`docs/ARCADE_COMPILER_SIZE_CONTRACT.md`, "As built: C5"): before it the mapped part was 15,957 of 16,384 bytes (code 8,290), with it 16,323 (code 9,095; `level3` is banked again). The play itself is unchanged tick for tick (the play digests of `tests/arcade-runner.mjs` pass as they were); only the sound changed. The worst gameplay tick moved from 160,590 to 160,622 T.
+`node arcade/tools/song-wav.mjs arcade/examples/runner.assets.json` writes both songs to `arcade/build/music/runner-<song>.wav` for a listen.
 
 ## Limits of the game, and how the levels keep to them
 
