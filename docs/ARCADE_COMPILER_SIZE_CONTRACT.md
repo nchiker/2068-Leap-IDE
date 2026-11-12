@@ -204,22 +204,11 @@ this file before C1 starts. **Answered:** five must-fix (F6 kept its overflow ex
 F1's FOR form needs a constant step and K is the folded value; section 8 excludes the baseline checks from its own condition, adds batch1, and
 section 7 names `tests/arcade-runner.mjs`) and the tightenings (F4's invalidation list and slot range, the patched `LD HL,0`; F5's exclusion list from
 the sources; F2's size bookkeeping; the `= 1` form; F2 alone is slower: the time target holds for the batch together; Starfall and Blockfall perf
-suites added to C4).
-
-## As built: the perf tool (C4, 2026-11-12)
-
-`tests/arcade-codegen-perf.mjs` measures the seven recorded runs of the five games (Runner; platformer win twice and game over; Vaults win and
-lose; Starfall; Blockfall with `CONST FREESEED = 0`, the variant its suite measures) on the real runtimes, whole tick with the interrupt, the
-same exclusions as each game's own suite. `--old <ref>` compiles with another ref's `src/`; `--save` / `--compare` apply section 5's bounds per
-run. "Before" = `arcade/spike/codegen/perf-before.json` (compiler of 9b7969c): Runner median 129,953 / 95th 145,626 / worst 160,866; Vaults win
-156,814 / 185,574, 8 over; Starfall 54,326 / 100,351; Blockfall 11,132 / 43,831 / 93,556. About 95 s. Starfall's script moved to
-`tests/arcade-starfall-script.mjs`; the runner / platformer / Vaults perf suites export their measurement (their output is unchanged). (Fable wrote the prototypes, so its review is anchored on them; the independent check is the code review of C6.)
-
 suites added to C4). (Fable wrote the prototypes, so its review is anchored on them; the independent check is the code review of C6.)
 
 ## 13. As built
 
-### As built: C1 (emitter: F2, F4, F5; 2026-11-12, not committed: a worktree diff on `arcade-codegen-size` 9b7969c)
+### As built: C1 (emitter: F2, F4, F5; 2026-11-12; reviewed and verified by the main thread, committed)
 
 **Design.** `z80-emit.js` keeps its encoders (the ones checked against sjasmplus) and adds a recording layer: every instruction method records
 an item `{mnemonic, operands, offset, length}`, data is recorded as runs. `finish()` works on the items in the order **F4, F5, F2**, lays the code
@@ -274,3 +263,12 @@ differential, game play-through or interpreter comparison fails.
 
 **Tool.** `arcade/tools/listing-diff.mjs` (the spike's `instr.mjs`, moved): per example, each source line's code before (a git ref read with
 `git archive`, or another directory) and after, and a check that the per-line differences add up to the change in code bytes.
+
+### As built: the perf tool (C4, 2026-11-12)
+
+`tests/arcade-codegen-perf.mjs` measures the seven recorded runs of the five games (Runner; platformer win twice and game over; Vaults win and
+lose; Starfall; Blockfall with `CONST FREESEED = 0`, the variant its suite measures) on the real runtimes, whole tick with the interrupt, the
+same exclusions as each game's own suite. `--old <ref>` compiles with another ref's `src/`; `--save` / `--compare` apply section 5's bounds per
+run. "Before" = `arcade/spike/codegen/perf-before.json` (compiler of 9b7969c): Runner median 129,953 / 95th 145,626 / worst 160,866; Vaults win
+156,814 / 185,574, 8 over; Starfall 54,326 / 100,351; Blockfall 11,132 / 43,831 / 93,556. About 95 s. Starfall's script moved to
+`tests/arcade-starfall-script.mjs`; the runner / platformer / Vaults perf suites export their measurement (their output is unchanged).
