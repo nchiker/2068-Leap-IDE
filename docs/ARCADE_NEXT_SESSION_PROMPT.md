@@ -7,7 +7,10 @@ The compiler size pass is under way on branch **`arcade-codegen-size`** (not pus
   Checkpoints of its uncommitted work are saved as `arcade/spike/codegen/wip-c1.patch` on the branch (apply with `git apply`). If the session
   ended mid-C1: check whether the worktree still exists (`git worktree list`); if not, apply the newest patch to a fresh worktree and continue
   from the contract; the patch is unreviewed until this note says otherwise.
-* Baseline `node arcade/tests/run-all.mjs --jobs 4` on 9b7969c: result recorded here when it finishes.
+* Baseline `node arcade/tests/run-all.mjs --jobs 4` on 9b7969c: **78/78 passed, 573 s**.
+* **C4 perf tool in progress** (12:05): a Sonnet agent writes `tests/arcade-codegen-perf.mjs` in the PRIMARY tree (five games, `--old <ref>`,
+  `--save`, `--compare` with the section 5 bounds) and saves `arcade/spike/codegen/perf-before.json` (the figures before any compiler change).
+  Unreviewed until this note says otherwise; if lost, re-brief from contract sections 5 and 10.
 * Next after C1: review, C2 (F1, F3, F6, F7, F8, then F9) by the same agent; a Sonnet agent writes the C4 perf tool (all five games, before / after
   bounds of contract section 5); then C3, C4, C5, C6.
 
