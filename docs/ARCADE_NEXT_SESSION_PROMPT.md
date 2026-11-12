@@ -1,14 +1,12 @@
-# RESUME HERE (usage limit hit 2026-11-12 ~12:30; both agents stopped mid-work)
+# RESUME HERE (in-progress checkpoint, 2026-11-12)
 
 Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured targets, contract section 5). Baseline run-all on 9b7969c: 78/78, 573 s.
 * **C1 (emitter F2 / F4 / F5), Fable agent, STOPPED before reporting**: its unreviewed work is `arcade/spike/codegen/wip-c1.patch` (1,469 lines,
   from worktree `.../scratchpad/wt-c1`, which may still exist: `git worktree list`). Resume: new worktree from this branch (see traps for the tsrun
   symlink and arcade/build copy), `git apply` the patch, read its "As built: C1" notes if present, finish F2/F4/F5 per contract sections 4-7, run
   `node tests/arcade-compile.mjs` and run-all (pinned-byte failures expected, behaviour failures must be 0), then review before C2.
-* **C4 perf tool, Sonnet agent, STOPPED unfinished** (its last note: a duplicate keysOf/stickOf line and unused imports to remove):
-  `arcade/spike/codegen/wip-perf.patch` = new `tests/arcade-codegen-perf.mjs`, `tests/arcade-starfall-script.mjs`, a partial
-  `perf-before.json`, and export edits to five perf/game suites (reverted in the tree; check each suite's output is unchanged before keeping them).
-  `perf-before.json` must be regenerated with the finished tool on the compiler of 9b7969c (`--old 9b7969c`).
+* **C4 perf tool DONE and verified** (e278b91): `tests/arcade-codegen-perf.mjs`, before-figures `arcade/spike/codegen/perf-before.json`.
+* C1 agent resumed after the usage reset (same worktree); checkpoints keep going to `wip-c1.patch`.
 * Then: C2 (F1, F3, F6, F7, F8, then F9), C3, C4, C5, C6 as the contract's section 10.
 
 ---
