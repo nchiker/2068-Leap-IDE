@@ -1,0 +1,644 @@
+diff --git a/src/lang/arcade/arcade-codegen.js b/src/lang/arcade/arcade-codegen.js
+index ae1aa56..97549e5 100644
+--- a/src/lang/arcade/arcade-codegen.js
++++ b/src/lang/arcade/arcade-codegen.js
+@@ -187,7 +187,13 @@
+ 
+ "use strict";
+ 
+-import { Emitter, L, M } from './z80-emit.js';
++import { Emitter, L, M, P } from './z80-emit.js';
++
++/**
++ * Compiler size pass, F5 (docs/ARCADE_COMPILER_SIZE_CONTRACT.md section 4): the targets a `CALL x / RET` is never turned into `JP x` for, because they are not ordinary routines (they read or set
++ * SP, or are not entered by CALL at all): the scene driver and the entries of the compiled code (labels), and what is in the runtimes' boot.asm besides RT_BORDER (runtime symbols).
++ */
++export const NO_TAIL = { labels: /^(scn\$|frame\$|entry\$)/, runtime: ['ENTRY', 'NMI', 'RST_EVEN', 'RST_ODD', 'FILL_EARLY'] };
+ import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, convertSpriteV3, MAX_SFX, MAX_SONGS } from './arcade-assets.js';
+ import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, noviewPoolPieces, buildFrameT } from './arcade-window.js';
+ import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
+@@ -1178,7 +1184,12 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+   // ── 5. code ──
+   const nSprites = sprites.length;
+   const base = GAME_BASE + HEADER_BYTES + DESC_LEN * nSprites;
+-  const e = new Emitter(base);
++  // the emitter's optimisations (compiler size pass F2 / F4 / F5): all on; `opts.emit` {hl, ret, jr} switches one off (measurements, tests)
++  const noTailAddrs = new Set(NO_TAIL.runtime.map((n) => sym[n]).filter((a) => a !== undefined));
++  const e = new Emitter(base, { hl: opts.emit?.hl ?? true, ret: opts.emit?.ret ?? true, jr: opts.emit?.jr ?? true, noTail: (t) => (typeof t === 'number' ? noTailAddrs.has(t) : NO_TAIL.labels.test(t)) });
++  // addresses and sizes taken while emitting are provisional (the emitter shortens code in finish()): the source map is remapped after finish(), and a size is taken as a span
++  const spans = [];                                 // [from, to, use(bytes)]
++  const span = (from, use) => spans.push([from, e.size, use]);
+   const srcMap = [];
+   const mark = (node) => {
+     if (!node) return;
+@@ -1861,11 +1872,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+     const fix = e.newLabel('wlfix');
+     if (win) {
+       const rt = need('RT_WORLDLOAD');
+-      e.label(fix); e.ld('hl', 0);
++      e.label(fix); e.ld('hl', P(0));
+       e.ld('a', st.w); e.ld('de', st.camMax); e.call(rt);
+     } else {
+       const rt = need('RT_PLANLOAD');
+-      e.label(fix); e.ld('hl', 0);
++      e.label(fix); e.ld('hl', P(0));
+       e.ld('bc', (st.w << 8) | st.h); e.call(rt);
+     }
+     worldFix.push({ label: fix, key: st.key });
+@@ -1882,7 +1893,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+     const rt = need('RT_TABLELOAD');
+     const si = curC ? curC.scene : -1;
+     const vis = visibleTabs(si);
+-    const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', 0); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
++    const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', P(0)); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
+     const named = s.table ? vis.find((t) => up(t.node.name) === up(s.table.name)) : undefined;
+     if (named) { direct(named); return; }
+     const x = s.table ?? s.index, k = fold(x);
+@@ -2238,7 +2249,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+     const snap = (info) => { e.ld('a', M(info.before)); e.cpl(); e.and('l'); e.ld(M(info.edge), 'a'); e.ld('a', 'l'); e.ld(M(info.before), 'a'); };
+     for (const [code, info] of pressKeyInfo) { e.ld('a', code); e.call(need('RT_KEYDOWN')); snap(info); }
+     for (const [n, info] of pressJoyInfo) { e.ld('a', n); e.call(need('RT_STICK')); snap(info); }
+-    prologueBytes += e.size - m;
++    span(m, (n) => { prologueBytes += n; });
+   }
+ 
+   /** Language batch 7: A = 0 (the scene has NOWINDOW / NOVIEW) or 1, then the runtime's mode routine. Nothing at all in a program without the clause. */
+@@ -2260,7 +2271,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+       for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', target(k)); }
+     }
+     e.jp(target(n - 1));
+-    for (let k = 0; k < n; k++) if (sceneTimerAddrs[k].length) { const m = e.size; e.label(`frame$tm$${k}`); for (const a of sceneTimerAddrs[k]) timerStep(a); e.jp(labelOf('P', 'FRAME', k)); prologueBytes += e.size - m; }
++    for (let k = 0; k < n; k++) if (sceneTimerAddrs[k].length) { const m = e.size; e.label(`frame$tm$${k}`); for (const a of sceneTimerAddrs[k]) timerStep(a); e.jp(labelOf('P', 'FRAME', k)); span(m, (n) => { prologueBytes += n; }); }
+     e.label('scn$enter');                                         // A = the scene's index
+     e.ld('sp', M(spAddr)); e.push('af'); e.call('scn$reset'); e.pop('af');
+     e.ld(M(curAddr), 'a');
+@@ -2308,7 +2319,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+       const m5 = e.size;
+       for (const a of sceneTimerAddrs[0] ?? []) timerStep(a);
+       e.jp('P$FRAME');
+-      prologueBytes += e.size - m5;
++      span(m5, (n) => { prologueBytes += n; });
+     }
+     for (const c of reach) {
+       useCtx(c.ctx);
+@@ -2467,7 +2478,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+       e.label('fmt$d1'); e.or('a'); e.sbc('hl', 'de'); e.jr('c', 'fmt$d2'); e.inc('b'); e.jr('fmt$d1');
+       e.label('fmt$d2'); e.add('hl', 'de'); e.ld('a', 'c'); e.or('a'); e.jr('z', 'fmt$d3'); e.dec('c'); e.ret();
+       e.label('fmt$d3'); e.ld('a', 'b'); e.jp('fmt$put');
+-      fmtBytes = e.size - m6;
++      span(m6, (n) => { fmtBytes = n; });
+     }
+     // LOADTABLE by index: one pointer list per scope that needs it (a DW per visible table; each word is a fixup the linker fills with the record's address)
+     for (const [id, vis] of tabLists) {
+@@ -2492,7 +2503,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+         e.label(label); e.db(codes.length, ...codes);
+       }
+       if (v2) { e.label('inst$table'); e.db(instAssets.length, ...instAssets); }
+-      dataSize.strings = e.size - mark0;
++      dataSize.strings = 0; span(mark0, (n) => { dataSize.strings = n; });      // (set here to keep the order of the keys)
+       v1Info = { tileset: 0, sfxTable: 0, map: 0 };
+       if (tileset) { e.label('tileset$'); e.db(tileset.count); for (const b of tileset.bytes) e.db(b); }
+       dataSize.tileset = tileset ? 1 + tileset.bytes.length : 0;
+@@ -2520,7 +2531,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+     if (initSegments.length) {
+       const m0 = e.size;
+       for (const seg of initSegments) { e.label(seg.label); for (const v of seg.values) e.dw(v & 0xFFFF); }
+-      dataSize.init = e.size - m0;
++      dataSize.init = 0; span(m0, (n) => { dataSize.init = n; });
+     }
+     if (slotNames.length === 0) allocSlot('pad');   // the clear loop needs at least one slot (LDIR with BC = 0 would copy 64 KB)
+     const nSlots = slotNames.length;
+@@ -2529,7 +2540,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+     if (nSlots > 0 && VARS_BASE + 2 * nSlots - 1 > VARS_LIMIT) {
+       throw new GenError(ast, `too many variables: ${nSlots} slots need ${2 * nSlots} bytes, the runtime allows ${VARS_LIMIT - VARS_BASE + 1}`);
+     }
++    e.slots = [VARS_BASE, VARS_BASE + 2 * nSlots];  // F4 tracks the game's variable slots and nothing else (never a runtime variable)
+     var code = e.finish();
++    for (const [from, to, use] of spans) use(e.finalSize(from, to));
++    {                                               // the source map in final addresses; entries whose code now starts at the same address: the last one stands (as mark() does)
++      const final = [];
++      for (const sm of srcMap) { sm.addr = e.remap(sm.addr); if (final.length && final[final.length - 1].addr === sm.addr) final.pop(); final.push(sm); }
++      srcMap.length = 0; srcMap.push(...final);
++    }
+   } catch (ex) {
+     if (ex instanceof GenError) { err(ex.node ?? ast, ex.message); return fail(); }
+     err(ast, `internal compiler error: ${ex.message}`);
+@@ -2613,7 +2631,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+   // bankable per-level tables: every record is a candidate too (no per-table override in this batch: tables are code, not project assets), after the maps
+   for (const t of allTabs) if (t.data) bankables.push({ key: t.key, name: t.name, kind: 'table', data: t.data, override: 'auto', node: t.node });
+   const rate = ast.framerate ? ast.framerate.value : 30;
+-  return {
++  return Object.defineProperty({
+     errors, warnings,
+     streams: [...streams.values()].filter((st) => !st.own && !st.error && st.data).map((st) => ({ key: st.key, name: st.name, kind: st.kind, data: st.data })),
+     fixups: [...worldFix.map((f) => ({ at: e.addressOf(f.label) + 1, key: f.key })), ...tabFix.map((f) => ({ at: e.addressOf(f.label) + f.off, key: f.key }))],
+@@ -2638,7 +2656,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
+     ...(noviewPlan ? { noviewPhase: noviewPlan } : {}),
+     ...(hasModes ? { sceneModes } : {}),
+     usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(allTabs.length ? { tables: allTabs.length, tableBytes: allTabs.reduce((n, t) => n + (t.data?.length ?? 0), 0) } : {}), ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
+-  };
++  }, 'emitter', { value: e, enumerable: false });      // (not enumerable: the result is copied and compared as data; the emitter is for listings and tests: gen.emitter.listing() / .asm())
+ }
+ 
+ // ── the banked cartridge map: placement policy (docs/ARCADE_BANKING_CONTRACT.md section 5) ──────────────────────────────────────────────────────────────
+diff --git a/src/lang/arcade/arcade-compile.js b/src/lang/arcade/arcade-compile.js
+index ae55f33..f4a7cdb 100644
+--- a/src/lang/arcade/arcade-compile.js
++++ b/src/lang/arcade/arcade-compile.js
+@@ -107,7 +107,7 @@ export function usageLines(u) {
+   return lines;
+ }
+ 
+-export function compile(text, { runtime, image, assets, scenes, bankAll = false } = {}) {
++export function compile(text, { runtime, image, assets, scenes, bankAll = false, emit } = {}) {
+   const out = { dck: null, memory: null, map: null, errors: [], warnings: [], usage: null };
+   const sort = (l) => l.sort((a, b) => a.line - b.line || a.col - b.col);
+   const take = (list) => { for (const d of list) (d.severity === 'warning' ? out.warnings : out.errors).push(d); };
+@@ -127,7 +127,7 @@ export function compile(text, { runtime, image, assets, scenes, bankAll = false
+     return out;
+   }
+ 
+-  const gen = generate(ast, runtime, assets, { bankAll });
++  const gen = generate(ast, runtime, assets, { bankAll, emit });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
+   take(gen.errors ?? []);
+   take(gen.warnings ?? []);
+   if (out.errors.length || !gen.code) { sort(out.errors); sort(out.warnings); return out; }
+diff --git a/src/lang/arcade/z80-emit.js b/src/lang/arcade/z80-emit.js
+index 995ecc8..1a0802e 100644
+--- a/src/lang/arcade/z80-emit.js
++++ b/src/lang/arcade/z80-emit.js
+@@ -19,6 +19,27 @@
+  *
+  * Only the instructions Leap Arcade's code generator needs are here (no IX/IY, no I/O); each is checked against
+  * sjasmplus in tests/arcade-compile.mjs. A label is a name; it may be used before it is defined.
++ *
++ * Instruction records and the size optimisations (compiler size pass, docs/ARCADE_COMPILER_SIZE_CONTRACT.md F2 / F4 / F5)
++ *   Every instruction method writes its bytes as before AND records an item {mnemonic, operands, offset, length}; raw data
++ *   (db / dw) is recorded as data items. finish() works on the items, so it can change instructions, and it can write what
++ *   it emitted as assembly text (asm()) for the cross-check against sjasmplus. Three optimisations, each an option of the
++ *   constructor (all off by default: the emitter is then a plain assembler):
++ *     new Emitter(org, { hl: true, ret: true, jr: true, noTail: (target) => bool })   and   e.slots = [lo, hi)
++ *     hl   F4: a `LD HL,n` / `LD HL,(v)` whose value HL already holds is left out; `LD DE|BC,(v)` with HL = v becomes
++ *          `LD D,H / LD E,L`. Only constants and words inside `slots` (the game's variable slots) are tracked.
++ *     ret  F5: `JP [cc,]label` where the instruction at the label is an emitted RET becomes `RET [cc]`; `CALL x` followed
++ *          directly by `RET` (no label between) becomes `JP x` unless `noTail(x)` says x is not an ordinary routine.
++ *     jr   F2: `JP label` / `JP NZ|Z|NC|C,label` in reach becomes `JR` (decided for all jumps together, to a fixed point).
++ *   Order in finish(): hl, ret, jr. Until finish(), `pc`, `size` and addressOf() are PROVISIONAL (what they would be with
++ *   no optimisation). After finish(): addressOf() gives final addresses, remap(addr) turns a provisional address into the
++ *   final one and finalSize(a, b) gives the final byte count between two provisional `size` values.
++ *   What is and is not remapped: every label and every reference to a label (L(label, off) too: the final address of the
++ *   label plus off; finish() throws if the bytes between the label and label + off changed size). A NUMBER is an absolute
++ *   address outside this emitter's code (a runtime entry, a variable) and is never changed, so code inside the emitter
++ *   must be addressed by label. A `JP number` is never relaxed (a `CALL number / RET` may become `JP number`); a JR or
++ *   DJNZ to a number is refused when an optimisation is on. P(n) is a 16-bit immediate that somebody patches later (the
++ *   linker): it is encoded as n and never taken for the constant n.
+  */
+ 
+ "use strict";
+@@ -34,34 +55,51 @@ export const L = (label, off = 0) => ({ label, off });
+ /** Absolute memory operand (nn): `addr` is a number, a label name or L(...). */
+ export const M = (addr) => ({ mem: typeof addr === 'string' ? L(addr) : addr });
+ 
++/** A 16-bit immediate that is patched after finish() (by the linker): encoded as `n`, never treated as the constant n. */
++export const P = (n = 0) => ({ patch: n });
++
++const isPatch = (x) => x !== null && typeof x === 'object' && typeof x.patch === 'number';
+ const isRef = (x) => x !== null && typeof x === 'object' && typeof x.label === 'string';
+ const isMem = (x) => x !== null && typeof x === 'object' && 'mem' in x;
+ const isNum = (x) => typeof x === 'number';
+ 
+ export class Emitter {
+   /** @param {number} org address of the first byte */
+-  constructor(org = 0) {
++  /** @param {number} org address of the first byte  @param {object} opt {hl, ret, jr, noTail, slots}: see the header (all off by default) */
++  constructor(org = 0, opt = {}) {
+     this.org = org;
+-    this.buf = [];
+-    this.labels = new Map();   // name -> absolute address
+-    this.fixups = [];          // {pos, ref, kind: 'abs16' | 'rel8', at}
++    this.buf = [];             // the bytes as first encoded (provisional: before the optimisations of finish())
++    this.labels = new Map();   // name -> absolute address (provisional for a label of this code)
++    this.internal = new Set(); // the labels defined with label(): addresses inside this code
++    this.fixups = [];          // {pos, ref, kind: 'abs16' | 'rel8'}
++    this.items = [];           // {off, len, mn, args, data}: one per instruction, one per run of data
+     this.uid = 0;
++    this.opt = { hl: !!opt.hl, ret: !!opt.ret, jr: !!opt.jr, noTail: opt.noTail ?? null };
++    this.slots = opt.slots ?? null;   // [lo, hi): the addresses F4 may track (the code generator sets it before finish())
++    this.depth = 0;            // > 0 inside an instruction method (an encoder calling another one records one item)
++    this.lastLabel = -1;       // offset of the last label(): data after it starts a new item
++    this.fin = null;           // the result of finish()
+   }
+ 
+-  /** Address of the next byte. */
++  /** Address of the next byte (provisional, see the header). */
+   get pc() { return this.org + this.buf.length; }
++  /** Bytes so far (provisional). */
+   get size() { return this.buf.length; }
+ 
+   /** Define `name` at the current address. */
+   label(name) {
+     if (this.labels.has(name)) throw new Error(`label '${name}' defined twice`);
+     this.labels.set(name, this.pc);
++    this.internal.add(name);
++    this.lastLabel = this.buf.length;
++    this.fin = null;
+     return name;
+   }
+   /** Define `name` as an absolute address (an external symbol). */
+   define(name, addr) {
+     if (this.labels.has(name)) throw new Error(`label '${name}' defined twice`);
+     this.labels.set(name, addr);
++    this.fin = null;
+   }
+   /** A fresh label name (not yet defined). */
+   newLabel(prefix = 'L') { return `${prefix}$${++this.uid}`; }
+@@ -99,13 +137,16 @@ export class Emitter {
+     } else if (isRef(v)) {
+       this.fixups.push({ pos: this.buf.length, ref: v, kind: 'abs16' });
+       this.buf.push(0, 0);
++    } else if (isPatch(v)) {
++      this.imm16(v.patch);
+     } else throw new Error(`bad 16-bit operand ${JSON.stringify(v)}`);
+   }
+   addr16(m) { this.imm16(isMem(m) ? m.mem : m); }
+   rel8(target) {
+     const ref = typeof target === 'string' ? L(target) : target;
+     if (isNum(ref)) {
+-      // an absolute address: resolve now
++      // an absolute address: resolve now (it could not follow code that finish() moves)
++      if (this.opt.hl || this.opt.ret || this.opt.jr) throw new Error('a relative jump to a number cannot be used with the optimisations');
+       const d = ref - (this.pc + 1);
+       if (d < -128 || d > 127) throw new Error(`relative jump out of range (${d})`);
+       this.buf.push(d & 0xFF);
+@@ -119,8 +160,8 @@ export class Emitter {
+   // ── loads ──
+   ld(dst, src) {
+     const b = this.buf;
+-    const d8 = isNum(dst) || isMem(dst) || isRef(dst) ? undefined : R8[dst];
+-    const s8 = isNum(src) || isMem(src) || isRef(src) ? undefined : R8[src];
++    const d8 = typeof dst === 'string' ? R8[dst] : undefined;
++    const s8 = typeof src === 'string' ? R8[src] : undefined;
+     if (d8 !== undefined && s8 !== undefined) {
+       if (d8 === 6 && s8 === 6) throw new Error('ld (hl),(hl) does not exist');
+       b.push(0x40 | (d8 << 3) | s8); return this;
+@@ -134,7 +175,7 @@ export class Emitter {
+     if (dst === '(de)' && src === 'a') { b.push(0x12); return this; }
+     if (dst === 'sp' && src === 'hl') { b.push(0xF9); return this; }
+     const d16 = typeof dst === 'string' ? R16[dst] : undefined;
+-    if (d16 !== undefined && (isNum(src) || isRef(src))) {
++    if (d16 !== undefined && (isNum(src) || isRef(src) || isPatch(src))) {
+       b.push(0x01 | (d16 << 4)); this.imm16(src); return this;
+     }
+     if (d16 !== undefined && isMem(src)) {
+@@ -273,27 +314,336 @@ export class Emitter {
+   lddr() { this.buf.push(0xED, 0xB8); return this; }
+ 
+   // ── result ──
+-  /** Address of a defined label. */
++  /** Address of a defined label: the final address after finish(), the provisional one before. */
+   addressOf(name) {
+-    const a = this.labels.get(name);
++    const a = (this.fin ? this.fin.labels : this.labels).get(name);
+     if (a === undefined) throw new Error(`undefined label '${name}'`);
+     return a;
+   }
+-  /** Resolve every reference and return the bytes (a fresh Uint8Array). Safe to call more than once. */
++
++  /**
++   * Resolve every reference and return the bytes (a fresh Uint8Array). Safe to call more than once (the work is done
++   * once; emitting anything afterwards makes the next finish() start again from the recorded items).
++   */
+   finish() {
+-    const out = Uint8Array.from(this.buf);
+-    for (const f of this.fixups) {
+-      const base = this.labels.get(f.ref.label);
+-      if (base === undefined) throw new Error(`undefined label '${f.ref.label}'`);
+-      const target = base + (f.ref.off || 0);
+-      if (f.kind === 'abs16') {
+-        out[f.pos] = target & 0xFF; out[f.pos + 1] = (target >> 8) & 0xFF;
+-      } else {
+-        const d = target - (this.org + f.pos + 1);
+-        if (d < -128 || d > 127) throw new Error(`relative jump to '${f.ref.label}' out of range (${d})`);
+-        out[f.pos] = d & 0xFF;
++    if (!this.fin) this.fin = this.build();
++    return Uint8Array.from(this.fin.bytes);
++  }
++
++  /** Final address of a provisional address (after finish()). Addresses outside this code are returned as they are. */
++  remap(addr) {
++    if (!this.fin) throw new Error('remap() before finish()');
++    const p = addr - this.org;
++    if (p < 0 || p > this.buf.length) return addr;
++    return this.org + mapOffset(this.fin.T, p);
++  }
++  /** Final number of bytes between two provisional offsets (values of `size`), after finish(). */
++  finalSize(from, to) {
++    if (!this.fin) throw new Error('finalSize() before finish()');
++    return mapOffset(this.fin.T, to) - mapOffset(this.fin.T, from);
++  }
++  /**
++   * What finish() emitted, one entry per instruction or run of data, in address order:
++   *   {addr, bytes, mn, args, labels, data}   plus, for what an optimisation touched,
++   *   dead: true (bytes is empty), why: 'hl' | 'tail'     an instruction that was left out; for 'hl', need: {k} or {s}: the value HL must hold here
++   *   was: 'jp' | 'call' | 'ld'                            the mnemonic before the change (JP -> JR / RET, CALL -> JP, LD rr,(v) -> LD r,H / LD r,L with need: {s})
++   *   tail: true                                           a JP that was `CALL x / RET`
++   * `endLabels` (a property of the array) are the labels defined after the last byte.
++   */
++  listing() {
++    this.finish();
++    const { W, start, endLabels } = this.fin;
++    const out = W.map((w, i) => ({
++      addr: this.org + start[i], bytes: w.dead ? [] : w.bytes.slice(), mn: w.mn, args: w.args, labels: w.labels.slice(), data: !!w.data,
++      ...(w.dead ? { dead: true, why: w.why } : {}), ...(w.need ? { need: w.need } : {}), ...(w.was ? { was: w.was } : {}), ...(w.tail ? { tail: true } : {}),
++      fixes: w.dead ? [] : w.fixes.map((f) => ({ ...f })),
++    }));
++    out.endLabels = endLabels.slice();
++    return out;
++  }
++
++  /**
++   * The emitted code as sjasmplus source: ORG, the external symbols as EQU, every label, every instruction with its
++   * operands (label references by name, so sjasmplus resolves them itself) and the data as DB / DW. Assembling it must
++   * give exactly the bytes of finish() (tests/arcade-compile.mjs, on every example game).
++   */
++  asm() {
++    const items = this.listing();
++    const names = new Map(), taken = new Set();
++    const nameOf = (label) => {
++      if (!names.has(label)) {
++        let n = 'L_' + label.replace(/[^A-Za-z0-9_]/g, '_');
++        for (let k = 2; taken.has(n); k++) n = 'L_' + label.replace(/[^A-Za-z0-9_]/g, '_') + '_' + k;
++        taken.add(n); names.set(label, n);
++      }
++      return names.get(label);
++    };
++    const ref = (r) => nameOf(r.label) + (r.off ? (r.off > 0 ? '+' : '-') + Math.abs(r.off) : '');
++    const op = (x) => (isNum(x) ? String(x) : typeof x === 'string' ? x : isMem(x) ? `(${op(x.mem)})` : isRef(x) ? ref(x) : isPatch(x) ? String(x.patch) : String(x));
++    const text = (it) => {
++      const a = it.args, mn = it.mn;
++      if (mn === 'jp' || mn === 'jr' || mn === 'call' || mn === 'djnz') {
++        const t = a[a.length - 1], cc = a.length > 1 ? a[0] + ',' : '';
++        return `${mn} ${cc}${t === '(hl)' ? t : typeof t === 'string' ? nameOf(t) : op(t)}`;
+       }
++      if (mn === 'add' || mn === 'adc' || mn === 'sbc') return a.length === 1 ? `${mn} a,${op(a[0])}` : `${mn} ${op(a[0])},${op(a[1])}`;
++      if (mn === 'sub' || mn === 'and' || mn === 'xor' || mn === 'or' || mn === 'cp') return `${mn} ${op(a[a.length - 1])}`;
++      return a.length ? `${mn} ${a.filter((x) => x !== undefined).map(op).join(',')}` : mn;
++    };
++    const lines = [`  org ${this.org}`];
++    for (const [name, addr] of this.labels) if (!this.internal.has(name)) lines.push(`${nameOf(name)} equ ${addr}`);
++    for (const it of items) {
++      for (const l of it.labels) lines.push(`${nameOf(l)}:`);
++      if (it.dead) { lines.push(`  ; left out (${it.why}): ${text(it)}`); continue; }
++      if (!it.data) { lines.push(`  ${text(it)}`); continue; }
++      const fixAt = new Map(it.fixes.map((f) => [f.at, f]));
++      let run = [];
++      const flush = () => { for (let k = 0; k < run.length; k += 16) lines.push(`  db ${run.slice(k, k + 16).join(',')}`); run = []; };
++      for (let k = 0; k < it.bytes.length; k++) {
++        const f = fixAt.get(k);
++        if (f) { flush(); lines.push(`  dw ${ref(f.ref)}`); k++; } else run.push(it.bytes[k]);
++      }
++      flush();
+     }
+-    return out;
++    for (const l of items.endLabels) lines.push(`${nameOf(l)}:`);
++    return lines.join('\n') + '\n';
++  }
++
++  // ── finish(): the items, the optimisations, the layout ──
++  build() {
++    const org = this.org, opt = this.opt;
++    // 1. working items: bytes, fixups (positions relative to the item) and the labels defined at the item
++    const W = this.items.map((it) => ({ mn: it.mn, args: it.args, data: it.data, bytes: this.buf.slice(it.off, it.off + it.len), fixes: [], labels: [], prov: it.off, len0: it.len }));
++    {
++      let i = 0;
++      for (const f of this.fixups) {                  // both lists are in address order
++        while (i < W.length && W[i].prov + W[i].len0 <= f.pos) i++;
++        if (i >= W.length || f.pos < W[i].prov) throw new Error('internal: a fixup outside every item');
++        W[i].fixes.push({ at: f.pos - W[i].prov, ref: f.ref, kind: f.kind });
++      }
++    }
++    const endLabels = [];
++    {
++      const at = new Map(W.map((w) => [w.prov, w]));
++      for (const name of this.internal) {
++        const p = this.labels.get(name) - org;
++        if (p === this.buf.length) endLabels.push(name);
++        else if (at.has(p)) at.get(p).labels.push(name);
++        else throw new Error(`internal: label '${name}' is inside an item`);
++      }
++    }
++    const orig = W.slice();                           // the items as emitted (prov / len0 are the provisional layout)
++    // 2. the optimisations
++    const V = opt.hl ? trackHL(W, this.slots) : W;
++    const idx = new Map();                            // internal label -> index into V (V.length: the end)
++    V.forEach((w, i) => { for (const l of w.labels) idx.set(l, i); });
++    for (const l of endLabels) idx.set(l, V.length);
++    const internalTarget = (t) => {                   // a jump target that is a label of this code (no offset): its name, else null
++      const name = typeof t === 'string' ? t : isRef(t) && !t.off ? t.label : null;
++      return name !== null && idx.has(name) ? name : null;
++    };
++    if (opt.ret) foldReturns(V, idx, internalTarget, opt.noTail);
++    const size = (w) => (w.dead ? 0 : w.bytes.length);
++    const start = new Int32Array(V.length + 1);
++    const layout = () => { let p = 0; for (let i = 0; i < V.length; i++) { start[i] = p; p += V[i].short ? 2 : size(V[i]); } start[V.length] = p; };
++    if (opt.jr) {
++      // F2: every candidate starts short; one that does not reach becomes long again, until nothing changes (making a jump longer never
++      // brings another one into reach, so this ends, and what stays short is in reach: the resolution below checks every displacement again)
++      const cands = [];
++      V.forEach((w, i) => {
++        if (w.dead || w.data || w.mn !== 'jp') return;
++        const cc = w.args.length > 1 ? w.args[0] : undefined, t = w.args[w.args.length - 1];
++        if (t === '(hl)' || (cc !== undefined && CC[cc] > 3)) return;
++        const name = internalTarget(t);
++        if (name === null) return;
++        w.short = true; cands.push({ w, i, to: idx.get(name) });
++      });
++      for (let changed = true; changed;) {
++        changed = false; layout();
++        for (const c of cands) {
++          if (!c.w.short) continue;
++          const d = start[c.to] - (start[c.i] + 2);
++          if (d < -128 || d > 127) { c.w.short = false; changed = true; }
++        }
++      }
++      for (const c of cands) {
++        const short = c.w.short; delete c.w.short;
++        if (short) Object.assign(c.w, encode('jr', c.w.args), { mn: 'jr', was: 'jp' });
++      }
++    }
++    layout();
++    // 3. final addresses, the provisional -> final table (over the items as emitted), references
++    const total = start[V.length];
++    const labels = new Map(this.labels);
++    for (const [name, i] of idx) labels.set(name, org + start[i]);
++    const at = new Map(V.map((w, i) => [w, start[i]]));
++    const T = { prov: orig.map((w) => w.prov), fin: orig.map((w) => at.get(w)), len0: orig.map((w) => w.len0), len1: orig.map((w) => (w.dead ? 0 : w.bytes.length + (w.split ? 1 : 0))), total, end: this.buf.length };
++    const out = new Uint8Array(total);
++    V.forEach((w, i) => {
++      if (w.dead) return;
++      out.set(w.bytes, start[i]);
++      for (const f of w.fixes) {
++        const base = labels.get(f.ref.label);
++        if (base === undefined) throw new Error(`undefined label '${f.ref.label}'`);
++        const off = f.ref.off || 0;
++        if (off && this.internal.has(f.ref.label)) {
++          const p = this.labels.get(f.ref.label) - org + off;
++          if (p >= 0 && p <= T.end && mapOffset(T, p) !== base - org + off) throw new Error(`internal: '${f.ref.label}${off > 0 ? '+' : ''}${off}' crosses code whose size changed`);
++        }
++        const target = base + off, pos = start[i] + f.at;
++        if (f.kind === 'abs16') { out[pos] = target & 0xFF; out[pos + 1] = (target >> 8) & 0xFF; }
++        else {
++          const d = target - (org + pos + 1);
++          if (d < -128 || d > 127) throw new Error(`relative jump to '${f.ref.label}' out of range (${d})`);
++          out[pos] = d & 0xFF;
++        }
++      }
++    });
++    return { bytes: out, labels, W: V, start, endLabels, T };
++  }
++}
++
++/** Provisional offset -> final offset. An offset inside an instruction that was removed or changed maps into what replaced it (clamped). */
++function mapOffset(T, p) {
++  if (p >= T.end) return T.total;
++  let lo = 0, hi = T.prov.length;                     // the last item that starts at or before p
++  while (lo < hi) { const m = (lo + hi) >> 1; if (T.prov[m] <= p) lo = m + 1; else hi = m; }
++  const i = lo - 1;
++  if (i < 0) return p;
++  const d = p - T.prov[i];
++  return T.fin[i] + (T.len0[i] === T.len1[i] ? d : Math.min(d, T.len1[i]));
++}
++
++/** Encode one instruction on its own: {bytes, fixes}. */
++function encode(mn, args) {
++  const t = new Emitter(0);
++  t[mn](...args);
++  return { bytes: t.buf.slice(), fixes: t.fixups.map((f) => ({ at: f.pos, ref: f.ref, kind: f.kind })) };
++}
++
++/**
++ * F4: what HL holds, over the items in order. The state is {k, s}: HL = the constant k and / or HL = the word at the slot address s
++ * (each may be unknown). It is dropped at every label and by everything that is not known to keep it (see `default`).
++ * Returns the new item list (a left-out load stays in it as a dead item with `need`, for the listing and the checks).
++ */
++function trackHL(W, slots) {
++  const lo = slots ? slots[0] : 0, hi = slots ? slots[1] : 0;
++  const slotOf = (x) => (isMem(x) && isNum(x.mem) && x.mem >= lo && x.mem + 1 < hi ? x.mem : undefined);
++  const HLR = (r) => r === 'h' || r === 'l' || r === 'hl';
++  const out = [];
++  let k, s;                                           // undefined = unknown
++  const reset = () => { k = undefined; s = undefined; };
++  for (const w of W) {
++    if (w.labels.length) reset();                     // a label: any path may arrive here
++    if (w.data) { reset(); out.push(w); continue; }
++    const a = w.args;
++    let keep = true;
++    switch (w.mn) {
++      case 'ld': {
++        const [d, src] = a;
++        if (d === 'hl') {
++          const m = slotOf(src);
++          if (isNum(src)) { const v = src & 0xFFFF; if (k === v) { keep = false; w.need = { k: v }; } else { k = v; s = undefined; } }
++          else if (m !== undefined) { if (s === m) { keep = false; w.need = { s: m }; } else { s = m; k = undefined; } }
++          else reset();                               // a label's address, a patched operand, a word outside the slots
++        } else if (d === 'h' || d === 'l') reset();
++        else if ((d === 'de' || d === 'bc') && s !== undefined && slotOf(src) === s) {
++          out.push(Object.assign(w, encode('ld', [d[0], 'h']), { args: [d[0], 'h'], was: 'ld', need: { s }, split: true }));
++          out.push({ ...encode('ld', [d[1], 'l']), mn: 'ld', args: [d[1], 'l'], labels: [], was: 'ld' });
++          continue;
++        } else if (isMem(d)) {
++          const m = isNum(d.mem) ? d.mem : undefined;                             // undefined: a label (not a slot, but nothing is assumed)
++          if (src === 'hl') {
++            if (slotOf(d) !== undefined) s = m;                                   // HL = the slot now (and still the constant, if known)
++            else if (m === undefined || (s !== undefined && Math.abs(m - s) <= 1)) s = undefined;
++          } else {
++            const last = m === undefined ? 0 : m + (src === 'a' ? 0 : 1);         // the bytes m..last are written by another register
++            if (m === undefined || (s !== undefined && m <= s + 1 && last >= s)) s = undefined;
++          }
++        } else if (d === '(hl)' || d === '(de)' || d === '(bc)') s = undefined;   // a store through a pointer: any slot may have changed
++        // else: A, B, C, D, E, BC, DE or SP loaded: HL and the memory are as they were
++        break;
++      }
++      case 'inc': case 'dec': case 'rlc': case 'rrc': case 'rl': case 'rr': case 'sla': case 'sra': case 'srl':
++        if (HLR(a[0])) reset(); else if (a[0] === '(hl)') s = undefined;
++        break;
++      case 'res': case 'set':
++        if (HLR(a[1])) reset(); else if (a[1] === '(hl)') s = undefined;
++        break;
++      case 'add': case 'adc': case 'sbc':
++        if (a[0] === 'hl') reset();
++        break;
++      case 'pop':
++        if (a[0] === 'hl') reset();
++        break;
++      case 'jp': case 'jr':
++        if (a.length < 2) reset();                    // unconditional (JP (HL) too): what follows is reached only through a label
++        break;
++      case 'ret':
++        if (a[0] === undefined) reset();
++        break;
++      case 'sub': case 'and': case 'xor': case 'or': case 'cp': case 'push': case 'bit': case 'djnz':
++      case 'cpl': case 'neg': case 'scf': case 'ccf': case 'rlca': case 'rrca': case 'rla': case 'rra': case 'nop': case 'di': case 'ei':
++        break;                                        // neither HL nor memory a slot can be in (PUSH writes the stack)
++      default:
++        reset();                                      // CALL, RST, EX, EXX, LDI / LDIR / LDD / LDDR, HALT and anything not listed above
++    }
++    if (!keep) { w.dead = true; w.why = 'hl'; }
++    out.push(w);
+   }
++  return out;
++}
++
++/**
++ * F5: JP [cc,]label to an emitted RET -> RET [cc] (to a fixed point: a JP that became a RET is a RET for the jumps to it);
++ * then CALL x directly followed by RET, with no label on the RET -> JP x, unless noTail(x) (x: a label name or a number).
++ */
++function foldReturns(V, idx, internalTarget, noTail) {
++  const live = (i) => { while (i < V.length && V[i].dead) i++; return i; };
++  const isRet = (w) => !!w && !w.data && !w.dead && w.mn === 'ret' && w.args[0] === undefined;
++  for (let changed = true; changed;) {
++    changed = false;
++    for (const w of V) {
++      if (w.dead || w.data || w.mn !== 'jp' || w.args[0] === '(hl)') continue;
++      const name = internalTarget(w.args[w.args.length - 1]);
++      if (name === null || !isRet(V[live(idx.get(name))])) continue;
++      const args = w.args.length > 1 ? [w.args[0]] : [];
++      Object.assign(w, encode('ret', args), { mn: 'ret', args, was: 'jp' });
++      changed = true;
++    }
++  }
++  for (let i = 0; i < V.length; i++) {
++    const w = V[i];
++    if (w.dead || w.data || w.mn !== 'call' || w.args.length !== 1) continue;
++    const j = live(i + 1);
++    if (!isRet(V[j])) continue;
++    let labelled = false;
++    for (let q = i + 1; q <= j; q++) if (V[q].labels.length) labelled = true;
++    const t = w.args[0];
++    const target = isNum(t) ? t : typeof t === 'string' ? t : isRef(t) && !t.off ? t.label : null;
++    if (labelled || target === null || (noTail && noTail(target))) continue;
++    Object.assign(w, encode('jp', w.args), { mn: 'jp', was: 'call', tail: true });
++    V[j].dead = true; V[j].why = 'tail';
++  }
++}
++
++// ── the recording layer: every instruction method records one item; data is recorded as runs ──
++const INSTRUCTIONS = ['ld', 'push', 'pop', 'ex', 'exx', 'add', 'adc', 'sbc', 'sub', 'and', 'xor', 'or', 'cp', 'inc', 'dec',
++  'rlc', 'rrc', 'rl', 'rr', 'sla', 'sra', 'srl', 'bit', 'res', 'set', 'jp', 'jr', 'djnz', 'call', 'ret', 'rst',
++  'nop', 'halt', 'di', 'ei', 'cpl', 'neg', 'scf', 'ccf', 'rlca', 'rrca', 'rla', 'rra', 'ldi', 'ldir', 'ldd', 'lddr'];
++for (const mn of [...INSTRUCTIONS, 'db', 'dw']) {
++  const enc = Emitter.prototype[mn], data = mn === 'db' || mn === 'dw';
++  Emitter.prototype[mn] = function (...args) {
++    if (this.depth > 0) return enc.apply(this, args);
++    const off = this.buf.length, nfix = this.fixups.length;
++    this.depth++;
++    try { enc.apply(this, args); } finally { this.depth--; }
++    const len = this.buf.length - off;
++    if (len === 0) return this;
++    this.fin = null;
++    const last = this.items[this.items.length - 1];
++    if (data && last && last.data && this.lastLabel !== off) last.len += len;      // one item per run of data between labels
++    else this.items.push({ off, len, mn: data ? 'db' : mn, args: data ? [] : args, data });
++    return this;
++  };
+ }
