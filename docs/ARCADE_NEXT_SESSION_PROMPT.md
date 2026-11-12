@@ -1,12 +1,9 @@
 # RESUME HERE (in-progress checkpoint, 2026-11-12)
 
 Branch **`arcade-codegen-size`** (not pushed). C0 done (9b7969c: re-measured targets, contract section 5). Baseline run-all on 9b7969c: 78/78, 573 s.
-* **C1 (emitter F2 / F4 / F5), Fable agent, STOPPED before reporting**: its unreviewed work is `arcade/spike/codegen/wip-c1.patch` (1,469 lines,
-  from worktree `.../scratchpad/wt-c1`, which may still exist: `git worktree list`). Resume: new worktree from this branch (see traps for the tsrun
-  symlink and arcade/build copy), `git apply` the patch, read its "As built: C1" notes if present, finish F2/F4/F5 per contract sections 4-7, run
-  `node tests/arcade-compile.mjs` and run-all (pinned-byte failures expected, behaviour failures must be 0), then review before C2.
-* **C4 perf tool DONE and verified** (e278b91): `tests/arcade-codegen-perf.mjs`, before-figures `arcade/spike/codegen/perf-before.json`.
-* C1 agent resumed after the usage reset (same worktree); checkpoints keep going to `wip-c1.patch`.
+* **C1 DONE**, reviewed and verified (3419caa): emitter F2 / F4 / F5, all 7 examples -2,177 bytes; 45 pinned-byte checks fail as expected (C3).
+* **C4 perf tool DONE** (e278b91).
+* **C2 in progress** (14:20): the same Fable agent, worktree `.../scratchpad/wt-c1` reset to 7d20dd1; checkpoints in `arcade/spike/codegen/wip-c2.patch`.
 * Then: C2 (F1, F3, F6, F7, F8, then F9), C3, C4, C5, C6 as the contract's section 10.
 
 ---
