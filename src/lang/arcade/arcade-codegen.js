@@ -187,7 +187,13 @@
 
 "use strict";
 
-import { Emitter, L, M } from './z80-emit.js';
+import { Emitter, L, M, P } from './z80-emit.js';
+
+/**
+ * Compiler size pass, F5 (docs/ARCADE_COMPILER_SIZE_CONTRACT.md section 4): the targets a `CALL x / RET` is never turned into `JP x` for, because they are not ordinary routines (they read or set
+ * SP, or are not entered by CALL at all): the scene driver and the entries of the compiled code (labels), and what is in the runtimes' boot.asm besides RT_BORDER (runtime symbols).
+ */
+export const NO_TAIL = { labels: /^(scn\$|frame\$|entry\$)/, runtime: ['ENTRY', 'NMI', 'RST_EVEN', 'RST_ODD', 'FILL_EARLY'] };
 import { assetTables, lookupAsset as lookupIn, convertTileset, convertSfx, convertSfxC, convertMusic, convertMap, convertSpriteV3, MAX_SFX, MAX_SONGS } from './arcade-assets.js';
 import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, noviewPoolPieces, buildFrameT } from './arcade-window.js';
 import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
@@ -1178,7 +1184,12 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   // ── 5. code ──
   const nSprites = sprites.length;
   const base = GAME_BASE + HEADER_BYTES + DESC_LEN * nSprites;
-  const e = new Emitter(base);
+  // the emitter's optimisations (compiler size pass F2 / F4 / F5): all on; `opts.emit` {hl, ret, jr} switches one off (measurements, tests)
+  const noTailAddrs = new Set(NO_TAIL.runtime.map((n) => sym[n]).filter((a) => a !== undefined));
+  const e = new Emitter(base, { hl: opts.emit?.hl ?? true, ret: opts.emit?.ret ?? true, jr: opts.emit?.jr ?? true, noTail: (t) => (typeof t === 'number' ? noTailAddrs.has(t) : NO_TAIL.labels.test(t)) });
+  // addresses and sizes taken while emitting are provisional (the emitter shortens code in finish()): the source map is remapped after finish(), and a size is taken as a span
+  const spans = [];                                 // [from, to, use(bytes)]
+  const span = (from, use) => spans.push([from, e.size, use]);
   const srcMap = [];
   const mark = (node) => {
     if (!node) return;
@@ -1861,11 +1872,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const fix = e.newLabel('wlfix');
     if (win) {
       const rt = need('RT_WORLDLOAD');
-      e.label(fix); e.ld('hl', 0);
+      e.label(fix); e.ld('hl', P(0));
       e.ld('a', st.w); e.ld('de', st.camMax); e.call(rt);
     } else {
       const rt = need('RT_PLANLOAD');
-      e.label(fix); e.ld('hl', 0);
+      e.label(fix); e.ld('hl', P(0));
       e.ld('bc', (st.w << 8) | st.h); e.call(rt);
     }
     worldFix.push({ label: fix, key: st.key });
@@ -1882,7 +1893,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const rt = need('RT_TABLELOAD');
     const si = curC ? curC.scene : -1;
     const vis = visibleTabs(si);
-    const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', 0); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
+    const direct = (t) => { const fix = e.newLabel('tbfix'); e.label(fix); e.ld('hl', P(0)); e.call(rt); tabFix.push({ label: fix, key: t.key, off: 1 }); };
     const named = s.table ? vis.find((t) => up(t.node.name) === up(s.table.name)) : undefined;
     if (named) { direct(named); return; }
     const x = s.table ?? s.index, k = fold(x);
@@ -2238,7 +2249,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     const snap = (info) => { e.ld('a', M(info.before)); e.cpl(); e.and('l'); e.ld(M(info.edge), 'a'); e.ld('a', 'l'); e.ld(M(info.before), 'a'); };
     for (const [code, info] of pressKeyInfo) { e.ld('a', code); e.call(need('RT_KEYDOWN')); snap(info); }
     for (const [n, info] of pressJoyInfo) { e.ld('a', n); e.call(need('RT_STICK')); snap(info); }
-    prologueBytes += e.size - m;
+    span(m, (n) => { prologueBytes += n; });
   }
 
   /** Language batch 7: A = 0 (the scene has NOWINDOW / NOVIEW) or 1, then the runtime's mode routine. Nothing at all in a program without the clause. */
@@ -2260,7 +2271,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', target(k)); }
     }
     e.jp(target(n - 1));
-    for (let k = 0; k < n; k++) if (sceneTimerAddrs[k].length) { const m = e.size; e.label(`frame$tm$${k}`); for (const a of sceneTimerAddrs[k]) timerStep(a); e.jp(labelOf('P', 'FRAME', k)); prologueBytes += e.size - m; }
+    for (let k = 0; k < n; k++) if (sceneTimerAddrs[k].length) { const m = e.size; e.label(`frame$tm$${k}`); for (const a of sceneTimerAddrs[k]) timerStep(a); e.jp(labelOf('P', 'FRAME', k)); span(m, (n) => { prologueBytes += n; }); }
     e.label('scn$enter');                                         // A = the scene's index
     e.ld('sp', M(spAddr)); e.push('af'); e.call('scn$reset'); e.pop('af');
     e.ld(M(curAddr), 'a');
@@ -2308,7 +2319,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       const m5 = e.size;
       for (const a of sceneTimerAddrs[0] ?? []) timerStep(a);
       e.jp('P$FRAME');
-      prologueBytes += e.size - m5;
+      span(m5, (n) => { prologueBytes += n; });
     }
     for (const c of reach) {
       useCtx(c.ctx);
@@ -2467,7 +2478,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       e.label('fmt$d1'); e.or('a'); e.sbc('hl', 'de'); e.jr('c', 'fmt$d2'); e.inc('b'); e.jr('fmt$d1');
       e.label('fmt$d2'); e.add('hl', 'de'); e.ld('a', 'c'); e.or('a'); e.jr('z', 'fmt$d3'); e.dec('c'); e.ret();
       e.label('fmt$d3'); e.ld('a', 'b'); e.jp('fmt$put');
-      fmtBytes = e.size - m6;
+      span(m6, (n) => { fmtBytes = n; });
     }
     // LOADTABLE by index: one pointer list per scope that needs it (a DW per visible table; each word is a fixup the linker fills with the record's address)
     for (const [id, vis] of tabLists) {
@@ -2492,7 +2503,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         e.label(label); e.db(codes.length, ...codes);
       }
       if (v2) { e.label('inst$table'); e.db(instAssets.length, ...instAssets); }
-      dataSize.strings = e.size - mark0;
+      dataSize.strings = 0; span(mark0, (n) => { dataSize.strings = n; });      // (set here to keep the order of the keys)
       v1Info = { tileset: 0, sfxTable: 0, map: 0 };
       if (tileset) { e.label('tileset$'); e.db(tileset.count); for (const b of tileset.bytes) e.db(b); }
       dataSize.tileset = tileset ? 1 + tileset.bytes.length : 0;
@@ -2520,7 +2531,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     if (initSegments.length) {
       const m0 = e.size;
       for (const seg of initSegments) { e.label(seg.label); for (const v of seg.values) e.dw(v & 0xFFFF); }
-      dataSize.init = e.size - m0;
+      dataSize.init = 0; span(m0, (n) => { dataSize.init = n; });
     }
     if (slotNames.length === 0) allocSlot('pad');   // the clear loop needs at least one slot (LDIR with BC = 0 would copy 64 KB)
     const nSlots = slotNames.length;
@@ -2529,7 +2540,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     if (nSlots > 0 && VARS_BASE + 2 * nSlots - 1 > VARS_LIMIT) {
       throw new GenError(ast, `too many variables: ${nSlots} slots need ${2 * nSlots} bytes, the runtime allows ${VARS_LIMIT - VARS_BASE + 1}`);
     }
+    e.slots = [VARS_BASE, VARS_BASE + 2 * nSlots];  // F4 tracks the game's variable slots and nothing else (never a runtime variable)
     var code = e.finish();
+    for (const [from, to, use] of spans) use(e.finalSize(from, to));
+    {                                               // the source map in final addresses; entries whose code now starts at the same address: the last one stands (as mark() does)
+      const final = [];
+      for (const sm of srcMap) { sm.addr = e.remap(sm.addr); if (final.length && final[final.length - 1].addr === sm.addr) final.pop(); final.push(sm); }
+      srcMap.length = 0; srcMap.push(...final);
+    }
   } catch (ex) {
     if (ex instanceof GenError) { err(ex.node ?? ast, ex.message); return fail(); }
     err(ast, `internal compiler error: ${ex.message}`);
@@ -2613,7 +2631,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   // bankable per-level tables: every record is a candidate too (no per-table override in this batch: tables are code, not project assets), after the maps
   for (const t of allTabs) if (t.data) bankables.push({ key: t.key, name: t.name, kind: 'table', data: t.data, override: 'auto', node: t.node });
   const rate = ast.framerate ? ast.framerate.value : 30;
-  return {
+  return Object.defineProperty({
     errors, warnings,
     streams: [...streams.values()].filter((st) => !st.own && !st.error && st.data).map((st) => ({ key: st.key, name: st.name, kind: st.kind, data: st.data })),
     fixups: [...worldFix.map((f) => ({ at: e.addressOf(f.label) + 1, key: f.key })), ...tabFix.map((f) => ({ at: e.addressOf(f.label) + f.off, key: f.key }))],
@@ -2638,7 +2656,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     ...(noviewPlan ? { noviewPhase: noviewPlan } : {}),
     ...(hasModes ? { sceneModes } : {}),
     usage: { dataBytes: dataSize, maps: mapList.length, initSegments: initSegments.length, codeBytes: code.length, varSlots: nSlots, varBytes: 2 * nSlots, spriteBytes: sprites.reduce((a, s) => a + s.data.length, 0), sprites: nSprites, instances: v2 ? instAssets.length : nSprites, scenes: scenes.length, driver, ...(allTabs.length ? { tables: allTabs.length, tableBytes: allTabs.reduce((n, t) => n + (t.data?.length ?? 0), 0) } : {}), ...(prologueBytes ? { prologueBytes } : {}), ...(fmtBytes ? { fmtBytes } : {}) },
-  };
+  }, 'emitter', { value: e, enumerable: false });      // (not enumerable: the result is copied and compared as data; the emitter is for listings and tests: gen.emitter.listing() / .asm())
 }
 
 // ── the banked cartridge map: placement policy (docs/ARCADE_BANKING_CONTRACT.md section 5) ──────────────────────────────────────────────────────────────
@@ -2655,6 +2673,8 @@ const emptyBank = () => ({ banked: [], keys: new Set(), at: new Map(), bytes: 0 
  * override `banked` go first, then the `auto` ones largest first (ties: declaration order), one at a time, until the mapped part fits; `mapped` ones never move. The code is generated again
  * for the placement (the map records leave the code; the map table points into the window), and checked: one more asset is banked when the mapped part still does not fit.
  * `opts.bankAll` (tests) banks every asset.
+ * `opts.emit` {hl, ret, jr} switches the emitter's optimisations (compiler size pass F4 / F5 / F2; all on by default) off one by one, for measurements and tests. The result has a
+ * non-enumerable `emitter` (the Emitter of the code): `gen.emitter.listing()` and `gen.emitter.asm()` give what was emitted, for the listing diff tool and the sjasmplus cross-check.
  */
 export function generate(ast, runtime, assets = {}, opts = {}) {
   const g1 = generateOnce(ast, runtime, assets, opts, null);

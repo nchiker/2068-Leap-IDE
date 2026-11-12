@@ -107,7 +107,7 @@ export function usageLines(u) {
   return lines;
 }
 
-export function compile(text, { runtime, image, assets, scenes, bankAll = false } = {}) {
+export function compile(text, { runtime, image, assets, scenes, bankAll = false, emit } = {}) {
   const out = { dck: null, memory: null, map: null, errors: [], warnings: [], usage: null };
   const sort = (l) => l.sort((a, b) => a.line - b.line || a.col - b.col);
   const take = (list) => { for (const d of list) (d.severity === 'warning' ? out.warnings : out.errors).push(d); };
@@ -127,7 +127,7 @@ export function compile(text, { runtime, image, assets, scenes, bankAll = false 
     return out;
   }
 
-  const gen = generate(ast, runtime, assets, { bankAll });
+  const gen = generate(ast, runtime, assets, { bankAll, emit });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
   take(gen.errors ?? []);
   take(gen.warnings ?? []);
   if (out.errors.length || !gen.code) { sort(out.errors); sort(out.warnings); return out; }

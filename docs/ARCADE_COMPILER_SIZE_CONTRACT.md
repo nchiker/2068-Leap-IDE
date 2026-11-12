@@ -214,3 +214,63 @@ same exclusions as each game's own suite. `--old <ref>` compiles with another re
 run. "Before" = `arcade/spike/codegen/perf-before.json` (compiler of 9b7969c): Runner median 129,953 / 95th 145,626 / worst 160,866; Vaults win
 156,814 / 185,574, 8 over; Starfall 54,326 / 100,351; Blockfall 11,132 / 43,831 / 93,556. About 95 s. Starfall's script moved to
 `tests/arcade-starfall-script.mjs`; the runner / platformer / Vaults perf suites export their measurement (their output is unchanged). (Fable wrote the prototypes, so its review is anchored on them; the independent check is the code review of C6.)
+
+suites added to C4). (Fable wrote the prototypes, so its review is anchored on them; the independent check is the code review of C6.)
+
+## 13. As built
+
+### As built: C1 (emitter: F2, F4, F5; 2026-11-12, not committed: a worktree diff on `arcade-codegen-size` 9b7969c)
+
+**Design.** `z80-emit.js` keeps its encoders (the ones checked against sjasmplus) and adds a recording layer: every instruction method records
+an item `{mnemonic, operands, offset, length}`, data is recorded as runs. `finish()` works on the items in the order **F4, F5, F2**, lays the code
+out and resolves the references; `listing()` gives what was emitted and `asm()` writes it as sjasmplus source (labels by name, so sjasmplus
+resolves them itself). Each fix is a constructor option (`hl`, `ret`, `jr`; all off by default, so the emitter alone is a plain assembler and
+section 1 of `tests/arcade-compile.mjs` still compares encodings); the code generator turns all three on, `compile(text, {emit: {hl, ret, jr}})`
+switches them one by one. Until `finish()`, `pc` / `size` / `addressOf()` are provisional; after it `addressOf()` is final, `remap(addr)` maps a
+provisional address and `finalSize(a, b)` a span. The code generator remaps the source map (entries that land on one address: the last stands, as
+`mark()` does) and takes `prologueBytes`, `fmtBytes`, `dataBytes.strings` and `.init` as spans measured after `finish()`. `gen.emitter` (not
+enumerable) is the emitter of the result.
+
+**Decided here.**
+* A NUMBER is an address outside the emitter's code and is never changed: `JP number` is not relaxed (a `CALL number / RET` does become
+  `JP number`); a `JR` / `DJNZ` to a number is refused when an optimisation is on. Nothing the linker patches is a jump: its fixups are the operand
+  of `LD HL,src` and data words. That `LD HL` is now written `LD HL,P(0)` (`P`: a patched immediate), which F4 never takes for the constant 0.
+* `L(label, off)` resolves to the label's final address plus off; `finish()` throws if the bytes between changed (never silently wrong).
+* F2 starts with every candidate short and makes the ones out of reach long again until nothing changes (at least as good as shrinking step by step).
+* F4 keeps two facts, "HL = constant k" and "HL = the word at slot s" (`LD HL,0 / LD (a),HL` leaves both true). A store through a pointer or into
+  the slot's bytes drops the slot fact only (HL itself did not change). `LD BC,(v)` gets the same replacement as `LD DE,(v)`. The slot range is
+  `GAME_VARS_BASE .. + 2 * slots` (variables, arrays, hidden slots), set just before `finish()`. Everything not on a short list of instructions
+  known to keep HL and memory drops the state.
+* F5: the JP-to-RET rule runs to a fixed point (a JP that became a RET is a RET for jumps to it), then the tail call. The exclusion list is
+  `NO_TAIL` in `arcade-codegen.js`: labels `scn$*`, `frame$*`, `entry$*`; runtime symbols `ENTRY`, `NMI`, `RST_EVEN`, `RST_ODD`, `FILL_EARLY`
+  (what is in boot.asm besides `RT_BORDER`, which is an ordinary routine).
+
+**Code bytes** (every example, compiled as the Studio does; `node arcade/tools/listing-diff.mjs --before . --before-emit none --after-emit <x>`):
+
+| | runner | vaults | platformer | shooter | blockfall | breakout | bounce | total |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| before | 9893 | 13513 | 9059 | 11376 | 11449 | 1505 | 465 | 57260 |
+| F4 `hl` alone | -135 | -141 | -135 | -72 | -111 | -15 | -3 | -612 |
+| F5 `ret` alone | -210 | -179 | -173 | -79 | -97 | -18 | -2 | -758 |
+| F2 `jr` alone | -230 | -225 | -192 | -120 | -155 | -21 | -8 | -951 |
+| all three | -539 | -507 | -467 | -255 | -344 | -52 | -13 | -2177 |
+
+F4 with the narrow rule saves exactly what the prototype's wide rule did (-612) and F2 what the prototype did (-951); F5 saves bytes in every
+example. Together they are less than the sum (-2321): a JP that F5 turns into a RET is no longer F2's. Section 5's targets are for F1-F5
+together, so they are judged after C2. No time was measured in C1.
+
+**Tests.** `tests/arcade-emitter-opt.mjs` (87 checks; also section 1b of `tests/arcade-compile.mjs`, so `run-all.mjs` runs it): exact-byte unit
+checks of F2 (reach limits, fixed point, what is not relaxed, remap / finalSize), F4 (66 instruction cases, each for a slot and a constant,
+plus the patched load and the slot range) and F5 (all eight conditions, a `$C9` data byte, the exclusions); 40 random programs through
+sjasmplus; and for every example: the whole compiled code against sjasmplus assembling `asm()` (optimised and not), usage against the linked image
+and the listing, the source map, the linker's fixups, the F4 path check (an independent model of HL propagated over the control flow graph, with
+13 controls it must accept or refuse: 204 left-out or replaced loads over the 7 examples, none unreachable) and F5's exclusions (110 tail
+calls, 324 JP -> RET), and that in the v2-v4 runtime sources only boot.asm touches SP.
+`node arcade/tests/run-all.mjs --jobs 4`: 67 of 78 steps pass. The 11 that fail are compiler suites with 45 checks that pin bytes, hashes,
+byte counts or T-states (C3 rewrites them): `arcade-m4` 2 (array read 86 T is 83; 118 T is 115), `arcade-m5` 1 (hash baseline), `m6-compiler` 1
+and `m8-compiler` 1 (DCK baselines), `m9-compiler` 6 (driver byte shapes), `m10-compiler` 3 (`CALL RT_PLAY` shapes), `m11-compiler` 3 (identity
+with the previous compiler), `m12-compiler` 4, `m13-compiler` 3, `m14-compiler` 15 (mode call shapes and byte counts), `m15-compiler` 6. No
+differential, game play-through or interpreter comparison fails.
+
+**Tool.** `arcade/tools/listing-diff.mjs` (the spike's `instr.mjs`, moved): per example, each source line's code before (a git ref read with
+`git archive`, or another directory) and after, and a check that the per-line differences add up to the change in code bytes.

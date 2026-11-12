@@ -4,7 +4,9 @@
 //   ARCADE_QUICK=1 node tests/arcade-compile.mjs   (fewer fuzz games)
 //
 // Sections
-//   1  Z80 emitter: every instruction encoding against sjasmplus
+//   1  Z80 emitter: every instruction encoding against sjasmplus (the emitter's optimisations off: it is a plain assembler)
+//   1b the emitter's optimisations (compiler size pass F2 / F4 / F5; tests/arcade-emitter-opt.mjs): unit checks, random code and every
+//      example game's whole compiled code against sjasmplus, the HL model over the control flow graph, the tail-call exclusions
 //   2  reference interpreter: the contract's arithmetic table
 //   3  expression fuzz: random expressions compiled and run on a Z80 (TSRun's CPU) vs the interpreter
 //   4  differential games: >= 8 programs, per tick SPR_TAB + every variable vs the interpreter
@@ -27,6 +29,7 @@ import { interpret, wrap16 } from '../src/lang/arcade/arcade-interp.js';
 import { generate } from '../src/lang/arcade/arcade-codegen.js';
 import { link, findSource } from '../src/lang/arcade/arcade-link.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
+import { emitterOptChecks } from './arcade-emitter-opt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -148,6 +151,10 @@ console.log('1. Z80 emitter against sjasmplus');
       detail = `first difference at offset ${first} (${at}): ours ${got[first]?.toString(16)} sjasmplus ${ref[first]?.toString(16)}`;
     }
     check_('emitter output is byte-identical to sjasmplus', first < 0 && got.length === ref.length, detail);
+    // the other direction: the text the emitter writes for what it emitted (Emitter.asm(), the basis of section 1b), for every instruction form
+    const back = sjasm(e.asm(), 'emit-back').bytes;
+    check_('the emitter\'s own assembly text of every instruction form assembles to the same bytes', back.length === got.length && back.every((v, i) => v === got[i]), `${back.length} bytes`);
+    check_('with no option the emitter changes nothing (no instruction replaced or left out)', e.listing().every((it) => !it.dead && !it.was) && e.listing().filter((it) => !it.data).length === lines.filter((l) => !l.endsWith(':')).length);
   }
   // range checks and errors
   const bad = (f) => { try { f(); return false; } catch { return true; } };
@@ -162,6 +169,12 @@ console.log('1. Z80 emitter against sjasmplus');
   const x2 = new Emitter(0x9000); x2.dw(L('t', 2)); x2.label('t'); x2.db(1);
   check_('dw with a label reference and offset', x2.finish().join() === [0x04, 0x90, 1].join());
 }
+
+// =================================================================================================================
+// 1b. The emitter's optimisations (F2 JP -> JR, F4 HL tracking, F5 RET folding and tail calls)
+// =================================================================================================================
+console.log('\n1b. Emitter optimisations (F2, F4, F5)');
+emitterOptChecks(check_);
 
 // =================================================================================================================
 // 2. Interpreter arithmetic (the contract's semantics table)
