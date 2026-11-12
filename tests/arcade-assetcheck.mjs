@@ -510,5 +510,27 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'v3/runtime.json')
   check(`fuzz: scanRoles on ${sruns} damaged sources never throws and keeps its shape`, sthrown === 0 && shape, `${sthrown} threw`);
 }
 
+// ═══ Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1) ═══════════════════════════════════════════════════
+{
+  const sq = { points: [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0]], edges: [[0, 1], [1, 2], [2, 3], [3, 0]] };
+  const cm = (m) => checkAssets(mkProject({ models: { m } }), null);
+  const shapeMsgs = (m) => cm(m).filter((f) => f.id === 'model-shape').map((f) => f.message).join(' | ');
+  check('models: a good model gives no finding', cm(sq).length === 0);
+  check('models: 129 points / 256 edges / a coordinate of 65 are errors (the limits 128, 255, 64 are fine)',
+    /129 points; at most 128/.test(shapeMsgs({ points: Array.from({ length: 129 }, () => [0, 0, 0]), edges: [[0, 1]] })) && /256 edges; at most 255/.test(shapeMsgs({ points: sq.points, edges: Array.from({ length: 256 }, () => [0, 1]) }))
+    && /point 1 has a coordinate beyond \+-64/.test(shapeMsgs({ points: [[0, 0, 0], [65, 0, 0]], edges: [[0, 1]] }))
+    && cm({ points: Array.from({ length: 128 }, (_, i) => [i % 2 ? 64 : -64, 0, 0]), edges: Array.from({ length: 255 }, () => [0, 1]) }).filter((f) => f.severity === 'error').length === 0);
+  check('models: no points / no edges / an edge i = j / an edge naming a missing point are errors, with the edge positions',
+    /no points/.test(shapeMsgs({ points: [], edges: [] })) && /no edges/.test(shapeMsgs({ points: sq.points, edges: [] }))
+    && /edge 1 joins a point to itself/.test(shapeMsgs({ points: sq.points, edges: [[0, 1], [2, 2]] }))
+    && /edge 0 names a point that does not exist \(the points are 0\.\.3\)/.test(shapeMsgs({ points: sq.points, edges: [[0, 4]] }))
+    && eq(cm({ points: sq.points, edges: [[0, 1], [3, 3], [9, 0]] }).filter((f) => f.id === 'model-shape').map((f) => f.positions), [[1], [2]]));
+  check('models: a malformed point / edge or a missing array is asset-malformed; a point on no edge is a warning; every finding is shown (compilerAlso false)',
+    has(cm({ edges: [] }), 'asset-malformed', 'm') && has(cm({ points: [[0, 0]], edges: [] }), 'asset-malformed') && has(cm({ points: sq.points, edges: [[0, 'x']] }), 'asset-malformed')
+    && cm({ points: [...sq.points, [5, 5, 5]], edges: sq.edges }).some((f) => f.id === 'model-unused-point' && f.severity === 'warning' && eq(f.points, [4]))
+    && cm({ points: [[0, 0, 0], [100, 0, 0]], edges: [[0, 0]] }).every((f) => f.compilerAlso === false && f.kind === 'models' && f.asset === 'm'));
+  check('models: checkAssets never throws on junk', (() => { try { for (const m of [null, 5, 'x', [], { points: null }, { points: [null], edges: [null] }]) checkAssets(mkProject({ models: { m } }), null); return true; } catch { return false; } })());
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

@@ -74,7 +74,8 @@ ENDSCENE
 ## 2. Meaning (exact; the JS reference implements exactly this)
 
 ### 2.1 Models
-Asset (project JSON, `"type": "model"`): `points` [[x, y, z], ...], 1..128 points, integers |c| <= 64 (the quarter-square
+Asset (project / `*.assets.json`: `assets.models.<name>` = `{points, edges}`, a sixth kind beside `sprites`, `tilesets`, `maps`,
+`sfx`, `music`): `points` [[x, y, z], ...], 1..128 points, integers |c| <= 64 (the quarter-square
 range); `edges` [[i, j], ...], 1..255 edges, i <> j, both < points. World axes: x right, y **up**, z forward. Game image
 (linker): `DB npts, DB nedges, npts x (DB x, y, z), nedges x (DB i, j)`, in the **mapped** 16 KB (never in a bank: the bank
 window is the display files, and the draw reads the model every tick).

@@ -355,6 +355,40 @@ try {
   check('host: songCount() answers (MUSIC lines in the source: the Shooter example declares 2, counted independently in the page too)', songsHost.n === 2 && songsHost.own === 2, JSON.stringify(songsHost));
   await evaluate("(document.querySelector('#tool-sfx [data-role=pat-del]').click(), true)");
 
+  // ── Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 4): a sixth asset kind with a turning wireframe preview, no editor ──
+  const modelHead = await evaluate(`[...document.querySelectorAll('#asset-groups .asset-group-head')].map((h) => h.textContent.replace(/\\s+/g, ' ').trim())`);
+  check('the asset list has a "Models" group after Songs, with a "+" button', modelHead.length === 6 && /^Models\s*\(0\)/.test(modelHead[5]) && /^Songs/.test(modelHead[4]) && await evaluate("!!document.querySelector('[data-new-asset=models]')"), JSON.stringify(modelHead));
+  await evaluate("(window.prompt = () => 'cube', document.querySelector('[data-new-asset=models]').click(), true)");
+  const modelNew = await waitFor(`(() => { const row = document.querySelector('.proj-row[data-asset="models/cube"]'); const c = row?.querySelector('canvas.model-preview');
+    return row && c ? { meta: row.querySelector('.proj-meta').textContent, active: row.classList.contains('active'), w: c.width, h: c.height, sel: leapStudio.selected?.kind + '/' + leapStudio.selected?.name } : null; })()`, 8000);
+  check('"+" of Models makes a cube (8 pts, 12 edges), lists it with a preview canvas, selects it',
+    !!modelNew && modelNew.meta === '8 pts, 12 edges' && modelNew.active && modelNew.w >= 28 && modelNew.sel === 'models/cube', JSON.stringify(modelNew));
+  check('selecting a model says there is no model editor yet (and opens no editor tab)', /no model editor/.test(await status()), await status());
+  // the preview paints lines and turns: two snapshots of the canvas differ, both have ink
+  const snap = () => evaluate(`(() => { const c = document.querySelector('.proj-row[data-asset="models/cube"] canvas.model-preview'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0, h = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) { n++; h = (h * 31 + i + d[i]) | 0; } return { n, h }; })()`);
+  for (let i = 0; i < 40 && (await snap()).n === 0; i++) await sleep(100);   // the first frame of the loop
+  const sn1 = await snap(); await sleep(1500); const sn2 = await snap();
+  check('the model preview draws a wireframe and it turns (the picture changes over 1.5 s)', sn1.n > 20 && sn2.n > 20 && sn1.h !== sn2.h, JSON.stringify([sn1, sn2]));
+  // the colour is the page's, from a CSS variable: no pixel is the default black of a canvas stroke
+  const col = await evaluate(`(() => { const c = document.querySelector('canvas.model-preview'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const want = document.createElement('canvas').getContext('2d'); want.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--blue-fg').trim(); want.fillRect(0, 0, 1, 1); const w = want.getImageData(0, 0, 1, 1).data;
+    let best = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && Math.abs(d[i] - w[0]) < 4 && Math.abs(d[i + 1] - w[1]) < 4 && Math.abs(d[i + 2] - w[2]) < 4) best++; return best; })()`);
+  check('the preview line colour is the theme variable --blue-fg', col > 5, String(col));
+  await b.shot('studio-model');
+  // a bad model is a problem (the compiler does not judge models yet, so the Studio does)
+  await evaluate(`(leapStudio.makeHost('smoke-model').setAsset('models', 'broken', { points: [[0, 0, 0], [99, 0, 0]], edges: [[0, 0], [0, 5]] }), true)`);
+  const modelBad = await waitFor(`(() => { const r = [...document.querySelectorAll('#problems .problem[data-asset="models/broken"]')]; return r.length >= 3 ? r.map((x) => x.textContent) : null; })()`, 8000);
+  check('a bad model (a coordinate of 99, an edge i = j, an edge to a missing point) gives problems that name it',
+    !!modelBad && modelBad.some((t) => /beyond \+-64/.test(t)) && modelBad.some((t) => /joins a point to itself/.test(t)) && modelBad.some((t) => /does not exist/.test(t)) && modelBad.filter((t) => /^error/.test(t)).length === 3 && modelBad.some((t) => /^warning.*on no edge/.test(t)), JSON.stringify(modelBad));
+  await evaluate(`document.querySelector('#problems .problem[data-asset="models/broken"]').click()`);
+  check('clicking the model problem selects the model', await waitFor(`leapStudio.selected?.kind === 'models' && leapStudio.selected?.name === 'broken'`, 5000) !== null);
+  await evaluate(`(window.confirm = () => true, document.querySelector('.proj-row[data-asset="models/broken"] .proj-act:last-of-type').click(), true)`);
+  check('delete removes the model and its problems', await waitFor(`!document.querySelector('.proj-row[data-asset="models/broken"]') && !document.querySelector('#problems .problem[data-asset="models/broken"]') && !leapStudio.project.assets.models.broken`, 8000) !== null);
+  check('a game with a model asset still compiles (the Shooter example)', await evaluate('leapStudio.lastCompile?.ok') === true);
+  // no preview frames are scheduled while the page is hidden is a browser guarantee (requestAnimationFrame); the loop also ends when no model is listed
+  await evaluate(`(leapStudio.makeHost('smoke-model').setAsset('models', 'tri', { points: [[0, 0, 0], [30, 0, 0], [0, 30, 0]], edges: [[0, 1], [1, 2], [2, 0]] }), true)`);
+
   // ── Project files: save, open, round trip ──
   await evaluate(`(() => {
     window.smokeDownloads = [];
@@ -368,6 +402,7 @@ try {
   check('Save downloads <name>.leapgame', saved && saved.name === 'Shooter.leapgame', saved?.name);
   const parsed = JSON.parse(saved.text);
   check('the saved document is format 1 with files and assets', parsed.format === 1 && 'main.arc' in parsed.files && Object.keys(parsed.assets.sprites).length === 5, Object.keys(parsed.assets.sprites).join());
+  check('the saved document keeps the models (cube, tri) with their points and edges', Object.keys(parsed.assets.models ?? {}).join() === 'cube,tri' && parsed.assets.models.cube.points.length === 8 && parsed.assets.models.tri.edges.length === 3, JSON.stringify(Object.keys(parsed.assets.models ?? {})));
   check('after Save the unsaved mark is gone', await evaluate("document.getElementById('dirty-mark').hidden"));
   await evaluate(`leapEditor.setSource('REM changed\\n' + leapEditor.getSource(), {fresh: true})`);
   await evaluate("document.getElementById('btn-new').click()");
@@ -504,6 +539,8 @@ try {
   await evaluate(`(() => { const h = leapStudio.makeHost('t'); const v = h.getAsset('sprites','ball'); v.w = 8; h.setAsset('sprites', 'extra1', v); return true; })()`);
   const savedSong = { patterns: [{ ticks: [{ tone: 300, vol: 9, noise: 0, mix: 6 }], ticksB: [{ tone: 400, vol: 7, noise: 0, mix: 6 }, { tone: 410, vol: 7, noise: 0, mix: 6 }], name: 'a' }, { ticks: [{ tone: 200, vol: 5, noise: 0, mix: 6 }] }], order: [1, 0, 1], loop: 1 };
   const songOk = await evaluate(`leapStudio.makeHost('t').setAsset('music', 'keep', ${JSON.stringify(savedSong)}).ok`);
+  const savedModel = { points: [[0, 0, 0], [20, 0, 0], [0, 20, 5]], edges: [[0, 1], [1, 2]], note: 'kept' };
+  const modelOk = await evaluate(`leapStudio.makeHost('t').setAsset('models', 'keepm', ${JSON.stringify(savedModel)}).ok`);
   await sleep(700);
   await b.open('about:blank'); await sleep(200);
   await b.open('studio.html');
@@ -512,6 +549,8 @@ try {
   check('auto-save restores the project after a reload (text, assets, unsaved mark)', re.src === 'REM survives a reload' && re.sprites === 'ball,extra1' && re.dirty, JSON.stringify(re));
   const reSong = await evaluate(`JSON.stringify(leapStudio.project.assets.music)`);
   check('a song survives the reload unchanged', songOk === true && reSong === JSON.stringify({ keep: savedSong }), reSong);
+  const reModel = await evaluate(`JSON.stringify(leapStudio.project.assets.models)`);
+  check('a model survives the reload unchanged, and its row has a preview canvas', modelOk === true && reModel === JSON.stringify({ keepm: savedModel }) && await evaluate(`!!document.querySelector('.proj-row[data-asset="models/keepm"] canvas.model-preview')`), reModel);
   await evaluate(`document.querySelector('.proj-row[data-asset="music/keep"]').click()`);
   const reOpen = await waitFor(`(() => { const s = document.querySelector('#tool-sfx [data-role=name]'); return s && s.value === 'keep' && [...document.querySelectorAll('#tool-sfx [data-role=order] .sfxed-chip')].map((c) => c.textContent).join() === '1,0 a,1'; })()`, 10000);
   check('after the reload the song opens in the sound editor with its order list', !!reOpen);
