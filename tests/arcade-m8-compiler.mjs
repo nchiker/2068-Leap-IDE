@@ -153,8 +153,11 @@ console.log('1. Parser and checker: VIEW3D, VIEW, SETWALL and the functions');
   bad('VIEW on a v3 runtime', '    VIEW 1, 2, 3', /VIEW needs the v4 runtime/, { view: '' }, 3);
   bad('SETWALL on a v3 runtime', '    SETWALL 1, 2 = 3', /SETWALL needs the v4 runtime/, { view: '' }, 3);
   for (const [f, call] of [['COSA', 'COSA(v)'], ['SINA', 'SINA(v)'], ['FXMUL', 'FXMUL(v, w)'], ['WALL', 'WALL(v, w)'], ['SEEN', 'SEEN(p)'], ['DEPTH', 'DEPTH(p)']]) {
-    bad(`${f}() on a v3 runtime`, `    v = ${call}`, new RegExp(`${f}\\(\\) needs the v4 runtime`), { view: '' }, 3);
-    bad(`${f}() on a v2 runtime`, `    v = ${call}`, new RegExp(`${f}\\(\\) needs the v4 runtime`), { view: '' }, 2);
+    // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10): COSA SINA FXMUL are on v2 and v4 now, v3 has them not
+    const both = ['COSA', 'SINA', 'FXMUL'].includes(f);
+    bad(`${f}() on a v3 runtime`, `    v = ${call}`, new RegExp(`${f}\\(\\) needs the ${both ? 'v2 or v4' : 'v4'} runtime`), { view: '' }, 3);
+    if (both) { const e = errs(prog(`    v = ${call}`, { view: '' }), 2); check_(`${f}() on a v2 runtime is allowed`, e.length === 0, msgs(e)); }
+    else bad(`${f}() on a v2 runtime`, `    v = ${call}`, new RegExp(`${f}\\(\\) needs the v4 runtime`), { view: '' }, 2);
   }
   ok0('COSA SINA FXMUL are plain functions on v4 (no VIEW3D needed by the checker)', '    v = COSA(1) + SINA(2) + FXMUL(3, 4)', { view: '' });
   // statements and arguments
@@ -404,7 +407,7 @@ const dckArea = (res) => res.dck.slice(9 + 2 * 8192, 9 + 4 * 8192);        // ch
   }
   { const r = compileWith(MIN().replace('VIEW 300, 300, v', 'SETWALL 1, 2 = v'), (rt) => { delete rt.constants.RA_V; }); check_('SETWALL needs the runtime argument block (RA_*)', r.errors.length === 1 && /argument block/.test(r.errors[0].message), errText(r)); }
   { const r = compileWith(MIN(), (rt) => { rt.version = 3; }); check_('VIEW3D compiled for a v3 runtime: the checker refuses it ("needs the v4 runtime")', r.errors.length >= 1 && /VIEW3D needs the v4 runtime/.test(r.errors[0].message), errText(r)); }
-  { const r = compileWith(MIN().replace('VIEW 300, 300, v', 'v = COSA(v)').replace('VIEW3D level', ''), (rt) => { rt.version = 2; }); check_('COSA on a v2 runtime: "needs the v4 runtime"', r.errors.length >= 1 && /COSA\(\) needs the v4 runtime/.test(r.errors[0].message), errText(r)); }
+  { const r = compileWith(MIN().replace('VIEW 300, 300, v', 'v = COSA(v)').replace('VIEW3D level', ''), (rt) => { rt.version = 2; }); check_('COSA on a v2 runtime: the checker allows it now (wireframe 3D; the code generator still refuses it until its slice); WALL() still needs v4', errs(prog('    v = COSA(v)', { view: '' }), 2).length === 0 && errs(prog('    v = WALL(1, 2)', { view: '' }), 2).some((d) => /WALL\(\) needs the v4 runtime/.test(d.message)), errText(r)); }
   { const rt = mockRuntime4(); rt.constants.DIV_VIEW = 0x20; const r = compile(MIN(), { runtime: rt, image: MOCK_IMAGE, assets: ASSETS }); check_('DIV_VIEW comes from runtime.json (a different value is written into the header)', r.errors.length === 0 && (r.memory[0x8004] & 0x20) === 0x20, errText(r)); }
   { const rt = mockRuntime4(); delete rt.constants.DIV_VIEW; const r = compile(MIN(), { runtime: rt, image: MOCK_IMAGE, assets: ASSETS }); check_('without DIV_VIEW in runtime.json the default $40 is used', r.errors.length === 0 && (r.memory[0x8004] & 0x40) === 0x40, errText(r)); }
   { const rt = mockRuntime4(); rt.constants.BB_ENT = 8; rt.symbols.BB_TAB = 0xE180; const src = MIN().replace('VIEW 300, 300, v', 'v = SEEN(o) + DEPTH(o)'); const r = compile(src, { runtime: rt, image: MOCK_IMAGE, assets: ASSETS }); check_('BB_TAB / BB_ENT come from runtime.json: with entry size 8 at $E180 the reads are LD HL,($E182) and LD HL,($E180)', r.errors.length === 0 && (() => { const c = r.gen.code; const has = (lo, hi) => { for (let i = 0; i + 2 < c.length; i++) if (c[i] === 0x2A && c[i + 1] === lo && c[i + 2] === hi) return true; return false; }; return has(0x82, 0xE1) && has(0x80, 0xE1); })(), errText(r)); }
@@ -607,8 +610,9 @@ console.log('\n9. Programs that use none of the new words compile to the same by
 console.log('\n10. requiredRuntime');
 {
   const rr = (src, a = ASSETS) => requiredRuntime(src, a);
-  check_('VIEW3D needs v4 (and names why)', rr(RAY).version === 4 && rr(RAY).reasons.includes('VIEW3D') && rr(RAY).reasons.includes('VIEW') && rr(RAY).reasons.includes('SETWALL') && rr(RAY).reasons.includes('WALL()') && rr(RAY).reasons.includes('COSA()'));
-  for (const w of ['COSA(1)', 'SINA(1)', 'FXMUL(1, 2)', 'WALL(1, 2)', 'SEEN(p)', 'DEPTH(p)']) check_(`${w.split('(')[0]}() alone needs v4`, rr(prog(`    v = ${w}`, { view: '' })).version === 4 && rr(prog(`    v = ${w}`, { view: '' })).reasons.join() === `${w.split('(')[0]}()`);
+  check_('VIEW3D needs v4 (and names why)', rr(RAY).version === 4 && rr(RAY).reasons.includes('VIEW3D') && rr(RAY).reasons.includes('VIEW') && rr(RAY).reasons.includes('SETWALL') && rr(RAY).reasons.includes('WALL()') && !rr(RAY).reasons.includes('COSA()'));
+  for (const w of ['WALL(1, 2)', 'SEEN(p)', 'DEPTH(p)']) check_(`${w.split('(')[0]}() alone needs v4`, rr(prog(`    v = ${w}`, { view: '' })).version === 4 && rr(prog(`    v = ${w}`, { view: '' })).reasons.join() === `${w.split('(')[0]}()`);
+  for (const w of ['COSA(1)', 'SINA(1)', 'FXMUL(1, 2)']) check_(`${w.split('(')[0]}() alone needs v2 now (wireframe 3D: v2 and v4 have it)`, rr(prog(`    v = ${w}`, { view: '' })).version === 2 && rr(prog(`    v = ${w}`, { view: '' })).reasons.length === 0);
   check_('VIEW alone, SETWALL alone, VIEW3D alone need v4', rr(prog('    VIEW 1, 2, 3', { view: '' })).reasons.join() === 'VIEW' && rr(prog('    SETWALL 1, 2 = 3', { view: '' })).reasons.join() === 'SETWALL' && rr(prog('    v = 1')).reasons.join() === 'VIEW3D');
   check_('a v3 program is still v3 (WINDOW, FLIP) and a plain one v2', rr(prog('    CAMERA 5', { view: 'WINDOW level\n' })).version === 3 && rr(prog('    SHOW p AT 1, 1 FLIP', { view: '' })).version === 3 && rr(prog('    SHOW p AT 1, 1', { view: '', map: '', sprites: 'SPRITE p = "pill"\n' })).version === 2);
   check_('FLIP in a VIEW3D program: v4, the reasons are the v4 ones only', (() => { const r = rr(prog('    SHOW p AT 1, 1 FLIP')); return r.version === 4 && r.reasons.join() === 'VIEW3D'; })());

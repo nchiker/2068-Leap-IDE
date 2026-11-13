@@ -107,6 +107,16 @@
  *      `Play {sfx: Ident}`: the checker, the interpreter and the code generator read the name as a SONG when a MUSIC of that name is declared (and no SFX: a name that is both is a checker
  *      error). A word that may name an asset (BATCH11_WORDS: WORLD, MUSIC, NOMUSIC, TABLE, LOADTABLE) standing alone after PLAY is read as a name. `NOMUSIC` is node NoMusic {}; anything
  *      after it in the statement is an error.
+ *  20. (wireframe 3D, docs/ARCADE_WIREFRAME_CONTRACT.md section 1; only the v2 runtime has it)
+ *      - `WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]` is a top-level item: node Wire3d {r0, r1, ink, paper, bright: expr | null, clausePos: {name: token position}}; also listed in program.wires. The colour
+ *        clauses come in any order, each once (a repeat is an error). ROWS is contextual (an ident, so a variable called `rows` stays legal); INK PAPER BRIGHT are the existing words. Inside a SCENE the item is
+ *        reported but recorded; in a PROC it is a "top level" error. The ranges and the "once" rule are the checker's.
+ *      - `MODEL name = "asset"` is an asset declaration like SFX (node Asset {kind: 'MODEL'}; top level only; in program.assets).
+ *      - `EYE x, y, z, a` is node Eye {x, y, z, a}.
+ *      - `DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]` is node DrawModel {model: Ident, x, y, z, yaw, pitch, scale: expr | null, clausePos: {yaw, pitch, scale: token position}}; the three clauses come in any
+ *        order, each once. YAW PITCH SCALE are contextual (idents). Whether `m` is a MODEL and SCALE a constant 1 / 2 / 4 / 8 is the checker's.
+ *      - `LINE x0, y0 TO x1, y1` is node Line {x0, y0, x1, y1} (a word since the first version; it means the wireframe play area's 2-D line now, and needs a WIRE3D).
+ *      - WIRE3D MODEL EYE DRAWMODEL LINE are reserved for variables but, as BATCH11_WORDS, may still name an asset (`SFX eye = "eye"`, `DRAWMODEL eye AT ...`, `PLAY line`).
  */
 
 "use strict";
@@ -305,7 +315,7 @@ class Parser {
   program() {
     const prog = this.prog = {
       type: 'Program', line: 1, col: 0, endCol: 0,
-      game: null, framerate: null, assets: [], scenes: [], procs: [], decls: [], items: [], windows: [], bands: [], views: [],
+      game: null, framerate: null, assets: [], scenes: [], procs: [], decls: [], items: [], windows: [], bands: [], views: [], wires: [],
     };
     this.expects.push(new Set(['PROC', 'SCENE']));
     for (;;) {
@@ -380,6 +390,12 @@ class Parser {
         prog.views.push(node); prog.items.push(node);
         return;
       }
+      if (v === 'WIRE3D') {                                 // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md section 1)
+        if (scene) this.record(t, 'WIRE3D must be at the top level, outside any SCENE');
+        const node = this.wire3dDecl();
+        prog.wires.push(node); prog.items.push(node);
+        return;
+      }
       if (v === 'SCENE') { this.scene(); return; }
       if (v === 'PROC') {
         const p = this.proc();
@@ -441,6 +457,30 @@ class Parser {
       } else clauses[key] = this.expr();
     }
     return this.close(this.mk('View3d', t, { map, clauses, clausePos }));
+  }
+
+  /**
+   * `WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]` (wireframe 3D): node Wire3d {r0, r1, ink, paper, bright, clausePos}; a colour clause is an expression node (null when absent).
+   */
+  wire3dDecl() {
+    const t = this.next();
+    const w = this.peek();
+    if (!(w.type === 'ident' && w.value === 'ROWS')) this.fail(w, 'WIRE3D needs the rows of the play area: WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]');
+    this.next();
+    const r0 = this.expr();
+    this.expectKw('TO', 'expected TO: WIRE3D ROWS r0 TO r1');
+    const r1 = this.expr();
+    const clauses = { ink: null, paper: null, bright: null }, clausePos = {};
+    for (;;) {
+      const c = this.peek();
+      const key = isKw(c, 'INK') ? 'ink' : isKw(c, 'PAPER') ? 'paper' : isKw(c, 'BRIGHT') ? 'bright' : null;
+      if (key === null) break;
+      if (clauses[key] !== null) this.fail(c, `a WIRE3D has at most one ${c.value} clause`);
+      this.next();
+      clausePos[key] = pos(c);
+      clauses[key] = this.expr();
+    }
+    return this.close(this.mk('Wire3d', t, { r0, r1, ink: clauses.ink, paper: clauses.paper, bright: clauses.bright, clausePos }));
   }
 
   /** `BAND rows, num, den` (language batch 2): node Band {rows, num, den}. */
@@ -776,6 +816,35 @@ class Parser {
         const value = this.expr();
         return this.close(this.mk('SetWall', t, { x, y, value }));
       }
+      case 'EYE': {                                       // wireframe 3D: the viewer
+        this.next();
+        const x = this.expr(); this.expectSym(',', "expected ',' : EYE x, y, z, a");
+        const y = this.expr(); this.expectSym(',', "expected ',' : EYE x, y, z, a");
+        const z = this.expr(); this.expectSym(',', "expected ',' : EYE x, y, z, a");
+        const a = this.expr();
+        return this.close(this.mk('Eye', t, { x, y, z, a }));
+      }
+      case 'DRAWMODEL': {                                  // wireframe 3D: DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]
+        this.next();
+        const model = this.nameRef('a model name: DRAWMODEL model AT x, y, z');
+        this.expectKw('AT', 'expected AT: DRAWMODEL model AT x, y, z [YAW a] [PITCH p] [SCALE s]');
+        const x = this.expr(); this.expectSym(',', "expected ',' : DRAWMODEL model AT x, y, z");
+        const y = this.expr(); this.expectSym(',', "expected ',' : DRAWMODEL model AT x, y, z");
+        const z = this.expr();
+        const clauses = { yaw: null, pitch: null, scale: null }, clausePos = {};
+        for (;;) {
+          const c = this.peek();
+          const key = c.type === 'ident' && ['YAW', 'PITCH', 'SCALE'].includes(c.value) ? c.value.toLowerCase() : null;
+          if (key === null) break;
+          if (clauses[key] !== null) this.fail(c, `DRAWMODEL has at most one ${c.value} clause`);
+          this.next();
+          clausePos[key] = pos(c);
+          clauses[key] = this.expr();
+        }
+        return this.close(this.mk('DrawModel', t, { model, x, y, z, yaw: clauses.yaw, pitch: clauses.pitch, scale: clauses.scale, clausePos }));
+      }
+      case 'WIRE3D': this.fail(t, 'WIRE3D must be at the top level, outside any PROC');
+      // falls through (fail throws)
       case 'VIEW3D': this.fail(t, 'VIEW3D must be at the top level, outside any PROC');
       // falls through (fail throws)
       case 'WINDOW': this.fail(t, 'WINDOW must be at the top level, outside any PROC');

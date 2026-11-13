@@ -40,5 +40,11 @@
   "title": "Blockfall",
   "about": "A falling-blocks puzzle: tiles and text only, no sprites; a three-channel song plays during the game (MUSIC: the effects borrow its drum channel). Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.",
   "file": "blockfall.leapgame"
+ },
+ {
+  "id": "orbit",
+  "title": "Orbit Gates (wireframe 3D)",
+  "about": "A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.",
+  "file": "orbit.leapgame"
  }
 ]

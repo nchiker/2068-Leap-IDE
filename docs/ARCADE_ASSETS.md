@@ -8,7 +8,7 @@ shift phases), not fixed here. Implemented: see `ARCADE_STUDIO.md` and `ARCADE_S
 ```json
 { "format": 1, "name": "Breakout", "framerate": 30,
   "files":  { "main.arc": "GAME \"Breakout\" ..." },
-  "assets": { "sprites": {}, "tilesets": {}, "maps": {}, "sfx": {}, "music": {} },
+  "assets": { "sprites": {}, "tilesets": {}, "maps": {}, "sfx": {}, "music": {}, "models": {} },
   "scenes": { "play": { "display": "auto" } } }
 ```
 * Saved in the browser (auto-save, one key per project), downloaded as `<name>.leapgame`, shareable by link when
@@ -76,6 +76,21 @@ The Studio's editors enforce the two-colours-per-row rule while drawing and prev
   `convertMusic` to pattern streams with waits (a held note costs one byte); edited in the Studio's song editor; the example games write theirs as
   code with `arcade/examples/songs.mjs` and `node arcade/tools/song-wav.mjs <assets.json>` renders them to .wav. In a game with songs every
   one-channel effect is stored as a channel-C stream (`convertSfxC`).
+
+## Models (wireframe 3D)
+**As built, 2026-11-12** (`docs/ARCADE_WIREFRAME_CONTRACT.md` sections 2.1 and 7b). A model is a set of 3-D points and the straight lines between them, drawn by `DRAWMODEL` in a `WIRE3D` game (`docs/ARCADE_LANGUAGE.md`):
+`{ "points": [ [x, y, z], ... ], "edges": [ [i, j], ... ] }`
+* `points`: 1 to **128** points of three integers, each coordinate -64..64 (the range of the runtime's quarter-square multiply). World axes: x right, y **up**, z forward. The model's origin is (0, 0, 0): `DRAWMODEL` places and turns it about
+  that point (yaw about the vertical axis after pitch about the model's own x axis) and scales it by the constant 1, 2, 4 or 8.
+* `edges`: 1 to **255** pairs of point indices (`i` <> `j`, both below the number of points). An edge is drawn as a line between its two projected points; there are no faces and no hidden-line removal. A point on no edge is a Studio
+  warning (`model-unused-point`: it draws nothing and still takes room on the cartridge). Colour is not part of a model: the whole play area has one ink (`WIRE3D ... INK n`).
+* At most **32** `MODEL` declarations in a game (`SPRITE`-style: `MODEL gate = "gate"` looks up `assets.models.gate`). The project file keeps a model it cannot use (the format check refuses only a wrong shape: `points` and `edges` arrays
+  of whole numbers); the limits above are findings of the asset check (`model-shape`, an error, which the compiler also reports at the `MODEL` line) and of the compiler.
+* **Game image** (`convertModel(asset)` -> `{points, edges, bytes}`, `modelBytes` in `src/lang/arcade/arcade-wire.js`): `DB npts, DB nedges`, then `npts` x (`DB x, DB y, DB z`, signed bytes), then `nedges` x (`DB i, DB j`):
+  2 + 3 npts + 2 nedges bytes (a cube: 8 points, 12 edges, 50 bytes; at most 2 + 384 + 510 = 896). The image is data in the **mapped** 16 KB code area, never in a bank (the bank window is the display files and the draw reads the model
+  every tick); the game header's `wire_desc` pointer is in the same area. `RT_DRAWMODEL` takes the address of the image in HL.
+* The Studio keeps models in the project, validates them and shows a small turning preview of each (`src/tools/model-preview.js`); "+" adds a cube. There is no point editor yet: models are written as JSON or by code (`arcade/examples/orbit.assets.gen.mjs` makes
+  the sample game's `gate` and `rock`).
 
 ## Size accounting
 The Studio reports bytes by category (runtime modules, code, sprites, tiles, maps, sound) against the 64 KB DCK and

@@ -95,7 +95,8 @@
   "tilesets": {},
   "maps": {},
   "sfx": {},
-  "music": {}
+  "music": {},
+  "models": {}
  },
  "scenes": {}
 }

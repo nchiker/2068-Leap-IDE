@@ -23,6 +23,7 @@ import { checkAssets } from './src/lang/arcade/arcade-assetcheck.js';
 import { toggleHelp, setHelpProfile } from './src/help.js';
 import { createSymbolsTool } from './src/tools/symbols.js';
 import * as P from './src/arcade-project.js';
+import { drawModelPreview } from './src/tools/model-preview.js';
 import { newSong, toSong, fromSong, songInfo } from './src/tools/music-model.js';
 
 const profile = STUDIO_PROFILES[0];
@@ -256,8 +257,13 @@ const NEW_ASSET = {
   maps: () => ({ w: 32, h: 24, tileset: '', cells: 'FF'.repeat(32 * 24) }),
   sfx: () => ({ ticks: [{ tone: 200, vol: 0, noise: 0, mix: 6 }] }),
   music: () => toSong(newSong()),          // one short pattern, order [0], loop 0 (music-model.js)
+  // a cube (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1; there is no model editor yet: edit the JSON or write models as code)
+  models: () => ({
+    points: [[-20, -20, -20], [20, -20, -20], [20, 20, -20], [-20, 20, -20], [-20, -20, 20], [20, -20, 20], [20, 20, 20], [-20, 20, 20]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]],
+  }),
 };
-const KIND_WORD = { sprites: 'sprite', tilesets: 'tile set', maps: 'map', sfx: 'sound effect', music: 'song' };
+const KIND_WORD = { sprites: 'sprite', tilesets: 'tile set', maps: 'map', sfx: 'sound effect', music: 'song', models: 'model' };
 
 function newAssetUi(kind) {
   const raw = window.prompt(`Name of the new ${KIND_WORD[kind] ?? kind} (a letter, then letters, digits and _):`, '');
@@ -281,8 +287,8 @@ function deleteAssetUi(kind, name) {
   studioHost.deleteAsset(kind, name);
 }
 
-const ASSET_TITLES = { sprites: 'Sprites', tilesets: 'Tile sets', maps: 'Maps', sfx: 'Sound effects', music: 'Songs' };
-const SHOWN_KINDS = ['sprites', 'tilesets', 'maps', 'sfx', 'music'];
+const ASSET_TITLES = { sprites: 'Sprites', tilesets: 'Tile sets', maps: 'Maps', sfx: 'Sound effects', music: 'Songs', models: 'Models' };
+const SHOWN_KINDS = ['sprites', 'tilesets', 'maps', 'sfx', 'music', 'models'];
 
 const songMeta = new WeakMap();      // song asset object -> its project-list line
 function assetMeta(kind, a) {
@@ -293,6 +299,7 @@ function assetMeta(kind, a) {
     const n = (k) => (Array.isArray(a[k]) ? a[k].length : 0);
     return `${Math.max(n('ticks'), n('ticksB'), n('ticksC'))} ticks${n('ticksB') || n('ticksC') ? ', 3 channels' : ''}`;
   }
+  if (kind === 'models') return `${a?.points?.length ?? 0} pts, ${a?.edges?.length ?? 0} edges`;
   if (kind === 'music') {                        // patterns and the length of one pass of the order list
     // songInfo converts the whole song (the bytes), so it is worked out once per asset: setAsset stores a fresh copy on every change, so the object is the cache key
     if (!a || typeof a !== 'object') return '';
@@ -351,7 +358,9 @@ function selectAsset(kind, name) {
     showTab(def.tab);
     ensureEditor(kind).then((api) => api?.select?.(name, kind));
   } else {
-    say(`Editing ${kind === 'tilesets' ? 'tile sets' : kind === 'maps' ? 'maps' : 'sound effects'} comes with a later Studio slice; ${name} is used by name in the source`, 'idle');
+    say(kind === 'models'
+      ? `Model ${name}: there is no model editor yet; the project file holds its points and edges, and the source uses it by name (MODEL x = "${name}")`
+      : `Editing ${kind === 'tilesets' ? 'tile sets' : kind === 'maps' ? 'maps' : 'sound effects'} comes with a later Studio slice; ${name} is used by name in the source`, 'idle');
   }
 }
 
@@ -362,7 +371,45 @@ function problemFiles() {
   return s;
 }
 
+// ── Model previews (docs/ARCADE_WIREFRAME_CONTRACT.md section 4): a small turning wireframe on each model row ──
+// One requestAnimationFrame loop, running only while a preview canvas is on screen and the page is visible; colours are read from the CSS variables.
+const modelPreviews = new Set();            // canvases of the current asset list (renderProject refills it)
+let previewRaf = 0;
+const PREVIEW_PX = 28;
+function paintPreviews(t) {
+  previewRaf = 0;
+  let any = false;
+  const cs = getComputedStyle(document.documentElement);
+  const colors = { line: cs.getPropertyValue('--blue-fg').trim() || cs.getPropertyValue('--fg-soft').trim(), bg: null };
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  for (const c of modelPreviews) {
+    if (!c.isConnected) { modelPreviews.delete(c); continue; }
+    any = true;
+    if (c.offsetParent === null) continue;   // hidden (a collapsed panel): nothing to paint
+    const ctx = c.getContext('2d');
+    const k = Math.round(c.width / PREVIEW_PX);
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    drawModelPreview(ctx, c._model, still ? 0.6 : t / 1000 * 0.6, PREVIEW_PX, PREVIEW_PX, colors);
+  }
+  if (any && !document.hidden && !still) previewRaf = requestAnimationFrame(paintPreviews);
+}
+function startPreviews() {
+  if (!previewRaf && modelPreviews.size) previewRaf = requestAnimationFrame(paintPreviews);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) startPreviews(); });
+function modelPreviewCanvas(model) {
+  const c = document.createElement('canvas');
+  const k = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  c.width = c.height = PREVIEW_PX * k;
+  c.className = 'model-preview';
+  c.setAttribute('aria-hidden', 'true');
+  c._model = model;
+  modelPreviews.add(c);
+  return c;
+}
+
 function renderProject() {
+  modelPreviews.clear();
   const files = $('file-list');
   const bad = problemFiles();
   files.replaceChildren();
@@ -397,6 +444,7 @@ function renderProject() {
     for (const name of names) {
       const li = el('li', 'proj-row' + (selected && selected.kind === kind && selected.name === name ? ' active' : ''));
       li.dataset.asset = `${kind}/${name}`;
+      if (kind === 'models') li.append(modelPreviewCanvas(project.assets.models[name]));
       li.append(el('span', 'proj-name', name), el('span', 'proj-meta', assetMeta(kind, project.assets[kind][name])));
       const ren = el('button', 'proj-act', '✎'); ren.title = 'Rename';
       const del = el('button', 'proj-act', '✕'); del.title = 'Delete';
@@ -410,6 +458,7 @@ function renderProject() {
     groups.append(ul);
   }
   renderScenes();
+  startPreviews();
   $('project-name').textContent = project.name;
   document.title = `${project.name} — Leap Arcade Studio`;
   $('input-hint').textContent = inputHints(P.buildSource(project).text).join(' · ') || 'Click the screen to play.';
@@ -508,7 +557,7 @@ function renderResult() {
   }
   // asset warnings the compile does not report itself (docs/ARCADE_STUDIO_S2_CONTRACT.md section 3); a click selects the asset
   const assetWarns = projectAssetWarnings().filter((w) => !w.compilerAlso);
-  const assetLabel = { tilesets: 'tiles', maps: 'map', sfx: 'sound', sprites: 'sprite', music: 'song' };
+  const assetLabel = { tilesets: 'tiles', maps: 'map', sfx: 'sound', sprites: 'sprite', music: 'song', models: 'model' };
   for (const w of assetWarns) {
     const row = el('div', `problem ${w.severity}`);
     row.dataset.asset = `${w.kind}/${w.asset}`;

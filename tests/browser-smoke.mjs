@@ -65,7 +65,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 // ── Chrome over CDP ──
 const port = 9300 + Math.floor(Math.random() * 500);
 const chrome = spawn(findChrome(), [`--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'leap-prof-'))}`,
-  '--headless', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+  '--headless', '--mute-audio', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
   '--autoplay-policy=no-user-gesture-required', '--window-size=1920,1000', 'about:blank'], { stdio: 'ignore' });
 let targets;
 for (let i = 0; i < 100 && !targets; i++) {

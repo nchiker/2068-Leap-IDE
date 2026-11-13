@@ -1025,7 +1025,6 @@ console.log('\n5. Errors for statements outside the M2 subset');
     ['TILE', '    TILE 1, 2 = 3', 'TILE', 4],
     ['PLAY', '    PLAY beep', 'PLAY', 4, 'SFX beep = "beep"\n'],
     ['PLOT', '    PLOT 1, 2', 'PLOT', 4],
-    ['LINE', '    LINE 1, 2 TO 3, 4', 'LINE', 4],
     ['CLS', '    CLS', 'CLS', 4],
     ['BORDER', '    BORDER 2', 'BORDER', 4],
     ['INK', '    INK 2', 'INK', 4],
@@ -1046,6 +1045,11 @@ console.log('\n5. Errors for statements outside the M2 subset');
     const hit = r.errors.find((e) => e.line === line && /not supported yet in M2/.test(e.message));
     check_(`${name}: "not supported yet in M2" at line ${line}, column ${col}`, !!hit && hit.col === col && hit.message.startsWith(word) && !r.dck,
       hit ? `${hit.message} @${hit.line}:${hit.col}` : JSON.stringify(r.errors.slice(0, 2)));
+  }
+  { // LINE is a wireframe statement now (docs/ARCADE_WIREFRAME_CONTRACT.md 1.5): without a WIRE3D the checker says so, at the word, and there is no cartridge
+    const r = compileGame(wrapG('    LINE 1, 2 TO 3, 4'));
+    const hit = r.errors.find((e) => e.line === 8 && /^LINE needs a WIRE3D/.test(e.message));
+    check_('LINE without a WIRE3D: "LINE needs a WIRE3D" at line 8, column 4', !!hit && hit.col === 4 && !r.dck, hit ? `${hit.message} @${hit.line}:${hit.col}` : JSON.stringify(r.errors.slice(0, 2)));
   }
   const rec = compileGame(`GAME "r"\nSCENE s\n  DIM a\n  PROC INIT():\n  ENDP\n  PROC FRAME():\n    CALL f(1)\n  ENDP\n  PROC f(n):\n    CALL f(n - 1)\n  ENDP\nENDSCENE\n`);
   check_('recursion is refused', rec.errors.some((e) => /recursion.*not supported yet in M2/.test(e.message)), rec.errors[0]?.message);

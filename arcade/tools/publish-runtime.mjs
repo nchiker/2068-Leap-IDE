@@ -29,6 +29,7 @@ const EXAMPLES = [
   { id: 'runner', title: 'Leap Runner (4 levels)', about: 'The platformer with four levels, more than the 16 KB game area holds: the worlds are banked into the cartridge (DOCK chunk 2) and loaded with WORLD. Keys: O P move, Q or Space jump, A drops through planks. Needs the v3 runtime.' },
   { id: 'vaults', title: 'Vaults (3D maze)', about: 'A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot; a title song (MUSIC). Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.' },
   { id: 'blockfall', title: 'Blockfall', about: 'A falling-blocks puzzle: tiles and text only, no sprites; a three-channel song plays during the game (MUSIC: the effects borrow its drum channel). Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.' },
+  { id: 'orbit', title: 'Orbit Gates (wireframe 3D)', about: 'A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.' },
 ];
 
 let differs = 0;

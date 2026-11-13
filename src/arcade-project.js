@@ -4,7 +4,7 @@
  * A project is the `.leapgame` JSON document of docs/ARCADE_ASSETS.md, format 1:
  *
  *   { format: 1, name, framerate, files: {'main.arc': text, ...},
- *     assets: {sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {}}, scenes: {} }
+ *     assets: {sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {}, models: {}}, scenes: {} }
  *
  * This module holds everything about that document that needs no browser: validating / migrating what was read
  * from a file or from storage, the new-project template, the operations the Studio and the asset editors make
@@ -24,7 +24,7 @@ import { MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS } from './lang/arcade/arcade
 
 export const FORMAT = 1;
 export const MAIN_FILE = 'main.arc';
-export const ASSET_KINDS = Object.freeze(['sprites', 'tilesets', 'maps', 'sfx', 'music']);
+export const ASSET_KINDS = Object.freeze(['sprites', 'tilesets', 'maps', 'sfx', 'music', 'models']);
 export const STORAGE_KEY = 'leap-studio.project';
 export const MAX_NAME = 31;
 
@@ -157,6 +157,20 @@ export function validateAsset(kind, value) {
     }
     const loop = value.loop;
     if (loop !== undefined && loop !== null && !(Number.isInteger(loop) && loop >= 0 && loop < order.length)) return `"loop" is ${JSON.stringify(loop)}: an order position 0..${order.length - 1}, or null for none`;
+    return null;
+  }
+  case 'models': {
+    // docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1: {points: [[x, y, z], ...], edges: [[i, j], ...]}. Only the shape is refused here (so a
+    // project never loses a model); the limits (128 points, |c| <= 64, 255 edges, indices) are findings of arcade-assetcheck.js.
+    const { points, edges } = value;
+    if (!Array.isArray(points)) return 'a model needs "points": [[x, y, z], ...]';
+    if (!Array.isArray(edges)) return 'a model needs "edges": [[i, j], ...]';
+    for (let i = 0; i < points.length; i++) {
+      if (!(Array.isArray(points[i]) && points[i].length === 3 && points[i].every(Number.isInteger))) return `point ${i} must be [x, y, z], three whole numbers`;
+    }
+    for (let i = 0; i < edges.length; i++) {
+      if (!(Array.isArray(edges[i]) && edges[i].length === 2 && edges[i].every(Number.isInteger))) return `edge ${i} must be [i, j], two whole numbers`;
+    }
     return null;
   }
   default:
@@ -315,7 +329,7 @@ export function newProject(name = 'Untitled') {
   return {
     format: FORMAT, name: title, framerate: 30,
     files: { [MAIN_FILE]: TEMPLATE_SOURCE.replace('GAME "Untitled"', `GAME "${title.replace(/"/g, "'")}"`) },
-    assets: { sprites: { ball: clone(BALL) }, tilesets: {}, maps: {}, sfx: {}, music: {} },
+    assets: { sprites: { ball: clone(BALL) }, tilesets: {}, maps: {}, sfx: {}, music: {}, models: {} },
     scenes: {},
   };
 }
@@ -324,7 +338,7 @@ export function newProject(name = 'Untitled') {
 export function exampleProject(name, arcText, assets = {}) {
   const p = newProject(name);
   p.files = { [MAIN_FILE]: arcText.replace(/\r\n?/g, '\n') };
-  p.assets = { sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {} };
+  p.assets = { sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {}, models: {} };
   for (const kind of ASSET_KINDS) if (isObj(assets[kind])) p.assets[kind] = clone(assets[kind]);
   const framerate = /^\s*FRAMERATE\s+(\d+)/im.exec(arcText);
   if (framerate) p.framerate = Number(framerate[1]);
@@ -392,7 +406,7 @@ export function renameAsset(project, kind, oldName, newName) {
 
 /** Source references to an asset name that has no asset: [{line, name}] (the Studio warns after a rename). */
 export function assetReferences(project, kind, name) {
-  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX', music: 'MUSIC' }[kind];
+  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX', music: 'MUSIC', models: 'MODEL' }[kind];
   if (!word) return [];
   const re = new RegExp(`^\\s*${word}\\s+[A-Za-z]\\w*\\s*(\\(\\s*\\d+\\s*\\))?\\s*=\\s*"${name.replace(/[^\w]/g, '\\$&')}"`, 'i');
   const out = [];

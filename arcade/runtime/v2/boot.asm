@@ -17,6 +17,7 @@ M_NMI_S:
 NMI:
     retn
 M_NMI_E:
+    INCLUDE "wiremode.asm"      ; $0068: RT_WIREMODE, wire_boot (wireframe, slice W2: the free bytes before the cold start)
 
     ORG RT_ENTRY
 M_BOOT_S:
@@ -92,9 +93,14 @@ ENTRY:
 
     ; ---- video: both display files (all cells blank), the cell map, glyphs, tiles, row table, pre-shifted sprite tables ----
     call video_init
+    call wire_boot              ; wireframe 3D (wiretick.asm): the play area of a DIV_EXT | DIV_WIRE header, after the map table; nothing in any other game
 
     ; ---- header values the main loop uses ----
     ld a,(GAME_DIV)
+    cp DIV_EXT
+    jr c,.div7
+    and $BF                     ; an extended header: bit 6 (DIV_WIRE) is not part of the divisor either
+.div7:
     and $7F                     ; bit 7 (DIV_EXT) says the header has a map table; it is not part of the divisor
     jr nz,.divok
     inc a                       ; a header with frame_div 0 is read as 1
@@ -114,3 +120,4 @@ ENTRY:
     ei                          ; the ISR can fire from the next instruction
     jp MAIN                     ; the frame loop (main.asm)
 M_BOOT_E:
+    ASSERT M_BOOT_E <= RT_VIDEO

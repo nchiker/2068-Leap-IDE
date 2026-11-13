@@ -20,6 +20,9 @@
  * Songs (kind 'music', docs/ARCADE_MUSIC_CONTRACT.md sections 3 and 7): music-unstorable (error; `pattern`, `channel` 'A' | 'B' | 'C' and `ticks`, one finding
  * per pattern and channel with a bad tick), music-shape (error: a limit of section 3, an order entry naming no pattern, an empty order list or pattern, a
  * loop outside the order list; `pattern` when one pattern is at fault), music-unused-pattern (warning: a pattern the order list never plays; `pattern`).
+ * Models (kind 'models', docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1): model-shape (error; `points` / `edges` / `positions` as the finding says: 1..128 points,
+ * integer coordinates |c| <= 64, 1..255 edges, an edge whose two ends differ and name points that exist), model-unused-point (warning: a point no edge uses;
+ * `points`), asset-malformed (no "points" / "edges" array, or a point or edge that is not a list of whole numbers).
  */
 
 "use strict";
@@ -324,7 +327,7 @@ function checkSfx(name, asset, out) {
 function checkMusic(name, asset, out) {
   const mk = (id, severity, message, extra = {}, compilerAlso = true) => out.push({ id, severity, kind: 'music', asset: name, message, compilerAlso, ...extra });
   const pats = isObj(asset) ? asset.patterns : null;
-  if (!Array.isArray(pats)) { mk('asset-malformed', 'error', `song "${name}" has no "patterns" array`, {}, false); return; }
+  if (!Array.isArray(pats)) { mk('asset-malformed', 'error', `song "${name}" has no "patterns" array`); return; }
   if (pats.length === 0) mk('music-shape', 'error', `song "${name}" has no patterns`);
   if (pats.length > MUSIC_MAX_PATTERNS) mk('music-shape', 'error', `song "${name}" has ${pats.length} patterns; at most ${MUSIC_MAX_PATTERNS}`);
   pats.forEach((p, i) => {
@@ -360,8 +363,39 @@ function checkMusic(name, asset, out) {
   });
 }
 
+/** The limits of a model (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1). */
+export const MODEL_LIMITS = Object.freeze({ points: 128, edges: 255, coord: 64 });
+
+function checkModel(name, asset, out) {
+  const mk = (id, severity, message, extra = {}) => out.push({ id, severity, kind: 'models', asset: name, message, compilerAlso: severity === 'error', ...extra });   // the compiler judges a declared model (modelError, at its MODEL line): its errors are not shown twice; the warning is the Studio's alone
+  const pts = isObj(asset) ? asset.points : null, edges = isObj(asset) ? asset.edges : null;
+  if (!Array.isArray(pts)) { mk('asset-malformed', 'error', `model "${name}" has no "points" array`); return; }
+  if (!Array.isArray(edges)) { mk('asset-malformed', 'error', `model "${name}" has no "edges" array`); return; }
+  const badPts = pts.map((p, i) => (Array.isArray(p) && p.length === 3 && p.every(Number.isInteger) ? -1 : i)).filter((i) => i >= 0);
+  const badEdges = edges.map((e, i) => (Array.isArray(e) && e.length === 2 && e.every(Number.isInteger) ? -1 : i)).filter((i) => i >= 0);
+  if (badPts.length) mk('asset-malformed', 'error', `model "${name}": point${badPts.length > 1 ? 's' : ''} ${list(badPts)} must be [x, y, z], three whole numbers`, { points: badPts });
+  if (badEdges.length) mk('asset-malformed', 'error', `model "${name}": edge${badEdges.length > 1 ? 's' : ''} ${list(badEdges)} must be [i, j], two whole numbers`, { positions: badEdges });
+  if (pts.length === 0) mk('model-shape', 'error', `model "${name}" has no points`);
+  if (pts.length > MODEL_LIMITS.points) mk('model-shape', 'error', `model "${name}" has ${pts.length} points; at most ${MODEL_LIMITS.points}`);
+  if (edges.length === 0) mk('model-shape', 'error', `model "${name}" has no edges`);
+  if (edges.length > MODEL_LIMITS.edges) mk('model-shape', 'error', `model "${name}" has ${edges.length} edges; at most ${MODEL_LIMITS.edges}`);
+  const far = pts.map((p, i) => (Array.isArray(p) && p.length === 3 && p.every(Number.isInteger) && p.some((c) => Math.abs(c) > MODEL_LIMITS.coord) ? i : -1)).filter((i) => i >= 0);
+  if (far.length) mk('model-shape', 'error', `model "${name}": point${far.length > 1 ? 's' : ''} ${list(far)} ${far.length > 1 ? 'have' : 'has'} a coordinate beyond +-${MODEL_LIMITS.coord}`, { points: far });
+  const same = [], outside = [];
+  edges.forEach((e, k) => {
+    if (!(Array.isArray(e) && e.length === 2 && e.every(Number.isInteger))) return;
+    if (e[0] === e[1]) same.push(k);
+    if (e.some((v) => v < 0 || v >= pts.length)) outside.push(k);
+  });
+  if (same.length) mk('model-shape', 'error', `model "${name}": edge${same.length > 1 ? 's' : ''} ${list(same)} join${same.length > 1 ? '' : 's'} a point to itself`, { positions: same });
+  if (outside.length) mk('model-shape', 'error', `model "${name}": edge${outside.length > 1 ? 's' : ''} ${list(outside)} name${outside.length > 1 ? '' : 's'} a point that does not exist (the points are 0..${pts.length - 1})`, { positions: outside });
+  const used = new Set(edges.flatMap((e) => (Array.isArray(e) ? e : [])));
+  const loose = pts.map((_, i) => i).filter((i) => !used.has(i));
+  if (loose.length && edges.length) mk('model-unused-point', 'warning', `model "${name}": point${loose.length > 1 ? 's' : ''} ${list(loose)} ${loose.length > 1 ? 'are' : 'is'} on no edge, so nothing is drawn there (it still takes room on the cartridge)`, { points: loose });
+}
+
 /**
- * All asset warnings of a project. See the header. Order: tile sets, maps, sound effects, songs, each by asset name.
+ * All asset warnings of a project. See the header. Order: tile sets, maps, sound effects, songs, models, each by asset name.
  * @param {object} project  a .leapgame project ({assets: {tilesets, maps, sfx, music}})
  * @param {object|null} roles  scanRoles(source)
  */
@@ -372,7 +406,7 @@ export function checkAssets(project, roles) {
   };
   try {
     const r = isObj(roles) ? roles : null;
-    const tsTab = table(project, 'tilesets'), mapTab = table(project, 'maps'), sfxTab = table(project, 'sfx'), musTab = table(project, 'music');
+    const tsTab = table(project, 'tilesets'), mapTab = table(project, 'maps'), sfxTab = table(project, 'sfx'), musTab = table(project, 'music'), modTab = table(project, 'models');
     for (const name of Object.keys(tsTab).sort()) guard('tilesets', name, () => checkTileset(name, tsTab[name], r, project, out));
     if (r && worldsOf(r).length) {
       const sets = new Set();       // the tile sets the worlds are drawn with: tile 0 must be blank in each (checked once per set)
@@ -386,6 +420,7 @@ export function checkAssets(project, roles) {
     if (r) for (const name of Object.keys(mapTab).sort()) guard('maps', name, () => checkMap(name, mapTab[name], mapRole(name, r), r, project, out));
     for (const name of Object.keys(sfxTab).sort()) guard('sfx', name, () => checkSfx(name, sfxTab[name], out));
     for (const name of Object.keys(musTab).sort()) guard('music', name, () => checkMusic(name, musTab[name], out));
+    for (const name of Object.keys(modTab).sort()) guard('models', name, () => checkModel(name, modTab[name], out));
   } catch (e) {
     out.push({ id: 'asset-malformed', severity: 'error', kind: 'project', asset: '', message: `the assets could not be checked: ${e?.message ?? e}`, compilerAlso: false });
   }

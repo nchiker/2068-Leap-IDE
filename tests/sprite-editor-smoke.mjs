@@ -54,7 +54,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 
 const port = 9300 + Math.floor(Math.random() * 500);
 const chrome = spawn(findChrome(), [`--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'sprite-prof-'))}`,
-  '--headless', '--no-sandbox', '--window-size=1400,1100', 'about:blank'], { stdio: 'ignore' });
+  '--headless', '--mute-audio', '--no-sandbox', '--window-size=1400,1100', 'about:blank'], { stdio: 'ignore' });
 let targets;
 for (let i = 0; i < 100 && !targets; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); } catch { await sleep(100); } }
 const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);

@@ -27,7 +27,14 @@
  * judged as a game without the window / view would be: sprites, redrawn text or tiles, else a static picture); its entry gets `mode` ('nowindow' | 'noview'), and no entry of any other scene has the key.
  * `sceneModes(ast)` lists every scene's mode: the display model's one rule (what the scene shows):
  *   'window' / 'view'  the scrolling window / the 3D view is drawn (a scene without the clause, in a game that has one)
- *   'screen'           the whole 32 x 24 cell screen, sprites at screen positions (a game without the window / view, or a scene with the clause)
+ *   'wire'             the wireframe play area is drawn (a scene without NOVIEW, in a game with a WIRE3D; docs/ARCADE_WIREFRAME_CONTRACT.md)
+ *   'screen'           the whole 32 x 24 cell screen, sprites at screen positions (a game without the window / view / play area, or a scene with the clause)
+ *
+ * `wireLayer(rec, bits, attrs)` is the display model's rule for the wireframe play area (contract sections 2.4 to 2.6), applied to the picture of one record of the interpreter (arcade-interp.js, `rec.wire`):
+ * given the display file `bits` (6,144 bytes, the ZX layout) and the 768 attribute bytes that the cell map alone would show (what a game without the play area shows: the caller renders its cells), it returns
+ * what the machine shows before the sprites are drawn (the caller draws them over the result): while the play area is on, its pixel rows hold the lines of the record (`rec.wire.bits`) and its attribute cells the
+ * declared attribute, whatever the cell map holds there; while it is off nothing changes (every cell of the cell map is shown, the play rows included). `stale` is true when the play rows of the file hold more than the
+ * lines (`rec.wire.fresh` is false: INIT, before any clear; a switch on clears the hidden file's play area at once, so its tick is fresh), so a comparison must leave those pixels out.
  */
 
 "use strict";
@@ -88,10 +95,22 @@ const byName = (items, type) => {
 export function sceneModes(ast) {
   const out = [];
   try {
-    const kind = Array.isArray(ast?.windows) && ast.windows.length ? 'window' : Array.isArray(ast?.views) && ast.views.length ? 'view' : 'screen';
+    const kind = Array.isArray(ast?.windows) && ast.windows.length ? 'window' : Array.isArray(ast?.views) && ast.views.length ? 'view' : Array.isArray(ast?.wires) && ast.wires.length ? 'wire' : 'screen';
     for (const sc of ast?.scenes ?? []) if (sc && typeof sc === 'object') out.push({ name: String(sc.name ?? ''), line: (sc.namePos ?? sc).line ?? 1, show: sc.mode ? 'screen' : kind, mode: sc.mode ?? null });
   } catch { /* a malformed AST */ }
   return out;
+}
+
+/** The display file offset of pixel row y, byte column c (the ZX layout). */
+const rowOff = (y, c) => ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | c;
+
+/** See the header: the play area over the cell picture of a record. Returns {bits, attrs, stale} (copies; `bits` and `attrs` are not changed). */
+export function wireLayer(rec, bits, attrs) {
+  const outBits = Uint8Array.from(bits), outAttrs = Uint8Array.from(attrs), w = rec?.wire;
+  if (!w || !w.on) return { bits: outBits, attrs: outAttrs, stale: false };
+  for (let y = 8 * w.r0; y < 8 * (w.r1 + 1); y++) for (let c = 0; c < 32; c++) outBits[rowOff(y, c)] = w.bits[rowOff(y, c)];
+  for (let r = w.r0; r <= w.r1; r++) outAttrs.fill(w.attr, 32 * r, 32 * r + 32);
+  return { bits: outBits, attrs: outAttrs, stale: !w.fresh };
 }
 
 /** The project's override for a scene: the raw `display` of the entry (exact name first, then ignoring case), or undefined. */
@@ -117,7 +136,7 @@ export function sceneDisplayPlan(ast, { scenes } = {}) {
     if (!ast || !Array.isArray(ast.scenes)) return out;
     const topProcs = byName(ast.procs, 'Proc');
     const topFns = byName(ast.decls, 'DefFn');
-    const windowed = (Array.isArray(ast.windows) && ast.windows.length > 0) || (Array.isArray(ast.views) && ast.views.length > 0);
+    const windowed = (Array.isArray(ast.windows) && ast.windows.length > 0) || (Array.isArray(ast.views) && ast.views.length > 0) || (Array.isArray(ast.wires) && ast.wires.length > 0);
     for (const sc of ast.scenes) {
       if (!sc || typeof sc !== 'object') continue;
       const sceneProcs = byName(sc.procs, 'Proc');

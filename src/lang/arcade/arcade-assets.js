@@ -5,7 +5,8 @@
  *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: a register delta stream (batch 5)
  *   convertMap(asset, n)    -> {w, h, cells, bytes}    bytes = the 768 CELL_TILE bytes (tile = 128 + index, blank = 32)
  *   lookupAsset(table, ...names) -> asset | undefined  exact name first, then case-insensitive
- *   assetTables(assets)     -> {sprites, tilesets, sfx, maps, music}   see below
+ *   assetTables(assets)     -> {sprites, tilesets, sfx, maps, music, models}   see below
+ *   convertModel(asset)     -> {points, edges, bytes}   a wireframe model's game image (DB npts, DB nedges, points, edges; arcade-wire.js modelBytes), checked by modelError (docs/ARCADE_WIREFRAME_CONTRACT.md 2.1)
  *
  * Asset shapes (docs/ARCADE_ASSETS.md, as extended here where that file is silent):
  *   tileset {tiles: [{rows: [8 x {bits, ink, paper, bright}], flags}]}   bits = 8-bit number or 1..2 hex digits, MSB = left pixel;
@@ -17,13 +18,14 @@
  *   map     {w, h, cells}  w <= 32, h <= 24; cells = array (or hex string, 2 digits per cell) of w*h values, each a tile index
  *           0..127 or blank (-1, null, or 255 / "FF"); placed at the top-left of the 32 x 24 cell map, the other cells are font
  *           spaces. (docs/ARCADE_ASSETS.md says "hex or run-length"; run-length is not implemented.)
- * `assets` passed to compile() is {sprites, tilesets, sfx, maps, music} (each a name -> asset object; `music`: the songs, docs/ARCADE_MUSIC_CONTRACT.md section 3).
+ * `assets` passed to compile() is {sprites, tilesets, sfx, maps, music, models} (each a name -> asset object; `music`: the songs, docs/ARCADE_MUSIC_CONTRACT.md section 3; `models`: wireframe models {points, edges}, section 2.1).
  * For compatibility with M2 a value that has none of those five keys is taken to be the sprites table itself.
  */
 
 "use strict";
 
 import { LIMITS } from './arcade-words.js';
+import { modelError, modelBytes } from './arcade-wire.js';
 
 export const MAX_TILES = 128;
 export const MAX_SFX = 8;
@@ -33,11 +35,18 @@ export const TILE_CELL = 128;               // cell value of tile 0
 
 export function assetTables(assets) {
   const a = assets ?? {};
-  const named = ['sprites', 'tilesets', 'sfx', 'maps', 'music'];
+  const named = ['sprites', 'tilesets', 'sfx', 'maps', 'music', 'models'];
   if (named.some((k) => k in a)) {
-    return { sprites: a.sprites ?? {}, tilesets: a.tilesets ?? {}, sfx: a.sfx ?? {}, maps: a.maps ?? {}, music: a.music ?? {} };
+    return { sprites: a.sprites ?? {}, tilesets: a.tilesets ?? {}, sfx: a.sfx ?? {}, maps: a.maps ?? {}, music: a.music ?? {}, models: a.models ?? {} };
   }
-  return { sprites: a, tilesets: {}, sfx: {}, maps: {}, music: {} };
+  return { sprites: a, tilesets: {}, sfx: {}, maps: {}, music: {}, models: {} };
+}
+
+/** A wireframe model asset ({points, edges}, docs/ARCADE_WIREFRAME_CONTRACT.md 2.1) converted: throws an Error naming the problem, else {points, edges, bytes} (its game image). */
+export function convertModel(asset) {
+  const why = modelError(asset);
+  if (why) throw new Error(why);
+  return { points: asset.points, edges: asset.edges, bytes: Uint8Array.from(modelBytes(asset)) };
 }
 
 export function lookupAsset(table, ...names) {

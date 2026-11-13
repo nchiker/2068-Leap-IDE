@@ -156,6 +156,34 @@ check('validateAsset: the flat "rows" form is accepted too', P.validateAsset('sp
   check('assetReferences finds a MUSIC declaration of a song', eq(P.assetReferences(pm, 'music', 'tune').map((r) => r.file), ['main.arc']));
 }
 
+// ── Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1): a sixth asset kind the project never drops ──
+{
+  const cube = { points: [[-20, -20, -20], [20, -20, -20], [20, 20, -20], [-20, 20, -20]], edges: [[0, 1], [1, 2], [2, 3], [3, 0]], note: 'kept' };
+  const v = (x) => P.validateAsset('models', x);
+  check('ASSET_KINDS has models as the sixth kind; new / example projects start with an empty models table',
+    P.ASSET_KINDS.length === 6 && P.ASSET_KINDS[5] === 'models' && eq(P.newProject('m').assets.models, {}) && eq(P.exampleProject('m', 'GAME "m"\n').assets.models, {}));
+  check('validateAsset models: a good model (unknown keys kept); refuses missing or malformed points / edges',
+    v(cube) === null && /needs "points"/.test(v({ edges: [] })) && /needs "edges"/.test(v({ points: [] })) && /point 1 must be \[x, y, z\]/.test(v({ points: [[0, 0, 0], [1, 2]], edges: [] }))
+    && /edge 0 must be \[i, j\]/.test(v({ points: [], edges: [[0]] })) && v({ points: [[0.5, 0, 0]], edges: [] }) !== null);
+  check('validateAsset models: the limits are the asset checker\'s, not the loader\'s (a model beyond them still loads, so it is never dropped)',
+    v({ points: [[100, 0, 0], [0, 0, 0]], edges: [[0, 0], [0, 9]] }) === null);
+  const pm = P.newProject('models');
+  check('setAsset / getAsset / listAssets / renameAsset / deleteAsset work for models',
+    P.setAsset(pm, 'models', 'gate', cube).ok && eq(P.getAsset(pm, 'models', 'gate'), cube) && eq(P.listAssets(pm, 'models'), ['gate']) && P.setAsset(pm, 'models', 'bad', { points: 3, edges: [] }).ok === false
+    && P.renameAsset(pm, 'models', 'gate', 'rock').ok && eq(P.listAssets(pm, 'models'), ['rock']) && P.deleteAsset(pm, 'models', 'rock') && eq(P.listAssets(pm, 'models'), []));
+  P.setAsset(pm, 'models', 'gate', cube);
+  P.setFile(pm, 'main.arc', pm.files['main.arc'] + 'MODEL g = "gate"\n');
+  check('assetReferences finds a MODEL declaration of a model', eq(P.assetReferences(pm, 'models', 'gate').map((r) => r.file), ['main.arc']));
+  const re = P.parseProject(P.serializeProject(pm));
+  check('a project with a model round-trips through serialize / parse', re.ok && eq(re.project.assets.models, { gate: cube }) && eq(re.project.assets.sprites, pm.assets.sprites));
+  const store = (() => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, x) => m.set(k, x) }; })();
+  check('a project with a model round-trips through the browser auto-save', P.storeProject(pm, store) && eq(P.loadProject(store).assets.models, { gate: cube }));
+  const old = P.validateProject({ format: 1, name: 'o', files: { 'main.arc': 'GAME "o"\n' }, assets: { sprites: {} } });
+  check('a project written before models existed loads with an empty models table', old.ok && eq(old.project.assets.models, {}));
+  const bad = P.validateProject({ format: 1, name: 'o', files: { 'main.arc': 'GAME "o"\n' }, assets: { models: { x: { points: 'no', edges: [] } } } });
+  check('a damaged model in a file is reported with its name', !bad.ok && /assets\.models\.x: a model needs "points"/.test(bad.errors.join(' ')), JSON.stringify(bad.errors));
+}
+
 check('validateAsset: tileset, map, sfx, unknown kind',
   P.validateAsset('tilesets', { tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00' })) }] }) === null &&
   P.validateAsset('tilesets', { tiles: [{ rows: [] }] }) !== null &&

@@ -59,7 +59,7 @@ export async function startBrowser({ outDir = null, width = 1920, height = 1000 
 
   const port = 9300 + Math.floor(Math.random() * 500);
   const chrome = spawn(findChrome(), [`--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'leap-prof-'))}`,
-    '--headless', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+    '--headless', '--mute-audio', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
     '--autoplay-policy=no-user-gesture-required', `--window-size=${width},${height}`, 'about:blank'], { stdio: 'ignore' });
   let targets;
   for (let i = 0; i < 100 && !targets; i++) {

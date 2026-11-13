@@ -164,7 +164,8 @@ const res = compileOnMock();
   const nv = u.noviewPhaseRam;
   check_(`the linker's plan of the NOVIEW sprite pool: the art fits (needs at least ${nv?.needed} of ${nv?.available} bytes, nothing missing) and every frame of the wraith (4 phases, 4 frames) stays cached, so nothing is built while the title runs`, !!nv && nv.miss === 0 && nv.available === 3712 && nv.perAsset[1].K === nv.perAsset[1].nframes && nv.perAsset.every((a) => a.built === a.nframes), nv ? `${nv.needed} of ${nv.available}` : 'no plan');
   check_('game variables fit with room (GAME_VARS 2,048 bytes)', u.gameVars.used <= 2048 - 512, `${u.gameVars.used} B`);
-  check_('requiredRuntime says the v4 runtime (VIEW3D, VIEW, SETWALL, WALL, COSA, SINA, FXMUL, SEEN, DEPTH)', (() => { const r = requiredRuntime(SRC, A); return r.version === 4 && ['VIEW3D', 'VIEW', 'SETWALL', 'WALL()', 'COSA()', 'SINA()', 'FXMUL()', 'SEEN()', 'DEPTH()'].every((w) => r.reasons.includes(w)); })());
+  // (COSA SINA FXMUL are on v2 too since the wireframe contract, item 10: they are no longer reasons for v4)
+  check_('requiredRuntime says the v4 runtime (VIEW3D, VIEW, SETWALL, WALL, SEEN, DEPTH)', (() => { const r = requiredRuntime(SRC, A); return r.version === 4 && ['VIEW3D', 'VIEW', 'SETWALL', 'WALL()', 'SEEN()', 'DEPTH()'].every((w) => r.reasons.includes(w)); })());
   const rtJson = join(ROOT, 'arcade/build/v4/runtime.json');
   if (existsSync(rtJson)) {
     const rt = JSON.parse(readFileSync(rtJson, 'utf8')), img = new Uint8Array(readFileSync(join(dirname(rtJson), rt.image ?? 'runtime.bin')));

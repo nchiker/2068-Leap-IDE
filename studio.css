@@ -102,3 +102,7 @@
   .panel-project, .panel-right { flex: none; min-width: 0; }
   .studio-root .panel-editor { height: 45vh; }
 }
+
+/* Model previews: a small turning wireframe on each model row (studio.js paintPreviews); the line colour comes from --blue-fg */
+.proj-row .model-preview { width: 28px; height: 28px; flex: none; margin: -2px 4px -2px 0; }
+.proj-row[data-asset^="models/"] .proj-meta { white-space: nowrap; }

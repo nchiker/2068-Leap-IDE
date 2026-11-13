@@ -143,7 +143,7 @@ console.log('\n2. SCENE name NOWINDOW / NOVIEW: the checker');
   const noWin = PLAIN(sc('t', 'NOWINDOW', '', '    ENTER p\n') + sc('p', ''));
   badAt("NOWINDOW in a game without a WINDOW: \"SCENE 't' NOWINDOW: NOWINDOW needs a WINDOW in the game ...\" at the word", noWin, /^SCENE 't' NOWINDOW: NOWINDOW needs a WINDOW in the game/, at(noWin, 'NOWINDOW'), 3);
   const noView = PLAIN(sc('t', 'NOVIEW', '', '    ENTER p\n') + sc('p', ''));
-  badAt('NOVIEW in a game without a VIEW3D', noView, /^SCENE 't' NOVIEW: NOVIEW needs a VIEW3D in the game/, at(noView, 'NOVIEW'), 4);
+  badAt('NOVIEW in a game without a VIEW3D', noView, /^SCENE 't' NOVIEW: NOVIEW needs a VIEW3D or a WIRE3D in the game/, at(noView, 'NOVIEW'), 4);
   const wrong1 = W3(sc('t', 'NOVIEW', '', '    ENTER p\n') + sc('p', ''));
   badAt('NOVIEW in a WINDOW game: says NOVIEW is for a VIEW3D game, that this one has a WINDOW (with its line), and to use NOWINDOW', wrong1, new RegExp(`^SCENE 't' NOVIEW: NOVIEW is for a game with a VIEW3D, and this game has a WINDOW \\(line ${at(wrong1, 'WINDOW level').line}\\): use NOWINDOW$`), at(wrong1, 'NOVIEW'), 3);
   const wrong2 = V4(sc('t', 'NOWINDOW', '', '    ENTER p\n') + sc('p', ''));

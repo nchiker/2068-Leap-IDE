@@ -50,11 +50,15 @@ WORK_START:                     ; (labels for the tests' cycle counting and samp
     rrca
     rrca                        ; file 1 -> bit 5 ($20), file 0 -> 0: the high-byte offset of the hidden file
     ld (V_HOFF),a
+    ld a,(V_WIRE)               ; a WIRE3D game (V_WIRE 2 / 3) takes wire_tick (wiretick.asm), which comes back to SKIP_CALL or TICK_DRAW;
+    or a                        ; every other game pays this test only (27 T)
+    jp nz,wire_tick
     ld hl,(GAME_FRAME)
     call call_hl                ; frame_entry: may call RT_SHOW / RT_HIDE / RT_MUL / RT_TILE / RT_PRINTS ... and use any register
 SKIP_CALL:
     call skip_analysis
     call erase_all
+TICK_DRAW:
     call redraw_dirty           ; cells changed by init_entry / frame_entry (or by the map at boot) appear in this file now
     call draw_all
     ld hl,(V_TICKS)

@@ -73,7 +73,7 @@ ENDSCENE
 | `GAME "t"`, `FRAMERATE n` | title; target updates per second (60, 30, 20, 15, 12, 10...) | frame rate is a design input |
 | `SPRITE n = "a"`, `SFX n = "a"`, `TILESET n = "a"`, `MAP n = "a"` | declare named assets from the project | assets are authored in the Studio |
 | `SCENE n` ... `ENDSCENE`, `ENTER n` | a game part with its own `INIT` and `FRAME`; `ENTER` switches scene | the build plans display and memory per scene |
-| `SCENE n NOWINDOW` / `SCENE n NOVIEW` | a scene of a `WINDOW` / `VIEW3D` game that shows no window / 3D view: the whole cell screen and sprites at screen positions (title, menu, score table); the window / view comes back when a scene without the clause is entered | a full-screen title in a game whose play scenes scroll or ray-cast |
+| `SCENE n NOWINDOW` / `SCENE n NOVIEW` | a scene of a `WINDOW` / `VIEW3D` / `WIRE3D` game that shows no window / 3D view / wireframe play area: the whole cell screen and sprites at screen positions (title, menu, score table); the window / view / play area comes back when a scene without the clause is entered (`NOVIEW` covers both `VIEW3D` and `WIRE3D` games) | a full-screen title in a game whose play scenes scroll, ray-cast or draw wireframes |
 | `PROC INIT()`, `PROC FRAME()` | entry points inside a scene | the runtime owns the loop |
 | `SHOW s AT x, y [FRAME f]`, `HIDE s` | place / remove a sprite (pixel position, y from the top) | sprites |
 | `HIT(a, b)` | 1 if two sprites overlap (pixel-exact test is *later*; bounding boxes first) | collision |
@@ -85,6 +85,27 @@ ENDSCENE
 *Music is built* (2026-11-12): `MUSIC name = "asset"`, `PLAY song`, `NOMUSIC`; `docs/ARCADE_MUSIC_CONTRACT.md` sections 2 and 6a. *Later* (not specified until a game needs them): `SCROLL`, sprite flip/animation words, `SELECT`/`CASE`,
 `WHILE`/`WEND` (these two are likely early, for game B), `COLLIDE` against tiles, fixed-point, more string words,
 `ON COLLIDE`, a `TIMER`.
+
+*Wireframe 3D is built* (2026-11-12; contract `docs/ARCADE_WIREFRAME_CONTRACT.md` sections 1 to 3 and the as-built notes 7a / 7b; runtime `docs/ARCADE_RUNTIME_API_V2.md` "As built: wireframe 3D"):
+```
+WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 1       REM top level, once: the play area is character rows 2..21, all 32 columns
+MODEL gate = "gate"                              REM a wireframe model asset (up to 32)
+  EYE ex, 0, ez, ea                              REM the viewer: world position and heading
+  DRAWMODEL gate AT gx, 0, gz YAW t PITCH p SCALE 2
+  LINE 120, 96 TO 136, 96                        REM a 2-D line in screen pixels
+```
+`WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]` gives the game a play area (r0 >= 0, r0 + 3 <= r1 <= 23, so at least 4 rows; defaults `INK 7 PAPER 0 BRIGHT 1`) in which only lines are drawn,
+in one colour for the whole area (the attribute is set once; lines are not coloured per model). `MODEL name = "asset"` declares a model: 1..128 points, 1..255 edges, coordinates -64..64, x right, y up, z forward (`docs/ARCADE_ASSETS.md`).
+`EYE x, y, z, a` sets the viewer (signed 16-bit position, heading `a` taken AND 255, 256 to a turn; it is 0, 0, 0, 0 at the start and after `ENTER`). `DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]`
+draws model `m` at once, seen from the eye: turned by PITCH about its own x axis, then by YAW about the vertical axis (both AND 255, default 0), scaled by the constant 1, 2, 4 or 8 (default 1); its clauses may come in any order and
+are evaluated as x, y, z, yaw, pitch. `LINE x0, y0 TO x1, y1` draws a 2-D line in screen pixels (y from the top), clipped exactly to the play area; a coordinate outside -16384..16383 draws nothing. The play area is cleared at the
+start of every tick, so `DRAWMODEL` and `LINE` belong in `PROC FRAME` (a warning for one in `INIT`); sprites are drawn over the lines, and `PRINT` / `TILE` inside the play rows are kept in the cell map but not shown while the area is on
+(a warning for a constant row inside it). There is no 3D clipping: an edge with an end behind the eye (camera z below 16) or beyond 16,000 is not drawn, and neither is a model whose offset from the eye exceeds 16,000 in any axis.
+`SCENE name NOVIEW` in a `WIRE3D` game is a scene without the play area (title, menu, score table; `DRAWMODEL` and `LINE` do nothing there, `EYE` is stored). Errors: `WIRE3D` twice, with a `WINDOW` or a `VIEW3D`, rows out of range,
+a colour outside 0..7, `EYE` / `DRAWMODEL` / `LINE` / `MODEL` without a `WIRE3D`, `DRAWMODEL` of a name that is not a model, `SCALE` not a constant 1, 2, 4 or 8, `NOVIEW` in a game with neither `VIEW3D` nor `WIRE3D`; warning: a `MODEL` never drawn.
+A `WIRE3D` game needs the **v2 runtime** (`requiredRuntime` says so; v3 and v4 refuse it) and its sprite art may have at most 45 phases in all (a link error otherwise). `COSA(a)`, `SINA(a)` and `FXMUL(a, b)` now work on the **v2 and the
+v4 runtime** with the same values (8.8 fixed point, -256..256), so a game moves along its heading with `x = x + FXMUL(speed, SINA(a))` and `z = z + FXMUL(speed, COSA(a))`; the v3 runtime refuses them. New reserved words: WIRE3D MODEL EYE
+DRAWMODEL (LINE was reserved already); they may still name an asset as MUSIC does. ROWS YAW PITCH SCALE are contextual (a variable `yaw` keeps working). The sample game is `arcade/examples/orbit.arc` ("Orbit Gates").
 
 ## Rules the compiler enforces
 Static names (no run-time name lookup); 16-bit arithmetic with defined wrap; array bounds checked in the
@@ -131,3 +152,7 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
   scene name. The words are contextual (`nowindow` stays a legal variable name). In a program with at least one clause every `ENTER` sequence and the boot call the runtime's mode routine (`RT_WINMODE` v3, `RT_VIEWMODE` v4) with A = 0
   or 1; a program without the clause compiles to the same bytes as before. A `VIEW3D` game with a `NOVIEW` scene also gets a second phase-pool plan (3,712 bytes against 5,888); sprite art that does not fit is a build error (use fewer
   phases). Needs a runtime that has the routines (a build of language batch 7); a runtime without them is a compile error that names the routine.
+* 0.8 (2026-11-12, wireframe 3D; contract `docs/ARCADE_WIREFRAME_CONTRACT.md`, tests `arcade/tests/m17-runtime-wire.mjs`, `arcade/tests/m17-runtime-tick.mjs`): `WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]`, `MODEL name = "asset"`, `EYE x, y, z, a`,
+  `DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]` and `LINE x0, y0 TO x1, y1` (a new use of the word `LINE`, which was already reserved); `SCENE name NOVIEW` also in a `WIRE3D` game; `COSA`, `SINA`, `FXMUL` on the v2 runtime as well as v4
+  (before: v4 only; `requiredRuntime` no longer forces v4 for them, a program that used them only with `VIEW3D` is unchanged). Needs the v2 runtime for `WIRE3D`. New reserved words WIRE3D MODEL EYE DRAWMODEL; contextual ROWS YAW PITCH SCALE.
+  Detail in the paragraph "Wireframe 3D is built" above.
