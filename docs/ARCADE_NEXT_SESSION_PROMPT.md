@@ -2,7 +2,7 @@
 
 **State (2026-11-12, end of the wireframe session):** wireframe 3D (item 4) is DONE on branch `arcade-wire` (pushed; PR only when the owner
 says): contract `docs/ARCADE_WIREFRAME_CONTRACT.md`, sample game Orbit Gates (owner played it in Fuse: "it looks good to me"). Section 10
-of the contract lists Claude's decisions for the owner's review. **Next: item 5, the Studio review and completion** (a written findings
+of the contract (Claude's decisions) was approved by the owner on 2026-11-12. **Next: item 5, the Studio review and completion** (a written findings
 list for the owner first; known items: a starter per game type in New project, colours in the sprite editors, a model editor for
 `assets.models`; **two blacks**: TSRun, so the Studio display, draws BRIGHT black as #333 while the border and Fuse / ZEsarUX / the real
 machine show black: Starfall's bright-black paper still differs from its border in the Studio, Orbit Gates was fixed by using BRIGHT 0 on

@@ -304,6 +304,8 @@ and the game's content (2 gates + 2 rocks, the trig, the clipped edges of near r
 counted points and edges but not the per-call overhead, the game logic's 32 trig calls or clipping.
 
 ## 10. Decisions made here, for the owner's review
+
+**Approved by the owner, 2026-11-12: all six ("I agree with your decisions").**
 1. **P2 projector, OR lines, generic models** (no compiled models, no XOR, no P3): the room (section 3.1). Compiled models
    (26 % faster, ~2 KB per model in the game) can come later as a compiler option.
 2. **Camera: position + heading only** (no camera pitch or roll); objects have yaw + pitch. Enough for flying / driving games;
