@@ -1,3 +1,5 @@
+**RESUME HERE (2026-11-12, branch `arcade-studio-review` from `main` `1780e98`):** item 5 step 1 is done: the Studio review (45 findings, ids B/K/N/S/T/M/A/W/R/P/E, sizes, a Pick column, Claude's recommended order in four stages) is the owner's doc "Leap Arcade Studio review (item 5)" https://claude.ai/artifact/UWBj3tv5v7PPd1bTAjn6Ky. Key finding B1: the sprite, tile and map editors draw no colours in the Studio because `studio.js` passes `palette` as hex strings while the editors expect `[r, g, b]` (since the first slice; the editors' smoke tests use their own palette). Two blacks: Starfall, Vaults, Blockfall and both Leap Runners put BRIGHT 1 on black paper (code and/or tiles); `WIRE3D` and `VIEW3D` default to bright black. No code changed yet. **Next:** the owner picks from the doc, then Claude writes the contract (with a Sample game section) before any code.
+
 # Prompt for the next session (written 2026-11-11, updated 2026-11-12 after the compiler size pass)
 
 **State (2026-11-12, end of the wireframe session):** wireframe 3D (item 4) is DONE on branch `arcade-wire` (pushed; PR only when the owner
