@@ -7,8 +7,8 @@
 ; While the play area is on nothing but wire_clear, RT_DRAWMODEL / RT_LINE and the sprite blits writes a pixel row of it, and nothing writes its
 ; attributes: the dirty bits of its rows are dropped each tick (wire_erase), the sprite erase goes through dirty cells, and a sprite that touches
 ; it is never skipped (it is drawn each tick: the clear removed it).  Outside the play area the tick is the same as in every other game.
-; A switch ON inside frame_entry (ENTER) leaves the hidden file's play rows as they were for that one tick (the clear ran only if the tick started
-; with the area on): contract 2.6, "nothing else (the next tick clears)".
+; A switch ON inside frame_entry (ENTER) clears the hidden file's play rows at once (wire_clear_on, interrupts on), so the previous scene's
+; pixels never show there (contract 2.6 as amended: before, the next tick cleared and the old picture showed for one tick).
 ;
 ; Register rules: no IX / IY / alternates here (wire_clear uses them: the tick only, where compiled code holds nothing); interrupts are on except
 ; inside wire_clear.  No self-modifying code.
@@ -170,4 +170,25 @@ wire_dirty_rect:
     dec e
     jr nz,.row
     ret
+; wire_clear_on (RT_WIREMODE ON): the play area of the hidden file ($40 + V_HOFF) to 0, as wire_clear does at a tick's start, but with
+; LD (HL),A and the interrupts as they are: the switch runs anywhere inside frame_entry, where the PUSH clear's DI could lose a frame
+; interrupt.  About 2.4 times the PUSH clear (74,700 T for rows 2..21).  Clobbers AF, BC, DE, HL (not IX, IY, the alternates).
+wire_clear_on:
+    ld a,(V_HOFF)
+    add a,DFILE0>>8
+    ld (W_HIDHI),a
+    ld a,(W_CLR0)
+    ld c,a
+.t:
+    call w_clr_third            ; B = the last row of the area in this third, HL = its span on pixel line 0, A = n; CY past the last row
+    ret c
+    ld c,b
+    inc c                       ; the next third's first row
+    add a,a
+    add a,a
+    add a,a
+    ld d,a                      ; n * 8 groups of 4 bytes per pixel line
+    xor a
+    call w_clr_lines
+    jr .t
 M_WTICK_E:

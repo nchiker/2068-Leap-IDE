@@ -3,7 +3,8 @@
 ; wireframe's bytes after RT_END stay within the contract's bound).  The tick's part is wiretick.asm (appended after wire.asm).
 ;   RT_WIREMODE   A = 0 the play area off, anything else on.  Clobbers AF, BC, DE, HL (IX, IY and the alternates kept).  Nothing at all in a game
 ;                 without the play area (V_WIRE = 0: its W_* RAM is phase slots there) and when the game is in that mode already.
-;                 on:  V_WIRE bit 0 and W_ON = 1, W_ATTR into the play-area cells of BOTH display files.  Nothing else (the next tick clears).
+;                 on:  the play area of the HIDDEN file ($40 + V_HOFF) to 0 (wire_clear_on: LD (HL),A, interrupts as they are), V_WIRE bit 0
+;                      and W_ON = 1, W_ATTR into the play-area cells of BOTH display files.  (wire_boot's switch does not clear.)
 ;                 off: V_WIRE bit 0 and W_ON = 0, every play-area cell dirty in BOTH files' maps (the cell map appears in the next two ticks).
 ;   wire_boot     (boot.asm, after video_init, so after the map table): a DIV_EXT | DIV_WIRE header whose wire_desc is a valid play area
 ;                 (r1 <= 23, r1 >= r0 + 3) -> wire_setup (clip rectangle, projection centre, the clear's rows, W_ATTR, the eye 0, 0, 0, 0),
@@ -20,6 +21,8 @@ RT_WIREMODE:
     jr z,.off
     bit 0,(hl)
     ret nz                      ; on already
+    call wire_clear_on          ; the hidden file's play rows to paper at once (interrupts on; the boot's switch does not clear)
+    ld hl,V_WIRE
 .on:                            ; (HL = V_WIRE; wire_boot enters here)
     set 0,(hl)
     ld a,1

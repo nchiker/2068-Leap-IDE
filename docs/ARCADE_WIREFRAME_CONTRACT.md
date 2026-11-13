@@ -116,7 +116,9 @@ The HUD is the rows outside the play area.
 
 ### 2.6 The switch
 As batch 7's `RT_WINMODE`: `ENTER`'s reset sets the target scene's mode (after the first screen map, before `INIT`); the boot
-does the same for the first scene. On: the attributes (2.4), nothing else (the next tick clears). Off: play cells dirty (2.5).
+does the same for the first scene. On: **the play area of the hidden file is cleared at once** (with interrupts on: the switch runs anywhere inside
+`FRAME`, so not the PUSH clear), then the attributes (2.4); the boot's switch clears nothing. Off: play cells dirty (2.5). (Amended 2026-11-12,
+section 7c: before, "nothing else (the next tick clears)" left the previous scene's pixels on screen for one tick.)
 A program without `NOVIEW` scenes emits no switch call (the boot turns it on, from the header).
 
 ## 3. Runtime v2
@@ -226,7 +228,7 @@ without `WIRE3D`): W2 must call neither in such a game; SIN8 is stored as a 65-e
   most 1,660 T after the interrupt (rows 0..23 with a busy three-channel effect), interrupts off at most 36,107 T, on again 37,826 T
   after the interrupt; `RT_WIREMODE` rows 2..21 on 27,406 T / off 3,723 T; no interrupt lost (1,200 of 1,200 refreshes). The boot
   rejects an invalid descriptor (null, r1 > 23, fewer than 4 rows) as "no play area"; frame_div is `AND $BF` then `AND $7F` with
-  DIV_EXT. Switching on inside `FRAME` leaves that tick's play rows uncleared (section 2.6: "the next tick clears"); the interpreter
+  DIV_EXT. Switching on inside `FRAME` leaves that tick's play rows uncleared (section 2.6 as it was then: "the next tick clears"; amended in 7c); the interpreter
   models it (`fresh`). `RT_WIREMODE` does not reset the eye (the compiled `ENTER` does: zero stores + `CALL RT_EYE`).
   Tests: `arcade/tests/m17-runtime-tick.mjs` (26 checks, two negative controls); the v2 tick suites m4 / m5 unchanged.
 * **W3a front end** (Sonnet): words, parser, checker, `requiredRuntime`; extra warning "MODEL never used"; the play-area text warning
@@ -238,6 +240,27 @@ without `WIRE3D`): W2 must call neither in such a game; SIN8 is stored as a 65-e
 * **W5 Orbit Gates** (Sonnet, the design of section 9): `arcade/examples/orbit.arc` (6,538 code bytes, 1 sprite phase), additions to the
   design: shield recharge every 5 gates (at most 3), a gate further than 9,000 or 600 behind is given up (16-bit safety), models drawn
   only in front of the eye, 20 ticks of protection after a hit, the sprite is `burst` (`flash` is a reserved word).
+
+### 7c. Projection speed-up and the switch-on clear (2026-11-12; Opus agent)
+* **The "6.6k T per point" was a reading error:** the profile's gate buckets (`tests/arcade-orbit.mjs --profile`) are per TICK, and a tick draws 2.00 gates;
+  per gate the projection was 3.3k T per point (52.7k per tick / 16 points), close to the spike. It was still over the spike + 10 % (W1's method,
+  (T 64 points - T 1 point) / 62: yaw 2,831-3,703, yaw + pitch 3,473-4,315 over SCALE 1..8 and Tz 260..15,500), from rolled loops: the SCALE shift (28 T a bit
+  per row), the 1/Z normalisation (40 T a bit, 5 bits at Z 8,000), the q multiply and its e shifts, two `neg_hl` calls per negative coordinate. The edge loop
+  is the spike's (about 213 T per edge; the gates' lines are short, about 1,000 T each).
+* **As built:** the rows read the matrix at absolute addresses (`w_dot2` is gone); the SCALE rounding is one of four unrolled shifts `w_shk0..3` (k 0, 1: left
+  shifts of A:H:L; k 2, 3: arithmetic right shifts of HL; equal since (sum 2^k + 32) >> 6 = (sum + 2^(5-k)) >> (6-k)), called through IY (set by
+  `RT_DRAWMODEL`; `W_NSH` is free); row 1 of the full matrix skips its 0 entry (8 products, not 9); `w_proj_point` takes Zc in HL and normalises by shifting
+  left when Zc >= 1024; `w_qmul` never forms the product: acc = floor((acc + bit_i(R) V) / 2) over R's 8 bits from bit 0, then e halvings (the floors nest:
+  exactly floor(V R / 2^(8+e))), e < 0 by V << -e first; the signs fold into sx / sy; the QMAX test looks at the high byte first. `arcade-wire.js` is
+  unchanged; m17-runtime-wire: 0 mismatches.
+* **Figures** (per point, W1's method, min-max over Tz 260..15,500 and SCALE 1..8): yaw only **2,489-2,890** (was 2,831-3,703), yaw + pitch
+  **2,779-3,451** (was 3,473-4,315); the 12-point ship, yaw + pitch, matrix + projection max 40,566 (was 47,419); per-`DRAWMODEL` overhead max 2,845.
+* **Switch on (2.6 amended):** `RT_WIREMODE` ON from off calls `wire_clear_on` (wiretick.asm, with `w_clr_lines`): the hidden file's play rows to 0 with
+  `LD (HL),A`, interrupts as they are (`RT_WIREMODE` on, rows 2..21: 102,156 T, was 27,406). The boot's switch (`wire_boot`) does not clear. The
+  interpreter's `wireMode` sets `fresh` on a switch on.
+* **Bytes:** `RT_END` `$3C63` -> `$3CAA`, **854 free** (after `M_WIRE_S` 5,318; m17's bound is now 5,350 and >= 800 free). Only labels of wire.asm,
+  wiretick.asm and wiremode.asm moved (`RT_EYE` `$3A61`, `RT_LINE` `$3B6E`, `wire_tick` `$3BD1`, `wire_boot` `$00D1`; `RT_DRAWMODEL`, `RT_COSA` / `RT_SINA` /
+  `RT_FXMUL`, `RT_WIREMODE` unchanged). The batch baselines' DCK hashes contain the runtime: regenerate them (`node arcade/tools/regen-baselines.mjs`).
 
 ## 8. Tests (beyond the slices' files)
 * Reference vs runtime: >= 2,000 random scenes (random eye, models, poses, scales, lines across and outside the play area,

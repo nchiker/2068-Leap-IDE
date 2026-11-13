@@ -371,7 +371,7 @@ W_MAT           EQU W_VARS+66   ; 3 rows of 5 bytes: m0, m1, m2 (int8, 1.0 = 64)
 W_TX            EQU W_MAT+3
 W_TY            EQU W_MAT+8
 W_TZ            EQU W_MAT+13
-W_NSH           EQU W_VARS+81   ; 2 + log2 SCALE (the rounding's shift)
+W_NSH           EQU W_VARS+81   ; (free: was 2 + log2 SCALE before the SCALE shifts became w_shk0..3)
 W_RC            EQU W_VARS+82   ; word: 32 >> log2 SCALE (the rounding's constant)
 W_NPTS          EQU W_VARS+84   ; points of the model being drawn
 W_NEDG          EQU W_VARS+85   ; its edges (W_NPTS, W_NEDG are stored as one word)

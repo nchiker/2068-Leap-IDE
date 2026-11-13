@@ -35,7 +35,9 @@ const S = rt.syms, K = rt.json.constants;
 for (const k of ['W_REC', 'W_VARS', 'W_ON', 'RA_W0', 'RA_W4', 'W_REC_LEN', 'W_VARS_LEN']) if (K[k] === undefined) throw new Error('runtime.json lacks the constant ' + k);
 const W_START = S.M_WIRE_S, RT_END = S.RT_END;
 console.log(`runtime v2: wire.asm ${hex(W_START)}-${hex(RT_END)} (${RT_END - W_START} bytes; RT_END ${hex(RT_END)}, ${0x4000 - RT_END} bytes free in chunks 0-1)\n`);
-check('the whole addition is at most 5,300 bytes', RT_END - W_START <= 5300, `${RT_END - W_START} bytes`);
+// (the contract's W1 bound was 5,300; the faster projection (w_proj_point / w_qmul, the SCALE shifts) and the switch-on clear (wire_clear_on) took it to
+// 5,318 on 2026-11-12: the bound is now what is left of chunks 0-1, at least 800 bytes free)
+check('the whole addition is at most 5,350 bytes and at least 800 bytes of chunks 0-1 are free', RT_END - W_START <= 5350 && 0x4000 - RT_END >= 800, `${RT_END - W_START} bytes, ${0x4000 - RT_END} free`);
 
 // ---- the machine ---------------------------------------------------------------------------------------------------------------------------
 const RET = 0x5B00;                       // a HALT in free RAM of chunk 2: the return address of every call

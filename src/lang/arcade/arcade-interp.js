@@ -131,10 +131,11 @@
  *   start and after every ENTER; EYE stores x, y, z as signed 16 bits and the heading AND 255) and `on` (the play area is shown: every scene but a NOVIEW one; set after the reset of every scene entry, the first one at the start).
  *   - Every tick starts, while `on`, by clearing the play rows of `bits` (the runtime clears the hidden file there); DRAWMODEL and LINE then draw at once (OR) as arcade-wire.js does, clipped to the play area, and do nothing while
  *     not `on`. x, y, z, YAW, PITCH of a DRAWMODEL are evaluated in that order whatever the order of its clauses (an absent clause is 0); the model's asset is `assets.models.<asset>` (checked by modelError); SCALE is a constant.
- *   - Switching on (a scene entry into a scene that is not NOVIEW, when it was off) empties `bits` and says nothing was cleared in that tick (`fresh` false); switching off empties it. A scene entry into a scene that is on while it is
- *     on changes nothing (the runtime does not clear then either).
+ *   - Switching on (a scene entry into a scene that is not NOVIEW, when it was off) clears the play area of the hidden file at once (the runtime's RT_WIREMODE does, with interrupts on): `bits` is emptied and the tick is
+ *     `fresh` from there on (contract 2.6 as amended; before, the switch left the previous scene's pixels in the play rows for that tick). Switching off empties `bits`. A scene entry into a scene that is on while it is on changes
+ *     nothing (the runtime does not clear then either).
  *   - The record has `wire` {on, fresh, eye: {x, y, z, a}, r0, r1, attr (bright << 6 | paper << 3 | ink of the declaration), bits (a copy)}: `bits` holds the lines drawn since the tick's clear (or since the switch on); `fresh` is false in
- *     the tick that switched the play area on (the clear did not run in it: what else the play rows of the file hold is the previous scene's cells) and in `init` (INIT runs before any clear). What the machine SHOWS of the
+ *     `init` (INIT runs before any clear, and the boot's switch does not clear: what else the play rows of the file hold is what the boot left there). What the machine SHOWS of the
  *     play rows while `on` is `bits` with the attribute `attr`; the cell map (`cells`, `attrs`, which PRINT, TILE, FILL, LOADMAP keep updating as ever) is not shown there, and is shown again, all of it, when the play area is off
  *     (arcade-display.js `wireLayer` is that rule; sprites are drawn over it by the caller). A game with a NOVIEW scene has `show: 'wire'` (the play area is shown) or 'screen' in every record.
  *
@@ -593,10 +594,11 @@ export function interpret(ast, opts = {}) {
       wire = { area: wireAreaOf(r0, r1), r0, r1, attr: (bright << 6) | (paper << 3) | ink, on: !sceneList[0]?.mode, fresh: false, eye: { ...WIRE_EYE0 }, bm: new Uint8Array(6144), models };
     }
   }
-  /** The play area's mode (A = 1 on, 0 off) as RT_WIREMODE sets it: switching on from off empties the bitmap and nothing has been cleared in this tick; switching off empties it. */
+  /** The play area's mode (A = 1 on, 0 off) as RT_WIREMODE sets it: switching on from off clears the play area of the hidden file at once (wire_clear_on), so the bitmap is empty and the file holds exactly
+   *  the lines from here on (`fresh`); switching off empties it. */
   const wireMode = (on) => {
     if (!wire) return;
-    if (!on || !wire.on) { wire.bm.fill(0); if (on) wire.fresh = false; }
+    if (!on || !wire.on) { wire.bm.fill(0); if (on) wire.fresh = true; }
     wire.on = on;
   };
 

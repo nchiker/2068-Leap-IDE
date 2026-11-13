@@ -174,8 +174,6 @@ RT_DRAWMODEL:
     ret z
     ld a,c
     ld (W_K),a
-    add a,2
-    ld (W_NSH),a
     ld b,c
     inc b
     ld a,64
@@ -183,6 +181,17 @@ RT_DRAWMODEL:
     rrca                        ; 32 >> k (k + 1 halvings of 64)
     djnz .rc
     ld (W_RC),a                 ; (W_RC+1 is 0: wire_setup)
+    push hl
+    sla c
+    ld b,0
+    ld hl,W_SHKTAB
+    add hl,bc
+    ld a,(hl)
+    inc hl
+    ld h,(hl)
+    ld l,a
+    ex (sp),hl
+    pop iy                      ; IY = w_shk<k>, the rows' SCALE shift (the projection loops call it through w_jpiy)
     ld c,(hl)                   ; the model: npts, nedges, points, edges
     inc hl
     ld b,(hl)
@@ -255,18 +264,15 @@ RT_DRAWMODEL:
     ld (W_PIDX),a
     ld a,(W_PITCH)
     or a
-    jr nz,.full
-    call w_project_yaw
-    jp w_draw_edges
-.full:
-    call w_project_full
-    jp w_draw_edges
+    jp z,w_project_yaw          ; both loops end in w_draw_edges
 
 ; =====================================================================================================================
 ; Rotation and projection (proj.asm of the spike; the matrix in the contract's order; SCALE).  RT_LINE, w_smul (the eye transform's
-; multiply), w_matrix / w_mulr / w_sin8 and w_dot2 / w_project_yaw are relocatable pieces at the end (W_R_*).
+; multiply), w_matrix / w_mulr / w_sin8 and the yaw-only loop with the SCALE shifts are relocatable pieces at the end (W_R_*).
+; The rows read the matrix at absolute addresses; the SCALE rounding (sum 2^k + 32) >> 6 is one of four unrolled shifts w_shk0..3, called
+; through IY (set by RT_DRAWMODEL; nothing below uses IY otherwise).  Row Z is computed last and handed to w_proj_point in HL.
 ; =====================================================================================================================
-    MACRO WROW row, dst         ; dst = T + ((W_MAT row . p) 2^k + 32) >> 6, inline (w_dot3 without the call and IY)
+    MACRO WROW row              ; HL = T + floor(((W_MAT row . p) 2^k + 32) / 64): the products inline, then the shift for k (IY)
     ld h,W_QSL>>8
     ld c,(ix+0)
     ld a,(W_MAT+5*row)
@@ -282,20 +288,26 @@ RT_DRAWMODEL:
     WTERM
     ld hl,(W_RC)
     add hl,de
-    ld a,(W_NSH)
-    ld b,a
-    ld a,h
-    add a,a
-    sbc a,a
-.s:
-    add hl,hl
-    rla
-    djnz .s
-    ld l,h
-    ld h,a
+    call w_jpiy
     ld de,(W_MAT+5*row+3)
     add hl,de
-    ld (dst),hl
+    ENDM
+
+    MACRO WROW2 c0, m0, c1, m1, tvar  ; HL = tvar + floor(((m0 p[c0] + m1 p[c1]) 2^k + 32) / 64): a row with a 0 entry
+    ld h,W_QSL>>8
+    ld c,(ix+c0)
+    ld a,(m0)
+    ld b,a
+    WTERMLD
+    ld c,(ix+c1)
+    ld a,(m1)
+    ld b,a
+    WTERM
+    ld hl,(W_RC)
+    add hl,de
+    call w_jpiy
+    ld de,(tvar)
+    add hl,de
     ENDM
 
 w_project_full:
@@ -303,9 +315,11 @@ w_project_full:
     ld a,(W_NPTS)
 .p:
     push af
-    WROW 0, W_PCX
-    WROW 1, W_PCY
-    WROW 2, W_PCZ
+    WROW 0
+    ld (W_PCX),hl
+    WROW2 1, W_MAT+6, 2, W_MAT+7, W_TY    ; row 1 is [0, cp, -sp]
+    ld (W_PCY),hl
+    WROW 2
     call w_proj_point
     ld bc,3
     add ix,bc
@@ -314,67 +328,117 @@ w_project_full:
     pop af
     dec a
     jp nz,.p
-    ret
+    jp w_draw_edges
 
-; w_proj_point: W_PCX, W_PCY, W_PCZ -> record W_PIDX: sx = 128 + q(Xc), sy = c - q(Yc) (P2), the flag (outcode / near / too far)
+; w_proj_point: HL = Zc, W_PCX = Xc, W_PCY = Yc -> record W_PIDX: sx = 128 + q(Xc), sy = c - q(Yc) (P2), the flag (outcode / near /
+; too far).  Zc = mz 2^e with mz = 128..255 is found by shifting right (Zc < 1024) or left (normalising HL), R = RCPT[mz].  The sign of
+; each coordinate is kept in C and folded into sx / sy (no negation of q).  Clobbers AF, BC, DE, HL (not IX, IY).
 w_proj_point:
-    ld bc,(W_PCZ)
-    bit 7,b
-    jr nz,.near
-    ld a,b
+    ld a,h
     or a
-    jr nz,.ok
-    ld a,c
+    jp m,.near                  ; Zc < 0
+    jr nz,.big
+    ld a,l
     cp W_NEAR
-    jr nc,.ok
+    jr c,.near
+    ld e,0                      ; Zc = 16..255: mz = Zc << -e
+    or a
+    jp m,.r
+.sm:
+    dec e
+    add a,a
+    jp p,.sm
+    jr .r
+.far:
+    ld a,$40
+    jp .flag
 .near:
     ld a,$80
-    jr .flag
-.ok:
-    call w_rcp_setup
+    jp .flag
+.big:                           ; A = H = 1..127
+    cp 4
+    jr c,.rs
+    ld e,8                      ; Zc >= 1024: shift A:L left until bit 7 of A, e = 8 - shifts
+.ls:
+    dec e
+    sla l
+    adc a,a
+    jp p,.ls
+    jr .r
+.rs:                            ; Zc = 256..1023: e = 1 or 2
+    ld e,1
+    srl a
+    rr l
+    or a
+    jr z,.rl
+    inc e
+    srl a
+    rr l
+.rl:
+    ld a,l
+.r:
+    ld l,a
+    ld h,W_RCPT>>8
+    ld d,(hl)
+    ld (W_PE),de                ; W_PE = e, W_PR = R
+; x: sx = 128 + sign q(|Xc|)
     ld hl,(W_PCX)
-    call w_qv
-    jr c,.far
-    ld de,128
-    add hl,de
-    push hl
+    call w_qmul                 ; C = the sign of Xc
+    jr nc,.far
+    ld a,(W_PIDX)
+    ld e,a
+    ld d,W_SXL>>8
+    bit 7,c
+    jr nz,.xn
+    ld a,l
+    add a,128
+    ld (de),a
+    inc d
+    ld a,h
+    adc a,0
+    jr .xo
+.xn:
+    ld a,128
+    sub l
+    ld (de),a
+    inc d
+    ld a,0
+    sbc a,h
+.xo:
+    ld (de),a                   ; A = the high byte of sx: the x outcode (the clip rectangle is always x 0..255)
+    ld b,0
+    or a
+    jr z,.xi
+    ld b,1                      ; x < 0
+    jp m,.xi
+    ld b,2                      ; x > 255
+.xi:
+    push bc
+; y: sy = c - sign q(|Yc|)
     ld hl,(W_PCY)
-    call w_qv
-    pop de                      ; DE = sx
-    jr c,.far
-    ld bc,(W_CENY)
-    ex de,hl                    ; HL = sx, DE = q(Yc)
-    push hl
-    ld h,b
-    ld l,c
+    call w_qmul
+    pop de                      ; D = the x outcode (flags kept)
+    jp nc,.far
+    ld b,d
+    ex de,hl                    ; DE = q
+    ld hl,(W_CENY)
+    bit 7,c
+    jr nz,.yn
     or a
     sbc hl,de
-    ex de,hl                    ; DE = sy
-    pop hl                      ; HL = sx
+    jr .ys
+.yn:
+    add hl,de
+.ys:
     ld a,(W_PIDX)
-    ld c,a
-    ld b,W_SXL>>8
+    ld e,a
+    ld d,W_SYL>>8
     ld a,l
-    ld (bc),a
-    inc b
+    ld (de),a
+    ld c,a
+    inc d
     ld a,h
-    ld (bc),a
-    inc b
-    ld a,e
-    ld (bc),a
-    inc b
-    ld a,d
-    ld (bc),a
-; outcode (x: the clip rectangle is always the full width 0..255)
-    ld b,0
-    ld a,h
-    or a
-    jr z,.yy
-    ld b,1                      ; x < 0
-    jp m,.yy
-    ld b,2                      ; x > 255
-.yy:
-    ld a,d
+    ld (de),a
     or a
     jr z,.y0
     ld a,4                      ; y < 0
@@ -382,19 +446,17 @@ w_proj_point:
     ld a,8
     jr .yo
 .y0:
-    ld a,(W_CYMIN)
-    ld c,a
-    ld a,e
-    cp c
-    jr nc,.y1
+    ld hl,W_CYMIN
+    ld a,c
+    cp (hl)
     ld a,4                      ; y < ymin
-    jr .yo
-.y1:
-    ld a,(W_CYMAX)
-    cp e
+    jr c,.yo
+    inc l
+    ld a,(hl)
+    cp c
     ld a,0
     jr nc,.yo
-    ld a,8
+    ld a,8                      ; y > ymax
 .yo:
     or b
 .flag:
@@ -403,87 +465,64 @@ w_proj_point:
     ld h,W_FLG>>8
     ld (hl),a
     ret
-.far:
-    ld a,$40
-    jr .flag
 
-; w_rcp_setup: BC = Zc (>= W_NEAR) -> W_PE = e (signed), W_PR = R = RCPT[mz], Zc = mz 2^e with mz = 128..255
-w_rcp_setup:
-    ld e,0
-    ld a,b
-    or a
-    jr z,.small
-.big:
-    srl b
-    rr c
-    inc e
-    ld a,b
-    or a
-    jr nz,.big
-    jr .r
-.small:
-    bit 7,c
-    jr nz,.r
-    sla c
-    dec e
-    jr .small
-.r:
-    ld a,e
-    ld (W_PE),a
-    ld h,W_RCPT>>8
-    ld l,c
-    ld a,(hl)
-    ld (W_PR),a
-    ret
-
-; w_qv: HL = v (signed) -> HL = sign(v) q(|v|); CY if |q| > W_QMAX
-w_qv:
+; w_qmul: HL = v (signed, |v| <= 32,767) -> C = H (the sign), HL = q = (|v| R) >> (8 + e) (P2; e, R at W_PE, W_PR); CY when q <= W_QMAX,
+; NC when too far.  The product is never formed: acc = floor((acc + bit_i(R) V) / 2) for i = 0..7 (R's bits from bit 0), then e more
+; halvings; the floors nest, so acc = floor(V R / 2^(8 + e)) exactly (the carry of the add is the 17th bit).  e < 0: V = |v| << -e first
+; (NC when that leaves 16 bits: q would be >= 32,768 > W_QMAX, as the reference's 2^24 test or its QMAX test says).  Clobbers AF, B, DE.
+w_qmul:
+    ld c,h
     bit 7,h
-    jr z,w_qv2_abs
-    call neg_hl
-    call w_qv2_abs
-    ret c
-    call neg_hl
-    or a
-    ret
-
-; P2: HL = |v| -> HL = (|v| R) >> (8 + e), CY if > W_QMAX
-w_qv2_abs:
-    ex de,hl                    ; DE = |v|
-    ld a,(W_PR)
-    ld hl,0
-    ld c,l
-    WMUL8                       ; C:HL = |v| R  (< 2^23)
+    jr z,.pos
+    xor a
+    sub l
+    ld l,a
+    sbc a,a
+    sub h
+    ld h,a
+.pos:
     ld a,(W_PE)
     or a
     jp m,.left
-    ld l,h
-    ld h,c                      ; >> 8
-    jr z,.chk
-    ld b,a
-.sr:
+    ex de,hl                    ; DE = V
+.go:
+    ld b,a                      ; e (>= 0)
+    ld hl,0
+    ld a,(W_PR)
+    DUP 8
+    rra
+    jr nc,$+3
+    add hl,de
+    rr h
+    rr l
+    EDUP
+    inc b
+    jr .hz
+.h:
     srl h
     rr l
-    djnz .sr
-    jr .chk
+.hz:
+    djnz .h
+    ld a,h
+    cp W_QMAX>>8
+    ret c
+    ret nz
+    ld a,l
+    cp (W_QMAX&255)+1
+    ret
 .left:
     neg
     ld b,a
 .sl:
     add hl,hl
-    rl c
-    ret c                       ; too far
+    jr c,.far
     djnz .sl
-    ld l,h
-    ld h,c
-.chk:
     ex de,hl
-    ld hl,W_QMAX
+    xor a
+    jr .go
+.far:
     or a
-    sbc hl,de
-    ex de,hl
-    ret                         ; CY if q > W_QMAX
-
+    ret
 ; w_draw_edges: W_NEDG edges at W_EPTR over the records.  Both ends inside (flags 0): draw_fast with the low bytes; a near /
 ; too-far end, or both ends off the same side: skipped; otherwise draw_line with the 16-bit ends.
 w_draw_edges:
@@ -1870,42 +1909,13 @@ w_r_matrix_end:
 W_R_MATRIX_LEN  EQU 166
 
     MACRO W_R_YAW
-; w_dot2: IX = point (x, y, z int8), IY = a W_MAT row whose m1 is 0 (the yaw-only rows) -> HL = T + ((m0 x + m2 z) 2^k + 32) >> 6.
-; Clobbers AF, BC, DE.
-w_dot2:
-    ld h,W_QSL>>8
-    ld c,(ix+0)
-    ld b,(iy+0)
-    WTERMLD
-    ld c,(ix+2)
-    ld b,(iy+2)
-    WTERM
-    ld hl,(W_RC)                ; ((sum + (32 >> k)) << (2 + k)) >> 8 = (sum 2^k + 32) >> 6, on A:H:L
-    add hl,de
-    ld a,(W_NSH)
-    ld b,a
-    ld a,h
-    add a,a
-    sbc a,a
-.s:
-    add hl,hl
-    rla
-    djnz .s
-    ld l,h
-    ld h,a
-    ld e,(iy+3)
-    ld d,(iy+4)
-    add hl,de
-    ret
-
-; w_project_yaw / w_project_full: W_NPTS points at W_PSRC -> records W_PIDX.. (project_yaw: pitch 0, Yc = Ty + y 2^k)
+; w_project_yaw: W_NPTS points at W_PSRC -> records W_PIDX.. (pitch 0: rows X and Z have m1 = 0, Yc = Ty + y 2^k)
 w_project_yaw:
     ld ix,(W_PSRC)
     ld a,(W_NPTS)
 .p:
     push af
-    ld iy,W_MAT
-    call w_dot2
+    WROW2 0, W_MAT+0, 2, W_MAT+2, W_TX
     ld (W_PCX),hl
     ld a,(ix+1)
     ld l,a
@@ -1923,9 +1933,7 @@ w_project_yaw:
     ld de,(W_TY)
     add hl,de
     ld (W_PCY),hl
-    ld iy,W_MAT+10
-    call w_dot2
-    ld (W_PCZ),hl
+    WROW2 0, W_MAT+10, 2, W_MAT+12, W_TZ
     call w_proj_point
     ld bc,3
     add ix,bc
@@ -1933,12 +1941,89 @@ w_project_yaw:
     inc (hl)
     pop af
     dec a
-    jr nz,.p
-    ret
-
+    jp nz,.p
+    jp w_draw_edges
 w_r_yaw_end:
     ENDM
-W_R_YAW_LEN     EQU 149
+W_R_YAW_LEN     EQU 192
+
+    MACRO W_R_SHK
+; w_shk0..3: HL = sum + (32 >> k) (signed, |sum| <= 12,288) -> HL = floor((sum 2^k + 32) / 64) = floor(HL / 2^(6 - k)): k = 0, 1 by left
+; shifts of the sign-extended A:H:L (the high two bytes), k = 2, 3 by arithmetic right shifts.  Clobbers AF.  RT_DRAWMODEL puts one in IY.
+w_jpiy:
+    jp (iy)
+w_shk0:
+    ld a,h
+    add a,a
+    sbc a,a
+    add hl,hl
+    rla
+    add hl,hl
+    rla
+    ld l,h
+    ld h,a
+    ret
+w_shk1:
+    ld a,h
+    add a,a
+    sbc a,a
+    add hl,hl
+    rla
+    add hl,hl
+    rla
+    add hl,hl
+    rla
+    ld l,h
+    ld h,a
+    ret
+W_SHKTAB:
+    DW w_shk0, w_shk1, w_shk2, w_shk3
+w_r_shk_end:
+    ENDM
+W_R_SHK_LEN     EQU 32
+
+    MACRO W_R_SHK23
+w_shk2:
+    sra h
+    rr l
+w_shk3:
+    sra h
+    rr l
+    sra h
+    rr l
+    sra h
+    rr l
+    ret
+w_r_shk23_end:
+    ENDM
+W_R_SHK23_LEN   EQU 17
+
+    MACRO W_R_CLRL
+; w_clr_lines: HL = a span on pixel line 0 of a third, D = its length / 4 (n * 8), A = 0 -> the span on all 8 pixel lines set to A with
+; LD (HL),A (interrupts as they are: wire_clear_on).  Clobbers B, E, H (+ 8).
+w_clr_lines:
+    ld e,8
+.ln:
+    push hl
+    ld b,d
+.g:
+    ld (hl),a
+    inc l
+    ld (hl),a
+    inc l
+    ld (hl),a
+    inc l
+    ld (hl),a
+    inc l                       ; (a span never crosses its pixel line's page)
+    djnz .g
+    pop hl
+    inc h
+    dec e
+    jr nz,.ln
+    ret
+w_r_clrl_end:
+    ENDM
+W_R_CLRL_LEN    EQU 20
 
 ; place what fits in the gap before the next page boundary (largest first), the rest after the tables
 W_GAP0  = (256 - ($ & $FF)) & $FF
@@ -1950,6 +2035,9 @@ W_PUT_YAW = 0
 W_PUT_EYE = 0
 W_PUT_SMUL = 0
 W_PUT_LINE = 0
+W_PUT_SHK = 0
+W_PUT_SHK23 = 0
+W_PUT_CLRL = 0
     IF W_R_CLEAR_LEN <= W_GAP
 W_PUT_CLEAR = 1
 W_GAP   = W_GAP - W_R_CLEAR_LEN
@@ -1978,6 +2066,18 @@ W_GAP   = W_GAP - W_R_SMUL_LEN
 W_PUT_LINE = 1
 W_GAP   = W_GAP - W_R_LINE_LEN
     ENDIF
+    IF W_R_SHK_LEN <= W_GAP
+W_PUT_SHK = 1
+W_GAP   = W_GAP - W_R_SHK_LEN
+    ENDIF
+    IF W_R_SHK23_LEN <= W_GAP
+W_PUT_SHK23 = 1
+W_GAP   = W_GAP - W_R_SHK23_LEN
+    ENDIF
+    IF W_R_CLRL_LEN <= W_GAP
+W_PUT_CLRL = 1
+W_GAP   = W_GAP - W_R_CLRL_LEN
+    ENDIF
     IF W_PUT_CLEAR
     W_R_CLEAR
     ENDIF
@@ -1998,6 +2098,15 @@ W_GAP   = W_GAP - W_R_LINE_LEN
     ENDIF
     IF W_PUT_LINE
     W_R_LINE
+    ENDIF
+    IF W_PUT_SHK
+    W_R_SHK
+    ENDIF
+    IF W_PUT_SHK23
+    W_R_SHK23
+    ENDIF
+    IF W_PUT_CLRL
+    W_R_CLRL
     ENDIF
     ALIGN 256
 w_pad_end:
@@ -2065,11 +2174,23 @@ W_RCPT  EQU W_RCPT_LO-128       ; RCPT[mz] at W_RCPT + mz, mz = 128..255
     IFN W_PUT_LINE
     W_R_LINE
     ENDIF
+    IFN W_PUT_SHK
+    W_R_SHK
+    ENDIF
+    IFN W_PUT_SHK23
+    W_R_SHK23
+    ENDIF
+    IFN W_PUT_CLRL
+    W_R_CLRL
+    ENDIF
     ASSERT w_r_clear_end - wire_clear == W_R_CLEAR_LEN
     ASSERT w_r_trig_end - RT_SINA == W_R_TRIG_LEN
     ASSERT w_r_eye_end - RT_EYE == W_R_EYE_LEN
     ASSERT w_r_line_end - RT_LINE == W_R_LINE_LEN
     ASSERT w_r_smul_end - w_smul == W_R_SMUL_LEN
     ASSERT w_r_matrix_end - w_matrix == W_R_MATRIX_LEN
-    ASSERT w_r_yaw_end - w_dot2 == W_R_YAW_LEN
+    ASSERT w_r_yaw_end - w_project_yaw == W_R_YAW_LEN
+    ASSERT w_r_shk_end - w_jpiy == W_R_SHK_LEN
+    ASSERT w_r_shk23_end - w_shk2 == W_R_SHK23_LEN
+    ASSERT w_r_clrl_end - w_clr_lines == W_R_CLRL_LEN
 M_WIRE_E:

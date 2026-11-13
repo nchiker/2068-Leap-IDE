@@ -34,7 +34,7 @@
  * given the display file `bits` (6,144 bytes, the ZX layout) and the 768 attribute bytes that the cell map alone would show (what a game without the play area shows: the caller renders its cells), it returns
  * what the machine shows before the sprites are drawn (the caller draws them over the result): while the play area is on, its pixel rows hold the lines of the record (`rec.wire.bits`) and its attribute cells the
  * declared attribute, whatever the cell map holds there; while it is off nothing changes (every cell of the cell map is shown, the play rows included). `stale` is true when the play rows of the file hold more than the
- * lines (`rec.wire.fresh` is false: the tick switched the play area on, or INIT, and the clear did not run in it), so a comparison must leave those pixels out.
+ * lines (`rec.wire.fresh` is false: INIT, before any clear; a switch on clears the hidden file's play area at once, so its tick is fresh), so a comparison must leave those pixels out.
  */
 
 "use strict";

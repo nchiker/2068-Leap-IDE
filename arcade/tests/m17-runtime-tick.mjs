@@ -8,7 +8,8 @@
 // The expectation is built per display file, op by op, from the contract: the cell map and the sprites from m4-common's Model2 (written from the v2
 // contract), the play area from src/lang/arcade/arcade-wire.js (the clear at the tick's start when the area is on, DRAWMODEL / LINE into the hidden
 // file while it is on), the rows outside the play area from the cell map, the sprites over everything, the play-area attributes written into BOTH files
-// by an effective ON.  After every refresh the file on screen must equal its expectation, bitmap and attributes.
+// by an effective ON, which also clears the play area of the hidden file (contract 2.6 as amended).  After every refresh the file on screen must equal
+// its expectation, bitmap and attributes.
 //  1. scenario A (rows 2..21, HUD rows 0-1 and 22-23): sprites static in the HUD (so the skip analysis runs), static in the play area, across its edge,
 //     moving; text and tiles in the HUD and in the play rows; the switch OFF / ON before, between and after the draws of a tick, twice in a row, OFF and
 //     ON in one tick; a busy sound effect.  Text printed into a play row is not shown while on and appears after OFF in both files; ON restores the
@@ -185,7 +186,8 @@ class Expect {
     this.on = on;
     if (on) for (const f of [0, 1]) for (let r = this.area.r0; r <= this.area.r1; r++) this.at[f].fill(this.attr, 32 * r, 32 * r + 32);
   }
-  mode(a) { if (!this.has) return; if (a && !this.on) this.setOn(true); else if (!a && this.on) this.on = false; }
+  /** RT_WIREMODE A (h: the hidden file, when called in a tick): ON from off also clears the play area of the hidden file at once (wire_clear_on; the boot's switch does not). */
+  mode(a, h) { if (!this.has) return; if (a && !this.on) { this.setOn(true); if (h !== undefined) W.clearArea(this.bm[h], this.area); } else if (!a && this.on) this.on = false; }
   inPlayRow(row) { return this.has && row >= this.area.r0 && row <= this.area.r1; }
   tickStart(h) { if (this.has && this.on) W.clearArea(this.bm[h], this.area); }
   apply(o, h) {
@@ -193,7 +195,7 @@ class Expect {
       case 'eye': this.eye = { x: o.x, y: o.y, z: o.z, a: o.a & 255 }; break;
       case 'dm': if (this.has && this.on) W.drawModel(this.bm[h], MODELS[o.m], { x: o.x, y: o.y, z: o.z, yaw: o.yaw, pitch: o.pitch, scale: 1 << o.k }, this.eye, this.area); break;
       case 'line': if (this.has && this.on) W.drawLine(this.bm[h], o.x0, o.y0, o.x1, o.y1, this.area); break;
-      case 'mode': this.mode(o.a); break;
+      case 'mode': this.mode(o.a, h); break;
       case 'wrap': break;
       default: this.m.apply(o);
     }
@@ -505,11 +507,32 @@ function bootTo(game) {
   b = m.ram.slice();
   for (const f of [0x5800, 0x7800]) for (let i = 0; i < 768; i++) m.ram[f + i] = 0x38;
   b = m.ram.slice();
+  // the switch on clears the play rows of the hidden file ($40 + V_HOFF) with interrupts on: both bitmaps are filled with a pattern first
+  const hid = m.ram[S.V_HOFF] ? 0x6000 : 0x4000, shown = hid ^ 0x2000;
+  const playByte = (o) => { const y = ((o >> 5) & 0xC0) | ((o >> 8) & 7) | ((o >> 2) & 0x38); return y >= 16 && y < 176; };
+  for (const f of [0x4000, 0x6000]) for (let i = 0; i < 6144; i++) m.ram[f + i] = 0x5A ^ (i & 0xFF);
+  b = m.ram.slice();
   const on = callRoutine(m, S.RT_WIREMODE, { a: 7 });
   wr = writes(b);
-  const onOk = wr.every((a) => inRows(a, 0x5800, 2, 21, 32) || inRows(a, 0x7800, 2, 21, 32) || a === K.V_WIRE || a === K.W_ON) && m.ram[K.V_WIRE] === 3 && m.ram[K.W_ON] === 1 &&
+  const onOk = wr.every((a) => inRows(a, 0x5800, 2, 21, 32) || inRows(a, 0x7800, 2, 21, 32) || (a >= hid && a < hid + 6144 && playByte(a - hid)) || a === K.V_WIRE || a === K.W_ON || a === S.W_HIDHI) && m.ram[K.V_WIRE] === 3 && m.ram[K.W_ON] === 1 &&
     [0x5800, 0x7800].every((f) => Array.from({ length: 768 }, (_, i) => m.ram[f + i] === ((i >> 5) >= 2 && (i >> 5) <= 21 ? 0x45 : 0x38)).every(Boolean));
-  check(`RT_WIREMODE 7 (off -> on): ${fmt(on.t)} T; writes V_WIRE = 3, W_ON = 1 and the attribute $45 into rows 2..21 of both attribute files, nothing else; registers kept`, onOk && on.preserved && on.spOk, `${wr.length} bytes`);
+  const clearedOk = Array.from({ length: 6144 }, (_, i) => playByte(i) ? m.ram[hid + i] === 0 : m.ram[hid + i] === (0x5A ^ (i & 0xFF))).every(Boolean) &&
+    Array.from({ length: 6144 }, (_, i) => m.ram[shown + i] === (0x5A ^ (i & 0xFF))).every(Boolean);
+  check(`RT_WIREMODE 7 (off -> on): ${fmt(on.t)} T; writes V_WIRE = 3, W_ON = 1, the attribute $45 into rows 2..21 of both attribute files and 0 into the play rows (pixel rows 16..175) of the hidden file's bitmap (${hex(hid)}), nothing else (the file on screen untouched); registers kept`, onOk && clearedOk && on.preserved && on.spOk, `${wr.length} bytes`);
+  {
+    // the same switch again with interrupts ON (IM 1; TSRun raises none while single-stepping): IFF1 must stay set at every instruction
+    callRoutine(m, S.RT_WIREMODE, { a: 0 });
+    for (let i = 0; i < 6144; i++) m.ram[hid + i] = 0xA5;
+    const cpu = m.cpu, saved = { ...cpu }, sp0 = cpu.sp;
+    cpu.a = 1; cpu.iff1 = cpu.iff2 = true; cpu.im = 1; cpu.halted = false; cpu.eiDelay = false;
+    cpu.sp = (sp0 - 2) & 0xFFFF; m.bus.write(cpu.sp, 0x00); m.bus.write(cpu.sp + 1, 0x5B);   // return to $5B00
+    cpu.pc = S.RT_WIREMODE;
+    let steps = 0, off = 0, inClear = 0;
+    while (cpu.pc !== 0x5B00 && steps++ < 400000) { Z.runZ80(cpu, m.bus, 1, m); if (!cpu.iff1) off++; if (cpu.pc === S.wire_clear_on) inClear++; }
+    const zero = Array.from({ length: 6144 }, (_, i) => !playByte(i) || m.ram[hid + i] === 0).every(Boolean);
+    Object.assign(cpu, saved);
+    check(`  ... with interrupts on, the switch (and its clear, wire_clear_on) never turns them off: ${steps} instructions, ${off} with IFF1 = 0; the play rows cleared again`, cpu && steps < 400000 && inClear === 1 && off === 0 && zero);
+  }
   b = m.ram.slice();
   const onAgain = callRoutine(m, S.RT_WIREMODE, { a: 1 });
   check(`RT_WIREMODE 1 when on: ${onAgain.t} T, nothing written`, writes(b).length === 0);

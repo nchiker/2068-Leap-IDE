@@ -163,19 +163,19 @@ console.log('\n4. NOVIEW scenes: the switch');
   check_('every record has show: a NOVIEW scene is "screen", a scene with the play area "wire"', R.map((r) => r.show).join() === 'screen,screen,wire,wire,wire,screen,screen,wire,wire', R.map((r) => r.show).join());
   check_('on follows show (off in the title, on in play)', R.every((r) => r.wire.on === (r.show === 'wire')));
   check_('the first scene is NOVIEW: the play area is off from the start; nothing is drawn there (DRAWMODEL and LINE do nothing), the eye is stored', res.init.wire.on === false && lit(res.init.wire.bits) === 0 && JSON.stringify(res.init.wire.eye) === '{"x":9,"y":9,"z":9,"a":9}' && R[1].wire.on === false && lit(R[1].wire.bits) === 0 && lit(R[2].wire.bits) > 0);
-  // record 2 (tick 2): the title ENTERs play: the play area switches on in that tick (nothing cleared), the eye is reset, play's INIT draws its line
+  // record 2 (tick 2): the title ENTERs play: the play area switches on in that tick and the switch clears the hidden file's play area at once (contract 2.6 as amended), the eye is reset, play's INIT draws its line
   const r2 = R[2];
   const lineOnly = new Uint8Array(6144); drawLine(lineOnly, 0, 70, 255, 70, AREA);
-  check_('tick 2 (title -> play): on, fresh false (no clear ran in it), the eye 0, 0, 0, 0, and the bits are exactly play\'s INIT line (nothing drawn in the title reached them)', r2.wire.on && !r2.wire.fresh && JSON.stringify(r2.wire.eye) === JSON.stringify(EYE0) && same(r2.wire.bits, lineOnly), firstDiff(r2.wire.bits, lineOnly));
+  check_('tick 2 (title -> play): on, fresh (the switch cleared the hidden file\'s play area), the eye 0, 0, 0, 0, and the bits are exactly play\'s INIT line (nothing drawn in the title reached them)', r2.wire.on && r2.wire.fresh && JSON.stringify(r2.wire.eye) === JSON.stringify(EYE0) && same(r2.wire.bits, lineOnly), firstDiff(r2.wire.bits, lineOnly));
   check_('tick 3 (play, started on): fresh, cleared, the model drawn with eye 0', R[3].wire.on && R[3].wire.fresh && same(R[3].wire.bits, byHand(AREA, [{ model: 'gate', pose: { x: 0, y: 0, z: 200, scale: 1 } }])));
   check_('tick 5 (play -> title): off, the bitmap is empty, show screen', !R[5].wire.on && lit(R[5].wire.bits) === 0 && R[5].show === 'screen');
   check_('tick 6 (title again, off from the start of the tick): no pixel, fresh false', !R[6].wire.on && lit(R[6].wire.bits) === 0 && !R[6].wire.fresh);
-  check_('the second visit to play (tick 7): on, not fresh, the INIT line', R[7].wire.on && !R[7].wire.fresh && same(R[7].wire.bits, lineOnly));
+  check_('the second visit to play (tick 7): on, fresh (cleared by the switch), the INIT line', R[7].wire.on && R[7].wire.fresh && same(R[7].wire.bits, lineOnly));
   check_('the following tick of play is fresh again', R[8].wire.fresh && R[8].wire.on);
   // two ENTERs in one tick (a ring of INITs): the last scene decides
   const ring = run(HEAD() + scene('a', '', '    ENTER b\n') + scene('b', '    ENTER c\n', '', ' NOVIEW') + scene('c', '    LINE 0, 80 TO 255, 80\n', ''), 2);
   const l80 = new Uint8Array(6144); drawLine(l80, 0, 80, 255, 80, AREA);
-  check_('a -> b (NOVIEW) -> c in one tick: the play area went off and on again, so only c\'s line is there and fresh is false', ring.ticks[0].wire.on && !ring.ticks[0].wire.fresh && same(ring.ticks[0].wire.bits, l80), firstDiff(ring.ticks[0].wire.bits, l80));
+  check_('a -> b (NOVIEW) -> c in one tick: the play area went off and on again (the switch on cleared it), so only c\'s line is there and the tick is fresh', ring.ticks[0].wire.on && ring.ticks[0].wire.fresh && same(ring.ticks[0].wire.bits, l80), firstDiff(ring.ticks[0].wire.bits, l80));
   // a game with no NOVIEW scene: no `show` key (as batch 7)
   const plain = run(HEAD() + scene('s', '', '    t = t + 1\n'), 1);
   check_('a game without a NOVIEW scene has no `show` key in its records', plain.ticks[0].show === undefined && plain.init.show === undefined);

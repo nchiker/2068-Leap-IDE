@@ -19,7 +19,7 @@
 //   8  the shields run out (a pilot that steers into the rocks): the game over by shields
 //   9  the real runtime (arcade/build/v2) on a stock TS2068: four scripted games (the bot, a no-input cycle title -> play -> over -> title -> play, a rock hit, the shields run out) planned on the interpreter with the
 //      runtime's own RND, every tick compared with it: state, and BOTH display files (bitmap and attributes) against a picture built from the interpreter's record (cells, play area pixel exact, sprite)
-//  10  the tick that switches the play area on (nothing cleared in it): what is left of the title in the play rows and for how long it is on screen
+//  10  the tick that switches the play area on: the switch clears the hidden file's play area at once (contract 2.6 as amended), so no pixel of the title is left in the play rows
 //  11  the tick costs of the play scene (median, 95th percentile, worst, ticks over the budget of 3 refreshes), by number of models; the scene changes
 //  12  the interrupts the handler took against the refreshes TSRun ran (no lost interrupt); the sound at song level (the title song, the effects)
 import { readFileSync } from 'node:fs';
@@ -366,7 +366,8 @@ const cellBits = (cells) => {
   for (let r = 0; r < 24; r++) for (let c = 0; c < 32; c++) { const g = glyphOf(cells[r * 32 + c]); for (let k = 0; k < 8; k++) b[rowAddr(r * 8 + k) + c] = g[k]; }
   return b;
 };
-/** The picture the finished file must hold after tick `rec`: {bits, attrs, stale}.  `leftover` = the bytes of that file from the tick before it (a tick that switched the play area on does not clear its rows). */
+/** The picture the finished file must hold after tick `rec`: {bits, attrs, stale}.  `leftover` = the bytes of that file from the tick before it (used only by a stale record: no clear ran; since the switch on clears
+ *  the hidden file's play area at once, contract 2.6 as amended, no tick of these runs is stale). */
 function expectFile(rec, leftover) {
   const lay = wireLayer(rec, cellBits(rec.cells), Uint8Array.from(rec.attrs));
   const { bits, attrs } = lay;
@@ -424,7 +425,7 @@ function realRun(name, script) {
   // pictures
   const last = [null, null], lastRec = [null, null], expPrev = { v: null };
   let bad = null, badShown = null, nCmp = 0, nShown = 0, onTicks = 0, playPixels = 0;
-  const leftovers = [], switches = [];
+  const leftovers = [], switches = [], switchOns = [];
   want.ticks.forEach((rec, i) => {
     const k = i + 1, sh = shots[i], f = rec.wire;
     const ex = expectFile(rec, last[sh.idx] ?? new Uint8Array(FILE_LEN));
@@ -434,6 +435,7 @@ function realRun(name, script) {
     const prev = i > 0 ? want.ticks[i - 1] : null;
     const change = prev && prev.wire.on !== f.on;
     if (change) switches.push({ k, on: f.on });
+    if (change && f.on) switchOns.push({ k, fresh: f.fresh, exact: !d, lit: litIn(sh.fin), linesLit: litIn(f.bits), refreshes: got.S[k + 1] !== undefined ? got.S[k + 1] - got.S[k] : null });
     if (ex.stale) {                                           // the tick that switched the play area on: its rows are what the file held before (the previous scene's cells, drawn two ticks ago)
       const was = lastRec[sh.idx], wasEx = was ? expectFile(was, new Uint8Array(FILE_LEN)) : null;
       let same = !!wasEx;
@@ -453,8 +455,8 @@ function realRun(name, script) {
     last[sh.idx] = sh.fin; lastRec[sh.idx] = rec; expPrev.v = ex;
   });
   const frames = irq.fs1 > irq.fs0 ? Math.round((irq.fs1 - irq.fs0) / 58688) : 0;
-  stats.push({ name, got, want, ticks, irq, frames, shots, leftovers, switches });
-  return { name, ticks, got, want, secs, dState, bad, badShown, nCmp, nShown, onTicks, playPixels, leftovers, switches, irq, frames };
+  stats.push({ name, got, want, ticks, irq, frames, shots, leftovers, switches, switchOns });
+  return { name, ticks, got, want, secs, dState, bad, badShown, nCmp, nShown, onTicks, playPixels, leftovers, switches, switchOns, irq, frames };
 }
 
 console.log('\n   scripts (planned on the interpreter with the runtime\'s RND)');
@@ -505,11 +507,12 @@ check_(`the file on screen during every tick (the previous tick's) is that tick'
 // ── 10. the switch on ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 console.log('\n10. Title -> play: the tick that switches the play area on');
 {
-  const L = out9.flatMap((r) => r.leftovers.map((l) => ({ ...l, run: r.name })));
-  info(L.map((l) => `${l.run} tick ${l.k}: ${l.lit} lit pixels left in the play rows, equal to the title's own picture of that file: ${l.same}, on screen for ${l.refreshes} refreshes (${(l.refreshes * 1000 / 60.11).toFixed(0)} ms)`).join('; '));
-  check_(`in each of the ${L.length} ticks in which ENTER play switches the play area on the interpreter says nothing was cleared (fresh = false) and the real file's play rows hold exactly what that file held before (the title's picture from two ticks earlier), with the play attributes written`, L.length >= 3 && L.every((l) => l.same && l.attrOk), L.map((l) => `${l.run}@${l.k}`).join(' '));
-  // The leftover is on screen from the interrupt after its tick to the one after the NEXT tick, which is the first frame of the game (it clears its file and draws everything: several refreshes at FRAMERATE 20).
-  check_('the leftover is on screen for exactly one tick: the next tick clears its own file (fresh) and draws the first frame, and the tick after that is not stale either; no play row of any later tick holds title pixels (the pictures of section 9 are exact)', L.every((l) => { const r = out9.find((x) => x.name === l.run); return r.want.ticks[l.k].wire.fresh === true && r.want.ticks[l.k + 1].wire.fresh === true; }), `on screen for ${L.map((l) => l.refreshes).join(', ')} refreshes`);
+  const L = out9.flatMap((r) => r.switchOns.map((l) => ({ ...l, run: r.name })));
+  const stale = out9.reduce((n, r) => n + r.leftovers.length, 0);
+  info(L.map((l) => `${l.run} tick ${l.k}: ${l.lit} lit pixels in the play rows (the record's lines: ${l.linesLit}), on screen for ${l.refreshes} refreshes`).join('; '));
+  check_(`in each of the ${L.length} ticks in which ENTER play switches the play area on, the switch cleared the hidden file's play area at once: the interpreter says fresh, the finished file equals its picture exactly (play rows = the record's lines, nothing of the title left) and no tick of the runs is stale`,
+    L.length >= 3 && L.every((l) => l.fresh && l.exact && l.lit === l.linesLit) && stale === 0, L.map((l) => `${l.run}@${l.k}`).join(' ') + (stale ? `; ${stale} stale ticks` : ''));
+  check_('the tick after each switch on is fresh too (its own clear at the tick start)', L.every((l) => { const r = out9.find((x) => x.name === l.run); return r.want.ticks[l.k].wire.fresh === true; }));
 }
 
 // ── 11. the tick costs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -591,10 +594,12 @@ if (process.argv.includes('--profile')) {
   paint(S_('M_SKIP_S'), S_('M_SKIP_E'), 'rt.skip'); paint(S_('M_TILEOPS_S'), S_('M_TILEOPS_E'), 'rt.tileops'); paint(S_('M_BOOT_S'), S_('M_BOOT_E'), 'rt.boot'); paint(S_('M_ISR_S'), S_('M_ISR_E'), 'isr');
   paint(0x8000, 0x10000, 'game');
   paint(S_('M_WIRE_S'), S_('M_WIRE_E'), 'wire.other');
-  paint(S_('RT_DRAWMODEL'), S_('w_project_full'), 'dm.setup'); paint(S_('w_project_full'), S_('w_proj_point'), 'dm.proj-full'); paint(S_('w_proj_point'), S_('w_rcp_setup'), 'dm.proj-pt'); paint(S_('w_rcp_setup'), S_('w_qv'), 'dm.proj-rcp'); paint(S_('w_qv'), S_('w_draw_edges'), 'dm.proj-qv'); paint(S_('w_matrix'), S_('w_dot2'), 'dm.matrix'); paint(S_('w_dot2'), S_('RT_EYE'), 'dm.proj-yaw');
+  // (the relocatable pieces of wire.asm are painted by their own labels: w_matrix .. w_r_matrix_end and so on, wherever the build put them)
+  paint(S_('RT_DRAWMODEL'), S_('w_project_full'), 'dm.setup'); paint(S_('w_project_full'), S_('w_proj_point'), 'dm.proj-full'); paint(S_('w_proj_point'), S_('w_qmul'), 'dm.proj-pt'); paint(S_('w_qmul'), S_('w_draw_edges'), 'dm.proj-qv'); paint(S_('w_matrix'), S_('w_r_matrix_end'), 'dm.matrix'); paint(S_('w_project_yaw'), S_('w_r_yaw_end'), 'dm.proj-yaw');
   paint(S_('w_smul'), S_('w_r_smul_end'), 'dm.smul'); paint(S_('w_draw_edges'), S_('w_draw_line'), 'dm.edges'); paint(S_('w_draw_line'), S_('w_draw_state'), 'line.clipsetup'); paint(S_('w_draw_state'), S_('w_draw_fast'), 'line.clipdraw');
-  paint(S_('w_draw_fast'), S_('w_pad_end'), 'line.fast'); paint(S_('wire_clear'), S_('w_r_clear_end'), 'clear'); paint(S_('RT_SINA'), S_('w_matrix'), 'trig'); paint(S_('RT_EYE'), S_('w_smul'), 'eye');
-  paint(S_('RT_LINE'), S_('w_r_line_end'), 'line.entry'); paint(S_('wire_tick'), S_('M_WTICK_E'), 'tick.wire'); paint(S_('M_WMODE_S'), S_('M_WMODE_E'), 'wire.mode');
+  paint(S_('w_draw_fast'), S_('w_pad_end'), 'line.fast'); paint(S_('w_jpiy'), S_('w_r_shk_end'), 'dm.proj-shift'); paint(S_('w_shk2'), S_('w_r_shk23_end'), 'dm.proj-shift'); paint(S_('w_clr_lines'), S_('w_r_clrl_end'), 'clear.on');
+  paint(S_('wire_clear'), S_('w_r_clear_end'), 'clear'); paint(S_('RT_SINA'), S_('w_r_trig_end'), 'trig'); paint(S_('RT_EYE'), S_('w_r_eye_end'), 'eye');
+  paint(S_('RT_LINE'), S_('w_r_line_end'), 'line.entry'); paint(S_('wire_tick'), S_('M_WTICK_E'), 'tick.wire'); paint(S_('wire_clear_on'), S_('M_WTICK_E'), 'clear.on'); paint(S_('M_WMODE_S'), S_('M_WMODE_E'), 'wire.mode');
   const isrId = regionId('isr'), gameId = regionId('game');
   const codeLo = res.gen.base, codeHi = res.gen.base + res.gen.code.length;
   const FE = res.map.entries.frame, A_DM = S_('RT_DRAWMODEL'), A_LINE = S_('RT_LINE'), A_EYE = S_('RT_EYE'), A_COSA = S_('RT_COSA'), A_SINA = S_('RT_SINA'), A_FXM = S_('RT_FXMUL'), A_DFAST = S_('w_draw_fast'), A_DLINE = S_('w_draw_line'), A_REJ = S_('w_ls_rej');
@@ -674,7 +679,7 @@ if (process.argv.includes('--profile')) {
     out.push(line('1 wire_clear', (t) => sumB(t, (b) => b === 'clear')));
     out.push(line('2 DRAWMODEL gate (all)', (t) => sumB(t, (b) => b.startsWith('dm.gate.'))));
     out.push(line('2 DRAWMODEL rock (all)', (t) => sumB(t, (b) => b.startsWith('dm.rock.'))));
-    for (const m_ of ['gate', 'rock']) for (const sub of ['setup', 'smul', 'matrix', 'proj-yaw', 'proj-full', 'proj-pt', 'proj-rcp', 'proj-qv', 'edges', 'line-clipsetup', 'line-clipdraw', 'line-fast']) out.push(line(`    ${m_}: ${{ setup: 'entry + eye transform', smul: 'eye transform products', matrix: 'rotation matrix', 'proj-yaw': 'projection: yaw-only loop', 'proj-full': 'projection: yaw+pitch loop', 'proj-pt': 'projection: proj_point', 'proj-rcp': 'projection: reciprocal', 'proj-qv': 'projection: q(v) lookups', edges: 'edge loop', 'line-clipsetup': 'clipped lines: clip', 'line-clipdraw': 'clipped lines: draw', 'line-fast': 'fast lines: draw' }[sub]}`, (t) => sumB(t, (b) => b === `dm.${m_}.${sub}`)));
+    for (const m_ of ['gate', 'rock']) for (const sub of ['setup', 'smul', 'matrix', 'proj-yaw', 'proj-full', 'proj-shift', 'proj-pt', 'proj-qv', 'edges', 'line-clipsetup', 'line-clipdraw', 'line-fast']) out.push(line(`    ${m_}: ${{ setup: 'entry + eye transform', smul: 'eye transform products', matrix: 'rotation matrix', 'proj-yaw': 'projection: yaw-only loop', 'proj-full': 'projection: yaw+pitch loop', 'proj-shift': 'projection: SCALE shifts', 'proj-pt': 'projection: proj_point + 1/Z', 'proj-qv': 'projection: q(v) multiplies', edges: 'edge loop', 'line-clipsetup': 'clipped lines: clip', 'line-clipdraw': 'clipped lines: draw', 'line-fast': 'fast lines: draw' }[sub]}`, (t) => sumB(t, (b) => b === `dm.${m_}.${sub}`)));
     out.push(line('3 RT_LINE (6 lines, all)', (t) => sumB(t, (b) => b === 'line')));
     out.push(line('4 RT_EYE', (t) => sumB(t, (b) => b === 'eye')));
     out.push(line('4 COSA / SINA / FXMUL', (t) => sumB(t, (b) => b === 'trig')));
