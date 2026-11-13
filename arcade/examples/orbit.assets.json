@@ -11,112 +11,112 @@
        "mask": "0180",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0180",
        "mask": "0180",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "2184",
        "mask": "2184",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1188",
        "mask": "1188",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0990",
        "mask": "0990",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "05A0",
        "mask": "05A0",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03C0",
        "mask": "03C0",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FFFE",
        "mask": "FFFE",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7FFF",
        "mask": "7FFF",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03C0",
        "mask": "03C0",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "05A0",
        "mask": "05A0",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0990",
        "mask": "0990",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1188",
        "mask": "1188",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "2184",
        "mask": "2184",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0180",
        "mask": "0180",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0180",
        "mask": "0180",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ]
     }
@@ -139,49 +139,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -192,49 +192,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -245,49 +245,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "38",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -298,49 +298,49 @@
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "06",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -351,49 +351,49 @@
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0C",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "70",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -404,49 +404,49 @@
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "70",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0C",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -457,49 +457,49 @@
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "60",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -510,49 +510,49 @@
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "41",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -563,49 +563,49 @@
        "bits": "1C",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "60",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -616,49 +616,49 @@
        "bits": "78",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "06",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -669,49 +669,49 @@
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "82",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "82",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "41",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -722,49 +722,49 @@
        "bits": "41",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "41",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -775,49 +775,49 @@
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "60",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "18",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -828,49 +828,49 @@
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0C",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -881,49 +881,49 @@
        "bits": "41",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "82",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "82",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -934,49 +934,49 @@
        "bits": "08",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "06",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -987,49 +987,49 @@
        "bits": "06",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "60",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "18",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "06",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1040,49 +1040,49 @@
        "bits": "30",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "C0",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0C",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "30",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "C0",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1093,49 +1093,49 @@
        "bits": "10",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "C0",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0

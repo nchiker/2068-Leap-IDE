@@ -9,7 +9,7 @@ REM   or debris: at most 4 models a tick.
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/orbit.arc --assets arcade/examples/orbit.assets.json --runtime v2
 GAME "Orbit Gates"
 FRAMERATE 12
-WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 1
+WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 0
 
 MODEL gate = "gate"
 MODEL gatefar = "gatefar"
@@ -33,7 +33,7 @@ SCENE title NOVIEW
   PROC INIT():
     PLAY theme
     BORDER 0
-    PAPER 0 : INK 7 : BRIGHT 1 : CLS
+    PAPER 0 : INK 7 : BRIGHT 0 : CLS
     CALL STARS()
     FOR r = 0 TO 3
       FOR c = 0 TO 3
@@ -41,10 +41,10 @@ SCENE title NOVIEW
       NEXT c
     NEXT r
     INK 6 : PRINT AT 8, 10; "ORBIT  GATES";
-    INK 5 : PRINT AT 10, 6; "A WIREFRAME FLIGHT IN SPACE";
+    INK 5 : PRINT AT 10, 2; "A WIREFRAME FLIGHT IN SPACE";
     INK 7 : PRINT AT 15, 11; "BEST "; best USING "00000";
-    INK 4 : PRINT AT 18, 4; "Q FASTER  A SLOWER  O P TURN";
-    INK 4 : PRINT AT 19, 3; "SPACE (FIRE) FIRES THE LASER";
+    INK 4 : PRINT AT 18, 2; "Q FASTER  A SLOWER  O P TURN";
+    INK 4 : PRINT AT 19, 2; "SPACE (FIRE) FIRES THE LASER";
     INK 4 : PRINT AT 20, 9; "OR JOYSTICK 1";
     INK 3 : PRINT AT 22, 1; "FLY THE GATES, SHOOT THE ROCKS";
   ENDP
@@ -61,9 +61,9 @@ SCENE title NOVIEW
     fire = KEYDOWN(" ") OR BIT(STICK(1), 4)
     IF fire = 0 THEN rel = 1 ENDIF
     IF tw MOD 20 < 12 THEN
-      INK 6 : PRINT AT 13, 11; "PRESS  FIRE";
+      INK 6 : PRINT AT 13, 10; "PRESS  FIRE";
     ELSE
-      INK 0 : PRINT AT 13, 11; "           ";
+      INK 0 : PRINT AT 13, 10; "           ";
     ENDIF
     IF fire AND rel THEN ENTER play ENDIF
   ENDP
@@ -78,7 +78,7 @@ SCENE play
   PROC INIT():
     NOMUSIC
     BORDER 0
-    PAPER 0 : INK 6 : BRIGHT 1 : CLS
+    PAPER 0 : INK 6 : BRIGHT 0 : CLS
     score = 0 : gates = 0 : why = 0
     px = 0 : pz = 0 : ea = 0 : spd = 24 : fuel = 900 : shd = 3 : inv = 0 : fl = 0 : cd = 0 : lz = 0 : sb = 0
     ec = COSA(0) : es = SINA(0)
@@ -380,14 +380,14 @@ SCENE over NOVIEW
     NOMUSIC
     BORDER 0
     IF score > best THEN best = score ENDIF
-    PAPER 0 : INK 7 : BRIGHT 1 : CLS
+    PAPER 0 : INK 7 : BRIGHT 0 : CLS
     INK 2 : PRINT AT 6, 11; "GAME OVER";
     INK 3
-    IF why = 1 THEN PRINT AT 8, 10; "OUT OF FUEL"; ELSE PRINT AT 8, 9; "SHIELDS DOWN"; ENDIF
-    INK 6 : PRINT AT 11, 9; "SCORE "; score USING "00000";
-    INK 5 : PRINT AT 13, 9; "BEST  "; best USING "00000";
-    INK 7 : PRINT AT 15, 9; "GATES "; gates USING "000";
-    INK 4 : PRINT AT 19, 7; "PRESS FIRE FOR THE TITLE";
+    IF why = 1 THEN PRINT AT 8, 10; "OUT OF FUEL"; ELSE PRINT AT 8, 10; "SHIELDS DOWN"; ENDIF
+    INK 6 : PRINT AT 11, 10; "SCORE "; score USING "00000";
+    INK 5 : PRINT AT 13, 10; "BEST  "; best USING "00000";
+    INK 7 : PRINT AT 15, 11; "GATES "; gates USING "000";
+    INK 4 : PRINT AT 19, 4; "PRESS FIRE FOR THE TITLE";
   ENDP
 
   REM Fire goes on once it has been released and pressed again (it is usually still down when the scene starts).

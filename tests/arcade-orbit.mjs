@@ -35,6 +35,8 @@ import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { wireLayer } from '../src/lang/arcade/arcade-display.js';
 import { real, runReal, interpFor, diffRecords, compareSoundRun } from './arcade-m5-harness.mjs';
 import { fontGlyph, rowAddr } from '../arcade/tests/m3-common.mjs';
+import { checkAssets } from '../src/lang/arcade/arcade-assetcheck.js';
+import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
 import { cosa, sina, fxmul, areaOf, clearArea, drawModel, drawLine, EYE0 } from '../src/lang/arcade/arcade-wire.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -108,7 +110,7 @@ console.log('\n2. Title -> play');
   check_('the title song plays on the title (song 0) and stops when the game starts (NOMUSIC)', r.init.music.active === true && ts[0].music.active === true && ts[18].music.active === true && ts[19].music.active === false && ts[25].music.active === false);
   const rows = [8, 10, 13, 15, 18].map((k) => text(ts[1], k).trim());
   check_('the title screen: the name, the tagline, PRESS FIRE (blinking), BEST, the controls; the ring logo in tiles (cells 14..17 of rows 3..6 are tiles)', rows[0] === 'ORBIT  GATES' && rows[1].startsWith('A WIREFRAME FLIGHT') && rows[2] === 'PRESS  FIRE' && rows[3] === 'BEST 00000' && rows[4].startsWith('Q FASTER') && [3, 4, 5, 6].every((rr) => [14, 15, 16, 17].every((cc) => ts[1].cells[rr * 32 + cc] >= 128)), JSON.stringify(rows));
-  const blink = ts.slice(0, 19).map((q) => text(q, 13, 11, 11).trim() === 'PRESS  FIRE');
+  const blink = ts.slice(0, 19).map((q) => text(q, 13, 10, 11).trim() === 'PRESS  FIRE');
   check_('PRESS FIRE blinks (12 ticks on, 8 off)', blink.some((x) => x) && blink.some((x) => !x), blink.map((x) => (x ? 1 : 0)).join(''));
   check_('a game starts with the eye at the origin, heading 0, speed 24, fuel 900, 3 shields, gate 0 straight ahead (0, 1500), the next gate 1500 units on', V(ts[19], 'PX') === 0 && V(ts[19], 'PZ') === 0 && V(ts[19], 'EA') === 0 && V(ts[19], 'SPD') === 24 && V(ts[19], 'GX') === 0 && V(ts[19], 'GZ') === 1500
     && Math.abs(Math.hypot(V(ts[19], 'NX') - 0, V(ts[19], 'NZ') - 1500) - 1500) < 3);
@@ -270,6 +272,42 @@ check_('a laser shot needs the fire button: the cooldown register is 6 only in t
   for (let t = 20; t < bt.length; t++) { if (bt[t].scene !== SCENE.play) continue; if (V(bt[t], 'CD') === 6) { if (!(bot.script[t] & FIRE) || t - last < 6) return false; last = t; } }
   return true;
 })());
+
+// ── 2b. colours and text ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// The Studio's emulator (TSRun) draws BRIGHT black as dark grey and plain black as black, so no cell of the game may combine PAPER 0 with BRIGHT 1; the fixed text of the title and the game over is
+// centred and never runs past column 31 (a character at column 32 would wrap into the next row).
+console.log('\n2b. Colours and text');
+{
+  const blackBright = (rec) => {                              // the first cell with paper 0 and BRIGHT 1: the cell map's attributes, and the play area's declared attribute while it is on
+    for (let i = 0; i < 768; i++) if (((rec.attrs[i] >> 3) & 7) === 0 && (rec.attrs[i] & 0x40)) return `cell row ${i >> 5}, column ${i & 31}`;
+    if (rec.wire.on && ((rec.wire.attr >> 3) & 7) === 0 && (rec.wire.attr & 0x40)) return 'the play area';
+    return null;
+  };
+  const demo = run([...START, ...Array(60).fill(0), ...Array(25).fill(FIRE), ...Array(5).fill(0)], 1400);          // the title, play until the fuel runs out, the game over
+  const scenesSeen = new Set(demo.ticks.map((q) => q.scene));
+  const bad = [demo.init, ...demo.ticks].map((q, i) => [i, blackBright(q)]).filter(([, b]) => b)[0];
+  const badBot = bt.map((q, i) => [i, blackBright(q)]).filter(([, b]) => b)[0];
+  check_(`no cell on any screen has PAPER 0 with BRIGHT 1: every tick of a run through the title, the play scene and the game over (${demo.ticks.length} ticks; scenes ${[...scenesSeen].map((k) => demo.scenes[k]).join(', ')}) and of the bot run (${bt.length} ticks), and the play area's declared attribute`,
+    scenesSeen.size === 3 && !bad && !badBot, bad ? `tick ${bad[0]}: ${bad[1]}` : badBot ? `bot tick ${badBot[0] + 1}: ${badBot[1]}` : '');
+  const findings = checkAssets({ assets: ASSETS }, scanRoles(SRC));
+  check_('the Studio\'s asset check (checkAssets) reports nothing for orbit.assets.json, in particular no black-bright-mix; the source has no BRIGHT 1 and the play area is declared PAPER 0 BRIGHT 0', findings.length === 0 && !/\bBRIGHT\s+1\b/.test(SRC) && /WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 0/.test(SRC), JSON.stringify(findings.map((f) => f.id)));
+  // the PRINT AT statements with constant positions: the width printed = fixed strings + the pattern of a USING item (one column for a plain number: SHIELDS)
+  const stmts = [];
+  let scene = '';
+  SRC.split('\n').forEach((l, ln) => {
+    const sc = /^SCENE\s+(\w+)/.exec(l); if (sc) scene = sc[1];
+    const re = /PRINT AT (\d+), (\d+);((?:[^:]|"[^"]*")*?)(?=\s+:\s|\s+ELSE\b|\s+ENDIF\b|$)/g; let m;
+    while ((m = re.exec(l))) {
+      let w = 0; const items = m[3].match(/"[^"]*"( USING "[^"]*")?|[a-z]+( USING "[^"]*")?/gi) ?? [];
+      for (const it of items) { const u = /USING "([^"]*)"/.exec(it); if (u) w += u[1].length; else if (it[0] === '"') w += it.length - 2; else w += 1; }
+      stmts.push({ scene, ln: ln + 1, row: Number(m[1]), col: Number(m[2]), w, fixed: items.every((it) => it[0] === '"') });
+    }
+  });
+  const over = stmts.filter((x) => x.col + x.w > 32);
+  check_(`no PRINT AT runs past column 31 (${stmts.length} statements; the widest ends at column ${Math.max(...stmts.map((x) => x.col + x.w - 1))})`, stmts.length > 20 && over.length === 0, over.map((x) => `line ${x.ln}: column ${x.col} + ${x.w}`).join('; '));
+  const off = stmts.filter((x) => (x.scene === 'title' || x.scene === 'over') && x.col !== (32 - x.w) >> 1);
+  check_(`every printed line of the title and the game over is centred at column floor((32 - width) / 2) (${stmts.filter((x) => x.scene === 'title' || x.scene === 'over').length} statements, numbers counted by their USING field)`, off.length === 0, off.map((x) => `line ${x.ln}: column ${x.col}, width ${x.w}, centre ${(32 - x.w) >> 1}`).join('; '));
+}
 
 let byHandOf;
 // ── 4. the picture ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

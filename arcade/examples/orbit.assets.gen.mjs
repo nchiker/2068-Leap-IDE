@@ -51,7 +51,7 @@ const FLASH = ['.......##.......', '.......##.......', '..#....##....#..', '...#
   '.###############', '......####......', '.....#.##.#.....', '....#..##..#....', '...#...##...#...', '..#....##....#..', '.......##.......', '.......##.......'];
 if (FLASH.length !== 16 || FLASH.some((r) => r.length !== 16)) throw new Error('flash is not 16 x 16');
 
-function sprite(rows, { hot, phases, ink = 7, paper = 0, bright = 1 }) {
+function sprite(rows, { hot, phases, ink = 7, paper = 0, bright = 0 }) {
   const h = rows.length, w = rows[0].length;
   const hex = (v) => v.toString(16).toUpperCase().padStart(w / 4, '0');
   const outRows = rows.map((r) => {
@@ -61,7 +61,7 @@ function sprite(rows, { hot, phases, ink = 7, paper = 0, bright = 1 }) {
   });
   return { w, h, frames: [{ rows: outRows }], hot, phases };
 }
-const tileRows = (bytes, ink, paper = 0, bright = 1) => ({ rows: bytes.map((b) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })), flags: 0 });
+const tileRows = (bytes, ink, paper = 0, bright = 0) => ({ rows: bytes.map((b) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })), flags: 0 });
 
 // the ring logo: two octagons (vertices at k 45 degrees, radius 15 and 9 about the middle of a 32 x 32 block) drawn with a small Bresenham
 const logo = Array.from({ length: 32 }, () => Array(32).fill(0));
@@ -83,11 +83,11 @@ for (const r of [15, 9]) {
 }
 const logoTile = (tx, ty) => Array.from({ length: 8 }, (_, r) => parseInt(logo[ty * 8 + r].slice(tx * 8, tx * 8 + 8).join(''), 2));
 const tiles = [
-  tileRows([0, 0, 0, 0, 0, 0, 0, 0], 7, 0, 1),                  // 0 empty (black)
-  tileRows([0, 0, 0, 0, 0x08, 0, 0, 0], 7, 0, 1),               // 1 star
-  tileRows([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], 7, 0, 1),         // 2 bright star
+  tileRows([0, 0, 0, 0, 0, 0, 0, 0], 7, 0, 0),                  // 0 empty (black)
+  tileRows([0, 0, 0, 0, 0x08, 0, 0, 0], 7, 0, 0),               // 1 star
+  tileRows([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], 7, 0, 0),         // 2 bright star
 ];
-for (let ty = 0; ty < 4; ty++) for (let tx = 0; tx < 4; tx++) tiles.push(tileRows(logoTile(tx, ty), 5, 0, 1));    // 3 + ty * 4 + tx
+for (let ty = 0; ty < 4; ty++) for (let tx = 0; tx < 4; tx++) tiles.push(tileRows(logoTile(tx, ty), 5, 0, 0));    // 3 + ty * 4 + tx
 
 // ── sound ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const ticks = (n, f) => Array.from({ length: n }, (_, k) => f(k));
