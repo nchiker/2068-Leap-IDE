@@ -228,6 +228,8 @@ suites, Opus for the Z80 of stage 2. Claude writes the designs and decisions, re
 
 ## 8. Decisions made here, for the owner's review
 
+**Approved by the owner on 2026-11-13:** 1 (the stage order), 2 (both 3D defaults become `BRIGHT 0`) and 8 (the silent-AY change in the TSRun fork). Items 3 to 7 stand as written unless the owner says otherwise.
+
 1. Order of the stages (section 1), with the v2 size pass before the game changes.
 2. K2: both 3D defaults become `BRIGHT 0` (recommended).
 3. K1 is a compiler warning following text order only (no branch analysis).
