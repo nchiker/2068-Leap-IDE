@@ -3,24 +3,26 @@
 // arcade-orbit.mjs -- the sample game of the wireframe 3D, arcade/examples/orbit.arc ("Orbit Gates": WIRE3D, MODEL, EYE, DRAWMODEL, LINE, COSA / SINA / FXMUL, NOVIEW scenes; docs/ARCADE_WIREFRAME_CONTRACT.md
 // section 9, slices W5 and W6), on the REFERENCE INTERPRETER (src/lang/arcade/arcade-interp.js) and the compiler (sections 0 to 8), and on the REAL v2 runtime in TSRun (sections 9 to 12).
 //
-//   node tests/arcade-orbit.mjs        (ARCADE_QUICK=1: a bot run of 1,200 ticks instead of 3,000; --strict: the contract's 99 % of ticks within FRAMERATE 20 is a check; --record: write arcade/examples/orbit.perf.json)
+//   node tests/arcade-orbit.mjs        (ARCADE_QUICK=1: a bot run of 1,200 ticks instead of 3,000; --record: write arcade/examples/orbit.perf.json; --profile: section 13)
 //
 //   0  the assets file is what orbit.assets.gen.mjs makes
 //   1  the build: compiles with the v2 runtime with no errors and no warnings (code bytes, data, phases, models are printed); at most 45 sprite phases (a WIRE3D game's limit); the models
 //   2  title -> play: fire starts the game (not a fire still held from the start: it must be released first), the title song plays, the title is a NOVIEW scene (no play area, the cell screen with the logo)
-//   3  the bot: a pilot that READS the game's variables (the interpreter's records: the eye, the current and next gate, the rocks), turns towards the gate and steers round the rocks (a small model of the
-//      player's own movement predicts a few ticks ahead), run closed loop on the interpreter (it is re-run from the start with the stick values decided so far, a few ticks at a time):
-//      passes at least 10 gates in a fixed-seed run, never runs out of fuel, and the run is long (>= 3,000 ticks: the recentring of the origin, section 7, happens in it)
+//   3  the bot: a pilot that READS the game's variables (the interpreter's records: the eye, the current and next gate, the rocks), turns towards the gate, steers round the rocks and SHOOTS them (a small model of
+//      the player's movement and the rocks' drift predicts 40 ticks ahead), run closed loop on the interpreter (it is re-run from the start with the stick values decided so far, 8 to 24 ticks at a time):
+//      passes at least 40 gates in a fixed-seed run, blows up rocks with the laser, never runs out of fuel, and the run is long (3,000 ticks: the recentring of the origin, section 7, happens in it)
 //   4  the picture: every tick of the play scene equals what the reference (arcade-wire.js) draws by hand from the game's own variables (the eye, the gates and the rocks that are in front of the eye, the gunsight
 //      and the horizon marks: at most 2 gates + 2 rocks, contract section 9); the play area has lines in it; the HUD (rows 0, 22, 23) shows the score, the gates, the shields, the fuel
 //   5  a run with no input ends in the game over scene (by fuel), which shows the score, the best score and the gates, and fire goes back to the title (the best score is kept)
 //   6  a run that flies into a rock: a shield is lost, the crash sound plays, the 16 x 16 burst sprite is SHOWn in the middle of the play area for 6 ticks over the lines, then HIDDEN; the rock respawns
 //   7  recentring: |px|, |pz| <= 12000 on every tick of the bot run and of a straight flight away from the course (which also gives up the gate: "lost"); the origin moved (the eye jumps, the gates with it)
 //   8  the shields run out (a pilot that steers into the rocks): the game over by shields
-//   9  the real runtime (arcade/build/v2) on a stock TS2068: four scripted games (the bot, a no-input cycle title -> play -> over -> title -> play, a rock hit, the shields run out) planned on the interpreter with the
+//  8a  shooting: fire with no rock in the cone (the zap, the beams for 3 ticks, the cooldown), a kill (score, boom, debris counting 1..29, the model shards at SCALE 1 / 2 / 4, the rock placed again)
+//  8b  the rising challenge: the pass margin 220 -> 140, the gate spacing 1500 -> 2100, the fuel bonus, closer and faster rocks; the margin decides a pass; a careless pilot dies sooner than the bot
+//   9  the real runtime (arcade/build/v2) on a stock TS2068: five scripted games (the bot, a no-input cycle title -> play -> over -> title -> play, a rock hit, the shields run out, a rock shot) planned on the interpreter with the
 //      runtime's own RND, every tick compared with it: state, and BOTH display files (bitmap and attributes) against a picture built from the interpreter's record (cells, play area pixel exact, sprite)
 //  10  the tick that switches the play area on: the switch clears the hidden file's play area at once (contract 2.6 as amended), so no pixel of the title is left in the play rows
-//  11  the tick costs of the play scene (median, 95th percentile, worst, ticks over the budget of 3 refreshes), by number of models; the scene changes
+//  11  the tick costs of the play scene (median, 95th percentile, worst, ticks over the budget of FRAMERATE): >= 99 % of the ordinary play ticks fit it and it is the highest of 20 / 15 / 12 that does; by number of models; the scene changes
 //  12  the interrupts the handler took against the refreshes TSRun ran (no lost interrupt); the sound at song level (the title song, the effects)
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -47,7 +49,7 @@ const SRC = readFileSync(join(ROOT, 'arcade/examples/orbit.arc'), 'utf8');
 const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/orbit.assets.json'), 'utf8'));
 const AST = parse(SRC).ast;
 // The pilot's planning runs leave out the drawing (EYE, DRAWMODEL, LINE: they change no variable of the game; section 3 compares the two runs), which makes the interpreter about a third faster.
-const PLAN_SRC = SRC.split('\n').filter((l) => !/^\s*(DRAWMODEL|LINE|EYE)\b/.test(l) && !/^\s*IF fw > 0 THEN DRAWMODEL/.test(l)).join('\n');
+const PLAN_SRC = SRC.split('\n').filter((l) => !/^\s*(IF [^:]* THEN )?(DRAWMODEL|LINE|EYE)\b/.test(l)).join('\n');
 const PLAN_AST = parse(PLAN_SRC).ast;
 
 // ── the interpreter, driven by a list of joystick-1 values (one per tick; 0 = nothing) ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -80,11 +82,16 @@ let res;
   check_('orbit.arc compiles for the v2 runtime with no errors and no warnings', res.errors.length === 0 && res.warnings.length === 0, msgs || `${res.usage.codeBytes ?? res.usage.code} code bytes`);
   const phases = res.gen.sprites.reduce((a, s) => a + (s.phases ?? 8), 0);
   info(`code ${res.usage.code} bytes, data ${res.usage.varBytes} (${res.usage.codegen.varSlots} variable slots), sprites ${res.usage.spriteData}, models ${res.usage.data.models}, wire descriptor ${res.usage.data.wire}, strings ${res.usage.data.strings}, tileset ${res.usage.data.tileset}, sound ${res.usage.data.sfx}, music ${res.usage.data.music}; game ${res.usage.total} of ${res.usage.total + res.usage.free} bytes (${res.usage.free} free); sprite phases ${phases} (limit 45)`);
-  check_('at most 45 sprite phases (a WIRE3D game never writes the runtime\'s wireframe RAM), one sprite, two models, three scenes', phases <= 45 && res.usage.codegen.sprites === 1 && Object.keys(ASSETS.models).length === 2 && res.usage.codegen.scenes === 3, `${phases} phases`);
+  check_('at most 45 sprite phases (a WIRE3D game never writes the runtime\'s wireframe RAM), one sprite, four models, three scenes', phases <= 45 && res.usage.codegen.sprites === 1 && Object.keys(ASSETS.models).length === 4 && res.usage.codegen.scenes === 3, `${phases} phases`);
   const g = ASSETS.models.gate, r = ASSETS.models.rock;
   check_('the models: gate = 8 points on the octagon round(64 cos / sin(k 45 deg)) with 8 edges; rock = the 6-point octahedron at +-40 with 12 edges; every coordinate within the quarter-square range',
     g.points.length === 8 && g.edges.length === 8 && g.points.every((p, k) => p[0] === Math.round(64 * Math.cos(k * Math.PI / 4)) && p[1] === Math.round(64 * Math.sin(k * Math.PI / 4)) && p[2] === 0)
     && r.points.length === 6 && r.edges.length === 12 && r.points.every((p) => p.reduce((s, c) => s + Math.abs(c), 0) === 40));
+  const gf = ASSETS.models.gatefar, sh = ASSETS.models.shards;
+  const cyc3 = sh.edges.length === 9 && [0, 1, 2].every((k) => [[3 * k, 3 * k + 1], [3 * k + 1, 3 * k + 2], [3 * k + 2, 3 * k]].every((e) => sh.edges.some((x) => x[0] === e[0] && x[1] === e[1])));
+  check_('gatefar = the hexagon (6 points round(64 cos / sin(k 60 deg)), 6 edges) for the next gate; shards = 3 separate triangles (9 points, 9 edges, every coordinate within the quarter-square range), the debris model',
+    gf.points.length === 6 && gf.edges.length === 6 && gf.points.every((p, k) => p[0] === Math.round(64 * Math.cos(k * Math.PI / 3)) && p[1] === Math.round(64 * Math.sin(k * Math.PI / 3)) && p[2] === 0)
+    && sh.points.length === 9 && cyc3 && sh.points.every((p) => p.every((c) => Math.abs(c) <= 64)));
 }
 if (res.errors.length) { console.log('\nFAIL: arcade-orbit (the game does not compile)'); process.exit(1); }
 
@@ -114,18 +121,21 @@ console.log('\n2. Title -> play');
 const wrap = (d) => ((d + 128) & 255) - 128;
 const heading = (dx, dz) => Math.round(Math.atan2(dx, dz) / (2 * Math.PI) * 256) & 255;     // 0 = +z, 64 = +x (the game's convention)
 const alongOf = (s, g) => fxmul(s.px - g.x, sina(g.ch)) + fxmul(s.pz - g.z, cosa(g.ch));
-function simulate(s0, gates, L, H, rocks0, gch0, speed) {
+// The laser: the pilot shoots when the model of the flight says a rock is in the cone (250..2500 along the view, within 70 + along / 16 - 20 sideways: a margin of 20 under the game's) and the cooldown is over.
+const SHOT_MIN = 250, SHOT_MAX = 2500, SHOT_SAFE = 20;
+const inCone = (s, r, minAlong = SHOT_MIN) => { const dx = r.x - s.px, dz = r.z - s.pz, es = sina(s.ea), ec = cosa(s.ea), ar = fxmul(dx, es) + fxmul(dz, ec), sd = fxmul(dx, ec) - fxmul(dz, es); return ar >= minAlong && ar <= SHOT_MAX && Math.abs(sd) < 70 + (ar >> 4) - SHOT_SAFE ? ar : -1; };
+function simulate(s0, gates, L, H, rocks0, speed, cd0, shoot = true, aimRock = -1, minAlong = SHOT_MIN) {
   const s = { px: s0.px, pz: s0.pz, ea: s0.ea, spd: s0.spd }, sticks = [];
-  let gi = 0, pal = s0.pal, clear = 9999, rocksOn = true;
+  let gi = 0, pal = s0.pal, clear = 9999, rocksOn = true, cd = cd0, shots = 0, crossAt = H;
   const rocks = rocks0.map((r) => ({ ...r }));
   for (let t = 0; t < H; t++) {
     const g = gates[gi];
-    const ax = g.x + fxmul(L, cosa(g.ch)), az = g.z - fxmul(L, sina(g.ch));
+    let ax = g.x + fxmul(L, g.cs), az = g.z - fxmul(L, g.sn);
+    if (aimRock >= 0 && rocksOn && rocks[aimRock].live) { ax = rocks[aimRock].x; az = rocks[aimRock].z; }          // line up with that rock (to shoot it), then the gate
     const d = wrap(heading(ax - s.px, az - s.pz) - s.ea);
     let st = 0;
     if (d > 1) st |= RIGHT; else if (d < -1) st |= LEFT;
     if (s.spd < speed) st |= UP; else if (s.spd > speed) st |= DOWN;
-    sticks.push(st);
     if (st & LEFT) s.ea = (s.ea - 2) & 255;
     if (st & RIGHT) s.ea = (s.ea + 2) & 255;
     if ((st & UP) && s.spd < 40) s.spd += 2;
@@ -133,28 +143,45 @@ function simulate(s0, gates, L, H, rocks0, gch0, speed) {
     s.px += fxmul(s.spd, sina(s.ea)); s.pz += fxmul(s.spd, cosa(s.ea));
     if (rocksOn) {
       for (const r of rocks) {
-        r.rt++; if (r.rt === 16) { r.rt = 0; r.rv = -r.rv; }
-        r.x += fxmul(r.rv, cosa(gch0)); r.z -= fxmul(r.rv, sina(gch0));
+        if (!r.live) continue;
+        r.rt++; if (r.rt === 16) { r.rt = 0; r.dx = -r.dx; r.dz = -r.dz; }
+        r.x += r.dx; r.z += r.dz;
         clear = Math.min(clear, Math.max(Math.abs(s.px - r.x), Math.abs(s.pz - r.z)));
       }
     }
+    if (cd > 0) cd--;
+    if (shoot && rocksOn && cd === 0) {                         // the game's PROC SHOOT: the nearest live rock in the cone
+      let bi = -1, bd = SHOT_MAX + 1;
+      rocks.forEach((r, i) => { if (!r.live) return; const ar = inCone(s, r, minAlong); if (ar >= 0 && ar < bd) { bi = i; bd = ar; } });
+      if (bi >= 0) { st |= FIRE; cd = 6; rocks[bi].live = false; shots++; }
+    }
+    sticks.push(st);
     const al = alongOf(s, g);
-    if (pal < 0 && al >= 0) { if (gi + 1 < gates.length) { gi++; pal = alongOf(s, gates[gi]); } rocksOn = false; } else pal = al;
+    if (pal < 0 && al >= 0) { if (gi + 1 < gates.length) { gi++; pal = alongOf(s, gates[gi]); } if (rocksOn) crossAt = t; rocksOn = false; } else pal = al;
   }
-  return { sticks, clear };
+  return { sticks, clear, shots, crossAt };
 }
+const stateOf = (rec) => ({ s: { px: V(rec, 'PX'), pz: V(rec, 'PZ'), ea: V(rec, 'EA'), spd: V(rec, 'SPD'), pal: V(rec, 'PAL') },
+  gates: [{ x: V(rec, 'GX'), z: V(rec, 'GZ'), ch: V(rec, 'GCH'), cs: V(rec, 'GCS'), sn: V(rec, 'GSN') }, { x: V(rec, 'NX'), z: V(rec, 'NZ'), ch: V(rec, 'NCH'), cs: V(rec, 'NCS'), sn: V(rec, 'NSN') }],
+  rocks: [0, 1].map((i) => ({ x: A(rec, 'RX')[i], z: A(rec, 'RZ')[i], dx: A(rec, 'RDX')[i], dz: A(rec, 'RDZ')[i], rt: A(rec, 'RT')[i], live: A(rec, 'RS')[i] === 0 })), cd: V(rec, 'CD') });
 function decide(rec, K) {
   if (rec.scene !== SCENE.play) return Array(K).fill(0);
-  const s = { px: V(rec, 'PX'), pz: V(rec, 'PZ'), ea: V(rec, 'EA'), spd: V(rec, 'SPD'), pal: V(rec, 'PAL') };
-  const gates = [{ x: V(rec, 'GX'), z: V(rec, 'GZ'), ch: V(rec, 'GCH') }, { x: V(rec, 'NX'), z: V(rec, 'NZ'), ch: V(rec, 'NCH') }];
-  const rocks = [0, 1].map((i) => ({ x: A(rec, 'RX')[i], z: A(rec, 'RZ')[i], rv: A(rec, 'RV')[i], rt: A(rec, 'RT')[i] }));
+  const { s, gates, rocks, cd } = stateOf(rec);
+  const pm = V(rec, 'PM'), wide = pm - 50;                      // aim points across the gate, inside the pass margin
   let best = null;
-  for (const L of [0, 60, -60, 120, -120, 170, -170]) for (const speed of [32, 40, 24]) {
-    const r = simulate(s, gates, L, 40, rocks, gates[0].ch, speed);
-    if (r.clear >= 135) return r.sticks.slice(0, K);
+  const aims = [...[0, 40, -40, 80, -80, wide, -wide].map((L) => [L, -1]), [0, 0], [0, 1]];             // a point across the gate, or one of the rocks (to line up and shoot it)
+  for (const [L, ar] of aims) for (const speed of [40, 32, 24]) {
+    const r = simulate(s, gates, L, 40, rocks, speed, cd, true, ar);
+    if (r.clear >= 135) return r.sticks.slice(0, Math.min(r.crossAt + 1, r.clear < 220 || r.shots ? Math.min(K, 12) : K));     // a rock near the plan: look again soon; the gate is crossed in this plan: look again (new rocks appear then)
     if (!best || r.clear > best.clear) best = r;
   }
-  return best.sticks.slice(0, K);
+  return best.sticks.slice(0, Math.min(K, 4, best.crossAt + 1));
+}
+/** A pilot that only flies at the middle of the gate at speed 32: no dodging, no shooting. */
+function careless(rec, K) {
+  if (rec.scene !== SCENE.play) return Array(K).fill(0);
+  const { s, gates } = stateOf(rec);
+  return simulate(s, gates, 0, K, [], 32, 0, false).sticks;
 }
 /** Re-runs the interpreter from the start with the stick values chosen so far; `decide(lastRecord)` adds the next K. Stops at `ticks` or when `stop(rec)` says so. */
 function closedLoop({ ticks, K, decide: pilot, start = START, stop = () => false, rtRng = false }) {
@@ -171,11 +198,34 @@ function closedLoop({ ticks, K, decide: pilot, start = START, stop = () => false
   return { script, res: runIn(script, script.length, false) };            // (the result is the run with the drawing)
 }
 
+// what the game's PROC DRAW draws in a tick, from that tick's record (and the one before: the laser's 3 ticks): the models (gates in front of the eye, rocks or debris more than 250 along the view) and whether the
+// beams are on; the eye's cosine and sine are the game's own variables
+const AREA = areaOf(2, 21);
+const LASER = [[0, 175, 128, 96], [255, 175, 128, 96]];
+const SIGHT = [[118, 96, 124, 96], [132, 96, 138, 96], [128, 86, 128, 92], [128, 100, 128, 106], [0, 96, 9, 96], [246, 96, 255, 96]];
+function plan(rec, prev) {
+  const v = (n) => V(rec, n), eye = { x: v('PX'), y: 0, z: v('PZ'), a: v('EA') };
+  const ahead = (x, z) => fxmul(x - eye.x, v('ES')) + fxmul(z - eye.z, v('EC'));
+  let w = v('TT') & 31; if (w > 16) w = 32 - w;
+  const wob = w * 3 - 12, models = [];
+  if (ahead(v('GX'), v('GZ')) > 0) models.push({ model: 'gate', pose: { x: v('GX'), y: 0, z: v('GZ'), yaw: v('GCH') + wob, pitch: 0, scale: 4 } });
+  if (ahead(v('NX'), v('NZ')) > 0) models.push({ model: 'gatefar', pose: { x: v('NX'), y: 0, z: v('NZ'), yaw: v('NCH') + wob, pitch: 0, scale: 4 } });
+  for (let i = 0; i < 2; i++) {
+    const x = A(rec, 'RX')[i], z = A(rec, 'RZ')[i], rs = A(rec, 'RS')[i];
+    if (ahead(x, z) <= 250) continue;
+    const pose = { x, y: A(rec, 'RY')[i], z, yaw: A(rec, 'RW')[i], pitch: A(rec, 'RP')[i], scale: 2 };
+    if (rs === 0) models.push({ model: 'rock', pose });
+    else if (rs <= 12) models.push({ model: 'shards', pose: { ...pose, scale: rs <= 4 ? 1 : rs <= 8 ? 2 : 4 } });
+  }
+  return { eye, models, laser: v('CD') === 6 || (!!prev && prev.scene === SCENE.play && V(prev, 'LZ') > 0) };
+}
+
 // ── 3. the bot ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 console.log('\n3. The bot (closed loop on the interpreter)');
 const BOT_TICKS = QUICK ? 1200 : 3000;
 const t0 = Date.now();
-const bot = closedLoop({ ticks: BOT_TICKS, K: 24, decide, stop: (rec) => rec.scene === SCENE.over });
+// (the interpreter draws RND as the runtime does, xorshift from the boot seed: this one run is also the 'bot' game of section 9, which the real cartridge repeats)
+const bot = closedLoop({ ticks: BOT_TICKS, K: 24, decide, stop: (rec) => rec.scene === SCENE.over, rtRng: true });
 const bt = bot.res.ticks;
 const lastRec = bt.at(-1);
 const playTicks = bt.filter((r) => r.scene === SCENE.play);
@@ -183,7 +233,10 @@ const gatesPassed = lastRec.vars.GATES;
 let shieldsLost = 0; for (let i = 1; i < bt.length; i++) if (bt[i].scene === SCENE.play && bt[i - 1].scene === SCENE.play && V(bt[i], 'SHD') < V(bt[i - 1], 'SHD')) shieldsLost++;
 const minFuel = Math.min(...playTicks.map((r) => V(r, 'FUEL')));
 info(`bot run: ${bt.length} ticks (${((Date.now() - t0) / 1000).toFixed(1)} s), ${gatesPassed} gates passed, score ${lastRec.vars.SCORE}, ${shieldsLost} shield(s) lost, lowest fuel ${minFuel}, last scene ${bot.res.scenes[lastRec.scene]}`);
-check_(`the bot passes at least 10 gates in a fixed-seed run (${gatesPassed} in ${bt.length} ticks)`, gatesPassed >= 10);
+const kills = bt.reduce((n, r, i) => n + (i > 0 && r.scene === SCENE.play && bt[i - 1].scene === SCENE.play ? [0, 1].filter((k) => A(r, 'RS')[k] === 1 && A(bt[i - 1], 'RS')[k] === 0).length : 0), 0);
+const shots = bt.filter((r) => r.scene === SCENE.play && V(r, 'CD') === 6).length;
+info(`the bot shot ${shots} times and blew up ${kills} rocks`);
+check_(`the bot passes at least 40 gates in a fixed-seed run (${gatesPassed} in ${bt.length} ticks) and shoots rocks (${kills} blown up with ${shots} shots)`, gatesPassed >= 40 && kills >= 5);
 check_(`the run lasts ${BOT_TICKS} ticks in the play scene (the game is not over: fuel never below ${minFuel}, ${shieldsLost} shield(s) lost of 3)`, bt.length === BOT_TICKS && lastRec.scene === SCENE.play && minFuel > 0);
 {
   // the pilot's model of the movement is the game's: the eye of the first 40 play ticks equals the model driven with the same stick values
@@ -199,59 +252,60 @@ check_(`the run lasts ${BOT_TICKS} ticks in the play scene (the game is not over
   check_('the pilot\'s model of the player (turn 2 a tick, speed 8..40 in steps of 2, px += FXMUL(spd, SINA(ea)), pz += FXMUL(spd, COSA(ea))) equals the game on the first 40 ticks of the flight', bad === '', bad);
 }
 {
-  const planned = run(bot.script, bot.script.length, {}, PLAN_AST).ticks;
+  const planned = runRT(bot.script, bot.script.length, {}, PLAN_SRC).ticks;
   const d = planned.findIndex((r, i) => JSON.stringify(r.vars) !== JSON.stringify(bt[i].vars) || JSON.stringify(r.arrays) !== JSON.stringify(bt[i].arrays) || JSON.stringify(r.sprites) !== JSON.stringify(bt[i].sprites));
   check_('the drawing changes nothing in the game: the run without EYE / DRAWMODEL / LINE (what the pilot planned with) has the same variables, arrays and sprites as the run with them on every tick', d < 0, `tick ${d + 1}`);
 }
-check_('the score is 50 + speed for every gate (58 to 90 each) and the gates count up one at a time', (() => {
-  let sc = 0, g = 0, ok = true;
-  for (const r of bt) { if (r.vars.GATES === g + 1) { const d = r.vars.SCORE - sc; if (d < 58 || d > 90) ok = false; g++; sc = r.vars.SCORE; } else if (r.vars.GATES !== g) ok = false; }
-  return ok && lastRec.vars.SCORE > 0;
-})(), `score ${lastRec.vars.SCORE} for ${gatesPassed} gates`);
+check_('the score is 50 + speed for every gate passed and 100 + speed for every rock shot, tick by tick, and the gates count up one at a time', (() => {
+  for (let i = 1; i < bt.length; i++) {
+    const r = bt[i], q = bt[i - 1];
+    if (r.scene !== SCENE.play || q.scene !== SCENE.play) continue;
+    const g = r.vars.GATES - q.vars.GATES, k = [0, 1].filter((j) => A(r, 'RS')[j] === 1 && A(q, 'RS')[j] === 0).length;
+    if (g < 0 || g > 1 || r.vars.SCORE - q.vars.SCORE !== g * (50 + V(r, 'SPD')) + k * (100 + V(r, 'SPD'))) return false;
+  }
+  return lastRec.vars.SCORE > 0;
+})(), `score ${lastRec.vars.SCORE} for ${gatesPassed} gates and ${kills} rocks`);
+check_('a laser shot needs the fire button: the cooldown register is 6 only in ticks whose stick had fire, and two shots are at least 6 ticks apart', (() => {
+  let last = -99;
+  for (let t = 20; t < bt.length; t++) { if (bt[t].scene !== SCENE.play) continue; if (V(bt[t], 'CD') === 6) { if (!(bot.script[t] & FIRE) || t - last < 6) return false; last = t; } }
+  return true;
+})());
 
+let byHandOf;
 // ── 4. the picture ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 console.log('\n4. The picture');
 {
-  const AREA = areaOf(2, 21);
-  const gateM = ASSETS.models.gate, rockM = ASSETS.models.rock;
-  const ahead = (v, x, z) => fxmul(x - v('PX'), sina(v('EA'))) + fxmul(z - v('PZ'), cosa(v('EA')));
-  /** what the game's PROC DRAW should have drawn, by hand with the reference; returns {bits, models} */
-  const byHand = (rec) => {
-    const v = (n) => V(rec, n), bm = new Uint8Array(6144);
+  /** what the game's PROC DRAW should have drawn, by hand with the reference; returns {bits, models, laser} (see `plan`) */
+  byHandOf = (rec, prev) => {
+    const bm = new Uint8Array(6144), p = plan(rec, prev);
     clearArea(bm, AREA);
-    const eye = { x: v('PX'), y: 0, z: v('PZ'), a: v('EA') };
-    let w = v('TT') & 31; if (w > 16) w = 32 - w;
-    const wob = w * 3 - 12;
-    let models = 0;
-    if (ahead(v, v('GX'), v('GZ')) > 0) { drawModel(bm, gateM, { x: v('GX'), y: 0, z: v('GZ'), yaw: v('GCH') + wob, pitch: 0, scale: 4 }, eye, AREA); models++; }
-    if (ahead(v, v('NX'), v('NZ')) > 0) { drawModel(bm, gateM, { x: v('NX'), y: 0, z: v('NZ'), yaw: v('NCH') + wob, pitch: 0, scale: 4 }, eye, AREA); models++; }
-    for (let i = 0; i < 2; i++) if (ahead(v, A(rec, 'RX')[i], A(rec, 'RZ')[i]) > 0) { drawModel(bm, rockM, { x: A(rec, 'RX')[i], y: A(rec, 'RY')[i], z: A(rec, 'RZ')[i], yaw: A(rec, 'RW')[i], pitch: A(rec, 'RP')[i], scale: 2 }, eye, AREA); models++; }
-    for (const l of [[118, 96, 124, 96], [132, 96, 138, 96], [128, 86, 128, 92], [128, 100, 128, 106], [0, 96, 9, 96], [246, 96, 255, 96]]) drawLine(bm, ...l, AREA);
-    return { bits: bm, models };
+    for (const m of p.models) drawModel(bm, ASSETS.models[m.model], m.pose, p.eye, AREA);
+    for (const l of [...(p.laser ? LASER : []), ...SIGHT]) drawLine(bm, ...l, AREA);
+    return { bits: bm, models: p.models.length, laser: p.laser };
   };
   const rec0 = run(START, 60).ticks;
   const pics = [];
-  let bad = '', maxModels = 0, withGate = 0, withRock = 0;
+  let bad = '', maxModels = 0, lasers = 0, debrisTicks = 0;
   bt.forEach((rec, i) => {
     if (rec.scene !== SCENE.play || i === 0 || bt[i - 1].scene !== SCENE.play || (i > 700 && i % 4 !== 0)) return;          // (the first play tick only ran INIT: nothing is drawn yet)
-    const h = byHand(rec);
-    maxModels = Math.max(maxModels, h.models);
+    const h = byHandOf(rec, bt[i - 1]);
+    maxModels = Math.max(maxModels, h.models); if (h.laser) lasers++; if (plan(rec, bt[i - 1]).models.some((m) => m.model === 'shards')) debrisTicks++;
     if (!bad && rec.wire.bits.some((b, k) => b !== h.bits[k])) bad = `tick ${i + 1}: the picture of the game differs from the reference's at byte ${rec.wire.bits.findIndex((b, k) => b !== h.bits[k])}`;
     pics.push(lit(rec.wire.bits));
   });
-  check_(`${pics.length} ticks of the bot run: the play area equals what the reference draws by hand from the game's variables (eye, gates and rocks in front of it, gunsight, horizon marks)`, bad === '' && pics.length > 300, bad || `${pics.length} pictures`);
-  check_(`at most 2 gates + 2 rocks are drawn per tick (${maxModels} at most; contract section 9: 4 models a tick)`, maxModels >= 3 && maxModels <= 4);
-  const lineOnly = (() => { const bm = new Uint8Array(6144); clearArea(bm, AREA); for (const l of [[118, 96, 124, 96], [132, 96, 138, 96], [128, 86, 128, 92], [128, 100, 128, 106], [0, 96, 9, 96], [246, 96, 255, 96]]) drawLine(bm, ...l, AREA); return lit(bm); })();
+  check_(`${pics.length} ticks of the bot run (${lasers} with the laser's beams): the play area equals what the reference draws by hand from the game's variables (eye, gates in front of it, rocks or debris more than 250 along the view, the beams, gunsight, horizon marks)`, bad === '' && pics.length > 300, bad || `${pics.length} pictures`);
+  check_(`at most 2 gates + 2 rocks or debris are drawn per tick (${maxModels} at most; contract section 9: 4 models a tick); the run has ${lasers} laser ticks and ${debrisTicks} ticks with debris on the screen among the pictures compared`, maxModels >= 3 && maxModels <= 4 && lasers > 10);
+  const lineOnly = (() => { const bm = new Uint8Array(6144); clearArea(bm, AREA); for (const l of SIGHT) drawLine(bm, ...l, AREA); return lit(bm); })();
   check_(`the play area has lines in it: the gunsight and the horizon marks alone are ${lineOnly} pixels, and the gates and rocks add to them (median ${[...pics].sort((a, b) => a - b)[pics.length >> 1]} lit pixels, minimum ${Math.min(...pics)})`, Math.min(...pics) >= lineOnly && [...pics].sort((a, b) => a - b)[pics.length >> 1] > lineOnly + 40);
   // the gunsight and the horizon marks are where the design says (row 96 is the middle row of the area: pixel rows 16..175)
   const f = rec0[30].wire.bits;
   const px_ = (x, y) => (f[((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (x >> 3)] >> (7 - (x & 7))) & 1;
   check_('the gunsight cross is around (128, 96) and the horizon marks at both edges of row 96', [118, 121, 124, 132, 135, 138].every((x) => px_(x, 96)) && [86, 89, 92, 100, 103, 106].every((y) => px_(128, y)) && [0, 5, 9, 246, 250, 255].every((x) => px_(x, 96)) && !px_(128, 96));
   // the HUD
-  const rec = bt.filter((r, i) => r.scene === SCENE.play && i > 300)[0];
+  const rec = bt.filter((r, i) => r.scene === SCENE.play && i > 300 && V(r, 'HUD') === 0)[0];            // (a tick in which nothing is left to print)
   const r0 = text(rec, 0), r22 = text(rec, 22), r23 = text(rec, 23);
-  check_('the HUD (rows outside the play area): SCORE and GATES in row 0, FUEL in row 22, SHIELDS and SPEED in row 23, equal to the game\'s numbers', r0.startsWith(' SCORE ' + String(rec.vars.SCORE).padStart(5, '0')) && r0.includes('GATES ' + String(rec.vars.GATES).padStart(3, '0'))
-    && r23.includes('SHIELDS ' + V(rec, 'SHD')) && r23.includes('SPEED ' + String(V(rec, 'SPD')).padStart(2)) && /FUEL\s+\d+/.test(r22), `"${r0.trim()}" / "${r22.trim()}" / "${r23.trim()}"`);
+  check_('the HUD (rows outside the play area): SCORE and GATES in row 0, LEVEL (1 + gates / 4) and the gate width in row 1, FUEL in row 22, SHIELDS and SPEED in row 23, equal to the game\'s numbers', r0.startsWith(' SCORE ' + String(rec.vars.SCORE).padStart(5, '0')) && r0.includes('GATES ' + String(rec.vars.GATES).padStart(3, '0'))
+    && text(rec, 1).includes('LEVEL ' + String(1 + (rec.vars.GATES >> 2)).padStart(2)) && text(rec, 1).includes('GATE WIDTH ' + String(V(rec, 'PM')).padStart(3)) && r23.includes('SHIELDS ' + V(rec, 'SHD')) && r23.includes('SPEED ' + String(V(rec, 'SPD')).padStart(2)) && /FUEL\s+\d+/.test(r22), `"${r0.trim()}" / "${r22.trim()}" / "${r23.trim()}"`);
   const hudBad = bt.findIndex((r, i) => r.scene === SCENE.play && i > 30 && !text(r, 0).startsWith(' SCORE ' + String(r.vars.SCORE).padStart(5, '0')));
   check_('the score in row 0 is the game\'s score on every tick of the run', hudBad < 0, `tick ${hudBad + 1}`);
 }
@@ -345,6 +399,93 @@ console.log('\n8. The shields run out');
   check_(`steering into the rocks, the third hit ends the game (over scene at tick ${o + 1}, why 2 = shields, "SHIELDS DOWN")`, o > 0 && rr[o].vars.WHY === 2 && V(rr[o], 'SHD') === 0 && V(rr[o - 1], 'SHD') === 1 && text(rr[o], 8).trim() === 'SHIELDS DOWN');
 }
 
+// ── 8a. shooting ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+console.log('\n8a. Shooting the rocks');
+/** A pilot that slows to speed 8, lines up with a live rock and fires when it is 600..2500 units ahead and in the cone (so that the debris can be seen for its whole life); it stops at the first kill. */
+const aimShoot = (rec, K) => {
+  if (rec.scene !== SCENE.play) return Array(K).fill(0);
+  const { s, gates, rocks, cd } = stateOf(rec);
+  const tgt = rocks[0].live ? 0 : 1;
+  return simulate(s, gates, 0, K, rocks, 8, cd, true, tgt, 600).sticks;
+};
+const killOf = (r, q) => [0, 1].filter((j) => A(r, 'RS')[j] === 1 && A(q, 'RS')[j] === 0);
+/** the script of the shooting run: the pilot until the first kill, then 36 ticks with no input (the debris lives 29) */
+const shootScript = (rtRng) => { const r = closedLoop({ ticks: 600, K: 2, decide: aimShoot, stop: (rec) => rec.scene === SCENE.play && A(rec, 'RS').some((x) => x > 0), rtRng }); return [...r.script, ...Array(36).fill(0)]; };
+{
+  const laserBits = (() => { const bm = new Uint8Array(6144); clearArea(bm, AREA); for (const l of LASER) drawLine(bm, ...l, AREA); return bm; })();
+  const subset = (bits) => laserBits.every((b, k) => (bits[k] & b) === b);
+  // fire without a rock in the cone: the beams for 3 ticks, the zap, no score; held fire repeats every 6 ticks
+  const miss = run([...START, ...Array(40).fill(FIRE)]).ticks;
+  check_('fire with no rock in the cone (tick 21: the fire of the title press is still down): the cooldown starts (6), the zap plays (effect 3), nothing is hit (no score, rocks unchanged), and the beams are drawn for exactly 3 ticks (21 to 23: from the two lower corners of the play area to the gunsight)',
+    V(miss[20], 'CD') === 6 && miss[20].sfx.active && miss[20].sfx.index === 3 && miss[20].vars.SCORE === 0 && A(miss[20], 'RS').every((x) => x === 0)
+    && [20, 21, 22].every((i) => plan(miss[i], miss[i - 1]).laser && subset(miss[i].wire.bits)) && !plan(miss[23], miss[22]).laser && !subset(miss[23].wire.bits));
+  const starts = []; miss.forEach((r, i) => { if (r.scene === SCENE.play && V(r, 'CD') === 6) starts.push(i + 1); });
+  check_(`fire held down shoots every 6 ticks (cooldown 6): shots in ticks ${starts.slice(0, 6).join(', ')} ...`, starts.length >= 6 && starts.every((t, i) => i === 0 || t - starts[i - 1] === 6) && starts[0] === 21);
+  const script = shootScript(false), sh = run(script).ticks;
+  const ki = sh.findIndex((r, i) => i > 0 && r.scene === SCENE.play && killOf(r, sh[i - 1]).length > 0);
+  const kr = sh[ki], j = killOf(kr, sh[ki - 1])[0];
+  info(`the shooting pilot blew up rock ${j} in tick ${ki + 1}: it was ${(() => { const a = fxmul(A(kr, 'RX')[j] - V(kr, 'PX'), V(kr, 'ES')) + fxmul(A(kr, 'RZ')[j] - V(kr, 'PZ'), V(kr, 'EC')); return a; })()} units ahead, speed ${V(kr, 'SPD')}`);
+  check_('the kill: score + 100 + speed, the boom (effect 4), the laser beams in the tick, the rock stays in place as debris (RS = 1)', ki > 0 && kr.vars.SCORE - sh[ki - 1].vars.SCORE === 100 + V(kr, 'SPD') + (kr.vars.GATES - sh[ki - 1].vars.GATES) * (50 + V(kr, 'SPD')) && kr.sfx.index === 4 && kr.sfx.active && subset(kr.wire.bits) && A(kr, 'RS')[j] === 1 && V(kr, 'CD') === 6);
+  const rsSeq = sh.slice(ki, ki + 31).map((r) => A(r, 'RS')[j]);
+  check_(`the debris counts 1, 2, 3 ... 29 over 29 ticks; in the 30th the rock is placed again (${rsSeq.slice(0, 3).join(',')} ... ${rsSeq.slice(26, 31).join(',')})`, rsSeq.slice(0, 29).every((x, i) => x === i + 1) && rsSeq[29] === 0, rsSeq.join(','));
+  const scales = { 1: 0, 2: 0, 4: 0 }; let maxRD = 0, maxM = 0, pic = '';
+  for (let i = ki; i < ki + 36; i++) {
+    const p = plan(sh[i], sh[i - 1]);
+    p.models.filter((m) => m.model === 'shards').forEach((m) => scales[m.pose.scale]++);
+    maxRD = Math.max(maxRD, p.models.filter((m) => m.model === 'rock' || m.model === 'shards').length); maxM = Math.max(maxM, p.models.length);
+    const h = byHandOf(sh[i], sh[i - 1]);
+    if (!pic && sh[i].wire.bits.some((b, k) => b !== h.bits[k])) pic = `tick ${i + 1}`;
+  }
+  check_(`the debris is the model shards, drawn with SCALE 1 for 4 ticks, 2 for 4, 4 for 4 (${scales[1]} / ${scales[2]} / ${scales[4]} draws), turning fast (yaw +19, pitch +27 a tick); never more than 2 rock-or-debris models (${maxRD}) or 4 models (${maxM}) in a tick; all 36 pictures equal the reference's`, scales[1] === 4 && scales[2] === 4 && scales[4] === 4 && maxRD <= 2 && pic === '', pic);
+  const w0 = A(sh[ki + 1], 'RW')[j], w1 = A(sh[ki + 2], 'RW')[j], p0 = A(sh[ki + 1], 'RP')[j], p1 = A(sh[ki + 2], 'RP')[j];
+  check_('the debris stays where the rock was and turns fast', (w1 - w0 + 256) % 256 === 19 && (p1 - p0 + 256) % 256 === 27 && A(sh[ki + 5], 'RX')[j] === A(kr, 'RX')[j] && A(sh[ki + 5], 'RZ')[j] === A(kr, 'RZ')[j]);
+  const nr = sh[ki + 29];
+  const aheadOf = (r, x, z) => fxmul(x - V(r, 'PX'), V(r, 'ES')) + fxmul(z - V(r, 'PZ'), V(r, 'EC'));
+  check_('29 ticks later the rock is placed again: live (RS = 0), at another place, ahead of the eye and outside the hit box', A(nr, 'RS')[j] === 0 && (A(nr, 'RX')[j] !== A(kr, 'RX')[j] || A(nr, 'RZ')[j] !== A(kr, 'RZ')[j]) && aheadOf(nr, A(nr, 'RX')[j], A(nr, 'RZ')[j]) > 0 && !(Math.abs(V(nr, 'PX') - A(nr, 'RX')[j]) < 100 && Math.abs(V(nr, 'PZ') - A(nr, 'RZ')[j]) < 100));
+  const ok2 = sh.every((r, i) => r.scene !== SCENE.play || i === 0 || sh[i - 1].scene !== SCENE.play || V(r, 'SHD') === 3);
+  check_('the shot rock did no harm: no shield lost in the run', ok2);
+}
+
+// ── 8b. the rising challenge ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+console.log('\n8b. The rising challenge');
+{
+  const pl = bt.filter((r, i) => i > 0 && r.scene === SCENE.play && bt[i - 1].scene === SCENE.play);
+  const at = (g) => pl.find((r) => r.vars.GATES === g);
+  const first = at(0), g20 = at(20), g30 = at(30);
+  check_(`the pass margin shrinks with the gates passed: ${V(first, 'PM')} at gate 0, ${V(at(10), 'PM')} at 10, ${V(g20, 'PM')} at 20 (never below 140); the gates move apart: ${V(first, 'SP')} -> ${V(at(10), 'SP')} -> ${V(g30, 'SP')} (at most 2100)`,
+    V(first, 'PM') === 220 && V(at(10), 'PM') === 180 && V(g20, 'PM') === 140 && pl.every((r) => V(r, 'PM') >= 140 && V(r, 'PM') <= 220 && V(r, 'SP') >= 1500 && V(r, 'SP') <= 2100) && V(first, 'SP') === 1500 && V(g30, 'SP') === 2100);
+  const dist = (r) => Math.round(Math.hypot(V(r, 'NX') - V(r, 'GX'), V(r, 'NZ') - V(r, 'GZ')));
+  check_(`the next gate is sp units on from the current one (${dist(first)} at gate 0, ${dist(g30)} at gate 30)`, Math.abs(dist(first) - 1500) <= 8 && Math.abs(dist(g30) - 2100) <= 8);
+  // the fuel bonus per gate: 150 - 2 per gate passed, at least 90 (the first gate gives 148), up to 1500: every gate of the bot run, the careless run and the off-centre run below follows the formula
+  const gateEvents = (rs) => { const out = []; rs.forEach((r, i) => { if (i > 0 && r.scene === SCENE.play && rs[i - 1].scene === SCENE.play && r.vars.GATES === rs[i - 1].vars.GATES + 1) out.push([r.vars.GATES, V(rs[i - 1], 'FUEL') - 1, V(r, 'FUEL')]); }); return out; };
+  const botGates = gateEvents(bt);
+  const uncapped = botGates.filter(([, , after]) => after < 1500);
+  check_(`the fuel bonus per gate falls (150 - 2 per gate passed, at least 90; fuel at most 1500): all ${botGates.length} gates of the bot run follow it, ${uncapped.length} of them below the cap (gate ${uncapped[0]?.[0]}: +${uncapped[0]?.[2] - uncapped[0]?.[1]}, gate ${uncapped.at(-1)?.[0]}: +${uncapped.at(-1)?.[2] - uncapped.at(-1)?.[1]})`, botGates.every(([g, before, after]) => after === Math.min(1500, before + Math.max(90, 150 - 2 * g))) && uncapped.length >= 3);
+  // the rocks: closer to the course line and faster. The side distance of a rock from the line eye -> gate when it is placed (a jump of its position)
+  const placed = [];
+  bt.forEach((r, i) => { if (i < 2 || r.scene !== SCENE.play || bt[i - 1].scene !== SCENE.play) return; for (let k = 0; k < 2; k++) {
+    const jump = Math.hypot(A(r, 'RX')[k] - A(bt[i - 1], 'RX')[k], A(r, 'RZ')[k] - A(bt[i - 1], 'RZ')[k]);
+    if (jump > 80 && jump < 8000 && A(r, 'RS')[k] === 0 && A(bt[i - 1], 'RS')[k] !== undefined) {
+      const ux = V(r, 'GX') - V(r, 'PX'), uz = V(r, 'GZ') - V(r, 'PZ'), len = Math.hypot(ux, uz), ex = A(r, 'RX')[k] - V(r, 'PX'), ez = A(r, 'RZ')[k] - V(r, 'PZ');
+      placed.push({ g: r.vars.GATES, lat: len > 1 ? Math.abs(ex * uz - ez * ux) / len : 0, drift: Math.hypot(A(r, 'RDX')[k], A(r, 'RDZ')[k]) });
+    } } });
+  const early = placed.filter((x) => x.g < 4 && x.lat > 0), late = placed.filter((x) => x.g >= 24);
+  const mean = (a, f) => a.reduce((t, x) => t + f(x), 0) / (a.length || 1);
+  info(`rocks placed: ${early.length} at gates 0-3 (mean side distance ${mean(early, (x) => x.lat).toFixed(0)}, drift ${mean(early, (x) => x.drift).toFixed(1)} a tick), ${late.length} at gates 24 and up (${mean(late, (x) => x.lat).toFixed(0)}, ${mean(late, (x) => x.drift).toFixed(1)})`);
+  check_('later rocks sit closer to the course line (side distance) and drift faster than the first ones', early.length >= 2 && late.length >= 8 && mean(late, (x) => x.lat) < mean(early, (x) => x.lat) - 30 && mean(late, (x) => x.drift) > mean(early, (x) => x.drift) + 1.5);
+  // the pass margin decides: a pilot that aims 180 to the side of the middle passes the first gates (margin > 180: up to gate 9) and misses later ones
+  const off = closedLoop({ ticks: 900, K: 24, decide: (rec, K) => { if (rec.scene !== SCENE.play) return Array(K).fill(0); const { s, gates } = stateOf(rec); return simulate(s, gates, 180, K, [], 32, 0, false).sticks; }, stop: (rec) => rec.scene === SCENE.over });
+  const ot = off.res.ticks; const ev = [];
+  ot.forEach((r, i) => { if (i < 1 || r.scene !== SCENE.play || ot[i - 1].scene !== SCENE.play) return; const q = ot[i - 1];
+    if (V(q, 'PAL') < 0 && V(r, 'ALONG') >= 0 && V(r, 'GX') !== V(q, 'GX')) ev.push({ g: q.vars.GATES, pm: V(q, 'PM'), side: Math.abs(V(r, 'SIDE')), passed: r.vars.GATES > q.vars.GATES }); });
+  const offGates = gateEvents(ot);
+  check_(`the margin decides a pass: of ${ev.length} gates crossed by a pilot that aims 180 off the middle, every crossing with |side| < the margin scored and every other was missed; it passed ${ev.filter((e) => e.passed).length} (gates 0..${Math.max(...ev.filter((e) => e.passed).map((e) => e.g))}) and missed ${ev.filter((e) => !e.passed).length} (the margin was down to ${Math.min(...ev.map((e) => e.pm))})`, ev.length >= 8 && ev.every((e) => e.passed === (e.side < e.pm)) && ev.some((e) => e.passed && e.side >= 140) && ev.some((e) => !e.passed && e.side < 220 && e.side >= 140));
+  // a careless pilot (flies at the middle of every gate, no dodging, no laser) dies sooner than the bot, which lasts the 3,000 ticks
+  const cl = closedLoop({ ticks: BOT_TICKS, K: 24, decide: careless, stop: (rec) => rec.scene === SCENE.over, rtRng: true });
+  const ct = cl.res.ticks, cEnd = ct.findIndex((r) => r.scene === SCENE.over);
+  check_(`a careless pilot (aims at the middle of each gate, no dodging, no laser) is dead after ${cEnd < 0 ? 'NEVER' : cEnd + 1} ticks (${ct.at(-1).vars.GATES} gates, ${cEnd < 0 ? 'still alive' : ct[cEnd].vars.WHY === 2 ? 'shields' : 'fuel'}) while the bot flew all ${bt.length}`, cEnd > 0 && cEnd + 1 < BOT_TICKS * 0.6 && lastRec.scene === SCENE.play);
+}
+
 // ── 9. the real runtime ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // The cartridge of orbit.arc (section 1's build against arcade/build/v2: the play area in the boot and the tick) booted on a stock TS2068 in TSRun, one tick at a time (arcade-m5-harness.mjs runReal), with the
 // stick values of four scripted games, against the interpreter with the runtime's own RND (xorshift from the boot seed: interpFor), so the games are the same game:
@@ -392,10 +533,7 @@ const diffFile = (got, exp) => {
 };
 const litIn = (f, y0 = PLAY_Y0, y1 = PLAY_Y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let c = 0; c < 32; c++) { let v = f[rowAddr(y) + c]; while (v) { n += v & 1; v >>= 1; } } return n; };
 /** What a tick drew: gates / rocks in front of the eye (the game's own test), for the notes on the slow ticks. */
-const modelsOf = (rec) => {
-  const v = (n) => V(rec, n), ahead = (x, z) => fxmul(x - v('PX'), sina(v('EA'))) + fxmul(z - v('PZ'), cosa(v('EA')));
-  return (ahead(v('GX'), v('GZ')) > 0 ? 1 : 0) + (ahead(v('NX'), v('NZ')) > 0 ? 1 : 0) + [0, 1].filter((i) => ahead(A(rec, 'RX')[i], A(rec, 'RZ')[i]) > 0).length;
-};
+const modelsOf = (rec) => plan(rec, null).models.length;
 
 const stats = [];                                           // per run: what section 10 and 11 need
 function realRun(name, script) {
@@ -461,7 +599,7 @@ function realRun(name, script) {
 
 console.log('\n   scripts (planned on the interpreter with the runtime\'s RND)');
 const t9 = Date.now();
-const botRT = closedLoop({ ticks: BOT_TICKS, K: 24, decide, stop: (rec) => rec.scene === SCENE.over, rtRng: true });
+const botRT = bot;                                         // (section 3's run is already the one with the runtime's RND)
 const cycleRT = (() => {
   const back = [...START, ...Array(1700).fill(0)];
   const g0 = runRT(back).ticks.findIndex((r) => r.scene === SCENE.over);
@@ -483,8 +621,10 @@ const loseRT = (() => {
   const r = closedLoop({ ticks: 900, K: 2, decide: aimAtRock, stop: (rec) => rec.scene === SCENE.over, rtRng: true });
   return [...r.script, ...Array(25).fill(0), FIRE, FIRE, ...Array(12).fill(0)];
 })();
-info(`planned in ${((Date.now() - t9) / 1000).toFixed(0)} s: bot ${botRT.script.length} ticks, cycle ${cycleRT.length}, hit ${hitRT.length}, lose ${loseRT.length}`);
-const RUNS = [['bot', botRT.script], ['cycle', cycleRT], ['hit', hitRT], ['lose', loseRT]];
+
+const shootRT = shootScript(true);
+info(`planned in ${((Date.now() - t9) / 1000).toFixed(0)} s (the bot of section 3 is reused): cycle ${cycleRT.length} ticks, hit ${hitRT.length}, lose ${loseRT.length}, shoot ${shootRT.length}`);
+const RUNS = [['bot', botRT.script], ['cycle', cycleRT], ['hit', hitRT], ['lose', loseRT], ['shoot', shootRT]];
 const out9 = RUNS.map(([n, s]) => realRun(n, s)).filter(Boolean);
 if (out9.length !== RUNS.length) { console.log('\nFAIL: arcade-orbit (a cartridge run failed)'); process.exit(1); }
 const total9 = out9.reduce((n, r) => n + r.ticks, 0);
@@ -516,7 +656,7 @@ console.log('\n10. Title -> play: the tick that switches the play area on');
 }
 
 // ── 11. the tick costs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-console.log('\n11. The tick costs on the real runtime (FRAMERATE 20)');
+console.log('\n11. The tick costs on the real runtime');
 const FRAME = 58688, DIV = res.memory[0x8004] & 0x3F, BUDGET = DIV * FRAME;
 let perf;
 {
@@ -541,12 +681,11 @@ let perf;
   info(`other ticks (scene changes, title, over, the first two): ` + Object.entries(byKind).map(([n, c]) => `${n} ${c.length} ticks, median ${c.sort((a, b) => a - b)[c.length >> 1]} worst ${Math.max(...c)}`).join('; '));
   const fits = (n) => (play.filter((x) => x.cost <= n * FRAME).length / play.length * 100).toFixed(1);
   info(`share of the ordinary play ticks within N refreshes: 3 (FRAMERATE 20, ${3 * FRAME} T) ${fits(3)} %, 4 (FRAMERATE 15, ${4 * FRAME} T) ${fits(4)} %, 5 (FRAMERATE 12) ${fits(5)} %, 6 (FRAMERATE 10) ${fits(6)} %, 7 ${fits(7)} %`);
-  // The contract's target (section 6: >= 99 % of the ticks of the recorded runs within the frame rate) is NOT met at FRAMERATE 20 (reported to the main thread, which decides about the rate or the design): the line below says so
-  // and does not fail the run; --strict makes it a check.
-  const met = DIV === 3 && BUDGET === 176064 && within >= 99;
-  if (process.argv.includes('--strict')) check_(`>= 99 % of the ordinary play ticks fit the budget of FRAMERATE 20 (${BUDGET} T): ${within.toFixed(2)} % (${over.length} of ${play.length} over; median ${q(0.5)}, 95th ${q(0.95)}, worst ${cs.at(-1)} T)`, met);
-  else info(`CONTRACT TARGET (section 6: >= 99 % of the ticks within the frame rate) ${met ? 'MET' : 'NOT MET'} at FRAMERATE 20: ${within.toFixed(2)} % within the budget (run with --strict to make it a check)`);
-  check_(`the costs were measured over ${play.length} ordinary play ticks (>= 1,000) and no tick took 12 refreshes or more (worst ${cs.at(-1)} T = ${(cs.at(-1) / FRAME).toFixed(2)} refreshes): the loop never hangs and the interrupts stay on`, DIV === 3 && play.length >= 1000 && cs.at(-1) < 12 * FRAME);
+  // The contract's target (section 6): >= 99 % of the ordinary play ticks fit the game's FRAMERATE, and FRAMERATE is the highest of 20 / 15 / 12 at which they do (so the next higher rate does not)
+  const RATE = 60 / DIV, within1 = (n) => play.filter((x) => x.cost <= n * FRAME).length / play.length * 100;
+  check_(`>= 99 % of the ordinary play ticks fit the budget of FRAMERATE ${RATE} (${DIV} refreshes = ${BUDGET} T): ${within.toFixed(2)} % (${over.length} of ${play.length} over; median ${q(0.5)}, 95th ${q(0.95)}, 99th ${q(0.99)}, worst ${cs.at(-1)} T)`, [3, 4, 5].includes(DIV) && within >= 99);
+  check_(`FRAMERATE ${RATE} is the highest rate that does: ${DIV > 3 ? `at FRAMERATE ${60 / (DIV - 1)} (${DIV - 1} refreshes) only ${within1(DIV - 1).toFixed(2)} % fit` : 'it is the highest rate the game offers'}`, DIV === 3 || within1(DIV - 1) < 99);
+  check_(`the costs were measured over ${play.length} ordinary play ticks (>= 1,000) and no tick took 12 refreshes or more (worst ${cs.at(-1)} T = ${(cs.at(-1) / FRAME).toFixed(2)} refreshes): the loop never hangs and the interrupts stay on`, play.length >= 1000 && cs.at(-1) < 12 * FRAME);
   const slow = others.filter((x) => x.cost > BUDGET);
   info(`the ${others.length} other ticks: ${slow.length} over the budget` + (slow.length ? ': ' + slow.slice(0, 12).map((x) => `${x.run} ${x.k} ${x.kind} ${x.cost} T`).join('; ') : ''));
   perf = { play, over, cs, q, rows };
@@ -584,6 +723,7 @@ if (process.argv.includes('--profile')) {
   console.log('\n13. Where the time of an ordinary play tick goes (the bot run, instruction by instruction)');
   const { readFileSync: rf } = await import('node:fs');
   const SYM_ALL = {};
+  const MODEL_OF = (np, ne) => (np === 8 && ne === 8 ? 'gate' : np === 6 && ne === 6 ? 'gatefar' : np === 6 && ne === 12 ? 'rock' : np === 9 && ne === 9 ? 'shards' : `m${np}`);       // (the model by its point and edge counts)
   for (const l of rf(join(ROOT, 'arcade/build/v2/runtime.sym'), 'utf8').split('\n')) { const mm = l.match(/^(\S+): EQU 0x([0-9A-Fa-f]+)/); if (mm) SYM_ALL[mm[1]] = parseInt(mm[2], 16); }
   const S_ = (n) => { if (SYM_ALL[n] === undefined) throw new Error('no symbol ' + n); return SYM_ALL[n]; };
   const REG = new Uint8Array(65536), NAMES = ['other'];
@@ -634,7 +774,7 @@ if (process.argv.includes('--profile')) {
           if (a === FE) inFrame = { ret: rd(sp), sp };
           else if (inFrame && a === inFrame.ret && sp === ((inFrame.sp + 2) & 0xFFFF)) inFrame = null;
           if (ctx && a === ctx.ret && sp === ((ctx.sp + 2) & 0xFFFF)) { if (ctx.call) cur.dm.push(ctx.call); ctx = null; }
-          if (a === A_DM) { const hl = (m.cpu.h << 8) | m.cpu.l, np = oRead.call(m.bus, hl); ctx = { kind: 'dm', ret: rd(sp), sp, model: np === 8 ? 'gate' : np === 6 ? 'rock' : 'm' + np, call: { model: np === 8 ? 'gate' : np === 6 ? 'rock' : 'm' + np, npts: np, nedg: oRead.call(m.bus, hl + 1), fast: 0, clip: 0, rej: 0, T: 0, b: {} } }; }
+          if (a === A_DM) { const hl = (m.cpu.h << 8) | m.cpu.l, np = oRead.call(m.bus, hl); ctx = { kind: 'dm', ret: rd(sp), sp, model: MODEL_OF(np, oRead.call(m.bus, hl + 1)), call: { model: MODEL_OF(np, oRead.call(m.bus, hl + 1)), npts: np, nedg: oRead.call(m.bus, hl + 1), fast: 0, clip: 0, rej: 0, T: 0, b: {} } }; }
           else if (a === A_LINE) ctx = { kind: 'line', ret: rd(sp), sp, call: { model: 'LINE', fast: 0, clip: 0, rej: 0, b: {} } };
           else if (a === A_DFAST && ctx) ctx.call.fast++;
           else if (a === A_DLINE && ctx) ctx.call.clip++;
@@ -678,8 +818,10 @@ if (process.argv.includes('--profile')) {
     out.push(line('total tick', (t) => t.total));
     out.push(line('1 wire_clear', (t) => sumB(t, (b) => b === 'clear')));
     out.push(line('2 DRAWMODEL gate (all)', (t) => sumB(t, (b) => b.startsWith('dm.gate.'))));
+    out.push(line('2 DRAWMODEL gatefar (all)', (t) => sumB(t, (b) => b.startsWith('dm.gatefar.'))));
     out.push(line('2 DRAWMODEL rock (all)', (t) => sumB(t, (b) => b.startsWith('dm.rock.'))));
-    for (const m_ of ['gate', 'rock']) for (const sub of ['setup', 'smul', 'matrix', 'proj-yaw', 'proj-full', 'proj-shift', 'proj-pt', 'proj-qv', 'edges', 'line-clipsetup', 'line-clipdraw', 'line-fast']) out.push(line(`    ${m_}: ${{ setup: 'entry + eye transform', smul: 'eye transform products', matrix: 'rotation matrix', 'proj-yaw': 'projection: yaw-only loop', 'proj-full': 'projection: yaw+pitch loop', 'proj-shift': 'projection: SCALE shifts', 'proj-pt': 'projection: proj_point + 1/Z', 'proj-qv': 'projection: q(v) multiplies', edges: 'edge loop', 'line-clipsetup': 'clipped lines: clip', 'line-clipdraw': 'clipped lines: draw', 'line-fast': 'fast lines: draw' }[sub]}`, (t) => sumB(t, (b) => b === `dm.${m_}.${sub}`)));
+    out.push(line('2 DRAWMODEL shards (all)', (t) => sumB(t, (b) => b.startsWith('dm.shards.'))));
+    for (const m_ of ['gate', 'gatefar', 'rock', 'shards']) for (const sub of ['setup', 'smul', 'matrix', 'proj-yaw', 'proj-full', 'proj-shift', 'proj-pt', 'proj-qv', 'edges', 'line-clipsetup', 'line-clipdraw', 'line-fast']) out.push(line(`    ${m_}: ${{ setup: 'entry + eye transform', smul: 'eye transform products', matrix: 'rotation matrix', 'proj-yaw': 'projection: yaw-only loop', 'proj-full': 'projection: yaw+pitch loop', 'proj-shift': 'projection: SCALE shifts', 'proj-pt': 'projection: proj_point + 1/Z', 'proj-qv': 'projection: q(v) multiplies', edges: 'edge loop', 'line-clipsetup': 'clipped lines: clip', 'line-clipdraw': 'clipped lines: draw', 'line-fast': 'fast lines: draw' }[sub]}`, (t) => sumB(t, (b) => b === `dm.${m_}.${sub}`)));
     out.push(line('3 RT_LINE (6 lines, all)', (t) => sumB(t, (b) => b === 'line')));
     out.push(line('4 RT_EYE', (t) => sumB(t, (b) => b === 'eye')));
     out.push(line('4 COSA / SINA / FXMUL', (t) => sumB(t, (b) => b === 'trig')));
@@ -699,7 +841,7 @@ if (process.argv.includes('--profile')) {
     const calls = [];
     ord.forEach(({ k, t }) => t.dm.forEach((c) => calls.push({ k, ...c })));
     const callsOf = (m_) => calls.filter((c) => c.model === m_ && c.npts);
-    for (const m_ of ['gate', 'rock']) {
+    for (const m_ of ['gate', 'gatefar', 'rock', 'shards']) {
       const cs = callsOf(m_);
       if (!cs.length) continue;
       const avg = (f) => (cs.reduce((s, c) => s + f(c), 0) / cs.length).toFixed(2);
@@ -710,14 +852,14 @@ if (process.argv.includes('--profile')) {
     // the 20 slowest
     const slow = [...ord].sort((a, b) => b.t.total - a.t.total).slice(0, 20);
     const ahead = (rec, x, z) => fxmul(x - V(rec, 'PX'), sina(V(rec, 'EA'))) + fxmul(z - V(rec, 'PZ'), cosa(V(rec, 'EA')));
-    console.log('        the 20 slowest ordinary play ticks: tick, total | clear, gate DM, rock DM, LINE, EYE+trig, frame game, frame rt, tick rest, isr | gate depth (half-width px), next gate depth (px), rocks in front depth | per DRAWMODEL gate/rock: fast+clipped edges');
+    console.log('        the 20 slowest ordinary play ticks: tick, total | clear, gate DM, next-gate (gatefar) DM, rock DM, shards DM, LINE, EYE+trig, frame game, frame rt, tick rest, isr | gate depth (half-width px), next gate depth (px), rocks in front depth | per DRAWMODEL gate/rock: fast+clipped edges');
     for (const { k, t, rec } of slow) {
       const g = (m_) => sumB(t, (b) => b.startsWith(`dm.${m_}.`));
       const gd = ahead(rec, V(rec, 'GX'), V(rec, 'GZ')), nd = ahead(rec, V(rec, 'NX'), V(rec, 'NZ'));
       const rd = [0, 1].map((i) => ahead(rec, A(rec, 'RX')[i], A(rec, 'RZ')[i]));
       const px = (d) => (d > 16 ? Math.round(128 * 256 / d) : '-');
       const dms = t.dm.map((c) => `${c.model}:${c.fast}+${c.clip}`).join(' ');
-      console.log(`        ${String(k).padStart(4)} ${String(t.total).padStart(7)} | ${sumB(t, (b) => b === 'clear')} ${g('gate')} ${g('rock')} ${sumB(t, (b) => b === 'line')} ${sumB(t, (b) => b === 'eye' || b === 'trig')} ${sumB(t, (b) => b === 'frame.game')} ${sumB(t, (b) => b.startsWith('frame.runtime'))} ${sumB(t, (b) => b.startsWith('tick.'))} ${sumB(t, (b) => b === 'isr')} | ${gd} (${px(gd)}), ${nd} (${px(nd)}), ${rd.join('/')} | ${dms}`);
+      console.log(`        ${String(k).padStart(4)} ${String(t.total).padStart(7)} | ${sumB(t, (b) => b === 'clear')} ${g('gate')} ${g('gatefar')} ${g('rock')} ${g('shards')} ${sumB(t, (b) => b === 'line')} ${sumB(t, (b) => b === 'eye' || b === 'trig')} ${sumB(t, (b) => b === 'frame.game')} ${sumB(t, (b) => b.startsWith('frame.runtime'))} ${sumB(t, (b) => b.startsWith('tick.'))} ${sumB(t, (b) => b === 'isr')} | ${gd} (${px(gd)}), ${nd} (${px(nd)}), ${rd.join('/')} | ${dms}`);
     }
     // correlation of the DRAWMODEL cost with the clipped lines
     const withClip = calls.filter((c) => c.model === 'gate' && c.clip > 0).length;

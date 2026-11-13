@@ -1,9 +1,9 @@
 {
  "format": 1,
  "name": "Orbit Gates (wireframe 3D)",
- "framerate": 20,
+ "framerate": 12,
  "files": {
-  "main.arc": "REM Orbit Gates: the wireframe 3D sample game (docs/ARCADE_WIREFRAME_CONTRACT.md section 9) for the v2 runtime: a first-person flight through a course of gates.\nREM Assets (the models gate and rock, the burst sprite, the title tiles, three sounds, the title song) are in orbit.assets.json, made by orbit.assets.gen.mjs.\nREM   Keyboard: Q faster, A slower, O left, P right, SPACE fire.   Joystick 1: the stick and fire.   Fire starts a game (title) and goes back to the title (game over).\nREM   Three scenes: title -> play -> over -> title.  The title and the game over are NOVIEW scenes (the whole cell screen, no 3D); play is the 3D flight (rows 2 to 21).\nREM   The player is the EYE at (px, 0, pz) with the heading ea (256 to a turn).  The gates come one after another, 1500 units apart; the heading of the course drifts by -24 to 24 per gate.\nREM   Only the current gate and the next one are drawn (and only while they are in front of the eye), plus two rocks: at most 4 models a tick.\nREM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/orbit.arc --assets arcade/examples/orbit.assets.json --runtime v2\nGAME \"Orbit Gates\"\nFRAMERATE 20\nWIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 1\n\nMODEL gate = \"gate\"\nMODEL rock = \"rock\"\nSPRITE burst = \"burst\"\nTILESET gfx = \"gfx\"\nSFX chime = \"chime\"\nSFX buzz = \"buzz\"\nSFX crash = \"crash\"\nMUSIC theme = \"theme\"\n\nREM The game's score, the gates passed, the best score and why the flight ended (1 fuel, 2 shields) belong to the whole game: the game over shows them.\nDIM score, gates, best, why\n\nSCENE title NOVIEW\n  DIM fire, rel, tw\n\n  PROC INIT():\n    PLAY theme\n    BORDER 0\n    PAPER 0 : INK 7 : BRIGHT 1 : CLS\n    CALL STARS()\n    FOR r = 0 TO 3\n      FOR c = 0 TO 3\n        TILE 14 + c, 3 + r = 3 + r * 4 + c\n      NEXT c\n    NEXT r\n    INK 6 : PRINT AT 8, 10; \"ORBIT  GATES\";\n    INK 5 : PRINT AT 10, 6; \"A WIREFRAME FLIGHT IN SPACE\";\n    INK 7 : PRINT AT 15, 11; \"BEST \"; best USING \"00000\";\n    INK 4 : PRINT AT 18, 4; \"Q FASTER  A SLOWER  O P TURN\";\n    INK 4 : PRINT AT 19, 6; \"OR JOYSTICK 1 AND FIRE\";\n    INK 3 : PRINT AT 21, 5; \"FLY THROUGH THE GATES\";\n  ENDP\n\n  REM A few stars in the corners and at the sides of the picture.\n  PROC STARS():\n    TILE 3, 2 = 1 : TILE 8, 5 = 2 : TILE 25, 3 = 1 : TILE 28, 6 = 2 : TILE 5, 12 = 2 : TILE 26, 12 = 1\n    TILE 2, 16 = 1 : TILE 29, 17 = 2 : TILE 9, 22 = 1 : TILE 22, 23 = 2 : TILE 1, 7 = 1 : TILE 30, 9 = 1\n  ENDP\n\n  REM Fire starts the game once it has been released and pressed again (it is still down when the game over sends us here).\n  PROC FRAME():\n    tw = tw + 1\n    fire = KEYDOWN(\" \") OR BIT(STICK(1), 4)\n    IF fire = 0 THEN rel = 1 ENDIF\n    IF tw MOD 20 < 12 THEN\n      INK 6 : PRINT AT 13, 11; \"PRESS  FIRE\";\n    ELSE\n      INK 0 : PRINT AT 13, 11; \"           \";\n    ENDIF\n    IF fire AND rel THEN ENTER play ENDIF\n  ENDP\nENDSCENE\n\nSCENE play\n  DIM px, pz, ea, spd, fuel, shd, tt, inv, fl, hud\n  DIM gx, gz, gch, nx, nz, nch, pal\n  DIM js, lf, rg, up, dn, dx, dz, along, side, fw, wob, w, ox, i, f, sd, ux, uz\n  DIM rx(1), rz(1), ry(1), rv(1), rw(1), rp(1), rt(1)\n\n  PROC INIT():\n    NOMUSIC\n    BORDER 0\n    PAPER 0 : INK 6 : BRIGHT 1 : CLS\n    score = 0 : gates = 0 : why = 0\n    px = 0 : pz = 0 : ea = 0 : spd = 24 : fuel = 900 : shd = 3 : inv = 0 : fl = 0\n    gx = 0 : gz = 1500 : gch = 0\n    CALL MAKENEXT()\n    CALL SETPAL()\n    CALL RESPAWNROCKS()\n    hud = 15\n    CALL SHOWHUD()\n  ENDP\n\n  REM The next gate: 1500 units on from this one, its heading drifting by -24 to 24 (this uses the game's RND once per gate).\n  PROC MAKENEXT():\n    nch = BAND(gch + RND(49) - 24, 255)\n    nx = gx + FXMUL(1500, SINA(nch))\n    nz = gz + FXMUL(1500, COSA(nch))\n  ENDP\n\n  REM pal = how far along the gate's heading the eye is (negative: in front of the gate); the pass test looks for the change from negative to not negative.\n  PROC SETPAL():\n    pal = FXMUL(px - gx, SINA(gch)) + FXMUL(pz - gz, COSA(gch))\n  ENDP\n\n  REM The gate is passed or missed: the next one becomes the current one, the rocks are placed again.\n  PROC ADVANCE():\n    gx = nx : gz = nz : gch = nch\n    CALL MAKENEXT()\n    CALL SETPAL()\n    CALL RESPAWNROCKS()\n  ENDP\n\n  REM Rock i again: on the way from the eye to the gate (35 to 78 per cent of it), 210 to 379 units to one side of the course.\n  PROC RESPAWN(k):\n    ux = gx - px : uz = gz - pz\n    f = 90 + RND(110)\n    sd = 210 + RND(170)\n    IF RND(2) = 0 THEN sd = -sd ENDIF\n    rx(k) = px + FXMUL(ux, f) + FXMUL(sd, COSA(gch))\n    rz(k) = pz + FXMUL(uz, f) - FXMUL(sd, SINA(gch))\n    ry(k) = RND(61) - 30\n    rv(k) = 3 + RND(6)\n    IF RND(2) = 0 THEN rv(k) = -rv(k) ENDIF\n    rw(k) = RND(256) : rp(k) = RND(256) : rt(k) = 0\n  ENDP\n\n  PROC RESPAWNROCKS():\n    CALL RESPAWN(0)\n    CALL RESPAWN(1)\n  ENDP\n\n  PROC FRAME():\n    js = STICK(1)\n    lf = KEYDOWN(\"O\") OR BIT(js, 2)\n    rg = KEYDOWN(\"P\") OR BIT(js, 3)\n    up = KEYDOWN(\"Q\") OR BIT(js, 0)\n    dn = KEYDOWN(\"A\") OR BIT(js, 1)\n    tt = tt + 1\n    CALL FLY()\n    CALL RECENTRE()\n    CALL TESTGATE()\n    CALL ROCKS()\n    CALL HITFX()\n    CALL SHOWHUD()\n    CALL DRAW()\n    IF shd <= 0 THEN why = 2 : CALL FINISH() ENDIF\n    IF fuel <= 0 THEN why = 1 : CALL FINISH() ENDIF\n  ENDP\n\n  REM Turn 2 a tick, speed 8 to 40 (2 a tick), move along the heading, burn fuel.\n  PROC FLY():\n    IF lf THEN ea = BAND(ea - 2, 255) ENDIF\n    IF rg THEN ea = BAND(ea + 2, 255) ENDIF\n    IF up AND spd < 40 THEN spd = spd + 2 : hud = BOR(hud, 8) ENDIF\n    IF dn AND spd > 8 THEN spd = spd - 2 : hud = BOR(hud, 8) ENDIF\n    px = px + FXMUL(spd, SINA(ea))\n    pz = pz + FXMUL(spd, COSA(ea))\n    fuel = fuel - 1\n    IF inv > 0 THEN inv = inv - 1 ENDIF\n    IF BAND(tt, 7) = 0 THEN hud = BOR(hud, 4) ENDIF\n  ENDP\n\n  REM Keep the numbers small: when the eye is more than 12000 from the origin on an axis, the origin moves to the eye (the gates and rocks move with it).\n  PROC RECENTRE():\n    IF px > 12000 OR px < -12000 THEN\n      ox = px : px = 0 : gx = gx - ox : nx = nx - ox : rx(0) = rx(0) - ox : rx(1) = rx(1) - ox\n    ENDIF\n    IF pz > 12000 OR pz < -12000 THEN\n      ox = pz : pz = 0 : gz = gz - ox : nz = nz - ox : rz(0) = rz(0) - ox : rz(1) = rz(1) - ox\n    ENDIF\n  ENDP\n\n  REM The pass test of the current gate: along (the distance along its heading, negative before it) goes from below 0 to 0 or more; it scores when the eye is within 220 of the middle\n  REM (side), else it is a miss.  A gate 600 units behind, or 9000 away, is given up.\n  PROC TESTGATE():\n    dx = px - gx : dz = pz - gz\n    IF dx > 9000 OR dx < -9000 OR dz > 9000 OR dz < -9000 THEN\n      CALL LOST()\n    ELSE\n      along = FXMUL(dx, SINA(gch)) + FXMUL(dz, COSA(gch))\n      IF pal < 0 AND along >= 0 THEN\n        side = FXMUL(dx, COSA(gch)) - FXMUL(dz, SINA(gch))\n        IF ABS(side) < 220 THEN CALL PASSED() ELSE CALL MISSED() ENDIF\n      ELSE\n        IF along > 600 THEN CALL MISSED() ELSE pal = along ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  PROC PASSED():\n    score = score + 50 + spd\n    gates = gates + 1\n    fuel = fuel + 150 : IF fuel > 1500 THEN fuel = 1500 ENDIF\n    IF gates MOD 5 = 0 AND shd < 3 THEN shd = shd + 1 ENDIF\n    PLAY chime\n    hud = 15\n    CALL ADVANCE()\n  ENDP\n\n  PROC MISSED():\n    PLAY buzz\n    CALL ADVANCE()\n  ENDP\n\n  REM Flown far off the course: the course starts again 1500 units ahead of the eye.\n  PROC LOST():\n    PLAY buzz\n    gch = ea\n    gx = px + FXMUL(1500, SINA(ea))\n    gz = pz + FXMUL(1500, COSA(ea))\n    CALL MAKENEXT()\n    CALL SETPAL()\n    CALL RESPAWNROCKS()\n  ENDP\n\n  REM The rocks drift sideways (the other way every 16 ticks) and tumble; a rock within 100 units of the eye on both ground axes is a hit.\n  PROC ROCKS():\n    FOR i = 0 TO 1\n      rt(i) = rt(i) + 1\n      IF rt(i) = 16 THEN rt(i) = 0 : rv(i) = -rv(i) ENDIF\n      rx(i) = rx(i) + FXMUL(rv(i), COSA(gch))\n      rz(i) = rz(i) - FXMUL(rv(i), SINA(gch))\n      rw(i) = BAND(rw(i) + 3 + i * 2, 255)\n      rp(i) = BAND(rp(i) + 5, 255)\n      IF inv = 0 AND ABS(px - rx(i)) < 100 AND ABS(pz - rz(i)) < 100 THEN\n        shd = shd - 1 : inv = 20 : fl = 7 : hud = BOR(hud, 2)\n        PLAY crash\n        CALL RESPAWN(i)\n      ENDIF\n    NEXT i\n  ENDP\n\n  REM The flash of a hit: a 16 x 16 sprite in the middle of the play area for 6 ticks (it is drawn over the lines).\n  PROC HITFX():\n    IF fl > 0 THEN\n      fl = fl - 1\n      IF fl = 0 THEN HIDE burst ELSE SHOW burst AT 120, 88 ENDIF\n    ENDIF\n  ENDP\n\n  REM hud: bit 0 score and gates, 1 shields, 2 fuel, 3 speed (the rows outside the play area: 0, 1 and 22, 23).\n  PROC SHOWHUD():\n    IF hud <> 0 THEN\n      INK 6\n      IF BAND(hud, 1) THEN PRINT AT 0, 1; \"SCORE \"; score USING \"00000\"; : PRINT AT 0, 19; \"GATES \"; gates USING \"000\"; ENDIF\n      IF BAND(hud, 2) THEN PRINT AT 23, 1; \"SHIELDS \"; shd; ENDIF\n      IF BAND(hud, 4) THEN PRINT AT 22, 1; \"FUEL \"; fuel USING \"####\"; ENDIF\n      IF BAND(hud, 8) THEN PRINT AT 23, 19; \"SPEED \"; spd USING \"##\"; ENDIF\n      hud = 0\n    ENDIF\n  ENDP\n\n  REM How far the point (x, z) lies in front of the eye (the heading's dot product); fw <= 0: behind it, not worth drawing.\n  PROC AHEAD(x, z):\n    fw = FXMUL(x - px, SINA(ea)) + FXMUL(z - pz, COSA(ea))\n  ENDP\n\n  REM The picture: the eye, the gates (turning a little: the wobble is a flourish, never edge-on), the rocks, the gunsight and the horizon marks.  Nothing here changes the game.\n  PROC DRAW():\n    EYE px, 0, pz, ea\n    w = BAND(tt, 31)\n    IF w > 16 THEN w = 32 - w ENDIF\n    wob = w * 3 - 12\n    CALL AHEAD(gx, gz)\n    IF fw > 0 THEN DRAWMODEL gate AT gx, 0, gz YAW gch + wob SCALE 4 ENDIF\n    CALL AHEAD(nx, nz)\n    IF fw > 0 THEN DRAWMODEL gate AT nx, 0, nz YAW nch + wob SCALE 4 ENDIF\n    FOR i = 0 TO 1\n      CALL AHEAD(rx(i), rz(i))\n      IF fw > 0 THEN DRAWMODEL rock AT rx(i), ry(i), rz(i) YAW rw(i) PITCH rp(i) SCALE 2 ENDIF\n    NEXT i\n    LINE 118, 96 TO 124, 96 : LINE 132, 96 TO 138, 96 : LINE 128, 86 TO 128, 92 : LINE 128, 100 TO 128, 106\n    LINE 0, 96 TO 9, 96 : LINE 246, 96 TO 255, 96\n  ENDP\n\n  PROC FINISH():\n    IF why = 2 THEN PLAY crash ELSE PLAY buzz ENDIF\n    ENTER over\n  ENDP\nENDSCENE\n\nSCENE over NOVIEW\n  DIM ow, rel, fire\n\n  PROC INIT():\n    NOMUSIC\n    BORDER 0\n    IF score > best THEN best = score ENDIF\n    PAPER 0 : INK 7 : BRIGHT 1 : CLS\n    INK 2 : PRINT AT 6, 11; \"GAME OVER\";\n    INK 3\n    IF why = 1 THEN PRINT AT 8, 10; \"OUT OF FUEL\"; ELSE PRINT AT 8, 9; \"SHIELDS DOWN\"; ENDIF\n    INK 6 : PRINT AT 11, 9; \"SCORE \"; score USING \"00000\";\n    INK 5 : PRINT AT 13, 9; \"BEST  \"; best USING \"00000\";\n    INK 7 : PRINT AT 15, 9; \"GATES \"; gates USING \"000\";\n    INK 4 : PRINT AT 19, 7; \"PRESS FIRE FOR THE TITLE\";\n  ENDP\n\n  REM Fire goes on once it has been released and pressed again (it is usually still down when the scene starts).\n  PROC FRAME():\n    ow = ow + 1\n    fire = KEYDOWN(\" \") OR BIT(STICK(1), 4)\n    IF fire = 0 THEN rel = 1 ENDIF\n    IF fire AND rel AND ow > 20 THEN ENTER title ENDIF\n  ENDP\nENDSCENE\n"
+  "main.arc": "REM Orbit Gates: the wireframe 3D sample game (docs/ARCADE_WIREFRAME_CONTRACT.md section 9) for the v2 runtime: a first-person flight through a course of gates, with a laser for the rocks.\nREM Assets (the models gate, gatefar, rock and shards, the burst sprite, the title tiles, five sounds, the title song) are in orbit.assets.json, made by orbit.assets.gen.mjs.\nREM   Keyboard: Q faster, A slower, O left, P right, SPACE fire (the laser).   Joystick 1: the stick and fire.   Fire starts a game (title) and goes back to the title (game over).\nREM   Three scenes: title -> play -> over -> title.  The title and the game over are NOVIEW scenes (the whole cell screen, no 3D); play is the 3D flight (rows 2 to 21).\nREM   The player is the EYE at (px, 0, pz) with the heading ea (256 to a turn).  The gates come one after another; the heading of the course drifts by -24 to 24 per gate.  The course gets harder with every\nREM   gate passed (a narrower gate to pass, gates further apart, rocks closer to the course line and faster, a smaller fuel bonus: the level on the screen is 1 + gates / 4).\nREM   Fire shoots the rock in front of the eye (a rock hit turns into debris, the model shards).  Only the current gate and the next one are drawn (and only while they are in front of the eye), plus two rocks\nREM   or debris: at most 4 models a tick.\nREM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/orbit.arc --assets arcade/examples/orbit.assets.json --runtime v2\nGAME \"Orbit Gates\"\nFRAMERATE 12\nWIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 1\n\nMODEL gate = \"gate\"\nMODEL gatefar = \"gatefar\"\nMODEL rock = \"rock\"\nMODEL shards = \"shards\"\nSPRITE burst = \"burst\"\nTILESET gfx = \"gfx\"\nSFX chime = \"chime\"\nSFX buzz = \"buzz\"\nSFX crash = \"crash\"\nSFX zap = \"zap\"\nSFX boom = \"boom\"\nMUSIC theme = \"theme\"\n\nREM The game's score, the gates passed, the best score and why the flight ended (1 fuel, 2 shields) belong to the whole game: the game over shows them.\nDIM score, gates, best, why\n\nSCENE title NOVIEW\n  DIM fire, rel, tw\n\n  PROC INIT():\n    PLAY theme\n    BORDER 0\n    PAPER 0 : INK 7 : BRIGHT 1 : CLS\n    CALL STARS()\n    FOR r = 0 TO 3\n      FOR c = 0 TO 3\n        TILE 14 + c, 3 + r = 3 + r * 4 + c\n      NEXT c\n    NEXT r\n    INK 6 : PRINT AT 8, 10; \"ORBIT  GATES\";\n    INK 5 : PRINT AT 10, 6; \"A WIREFRAME FLIGHT IN SPACE\";\n    INK 7 : PRINT AT 15, 11; \"BEST \"; best USING \"00000\";\n    INK 4 : PRINT AT 18, 4; \"Q FASTER  A SLOWER  O P TURN\";\n    INK 4 : PRINT AT 19, 3; \"SPACE (FIRE) FIRES THE LASER\";\n    INK 4 : PRINT AT 20, 9; \"OR JOYSTICK 1\";\n    INK 3 : PRINT AT 22, 1; \"FLY THE GATES, SHOOT THE ROCKS\";\n  ENDP\n\n  REM A few stars in the corners and at the sides of the picture.\n  PROC STARS():\n    TILE 3, 2 = 1 : TILE 8, 5 = 2 : TILE 25, 3 = 1 : TILE 28, 6 = 2 : TILE 5, 12 = 2 : TILE 26, 12 = 1\n    TILE 2, 16 = 1 : TILE 29, 17 = 2 : TILE 9, 22 = 1 : TILE 22, 23 = 2 : TILE 1, 7 = 1 : TILE 30, 9 = 1\n  ENDP\n\n  REM Fire starts the game once it has been released and pressed again (it is still down when the game over sends us here).\n  PROC FRAME():\n    tw = tw + 1\n    fire = KEYDOWN(\" \") OR BIT(STICK(1), 4)\n    IF fire = 0 THEN rel = 1 ENDIF\n    IF tw MOD 20 < 12 THEN\n      INK 6 : PRINT AT 13, 11; \"PRESS  FIRE\";\n    ELSE\n      INK 0 : PRINT AT 13, 11; \"           \";\n    ENDIF\n    IF fire AND rel THEN ENTER play ENDIF\n  ENDP\nENDSCENE\n\nSCENE play\n  DIM px, pz, ea, spd, fuel, shd, tt, inv, fl, hud, cd, lz, sb, pm, sp, ec, es, gcs, gsn, ncs, nsn\n  DIM gx, gz, gch, nx, nz, nch, pal\n  DIM js, lf, rg, up, dn, fire, dx, dz, along, side, fw, wob, w, ox, oz, i, f, sd, ux, uz, bi, bd, ar, sdv, lv\n  DIM rx(1), rz(1), ry(1), rdx(1), rdz(1), rw(1), rp(1), rt(1), rs(1)\n\n  PROC INIT():\n    NOMUSIC\n    BORDER 0\n    PAPER 0 : INK 6 : BRIGHT 1 : CLS\n    score = 0 : gates = 0 : why = 0\n    px = 0 : pz = 0 : ea = 0 : spd = 24 : fuel = 900 : shd = 3 : inv = 0 : fl = 0 : cd = 0 : lz = 0 : sb = 0\n    ec = COSA(0) : es = SINA(0)\n    pm = 220 : sp = 1500\n    gx = 0 : gz = 1500 : gch = 0 : gcs = ec : gsn = es\n    CALL MAKENEXT()\n    CALL SETPAL()\n    CALL RESPAWNROCKS()\n    hud = 31\n    CALL SHOWHUD()\n  ENDP\n\n  REM The next gate: sp units on from this one, its heading drifting by -24 to 24 (this uses the game's RND once per gate).  Its cosine and sine are kept: the course heading never changes.\n  PROC MAKENEXT():\n    nch = BAND(gch + RND(49) - 24, 255)\n    ncs = COSA(nch) : nsn = SINA(nch)\n    nx = gx + FXMUL(sp, nsn)\n    nz = gz + FXMUL(sp, ncs)\n  ENDP\n\n  REM pal = how far along the gate's heading the eye is (negative: in front of the gate); the pass test looks for the change from negative to not negative.\n  PROC SETPAL():\n    pal = FXMUL(px - gx, gsn) + FXMUL(pz - gz, gcs)\n  ENDP\n\n  REM The gate is passed or missed: the next one becomes the current one and the course gets harder with the gates passed: the pass margin shrinks (220 down to 140), the gates move further apart (1500 up to 2100).\n  REM The rocks that are not debris are placed again.\n  PROC ADVANCE():\n    gx = nx : gz = nz : gch = nch : gcs = ncs : gsn = nsn\n    pm = 220 - gates * 4 : IF pm < 140 THEN pm = 140 ENDIF\n    sp = 1500 + gates * 20 : IF sp > 2100 THEN sp = 2100 ENDIF\n    CALL MAKENEXT()\n    CALL SETPAL()\n    CALL RESPAWNROCKS()\n  ENDP\n\n  REM Rock k again: on the way from the eye to the gate (35 to 78 per cent of it; when the gate is nearer than about 1400 units, on the way from the gate to the next one), to one side of the course: 210 to 379 units at first, closer with every gate (down to 120 to 289), and drifting\n  REM faster (3 to 8 a tick at first, up to 12).  Its drift is worked out once, along the course's side axis.\n  PROC RESPAWN(k):\n    ox = px : oz = pz : ux = gx - px : uz = gz - pz\n    IF ABS(ux) + ABS(uz) < 2000 THEN ox = gx : oz = gz : ux = nx - gx : uz = nz - gz ENDIF\n    f = 90 + RND(110)\n    sd = 210 - gates * 3 : IF sd < 120 THEN sd = 120 ENDIF\n    sd = sd + RND(170)\n    IF RND(2) = 0 THEN sd = -sd ENDIF\n    rx(k) = ox + FXMUL(ux, f) + FXMUL(sd, gcs)\n    rz(k) = oz + FXMUL(uz, f) - FXMUL(sd, gsn)\n    ry(k) = RND(61) - 30\n    f = 3 + RND(6) + gates DIV 4 : IF f > 12 THEN f = 12 ENDIF\n    IF RND(2) = 0 THEN f = -f ENDIF\n    rdx(k) = FXMUL(f, gcs) : rdz(k) = -FXMUL(f, gsn)\n    rw(k) = RND(256) : rp(k) = RND(256) : rt(k) = 0 : rs(k) = 0\n  ENDP\n\n  REM A rock that is being blown up (rs 1 to 29) keeps its place; the others are put on the course again.\n  PROC RESPAWNROCKS():\n    IF rs(0) = 0 THEN CALL RESPAWN(0) ENDIF\n    IF rs(1) = 0 THEN CALL RESPAWN(1) ENDIF\n  ENDP\n\n  PROC FRAME():\n    js = STICK(1)\n    lf = KEYDOWN(\"O\") OR BIT(js, 2)\n    rg = KEYDOWN(\"P\") OR BIT(js, 3)\n    up = KEYDOWN(\"Q\") OR BIT(js, 0)\n    dn = KEYDOWN(\"A\") OR BIT(js, 1)\n    fire = KEYDOWN(\" \") OR BIT(js, 4)\n    tt = tt + 1\n    CALL FLY()\n    CALL RECENTRE()\n    CALL TESTGATE()\n    CALL ROCKS()\n    CALL SHOOT()\n    CALL HITFX()\n    CALL SHOWHUD()\n    CALL DRAW()\n    IF shd <= 0 THEN why = 2 : CALL FINISH() ENDIF\n    IF fuel <= 0 THEN why = 1 : CALL FINISH() ENDIF\n  ENDP\n\n  REM Turn 2 a tick, speed 8 to 40 (2 a tick), move along the heading, burn fuel.  The eye's cosine and sine are worked out once a tick and used by everything below.\n  PROC FLY():\n    IF lf THEN ea = BAND(ea - 2, 255) ENDIF\n    IF rg THEN ea = BAND(ea + 2, 255) ENDIF\n    IF up AND spd < 40 THEN spd = spd + 2 : hud = BOR(hud, 8) ENDIF\n    IF dn AND spd > 8 THEN spd = spd - 2 : hud = BOR(hud, 8) ENDIF\n    ec = COSA(ea) : es = SINA(ea)\n    px = px + FXMUL(spd, es)\n    pz = pz + FXMUL(spd, ec)\n    fuel = fuel - 1\n    IF inv > 0 THEN inv = inv - 1 ENDIF\n    IF sb > 0 THEN sb = sb - 1 ENDIF\n    IF BAND(tt, 7) = 0 THEN hud = BOR(hud, 4) ENDIF\n  ENDP\n\n  REM Keep the numbers small: when the eye is more than 12000 from the origin on an axis, the origin moves to the eye (the gates and rocks move with it).\n  PROC RECENTRE():\n    IF px > 12000 OR px < -12000 THEN\n      ox = px : px = 0 : gx = gx - ox : nx = nx - ox : rx(0) = rx(0) - ox : rx(1) = rx(1) - ox\n    ENDIF\n    IF pz > 12000 OR pz < -12000 THEN\n      ox = pz : pz = 0 : gz = gz - ox : nz = nz - ox : rz(0) = rz(0) - ox : rz(1) = rz(1) - ox\n    ENDIF\n  ENDP\n\n  REM The pass test of the current gate: along (the distance along its heading, negative before it) goes from below 0 to 0 or more; it scores when the eye is within pm of the middle\n  REM (side), else it is a miss.  A gate 600 units behind, or 9000 away, is given up.\n  PROC TESTGATE():\n    dx = px - gx : dz = pz - gz\n    IF dx > 9000 OR dx < -9000 OR dz > 9000 OR dz < -9000 THEN\n      CALL LOST()\n    ELSE\n      along = FXMUL(dx, gsn) + FXMUL(dz, gcs)\n      IF pal < 0 AND along >= 0 THEN\n        side = FXMUL(dx, gcs) - FXMUL(dz, gsn)\n        IF ABS(side) < pm THEN CALL PASSED() ELSE CALL MISSED() ENDIF\n      ELSE\n        IF along > 600 THEN CALL MISSED() ELSE pal = along ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM A sound that must not be cut off by the laser's zap: the zap keeps quiet for 12 ticks after it.\n  PROC LOUD():\n    sb = 12\n  ENDP\n\n  PROC PASSED():\n    score = score + 50 + spd\n    gates = gates + 1\n    f = 150 - gates * 2 : IF f < 90 THEN f = 90 ENDIF\n    fuel = fuel + f : IF fuel > 1500 THEN fuel = 1500 ENDIF\n    IF gates MOD 5 = 0 AND shd < 3 THEN shd = shd + 1 ENDIF\n    PLAY chime : CALL LOUD()\n    hud = BOR(hud, 17)\n    CALL ADVANCE()\n  ENDP\n\n  PROC MISSED():\n    PLAY buzz : CALL LOUD()\n    CALL ADVANCE()\n  ENDP\n\n  REM Flown far off the course: the course starts again 1500 units ahead of the eye.\n  PROC LOST():\n    PLAY buzz : CALL LOUD()\n    gch = ea : gcs = ec : gsn = es\n    gx = px + FXMUL(1500, es)\n    gz = pz + FXMUL(1500, ec)\n    CALL MAKENEXT()\n    CALL SETPAL()\n    CALL RESPAWNROCKS()\n  ENDP\n\n  REM The rocks drift sideways (the other way every 16 ticks) and tumble; a rock within 100 units of the eye on both ground axes is a hit.  A rock that is blown up (rs from 1) is debris: it spins, and after 29 ticks\n  REM a new rock is placed.\n  PROC ROCKS():\n    FOR i = 0 TO 1\n      IF rs(i) = 0 THEN\n        rt(i) = rt(i) + 1\n        IF rt(i) = 16 THEN rt(i) = 0 : rdx(i) = -rdx(i) : rdz(i) = -rdz(i) ENDIF\n        rx(i) = rx(i) + rdx(i)\n        rz(i) = rz(i) + rdz(i)\n        rw(i) = BAND(rw(i) + 3 + i * 2, 255)\n        rp(i) = BAND(rp(i) + 5, 255)\n        IF inv = 0 AND ABS(px - rx(i)) < 100 AND ABS(pz - rz(i)) < 100 THEN\n          shd = shd - 1 : inv = 20 : fl = 7 : hud = BOR(hud, 2)\n          PLAY crash : CALL LOUD()\n          CALL RESPAWN(i)\n        ENDIF\n      ELSE\n        rs(i) = rs(i) + 1\n        rw(i) = BAND(rw(i) + 19, 255)\n        rp(i) = BAND(rp(i) + 27, 255)\n        IF rs(i) >= 30 THEN CALL RESPAWN(i) ENDIF\n      ENDIF\n    NEXT i\n  ENDP\n\n  REM The laser: fire (cooldown 6 ticks) shows two beams for 3 ticks and hits the nearest rock that is in front of the eye, 250 to 2500 units along the view, within 70 + along / 16 units of\n  REM the view direction (in the eye's own axes: along = forward, sdv = sideways).\n  PROC SHOOT():\n    IF cd > 0 THEN cd = cd - 1 ENDIF\n    IF fire AND cd = 0 THEN\n      cd = 6 : lz = 3\n      IF sb = 0 THEN PLAY zap ENDIF\n      bi = -1 : bd = 2501\n      FOR i = 0 TO 1\n        IF rs(i) = 0 THEN\n          dx = rx(i) - px : dz = rz(i) - pz\n          ar = FXMUL(dx, es) + FXMUL(dz, ec)\n          IF ar >= 250 AND ar < bd THEN\n            sdv = FXMUL(dx, ec) - FXMUL(dz, es)\n            IF ABS(sdv) < 70 + ar DIV 16 THEN bi = i : bd = ar ENDIF\n          ENDIF\n        ENDIF\n      NEXT i\n      IF bi >= 0 THEN\n        rs(bi) = 1\n        score = score + 100 + spd\n        hud = BOR(hud, 1)\n        PLAY boom : CALL LOUD()\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM The flash of a hit: a 16 x 16 sprite in the middle of the play area for 6 ticks (it is drawn over the lines).\n  PROC HITFX():\n    IF fl > 0 THEN\n      fl = fl - 1\n      IF fl = 0 THEN HIDE burst ELSE SHOW burst AT 120, 88 ENDIF\n    ENDIF\n  ENDP\n\n  REM hud: the groups that need printing: bit 0 (value 1) score and gates (row 0), value 16 level and gate width (row 1), 2 shields, 4 fuel, 8 speed (rows 22 and 23).  One group a tick, the first that is set in that\n  REM order (PRINT is slow, and a tick in which a gate is passed or a rock shot would be the slowest of all).\n  PROC SHOWHUD():\n    IF hud <> 0 THEN\n      INK 6\n      IF BAND(hud, 1) THEN\n        PRINT AT 0, 1; \"SCORE \"; score USING \"00000\"; : PRINT AT 0, 19; \"GATES \"; gates USING \"000\";\n        hud = hud - 1\n      ELSE\n        IF BAND(hud, 16) THEN\n          lv = 1 + gates DIV 4\n          PRINT AT 1, 1; \"LEVEL \"; lv USING \"##\"; : PRINT AT 1, 17; \"GATE WIDTH \"; pm USING \"###\";\n          hud = hud - 16\n        ELSE\n          IF BAND(hud, 2) THEN\n            PRINT AT 23, 1; \"SHIELDS \"; shd;\n            hud = hud - 2\n          ELSE\n            IF BAND(hud, 4) THEN\n              PRINT AT 22, 1; \"FUEL \"; fuel USING \"####\";\n              hud = hud - 4\n            ELSE\n              PRINT AT 23, 19; \"SPEED \"; spd USING \"##\";\n              hud = hud - 8\n            ENDIF\n          ENDIF\n        ENDIF\n      ENDIF\n    ENDIF\n  ENDP\n\n  REM How far the point (x, z) lies in front of the eye (the heading's dot product); fw <= 0: behind it, not worth drawing.\n  PROC AHEAD(x, z):\n    fw = FXMUL(x - px, es) + FXMUL(z - pz, ec)\n  ENDP\n\n  REM The picture: the eye, the gates (the current one an octagon, the next a hexagon: it is far away and small; turning a little: the wobble is a flourish, never edge-on) while they are in front of the eye, and the two rocks, or the debris of a rock that was shot (the model shards:\n  REM it turns fast and spreads, SCALE 1, 2, 4 in steps of 4 ticks), while they are more than 250 units along the view (a nearer one is about to be hit or missed, and costs the most).  Then the laser's\n  REM beams (from the two lower corners of the play area to the gunsight, 3 ticks), the gunsight and the horizon marks.  At most 2 gates + 2 rocks or debris: 4 models a tick.  Nothing here changes the game.\n  PROC DRAW():\n    EYE px, 0, pz, ea\n    w = BAND(tt, 31)\n    IF w > 16 THEN w = 32 - w ENDIF\n    wob = w * 3 - 12\n    CALL AHEAD(gx, gz)\n    IF fw > 0 THEN DRAWMODEL gate AT gx, 0, gz YAW gch + wob SCALE 4 ENDIF\n    CALL AHEAD(nx, nz)\n    IF fw > 0 THEN DRAWMODEL gatefar AT nx, 0, nz YAW nch + wob SCALE 4 ENDIF\n    FOR i = 0 TO 1\n      CALL AHEAD(rx(i), rz(i))\n      IF fw > 250 THEN\n        IF rs(i) = 0 THEN\n          DRAWMODEL rock AT rx(i), ry(i), rz(i) YAW rw(i) PITCH rp(i) SCALE 2\n        ELSE\n          IF rs(i) <= 4 THEN\n            DRAWMODEL shards AT rx(i), ry(i), rz(i) YAW rw(i) PITCH rp(i) SCALE 1\n          ELSE\n            IF rs(i) <= 8 THEN\n              DRAWMODEL shards AT rx(i), ry(i), rz(i) YAW rw(i) PITCH rp(i) SCALE 2\n            ELSE\n              IF rs(i) <= 12 THEN DRAWMODEL shards AT rx(i), ry(i), rz(i) YAW rw(i) PITCH rp(i) SCALE 4 ENDIF\n            ENDIF\n          ENDIF\n        ENDIF\n      ENDIF\n    NEXT i\n    IF lz > 0 THEN\n      LINE 0, 175 TO 128, 96 : LINE 255, 175 TO 128, 96\n      lz = lz - 1\n    ENDIF\n    LINE 118, 96 TO 124, 96 : LINE 132, 96 TO 138, 96 : LINE 128, 86 TO 128, 92 : LINE 128, 100 TO 128, 106\n    LINE 0, 96 TO 9, 96 : LINE 246, 96 TO 255, 96\n  ENDP\n\n  PROC FINISH():\n    IF why = 2 THEN PLAY crash ELSE PLAY buzz ENDIF\n    ENTER over\n  ENDP\nENDSCENE\n\nSCENE over NOVIEW\n  DIM ow, rel, fire\n\n  PROC INIT():\n    NOMUSIC\n    BORDER 0\n    IF score > best THEN best = score ENDIF\n    PAPER 0 : INK 7 : BRIGHT 1 : CLS\n    INK 2 : PRINT AT 6, 11; \"GAME OVER\";\n    INK 3\n    IF why = 1 THEN PRINT AT 8, 10; \"OUT OF FUEL\"; ELSE PRINT AT 8, 9; \"SHIELDS DOWN\"; ENDIF\n    INK 6 : PRINT AT 11, 9; \"SCORE \"; score USING \"00000\";\n    INK 5 : PRINT AT 13, 9; \"BEST  \"; best USING \"00000\";\n    INK 7 : PRINT AT 15, 9; \"GATES \"; gates USING \"000\";\n    INK 4 : PRINT AT 19, 7; \"PRESS FIRE FOR THE TITLE\";\n  ENDP\n\n  REM Fire goes on once it has been released and pressed again (it is usually still down when the scene starts).\n  PROC FRAME():\n    ow = ow + 1\n    fire = KEYDOWN(\" \") OR BIT(STICK(1), 4)\n    IF fire = 0 THEN rel = 1 ENDIF\n    IF fire AND rel AND ow > 20 THEN ENTER title ENDIF\n  ENDP\nENDSCENE\n"
  },
  "assets": {
   "sprites": {
@@ -1331,6 +1331,170 @@
       "vol": 10,
       "noise": 0,
       "mix": 6
+     }
+    ]
+   },
+   "zap": {
+    "ticks": [
+     {
+      "tone": 60,
+      "vol": 14,
+      "noise": 6,
+      "mix": 4
+     },
+     {
+      "tone": 110,
+      "vol": 13,
+      "noise": 6,
+      "mix": 4
+     },
+     {
+      "tone": 160,
+      "vol": 12,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 210,
+      "vol": 11,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 260,
+      "vol": 10,
+      "noise": 0,
+      "mix": 6
+     },
+     {
+      "tone": 310,
+      "vol": 9,
+      "noise": 0,
+      "mix": 6
+     }
+    ]
+   },
+   "boom": {
+    "ticks": [
+     {
+      "tone": 300,
+      "vol": 15,
+      "noise": 3,
+      "mix": 4
+     },
+     {
+      "tone": 325,
+      "vol": 15,
+      "noise": 4,
+      "mix": 4
+     },
+     {
+      "tone": 350,
+      "vol": 14,
+      "noise": 5,
+      "mix": 4
+     },
+     {
+      "tone": 375,
+      "vol": 13,
+      "noise": 6,
+      "mix": 4
+     },
+     {
+      "tone": 400,
+      "vol": 12,
+      "noise": 7,
+      "mix": 4
+     },
+     {
+      "tone": 425,
+      "vol": 12,
+      "noise": 8,
+      "mix": 4
+     },
+     {
+      "tone": 450,
+      "vol": 11,
+      "noise": 9,
+      "mix": 4
+     },
+     {
+      "tone": 475,
+      "vol": 10,
+      "noise": 10,
+      "mix": 4
+     },
+     {
+      "tone": 500,
+      "vol": 9,
+      "noise": 11,
+      "mix": 5
+     },
+     {
+      "tone": 525,
+      "vol": 9,
+      "noise": 12,
+      "mix": 5
+     },
+     {
+      "tone": 550,
+      "vol": 8,
+      "noise": 13,
+      "mix": 5
+     },
+     {
+      "tone": 575,
+      "vol": 7,
+      "noise": 14,
+      "mix": 5
+     },
+     {
+      "tone": 600,
+      "vol": 6,
+      "noise": 15,
+      "mix": 5
+     },
+     {
+      "tone": 625,
+      "vol": 6,
+      "noise": 16,
+      "mix": 5
+     },
+     {
+      "tone": 650,
+      "vol": 5,
+      "noise": 17,
+      "mix": 5
+     },
+     {
+      "tone": 675,
+      "vol": 4,
+      "noise": 18,
+      "mix": 5
+     },
+     {
+      "tone": 700,
+      "vol": 3,
+      "noise": 19,
+      "mix": 5
+     },
+     {
+      "tone": 725,
+      "vol": 3,
+      "noise": 20,
+      "mix": 5
+     },
+     {
+      "tone": 750,
+      "vol": 2,
+      "noise": 21,
+      "mix": 5
+     },
+     {
+      "tone": 775,
+      "vol": 1,
+      "noise": 22,
+      "mix": 5
      }
     ]
    },
@@ -10761,6 +10925,66 @@
      ]
     ]
    },
+   "gatefar": {
+    "points": [
+     [
+      64,
+      0,
+      0
+     ],
+     [
+      32,
+      55,
+      0
+     ],
+     [
+      -32,
+      55,
+      0
+     ],
+     [
+      -64,
+      0,
+      0
+     ],
+     [
+      -32,
+      -55,
+      0
+     ],
+     [
+      32,
+      -55,
+      0
+     ]
+    ],
+    "edges": [
+     [
+      0,
+      1
+     ],
+     [
+      1,
+      2
+     ],
+     [
+      2,
+      3
+     ],
+     [
+      3,
+      4
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      0
+     ]
+    ]
+   },
    "rock": {
     "points": [
      [
@@ -10842,6 +11066,93 @@
      [
       3,
       5
+     ]
+    ]
+   },
+   "shards": {
+    "points": [
+     [
+      40,
+      22,
+      28
+     ],
+     [
+      22,
+      40,
+      34
+     ],
+     [
+      22,
+      22,
+      16
+     ],
+     [
+      -28,
+      -16,
+      22
+     ],
+     [
+      -22,
+      -34,
+      40
+     ],
+     [
+      -40,
+      -34,
+      22
+     ],
+     [
+      -34,
+      28,
+      -16
+     ],
+     [
+      -16,
+      34,
+      -34
+     ],
+     [
+      -34,
+      16,
+      -34
+     ]
+    ],
+    "edges": [
+     [
+      0,
+      1
+     ],
+     [
+      1,
+      2
+     ],
+     [
+      2,
+      0
+     ],
+     [
+      3,
+      4
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      3
+     ],
+     [
+      6,
+      7
+     ],
+     [
+      7,
+      8
+     ],
+     [
+      8,
+      6
      ]
     ]
    }

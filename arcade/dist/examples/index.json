@@ -44,7 +44,7 @@
  {
   "id": "orbit",
   "title": "Orbit Gates (wireframe 3D)",
-  "about": "A first-person flight through a course of wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE): steer through the gates, dodge the tumbling rocks, watch the fuel and the shields; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space starts. Needs the v2 runtime with the wireframe mode.",
+  "about": "A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.",
   "file": "orbit.leapgame"
  }
 ]

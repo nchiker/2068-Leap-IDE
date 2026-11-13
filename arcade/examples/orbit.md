@@ -1,45 +1,52 @@
 # Orbit Gates (`orbit.arc`)
 
-The sample game of the wireframe 3D mode (`WIRE3D`, `docs/ARCADE_WIREFRAME_CONTRACT.md` section 9): a first-person flight through a course of gates, for the **v2 runtime** (with the wireframe mode), `FRAMERATE 20`.
+The sample game of the wireframe 3D mode (`WIRE3D`, `docs/ARCADE_WIREFRAME_CONTRACT.md` section 9): a first-person flight through a course of gates with a laser for the rocks, for the **v2 runtime**, `FRAMERATE 12` (the highest of 20 / 15 / 12 at which at least 99 % of the play ticks fit; measured on TSRun with the real runtime, see below).
 
 ## Play
 
-Fly through the gates (a flat octagon, radius 256 units, turning a little as you come). A gate passed within 220 units of its middle scores 50 plus your speed, adds 150 fuel, and every 5th gate gives a shield back (at most 3). A gate flown past
-at the edge or 600 units behind is missed (a buzz, no score). Tumbling rocks drift sideways beside the course: a rock within 100 units of you costs a shield (a crash, a burst in the middle of the screen, 20 ticks of protection). The flight
-ends when the fuel (starts at 900, one a tick) or the shields run out. Fire starts a game and takes you back to the title from the game over (release it first).
+Fly through the gates (an octagon, radius 256 units, turning a little as you come) and shoot the rocks.
 
-Keys: **O** left, **P** right, **Q** faster, **A** slower (speed 8 to 40), **Space** fire. Joystick 1: the stick and fire.
+* **Gate**: passing within the pass margin of its middle scores 50 plus your speed, adds fuel and, every 5th gate, gives a shield back (at most 3). A gate flown past at the edge, or 600 units behind, is missed (a buzz, no score).
+* **Rocks** tumble and drift sideways beside the course. A rock within 100 units of you costs a shield (a crash, a burst in the middle of the screen, 20 ticks of protection).
+* **Laser** (fire): two beams from the lower corners of the screen to the gunsight for 3 ticks, then 3 ticks of cooldown (hold fire for a shot every 6 ticks), with a zap. It hits the **nearest rock in front of you**, 250 to 2500 units along the view and within 70 + (distance / 16) units of the line of sight. A rock shot scores 100 plus your speed, booms and **breaks into debris** (the model `shards`: three fragments that turn fast and spread, SCALE 1, 2, 4 over 12 ticks); a new rock is placed 17 ticks after the debris is gone.
+* **The course gets harder with every gate passed** (the level on the screen is 1 + gates / 4): the pass margin shrinks from 220 to 140 units ("GATE WIDTH" in the HUD), the gates move apart from 1500 to 2100 units, the rocks sit closer to the course line (from 210..379 units to the side down to 120..289) and drift faster (3..8 up to 12 units a tick), and the fuel bonus per gate falls from 148 to 90.
+* The flight ends when the fuel (starts at 900, one a tick) or the shields run out. Fire starts a game and takes you back to the title from the game over (release it first).
+
+Keys: **O** left, **P** right, **Q** faster, **A** slower (speed 8 to 40), **Space** fire (the laser). Joystick 1: the stick and fire.
 
 ## Scenes
 
 * **`title`** (`NOVIEW`): the ring logo in tiles, the name, the best score, the controls, the title song (`MUSIC theme`, original, written with `songs.mjs`).
-* **`play`**: the 3D flight (`WIRE3D ROWS 2 TO 21`: pixel rows 16 to 175, the horizon at row 96). The HUD is the four rows outside the play area (score, gates, fuel, shields, speed).
+* **`play`**: the 3D flight (`WIRE3D ROWS 2 TO 21`: pixel rows 16 to 175, the horizon at row 96). The HUD is the four rows outside the play area (score and gates, level and gate width, fuel, shields and speed); one group is printed a tick.
 * **`over`** (`NOVIEW`): the score, the best score, the gates passed, why it ended.
 
 ## How it uses the mode
 
-* `EYE px, 0, pz, ea` is the player; `COSA` / `SINA` / `FXMUL` move it along its heading (`px += FXMUL(spd, SINA(ea))`) and test a gate pass (`along`, `side`, in the gate's own heading).
-* `DRAWMODEL gate AT .. YAW ch + wobble SCALE 4` for the current and the next gate, `DRAWMODEL rock AT .. YAW .. PITCH .. SCALE 2` for two rocks: **at most 4 models a tick**, and only those in front of the eye.
-* `LINE` draws the gunsight and the horizon marks. The `burst` sprite (16 x 16, one phase) is `SHOW`n over the lines for 6 ticks after a hit.
+* `EYE px, 0, pz, ea` is the player. `COSA` / `SINA` / `FXMUL` move it along its heading and test a gate pass (`along`, `side`, in the gate's own heading). The eye's cosine and sine are worked out once a tick, a gate's once when it is placed.
+* `DRAWMODEL gate` (the octagon) for the current gate and `gatefar` (a hexagon, 6 points: the gate after it is far and a few pixels wide, and a point costs about 5,500 T) for the next, `DRAWMODEL rock ... YAW .. PITCH .. SCALE 2` or `shards` (debris) for each of two rocks: **at most 4 models a tick**, only those in front of the eye, and rocks and debris only when more than 250 units along the view (a nearer one is about to be hit or missed, and near models cost the most).
+* `LINE` draws the laser's beams, the gunsight and the horizon marks. The `burst` sprite (16 x 16, one phase) is `SHOW`n over the lines for 6 ticks after a hit on the ship.
 * The origin is moved (the eye, the gates and the rocks together) when the eye is more than 12000 units out on an axis; a gate more than 9000 units away is given up and the course starts again ahead of the eye.
 * The models are written as code in `orbit.assets.gen.mjs` (no model editor yet), as the songs are.
+
+## Measured (TSRun, the real v2 runtime; `tests/arcade-orbit.mjs`, section 11)
+
+Over the 4,585 ordinary play ticks of the five recorded games (the bot of section 3 with the laser, a no-input cycle, a rock hit, the shields run out, a rock shot): median 195,360 T, 95th percentile 263,305, 99th 287,695, worst 340,848. Within 3 refreshes (FRAMERATE 20, 176,064 T) 35.7 % of the ticks, within 4 (FRAMERATE 15, 234,752 T) 78.7 %, within 5 (FRAMERATE 12, 293,440 T) **99.4 %**. `arcade/examples/orbit.perf.json` holds every tick's cost.
 
 ## Files
 
 | File | What |
 |---|---|
 | `orbit.arc` | the game |
-| `orbit.assets.gen.mjs` | the models, the sprite, the tiles, three sounds and the song; writes `orbit.assets.json` (`--check` compares without writing) |
+| `orbit.assets.gen.mjs` | the models (gate, gatefar, rock, shards), the sprite, the tiles, five sounds and the song; writes `orbit.assets.json` (`--check` compares without writing) |
 | `orbit.assets.json` | generated, committed |
-| `tests/arcade-orbit.mjs` | the game on the reference interpreter: a bot that reads the game's variables flies 3,000 ticks and passes 60 gates; the no-input, rock-hit and fly-away runs; the pictures against the reference. The runtime part is a TODO in the file |
+| `orbit.perf.json` | generated by `node tests/arcade-orbit.mjs --record`: the tick costs of the recorded games |
+| `tests/arcade-orbit.mjs` | the game on the reference interpreter (a bot that reads the game's variables, steers, dodges and shoots, and flies 3,000 ticks; the shooting, challenge, no-input, rock-hit and fly-away runs; the pictures against the reference) and on the real runtime (differential, costs, interrupts, sound; `--profile` for where the time goes) |
 
 ## Build
 
 ```
 node arcade/tools/arcadec.mjs arcade/examples/orbit.arc --assets arcade/examples/orbit.assets.json --runtime v2
 ```
-
-Needs a v2 runtime build with the wireframe mode (`RT_WIREMODE`, slice W2).
 
 ## Names the language forced
 
