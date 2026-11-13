@@ -53,6 +53,7 @@ to pick it up.
   batch 4, fixed) and a harness race in tests/arcade-m4.mjs. **Sample game:** Leap Runner's in-game song `rn_run` (787 bytes; owner: "sounds
   good"). A fresh code review (C6): 8 fixes, 3 points declined with reasons. Cross-emulator (TSRun / ZEsarUX / Fuse): all five games match (Starfall's and Breakout's xemu scripts updated). **Next:** wireframe game, then a review / completion of the Studio, then
   one more showcase game (`docs/ARCADE_NEXT_SESSION_PROMPT.md`).
+* **Studio review and completion, item 5 (2026-11-12/13, branch `arcade-studio-review`).** Review: 45 findings in the owner's doc "Leap Arcade Studio review (item 5)" (https://claude.ai/artifact/UWBj3tv5v7PPd1bTAjn6Ky). Root cause of "no colours": `studio.js` passes the palette as hex strings, the sprite / tile / map editors expect `[r, g, b]` (since S1a). Contract `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` (stages 0-5, sample games per stage, decisions in section 8 awaiting approval). Validation baseline: run-all --jobs 4 = 14 min 40 s; tests spend most emulator time on the ROM boot per case, screen drawing and the silent AY. No code changed yet.
 * **Wireframe 3D in runtime v2, W1-W6 (2026-11-12, branch `arcade-wire` from `main` `f82442d`; owner chose it before the Studio review).**
   Contract, decisions for review (section 10) and as-built notes (7a, 7b, 9a) `docs/ARCADE_WIREFRAME_CONTRACT.md`. Language: `WIRE3D ROWS r0 TO r1
   [INK] [PAPER] [BRIGHT]`, `MODEL n = "asset"` (assets.models: points |c| <= 64, edges), `EYE x, y, z, a`, `DRAWMODEL m AT x, y, z [YAW] [PITCH]
