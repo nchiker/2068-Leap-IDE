@@ -90,7 +90,7 @@ height) drives the erase from where the instance was drawn in that file.
 **Memory map (layout.inc).** Chunk 6: `ROW_TAB` `$C000`, `PHASE_PTR` `$C180`, `POOL_A` `$C200-$CDFF`, `CELL_TILE` `$CE00`, `CELL_ATTR` `$D100`, `DIRTY0` `$D400`,
 `SPR_TAB` `$D460` (16 x 6), `AST` `$D4C0`, `DIRTY1` `$D500`, `SPR_DRAWN` `$D560` (2 x 16 x 4), free `$D5E0-$D5FF`, `TILE_ATTR` `$D600`, `POOL_C` `$D680-$D7FF`,
 `GLYPH_TAB` `$D800-$DFFF`. Chunk 7: variables `$E000-$E0FF` (new: `V_KEYS`, `V_CHG`, `V_KIND`, `SK_RECT`, scratch; free `$E0F8-$E0FF`), `GAME_VARS` `$E100-$EFFF`
-unchanged, `POOL_B` `$F000-$FA7F`, free `$FA80-$FAFF`, canary `$FB00`, **stack `$FB02-$FEFF` (1,022 bytes; compiled code may use 1,012 of them, the frame
+unchanged, `POOL_B` `$F000-$FA7F` (in a `WIRE3D` game its slots 45..59, `$F4E0-$FA7F`, are never handed out: `W_REC` `$F500-$F9FF` and `W_VARS` `$FA00-$FA7F` are the wireframe's, see "As built: wireframe 3D"), `T3` `$FA80-$FAFF` (`RT_ARGS` and the tile operations' RAM, see below; the wireframe leaves it alone), canary `$FB00`, **stack `$FB02-$FEFF` (1,022 bytes; compiled code may use 1,012 of them, the frame
 interrupt needs 10 more at any moment: tested with an effect playing)**, hand-off `$FF00+`. Boot scratch (96 bytes) is `$FC00`, inside the stack area. Nothing
 is written during play outside the display file, cell map, dirty maps, `SPR_TAB`, `SPR_DRAWN`, variables, `GAME_VARS` and the stack (a test tracks every write
 of a worst-case game with all free areas poisoned). The build asserts the 8-bit address arithmetic the code uses; `m4-runtime-mem.mjs` proves the 21 regions disjoint.
@@ -240,3 +240,60 @@ Tests: `arcade/tests/m11-runtime-bank.mjs` (RT_LOADMAPPTR from the window = the 
 The song player is in `sound.asm` of v2, v3 and v4 alike: `RT_MUSIC` (HL = the song's address; 0 is ignored) and `RT_NOMUSIC`; songs play from
 the frame interrupt, a one-channel effect borrows channel C while a song plays and a three-channel effect pauses it. State at `$FF00-$FF2A`. Costs,
 bytes, the register discipline and the tests: `docs/ARCADE_MUSIC_CONTRACT.md` section 5a; the games that use it: section 8a.
+
+## As built: wireframe 3D (2026-11-12)
+
+Contract `docs/ARCADE_WIREFRAME_CONTRACT.md` (sections 2 and 3, as-built notes 7a and 7b, which override the earlier sections where they differ); language `docs/ARCADE_LANGUAGE.md`;
+models `docs/ARCADE_ASSETS.md`. The reference implementation is `src/lang/arcade/arcade-wire.js`: every picture and attribute of the runtime equals it, bit for bit.
+Files: `arcade/runtime/v2/wire.asm` (kernels and entries, included last, so no earlier address moved by it), `wiretick.asm` (the tick, after `wire.asm`), `wiremode.asm` (`RT_WIREMODE`, `wire_boot`, `ORG $0068`),
+`layout.inc` (the `W_*` section at its end), `main.asm`, `boot.asm`. Only the v2 runtime has it; v3 and v4 refuse `WIRE3D`.
+
+**Header.** Bit 6 of `frame_div` is `DIV_WIRE` (`$40`), valid only together with `DIV_EXT` (bit 7, as v3 and v4's `DIV_WIN` / `DIV_VIEW`): the header is then 20 bytes (`GAME_HEADER_WIRE_LEN`) and `GAME_WIREDESC` (`$8012`) is `DW wire_desc`,
+which points into the code area at `DB r0, DB r1, DB attr, DB 0` (character rows r0..r1, the play area's attribute). The boot (`wire_boot`, called after `video_init`, so after the map table) reads it: a `DIV_WIRE` descriptor that is null, has
+r1 > 23 or fewer than 4 rows (r1 < r0 + 3) is read as no play area and nothing is written (`V_WIRE` stays 0). The divisor is `frame_div AND $BF` (when `DIV_EXT` is set) then `AND $7F`. The model images are in the code area too.
+In a game without `DIV_WIRE` nothing of the wireframe runs.
+
+**Entries** (this build: `RT_DRAWMODEL` `$27E4` (the old `RT_END`), `RT_SINA` `$3802`, `RT_COSA` `$3807`, `RT_FXMUL` `$3845`, `RT_EYE` `$3A36`, `RT_LINE` `$3B43`, `RT_WIREMODE` `$0068`; take them from `runtime.json`).
+Every entry may clobber AF, BC, DE, HL, IX, IY and the alternate set (`RT_WIREMODE`: AF, BC, DE, HL only), and keeps interrupts on. The compiler's code uses none of IX, IY, `EXX`, `EX AF,AF'`; a later change that does must make these entries save them.
+The argument words are in `RT_ARGS` (`$FAC0`, little-endian, signed): `RA_W0` +0, `RA_W1` +2, `RA_W2` +4, `RA_W3` +6, `RA_W4` +8.
+* `RT_EYE`: `RA_W0..RA_W3` = x, y, z, heading (taken AND 255). Stores the eye (`W_EYEX..W_EYEA`). The compiled `ENTER` resets it with zero stores and `CALL RT_EYE`; `RT_WIREMODE` does not.
+* `RT_DRAWMODEL`: HL = the model's image (`DB npts, DB nedges`, points, edges), A = log2 SCALE (0..3), `RA_W0..RA_W4` = x, y, z, yaw, pitch (AND 255). Draws at once, ORed into the hidden file, inside the play area. Does nothing when the play area is off.
+  An object with |x - ex|, |y - ey| or |z - ez| above 16,000, or whose camera-space |Tx|, |Ty| or |Tz| is above 16,000, is not drawn; an edge with an end whose camera z is below 16 (near) or whose projection is beyond 16,000 is not drawn.
+* `RT_LINE`: `RA_W0..RA_W3` = x0, y0, x1, y1 (signed, y from the top). Exact clip to the play area, ORed into the hidden file. Does nothing when the play area is off, or when a coordinate is outside -16384..16383.
+* `RT_WIREMODE`: A = 0 off, anything else on. Nothing at all when the game has no play area (`V_WIRE` bit 1 clear: the `W_*` RAM is phase slots there) or is in that mode already. On: `V_WIRE` bit 0, `W_ON` = 1, `W_ATTR` into the play-area cells of both
+  attribute files; nothing else (the next tick clears). Off: `V_WIRE` bit 0 and `W_ON` clear, every play-area cell marked dirty in both files' maps (the cell map appears in the next two ticks). The compiled `ENTER` and the start call it with A = 0 / 1 only in a game with a `NOVIEW` scene.
+* `RT_COSA`, `RT_SINA`: HL = angle (AND 255) -> HL = (C[a] + 8) >> 4, the values of v4 (`QTAB`, 8.8 fixed point, -256..256). `RT_FXMUL`: HL, DE -> HL = floor(HL x DE / 256) from the exact 32-bit product, wrapped to 16 bits: v4's register contract.
+* Internal: `wire_setup` (B = r0, C = r1, A = attribute: clip rectangle x 0..255, y 8 r0..8 r1 + 7; projection centre row c = 4 (r0 + r1 + 1); the clear's rows; `W_ATTR`; `W_ON` = 1; the eye 0, 0, 0, 0; no pixel or attribute written), `wire_eye0`, `wire_clear`.
+
+**RAM.** The wireframe lives at the top of `POOL_B`: the boot hands out phase slots in order (slot n = the n-th phase of the assets in order), so a game with at most **45 phases in all** never writes `$F4E0-$FA7F`. **The linker refuses a `WIRE3D` game whose
+sprite assets have more than 45 phases** ("sprite art too large for a WIRE3D game: N phases, at most 45; use fewer phases"); `layout.inc` asserts that slots 32..44 end below `W_REC`. In a game without `WIRE3D` this RAM is phase slots: no `W_*` value may be trusted there
+(`W_ON` included) unless `wire_setup` ran; `wire_clear` does nothing while `W_ON` = 0.
+* `W_REC` `$F500-$F9FF` (`W_REC_LEN` `$0500`): five 256-byte pages, per projected point i (i < 128) at offset i: `W_SXL`, `W_SXH` (screen x), `W_SYL`, `W_SYH` (screen y), `W_FLG` (0 inside the clip rectangle; bits 0..3 = outcode, `$80` near, `$40` too far).
+* `W_VARS` `$FA00-$FA7F` (128 bytes at most; `W_VARS_END` is asserted below `T3`): the line (`W_LX0..W_LY1`), the clip rectangle (`W_CXMIN..W_CYMAX`), `W_HIDHI` (high byte of the file drawn into, `$40` + `V_HOFF`, set by every entry), `W_ON`, `W_ATTR`, `W_K` (log2 SCALE),
+  `W_CENY`, the line state left by the clip, the clear's rows and saved SP, the eye (`W_EYEX..W_EYEA`, `W_G1..W_G3`), the 3 x 5-byte matrix `W_MAT` (int8, 1.0 = 64, then the row's camera offset), the model being drawn, scratch. `$FA80` up (`T3`: `RT_ARGS`, the tile operations) is untouched.
+* `V_WIRE` `$E061` (a formerly unused byte of the variables page; `V_FREE2` and `T2` stay free, because the memory tests poison them): 0 = the game has no play area (nothing ever writes it again), 2 = it has one and it is off, 3 = on (`WIRE_HAS` 2, `WIRE_ON` 1). It is the only byte every game's tick reads for the wireframe.
+
+**The tick.** `main.asm` tests `V_WIRE` after `V_HOFF` is set (`WORK_START`): 0 continues as before, anything else jumps to `wire_tick` (`wiretick.asm`), which comes back to `SKIP_CALL` or `TICK_DRAW`.
+1. With the area on, `wire_clear` first: the play-area rows of the hidden file (`$40 + V_HOFF`) are cleared to paper with the PUSH clear, **interrupts off inside it and on again at its end** (whatever they were before). It starts within about 100 T of the
+   interrupt the tick started after (`TICK_LOOP` leaves that soon after a frame interrupt in every case), so the span ends before the next interrupt.
+2. `frame_entry` (the game's `FRAME`): `RT_DRAWMODEL` and `RT_LINE` draw at once. `ENTER` may switch the mode; the wire tail follows the mode **after** `FRAME`. Switching on inside `FRAME` leaves that tick's play rows uncleared (contract 2.6: the next tick clears).
+3. Mode off: the tick of every other game (`SKIP_CALL`). Mode on: `wire_unchanged` (an instance whose rows meet the play area gets `V_CHG` = 1, so the skip analysis never takes it for unchanged; `draw_all` pays it back, so `V_CHG` is 0 again at the end),
+   `skip_analysis`, `wire_erase` instead of `erase_all` (the dirty bits of the play rows are dropped: nothing but `wire_clear`, `RT_DRAWMODEL`, `RT_LINE` and the sprite blits writes a play-area pixel row, and nothing writes its attributes), then `TICK_DRAW`
+   (`redraw_dirty`, `draw_all`, the flip request). Sprites are drawn over the lines, masked as always. Outside the play area the tick is the same as in every other game. The play-row skips are in `wiretick.asm` (`wire_tick`, `wire_unchanged`, `wire_erase`, `wire_dirty_rect`).
+4. Text and tiles: `PRINT`, `TILE`, `FILL`, `LOADMAP` keep updating the cell map in the play rows, which are not shown while the area is on; switching it off marks every play cell dirty.
+
+`wire_tick` is `$3BA6`, `wire_boot` `$00CB` (this build). Moving `main.asm`'s code moved 23 labels by +7 bytes (from `SKIP_CALL`, `api.asm`, `text.asm` up to its `ALIGN` gap): the hash baselines were regenerated with
+`node arcade/tools/regen-baselines.mjs --old 9ba622d`, and the programs that do not use `WIRE3D` behave the same. The frame interrupt (`isr.asm`) saves only AF (`SND_TICK`: BC, DE, HL) and never touches IX, IY or the alternate registers: the wireframe code uses them with
+interrupts on, so **that must stay so** (m17 checks it with the real handler).
+
+**Bytes.** `RT_END` `$27E4` -> `$3C63`: the whole addition is 5,383 bytes (5,247 after `M_WIRE_S`), **925 bytes free** in the runtime's chunks 0-1 (`build-runtime-v2.mjs`; it was 6,172 before; W1 alone left 1,114). The tables are constant and in the cartridge: `QSL` / `QSH` 512,
+`SIN8` 256 (a 65-entry quarter table), `RCPT` 128. No self-modifying code. `RT_WIREMODE` and `wire_boot` sit in the free gap `$0068-$00F0` before the cold start (so they cost nothing of that bound).
+
+**Measured** (TSRun, exact T-states; `arcade/tests/m17-runtime-wire.mjs`, `m17-runtime-tick.mjs`):
+* `draw_fast`, a 40-pixel 45-degree line: 4,222 T; `RT_LINE` adds 298 T to that. A 12-point ship with yaw and pitch: matrix plus projection at most 47,419 T; the whole `DRAWMODEL` 71,927 T on average with its 18 edges; the per-`DRAWMODEL` overhead at most 2,761 T.
+* The clear: 20 rows 30,544 T, 24 rows 36,107 T, interrupts off throughout. In the tick: it starts at most 1,660 T after the interrupt (rows 0..23, three-channel effect busy); interrupts are off at most 36,107 T and on again 37,826 T after the interrupt.
+  `RT_WIREMODE`, rows 2..21: on 27,406 T, off 3,723 T. No interrupt was lost in 1,200 refreshes of 1,200 (m17-runtime-tick); 60 scenes with the real handler (636 interrupts) left registers and pictures unchanged.
+* Cost to a game without the play area: +27 T per tick (the `V_WIRE` test).
+* Equality with the reference: 2,000 random scenes (4,089 `DRAWMODEL`s, 150 models up to 128 points / 255 edges, 2,032 `LINE`s), 2,000 random `LINE`s, `COSA` / `SINA` for every angle, 10,324 `FXMUL` pairs against v4, the matrix for all 65,536 yaw / pitch
+  pairs: 73 checks, 0 mismatches (m17-runtime-wire); 26 checks and two negative controls (m17-runtime-tick); the v2 tick suites m4 / m5 are unchanged.
+* Deviations from the contract text: the eye transform uses three products where the contract writes four, with equal results (the reference keeps the four); `SIN8` is stored as a quarter table.
