@@ -273,7 +273,7 @@ console.log('\n3. word tables');
 // =================================================================================================================
 console.log('\n4. requiredRuntime');
 {
-  const expectExample = { bounce: 2, 'bounce-static': 2, breakout: 2, shooter: 2, blockfall: 2, platformer: 3, runner: 3, vaults: 4 };
+  const expectExample = { bounce: 2, 'bounce-static': 2, breakout: 2, shooter: 2, blockfall: 2, platformer: 3, runner: 3, vaults: 4, orbit: 2 };
   const dir = join(ROOT, 'arcade/examples');
   const names = readdirSync(dir).filter((f) => f.endsWith('.arc')).map((f) => f.slice(0, -4)).sort();
   eq('the examples are the ones this test knows', names, Object.keys(expectExample).sort());
@@ -435,9 +435,10 @@ console.log('\n5. code generator and linker');
       check_('no NOVIEW scene: no RT_WIREMODE call, with scenes or without', r3.errors.length === 0 && !a3.includes(MODE) && !norm(build(wprog('    DRAWMODEL gate AT 0, 0, 100\n'), { runtime: mock })).includes(MODE));
       check_('... but ENTER still resets the eye', a3.includes(`call ${sym.RT_EYE};ret`));
       check_('a program without ENTER or scenes has no eye reset code at all (the boot starts the eye at 0)', !norm(build(wprog('    DRAWMODEL gate AT 0, 0, 100\n'), { runtime: mock })).includes(`call ${sym.RT_EYE};`));
-      // the real runtime of this tree has no RT_WIREMODE yet: a NOVIEW scene fails cleanly, naming it
-      const rr = build(p1);
-      check_('a NOVIEW scene on a runtime without RT_WIREMODE: a clean error naming RT_WIREMODE, at the SCENE line', rr.dck === null && (sym.RT_WIREMODE !== undefined || rr.errors.some((x) => x.message.includes('needs RT_WIREMODE, which this runtime does not provide') && x.line === 1 + p1.slice(0, p1.indexOf('SCENE title')).split('\n').length - 1)), texts(rr));
+      // a runtime without RT_WIREMODE (one built before slice W2): a NOVIEW scene fails cleanly, naming it
+      const noMode = JSON.parse(JSON.stringify(rt)); delete noMode.symbols.RT_WIREMODE;
+      const rr = build(p1, { runtime: noMode });
+      check_('a NOVIEW scene on a runtime without RT_WIREMODE: a clean error naming RT_WIREMODE, at the SCENE line', rr.dck === null && (rr.errors.some((x) => x.message.includes('needs RT_WIREMODE, which this runtime does not provide') && x.line === 1 + p1.slice(0, p1.indexOf('SCENE title')).split('\n').length - 1)), texts(rr));
     }
 
     console.log('  -- asset errors, missing runtime parts');

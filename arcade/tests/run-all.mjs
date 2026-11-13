@@ -114,6 +114,7 @@ const suites = [
   'arcade/tests/m14-runtime-mode.mjs',
   'arcade/tests/m15-runtime-music.mjs',
   'arcade/tests/m17-runtime-wire.mjs',
+  'arcade/tests/m17-runtime-tick.mjs',
   ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m15c-mutations.mjs', 'arcade/tests/m16c-mutations.mjs'] : []),
 ];
 

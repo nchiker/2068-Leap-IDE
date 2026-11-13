@@ -216,6 +216,29 @@ Figures (TSRun, exact): `draw_fast` 40 px 45° 4,222 T; 12-point ship yaw + pitc
 `wire_clear` does nothing while `W_ON` = 0, and `W_ON` is meaningful only after `wire_setup` (the RAM is phase slots in a game
 without `WIRE3D`): W2 must call neither in such a game; SIN8 is stored as a 65-entry quarter table.
 
+### 7b. W2, W3a, W3b, W4, W5 as built (2026-11-12; agents, verified by the main thread)
+* **W2 tick integration** (Opus): `wiremode.asm` (`RT_WIREMODE`, `wire_boot`) in the free gap `$0068-$00F0` before the cold start (so
+  the size bound holds), `wiretick.asm` (`wire_tick`, `wire_unchanged`, `wire_erase`, `wire_dirty_rect`) after `wire.asm`; `main.asm`
+  tests `V_WIRE` (`$E061`, a free byte of the variables page; `V_FREE2` / `T2` are poisoned by the memory tests) and jumps to
+  `wire_tick`, which comes back to `SKIP_CALL` / `TICK_DRAW`. `RT_END` `$3C63`: **925 bytes free**; the whole addition 5,383 bytes
+  (5,247 after `M_WIRE_S`). 23 labels moved by +7 (main.asm from `SKIP_CALL`, api.asm, text.asm up to its ALIGN gap): hash baselines
+  regenerated (`regen-baselines.mjs --old 9ba622d`). Measured: +27 T per tick for a game without the play area; the clear starts at
+  most 1,660 T after the interrupt (rows 0..23 with a busy three-channel effect), interrupts off at most 36,107 T, on again 37,826 T
+  after the interrupt; `RT_WIREMODE` rows 2..21 on 27,406 T / off 3,723 T; no interrupt lost (1,200 of 1,200 refreshes). The boot
+  rejects an invalid descriptor (null, r1 > 23, fewer than 4 rows) as "no play area"; frame_div is `AND $BF` then `AND $7F` with
+  DIV_EXT. Switching on inside `FRAME` leaves that tick's play rows uncleared (section 2.6: "the next tick clears"); the interpreter
+  models it (`fresh`). `RT_WIREMODE` does not reset the eye (the compiled `ENTER` does: zero stores + `CALL RT_EYE`).
+  Tests: `arcade/tests/m17-runtime-tick.mjs` (26 checks, two negative controls); the v2 tick suites m4 / m5 unchanged.
+* **W3a front end** (Sonnet): words, parser, checker, `requiredRuntime`; extra warning "MODEL never used"; the play-area text warning
+  only in a scene's own PROCs (not game-level ones, which a `NOVIEW` scene may call).
+* **W3b code generation and interpreter** (Sonnet): `DRAWMODEL` evaluates x, y, z, yaw, pitch in that order whatever the clause order
+  (an absent clause is 0); model data and `wire_desc` are data in the code area, like songs. Byte identity: 68 builds of the 8
+  examples and 4 fixtures against `82b1cab`, identical. The Studio shows model errors once (the compiler reports them).
+* **W4 Studio** (Sonnet): models kept, validated, a 28 px turning preview per model; "+" makes a cube (no editor).
+* **W5 Orbit Gates** (Sonnet, the design of section 9): `arcade/examples/orbit.arc` (6,538 code bytes, 1 sprite phase), additions to the
+  design: shield recharge every 5 gates (at most 3), a gate further than 9,000 or 600 behind is given up (16-bit safety), models drawn
+  only in front of the eye, 20 ticks of protection after a hit, the sprite is `burst` (`flash` is a reserved word).
+
 ## 8. Tests (beyond the slices' files)
 * Reference vs runtime: >= 2,000 random scenes (random eye, models, poses, scales, lines across and outside the play area,
   near / far points), every pixel of both files and the attributes, and RAM outside `W_REC`, `W_VARS`, the stack equal.

@@ -125,6 +125,12 @@ V_KIND          EQU VARS+$3E    ; 16 bytes, per instance: the skip analysis' cla
 V_END           EQU VARS+$5E    ; byte: draw_all: 4 * ninst
 V_RBASE         EQU VARS+$5F    ; byte: draw_all: the low byte of the hidden file's SPR_DRAWN records
 V_ANYSKIP       EQU VARS+$60    ; byte: 1 when the skip analysis marked an instance this tick
+V_WIRE          EQU VARS+$61    ; byte: wireframe 3D (wiretick.asm): 0 = the game has no WIRE3D play area (the boot found no DIV_WIRE header or no valid
+                                ;   descriptor; nothing ever writes it again), 2 = it has one and it is off (a NOVIEW scene), 3 = on.  Zeroed by the boot with
+                                ;   the variables; the only byte every game's tick reads for the wireframe (one test, 27 T).  (In the formerly unused
+                                ;   $E061-$E06F: V_FREE2 and T2_FREE stay free, the memory tests poison them.)
+WIRE_HAS        EQU 2           ; V_WIRE bits: 1 = the game has a play area, 0 = it is on (bit 0: RRA tests it)
+WIRE_ON         EQU 1
 AY_SHADOW       EQU VARS+$00    ; 16 bytes, PAGE ALIGNED ($E000: the delta tick addresses it as D = $E0, E = register; it and the 16 bytes of V_FRAMES..RT_SEED swapped places): what the sound code last wrote to AY registers 0..15 (boot zeroes the AY and this)
 V_SFX_CH        EQU VARS+$80    ; byte: channels of the playing effect, set by RT_PLAY from byte 3 of its first record (3 = three channels, 4 / 5 = a channel-C stream (5 with noise), else 1; boot 0 = 1)
 ; Scratch of the cell renderer, the text routines and RT_HIT (all in chunk 7; none is used by the ISR)
@@ -292,6 +298,12 @@ TO_VARS         EQU RT_ARGS+12  ; $FACC.. scratch of the tile operations (tileop
 ; are never handed out and $F500-$FA7F is the wireframe's.  In a game without WIRE3D this RAM is phase slots: nothing here may be
 ; trusted there (W_ON included) unless wire_setup ran.
 ; ---------------------------------------------------------------------------------------------------------------
+; Header (slice W2, wiretick.asm): bit 6 of frame_div = DIV_WIRE, only together with DIV_EXT: the header is then 20 bytes and $8012 is DW wire_desc,
+; pointing at DB r0, DB r1, DB attr, DB 0 (the play area: character rows r0..r1, 0 <= r0, r0 + 3 <= r1 <= 23; the attribute of its cells).  The boot
+; reads it after the map table (an invalid descriptor, or a null pointer, is read as no play area: V_WIRE = 0), and frame_div AND $3F is then the divisor.
+DIV_WIRE        EQU $40
+GAME_WIREDESC   EQU GAME_BASE+18
+GAME_HEADER_WIRE_LEN EQU 20
 W_REC           EQU $F500       ; five 256-byte pages: per projected point i (i < 128) at offset i:
 W_SXL           EQU W_REC       ;   screen x, low byte
 W_SXH           EQU W_REC+$100  ;   screen x, high byte

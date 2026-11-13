@@ -546,6 +546,7 @@ console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked comp
     let n = 0, same = 0, built = 0, bad = '', nd = 0, sameD = 0, smaller = 0, badD = '';
     const eqb = (x, y) => (!x && !y) || (!!x && !!y && sameBytes(x, y));
     for (const p of progs) for (const [tn, R] of targets) {
+      if (/^\s*WIRE3D\b/im.test(p.text)) continue;      // a wireframe game (docs/ARCADE_WIREFRAME_CONTRACT.md): the previous compiler cannot build it
       if ((R.rt.version === 2 || R.rt.version === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(p.text)) continue;      // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10) changed COSA / SINA / FXMUL on v2 (allowed by the checker) and v3 (new message) on purpose
       const o = oldCompile(p.text, { runtime: R.rt, image: R.img, assets: p.assets }), w = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets, ...CODEGEN_OFF }), wd = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets });
       n++;

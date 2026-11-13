@@ -453,4 +453,5 @@ MASK_TAB:
     DW ((1<<(n+1))-1)<<k
     EDUP
     EDUP
+    ASSERT (MASK_TAB&$FF)+96 <= 256     ; sk_dirty and wire_dirty_rect (wiretick.asm) index it with an 8-bit add
 M_SKIP_E:

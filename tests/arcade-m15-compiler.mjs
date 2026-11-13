@@ -309,6 +309,7 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
       }
       for (const v of [2, 3, 4]) {
         if (!RT[v]) continue;
+        if (/^\s*WIRE3D\b/im.test(text)) continue;      // a wireframe game (docs/ARCADE_WIREFRAME_CONTRACT.md): the previous compiler cannot build it
         if ((v === 2 || v === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(text)) continue;      // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10) changed COSA / SINA / FXMUL on v2 (allowed by the checker) and v3 (new message) on purpose
         const a = oldCompile(text, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets, ...CODEGEN_OFF }), d = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets });
         if (a.errors.length || b.errors.length) { if (a.errors.length !== b.errors.length) bad += `${p.src} v${v}: errors ${a.errors.length} vs ${b.errors.length}; `; continue; }
