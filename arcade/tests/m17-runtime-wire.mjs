@@ -17,6 +17,11 @@
 //     at every interrupt every register (IX, IY and the alternates included) is the same after the handler as before it, and the picture equals
 //     the run without interrupts.  wire_clear: no interrupt accepted inside it, interrupts on after it, at most 37,000 T with interrupts off.
 //  6. The section 6 kernel figures (exact T-states, printed against the targets).
+//  W6 additions (the mutation tests of m17-mutations.mjs found these gaps): the projection records (flags, sx, sy) of every DRAWMODEL against
+//  the reference; w_proj_point on its own (near / too-far / outcode boundaries found with the reference, every RCPT entry); W_VARS poisoned before
+//  wire_setup (it may rely on no stale byte); the eye transform read back directly (Tx, Ty, Tz) against eyeTransform: all 256 headings at |d| = 16,000
+//  in every sign combination and 20,000 random eyes / positions; |d| > 16,000 with |T| in range (headings 32, 96, 160, 224); Zc 15 / 16 / 17; a model with no
+//  edges; the eye reset of wire_setup.
 //   node arcade/tests/m17-runtime-wire.mjs        (M17_QUICK=1: fewer scenes)
 import { buildDck, chunksFromImage } from '../tools/mkdck.mjs';
 import { buildRuntime } from '../tools/build-runtime-v2.mjs';
@@ -216,11 +221,30 @@ function randomLine(R, area) {
 
 /** Fill both display files and attribute files with random bytes (a stray write shows). */
 function poison(R) { for (let a = 0x4000; a < 0x8000; a++) m.ram[a] = R.int(0, 255); m.ram[RET] = 0x76; }
+const RS = rng(31337);
 function setup(area, hoff, attr = 0x45) {
   m.ram[S.V_HOFF] = hoff;
+  for (let a = K.W_VARS; a < K.W_VARS + K.W_VARS_LEN; a++) m.ram[a] = RS.int(0, 255);   // wire_setup must not rely on a stale byte
   call(S.wire_setup, { bc: (area.r0 << 8) | area.r1, a: attr });
 }
 function setEye(eye) { setArgs(eye.x, eye.y, eye.z, eye.a); call(S.RT_EYE); }
+/** The projection records of the last DRAWMODEL against the reference: the flag of every point; sx, sy of the points with an outcode (0..15). */
+function recCheck(model, pose, eye, area) {
+  const T = W.eyeTransform(eye, pose.x, pose.y, pose.z);
+  if (!T) return null;
+  const k = W.SCALES.indexOf(pose.scale ?? 1);
+  const M = W.buildMatrix(((pose.yaw ?? 0) - eye.a) & 255, (pose.pitch ?? 0) & 255);
+  const recs = W.projectPoints(model.points, M, T, k, area);
+  for (let i = 0; i < recs.length; i++) {
+    const flag = m.ram[K.W_REC + 0x400 + i];
+    if (flag !== recs[i].flag) return `record ${i}: flag ${hex(flag, 2)}, want ${hex(recs[i].flag, 2)}`;
+    if (!(flag & 0xC0)) {
+      const sx = ((m.ram[K.W_REC + 0x100 + i] << 24) >> 16) | m.ram[K.W_REC + i], sy = ((m.ram[K.W_REC + 0x300 + i] << 24) >> 16) | m.ram[K.W_REC + 0x200 + i];
+      if (sx !== recs[i].sx || sy !== recs[i].sy) return `record ${i}: (${sx}, ${sy}), want (${recs[i].sx}, ${recs[i].sy})`;
+    }
+  }
+  return null;
+}
 /** One DRAWMODEL with the reference, compared. */
 function drawModelCheck(model, pose, eye, area, hoff, what, opts = {}) {
   const k = W.SCALES.indexOf(pose.scale);
@@ -231,7 +255,7 @@ function drawModelCheck(model, pose, eye, area, hoff, what, opts = {}) {
   const want = files(before);
   const n = W.drawModel(want[hoff ? 1 : 0], model, pose, eye, area);
   const r = call(S.RT_DRAWMODEL, { hl: at, a: k, exact: !!opts.exact, marks: opts.marks });
-  const bad = compare(before, want, what);
+  const bad = compare(before, want, what) ?? (opts.noRec ? null : ((x) => (x ? `${what}: ${x}` : null))(recCheck(model, pose, eye, area)));
   if (bad) fail(bad);
   return { n, r, bad };
 }
@@ -320,6 +344,7 @@ function guard(name, model, pose, eye, expect, area = AREA) {
   return r;
 }
 const E0 = { x: 0, y: 0, z: 0, a: 0 };
+const HLIMIT = 1000, VLIMIT = 3150, HCLIP = 9000, VCLIP = 17500;   // (bounds of 4e: clean 700 / 2,837 / 6,527 / 15,466 T; the sloped loops would take about 1,400 / 3,600 / 14,000 / 19,000)
 guard('|dx| = 16,000 is drawn', cube, { x: 16000, y: 0, z: 1000 }, { x: 0, y: 0, z: 0, a: 64 }, (n) => n > 0);
 guard('|dx| = 16,001 is not drawn', cube, { x: 16001, y: 0, z: 1000 }, { x: 0, y: 0, z: 0, a: 64 }, (n) => n === 0);
 guard('dx = -16,001 is not drawn', cube, { x: -16001, y: 0, z: 1000 }, { x: 0, y: 0, z: 0, a: 192 }, (n) => n === 0);
@@ -418,6 +443,208 @@ for (const [yaw, pitch] of [[0, 0], [32, 32], [96, 160], [17, 203]]) {
     if (!cpu.iff1) { bad++; first ||= 'interrupts off after wire_clear'; }
   }
   check('wire_clear clears exactly rows r0..r1 of the hidden file (9 areas x 2 files), interrupts on after it', bad === 0, first);
+}
+
+// ---- 4b. more guards (W6) ---------------------------------------------------------------------------------------------------------------------
+console.log('\n--- 4b. guards found by the mutation test ---');
+{
+  // |d| > 16,000 on x or z with T in range: heading 32 turns d by 45 degrees (|T| = 11,3xx): only the d test rejects them
+  let drawn16000 = 0, cases16000 = 0;
+  for (const a of [32, 96, 160, 224]) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const eye = { x: 0, y: 0, z: 0, a };
+    const Tz = (v) => Math.floor((v * 16000 * W.sina(a) * (dx !== 0 ? 1 : 0) + v * 16000 * W.cosa(a) * (dz !== 0 ? 1 : 0)) / 256);
+    for (const mag of [16001, 16000]) {
+      const pose = { x: dx * mag, y: 0, z: dz * mag };
+      const tz = Math.floor((pose.x * W.sina(a) + pose.z * W.cosa(a)) / 256);
+      if (tz < 100) continue;                                    // behind the eye: nothing to see either way
+      if (mag === 16001) guard(`|d| = 16,001 (dx ${pose.x}, dz ${pose.z}) at heading ${a} (|T| = ${tz}) is not drawn`, cube, pose, eye, (n) => n === 0);
+      else {
+        const r = guard(`|d| = 16,000 (dx ${pose.x}, dz ${pose.z}) at heading ${a} is as the reference`, cube, pose, eye, () => true);
+        cases16000++; if (r.n > 0) drawn16000++;
+      }
+    }
+    void Tz;
+  }
+  check(`  (|d| = 16,000 at 45 degrees is drawn in ${drawn16000} of ${cases16000} cases)`, drawn16000 >= 4, `${drawn16000}`);
+  // the near limit: two points on the x axis at Zc = 15 / 16 / 17
+  const bar = { points: [[-10, 0, 0], [10, 0, 0]], edges: [[0, 1]] };
+  guard('Zc = 15 is near: the edge is not drawn', bar, { x: 0, y: 0, z: 15 }, E0, (n) => n === 0);
+  guard('Zc = 16 is not near: the edge is drawn', bar, { x: 0, y: 0, z: 16 }, E0, (n) => n > 0);
+  guard('Zc = 17 is drawn', bar, { x: 0, y: 0, z: 17 }, E0, (n) => n > 0);
+  guard('Zc = 0 and Zc < 0 are near', bar, { x: 0, y: 0, z: -3 }, E0, (n) => n === 0);
+  guard('a model with no edge draws nothing (the runtime does not loop 256 times)', { points: [[0, 0, 0], [5, 5, 5]], edges: [] }, { x: 0, y: 0, z: 200 }, E0, (n) => n === 0);
+  // wire_setup resets the eye to 0, 0, 0, 0 (setup() fills W_VARS with random bytes first); no RT_EYE here
+  restore(); poison(rng(4242)); setup(AREA, 0x20);
+  const before = mismatches;
+  const r1 = drawModelCheck(cube, { x: 30, y: 10, z: 300, yaw: 12, pitch: 33, scale: 2 }, W.EYE0, AREA, 0x20, 'default eye');
+  const r2 = drawModelCheck(cube, { x: -60, y: -5, z: 200, yaw: 99, pitch: 0, scale: 1 }, W.EYE0, AREA, 0x20, 'default eye 2');
+  check('wire_setup resets the eye to 0, 0, 0, 0 (heading and the three multipliers included): DRAWMODEL without RT_EYE equals the reference', mismatches === before && r1.n > 0 && r2.n > 0, `${r1.n} / ${r2.n} pixels`);
+}
+
+// ---- 4c. w_proj_point on its own ------------------------------------------------------------------------------------------------------------
+console.log('\n--- 4c. w_proj_point (projection P2) against the reference: the thresholds, every RCPT entry, random ---');
+{
+  restore(); poison(rng(9)); setup(AREA, 0x20);
+  const M0 = W.buildMatrix(0, 0);                              // identity: the point (0, 0, 0) lands at T
+  const ref = (X, Y, Z) => W.projectPoints([[0, 0, 0]], M0, [X, Y, Z], 0, AREA)[0];
+  let calls = 0, bad = 0, first = '';
+  const one = (X, Y, Z) => {
+    wr16(S.W_PCX, X); wr16(S.W_PCY, Y); m.ram[S.W_PIDX] = 0;
+    call(S.w_proj_point, { hl: Z & 0xFFFF });                         // HL = Zc, W_PCX / W_PCY = Xc, Yc
+    calls++;
+    const r = ref(X, Y, Z), flag = m.ram[K.W_REC + 0x400];
+    let msg = '';
+    if (flag !== r.flag) msg = `flag ${hex(flag, 2)}, want ${hex(r.flag, 2)}`;
+    else if (!(flag & 0xC0)) {
+      const sx = ((m.ram[K.W_REC + 0x100] << 24) >> 16) | m.ram[K.W_REC], sy = ((m.ram[K.W_REC + 0x300] << 24) >> 16) | m.ram[K.W_REC + 0x200];
+      if (sx !== r.sx || sy !== r.sy) msg = `(${sx}, ${sy}), want (${r.sx}, ${r.sy})`;
+    }   // (a near / too-far point's position bytes are not defined: the faster projector stores sx before it finds y too far)
+    if (msg) { bad++; first ||= `(X ${X}, Y ${Y}, Z ${Z}): ${msg}`; }
+  };
+  // thresholds found with the reference: the smallest |X| (or |Y|) where a flag appears, tested one below, at and one above, both signs
+  const search = (Z, axis, pred, hi = 20000) => {
+    const at = (v) => (axis === 0 ? ref(v, 0, Z) : ref(0, v, Z));
+    let lo = 0;
+    if (pred(at(0))) return null;
+    if (!pred(at(hi))) return null;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pred(at(mid))) hi = mid; else lo = mid; }
+    return hi;
+  };
+  const ZS = [15, 16, 17, 18, 20, 24, 31, 32, 33, 63, 64, 100, 127, 128, 129, 143, 144, 200, 254, 255, 256, 257, 300, 511, 512, 513, 767, 768, 769, 1000, 1023, 1024, 1025, 1279, 1280, 2047, 2048, 4000, 4095, 4096, 8191, 8192, 16000, 16383, 16384, 17000, 20000];
+  const ZSIGN = [-600, -17, -16, -1, 0, 1, 14];
+  for (const Z of ZSIGN) for (const X of [0, 5, -5, 700]) one(X, X, Z);
+  for (const Z of ZS) {
+    one(0, 0, Z);
+    const th = [];
+    for (const [axis, pred] of [[0, (r) => r.flag === 0x40], [0, (r) => r.flag > 0 && r.flag < 16 && (r.flag & 2)], [1, (r) => r.flag === 0x40], [1, (r) => r.flag > 0 && r.flag < 16 && (r.flag & 4)]]) {
+      const t = search(Z, axis, pred);
+      if (t !== null) th.push([axis, t]);
+    }
+    const noff = [];
+    for (const [axis, t] of th) for (const d of [-2, -1, 0, 1, 2]) for (const sg of [1, -1]) {
+      const v = sg * (t + d);
+      axis === 0 ? one(v, sg * 3, Z) : one(sg * 7, v, Z);
+      axis === 0 ? one(v, 0, Z) : one(0, v, Z);
+    }
+    void noff;
+  }
+  // the y thresholds of the clip rectangle: sy = c - q(Y) at ymin / ymax (and off by one), x at 0 / 255
+  for (const Z of [16, 17, 50, 128, 256, 777, 4000]) {
+    for (let X = -3; X <= 3; X++) one(Math.round(Z * 1.0) + X, 0, Z);
+    for (let X = -3; X <= 3; X++) one(-Math.round(Z * 1.0) + X, 0, Z);
+    for (let Y = -3; Y <= 3; Y++) { one(0, Math.round(Z * 0.7) + Y, Z); one(0, -Math.round(Z * 0.7) + Y, Z); one(0, Math.round(Z * 0.62) + Y, Z); one(0, -Math.round(Z * 0.62) + Y, Z); }
+  }
+  // every RCPT entry (mz = 128..255) at three exponents, with offsets giving q = 128, ~2,000 and ~15,000; Z < 128 for every integer
+  for (let Zi = 16; Zi < 128; Zi++) one(Zi * 20, -Zi * 9, Zi);                      // Z < 128: the left-shift form (every Z)
+  for (let mz = 128; mz < 256; mz++) for (const e of [0, 3, 6]) {
+    const Z = mz * 2 ** e;
+    if (Z > 20000) continue;
+    for (const f of [1, 15, 100]) { const X = Math.min(18000, Z * f); one(X, -Math.min(18000, Math.round(Z * f * 0.7)), Z); one(-X + 1, Math.min(18000, Math.round(Z * f * 0.3)), Z); }
+  }
+  const R = rng(17010);
+  for (let i = 0; i < (QUICK ? 3000 : 20000); i++) {
+    const Z = R.pick([R.int(16, 300), R.int(16, 3000), R.int(16, 17000), R.int(-500, 15)]);
+    const rg = (z) => R.pick([R.int(-3 * z, 3 * z), R.int(-140 * z, 140 * z), R.int(-18000, 18000)]);
+    const cl = (v) => Math.max(-18000, Math.min(18000, v));
+    one(cl(rg(Math.max(Z, 16))), cl(rg(Math.max(Z, 16))), Z);
+  }
+  check(`w_proj_point equals the reference's projection for ${calls} points (flag; sx, sy for the in-view; near Z < 16, too far |q| > 16,000, every outcode threshold and RCPT entry)`, bad === 0, first);
+}
+
+// ---- 4d. the eye transform read back ----------------------------------------------------------------------------------------------------------
+console.log('\n--- 4d. the eye transform: Tx, Ty, Tz of the runtime against eyeTransform (three products against four) ---');
+{
+  restore(); poison(rng(10)); setup(AREA, 0x20);
+  plant(MODEL_LO, [1, 0, 0, 0, 0]);                           // one point, no edge: RT_DRAWMODEL does the transform and the projection, nothing else
+  const R = rng(17007);
+  let n = 0, bad = 0, first = '', reached = 0, nulls = 0, rejD = 0;
+  const T0 = (a) => [W.cosa(a), W.sina(a)];
+  const one = (eye, x, y, z, what) => {
+    setArgs(eye.x, eye.y, eye.z, eye.a); call(S.RT_EYE);
+    setArgs(x, y, z, eye.a, 0);                                // yaw = heading: yaw' = 0
+    m.ram[S.W_YAW] = 0xA5;
+    wr16(S.W_TX, 0x5A5A); wr16(S.W_TY, 0x5A5A); wr16(S.W_TZ, 0x5A5A);
+    call(S.RT_DRAWMODEL, { hl: MODEL_LO, a: 0 });
+    n++;
+    const dx = x - eye.x, dy = y - eye.y, dz = z - eye.z;
+    const [C, Sn] = T0(eye.a & 255);
+    const msg = [];
+    const inD = Math.abs(dx) <= 16000 && Math.abs(dy) <= 16000 && Math.abs(dz) <= 16000;
+    const Tx = Math.floor((dx * C - dz * Sn) / 256), Tz = Math.floor((dx * Sn + dz * C) / 256);
+    const ref = W.eyeTransform(eye, x, y, z);
+    const got = m.ram[S.W_YAW] === 0;                         // W_YAW is written after the transform's checks
+    if (!inD) { rejD++; if (got) msg.push('drawn although |d| > 16,000'); }
+    else {
+      if (rd16s(S.W_TY) !== dy) msg.push(`Ty ${rd16s(S.W_TY)}, want ${dy}`);
+      if (rd16s(S.W_TZ) !== Tz) msg.push(`Tz ${rd16s(S.W_TZ)}, want ${Tz}`);
+      if (Math.abs(Tz) <= 16000 && rd16s(S.W_TX) !== Tx) msg.push(`Tx ${rd16s(S.W_TX)}, want ${Tx}`);
+      if (got !== !!ref) msg.push(`reached the projection ${got}, the reference ${ref ? 'draws' : 'rejects'} (T = ${Tx}, ${dy}, ${Tz})`);
+      if (ref && (ref[0] !== Tx || ref[1] !== dy || ref[2] !== Tz)) msg.push(`the reference's own T ${ref}`);
+    }
+    if (got) reached++; else nulls++;
+    if (msg.length) { bad++; first ||= `${what} eye (${eye.x}, ${eye.y}, ${eye.z}, ${eye.a}) at (${x}, ${y}, ${z}): ${msg.join('; ')}`; }
+  };
+  // all 256 headings at |d| = 16,000 on every axis in every sign combination, from the origin and from an offset eye
+  for (const base of [{ x: 0, y: 0, z: 0 }, { x: 1234, y: -4321, z: 777 }, { x: -9000, y: 12000, z: -16000 }]) {
+    for (let a = 0; a < 256; a++) for (const sx of [1, -1]) for (const sy of [1, -1]) for (const sz of [1, -1]) {
+      const eye = { ...base, a };
+      const x = base.x + sx * 16000, y = base.y + sy * 16000, z = base.z + sz * 16000;
+      if ([x, y, z].every((v) => v >= -32768 && v <= 32767)) one(eye, x, y, z, '|d| = 16,000');
+    }
+  }
+  const nExact = n;
+  const rcomp = () => R.pick([() => R.int(-16300, 16300), () => R.int(-300, 300), () => R.pick([16000, -16000, 16001, -16001, 15999, -15999]), () => R.int(-32768, 32767), () => R.int(-4000, 4000)])();
+  for (let i = 0; i < (QUICK ? 3000 : 20000); i++) {
+    const eye = { x: R.pick([R.int(-32768, 32767), R.int(-20000, 20000), 0]), y: R.pick([R.int(-32768, 32767), R.int(-3000, 3000)]), z: R.pick([R.int(-32768, 32767), R.int(-20000, 20000), 0]), a: R.int(0, 255) };
+    const x = eye.x + rcomp(), y = eye.y + rcomp(), z = eye.z + rcomp();
+    if ([x, y, z].some((v) => v < -32768 || v > 32767)) { i--; continue; }
+    one(eye, x, y, z, 'random');
+  }
+  check(`the eye transform: Tx, Ty, Tz of the runtime equal eyeTransform in ${n} cases (${nExact} at |d| = 16,000 on all 256 headings in all sign combinations from three eyes, the rest random; ${reached} reach the projection, ${nulls} rejected, ${rejD} with |d| > 16,000)`,
+    bad === 0 && reached > 3000 && nulls > 3000 && rejD > 500, first || `${reached} / ${nulls} / ${rejD}`);
+}
+
+// ---- 4e. LINE with exactly one coordinate out of range; dv = 0 lines are the fast forms (W6) ----------------------------------------------------
+console.log('\n--- 4e. LINE: exactly one coordinate beyond -16384..16383; horizontal / vertical lines take the byte-fill / column loops ---');
+{
+  const R = rng(17009);
+  let cases = 0, bad0 = mismatches;
+  for (let pos = 0; pos < 4; pos++) for (const v of [-16385, 16384, -20000, 20000, 32767, -32768]) for (let rep = 0; rep < 3; rep++) {
+    const l = [R.int(-300, 555), R.int(-300, 555), R.int(-300, 555), R.int(-300, 555)];
+    if (rep === 0) { l[0] = 20; l[1] = 20; l[2] = 200; l[3] = 100; }
+    l[pos] = v;
+    restore(); poison(R); setup(AREA, 0x20);
+    lineCheck(l, AREA, 0x20, `LINE (${l.join(', ')}): coordinate ${pos} beyond the range`);
+    cases++;
+  }
+  check(`LINE with exactly one of its four coordinates beyond -16384..16383 draws nothing, as the reference (${cases} lines: each coordinate x 6 values x 3 lines)`, mismatches === bad0, `${mismatches - bad0} mismatches`);
+  // timing: draw_fast and RT_LINE on dv = 0 lines (the figures table above has 682 T for a 40 px horizontal and 2,826 for a vertical)
+  restore(); poison(rng(77)); setup(AREA, 0x20);
+  const tH = [], tV = [], tLH = [], tLV = [];
+  for (const [ox, oy] of [[0, 0], [3, 5], [-5, 2], [-1, -7], [13, 40]]) {
+    for (const l of [[100 + ox, 100 + oy, 139 + ox, 100 + oy], [139 + ox, 100 + oy, 100 + ox, 100 + oy]]) {
+      const before = m.ram.slice(), want = files(before);
+      W.drawLine(want[1], ...l, AREA);
+      m.ram[S.W_HIDHI] = 0x60;
+      tH.push(call(S.w_draw_fast, { bc: (l[0] << 8) | l[2], de: (l[3] << 8) | l[1], exact: true }).t);
+      if (compare(before, want, 'draw_fast horizontal')) fail('draw_fast horizontal line differs');
+    }
+    for (const l of [[100 + ox, 80 + oy, 100 + ox, 119 + oy], [100 + ox, 119 + oy, 100 + ox, 80 + oy]]) {
+      const before = m.ram.slice(), want = files(before);
+      W.drawLine(want[1], ...l, AREA);
+      m.ram[S.W_HIDHI] = 0x60;
+      tV.push(call(S.w_draw_fast, { bc: (l[0] << 8) | l[2], de: (l[3] << 8) | l[1], exact: true }).t);
+      if (compare(before, want, 'draw_fast vertical')) fail('draw_fast vertical line differs');
+    }
+  }
+  for (const [x0, x1] of [[-100, 355], [-30, 140], [10, 290]]) tLH.push(lineCheck([x0, 90, x1, 90], AREA, 0x20, 'clipped horizontal', { exact: true }).r.t);
+  for (const [y0, y1] of [[-100, 300], [-5, 120], [60, 260]]) tLV.push(lineCheck([77, y0, 77, y1], AREA, 0x20, 'clipped vertical', { exact: true }).r.t);
+  const mx = (a) => Math.max(...a), fmt = (v) => Math.round(v).toLocaleString('en-US');
+  console.log(`      draw_fast 40 px horizontal: max ${fmt(mx(tH))} T; vertical: max ${fmt(mx(tV))} T; RT_LINE clipped horizontal (256 px): max ${fmt(mx(tLH))} T; clipped vertical (160 px): max ${fmt(mx(tLV))} T`);
+  check(`a horizontal 40 px line uses the byte-fill form: draw_fast <= 1,000 T (the sloped loop takes about 1,400)`, mx(tH) <= HLIMIT, fmt(mx(tH)));
+  check(`a vertical 40 px line uses the column loop: draw_fast <= 3,150 T (the sloped loop is about 25 % slower)`, mx(tV) <= VLIMIT, fmt(mx(tV)));
+  check(`a clipped horizontal line (256 px) takes the byte-fill form: RT_LINE <= 9,000 T`, mx(tLH) <= HCLIP, fmt(mx(tLH)));
+  check(`a clipped vertical line (160 px) takes the column loop: RT_LINE <= 17,500 T`, mx(tLV) <= VCLIP, fmt(mx(tLV)));
 }
 
 // ---- 5. interrupts -------------------------------------------------------------------------------------------------------------------------

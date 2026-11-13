@@ -126,7 +126,8 @@ function wireGame(spec) {
     put(SCRIPT.SPRTAB + 8 * i, [a.w, a.h, ...w16(dataAt), 0, 0, a.phases, 0]);
     dataAt += bytes.length;
   });
-  put(SCRIPT.INST, [INSTS.length, ...INSTS]);
+  const insts = spec.insts ?? INSTS;
+  put(SCRIPT.INST, [insts.length, ...insts]);
   const ts = [TILES.length];
   for (const t of TILES) ts.push(...t.bmp, t.attr);
   put(SCRIPT.TILESET, ts);
@@ -169,7 +170,7 @@ function compositeSprites(model, bm) {
 class Expect {
   /** spec: { has, desc: [r0, r1, attr], initMode, map } */
   constructor(spec) {
-    this.m = new Model2({ assets: ASSETS, insts: INSTS, tiles: TILES, map: spec.map ?? null });
+    this.m = new Model2({ assets: ASSETS, insts: spec.insts ?? INSTS, tiles: TILES, map: spec.map ?? null });
     this.has = !!spec.has;
     this.bm = [new Uint8Array(6144), new Uint8Array(6144)];
     this.at = [new Uint8Array(768).fill(BG_ATTR), new Uint8Array(768).fill(BG_ATTR)];
@@ -309,7 +310,7 @@ function run(game, exp, nframes, { poison = null, onTick = null, onStart = null 
 // ---- scenario generation -----------------------------------------------------------------------------------------------------------------
 const STATIC = [[0, 10, 0], [1, 40, 2], [2, 70, 0], [3, 120, 176], [4, 160, 176], [5, 200, 170], [6, 100, 80], [7, 200, 10]];   // [i, x, y]
 /** Ticks of a scene.  opts: { area (null: no wire ops), L, modes: {tick: [[where, a], ...]} (pre / mid / post), effectEvery, nModels: [lo, hi] }. */
-function genTicks(R, L, { area = null, modes = {}, effectEvery = 0, nModels = [1, 3], texts = {} } = {}) {
+function genTicks(R, L, { area = null, modes = {}, effectEvery = 0, nModels = [1, 3], texts = {}, noSprites = false } = {}) {
   const ticks = [];
   const eye = { x: 0, y: 0, z: 0, a: 0 };
   const mov = [{ i: 8, x: 30, y: 60 }, { i: 9, x: 180, y: 120 }];
@@ -317,8 +318,8 @@ function genTicks(R, L, { area = null, modes = {}, effectEvery = 0, nModels = [1
     const t = [];
     const md = modes[n] ?? [];
     for (const [w, a] of md) if (w === 'pre') t.push({ op: 'mode', a });
-    if (n === 0) for (const [i, x, y] of STATIC) t.push({ op: 'show', i, x, y });
-    for (const s of mov) {
+    if (n === 0 && !noSprites) for (const [i, x, y] of STATIC) t.push({ op: 'show', i, x, y });
+    for (const s of noSprites ? [] : mov) {
       if (R.chance(0.07)) { t.push({ op: 'hide', i: s.i }); continue; }
       if (R.chance(0.1)) { s.x = R.int(-10, 250); s.y = R.int(-10, 190); } else { s.x += R.int(-6, 6); s.y += R.int(-6, 6); }
       t.push({ op: 'show', i: s.i, x: s.x, y: s.y });
@@ -365,7 +366,7 @@ console.log('\n--- 1. scenario A: rows 2..21, HUD, sprites, text, the switch in 
   const map = randomMap(R);
   const game = wireGame({ div: 0xC2, desc, ticks, map, sfx: busyEffect(R, 40) });
   const exp = new Expect({ has: true, desc, map });
-  const textCheck = { hiddenWhileOn: 0, hiddenTicks: 0, shownAfterOff: new Set(), attrsOn: new Set(), bootOn: null };
+  const textCheck = { hiddenWhileOn: 0, hiddenTicks: 0, shownAfterOff: new Set(), attrsOn: new Set(), bootOn: null, staleRec: 0, hiddenRecs: 0 };
   const glyphRows = (idx) => exp.m.glyph(idx);
   const spriteOver = (row, col) => exp.m.insts.some((sp) => { if (!sp.visible) return false; const a = exp.m.assets[sp.asset], x = exp.m.drawX(sp); return x < 8 * col + 8 && x + a.w + 8 > 8 * col && sp.y < 8 * row + 8 && sp.y + a.h > 8 * row; });
   const cellBytes = (m, f, row, col) => Array.from({ length: 8 }, (_, k) => m.ram[(f ? 0x6000 : 0x4000) + rowAddr(8 * row + k) + col]);
@@ -373,6 +374,7 @@ console.log('\n--- 1. scenario A: rows 2..21, HUD, sprites, text, the switch in 
     onStart: (s, cur) => { if (textCheck.bootOn === null) textCheck.bootOn = cur.vwire; },
     onTick: (s, cur) => {
       const m = s.m, idx = 10 * 32 + 4;
+      if (cur.n >= 3) for (let i = 0; i < INSTS.length; i++) if (!exp.m.insts[i].visible) { textCheck.hiddenRecs++; if (m.ram[S.SPR_DRAWN + 64 * cur.h + 4 * i] !== 0) textCheck.staleRec++; }   // an instance that is not shown has no record in the file just drawn
       if (cur.n >= 31 && cur.n < 40) {        // on: the PLAY text (row 10) is in the cell map but neither its glyphs nor its attribute are in the file just drawn
         textCheck.hiddenTicks++;
         const g = glyphRows(idx), got = cellBytes(m, cur.h, 10, 4);
@@ -395,6 +397,7 @@ console.log('\n--- 1. scenario A: rows 2..21, HUD, sprites, text, the switch in 
   check(`  ... skip_analysis, wire_erase and redraw_dirty wrote no play-area pixel or attribute in the ${st.watchedTicks} ticks with the area on`, st.playWrites === 0 && st.watchedTicks > 50, `${st.playWrites} writes`);
   check('  ... the boot turned the area on (V_WIRE = 3 at the first tick), every op of every tick ran', textCheck.bootOn === 3 && st.opsBad === 0, `V_WIRE ${textCheck.bootOn}, ${st.opsBad}`);
   check('  ... the skip analysis marked instances (HUD sprites) in ticks with the play area on and off', st.anySkip > 20, `${st.anySkip} ticks`);
+  check(`  ... wire_erase clears the drawn flag of the record of an instance that is no longer shown (${textCheck.hiddenRecs} hidden-instance records looked at, ${textCheck.staleRec} stale)`, textCheck.staleRec === 0 && textCheck.hiddenRecs > 10, `${textCheck.staleRec} / ${textCheck.hiddenRecs}`);
   check(`  ... text PRINTed into a play row is not shown while on (${textCheck.hiddenWhileOn} of ${textCheck.hiddenTicks} ticks: neither glyph nor attribute) and appears after OFF in both files`,
     textCheck.hiddenWhileOn === textCheck.hiddenTicks && textCheck.hiddenTicks === 9 && textCheck.shownAfterOff.size === 2, `files ${[...textCheck.shownAfterOff]}`);
   check('  ... ON again writes the area\'s attribute into the play rows of both files', textCheck.attrsOn.has(70));
@@ -445,6 +448,33 @@ console.log('\n--- 3. scenario C: a NOVIEW first scene (RT_WIREMODE 0 in init_en
 }
 
 // =====================================================================================================================================
+// 3b. Scenarios D, E, F (W6, the mutation test): no sprite instance at all; the smallest play area (4 rows); the lowest rows
+// =====================================================================================================================================
+console.log('\n--- 3b. scenario D: no sprite instance (NINST = 0), rows 2..21; scenarios E, F: rows 5..8 (4 rows) and 20..23 ---');
+{
+  const R = rng(17106);
+  const desc = [2, 21, 0x45];
+  const area = W.areaOf(2, 21);
+  const ticks = genTicks(R, 60, { area, noSprites: true, modes: { 20: [['mid', 0]], 30: [['pre', 1]], 40: [['post', 0]], 50: [['mid', 1]] }, texts: { 3: [10, 4, 'NOSPR'], 22: [10, 4, 'AGAIN'] } });
+  const map = randomMap(R);
+  const game = wireGame({ div: 0xC1, desc, ticks, map, insts: [] });
+  const exp = new Expect({ has: true, desc, map, insts: [] });
+  const st = run(game, exp, QUICK ? 150 : 300);
+  check(`scenario D: no instance: ${st.refreshes} refreshes (${st.onTicks} ticks on, ${st.offTicks} off) equal the expectation (wire_unchanged and wire_erase with NINST = 0)`, st.bad === 0 && st.onTicks > 20 && st.offTicks > 10 && st.accepted === st.refreshes, st.firstBad.join(' | '));
+  for (const [r0, r1, attr] of [[5, 8, 0x4A], [20, 23, 0x43]]) {
+    const d = [r0, r1, attr], ar = W.areaOf(r0, r1);
+    const R2 = rng(17107 + r0);
+    const ticks2 = genTicks(R2, 70, { area: ar, modes: { 25: [['mid', 0]], 40: [['pre', 1]], 55: [['post', 0]], 60: [['pre', 1]] }, nModels: [1, 2], texts: { 4: [r0 + 1, 8, 'IN'], 30: [r0, 0, 'TOP'] } });
+    const map2 = randomMap(R2);
+    const g2 = wireGame({ div: 0xC1, desc: d, ticks: ticks2, map: map2 });
+    const e2 = new Expect({ has: true, desc: d, map: map2 });
+    const s2 = run(g2, e2, QUICK ? 150 : 300);
+    check(`scenario ${r0 === 5 ? 'E' : 'F'}: rows ${r0}..${r1} (${r1 - r0 + 1} rows, attribute $${attr.toString(16)}): ${s2.refreshes} refreshes (${s2.onTicks} ticks on, ${s2.offTicks} off) equal the expectation`,
+      s2.bad === 0 && s2.onTicks > 20 && s2.offTicks > 5 && s2.playWrites === 0, s2.firstBad.join(' | ') || `${s2.playWrites} play writes`);
+  }
+}
+
+// =====================================================================================================================================
 // 4. Games without the play area
 // =====================================================================================================================================
 console.log('\n--- 4. games without the play area: $F4E0-$FA7F untouched, V_WIRE 0, RT_WIREMODE a no-op, the cost at WORK_START ---');
@@ -452,7 +482,9 @@ console.log('\n--- 4. games without the play area: $F4E0-$FA7F untouched, V_WIRE
   const POISON = (a) => (a * 13 + 0x5B) & 0xFF;
   const LO = 0xF4E0, HI = 0xFA80;
   for (const [name, div, desc] of [['DIV_EXT only (18-byte header)', 0x81, [2, 21, 0x45]], ['the 16-byte header (frame_div 2)', 0x02, [2, 21, 0x45]],
-    ['DIV_EXT | DIV_WIRE, r1 = 24', 0xC1, [2, 24, 0x45]], ['DIV_EXT | DIV_WIRE, 3 rows (r1 = r0 + 2)', 0xC1, [5, 7, 0x45]], ['DIV_EXT | DIV_WIRE, a null descriptor', 0xC1, null]]) {
+    ['DIV_EXT | DIV_WIRE, r1 = 24', 0xC1, [2, 24, 0x45]], ['DIV_EXT | DIV_WIRE, 3 rows (r1 = r0 + 2)', 0xC1, [5, 7, 0x45]], ['DIV_EXT | DIV_WIRE, r1 < r0 (10, 5)', 0xC1, [10, 5, 0x45]],
+    ['DIV_EXT | DIV_WIRE, r1 < r0 by one (10, 9)', 0xC1, [10, 9, 0x45]], ['DIV_EXT | DIV_WIRE, r0 = r1 = 0', 0xC1, [0, 0, 0x45]], ['DIV_EXT | DIV_WIRE, r1 = 255', 0xC1, [200, 255, 0x45]],
+    ['DIV_EXT | DIV_WIRE, a null descriptor', 0xC1, null]]) {
     const R = rng(17104 + div + (desc?.[1] ?? 0));
     const ticks = genTicks(R, 60, { modes: { 10: [['pre', 1]], 20: [['mid', 0]], 30: [['post', 1]] }, texts: { 4: [10, 4, 'NOWIRE'] } });
     const map = randomMap(R);
@@ -501,9 +533,10 @@ function bootTo(game) {
   const offOk = wr.every((a) => inRows(a, K.DIRTY0, 2, 21, 4) || inRows(a, K.DIRTY1, 2, 21, 4) || a === K.V_WIRE || a === K.W_ON) && m.ram[K.V_WIRE] === 2 && m.ram[K.W_ON] === 0 &&
     Array.from({ length: 80 }, (_, i) => m.ram[K.DIRTY0 + 8 + i] === 0xFF && m.ram[K.DIRTY1 + 8 + i] === 0xFF).every(Boolean);
   check(`RT_WIREMODE 0 (on -> off): ${fmt(off.t)} T; writes V_WIRE = 2, W_ON = 0 and the play rows' dirty bytes (all $FF) of both maps, nothing else; IX, IY, alternates kept`, offOk && off.preserved && off.spOk, `${wr.length} bytes`);
+  for (let i = 0; i < 80; i++) { m.ram[K.DIRTY0 + 8 + i] = 0; m.ram[K.DIRTY1 + 8 + i] = 0; }   // so that a second OFF writing $FF again would show
   b = m.ram.slice();
   const offAgain = callRoutine(m, S.RT_WIREMODE, { a: 0 });
-  check(`RT_WIREMODE 0 when off: ${offAgain.t} T, nothing written`, writes(b).length === 0);
+  check(`RT_WIREMODE 0 when off: ${offAgain.t} T, nothing written (the play rows' dirty bytes, set to 0 first, stay 0)`, writes(b).length === 0);
   b = m.ram.slice();
   for (const f of [0x5800, 0x7800]) for (let i = 0; i < 768; i++) m.ram[f + i] = 0x38;
   b = m.ram.slice();
@@ -533,9 +566,11 @@ function bootTo(game) {
     Object.assign(cpu, saved);
     check(`  ... with interrupts on, the switch (and its clear, wire_clear_on) never turns them off: ${steps} instructions, ${off} with IFF1 = 0; the play rows cleared again`, cpu && steps < 400000 && inClear === 1 && off === 0 && zero);
   }
+  for (const f of [0x5800, 0x7800]) for (let i = 64; i < 704; i++) m.ram[f + i] = 0x3A;      // so that a second ON writing the area's attribute again would show
+  for (let i = 0; i < 6144; i++) if (playByte(i)) m.ram[hid + i] = 0x77;                      // ... nor the clear of the hidden file's play rows (only a switch from off clears)
   b = m.ram.slice();
   const onAgain = callRoutine(m, S.RT_WIREMODE, { a: 1 });
-  check(`RT_WIREMODE 1 when on: ${onAgain.t} T, nothing written`, writes(b).length === 0);
+  check(`RT_WIREMODE 1 when on: ${onAgain.t} T, nothing written (the play rows' attributes, set to $3A, and the hidden bitmap's, set to $77, first: they stay)`, writes(b).length === 0);
   results.on = on.t; results.off = off.t;
   // the largest area
   const g24 = wireGame({ div: 0xC1, desc: [0, 23, 0x07], ticks: genTicks(R, 1, {}) });
@@ -550,6 +585,53 @@ function bootTo(game) {
   let bad = 0, tt = [];
   for (const a of [0, 1, 0xFF]) { const bb = m0.ram.slice(); const r = callRoutine(m0, S.RT_WIREMODE, { a }); tt.push(r.t); for (let k = 0x4000; k < 0x10000; k++) if (m0.ram[k] !== bb[k] && !STACK(k)) bad++; }
   check(`a game without the play area: RT_WIREMODE 0 / 1 / $FF write nothing (${tt.join(' / ')} T)`, bad === 0);
+}
+
+// =====================================================================================================================================
+// 5b. wire_unchanged and wire_erase called directly (W6)
+// =====================================================================================================================================
+console.log('\n--- 5b. wire_unchanged on every y of the three asset heights; wire_unchanged / wire_erase with no instance ---');
+{
+  const R = rng(17108);
+  const game = wireGame({ div: 0xC1, desc: [2, 21, 0x45], ticks: genTicks(R, 1, {}), initMode: 0xFF });
+  const m = bootTo(game);
+  const STACKR = (a) => a >= 0xFB00 && a < 0xFF00;
+  const YMIN = 16, YMAX = 175;                                     // rows 2..21
+  let bad = 0, first = '', n = 0;
+  for (const k of [0, 1, 2]) {
+    const i = INSTS.indexOf(k), h = ASSETS[k].h, e = S.SPR_TAB + 6 * i;
+    for (let y = 0; y <= 176; y++) for (const vis of [1, 0]) for (const chg of [0, 2]) {
+      for (let j = 0; j < 16; j++) m.ram[S.V_CHG + j] = 0;
+      m.ram[e] = vis; m.ram[e + 4] = y; m.ram[e + 5] = 0;
+      m.ram[S.V_CHG + i] = chg;
+      callRoutine(m, S.wire_unchanged);
+      n++;
+      const touches = y <= YMAX && y + h > YMIN;
+      const want = chg || (vis && touches ? 1 : 0);
+      let others = 0;
+      for (let j = 0; j < 16; j++) if (j !== i) others += m.ram[S.V_CHG + j];
+      if (m.ram[S.V_CHG + i] !== want || others) { bad++; first ||= `asset ${k} (h ${h}) y ${y} visible ${vis} V_CHG ${chg}: V_CHG = ${m.ram[S.V_CHG + i]}, want ${want}${others ? ' (another instance changed)' : ''}`; }
+    }
+    m.ram[e] = 0; m.ram[e + 4] = 0;
+  }
+  check(`wire_unchanged marks (V_CHG = 1) exactly the visible, unchanged instances whose rows y .. y + h - 1 meet pixel rows ${YMIN}..${YMAX}: ${n} cases (assets of height ${ASSETS.map((a) => a.h)}, y = 0..176, visible or not, V_CHG 0 or 2 kept)`, bad === 0, first);
+  // no instance: a loop over 256 entries of whatever SPR_TAB holds would write; poisoned tables must stay as they are
+  m.ram[S.V_NINST] = 0;
+  for (let j = 0; j < 96; j++) m.ram[S.SPR_TAB + j] = [1, 0, 0, 0, 50, 0][j % 6];
+  for (let j = 0; j < 16; j++) m.ram[S.V_CHG + j] = 0;
+  let b = m.ram.slice();
+  callRoutine(m, S.wire_unchanged);
+  const wu = []; for (let a = 0x4000; a < 0x10000; a++) if (m.ram[a] !== b[a] && !STACKR(a)) wu.push(a);
+  check(`wire_unchanged with no instance writes nothing (SPR_TAB poisoned with visible instances in the play area)`, wu.length === 0, `${wu.length} bytes, first ${hex(wu[0] ?? 0)}`);
+  for (const f of [0, 1]) for (let j = 0; j < 16; j++) { m.ram[S.SPR_DRAWN + 64 * f + 4 * j] = 1; m.ram[S.SPR_DRAWN + 64 * f + 4 * j + 1] = 0x40; m.ram[S.SPR_DRAWN + 64 * f + 4 * j + 2] = 0x40; m.ram[S.SPR_DRAWN + 64 * f + 4 * j + 3] = 4; }
+  for (let a = S.SPR_DRAWN + 128; a < 0xD600; a++) m.ram[a] = 1;
+  for (let j = 0; j < 96; j++) { m.ram[S.DIRTY0 + j] = 0xFF; m.ram[S.DIRTY1 + j] = 0xFF; }
+  m.ram[S.V_HIDDEN] = 0;
+  b = m.ram.slice();
+  callRoutine(m, S.wire_erase);
+  const we = []; for (let a = 0x4000; a < 0x10000; a++) if (m.ram[a] !== b[a] && !STACKR(a)) we.push(a);
+  check(`wire_erase with no instance writes only the play rows' dirty bytes of the hidden map (80 bytes cleared; SPR_DRAWN poisoned with drawn flags)`,
+    we.length === 80 && we.every((a) => a >= S.DIRTY0 + 8 && a < S.DIRTY0 + 88 && m.ram[a] === 0), `${we.length} bytes, first ${hex(we[0] ?? 0)}`);
 }
 
 // =====================================================================================================================================

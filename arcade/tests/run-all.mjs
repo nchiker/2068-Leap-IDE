@@ -1,7 +1,7 @@
 // run-all.mjs -- rebuild every Leap Arcade runtime and run every Arcade test suite, then print one summary.
 //
 //   node arcade/tests/run-all.mjs            all suites except the slow mutation runs
-//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3- to m16c-mutations; several minutes each)
+//   node arcade/tests/run-all.mjs --full     also the mutation runs (m3- to m17-mutations; several minutes each)
 //   node arcade/tests/run-all.mjs --quick    sets ARCADE_QUICK=1 (shorter fuzz runs in the compiler suites)
 //   node arcade/tests/run-all.mjs --jobs N   runs the suites N at a time (default 1).  The runtime builds and the steps in
 //                                            EXCLUSIVE (they write shared files under arcade/build) run first, alone; each
@@ -115,7 +115,7 @@ const suites = [
   'arcade/tests/m15-runtime-music.mjs',
   'arcade/tests/m17-runtime-wire.mjs',
   'arcade/tests/m17-runtime-tick.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m15c-mutations.mjs', 'arcade/tests/m16c-mutations.mjs'] : []),
+  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m17-mutations.mjs', 'arcade/tests/m15c-mutations.mjs', 'arcade/tests/m16c-mutations.mjs'] : []),
 ];
 
 function finish(file, isBuild, t0, status, out) {

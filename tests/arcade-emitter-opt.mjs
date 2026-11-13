@@ -582,7 +582,8 @@ ENDSCENE
     let found = 0;
     // Stack-neutral SP uses that a tail call cannot break (docs/ARCADE_WIREFRAME_CONTRACT.md 7a): w_accline's EX (SP),HL swaps a word it pushed itself
     // (a computed jump), never the caller's return address; wire_clear (the PUSH clear, called by the tick, never by compiled code) saves SP and puts it back.
-    const STACK_NEUTRAL = { 'v2/wire.asm': ['w_accline', 'wire_clear'] };
+    // RT_DRAWMODEL's EX (SP),HL swaps the model address it pushed itself for the SCALE routine's address, which POP IY takes off at once (bfa0782).
+    const STACK_NEUTRAL = { 'v2/wire.asm': ['w_accline', 'wire_clear', 'RT_DRAWMODEL'] };
     for (const v of ['v2', 'v3', 'v4']) {
       const dir = join(ROOT, 'arcade/runtime', v);
       for (const f of readdirSync(dir).filter((x) => x.endsWith('.asm') && !/^test_|^game_placeholder/.test(x))) {      // (the test_*.asm drivers are not part of the runtime)

@@ -1,11 +1,24 @@
 # Prompt for the next session (written 2026-11-11, updated 2026-11-12 after the compiler size pass)
 
-**RESUME HERE (2026-11-12, wireframe in progress, branch `arcade-wire`):** contract `docs/ARCADE_WIREFRAME_CONTRACT.md` (as built: 7a, 7b).
-Done and committed: W1 kernels, W2 tick (`5d8feab`, run-all 85/85), W3a/W3b language, W4 Studio models, W5 Orbit Gates (`arcade/examples/orbit.arc`).
-Running when this was written: W6a mutation tests `arcade/tests/m17-mutations.mjs` + a direct eye-transform test (Sonnet, worktree
-`<scratchpad>/wt-w6`), W6b Orbit Gates on the real runtime (`tests/arcade-orbit.mjs` TODO 1-4: differential, per-tick T, interrupts; Sonnet,
-main tree). Still to do: the 20 / 15 fps decision from W6b's figures, the cross-emulator run of Orbit Gates (ZEsarUX, Fuse: an xemu script like
-the other games'), docs (`ARCADE_LANGUAGE.md`, `ARCADE_RUNTIME_API_V2.md`, `ARCADE_ASSETS.md`, HANDOFF), push the branch, PR when the owner says.
+**State (2026-11-12, end of the wireframe session):** wireframe 3D (item 4) is DONE on branch `arcade-wire` (pushed; PR only when the owner
+says): contract `docs/ARCADE_WIREFRAME_CONTRACT.md`, sample game Orbit Gates (owner played it in Fuse: "it looks good to me"). Section 10
+of the contract lists Claude's decisions for the owner's review. **Next: item 5, the Studio review and completion** (a written findings
+list for the owner first; known items: a starter per game type in New project, colours in the sprite editors, a model editor for
+`assets.models`; **two blacks**: TSRun, so the Studio display, draws BRIGHT black as #333 while the border and Fuse / ZEsarUX / the real
+machine show black: Starfall's bright-black paper still differs from its border in the Studio, Orbit Gates was fixed by using BRIGHT 0 on
+black paper everywhere; the asset check's `black-bright-mix` only sees tiles, not `PAPER 0 : BRIGHT 1` set in code: **owner's decision 2026-11-12: TSRun stays as
+it is** (its author's model: a real TS2068 shows BRIGHT black as dark grey; unverifiable without hardware), so games must not put BRIGHT 1
+on black paper: add a checker / Studio warning for `PAPER 0` + `BRIGHT 1` set in code (and in WIRE3D / VIEW3D clauses), and fix Starfall's
+bright-black paper the same way), then item 6, the showcase game. Merge `arcade-wire` first if the owner has approved it.
+**Traps found in the wireframe session:** a profile bucket can be per tick, not per call (the "6.6k T a point" was two gates' cost):
+check a surprising figure's denominator before acting on it; a sample game's budget must count per-call overhead, the game logic's own
+runtime calls (Orbit's 32 trig calls a tick) and clipped edges, not only points and edges (the sketch was 2x short); the owner plays the
+sample games in Fuse and judges the point of the game, not the feature list (memory `feedback-sample-games-need-a-point`); headless
+Chrome plays audio unless started with `--mute-audio` (fixed in every browser test); `run-all --jobs` steps rebuild runtimes in
+parallel: the builds now use per-job work dirs and atomic writes (an empty runtime.bin was read mid-rebuild). Launch a game for the
+owner: `node arcade/tools/arcadec.mjs arcade/examples/<g>.arc --assets arcade/examples/<g>.assets.json --runtime v2`, then
+`fuse --machine ts2068 --rom-ts2068-0 tsrun/roms/ts2068-0.rom --rom-ts2068-1 tsrun/roms/ts2068-1.rom --no-confirm-actions arcade/build/<g>.dck`.
+Free runtime bytes now: v2 854, v3 1,289, v4 about 1,315.
 
 Suggested setup: main thread on the strongest model available (Opus 5.5 or Fable 5.2) at high effort, because it writes the contracts and reviews every agent's work; agents on Opus for cycle-critical Z80 kernels, Sonnet 5.5 for routine implementation and tests, Haiku 5.5 for running test suites (the prompt below says so).
 
@@ -13,7 +26,7 @@ Suggested setup: main thread on the strongest model available (Opus 5.5 or Fable
 
 Continue Leap Arcade in /home/charlie.day/Projects/Leap-IDE (read `CLAUDE.md`, then `docs/HANDOFF.md`). The compiler size pass (`docs/ARCADE_COMPILER_SIZE_CONTRACT.md`, slices C0-C6) is **merged into `main`** (PR from `arcade-codegen-size`, 2026-11-12): all 7 examples 57,260 -> 47,680 code bytes, every recorded run faster, Leap Runner has an in-game song. Start the next item on a new branch from `main`.
 
-**The owner's order (updated 2026-11-12):** DONE: scenes without the window / view, the v3 shrink pass, billboards B1, `MUSIC`, the compiler size pass. **Next:**
+**The owner's order (updated 2026-11-12):** DONE: scenes without the window / view, the v3 shrink pass, billboards B1, `MUSIC`, the compiler size pass, the wireframe game (item 4, branch `arcade-wire`). **Next:**
 (4) **a wireframe game** (the spike `arcade/spike/wire/RESULTS.md` recommends a wireframe mode inside v2: about 4.7 KB of the v2 room; check v2's RAM for point / edge lists first; v2 has 6,987 bytes free by the builder's figure, less since the song player);
 (5) **a thorough review and completion of the game IDE (Leap Arcade Studio, `studio.html`)**, owner 2026-11-12: "the IDE web interface is still incomplete"; New project gives a starter for only one game type (wants one per game type: a v2 cell / sprite game, a v3 platformer with a window, a v4 raycaster, a game with scenes, ...); the sprite editors have no colours; "etc, stuff like that": a usability / completeness review of the whole Studio first (a written findings list for the owner), then the fixes;
 (6) **one more sample game that shows off all the new features** (scenes without window / view, banked worlds and tables, MUSIC, billboards, the room the size pass freed, ...).
