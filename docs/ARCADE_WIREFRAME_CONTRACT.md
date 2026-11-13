@@ -290,6 +290,19 @@ An original first-person flight through a ring of gates in space (v2, `FRAMERATE
 * Recorded runs (a scripted pilot that flies the gates, and a lose run) in `tests/arcade-orbit.mjs`, pixel-compared with the
   interpreter at checkpoints; perf as section 6; cross-emulator as the other games.
 
+### 9a. Orbit Gates as built, after the owner played it (2026-11-12)
+The owner played the first version in Fuse: "it looks good, the speed isn't bad", but the point was thin ("is it just to go through the
+gates?") and fire did nothing in flight. Approved and built: **a laser** (fire: two `LINE` beams from the lower corners to the gunsight for
+3 ticks, 6 ticks cooldown; hits the nearest rock 250..2,500 along the view within 70 + along / 16 sideways; 100 + speed points; the rock
+becomes **debris**, a `shards` model of 9 points / 9 edges tumbling and stepping `SCALE` 1 -> 2 -> 4 over 12 ticks); **a rising challenge**
+by gates passed (pass margin 220 -> 140, spacing 1,500 -> 2,100, rocks faster and closer, fuel bonus 148 -> 90; LEVEL and GATE WIDTH in the
+HUD); cached trig (gate and eye cos / sin), rocks nearer than 250 not drawn, the far gate a 6-point `gatefar`. **`FRAMERATE 12`**: 99.4 %
+of 4,585 play ticks within 5 refreshes (median 195,360 T, p95 263,305, worst 340,848; 35.7 % within 3, 78.7 % within 4): section 6's
+target holds at the rate chosen. 8,263 code bytes. The owner, after playing the new version: "it looks good to me".
+Why 20 fps failed (measured): the projection was ~3.3k T per point (rolled loops the spike did not have; fixed to 2.2-2.9k, `bfa0782`),
+and the game's content (2 gates + 2 rocks, the trig, the clipped edges of near rocks) is ~2x the section 9 sketch's budget; the sketch
+counted points and edges but not the per-call overhead, the game logic's 32 trig calls or clipping.
+
 ## 10. Decisions made here, for the owner's review
 1. **P2 projector, OR lines, generic models** (no compiled models, no XOR, no P3): the room (section 3.1). Compiled models
    (26 % faster, ~2 KB per model in the game) can come later as a compiler option.
