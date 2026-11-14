@@ -2,7 +2,9 @@
 "use strict";
 // arcadec.mjs -- Leap Arcade command-line compiler (milestones M2 and M3).
 //   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime auto|v0|v1|v2|v3|v4|<dir or runtime.json>] [-o out.dck]
-// Compiles with src/lang/arcade/arcade-compile.js against a runtime build: --runtime v0 (the default) is
+// Compiles with src/lang/arcade/arcade-compile.js against a runtime build.  --runtime auto (the default) is the rule the Studio and the
+// compiler use (requiredRuntime(): v2, v3 or v4 by what the program uses); v0 and v1 are frozen milestone runtimes, chosen only by naming
+// them: --runtime v0 is
 // arcade/build/runtime.json + runtime.bin (build them first: node arcade/tools/build-runtime.mjs); --runtime v1 is
 // arcade/build/v1/runtime.json + runtime.bin (text, tiles, collision, sound; runtime API v1); any other value is a
 // runtime.json file or a directory holding one. --runtime v2 is arcade/build/v2/runtime.json (M4a: arrays, sprite pools and instances, KEYDOWN, phases;
@@ -25,7 +27,7 @@ function usage(msg) {
 }
 
 const argv = process.argv.slice(2);
-let src = null, assetsFile = null, out = null, runtimeArg = 'v0';
+let src = null, assetsFile = null, out = null, runtimeArg = 'auto';
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--assets') assetsFile = argv[++i] ?? usage('--assets needs a file');

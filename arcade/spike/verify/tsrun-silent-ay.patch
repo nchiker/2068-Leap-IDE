@@ -1,0 +1,188 @@
+From 89208e8282830f99fe204845f26d6a95a0920903 Mon Sep 17 00:00:00 2001
+From: "charlie.day" <223032750+nchiker@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 08:05:43 -0500
+Subject: [PATCH] AY: closed-form silent advance
+
+ayRunSilent (sound off: always in headless use) stepped the chip one 16-T tick
+at a time, ~3,668 ticks a frame. It now jumps over all but the last
+ceil(40 tau / tickT) = 120 ticks of a span in closed form: tone, noise and
+envelope counters by division, the tone levels by toggle parity, the clock
+divider by tick parity, the 17-bit noise register up to 14 steps a shift
+(its period, 131,071, wraps long spans), the envelope ramps and ends. The
+last 120 ticks and the partial tick run through the unchanged per-tick loop,
+so the output filter's result differs from per-tick integration by at most
+e^-40 of full scale (measured: 2.2e-16). Every chip state field is
+bit-identical to the per-tick code (checked against a verbatim copy of it
+over 4,000 random register histories, ~115,000 comparisons, in the Leap
+IDE's tests/tsrun-ay-silent.mjs). ayRunTo, the sound-on path, is unchanged.
+About 25 times faster for a frame of tone and envelope.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ay.js | 147 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 147 insertions(+)
+
+diff --git a/ay.js b/ay.js
+index 4f43f46..5026b0e 100644
+--- a/ay.js
++++ b/ay.js
+@@ -227,9 +227,156 @@ export function ayRunTo(ay, t) {
+  * @param {number} t
+  */
+ export function ayRunSilent(ay, t) {
++    // The chip state after a span is a closed form of the tick count, so all
++    // but the last few ticks are skipped in one jump. The output filter is not:
++    // it runs tick by tick over the last ayFilterTailTau time constants, which
++    // leaves whatever it held before the jump below e^-40 of full scale.
++    const tickT = ay.tickT;
++    if (t > ay.t && t >= ay.nextTickT && ay.nextTickT > ay.t
++        && Number.isInteger(tickT) && Number.isInteger(t) && Number.isInteger(ay.nextTickT)) {
++        const ticks = Math.floor((t - ay.nextTickT) / tickT) + 1;
++        const skip = ticks - Math.ceil(ayFilterTailTau * ay.filterTauT / tickT);
++        if (skip > 0) {
++            ayJumpTicks(ay, skip);
++        }
++    }
+     ayAdvanceTo(ay, t, false);
+ }
+ 
++/**
++ * How many filter time constants ayRunSilent integrates exactly at the end of a
++ * span. The filter's output and input both stay within [0, 1], so what it held
++ * before that stretch contributes at most e^-40 (about 4e-18) to the result.
++ */
++const ayFilterTailTau = 40;
++
++/** The 17-bit noise shift register is maximal length: every nonzero state recurs after this many steps. */
++const ayNoisePeriod = 131071;
++
++/**
++ * Run ticks chip ticks at once, leaving every counter, level, the noise
++ * register, the envelope and the clock phase exactly as that many ayTick calls
++ * would, with the time at the last of those ticks. The filter is set to its
++ * resting value for the new levels; ayRunSilent integrates it from there.
++ *
++ * @param {Ay} ay
++ * @param {number} ticks at least 1
++ */
++function ayJumpTicks(ay, ticks) {
++    const regs = ay.regs;
++    for (let ch = 0; ch < 3; ch += 1) {
++        const counter = ay.toneCounter[ch];
++        if (ticks <= counter) {
++            ay.toneCounter[ch] = counter - ticks;
++        } else {
++            // A zero period counts as one.
++            const period = Math.max((regs[ch * 2 + 1] << 8) | regs[ch * 2], 1);
++            const after = ticks - counter - 1;
++            ay.toneLevel[ch] ^= (1 + Math.floor(after / period)) % 2;
++            ay.toneCounter[ch] = period - 1 - after % period;
++        }
++    }
++
++    // The noise and the envelope step on the ticks that find the phase clear.
++    const phase = ay.clockDividerPhase;
++    const slow = phase ? Math.floor(ticks / 2) : Math.ceil(ticks / 2);
++    if (ticks % 2 !== 0) {
++        ay.clockDividerPhase = !phase;
++    }
++    if (slow > 0) {
++        const noiseCounter = ay.noiseCounter;
++        if (slow <= noiseCounter) {
++            ay.noiseCounter = noiseCounter - slow;
++        } else {
++            const period = Math.max(regs[ayRegNoise], 1);
++            const after = slow - noiseCounter - 1;
++            ay.noiseCounter = period - 1 - after % period;
++            ayNoiseSteps(ay, 1 + Math.floor(after / period));
++        }
++        const e = ay.env;
++        if (slow <= e.counter) {
++            e.counter -= slow;
++        } else {
++            const period = ayEnvPeriod(ay);
++            const after = slow - e.counter - 1;
++            e.counter = period - 1 - after % period;
++            ayEnvSteps(ay, 1 + Math.floor(after / period));
++        }
++    }
++
++    ay.t = ay.nextTickT + (ticks - 1) * ay.tickT;
++    ay.nextTickT = ay.t + ay.tickT;
++    ayRefreshLevels(ay);
++    ay.filterOut[0] = ay.out[0];
++    ay.filterOut[1] = ay.out[1];
++    ay.filterOut[2] = ay.out[2];
++}
++
++/**
++ * Step the noise shift register n times. The new top bits are x[i] ^ x[i + 3]
++ * of bits already in the register, so up to 14 of them come out in one go.
++ *
++ * @param {Ay} ay
++ * @param {number} n at least 1
++ */
++function ayNoiseSteps(ay, n) {
++    let lfsr = ay.noiseLfsr;
++    if (lfsr >= 0 && lfsr < 0x20000 && Number.isInteger(lfsr)) {
++        let left = n % ayNoisePeriod;
++        while (left > 0) {
++            const k = Math.min(left, 14);
++            const feedback = (lfsr ^ (lfsr >> 3)) & ((1 << k) - 1);
++            lfsr = (lfsr >> k) | (feedback << (17 - k));
++            left -= k;
++        }
++    } else {
++        // Not a state the chip can reach: step it exactly as ayTick does.
++        for (let i = 0; i < n; i += 1) {
++            const feedback = (lfsr ^ (lfsr >> 3)) & 1;
++            lfsr = (lfsr >> 1) | (feedback << 16);
++        }
++    }
++    ay.noiseLfsr = lfsr;
++    ay.noiseLevel = lfsr & 1;
++}
++
++/**
++ * Take n envelope steps, as n ayEnvStep calls would.
++ *
++ * @param {Ay} ay
++ * @param {number} n at least 1
++ */
++function ayEnvSteps(ay, n) {
++    const e = ay.env;
++    if (e.holding || !(e.step >= 0 && e.step <= 15)) {
++        for (let i = 0; i < n && !e.holding; i += 1) {
++            ayEnvStep(ay);
++        }
++        return;
++    }
++    const toTop = 15 - e.step;
++    if (n <= toTop) {
++        e.step += n;
++        ayEnvSetLevel(ay);
++        return;
++    }
++    // Climb to the end of the ramp, then take the end-of-ramp step itself.
++    e.step = 15;
++    ayEnvStep(ay);
++    if (e.holding) {
++        return;
++    }
++    // A repeating shape: each further 16 steps are 15 rises and another end,
++    // which reverses the direction when the shape alternates.
++    const left = n - toTop - 1;
++    const ends = Math.floor(left / 16);
++    if (ends % 2 !== 0 && (ay.regs[ayRegEnvShape] & 0x02) !== 0) {
++        e.attack = !e.attack;
++    }
++    e.step = left % 16;
++    ayEnvSetLevel(ay);
++}
++
+ /**
+  * @param {Ay} ay
+  * @param {number} period
+-- 
+2.43.0
+

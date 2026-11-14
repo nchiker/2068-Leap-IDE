@@ -1,7 +1,8 @@
 "use strict";
 // m3-mutations.mjs -- mutation test of the M3 test suite: copies arcade/ (runtime v1, tools, tests) to a temporary directory, applies one deliberate
 // bug at a time to the runtime sources, rebuilds and runs the M3 tests; a mutation is KILLED when at least one test fails.  Every mutant must be killed.
-//   node arcade/tests/m3-mutations.mjs [name-fragment]       (about 15 s per mutant)
+//   node arcade/tests/m3-mutations.mjs [name-fragment] [--shard=i/n]       (about 15 s per mutant; --shard=i/n runs mutants i, i + n, i + 2n ... (0-based i) for parallel runs)
+//   node arcade/tests/m3-mutations.mjs --check               only verify that every pattern occurs exactly once
 import { cpSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
@@ -11,7 +12,11 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = join(HERE, '..');
 const TSRUN = join(ARCADE, '../tsrun');
-const only = process.argv[2];
+const args = process.argv.slice(2);
+const checkOnly = args.includes('--check');
+const only = args.find((a) => !a.startsWith('--'));
+const shardArg = args.find((a) => a.startsWith('--shard='));
+const [shardI, shardN] = shardArg ? shardArg.slice(8).split('/').map(Number) : [0, 1];
 const TESTS = ['m3-runtime.mjs', 'm3-runtime-text.mjs', 'm3-runtime-sound.mjs', 'm3-runtime-regs.mjs'];
 
 const E = (file, from, to) => ({ file, from, to });
@@ -47,11 +52,21 @@ const MUTANTS = [
   ['print_char writes the cursor cell with the wrong attribute (ink only)', [E('text.asm', '    ld a,(V_TEXT_ATTR)\n    ld e,a\n    call cursor_idx', '    ld a,(V_TEXT_ATTR)\n    and 7\n    ld e,a\n    call cursor_idx')]],
 ];
 
+if (checkOnly) {                                                    // patterns only: each must be found exactly once
+  let bad = 0;
+  for (const [name, edits] of MUTANTS) for (const e of edits) {
+    const n = readFileSync(join(ARCADE, 'runtime/v1', e.file), 'utf8').split(e.from).length - 1;
+    if (n !== 1) { console.log(`  ?? ${name}: pattern found ${n} times in ${e.file}`); bad++; }
+  }
+  console.log(`${bad ? 'FAIL' : 'PASS'}: m3-mutations --check (${MUTANTS.length} mutants, ${bad} bad patterns)`);
+  process.exit(bad ? 1 : 0);
+}
 const tmp = mkdtempSync(join(tmpdir(), 'm3mut-'));
 let killed = 0, survived = [], broken = [];
 try {
-  for (const [name, edits] of MUTANTS) {
+  for (const [mi, [name, edits]] of MUTANTS.entries()) {
     if (only && !name.includes(only)) continue;
+    if (mi % shardN !== shardI) continue;
     const root = join(tmp, 'root');
     rmSync(root, { recursive: true, force: true });
     mkdirSync(join(root, 'arcade'), { recursive: true });

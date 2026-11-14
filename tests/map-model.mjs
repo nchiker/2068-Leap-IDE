@@ -265,7 +265,7 @@ const compileWith = (text, assets) => {
 {
   const dir = join(ROOT, 'arcade/examples');
   const files = readdirSync(dir).filter((f) => f.endsWith('.assets.json')).sort();
-  ok(`${files.length} example assets files found`, files.length === 7, files.join(' '));
+  ok(`${files.length} example assets files found`, files.length === 8, files.join(' '));
   let maps = 0, compiled = 0;
   for (const f of files) {
     const assets = JSON.parse(readFileSync(join(dir, f), 'utf8')), name = f.replace('.assets.json', '');

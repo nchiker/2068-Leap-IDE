@@ -9,6 +9,7 @@
 // is given with the interrupt handler's time ("t", what decides whether the tick is late) and without it ("tx"). The game's logic is PROC FRAME: entered at the game's
 // frame entry, left when the runtime reaches AFTER_FRAME. The joystick of tick k is put on the machine when PROC FRAME is entered for tick k. Inside the logic every
 // instruction's time goes to the source line of the last game instruction (a runtime routine called from a line is charged to that line) and to the runtime routine running.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -37,12 +38,7 @@ export function profile(src, { ticks, stick, assets = ASSETS, runtimeDir, compil
   const res = compileFn(src, { runtime: R.rt, image: R.img, assets });
   if (res.errors.length) throw new Error('compile: ' + res.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
   const S = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom')));
-  M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom')));
-  M_.insertDock(m, res.dck);
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   for (let f = 0; f < 400 && rd16(S.HO_MARK) !== S.HO_MARK_VALUE; f++) M_.runFrame(m);
   if (rd16(S.HO_MARK) !== S.HO_MARK_VALUE) throw new Error('the runtime did not boot');

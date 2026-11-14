@@ -8,11 +8,13 @@
 //                                            other step gets ARCADE_JOB_TAG, so assembleGame() uses its own work directory.
 //                                            Output is kept per step and printed in the usual order, with the same summary.
 //
+// (tools/verify.mjs is the driver for everything: this file plus the Studio / editor / model tests, the IDE's suites and the checks, sharded and chosen by what changed.)
 // Needs Node 20+ and sjasmplus (/usr/local/bin/sjasmplus). Exit code 1 if any step fails.
 "use strict";
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { RUNTIME_BUILDS, SUITES, MUTATION_SUITES, EXCLUSIVE, SLOW_FIRST } from './steps.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const args = process.argv.slice(2);
@@ -20,103 +22,9 @@ const full = args.includes('--full');
 const env = { ...process.env, ...(args.includes('--quick') ? { ARCADE_QUICK: '1' } : {}) };
 const jobsArg = args.find((a, i) => a.startsWith('--jobs=') || args[i - 1] === '--jobs');
 const jobs = Math.max(1, Number(jobsArg?.startsWith('--jobs=') ? jobsArg.slice(7) : jobsArg ?? 1) || 1);
-// Steps that write shared files (arcade/build/*.dck; blockfall also builds v2 if it is missing): never beside another step.
-const EXCLUSIVE = new Set(['tests/arcade-blockfall.mjs']);
-// The slowest steps (sequential run, 2026-11-11: 270, 198, 139, 114, 53, 44, 42, 37 s) start first, so none of them is the tail.
-const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m11-differential.mjs',
-  'arcade/tests/m7-runtime-perf.mjs', 'tests/arcade-m12-differential.mjs', 'arcade/tests/m10-runtime-sound.mjs', 'arcade/tests/m15-runtime-music.mjs', 'tests/arcade-m5.mjs',
-  'arcade/tests/m7-runtime.mjs', 'tests/arcade-m15-differential.mjs'];
-
-const builds = [
-  'arcade/tools/build-runtime.mjs',
-  'arcade/tools/build-runtime-v1.mjs',
-  'arcade/tools/build-runtime-v2.mjs',
-  'arcade/tools/build-runtime-v3.mjs',
-  'arcade/tools/build-runtime-v4.mjs',
-];
-const suites = [
-  'tests/arcade-parse.mjs',
-  'tests/arcade-compile.mjs',
-  'tests/arcade-m3.mjs',
-  'tests/arcade-m4.mjs',
-  'tests/arcade-m5.mjs',
-  'tests/arcade-blockfall.mjs',
-  'tests/arcade-starfall.mjs',
-  'tests/arcade-m6-compiler.mjs',
-  'tests/arcade-m6-platformer.mjs',
-  'tests/arcade-runner.mjs',
-  'tests/arcade-m6-differential.mjs',
-  'tests/arcade-m8-compiler.mjs',
-  'tests/arcade-m8-differential.mjs',
-  'tests/arcade-display.mjs',
-  'tests/arcade-m9-compiler.mjs',
-  'tests/arcade-m9-differential.mjs',
-  'tests/arcade-m10-compiler.mjs',
-  'tests/arcade-m10-differential.mjs',
-  'tests/arcade-m11-compiler.mjs',
-  'tests/arcade-m11-differential.mjs',
-  'tests/arcade-m12-compiler.mjs',
-  'tests/arcade-m12-differential.mjs',
-  'tests/arcade-m13-compiler.mjs',
-  'tests/arcade-m13-differential.mjs',
-  'tests/arcade-m14-compiler.mjs',
-  'tests/arcade-m14-differential.mjs',
-  'tests/arcade-m15-compiler.mjs',
-  'tests/arcade-m17-compiler.mjs',
-  'tests/arcade-m17-interp.mjs',
-  'tests/arcade-orbit.mjs',                      // the wireframe sample game "Orbit Gates" on the reference interpreter (the runtime part is a TODO in the file)
-  'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
-  'tests/arcade-codegen-exhaustive.mjs',        // compiler size pass: F1 / F3 / F6 / F8 / F9 for every 16-bit value
-  'tests/arcade-m15-differential.mjs',
-  'arcade/tests/m1.mjs',
-  'tests/arcade-m8-vaults.mjs',
-  'arcade/tests/m1-overrun.mjs',
-  'arcade/tests/extra-regs.mjs',
-  'arcade/tests/m2-runtime.mjs',
-  'arcade/tests/m2-runtime-math.mjs',
-  'arcade/tests/m2-runtime-regs.mjs',
-  'arcade/tests/m3-runtime.mjs',
-  'arcade/tests/m3-runtime-text.mjs',
-  'arcade/tests/m3-runtime-sound.mjs',
-  'arcade/tests/m3-runtime-regs.mjs',
-  'arcade/tests/m3-runtime-perf.mjs',
-  'arcade/tests/m4-runtime.mjs',
-  'arcade/tests/m4-runtime-api.mjs',
-  'arcade/tests/m4-runtime-mem.mjs',
-  'arcade/tests/m4-runtime-regs.mjs',
-  'arcade/tests/m4-runtime-skip.mjs',
-  'arcade/tests/m4-runtime-perf.mjs',
-  'arcade/tests/m4-runtime-stick.mjs',
-  'arcade/tests/m5-runtime.mjs',
-  'arcade/tests/m5-runtime-pic.mjs',
-  'arcade/tests/m5-runtime-mem.mjs',
-  'arcade/tests/m5-runtime-regs.mjs',
-  'arcade/tests/m5-runtime-perf.mjs',
-  'arcade/tests/m6-runtime.mjs',
-  'arcade/tests/m6-runtime-pic.mjs',
-  'arcade/tests/m6-runtime-mem.mjs',
-  'arcade/tests/m6-runtime-regs.mjs',
-  'arcade/tests/m6-runtime-perf.mjs',
-  'arcade/tests/m7-runtime.mjs',
-  'arcade/tests/m7-runtime-api.mjs',
-  'arcade/tests/m7-runtime-mem.mjs',
-  'arcade/tests/m7-runtime-regs.mjs',
-  'arcade/tests/m7-runtime-perf.mjs',
-  'arcade/tests/m8-runtime.mjs',
-  'arcade/tests/m8-runtime-api.mjs',
-  'arcade/tests/m8-runtime-mem.mjs',
-  'arcade/tests/m8-runtime-regs.mjs',
-  'arcade/tests/m8-runtime-perf.mjs',
-  'arcade/tests/m8-runtime-v3compat.mjs',
-  'arcade/tests/m10-runtime-sound.mjs',
-  'arcade/tests/m11-runtime-bank.mjs',
-  'arcade/tests/m12-runtime-table.mjs',
-  'arcade/tests/m14-runtime-mode.mjs',
-  'arcade/tests/m15-runtime-music.mjs',
-  'arcade/tests/m17-runtime-wire.mjs',
-  'arcade/tests/m17-runtime-tick.mjs',
-  ...(full ? ['arcade/tests/m3-mutations.mjs', 'arcade/tests/m4-mutations.mjs', 'arcade/tests/m5-mutations.mjs', 'arcade/tests/m6-mutations.mjs', 'arcade/tests/m7-mutations.mjs', 'arcade/tests/m8-mutations.mjs', 'arcade/tests/m9-mutations.mjs', 'arcade/tests/m10c-mutations.mjs', 'arcade/tests/m11-mutations.mjs', 'arcade/tests/m12-mutations.mjs', 'arcade/tests/m14-mutations.mjs', 'arcade/tests/m15-mutations.mjs', 'arcade/tests/m17-mutations.mjs', 'arcade/tests/m15c-mutations.mjs', 'arcade/tests/m16c-mutations.mjs'] : []),
-];
+// The step lists (builds, suites, mutation suites, EXCLUSIVE, SLOW_FIRST) live in steps.mjs, which tools/verify.mjs shares.
+const builds = RUNTIME_BUILDS.map((b) => b.file);
+const suites = [...SUITES, ...(full ? MUTATION_SUITES.map((m) => m.file) : [])];
 
 function finish(file, isBuild, t0, status, out) {
   const lines = out.trim().split('\n');

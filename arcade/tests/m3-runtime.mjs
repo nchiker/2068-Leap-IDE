@@ -25,7 +25,7 @@ const allEq = (m, from, n, v) => { for (let i = 0; i < n; i++) if (m.ram[from + 
 console.log('1. Boot state (placeholder game; chunk 6 and the display files are filled with garbage when the cartridge starts)');
 {
   const S = rt.syms;
-  const m = C.newMachine(rt.dck);
+  const m = C.newMachine(rt.dck, { video: true });                           // the screen is read below (shownColours)
   // stop at the cartridge entry (every instruction), poison the RAM the runtime must initialise, then let it boot
   let seen = false;
   for (let f = 0; f < 400 && !seen; f++) {

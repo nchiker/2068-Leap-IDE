@@ -3,7 +3,8 @@
 // applies one deliberate bug at a time to the v2 runtime sources, rebuilds and runs the M4a tests; a mutation is KILLED when at least one test fails.
 // Every mutant must be killed.  (The sound and text routines are copies of v1's and are covered by m3-mutations.mjs; a few are repeated here to show
 // that the v2 tests see them too.)
-//   node arcade/tests/m4-mutations.mjs [name-fragment]       (about 15-25 s per mutant)
+//   node arcade/tests/m4-mutations.mjs [name-fragment] [--shard=i/n]       (about 15-25 s per mutant; --shard=i/n runs mutants i, i + n, i + 2n ... (0-based i) for parallel runs)
+//   node arcade/tests/m4-mutations.mjs --check               only verify that every pattern occurs exactly once
 //   TMPDIR=<dir> to choose where the scratch copy lives.
 import { cpSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, rmSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -14,7 +15,10 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = join(HERE, '..');
 const TSRUN = join(ARCADE, '../tsrun');
-const only = process.argv[2];
+const args = process.argv.slice(2);
+const only = args.find((a) => !a.startsWith('--'));
+const shardArg = args.find((a) => a.startsWith('--shard='));
+const [shardI, shardN] = shardArg ? shardArg.slice(8).split('/').map(Number) : [0, 1];
 const TESTS = ['m4-runtime.mjs', 'm4-runtime-api.mjs', 'm4-runtime-skip.mjs', 'm4-runtime-mem.mjs', 'm4-runtime-regs.mjs'];
 
 const E = (file, from, to) => ({ file, from, to });
@@ -78,15 +82,25 @@ const MUTANTS = [
   ['skip: the join of a changed instance forgets to widen by 2 cells (rows)', [E('skip.asm', '.r0lo:\n    ld e,d\n    inc e\n    inc e\n    ld d,a', '.r0lo:\n    ld e,d\n    ld d,a')]],
   // ---- shared v1 code the v2 pictures depend on ----
   ['mark_dirty marks only file 1', [E('text.asm', '    inc h                       ; DIRTY1 = DIRTY0 + $100\n    pop af\n    or (hl)\n    ld (hl),a\n    ret', '    pop af\n    ret')]],
-  ['sound tick forgets to preserve DE', [E('sound.asm', '    push bc\n    push de\n    push hl\n    ld hl,(V_SFX_PTR)', '    push bc\n    push hl\n    ld hl,(V_SFX_PTR)'), E('sound.asm', '.out:\n    pop hl\n    pop de\n    pop bc', '.out:\n    pop hl\n    pop bc')]],
+  ['sound tick forgets to preserve DE', [E('sound.asm', '    push bc\n    push de\n    push hl\n    cp 1<<SB_SYNC', '    push bc\n    push hl\n    cp 1<<SB_SYNC'), E('sound.asm', '.out:\n    pop hl\n    pop de\n    pop bc', '.out:\n    pop hl\n    pop bc')]],
   ['RT_STICK without DI', [E('api.asm', '    di                          ; v1:', '    nop                         ; v1:')]],
 ];
 
+if (args.includes('--check')) {                                                    // patterns only: each must be found exactly once
+  let bad = 0;
+  for (const [name, edits] of MUTANTS) for (const e of edits) {
+    const n = readFileSync(join(ARCADE, 'runtime/v2', e.file), 'utf8').split(e.from).length - 1;
+    if (n !== 1) { console.log(`  ?? ${name}: pattern found ${n} times in ${e.file}`); bad++; }
+  }
+  console.log(`${bad ? 'FAIL' : 'PASS'}: m4-mutations --check (${MUTANTS.length} mutants, ${bad} bad patterns)`);
+  process.exit(bad ? 1 : 0);
+}
 const tmp = mkdtempSync(join(tmpdir(), 'm4mut-'));
 let killed = 0, survived = [], broken = [];
 try {
-  for (const [name, edits] of MUTANTS) {
+  for (const [mi, [name, edits]] of MUTANTS.entries()) {
     if (only && !name.includes(only)) continue;
+    if (mi % shardN !== shardI) continue;
     const root = join(tmp, 'root');
     rmSync(root, { recursive: true, force: true });
     mkdirSync(join(root, 'arcade'), { recursive: true });

@@ -145,7 +145,7 @@ Leap-IDE/
 │   ├── LEAP_FORTH_REFERENCE.md, LEAP_C_REFERENCE.md, DEBUGGER.md, EXPORT_FORMATS.md, TESTS.md, BUILD_PHASES.md ← sections moved out of this file to keep it under the 150k-character limit
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needed; now built)
 │   └── mockup.html   ← Visual mock-up
-└── tsrun/            ← git submodule: TSRun fork, pinned at 9893b46
+└── tsrun/            ← git submodule: TSRun fork, pinned at 89208e8 (closed-form silent AY, on 9893b46)
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
@@ -159,10 +159,16 @@ ROMs. The 2.1.0-emu.1 pair (`8c3d6c81…`, `e46e2065…`; key `5a42872e…`) and
 
 **TSRun** is the fork https://github.com/nchiker/TSRun (upstream
 josef-jelinek/TSRun), included as the git submodule `tsrun/` pinned at commit
-`c52f272` (Leap V2 2.1.1-emu.1 as `roms/leap-*.rom`, with the READMEs). **`c52f272`
-is a local commit in the submodule, on top of TSRun `main` `34b0794`; it is not
-pushed to nchiker/TSRun yet. Do not push the IDE before it is pushed**, or
-GitHub Pages gets a submodule commit it cannot fetch. `34b0794` carries the
+`89208e8` ("AY: closed-form silent advance", 2026-11-14: the AY's silent advance
+in closed form, chip state identical; it speeds the Node test suites), on top of
+`9893b46` (Leap V2 2.1.2-emu.1 ROMs) and `c52f272` (Leap V2 2.1.1-emu.1 as
+`roms/leap-*.rom`, with the READMEs). `89208e8` is on the fork's branch
+`silent-ay`; the fork's `main` has the same change as `6ccf56e`, on top of
+two LeapG commits (Kempston mouse, host bridge on ports $6D / $6F) that the
+IDE has not been verified with, so the pin stays on `silent-ay` until a move
+to `main` is verified (`node tools/verify.mjs --all --full`). **Never push the IDE with a submodule
+commit that is not pushed to nchiker/TSRun**, or GitHub Pages gets a submodule
+commit it cannot fetch. `34b0794` carries the
 Leap-C 1.2.0 ROMs (`roms/leapc-*.rom`) and, below it, `02e5325` the 2068-Forth
 v2.0.1 ROMs; both were pushed by the ROM projects. Before them the pin was
 `9f9bbc5` (the Leap-C 1.0.0 ROMs), `11731e1` (the
@@ -1167,8 +1173,8 @@ sprite editor, the compiler and the emulator. The IDE above is unchanged by it. 
 (published builds in `arcade/dist/`; the compiler and the Studio choose v2, v3 or v4 per program), examples are in
 `arcade/examples/` (bounce, breakout, shooter, blockfall, platformer "Leap Runner", raycaster "Vaults"). Everything about it
 (plan, contracts, language batches, hardware notes, tests, traps) starts at **`docs/HANDOFF.md`** ("Leap Arcade / Leap Arcade
-Studio") and `docs/ARCADE_PLAN.md`. Test it with `node arcade/tests/run-all.mjs`, `node tests/studio-smoke.mjs`,
-`tests/arcade-project.mjs`, `tests/sprite-editor-smoke.mjs` and `tests/sprite-model.mjs`. Run it with
+Studio") and `docs/ARCADE_PLAN.md`. Test everything (Arcade, Studio, editors, models, the IDE's own suites, perf and stamp checks) with `node tools/verify.mjs --all`
+(before every PR; `--full` adds every mutant; `--changed` runs only what a change reads; steps in `arcade/tests/steps.mjs`). Run it with
 `python3 -m http.server 8080` and open `http://localhost:8080/studio.html`. All its numbers are emulator-only (TSRun, ZEsarUX
 13.0, Fuse 1.9.1); real hardware is untested.
 
@@ -1179,7 +1185,7 @@ Studio") and `docs/ARCADE_PLAN.md`. Test it with `node arcade/tests/run-all.mjs`
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
   clone `~/2068-Leap`. V1 is archived; ignore it.
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, git submodule
-  `./tsrun` pinned at `c52f272`.
+  `./tsrun` pinned at `89208e8`.
 - **This project on GitHub**: https://github.com/nchiker/2068-Leap-IDE, live at
   https://nchiker.github.io/2068-Leap-IDE/.
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`

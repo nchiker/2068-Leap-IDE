@@ -9,7 +9,7 @@ import { buildM1 } from '../tools/build-m1.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TSRUN = join(HERE, '../../tsrun');
-const M = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
+import { M, bootedMachine } from './fast-boot.mjs';
 const Z = await import(pathToFileURL(join(TSRUN, 'z80.js')).href);
 let passed = 0, failed = 0;
 const check = (name, ok, detail = '') => {
@@ -18,12 +18,7 @@ const check = (name, ok, detail = '') => {
 };
 
 const { dck, syms } = buildM1();
-const m = M.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-const must = (e) => { if (e) throw new Error(e); };
-must(M.setHomeRom(m, readFileSync(join(TSRUN, 'roms/ts2068-0.rom'))));
-must(M.setExRom(m, readFileSync(join(TSRUN, 'roms/ts2068-1.rom'))));
-must(M.insertDock(m, dck));
-M.resetMachine(m);
+const m = bootedMachine(dck);                                  // restored from the boot snapshot (V9), video off (V8)
 const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
 for (let f = 0; f < 400 && rd16(syms.HO_MARK) !== 0x5AA5; f++) M.runFrame(m);
 for (let f = 0; f < 60 && rd16(syms.V_FRAMES) < 2; f++) M.runFrame(m);

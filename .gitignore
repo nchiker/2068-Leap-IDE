@@ -5,3 +5,6 @@ __pycache__/
 # Leap Arcade: generated output (rebuild with arcade/tools/build-runtime*.mjs and arcadec.mjs)
 arcade/build/
 arcade/spike/**/build/
+
+# Claude Code agent worktrees
+.claude/worktrees/

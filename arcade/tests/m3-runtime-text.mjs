@@ -14,8 +14,8 @@ const S = rt.syms;
 console.log('M3 runtime text / tiles / collision: direct calls vs the JavaScript model\n');
 
 /** Boot a game and park the main loop at its wait (TICK_LOOP) so a routine can be called from outside. */
-function park(game) {
-  const m = C.newMachine(game.dck);
+function park(game, video = false) {
+  const m = C.newMachine(game.dck, { video });
   C.bootMachine(m, S);
   for (let f = 0; f < 8; f++) M.runFrame(m);
   settle(m);
@@ -37,7 +37,7 @@ function runFramesSettled(m, n) {
 const TILES = randomTiles(rng(301), 12);
 const spec = { div: 1, sprites: [{ kind: 'ball' }, { kind: 'box' }, { kind: 'ball', hot: [2, 3, 12, 10] }, { kind: 'box', hot: [0, 0, 0, 5] }], tiles: TILES, script: [] };
 const game = C.scriptGame(spec);
-const m = park(game);
+const m = park(game, true);                                    // the main machine's screen is read (shownColours)
 const model = new Model(spec);
 let pres = true, spOk = true, calls = 0;
 let dirtyExp = new Uint8Array(96);                       // expected dirty bits (never consumed while the machine is parked)

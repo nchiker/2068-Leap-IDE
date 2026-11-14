@@ -1,0 +1,17 @@
+started 2026-11-13T00:11:14-05:00 at 8967134
+tests/studio-smoke.mjs               exit 0    61.8 s  All checks passed
+tests/sprite-editor-smoke.mjs        exit 0     3.4 s  All checks passed; screenshots in /tmp/sprite-smoke-AwpMDo
+tests/tile-editor-smoke.mjs          exit 0     4.2 s  All checks passed; screenshots in /tmp/tile-smoke-ZSpyK1
+tests/map-editor-smoke.mjs           exit 0     3.4 s  83 passed, 0 failed; screenshots in /tmp/map-smoke-1UEQ6X
+tests/sound-editor-smoke.mjs         exit 0    10.0 s  All checks passed (176 passed); screenshots in /tmp/sound-smoke-cocfHf
+tests/arcade-project.mjs             exit 1     0.4 s  1 check(s) FAILED
+tests/arcade-assetcheck.mjs          exit 0     1.9 s  All checks passed
+tests/sprite-model.mjs               exit 0     0.9 s  All checks done: 97 passed, 0 failed
+tests/tile-model.mjs                 exit 1     1.3 s  Some checks done: 135 passed, 2 failed
+tests/map-model.mjs                  exit 1     0.6 s  Some checks done: 142 passed, 1 failed
+tests/sound-model.mjs                exit 0     0.7 s  All checks done: 158 passed, 0 failed
+tests/music-model.mjs                exit 0     0.7 s  All checks done: 123 passed, 0 failed
+tests/music-stream.mjs               exit 0     1.7 s  PASS: music streams (19 checks passed, 0 failed)
+tests/rom-checks.mjs                 exit 0    22.8 s  All checks passed
+tests/browser-smoke.mjs              exit 0    48.3 s  All checks passed
+finished 2026-11-13T00:13:56-05:00

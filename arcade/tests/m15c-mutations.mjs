@@ -78,12 +78,12 @@ const MUTANTS = [
   // ---- the checker, the parser, the word table ----
   ['check: 9 songs allowed', [E(CK, "if (kind === 'music' && ++songNo > LIMITS.maxSongs)", "if (kind === 'music' && ++songNo > LIMITS.maxSongs + 1)")]],
   ['check: a name that is both an SFX and a MUSIC is accepted', [E(CK, "if (this.assets.has(`sfx:${key}`)) { this.assets.get(`sfx:${key}`).used = true; this.err(", "if (false) { this.assets.get(`sfx:${key}`).used = true; this.err(")]],
-  ['check: no "MUSIC never used" warning', [E(CK, "a.kind === 'sprite' || a.kind === 'sfx' || a.kind === 'music') this.warn", "a.kind === 'sprite' || a.kind === 'sfx') this.warn")]],
+  ['check: no "MUSIC never used" warning', [E(CK, "a.kind === 'sprite' || a.kind === 'sfx' || a.kind === 'music' || a.kind === 'model') this.warn", "a.kind === 'sprite' || a.kind === 'sfx' || a.kind === 'model') this.warn")]],
   ['check: the NOMUSIC warning in every game', [E(CK, "if (![...this.assets.values()].some((a) => a.kind === 'music')) this.warn(s, 'NOMUSIC does nothing", "if (true) this.warn(s, 'NOMUSIC does nothing")]],
   ['check: a PLAYed song stays "never used"', [E(CK, '      if (song) {\n        song.used = true;', '      if (song) {\n        void 0;')]],
   ['parse: NOMUSIC takes an argument silently', [E(PA, "if (!isEnd(a) && !isBlockWord(a)) this.fail(a, 'NOMUSIC takes nothing", "if (false) this.fail(a, 'NOMUSIC takes nothing")]],
   ['parse: PLAY of a word that names an asset fails', [E(PA, "if (a.type === 'keyword' && BATCH11_WORDS.has(a.value) && (isEnd(this.peek(1))", "if (false && (isEnd(this.peek(1))")]],
-  ['words: MUSIC is no asset kind', [E(WO, ", MAP: 'map', MUSIC: 'music' });", ", MAP: 'map' });")]],
+  ['words: MUSIC is no asset kind', [E(WO, ", MAP: 'map', MUSIC: 'music', MODEL: 'model' });", ", MAP: 'map', MODEL: 'model' });")]],
 ];
 
 if (checkOnly) {

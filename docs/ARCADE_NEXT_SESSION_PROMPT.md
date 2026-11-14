@@ -1,3 +1,5 @@
+**RESUME HERE (2026-11-14):** stage 0 (validation speed) of `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` is DONE and merged (branch `arcade-verify`; as built and figures in section 2.2). **Next (new session, owner 2026-11-14): stage 1**, the fixes listed in section 1 / 4 (B1, B2, B4-B7, K1-K3, N2, N3, T1, T3, A2, A3, R1, R2, R5, P2, E1-E4, E6, X1), on a new branch from `main`. Verify with `node tools/verify.mjs --changed` while working and `--all` before the PR (see HANDOFF "Verification since 2026-11-14"); the checklist below predates it. Trap: the Agent tool's `isolation: worktree` makes the worktree from `main`, not your branch: have agents `git merge --ff-only <your head>` first.
+
 # Prompt for the next session (written 2026-11-11, updated 2026-11-12 after the compiler size pass)
 
 **State (2026-11-12, end of the wireframe session):** wireframe 3D (item 4) is DONE on branch `arcade-wire` (pushed; PR only when the owner

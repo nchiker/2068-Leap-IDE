@@ -10,7 +10,7 @@
 import { join } from 'node:path';
 import { buildRuntime, assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runtime-v4.mjs';
 import * as C from './m6-common.mjs';
-export const { M, Z, FRAME_T, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine, rowAddr, BG_ATTR, C3, dfileOf, diffCount,
+export const { M, Z, FRAME_T, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine, bootSkip, rowAddr, BG_ATTR, C3, dfileOf, diffCount,
   colourPlane, shownColours, randomAsset, assetBytes, normAsset, avg } = C;
 export { C };
 
@@ -398,9 +398,9 @@ export function spikePoses(n) {
  * to the shown file, the frame interrupt's flips.  opts: { script, hooks(pc, ctx), ModelClass, onTick(m, n, model) }.
  */
 export function observe8(game, nframes, { script = [], hooks = null, ModelClass = Model8, onTick = null, pixels = false } = {}) {
-  const S = game.syms, m = newMachine(game.dck);
+  const S = game.syms, m = newMachine(game.dck, { video: pixels });          // the picture check reads m.pixels
   let entry = -1;
-  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entry = f; break; } }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entry = f + bootSkip(m); break; } }
   const model = new ModelClass(game.spec);
   const st = { m, entry, frames: 0, ticks: 0, ok: 0, bad: 0, firstBad: null, writeViolations: 0, work: [], renders: [], pixelBad: 0, model, spMin: 0xFFFF };
   const snaps = [null, null];

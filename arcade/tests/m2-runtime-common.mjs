@@ -7,10 +7,12 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildRuntime, assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runtime.mjs';
+import { M as FM, TSRUN as FTSRUN, bootedMachine, bootSkip, pixelsOf } from './fast-boot.mjs';
+export { bootSkip, pixelsOf };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TSRUN = join(HERE, '../../tsrun');
-export const M = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
+const TSRUN = FTSRUN;
+export const M = FM;
 export const Z = await import(pathToFileURL(join(TSRUN, 'z80.js')).href);
 export const FRAME_T = M.tStatesPerFrame;                 // 58,688 on TSRun
 export const FIRST_PIXEL_T = 40 * 224 + 32;               // TSRun's raster: first pixel line, T after the frame interrupt
@@ -61,16 +63,15 @@ export function placeholderGame() {
   return { img: rt.img, dck: rt.dck, bytes: rt.img.slice(0x8000, 0x8010), gsyms: {}, syms: rt.syms };
 }
 
-/** A stock TS2068 (TSRun) with the DCK inserted and reset. */
-export function newMachine(dck) {
+/**
+ * A stock TS2068 (TSRun) with the DCK inserted, as it is a boot's first ~97 frames from reset (fast-boot.mjs restores that part from
+ * a snapshot: V9; bootMachine's frame counts add what was skipped).  `video: true` for a check that reads the drawn screen
+ * (pixelsOf, shownPlane / shownColours); without it the machine paints nothing (V8) and the screen readers throw.
+ */
+export function newMachine(dck, { video = false } = {}) {
   const keyMatrix = new Uint8Array(9).fill(0x1F);
   const joystick = new Uint8Array(2).fill(0xFF);
-  const m = M.createMachine(keyMatrix, joystick);
-  const must = (e) => { if (e) throw new Error(e); };
-  must(M.setHomeRom(m, readFileSync(join(TSRUN, 'roms/ts2068-0.rom'))));
-  must(M.setExRom(m, readFileSync(join(TSRUN, 'roms/ts2068-1.rom'))));
-  must(M.insertDock(m, dck));
-  M.resetMachine(m);
+  const m = bootedMachine(dck, { keyMatrix, joystick, video });
   m.joystick = joystick;
   return m;
 }
@@ -83,7 +84,7 @@ export function bootMachine(m, syms) {
   let entry = -1;
   for (let f = 1; f <= 400; f++) {
     M.runFrame(m);
-    if (rd16(m, syms.HO_MARK) === 0x5AA5) { entry = f; break; }
+    if (rd16(m, syms.HO_MARK) === 0x5AA5) { entry = f + bootSkip(m); break; }       // counted from reset, as a cold boot
   }
   let bootFrames = 0;
   for (; bootFrames < 60 && rd16(m, syms.V_FRAMES) === 0; bootFrames++) M.runFrame(m);
@@ -179,9 +180,10 @@ export function expectedPlane(sprites) {
 
 /** The frame buffer as a 256x192 plane (ink colour 0 -> 1, paper 7 -> 0), or null if a pixel is neither / unevenly doubled. */
 export function shownPlane(m) {
+  const px = pixelsOf(m);                                   // throws when the machine was made with video off (V8)
   const plane = new Uint8Array(256 * 192);
   for (let y = 0; y < 192; y++) for (let x = 0; x < 256; x++) {
-    const a = m.pixels[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x], b = m.pixels[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x + 1];
+    const a = px[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x], b = px[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x + 1];
     if (a !== b) return null;
     plane[y * 256 + x] = a === 0 ? 1 : a === 7 ? 0 : 2;
   }

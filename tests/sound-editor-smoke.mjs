@@ -153,7 +153,7 @@ try {
   await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: base + 'tests/sound-editor-test.html?example=shooter' });
-  check('the test page mounts the editor', !!(await waitFor('window.testReady === true')) && await exists('.sfxed'));
+  check('the test page mounts the editor', !!(await waitFor('window.testReady === true', 60000)) && await exists('.sfxed'));
   // the page's first layout settles over its first frames (a font swap shifts the lanes by a pixel per bar above them): measure only after it did
   for (let stable = 0, last = null; stable < 5;) {
     const top = await evaluate("document.querySelector('[data-role=lanes]')?.getBoundingClientRect().top");
@@ -785,7 +785,7 @@ try {
   // ── every effect of the other examples, as data, in the light theme ──
   for (const ex of ALL_EXAMPLES.filter((e) => e !== 'shooter')) {
     await send('Page.navigate', { url: base + `tests/sound-editor-test.html?example=${ex}&theme=light` });
-    await waitFor('window.testReady === true');
+    await waitFor('window.testReady === true', 60000);
     const list = await evaluate("t.host.listAssets('sfx')");
     let okAll = true, why = '';
     for (const nm of list) {

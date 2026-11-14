@@ -14,6 +14,7 @@
 // Since language batch 7 part C the game has three scenes (title without the window, demo, play), so the recorded play-through starts in the title: the first two ticks of the first scene and the tick that
 // executes an ENTER with the two after it are loads too ("scene start"): a scene starts from a screen of freshly loaded cells (the title's picture is all 768 cells, drawn in both display files by the first
 // two ticks, about 360,000 T each; the game's first two ticks after ENTER repaint the window in both files). They are not gameplay ticks; what the bound is about, gameplay, starts after them.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -60,12 +61,7 @@ export function measure({ compile: compileFn = compile, ticks: nTicks = TICKS } 
   const S = { ...rt.symbols, ...(rt.constants ?? {}) };
   for (const k of ['RT_WORLDLOAD', 'window_boot', 'window_repaint', 'WORK_START', 'WORK_END', 'AFTER_FRAME', 'ISR', 'ISR_END', 'SND_S', 'SND_E']) if (S[k] === undefined) throw new Error(`the runtime has no symbol ${k}`);
 
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom')));
-  M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom')));
-  M_.insertDock(m, res.dck);
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   for (let f = 0; f < 400 && rd16(S.HO_MARK) !== S.HO_MARK_VALUE; f++) M_.runFrame(m);
   if (rd16(S.HO_MARK) !== S.HO_MARK_VALUE) throw new Error('the runtime did not boot');

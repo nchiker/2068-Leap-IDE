@@ -16,6 +16,7 @@
 //
 // The mock runtime used for 3 and 4 is assembled here with sjasmplus (RT_SHOW/HIDE/MUL/DIV/MOD/RND/STICK at
 // arbitrary addresses); it is a stand-in for the contract in docs/ARCADE_RUNTIME_API.md, not the real runtime.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -1144,12 +1145,7 @@ if (existsSync(RT_JSON)) {
    * tick k is set before the refresh in which tick k runs. `init` is null: PROC INIT and tick 1 can share a refresh.
    */
   function runReal(res, { ticks, stick = null }) {
-    const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-    const must = (e) => { if (e) throw new Error(e); };
-    must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-    must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-    must(M_.insertDock(m, res.dck));
-    M_.resetMachine(m);
+    const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
     const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
     const SYM = rt.symbols;
     const snap = () => ({

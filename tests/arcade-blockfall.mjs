@@ -27,6 +27,7 @@
 //      map, the attribute map, every variable and array, the cursor and the sound state; and the picture the display file shows equals the
 //      JS compositor at every 5th tick.
 //   6. Tick cost on the real runtime (median, 95 %, worst) against the 30 fps budget (2 refreshes = 117,376 T). arcade/build/blockfall.dck is written.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
@@ -802,12 +803,7 @@ else {
     return { plane, attrs: m.ram.slice(att, att + 768), file };
   }
   function runReal(res, { ticks, stick, keys, pictureEvery = 5 }) {
-    const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-    const must = (e) => { if (e) throw new Error(e); };
-    must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-    must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-    must(M_.insertDock(m, res.dck));
-    M_.resetMachine(m);
+    const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
     const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
     const snap = () => ({
       vars: Object.fromEntries(Object.entries(res.map.vars).map(([k, a]) => [k, s16(rd16(a))])),

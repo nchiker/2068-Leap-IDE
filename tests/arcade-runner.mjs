@@ -27,6 +27,7 @@
 //   9  the scenes (batch 7 part C): the title shows no window (V_WIN = 0) and draws its sprites, title -> demo -> title alternate by themselves, fire in the title and in the demo starts the game, the whole flow
 //      on TSRun tick by tick against the interpreter (state, sprites, text cells), and the play itself unchanged: the play-through from the first playing tick on is the pre-scenes game's, tick for tick
 //      (a digest of the variables, arrays, sprites and camera of every tick, and of the world from tick 26 on, taken from the game as it was before the title and demo scenes were made)
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -298,13 +299,7 @@ const M_ = await import(pathToFileURL(join(ROOT, 'tsrun/machine.js')).href);
 /** Boot the cartridge (DCK as built: chunk 2 with the banked worlds too) on a stock TS2068 and sample at every entry of PROC FRAME (sample k = the state after tick k - 1; sample 0 after INIT). */
 function runFramed(R, res, { ticks, stick, keys }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const ent = SYM.SPR_ENT ?? 6, hasFrame = ent >= 8;
   const sceneCur = res.gen?.symbols?.scene?.cur ?? null;

@@ -12,6 +12,7 @@
 //   runGeneric(R, res, opts)                     boot the DCK on a stock TS2068 (TSRun), sample at every entry of PROC FRAME, time every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call
 //   loadRuntime(v)                               arcade/build/v<v>/runtime.json + runtime.bin, or null
 //   stripMusic(src), musicWordsIn(src)           the program without its songs (MUSIC declarations, NOMUSIC, PLAY <declared song>), for old-vs-new compiler comparisons; the MUSIC / NOMUSIC words left in the code (outside REM and strings)
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -189,13 +190,7 @@ export function loadRuntime(v) {
  */
 export function runGeneric(R, res, { ticks, onRefresh = null } = {}) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const snap = () => ({
     vars: Object.fromEntries(Object.entries(res.map.vars).map(([k, a]) => [k, s16(rd16(a))])),
