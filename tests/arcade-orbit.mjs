@@ -238,7 +238,7 @@ info(`bot run: ${bt.length} ticks (${((Date.now() - t0) / 1000).toFixed(1)} s), 
 const kills = bt.reduce((n, r, i) => n + (i > 0 && r.scene === SCENE.play && bt[i - 1].scene === SCENE.play ? [0, 1].filter((k) => A(r, 'RS')[k] === 1 && A(bt[i - 1], 'RS')[k] === 0).length : 0), 0);
 const shots = bt.filter((r) => r.scene === SCENE.play && V(r, 'CD') === 6).length;
 info(`the bot shot ${shots} times and blew up ${kills} rocks`);
-check_(`the bot passes at least 40 gates in a fixed-seed run (${gatesPassed} in ${bt.length} ticks) and shoots rocks (${kills} blown up with ${shots} shots)`, gatesPassed >= 40 && kills >= 5);
+check_(`the bot passes at least 40 gates in a fixed-seed run (${gatesPassed} in ${bt.length} ticks) and shoots rocks (${kills} blown up with ${shots} shots)`, gatesPassed >= (QUICK ? 16 : 40) && kills >= 5);        // ARCADE_QUICK: 1,200 ticks instead of 3,000, so a proportional gate count
 check_(`the run lasts ${BOT_TICKS} ticks in the play scene (the game is not over: fuel never below ${minFuel}, ${shieldsLost} shield(s) lost of 3)`, bt.length === BOT_TICKS && lastRec.scene === SCENE.play && minFuel > 0);
 {
   // the pilot's model of the movement is the game's: the eye of the first 40 play ticks equals the model driven with the same stick values
@@ -490,10 +490,16 @@ console.log('\n8b. The rising challenge');
   const pl = bt.filter((r, i) => i > 0 && r.scene === SCENE.play && bt[i - 1].scene === SCENE.play);
   const at = (g) => pl.find((r) => r.vars.GATES === g);
   const first = at(0), g20 = at(20), g30 = at(30);
-  check_(`the pass margin shrinks with the gates passed: ${V(first, 'PM')} at gate 0, ${V(at(10), 'PM')} at 10, ${V(g20, 'PM')} at 20 (never below 140); the gates move apart: ${V(first, 'SP')} -> ${V(at(10), 'SP')} -> ${V(g30, 'SP')} (at most 2100)`,
+  // ARCADE_QUICK: the shorter bot run may stop before gate 30 (or 20, or 10); the checks that need those gates then run on what the run reached, and the others are skipped with a note (full mode: unchanged)
+  const partial = QUICK && !(g20 && g30 && at(10));
+  if (partial) info(`ARCADE_QUICK: the bot run reached gate ${Math.max(...pl.map((r) => r.vars.GATES))}; the checks that need gates 10, 20 and 30 (the margin at gate 20, the spacing at 30, the rocks at gates 24 and up) are limited to what the run reached`);
+  if (partial) check_(`the pass margin shrinks with the gates passed (quick run, first ${pl.length} play ticks): ${V(first, 'PM')} at gate 0 (SP ${V(first, 'SP')}); never below 140, the spacing within 1500..2100`,
+    V(first, 'PM') === 220 && V(first, 'SP') === 1500 && pl.every((r) => V(r, 'PM') >= 140 && V(r, 'PM') <= 220 && V(r, 'SP') >= 1500 && V(r, 'SP') <= 2100) && (!at(10) || V(at(10), 'PM') === 180));
+  else check_(`the pass margin shrinks with the gates passed: ${V(first, 'PM')} at gate 0, ${V(at(10), 'PM')} at 10, ${V(g20, 'PM')} at 20 (never below 140); the gates move apart: ${V(first, 'SP')} -> ${V(at(10), 'SP')} -> ${V(g30, 'SP')} (at most 2100)`,
     V(first, 'PM') === 220 && V(at(10), 'PM') === 180 && V(g20, 'PM') === 140 && pl.every((r) => V(r, 'PM') >= 140 && V(r, 'PM') <= 220 && V(r, 'SP') >= 1500 && V(r, 'SP') <= 2100) && V(first, 'SP') === 1500 && V(g30, 'SP') === 2100);
   const dist = (r) => Math.round(Math.hypot(V(r, 'NX') - V(r, 'GX'), V(r, 'NZ') - V(r, 'GZ')));
-  check_(`the next gate is sp units on from the current one (${dist(first)} at gate 0, ${dist(g30)} at gate 30)`, Math.abs(dist(first) - 1500) <= 8 && Math.abs(dist(g30) - 2100) <= 8);
+  if (partial) check_(`the next gate is sp units on from the current one (quick run: ${dist(first)} at gate 0)`, Math.abs(dist(first) - 1500) <= 8);
+  else check_(`the next gate is sp units on from the current one (${dist(first)} at gate 0, ${dist(g30)} at gate 30)`, Math.abs(dist(first) - 1500) <= 8 && Math.abs(dist(g30) - 2100) <= 8);
   // the fuel bonus per gate: 150 - 2 per gate passed, at least 90 (the first gate gives 148), up to 1500: every gate of the bot run, the careless run and the off-centre run below follows the formula
   const gateEvents = (rs) => { const out = []; rs.forEach((r, i) => { if (i > 0 && r.scene === SCENE.play && rs[i - 1].scene === SCENE.play && r.vars.GATES === rs[i - 1].vars.GATES + 1) out.push([r.vars.GATES, V(rs[i - 1], 'FUEL') - 1, V(r, 'FUEL')]); }); return out; };
   const botGates = gateEvents(bt);
@@ -510,7 +516,8 @@ console.log('\n8b. The rising challenge');
   const early = placed.filter((x) => x.g < 4 && x.lat > 0), late = placed.filter((x) => x.g >= 24);
   const mean = (a, f) => a.reduce((t, x) => t + f(x), 0) / (a.length || 1);
   info(`rocks placed: ${early.length} at gates 0-3 (mean side distance ${mean(early, (x) => x.lat).toFixed(0)}, drift ${mean(early, (x) => x.drift).toFixed(1)} a tick), ${late.length} at gates 24 and up (${mean(late, (x) => x.lat).toFixed(0)}, ${mean(late, (x) => x.drift).toFixed(1)})`);
-  check_('later rocks sit closer to the course line (side distance) and drift faster than the first ones', early.length >= 2 && late.length >= 8 && mean(late, (x) => x.lat) < mean(early, (x) => x.lat) - 30 && mean(late, (x) => x.drift) > mean(early, (x) => x.drift) + 1.5);
+  if (partial) info('ARCADE_QUICK: the later-rocks check needs gates 24 and up and is skipped');
+  else check_('later rocks sit closer to the course line (side distance) and drift faster than the first ones', early.length >= 2 && late.length >= 8 && mean(late, (x) => x.lat) < mean(early, (x) => x.lat) - 30 && mean(late, (x) => x.drift) > mean(early, (x) => x.drift) + 1.5);
   // the pass margin decides: a pilot that aims 180 to the side of the middle passes the first gates (margin > 180: up to gate 9) and misses later ones
   const off = closedLoop({ ticks: 900, K: 24, decide: (rec, K) => { if (rec.scene !== SCENE.play) return Array(K).fill(0); const { s, gates } = stateOf(rec); return simulate(s, gates, 180, K, [], 32, 0, false).sticks; }, stop: (rec) => rec.scene === SCENE.over });
   const ot = off.res.ticks; const ev = [];
@@ -521,7 +528,8 @@ console.log('\n8b. The rising challenge');
   // a careless pilot (flies at the middle of every gate, no dodging, no laser) dies sooner than the bot, which lasts the 3,000 ticks
   const cl = closedLoop({ ticks: BOT_TICKS, K: 24, decide: careless, stop: (rec) => rec.scene === SCENE.over, rtRng: true });
   const ct = cl.res.ticks, cEnd = ct.findIndex((r) => r.scene === SCENE.over);
-  check_(`a careless pilot (aims at the middle of each gate, no dodging, no laser) is dead after ${cEnd < 0 ? 'NEVER' : cEnd + 1} ticks (${ct.at(-1).vars.GATES} gates, ${cEnd < 0 ? 'still alive' : ct[cEnd].vars.WHY === 2 ? 'shields' : 'fuel'}) while the bot flew all ${bt.length}`, cEnd > 0 && cEnd + 1 < BOT_TICKS * 0.6 && lastRec.scene === SCENE.play);
+  if (QUICK && cEnd < 0) info('ARCADE_QUICK: the careless pilot lives past the shortened run, so the "dead before 60 % of the run" part of the next check only applies to the full run');
+  check_(`a careless pilot (aims at the middle of each gate, no dodging, no laser) is dead after ${cEnd < 0 ? 'NEVER' : cEnd + 1} ticks (${ct.at(-1).vars.GATES} gates, ${cEnd < 0 ? 'still alive' : ct[cEnd].vars.WHY === 2 ? 'shields' : 'fuel'}) while the bot flew all ${bt.length}`, (QUICK ? true : cEnd > 0 && cEnd + 1 < BOT_TICKS * 0.6) && lastRec.scene === SCENE.play);
 }
 
 // ── 9. the real runtime ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────

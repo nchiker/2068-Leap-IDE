@@ -200,7 +200,26 @@ export const SHOW_Y_MAX = 176;
 export const BG_ATTR = 0x38;
 const clamp = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
 
-const up = (s) => String(s).toUpperCase();
+// Names are upper-cased on every scope access; the same few strings come back all the time, so the result is remembered (a plain Map, emptied if a fuzzer feeds it too many names).
+const upCache = new Map();
+const up = (s) => {
+  if (typeof s !== 'string') return String(s).toUpperCase();
+  let u = upCache.get(s);
+  if (u === undefined) { if (upCache.size > 20000) upCache.clear(); u = s.toUpperCase(); upCache.set(s, u); }
+  return u;
+};
+
+const astWalkCache = new WeakMap();
+
+// The upper-cased `name` of an AST node, remembered ON the node as a hidden (non-enumerable) property, so that it is invisible to JSON, deep comparisons and Object.keys walks. A name never changes
+// whatever the scope, so there is nothing to invalidate; a frozen node just goes through up() every time.
+const keyOf = (n) => {
+  const k = n.$key;
+  if (k !== undefined) return k;
+  const u = up(n.name);
+  if (Object.isExtensible(n)) Object.defineProperty(n, '$key', { value: u });
+  return u;
+};
 
 class Unsupported extends Error {
   constructor(what, node) {
@@ -216,7 +235,7 @@ class SceneSwitch {
 
 class Scope {
   constructor(parent) { this.parent = parent; this.vars = new Map(); }
-  find(key) { for (let s = this; s; s = s.parent) { const c = s.vars.get(key); if (c) return c; } return null; }
+  find(key) { let s = this; do { const c = s.vars.get(key); if (c) return c; s = s.parent; } while (s); return null; }
 }
 
 const BITF = new Set(['BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
@@ -272,12 +291,17 @@ export function interpret(ast, opts = {}) {
   let worldMapDecl = null, viewMapDecl = null;
   // the banked cartridge map (docs/ARCADE_BANKING_CONTRACT.md section 4): a MAP a WORLD statement names is a world / plan, not a screen map
   const worldNameKeys = new Set();
-  (function walk(n) {
+  const walkItems = ast.items ?? [];
+  let astFacts = astWalkCache.get(walkItems);                  // the two walks over the AST (here and `usesEdges`) only depend on it, which the pilot-style suites interpret again and again
+  if (!astFacts) { astFacts = {}; astWalkCache.set(walkItems, astFacts); }
+  if (astFacts.worldNameKeys) astFacts.worldNameKeys.forEach((k) => worldNameKeys.add(k));
+  else (function walk(n) {
     if (Array.isArray(n)) { n.forEach(walk); return; }
     if (!n || typeof n !== 'object') return;
     if (n.type === 'World') for (const m of n.map ? [n.map] : (n.maps ?? [])) if (m?.name) worldNameKeys.add(up(m.name));      // (batch 6: WORLD expr OF a, b, c)
     for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k]);
-  })(ast.items ?? []);
+  })(walkItems);
+  if (!astFacts.worldNameKeys) astFacts.worldNameKeys = [...worldNameKeys];
   const worldDecls = new Map();             // KEY -> the MAP node a WORLD names (not the WINDOW's / VIEW3D's own)
   const V3 = (opts.version ?? 0) >= 3 || winMapKey !== null || viewMapKey !== null;                // 8-byte SPR_TAB entries (asset, frame), the batch 2 words
   const spriteUse = V3 ? scanSpriteUse(ast, (d) => lookupAsset(tabs.sprites, d.asset, d.name)) : new Map();
@@ -343,13 +367,13 @@ export function interpret(ast, opts = {}) {
   const EDGE_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].map((c) => c.charCodeAt(0)).concat([32, 13, 1, 2]);
   const keyEdge = new Map(), keyBefore = new Map();         // code -> edge / before (0 or 1); every key the runtime knows is tracked (only the ones the program names can be seen)
   const joyEdge = [0, 0, 0], joyBefore = [0, 0, 0];         // [_, stick 1, stick 2]
-  const usesEdges = (function has(n) {
+  const usesEdges = astFacts.usesEdges !== undefined ? astFacts.usesEdges : (astFacts.usesEdges = (function has(n) {
     if (Array.isArray(n)) return n.some(has);
     if (!n || typeof n !== 'object') return false;
     if (n.type === 'Func' && (n.name === 'KEYPRESS' || n.name === 'JOYPRESS')) return true;
     for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object' && has(n[k])) return true;
     return false;
-  })(ast.items ?? []);
+  })(walkItems));
   /** Start of a tick: take the key and stick edges (edge = now AND NOT before; before = now). */
   const takeEdges = (t) => {
     if (!usesEdges) return;
@@ -433,18 +457,25 @@ export function interpret(ast, opts = {}) {
   const playCall = () => { if (!clock) return undefined; if (!chip) { ++playN; return undefined; } const f = clock.play(tick, ++playN); soundTo(f); return f; };
   let rndN = 0;
   // (the declarations are processed below, once ev() and the helpers it needs exist)
+  // a sprite record copied: the same keys in the same order as {...s}, written out (every SHOW / HIDE / reset keeps this shape)
+  const copySpr = V3 ? (s) => ({ visible: s.visible, asset: s.asset, x: s.x, y: s.y, frame: s.frame }) : (s) => ({ visible: s.visible, x: s.x, y: s.y });
+  let tplN = -1, vRecs = [], aRecs = [], varsTpl = null, arraysTpl = null;
   const snapshot = (events) => {
     const st = { active: sfx.active, index: sfx.index, played: sfx.played };
     if (chip) {                                                     // MUSIC: the chip, run to the sample
       if (clock) soundTo(clock.sample(tick));
       st.active = chip.effect() >= 0; st.played = sfx.index >= 0 && soundAt !== null ? soundAt - sfx.at : 0;
     } else if (clock && sfx.index >= 0) { st.played = Math.max(0, clock.sample(tick) - sfx.t0); st.active = sfx.active && st.played <= sfxLen[sfx.index]; }
-    const vars = {};
-    for (const r of nameRecs) if (r.kind === 'v') vars[r.key] = cellOf(r).v;
-    const arrays = {};
-    for (const r of nameRecs) if (r.kind === 'a') arrays[r.key] = cellOf(r).arr.slice();
+    if (tplN !== nameRecs.length) {                                 // the names only ever grow (a scene entered for the first time adds its own): a record template with every key in place
+      tplN = nameRecs.length; vRecs = nameRecs.filter((r) => r.kind === 'v'); aRecs = nameRecs.filter((r) => r.kind === 'a');
+      varsTpl = {}; for (const r of vRecs) varsTpl[r.key] = 0;
+      arraysTpl = {}; for (const r of aRecs) arraysTpl[r.key] = 0;
+    }
+    const vars = { ...varsTpl }, arrays = { ...arraysTpl };
+    for (const r of vRecs) vars[r.key] = cellOf(r).v;
+    for (const r of aRecs) arrays[r.key] = cellOf(r).arr.slice();
     return {
-      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : wire ? 'wire' : 'screen' } : {}), vars, arrays, border, sprites: spr.map((s) => ({ ...s })), events,
+      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : wire ? 'wire' : 'screen' } : {}), vars, arrays, border, sprites: spr.map(copySpr), events,
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       ...(wire ? { wire: { on: wire.on, fresh: wire.fresh, eye: { ...wire.eye }, r0: wire.r0, r1: wire.r1, attr: wire.attr, bits: wire.bm.slice() } } : {}),
@@ -625,7 +656,7 @@ export function interpret(ast, opts = {}) {
   function isConstExpr(e, sc) {
     switch (e.type) {
       case 'Number': return true;
-      case 'Ident': return !!sc.find(up(e.name))?.isConst;
+      case 'Ident': return !!sc.find(keyOf(e))?.isConst;
       case 'Unary': return e.op === '-' && isConstExpr(e.operand, sc);
       case 'Binary': return ['+', '-', '*', 'DIV', 'MOD'].includes(e.op) && isConstExpr(e.left, sc) && isConstExpr(e.right, sc);
       case 'Func': return (BITF.has(e.name) || e.name === 'BIT') && e.args.every((x) => isConstExpr(x, sc));
@@ -638,13 +669,13 @@ export function interpret(ast, opts = {}) {
     switch (e.type) {
       case 'Number': return wrap16(e.value);
       case 'Ident': {
-        const c = sc.find(up(e.name));
+        const c = sc.find(keyOf(e));
         if (!c) throw new Error(`interp: undeclared variable ${e.name}`);
         return c.v;
       }
       case 'Index': {
         if (!V2) throw new Unsupported('arrays', e);
-        const c = sc.find(up(e.name));
+        const c = sc.find(keyOf(e));
         if (!c || !c.arr) throw new Error(`interp: ${e.name} is not an array`);
         const i = ev(e.index, sc);
         if (c.h !== undefined) {                      // 2-D: i in 0..w, j in 0..h, flat i * (h + 1) + j
@@ -749,7 +780,7 @@ export function interpret(ast, opts = {}) {
         }
       }
       case 'FnCall': {
-        const f = sceneFns.get(up(e.name));
+        const f = sceneFns.get(keyOf(e));
         if (!f) throw new Error(`interp: unknown function ${e.name}`);
         const arg = ev(e.arg, sc);
         const fs = new Scope(f.home === 'global' ? globalScope : sceneScope);
@@ -785,7 +816,7 @@ export function interpret(ast, opts = {}) {
       case 'Assign': {
         if (s.target.type === 'Index') {
           if (!V2) throw new Unsupported('arrays', s);
-          const c = sc.find(up(s.target.name));
+          const c = sc.find(keyOf(s.target));
           const i = ev(s.target.index, sc);
           if (c.h !== undefined) {
             const j = ev(s.target.index2, sc);
@@ -798,7 +829,7 @@ export function interpret(ast, opts = {}) {
           return null;
         }
         const v = ev(s.value, sc);
-        sc.find(up(s.target.name)).v = v;
+        sc.find(keyOf(s.target)).v = v;
         return null;
       }
       case 'If': {
@@ -814,7 +845,7 @@ export function interpret(ast, opts = {}) {
         return null;
       }
       case 'For': {
-        const cell = sc.find(up(s.variable.name));
+        const cell = sc.find(keyOf(s.variable));
         const from = ev(s.from, sc), to = ev(s.to, sc);
         const step = s.step ? ev(s.step, sc) : 1;
         cell.v = from;
@@ -837,7 +868,7 @@ export function interpret(ast, opts = {}) {
         return s.else ? run(s.else.body, sc) : null;
       }
       case 'Call': {
-        const p = sceneProcs.get(up(s.name));
+        const p = sceneProcs.get(keyOf(s));
         if (!p) throw new Error(`interp: unknown PROC ${s.name}`);
         const args = (s.args ?? (s.arg ? [s.arg] : [])).map((a) => ev(a, sc));       // left to right, all before any is bound
         run(p.body, procScope(p, args));
