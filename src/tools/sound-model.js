@@ -26,7 +26,7 @@
  *
  *   fromAsset(asset) / toAsset(sfx)         stored <-> editing form (deep copies; unknown keys kept; missing vol / noise / mix read as 0)
  *   TRACKS, trackView, trackLengths, effectLength, isMulti, padTrack, sliceRange, PAD_TICK   the three channels ("tracks")
- *   newSfx(preset), PRESETS                 beep laser blip explosion powerup hurt
+ *   newSfx(preset), PRESETS                 beep laser blip explosion powerup hurt coin jump step door shield chime
  *   clampField, setTick, MIX_FORMS, mixOf, toneOn, noiseOn
  *   insertTicks, deleteTicks, duplicateRange, reverseRange, scaleVolume, fade, sweep, repeatRange, setRange
  *   noteOfTone, toneOfNote                  tone period <-> note name and cents; midiOfNote, noteNameOfMidi, noteTooLow (a note below A0)
@@ -365,7 +365,7 @@ export function noteTooLow(note, clock = AY_CLOCK) {
 }
 
 // ── presets ───────────────────────────────────────────────────────────────────────────────────────────────────
-export const PRESETS = ['beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt'];
+export const PRESETS = ['beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt', 'coin', 'jump', 'step', 'door', 'shield', 'chime'];
 const lerp = (a, b, k) => Math.round(a + (b - a) * k);
 const ramp = (n, f) => Array.from({ length: n }, (_, j) => f(n === 1 ? 0 : j / (n - 1), j));
 /** A new effect from a preset (default 'beep'): a short, valid, sensible effect to edit. */
@@ -389,6 +389,24 @@ export function newSfx(preset = 'beep') {
       break;
     case 'hurt':        // a buzzy falling tone: tone gated by noise
       ticks = ramp(10, (k) => ({ tone: lerp(240, 620, k), vol: lerp(14, 5, k), noise: 14, mix: 4 }));
+      break;
+    case 'coin':        // two quick notes, B5 then E6, the second one rings out
+      ticks = ramp(10, (k, j) => ({ tone: toneOfNote(j < 3 ? 'B5' : 'E6'), vol: j < 3 ? 13 : lerp(14, 3, (j - 3) / 6), noise: 0, mix: 6 }));
+      break;
+    case 'jump':        // the pitch rises quickly (the period falls), the volume fades
+      ticks = ramp(10, (k) => ({ tone: lerp(420, 140, k), vol: lerp(13, 5, k), noise: 0, mix: 6 }));
+      break;
+    case 'step':        // a short dull thud: a low tone with a little noise, three refreshes
+      ticks = [{ tone: 900, vol: 11, noise: 22, mix: 4 }, { tone: 1100, vol: 7, noise: 26, mix: 4 }, { tone: 1300, vol: 3, noise: 30, mix: 4 }];
+      break;
+    case 'door':        // a creak: a low tone sliding with a flutter, over noise
+      ticks = ramp(16, (k, j) => ({ tone: lerp(1500, 800, k) + (j % 2 ? 60 : 0), vol: lerp(9, 6, k), noise: 24, mix: 4 }));
+      break;
+    case 'shield':      // a hum that swells and falls, a slow vibrato on a low tone
+      ticks = ramp(18, (k, j) => ({ tone: 260 + (j % 4 < 2 ? 0 : 24), vol: Math.round(5 + 8 * Math.sin(Math.PI * k)), noise: 0, mix: 6 }));
+      break;
+    case 'chime':       // a bell: C6 then G6, each ringing down slowly
+      ticks = ramp(22, (k, j) => ({ tone: toneOfNote(j < 7 ? 'C6' : 'G6'), vol: Math.round((j < 7 ? 13 : 12) * Math.pow(0.88, j < 7 ? j : j - 7)), noise: 0, mix: 6 }));
       break;
     default: throw new RangeError(`unknown preset ${preset} (${PRESETS.join(', ')})`);
   }

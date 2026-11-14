@@ -506,5 +506,20 @@ if (!existsSync(RT_JSON) || !existsSync(join(ROMDIR, 'ts2068-0.rom'))) {
   ok('a sprite with two frames compiles: frame 0 is what is drawn (the build ignores the others today), and validateSprite said so', !gm.errors.length && diff(gm.plane, expected(pm)).n === 0 && M.validateSprite(multi).warnings.some((x) => /only frame 0/.test(x)));
 }
 
+// ── paletteRgb: the one reader of palette colours (B1) ──
+{
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  ok('paletteRgb reads [r, g, b], "#rrggbb", "#rgb", a bare hex and {rgb} in either form',
+    same(M.paletteRgb([1, 2, 3]), [1, 2, 3]) && same(M.paletteRgb('#0a0b0c'), [10, 11, 12]) && same(M.paletteRgb('#fa0'), [255, 170, 0]) && same(M.paletteRgb('0a0b0c'), [10, 11, 12])
+    && same(M.paletteRgb({ name: 'x', rgb: '#0a0b0c' }), [10, 11, 12]) && same(M.paletteRgb({ rgb: [4, 5, 6] }), [4, 5, 6]));
+  ok('paletteRgb gives black, and does not throw, for anything unreadable (null, undefined, "red", [1], {})',
+    [null, undefined, 'red', [1], {}, 7, '#12'].every((v) => same(M.paletteRgb(v), [0, 0, 0])));
+  const hex = M.PALETTE.map((p) => ({ name: p.name, rgb: '#' + p.rgb.map((v) => v.toString(16).padStart(2, '0')).join('') }));
+  let allSame = true;
+  for (let k = 0; k < 16; k++) if (!same(M.keyRGB(k, hex), M.keyRGB(k, M.PALETTE))) allSame = false;
+  ok('keyRGB with the Studio\'s hex-object palette equals keyRGB with PALETTE for all 16 keys (bright black is black)', allSame && same(M.keyRGB(8, hex), [0, 0, 0]));
+  ok('keyRGB falls back to PALETTE for a short palette', same(M.keyRGB(10, []), M.PALETTE[10].rgb));
+}
+
 console.log(`\n${failed === 0 ? 'All' : 'Some'} checks done: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

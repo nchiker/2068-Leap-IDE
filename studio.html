@@ -39,7 +39,7 @@
         <button class="phbtn" id="btn-examples" title="Open an example game" aria-haspopup="menu" aria-expanded="false">Examples ▾</button>
         <div class="menu" id="examples-menu" role="menu" hidden></div>
       </span>
-      <button class="phbtn" id="btn-save" title="Download the project as a .leapgame file (Ctrl+S)">Save</button>
+      <button class="phbtn" id="btn-save" title="Save the project as a .leapgame file: in place where the browser allows it, else a download (Ctrl+S)">Save</button>
       <input type="file" id="file-input" accept=".leapgame,.json,.arc" hidden>
     </div>
 
@@ -81,7 +81,7 @@
         <div class="proj-section" id="scene-section" hidden>
           <div class="proj-title">Scenes</div>
           <ul class="proj-list" id="scene-list"></ul>
-          <p class="proj-note">The display setup is planned per scene; only two buffers is built so far.</p>
+          <p class="proj-note">How each scene is drawn. Automatic picks for you; today every scene is drawn with two screen buffers.</p>
         </div>
       </div>
     </aside>
@@ -94,13 +94,23 @@
           <button class="phbtn edbtn" id="btn-undo"  title="Undo (Ctrl+Z)" disabled>Undo</button>
           <button class="phbtn edbtn" id="btn-redo"  title="Redo (Ctrl+Y)" disabled>Redo</button>
           <span class="phbtn-sep"></span>
+          <button class="phbtn edbtn" id="btn-cut"   title="Cut (Ctrl+X)">Cut</button>
+          <button class="phbtn edbtn" id="btn-copy"  title="Copy (Ctrl+C)">Copy</button>
+          <button class="phbtn edbtn" id="btn-paste" title="Paste (Ctrl+V)">Paste</button>
+          <span class="phbtn-sep"></span>
           <button class="phbtn edbtn" id="btn-find"  title="Find and replace (Ctrl+F, Ctrl+H)">Find</button>
           <button class="phbtn edbtn" id="btn-tidy"  title="Indent the file by its blocks (Shift+Alt+F)">Tidy</button>
+          <button class="phbtn" id="btn-lint" title="Compile the project and show the first problem">Lint</button>
         </div>
       </div>
       <!-- CodeMirror mounts here -->
       <div id="editor-mount" class="editor-mount"></div>
-      <div class="problems" id="problems" hidden></div>
+      <!-- E3: a drag handle on its top edge, a fold button with the count, and the rows (studio.js renderResult) -->
+      <div class="problems" id="problems" hidden>
+        <div class="problems-grip" id="problems-grip" role="separator" aria-orientation="horizontal" title="Drag to resize the list"></div>
+        <button class="problems-head" id="problems-head" aria-expanded="true" title="Fold or unfold the list"></button>
+        <div class="problems-list" id="problems-list"></div>
+      </div>
     </div>
 
     <!-- ── RIGHT PANEL: display, tools ────────── -->
@@ -114,15 +124,18 @@
           <button class="panel-tab" data-tab="maps">Maps</button>
           <button class="panel-tab" data-tab="sfx">Sounds</button>
         </div>
-        <div class="panel-header-btns" id="display-btns">
-          <button class="phbtn" id="btn-zoom-out" title="Smaller screen">−</button>
-          <span class="zoom-label" id="zoom-label">2×</span>
-          <button class="phbtn" id="btn-zoom-in" title="Larger screen">+</button>
-          <button class="phbtn" id="btn-reset-emu" title="Stop the game and reset the TS2068">Reset</button>
-        </div>
       </div>
 
       <div class="tab-body display-body" data-tab="display">
+        <!-- Zoom and Reset: here, not in the header, so the six tab names have the header to themselves (E2) -->
+        <div class="display-tools" id="display-btns">
+          <span class="display-tools-label">Screen</span>
+          <button class="phbtn" id="btn-zoom-out" title="Smaller screen">−</button>
+          <span class="zoom-label" id="zoom-label">2×</span>
+          <button class="phbtn" id="btn-zoom-in" title="Larger screen">+</button>
+          <button class="phbtn" id="btn-save-screen" title="Save the screen and its border as a PNG (320 x 240)">Save screen</button>
+          <button class="phbtn" id="btn-reset-emu" title="Stop the game and reset the TS2068">Reset</button>
+        </div>
         <div class="emulator-body">
           <!-- Focus the screen (click it) to play: arrow keys and Space are joystick 1 -->
           <div class="bezel" id="ts-bezel" tabindex="0" title="Click to play: arrow keys + Space are the joystick, letters reach KEYDOWN">
@@ -133,6 +146,22 @@
             <span id="input-hint">Click the screen to play.</span>
           </div>
         </div>
+
+        <!-- Run controls (R2): Pause / Step one tick / speed; they work while a game runs -->
+        <div class="run-bar" id="run-bar" role="group" aria-label="Run controls">
+          <button class="phbtn" id="btn-pause" title="Pause the game (F8); again to continue" disabled>Pause</button>
+          <button class="phbtn" id="btn-step" title="Run until the game completes one tick, then hold (F10)" disabled>Step tick</button>
+          <span class="phbtn-sep"></span>
+          <span class="run-speed" role="group" aria-label="Speed">
+            <button class="phbtn speed-btn" data-speed="0.5" title="Half speed (sound is off)" disabled>½×</button>
+            <button class="phbtn speed-btn active" data-speed="1" title="Normal speed" disabled>1×</button>
+            <button class="phbtn speed-btn" data-speed="2" title="Double speed (sound is off)" disabled>2×</button>
+          </span>
+        </div>
+        <!-- R1: the frame budget while a game runs (hidden otherwise) -->
+        <div class="run-meter" id="run-meter" aria-live="off" hidden></div>
+        <!-- N3: until the first Run of the session -->
+        <div class="first-run" id="first-run">Press Run (F5) to start the game.</div>
 
         <!-- Size and budget of the last successful compile -->
         <section class="sizes" id="size-panel" aria-label="Size and budget">
@@ -186,25 +215,25 @@
     "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
     "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
     "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
-    "./src/arcade-project.js": "./src/arcade-project.js?v=05f6f44aab",
-    "./src/emulator.js": "./src/emulator.js?v=c7ebc64993",
+    "./src/arcade-project.js": "./src/arcade-project.js?v=3db00d1fd6",
+    "./src/emulator.js": "./src/emulator.js?v=037ed0520d",
     "./src/files.js": "./src/files.js?v=70f9a1c03a",
     "./src/help.js": "./src/help.js?v=2738bd9e3b",
-    "./src/lang/arcade/arcade-assetcheck.js": "./src/lang/arcade/arcade-assetcheck.js?v=62701b153a",
+    "./src/lang/arcade/arcade-assetcheck.js": "./src/lang/arcade/arcade-assetcheck.js?v=f0eb03a5fe",
     "./src/lang/arcade/arcade-assets.js": "./src/lang/arcade/arcade-assets.js?v=6e69ea5c90",
     "./src/lang/arcade/arcade-bank.js": "./src/lang/arcade/arcade-bank.js?v=15fa367494",
-    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=989626f5ef",
-    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=9ae284877b",
+    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=f54d13cddc",
+    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=d9e9cf6fdc",
     "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=56b167fdbc",
     "./src/lang/arcade/arcade-display.js": "./src/lang/arcade/arcade-display.js?v=485724af88",
     "./src/lang/arcade/arcade-link.js": "./src/lang/arcade/arcade-link.js?v=919a6c81b0",
     "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=35f3630d13",
-    "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=0aaaadf9e4",
-    "./src/lang/arcade/arcade-view.js": "./src/lang/arcade/arcade-view.js?v=276aaae9e3",
+    "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=427d9a0880",
+    "./src/lang/arcade/arcade-view.js": "./src/lang/arcade/arcade-view.js?v=3b08523ce8",
     "./src/lang/arcade/arcade-window.js": "./src/lang/arcade/arcade-window.js?v=9c0f8f6e11",
     "./src/lang/arcade/arcade-wire.js": "./src/lang/arcade/arcade-wire.js?v=294f92d580",
-    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=5b25766a96",
-    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=718997a9d0",
+    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=c0e83e7fa0",
+    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=fc2d17e338",
     "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=38d64bf627",
     "./src/lang/arcade/z80-emit.js": "./src/lang/arcade/z80-emit.js?v=695f9865be",
     "./src/lang/basic/cartridge.js": "./src/lang/basic/cartridge.js?v=cb99a1e28a",
@@ -244,17 +273,18 @@
     "./src/lang/profiles.js": "./src/lang/profiles.js?v=2a1905fdd2",
     "./src/lang/spin-demo.js": "./src/lang/spin-demo.js?v=d07dbf383b",
     "./src/pc-keyboard.js": "./src/pc-keyboard.js?v=6b1aaae1ac",
-    "./src/tools/map-editor.js": "./src/tools/map-editor.js?v=d93f798da5",
+    "./src/tools/map-editor.js": "./src/tools/map-editor.js?v=75d8d3142d",
     "./src/tools/map-model.js": "./src/tools/map-model.js?v=ac0f5471c1",
     "./src/tools/model-preview.js": "./src/tools/model-preview.js?v=d1611c7399",
     "./src/tools/music-model.js": "./src/tools/music-model.js?v=33b9a6664a",
-    "./src/tools/sound-editor.js": "./src/tools/sound-editor.js?v=0239ead912",
-    "./src/tools/sound-model.js": "./src/tools/sound-model.js?v=5a1a26a4dc",
+    "./src/tools/sound-editor.js": "./src/tools/sound-editor.js?v=24b98379c5",
+    "./src/tools/sound-model.js": "./src/tools/sound-model.js?v=957d817742",
     "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=dd5d3657d6",
-    "./src/tools/sprite-model.js": "./src/tools/sprite-model.js?v=5274fb0073",
+    "./src/tools/sprite-model.js": "./src/tools/sprite-model.js?v=3ef1dc292c",
     "./src/tools/symbols.js": "./src/tools/symbols.js?v=16320c0533",
-    "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=9771c45471",
+    "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=9cecd46223",
     "./src/tools/tile-model.js": "./src/tools/tile-model.js?v=e7c3c758b6",
+    "./src/tools/warning-list.js": "./src/tools/warning-list.js?v=40203e81f0",
     "./tsrun/ay.js": "./tsrun/ay.js?v=2c2092395e",
     "./tsrun/dock.js": "./tsrun/dock.js?v=316db509d1",
     "./tsrun/machine.js": "./tsrun/machine.js?v=d41dbe568d",
@@ -266,7 +296,7 @@
 }
 </script>
 <script type="module" src="src/editor.js?v=d836aeb5be"></script>
-<script type="module" src="studio.js?v=7dfc012257"></script>
+<script type="module" src="studio.js?v=803e168efa"></script>
 
 </body>
 </html>

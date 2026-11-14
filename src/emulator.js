@@ -48,7 +48,7 @@ import { runZ80 } from '../tsrun/z80.js';
 import { initScreen, resizeScreen, setCrt, drawScreen } from '../tsrun/screen.js';
 import {
   initSound, resumeSound, soundWantsFrame, soundIsRunning,
-  setSoundNeedCallback, setSoundStateCallback, pushSound,
+  setSoundNeedCallback, setSoundStateCallback, pushSound, setSoundMuted, setSoundPaused,
 } from '../tsrun/sound.js';
 import { createPcKeyboard } from './pc-keyboard.js';
 
@@ -108,6 +108,13 @@ export async function createEmulator(opts) {
     lastNow:  0,
     carryMs:  0,
     onState:  opts.onState,
+    // The Studio's run controls (all off by default: the IDE never sets any of these, so its frame loop is as it was).
+    held:     false,      // frame-boundary hold: no frame runs, no key or joystick reaches the machine, the audio is silent
+    stepping: false,      // stepFrame() is running one frame of a hold
+    speed:    1,          // the frame clock's factor (the wall time each frame takes is FRAME_MS / speed); sound is muted at any other than 1
+    frameDone: null,      // fn(machine) after each emulated frame
+    gated:    false,      // setSoundMuted(true) is in effect because of a hold or a speed other than 1
+    soundPaused: false,   // setSoundPaused(true) is in effect (a hold)
   };
 
   await loadRoms(emu);
@@ -227,6 +234,41 @@ export async function createEmulator(opts) {
     /** While paused, execute exactly one Z80 instruction. */
     stepInstruction() { if (emu.paused) stepOneInstruction(emu); },
     get paused() { return emu.paused; },
+
+    // ── Run controls (the Studio: Pause / Step one tick / speed). Additive: nothing here is used until it is called. ──
+    /** fn(machine) once after every emulated frame (the frame's picture is painted and its interrupt taken), also for stepFrame(). */
+    onFrameDone(fn) { emu.frameDone = fn; },
+    /**
+     * A hold at a frame boundary (simpler than the debugger's pause(), which stops mid-frame): no frame runs; the key matrix and
+     * the joystick bytes are cleared and keys are ignored until it ends; the audio is silenced (so no tone sticks).
+     * Ending it clears the input again, so a key held across the hold does not come back.
+     */
+    holdFrames(on) {
+      on = !!on;
+      if (on === emu.held) return;
+      emu.held = on;
+      releaseInput(emu, joystick);
+      applyAudioGate(emu);
+    },
+    get held() { return emu.held; },
+    /** While held: run exactly one frame (silent, like the rest of a hold). */
+    stepFrame() {
+      if (!emu.held || emu.stepping) return;
+      emu.stepping = true;
+      try { stepMachine(emu); } finally { emu.stepping = false; }
+    },
+    /**
+     * The frame clock's factor: 0.5 runs the machine at half speed, 2 at twice (at most 4 frames a display refresh, so a slow
+     * page cannot go faster than that). Sound is muted at any speed but 1 (it cannot be resampled here; a tone at 2x would
+     * be wrong and the audio queue would run dry at 0.5x).
+     */
+    setSpeed(f) {
+      f = Number(f);
+      if (!(f > 0 && f <= 4)) throw new RangeError('speed must be above 0 and at most 4');
+      emu.speed = f;
+      applyAudioGate(emu);
+    },
+    get speed() { return emu.speed; },
     /** TSRun's CRT filter: rounded, slightly blended pixels and scanlines. */
     setCrt(on)   { emu.crt = on; if (emu.gfx) { setCrt(emu.gfx, on); resizeScreen(emu.gfx); } },
     get rom()    { return emu.rom; },
@@ -320,6 +362,7 @@ function initAudio(emu) {
     setSoundRate(emu.machine, sfx.context.sampleRate);
     setSoundStateCallback(sfx, running => enableSound(emu.machine, running));
     enableSound(emu.machine, soundIsRunning(sfx));
+    applyAudioGate(emu);
   });
   // Browsers keep audio suspended until a user gesture.
   const resume = () => { if (emu.sfx) resumeSound(emu.sfx); };
@@ -333,6 +376,7 @@ function initKeys(emu, focusEl) {
   // nothing types into Leap V2's own editor. A cartridge has no editor: there
   // keys always pass.
   focusEl.addEventListener('keydown', e => {
+    if (emu.held) return;     // a hold (Studio Pause): no key reaches the machine
     if (emu.runActive || emu.cart || emu.profile.keyboard.always) emu.kbd.keyDown(e);
   });
   focusEl.addEventListener('keyup',   e => emu.kbd.keyUp(e));
@@ -349,8 +393,9 @@ function onFrame(emu, now) {
     emu.carryMs = FRAME_MS;
   }
   // Cap the catch-up so a backgrounded tab does not fast-forward on return.
-  emu.carryMs += Math.min(now - emu.lastNow, 80);
+  emu.carryMs += Math.min(now - emu.lastNow, 80) * emu.speed;
   emu.lastNow = now;
+  if (emu.speed !== 1) emu.carryMs = Math.min(emu.carryMs, 6 * FRAME_MS);   // a slow page at 2x must not bank frames it will never catch up
   let ran = 0;
   while (emu.carryMs >= FRAME_MS && ran < 4) {
     stepMachine(emu);
@@ -363,7 +408,7 @@ function onFrame(emu, now) {
 // The audio worklet asks for frames when its queue runs low; they count
 // against the wall-clock budget so the display loop does not run them twice.
 function fillSoundQueue(emu) {
-  if (!emu.sfx || !soundIsRunning(emu.sfx) || emu.paused) return;
+  if (!emu.sfx || !soundIsRunning(emu.sfx) || emu.paused || emu.held || emu.speed !== 1) return;
   for (let ran = 0; ran < 4 && soundWantsFrame(emu.sfx); ran++) {
     stepMachine(emu);
     emu.carryMs = Math.max(emu.carryMs - FRAME_MS, -4 * FRAME_MS);
@@ -372,6 +417,7 @@ function fillSoundQueue(emu) {
 
 function stepMachine(emu) {
   if (emu.paused) return;
+  if (emu.held && !emu.stepping) return;      // Studio hold: the frame clock runs, the machine does not
   const m = emu.machine;
   // A cartridge test has no key wait to look for; it single-steps only for
   // the debugger (Z80 breakpoints, Pause).
@@ -382,10 +428,26 @@ function stepMachine(emu) {
     else if (emu.runActive) setState(emu, 'running');
   }
   setVideoOn(m, true);
-  enableSound(m, emu.sfx !== null && soundIsRunning(emu.sfx));
+  const audio = emu.sfx !== null && soundIsRunning(emu.sfx) && !emu.held && emu.speed === 1;
+  enableSound(m, audio);
   runFrame(m);   // runs the rest of the frame, then takes the frame interrupt
   const chunk = takeAudio(m);
-  if (chunk.n > 0 && emu.sfx && soundIsRunning(emu.sfx)) pushSound(emu.sfx, chunk);
+  if (chunk.n > 0 && audio) pushSound(emu.sfx, chunk);
+  if (emu.frameDone) emu.frameDone(m);
+}
+
+/** Let go of every key and clear the joystick bytes (a hold starts and ends with no input pressed). */
+function releaseInput(emu, joystick) {
+  emu.kbd.releaseAll();
+  joystick.fill(0xFF);
+}
+
+/** Silence the audio while held or at a speed other than 1, and tell the worklet a hold is on purpose; restore after. Sends nothing until needed. */
+function applyAudioGate(emu) {
+  if (!emu.sfx) return;
+  const gate = emu.held || emu.speed !== 1;
+  if (gate !== emu.gated) { emu.gated = gate; setSoundMuted(emu.sfx, gate); }
+  if (emu.held !== emu.soundPaused) { emu.soundPaused = emu.held; setSoundPaused(emu.sfx, emu.held); }
 }
 
 /**

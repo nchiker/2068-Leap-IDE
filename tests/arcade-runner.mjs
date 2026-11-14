@@ -41,6 +41,8 @@ import { diffV3 } from './arcade-m6-common.mjs';
 import { createSoundRecorder, soundOf, clockOf, compareSound, soundCoverage } from './arcade-m15-common.mjs';
 import { LEVELS, COLS, ROWS, levelTables, dataLines, buildRunnerAssets } from '../arcade/examples/runner.assets.gen.mjs';
 
+const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const EX = join(ROOT, 'arcade/examples');
@@ -267,7 +269,7 @@ let normal = null, bankedFour = null;
 if (!R3 || bankNeeds.length) skip_('the banked build', !R3 ? 'arcade/build/v3/runtime.json is missing' : `arcade/build/v3/runtime.json lacks ${bankNeeds.join(' ')} (slice B1 not built)`);
 else {
   normal = compile(SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS });
-  check_('the game compiles against runtime v3 with no errors and no warnings', normal.errors.length === 0 && normal.warnings.length === 0, errText(normal));
+  check_('the game compiles against runtime v3 with no errors and no warnings', normal.errors.length === 0 && normal.warnings.filter(notTwoBlacks).length === 0, errText(normal));
   const u = normal.usage;
   check_(`usage.mapped ${u.mapped.used} of ${u.mapped.available} bytes (fits)`, u.mapped.used <= u.mapped.available);
   const names = u.banked.assets.map((x) => x.name).sort().join(',');
@@ -275,7 +277,7 @@ else {
   const bankedKinds = (b) => b.assets.every((x) => x.kind === 'world' || x.kind === 'table' || (x.kind === 'map' && x.name === 'titlepic'));
   check_(`usage.banked as the linker places it: the title picture and ${worlds.split(',').length} worlds (${names}), ${u.banked.used} bytes, in the window; nothing but worlds, tables and the title picture; the banker banks only what the mapped part needs (the smaller code of the compiler size pass leaves ${['level', 'level2', 'level3', 'level4'].filter((n) => !worlds.split(',').includes(n)).join(', ') || 'none'} mapped)`, worlds.split(',').length >= 1 && bankedKinds(u.banked) && u.banked.assets.some((x) => x.name === 'titlepic'));
   const b4 = compile(SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS_BANKED });
-  check_('the game compiles with the four worlds forced banked (assets.maps.<name>.bank = "banked"), no errors and no warnings', b4.errors.length === 0 && b4.warnings.length === 0, errText(b4));
+  check_('the game compiles with the four worlds forced banked (assets.maps.<name>.bank = "banked"), no errors and no warnings', b4.errors.length === 0 && b4.warnings.filter(notTwoBlacks).length === 0, errText(b4));
   const names4 = b4.usage.banked.assets.map((x) => x.name).sort().join(','), worlds4 = b4.usage.banked.assets.filter((x) => x.kind === 'world').map((x) => x.name).sort().join(',');
   check_(`usage.banked with the four worlds banked: the four worlds, and nothing but tables and the title picture besides (${names4}), ${b4.usage.banked.used} bytes, in the window; usage.mapped ${b4.usage.mapped.used} of ${b4.usage.mapped.available}`, worlds4 === 'level,level2,level3,level4' && bankedKinds(b4.usage.banked) && b4.usage.mapped.used <= b4.usage.mapped.available);
   check_(`the cartridge ships chunks ${b4.shipped.join(' ')} with the four worlds banked too`, JSON.stringify(b4.shipped) === '[0,1,2,4,5]');

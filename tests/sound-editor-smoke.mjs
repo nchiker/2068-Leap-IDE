@@ -376,7 +376,8 @@ try {
   // ── presets and effect management ──
   const names = [];
   await evaluate("(window.__names = [], window.prompt = (q, d) => window.__names.shift() ?? d, window.confirm = () => true, true)");
-  for (const p of ['blank', 'beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt']) {
+  check('the preset list has 12 effects (and "blank")', same(await evaluate("Array.from(document.querySelectorAll('[data-role=preset] option')).map((o) => o.value)"), ['blank', 'beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt', 'coin', 'jump', 'step', 'door', 'shield', 'chime']));
+  for (const p of ['blank', 'beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt', 'coin', 'jump', 'step', 'door', 'shield', 'chime']) {
     await evaluate(`(window.__names = ['p_${p}'], true)`);
     await setField('[data-role=preset]', p);
     await click('[data-role=new]');
@@ -775,6 +776,82 @@ try {
   const darkBg = await evaluate("getComputedStyle(document.querySelector('.sfxed')).backgroundColor");
   const darkPix = await evaluate("(() => { const c = document.querySelector('[data-role=lanes]'); return Array.from(c.getContext('2d').getImageData(0, 0, 1, 1).data).join(); })()");
   check('the editor follows the theme variables, and the lanes canvas redraws when the theme switches', lightBg !== darkBg && lightPix !== darkPix, `${lightBg} / ${darkBg}; canvas ${lightPix} / ${darkPix}`);
+
+  // ── keyboard piano (A2) ──
+  await resetWork();
+  await evaluate("(document.querySelector('[data-role=piano-enter]').checked && document.querySelector('[data-role=piano-enter]').click(), true)");
+  await setField('[data-role=note-oct]', 4); await setField('[data-role=note-len]', 5); await setField('[data-role=note-inst]', 'organ'); await setField('[data-role=note-name]', 'C');
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  const toneOf = (n) => evaluate(`t.M.toneOfNote(${JSON.stringify(n)})`);
+  const bufs0 = await evaluate('t.audio.buffers.length');
+  await key('z');
+  check('piano, enter off: Z plays one buffer (the C4 note records) and writes nothing', (await evaluate('t.audio.buffers.length')) === bufs0 + 1 && same(await asset('work'), BASE) && !(await state()).canUndo
+    && (await evaluate(`(() => { const want = t.M.renderSfx({ ticks: t.MM.noteRecords('C4', 5, 'organ') }, { rate: 22050 }), got = t.audio.buffers.at(-1).data; return want.length === got.length && want.every((v, i) => v === got[i]); })()`)));
+  await click('[data-role=piano-enter]');
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await setField('[data-role=note-at]', 0);
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await key('z');
+  const C4TONE = await toneOf('C4');
+  let pw = await asset('work');
+  check('piano, enter on: Z writes a C4 (5 organ records) at the cursor tick, as one undo step', pw.ticks.slice(0, 5).every((t) => t.tone === C4TONE) && pw.ticks.length === 8 && (await state()).canUndo && /C4 written at tick 0/.test(await status()), ticksOf(pw));
+  await key('z', { ctrl: true });
+  check('Ctrl+Z takes the whole note back at once', same(await asset('work'), BASE));
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await setField('[data-role=note-at]', 0);
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await key('d');
+  pw = await asset('work');
+  check('D (the black key above D) writes D#4', pw.ticks[0].tone === (await toneOf('D#4')), ticksOf(pw));
+  await key('q');
+  pw = await asset('work');
+  check('Q (upper row) writes C5 after it (at tick 5, the tick after the last note)', pw.ticks[5].tone === (await toneOf('C5')) && pw.ticks[0].tone === (await toneOf('D#4')), ticksOf(pw));
+  await key('u');
+  pw = await asset('work');
+  check('U writes B5 at the next tick (10), the track grows', pw.ticks[10]?.tone === (await toneOf('B5')) && pw.ticks.length === 15, ticksOf(pw));
+  const wasW = await asset('work');
+  const keys = 'zsxdcvgbhnjmq2w3er5t6y7u'.split('');
+  const semis = [];
+  for (const k of keys) semis.push(await evaluate(`(() => { const i = 'zsxdcvgbhnjm'.indexOf(${JSON.stringify(k)}); return i >= 0 ? i : 12 + 'q2w3er5t6y7u'.indexOf(${JSON.stringify(k)}); })()`));
+  check('the key table covers 24 keys, semitones 0..23', semis.join() === Array.from({ length: 24 }, (_, i) => i).join());
+  await evaluate("(document.querySelector('[data-role=note-len]').focus(), true)");
+  const before = await evaluate('t.audio.buffers.length');
+  await key('z'); await key('q');
+  check('typing in a text field (the length box) neither plays nor enters', same(await asset('work'), wasW) && (await evaluate('t.audio.buffers.length')) === before);
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await key('z', { ctrl: true }); await key('z', { ctrl: true }); await key('z', { ctrl: true });
+  check('Ctrl+Z, not a piano key: three undos take the three notes away', same(await asset('work'), BASE));
+  await evaluate("(t.editor.select('work'), document.querySelector('[data-role=stop]').click(), document.querySelector('.sfxed').focus(), true)");
+  await key(' ');
+  check('Space still plays (existing shortcuts are untouched)', (await state()).playing);
+  await click('[data-role=stop]');
+  await setField('[data-role=note-oct]', 8);
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await key('q');
+  check('octave 8: the upper row would be octave 9, which is refused with a message', same(await asset('work'), BASE) && /too high/.test(await status()));
+  await setField('[data-role=note-oct]', 0); await setField('[data-role=note-inst]', 'pluck');
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await key('z');
+  check('octave 0 C0 is below the AY\'s lowest note and is refused (nothing written)', same(await asset('work'), BASE) && /below/.test(await status()));
+  await click('[data-role=piano-enter]');
+  await setField('[data-role=note-oct]', 4); await setField('[data-role=note-inst]', 'pluck');
+
+  // ── presets: copy from example (A3) ──
+  check('without host.exampleEffects the "Copy from example" control is hidden', await evaluate("document.querySelector('[data-role=example-copy]').hidden"));
+  await evaluate(`(t.host.exampleEffects = async () => [{ game: 'shooter', name: 'pew2', sfx: { ticks: [{ tone: 123, vol: 9, noise: 0, mix: 6 }, { tone: 124, vol: 8, noise: 0, mix: 6 }], ticksB: [{ tone: 300, vol: 7, noise: 0, mix: 6 }] } }, { game: 'breakout', name: 'bad', sfx: { ticks: [{ tone: 4000, vol: 15, noise: 0, mix: 6 }] } }], t.remount())`);
+  await waitFor("!document.querySelector('[data-role=example-copy]').hidden");
+  await resetWork();
+  check('with it, the control shows the examples ("game: name") after the placeholder', same(await evaluate("Array.from(document.querySelectorAll('[data-role=example-copy] option')).map((o) => o.textContent)"), ['Copy from example…', 'shooter: pew2', 'breakout: bad']));
+  await setField('[data-role=example-copy]', '0');
+  pw = await asset('work');
+  check('choosing one copies its channels into the current effect, as one undo step', same(pw, { ticks: [{ tone: 123, vol: 9, noise: 0, mix: 6 }, { tone: 124, vol: 8, noise: 0, mix: 6 }], ticksB: [{ tone: 300, vol: 7, noise: 0, mix: 6 }] }) && (await state()).canUndo && (await evaluate("document.querySelector('[data-role=example-copy]').value")) === '');
+  await evaluate("(document.querySelector('.sfxed').focus(), true)");
+  await key('z', { ctrl: true });
+  check('Ctrl+Z restores the effect', same(await asset('work'), BASE));
+  await setField('[data-role=example-copy]', '1');
+  check('an unstorable example effect is refused and nothing changes', same(await asset('work'), BASE) && /not valid|cannot/.test(await status()), await status());
+  await evaluate("(delete t.host.exampleEffects, t.remount())");
+  check('and with the member gone again the control is hidden', await evaluate("document.querySelector('[data-role=example-copy]').hidden"));
 
   // ── destroy ──
   await evaluate("(t.editor.destroy(), true)");

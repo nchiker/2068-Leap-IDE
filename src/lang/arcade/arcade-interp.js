@@ -612,7 +612,7 @@ export function interpret(ast, opts = {}) {
     if (wd) {
       if ((opts.version ?? 2) !== 2) throw new Unsupported('WIRE3D outside the v2 runtime', wd);
       const r0 = evConst(wd.r0), r1 = evConst(wd.r1);
-      const ink = wd.ink ? evConst(wd.ink) : 7, paper = wd.paper ? evConst(wd.paper) : 0, bright = wd.bright ? evConst(wd.bright) : 1;
+      const ink = wd.ink ? evConst(wd.ink) : 7, paper = wd.paper ? evConst(wd.paper) : 0, bright = wd.bright ? evConst(wd.bright) : 0;
       const models = new Map();
       for (const a of ast.assets ?? []) {
         if (a.kind !== 'MODEL') continue;

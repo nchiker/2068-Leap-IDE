@@ -311,6 +311,16 @@ try {
     JSON.stringify(await warnIds()) === '["background-attr-mix"]' && (await hostWarnIds()).includes('background-attr-mix'), JSON.stringify(await warnIds()));
   check('the warning carries clickable tile numbers (0 and 5)', await evaluate("!!document.querySelector('[data-role=warnings] [data-tile=\"0\"]') && !!document.querySelector('[data-role=warnings] [data-tile=\"5\"]')"));
   await shot('04-attr-mix');
+  // T1: a warning is one line (its first sentence) with a details toggle; the tile buttons are in the details
+  const wl = await evaluate(`(() => { const li = document.querySelector('[data-role=warnings] li[data-warning=background-attr-mix]'), d = li.querySelector('[data-role=warn-detail]'), tg = li.querySelector('[data-role=warn-toggle]'), h = li.querySelector('[data-role=warn-head]');
+    return { head: h.textContent, full: t.host.assetWarnings().find((w) => w.id === 'background-attr-mix').message, hidden: d.hidden, shown: d.getBoundingClientRect().height > 0, aria: tg.getAttribute('aria-expanded'), tg: tg.textContent, lis: document.querySelectorAll('[data-role=warnings] li').length }; })()`);
+  check('T1: the warning is one collapsed line: its first sentence, details hidden, toggle says "details"', wl.hidden && !wl.shown && wl.aria === 'false' && wl.tg === 'details' && wl.full.startsWith(wl.head) && wl.head.endsWith('.'), JSON.stringify({ head: wl.head, hidden: wl.hidden }));
+  check('T1: the tile buttons are not visible while collapsed (they are in the details)', await evaluate(`(() => { const b = document.querySelector('[data-role=warnings] [data-tile="5"]'); return !!b && b.getBoundingClientRect().height === 0; })()`));
+  await click('[data-role=warnings] li[data-warning=background-attr-mix] [data-role=warn-toggle]');
+  const wl2 = await evaluate(`(() => { const li = document.querySelector('[data-role=warnings] li[data-warning=background-attr-mix]'), d = li.querySelector('[data-role=warn-detail]'); return { hidden: d.hidden, h: d.getBoundingClientRect().height, text: d.textContent, aria: li.querySelector('[data-role=warn-toggle]').getAttribute('aria-expanded'), tg: li.querySelector('[data-role=warn-toggle]').textContent }; })()`);
+  check('T1: the toggle opens the details: the rest of the message and the tile buttons show', !wl2.hidden && wl2.h > 0 && wl2.aria === 'true' && wl2.tg === 'hide' && wl2.text.includes(wl.full.slice(wl.head.length + 1, wl.head.length + 20)) && wl2.text.includes('tile 5'), JSON.stringify(wl2).slice(0, 200));
+  await evaluate("(t.editor.refresh(), true)");
+  check('T1: an open warning stays open when the list is redrawn', await evaluate("!document.querySelector('[data-role=warnings] li[data-warning=background-attr-mix] [data-role=warn-detail]').hidden"));
   await click('[data-role=warnings] li[data-warning=background-attr-mix] [data-tile="5"]');
   check('clicking tile 5 in the warning selects it', (await state()).sel === 5);
   await click('[data-role=ink-sw][data-colour="0"]');
@@ -375,6 +385,73 @@ try {
   const lightFg = await evaluate("getComputedStyle(document.querySelector('.tiled-btn')).color");
   check('loaded in the light theme, the editor renders with its own colours', (await evaluate("getComputedStyle(document.querySelector('.tiled')).backgroundColor")) === lightBg && lightFg !== lightBg, `${lightFg}`);
   await shot('08-light-start');
+
+  // ── B1: a host whose palette is [{name, rgb: '#rrggbb'}] (what the Studio used to pass) still draws in colour ──
+  // ── T3: flag names from host.flagNames() / host.setFlagNames() ──
+  await send('Page.navigate', { url: base + 'tests/tile-editor-test.html' });
+  await waitFor('window.testReady === true', 60000);
+  await evaluate(`(async () => {
+    const { createTileEditor } = await import('../src/tools/tile-editor.js');
+    const S = await import('../src/tools/sprite-model.js');
+    const m2 = document.createElement('div'); m2.id = 'm2'; m2.style.width = '1000px'; document.body.append(m2);
+    const hex = S.PALETTE.map((p) => ({ name: p.name, rgb: '#' + p.rgb.map((v) => v.toString(16).padStart(2, '0')).join('') }));
+    const calls = [];
+    let names = ['wall', 'spike', 'coin', 'ladder', '', '', '', ''], refuse = null;
+    const host2 = Object.assign(Object.create(t.host), { id: 'tile-editor-2', palette: hex,
+      flagNames: () => names.slice(), setFlagNames: (n) => { calls.push(n.slice()); if (refuse) return { ok: false, error: refuse }; names = n.slice(); return { ok: true }; } });
+    window.t2 = { editor: createTileEditor(m2, host2), calls, hex, S, setRefuse: (r) => { refuse = r; }, setNames: (n) => { names = n; } };
+    return true;
+  })()`);
+  const px = await evaluate(`(() => { const st = t2.editor.getState(), out = [];
+    st.set.tiles.forEach((tile, i) => {
+      const c = document.querySelector('#m2 [data-role=strip] [data-tile="' + i + '"] canvas'), d = c.getContext('2d').getImageData(2, 2, 1, 1).data;
+      const key = t.T.tilePixels(tile)[0], want = t.T.keyRGB(key, t.T.PALETTE);
+      out.push({ i, got: [d[0], d[1], d[2]], want, black: want[0] + want[1] + want[2] === 0 });
+    });
+    return out; })()`);
+  check('B1: with a hex-object palette every tile of the strip draws in the palette colour (pixel 0,0)', px.length === 20 && px.every((p) => p.got.join() === p.want.join()), JSON.stringify(px.find((p) => p.got.join() !== p.want.join())));
+  check('B1: and that is not all black (some tile has a coloured pixel)', px.some((p) => !p.black));
+  const sw = await evaluate(`(() => { const st = t2.editor.getState(), tile = st.set.tiles[st.sel], b = document.querySelector('#m2 [data-role=ink-sw][data-colour="2"]');
+    const c = t.T.keyRGB(t.T.colourKey ? t.T.colourKey(2, tile.bright) : 2 + 8 * tile.bright, t.T.PALETTE); return { bg: getComputedStyle(b).backgroundColor, want: 'rgb(' + c.join(', ') + ')' }; })()`);
+  check('B1: the swatches have the palette colour as their background (ink red)', sw.bg === sw.want && sw.bg !== 'rgba(0, 0, 0, 0)', JSON.stringify(sw));
+  check('B1: paletteRgb reads [r,g,b], "#rrggbb", "#rgb" and {rgb} alike, and a bad entry gives black',
+    await evaluate("(() => { const f = t2.S.paletteRgb; const a = f([1, 2, 3]).join(), b = f('#010203').join(), c = f({ rgb: '#010203' }).join(), d = f({ rgb: [1, 2, 3] }).join(), e = f('#fff').join(), g = f(null).join(), h = f('red').join(); return a === '1,2,3' && b === a && c === a && d === a && e === '255,255,255' && g === '0,0,0' && h === '0,0,0'; })()"));
+
+  const fnames = () => evaluate("[...document.querySelectorAll('#m2 [data-role=flag-name]')].map((e) => e.textContent)");
+  check('T3: the host\'s flag names label all 8 flags (unnamed ones show their number)', JSON.stringify(await fnames()) === JSON.stringify(['wall', 'spike', 'coin', 'ladder', '4', '5', '6', '7']), JSON.stringify(await fnames()));
+  check('T3: the strip legend and the markers follow the names (tile 1 is solid: marker W)',
+    await evaluate("document.querySelector('#m2 [data-role=flag-legend]').textContent.startsWith('W wall, S spike, C coin') && [...document.querySelectorAll('#m2 [data-role=strip] [data-tile=\"1\"] .tiled-marks span')].some((s) => s.textContent === 'W' && s.title === 'wall')"));
+  await click('#m2 [data-role=flag-rename][data-flag="3"]');
+  check('T3: a rename button opens a text field with the current name (12 characters at most)', await evaluate("(() => { const i = document.querySelector('#m2 [data-role=flag-name-input]'); return !!i && i.value === 'ladder' && i.maxLength === 12; })()"));
+  await evaluate("(() => { const i = document.querySelector('#m2 [data-role=flag-name-input]'); i.value = 'water'; return true; })()");
+  await key('Enter');
+  check('T3: Enter calls host.setFlagNames with all 8 names and the label shows the new name',
+    await evaluate("t2.calls.length === 1 && t2.calls[0].length === 8 && t2.calls[0][3] === 'water' && t2.calls[0][0] === 'wall'") && (await fnames())[3] === 'water' && await evaluate("!document.querySelector('#m2 [data-role=flag-name-input]')"), JSON.stringify(await evaluate('t2.calls')));
+  await click('#m2 [data-role=flag-rename][data-flag="4"]');
+  await evaluate("(() => { document.querySelector('#m2 [data-role=flag-name-input]').value = '   '; return true; })()");
+  await key('Enter');
+  check('T3: an empty name is refused (no host call, a message, the field stays)', await evaluate("t2.calls.length === 1 && /cannot be empty/.test(document.querySelector('#m2 [data-role=message]').textContent) && !!document.querySelector('#m2 [data-role=flag-name-input]')"));
+  await evaluate("(() => { document.querySelector('#m2 [data-role=flag-name-input]').value = 'abcdefghijklmnopqrstuvwxyz'; return true; })()");
+  await key('Enter');
+  check('T3: a name longer than 12 characters is cut to 12', await evaluate("t2.calls.length === 2 && t2.calls[1][4] === 'abcdefghijkl'") && (await fnames())[4] === 'abcdefghijkl', JSON.stringify(await fnames()));
+  await evaluate("(t2.setRefuse('names must differ'), true)");
+  await click('#m2 [data-role=flag-rename][data-flag="5"]');
+  await evaluate("(() => { document.querySelector('#m2 [data-role=flag-name-input]').value = 'x'; return true; })()");
+  await key('Enter');
+  check('T3: a refusal from the host shows its error and keeps the field open', await evaluate("/names must differ/.test(document.querySelector('#m2 [data-role=message]').textContent) && !!document.querySelector('#m2 [data-role=flag-name-input]') && t2.calls.length === 3"));
+  await key('Escape');
+  check('T3: Escape closes the field without a call, and the label is unchanged by the refusal', await evaluate("t2.calls.length === 3 && !document.querySelector('#m2 [data-role=flag-name-input]')") && (await fnames())[5] === '5', JSON.stringify(await fnames()));
+  await evaluate("(t2.setRefuse(null), t2.setNames(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']), true)");
+  await evaluate("(t.editor.refresh(), t2.editor.refresh(), true)");
+  check('T3: names changed by the host show after a refresh', JSON.stringify(await fnames()) === JSON.stringify(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']), JSON.stringify(await fnames()));
+  check('T3: a checkbox of a named flag still sets the flag (flag 3 on tile 10)', await (async () => {
+    await click('#m2 [data-role=strip] [data-tile="10"]');
+    await click('#m2 [data-role=flags] input[data-flag="3"]');
+    return (await asset()).tiles[10].flags === 8;
+  })());
+  check('T3: the default editor (host without flagNames) keeps solid / hazard / pickup and numbers 3..7',
+    await evaluate("JSON.stringify([...document.querySelectorAll('.tiled:not(#m2 .tiled) [data-role=flag-name]')].map((e) => e.textContent)) === JSON.stringify(['solid', 'hazard', 'pickup', '3', '4', '5', '6', '7']) && !document.querySelector('.tiled:not(#m2 .tiled) [data-role=flag-rename]')"));
+  await evaluate("(t2.editor.destroy(), document.getElementById('m2').remove(), true)");
 
   // ── a host without roles / assetWarnings / usedBy: those features are off, the editor still works ──
   await send('Page.navigate', { url: base + 'tests/tile-editor-test.html?bare=1' });

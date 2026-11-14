@@ -16,6 +16,7 @@
 "use strict";
 
 import { createEmulator } from './src/emulator.js';
+import { cpuHz, tStatesPerFrame } from './tsrun/machine.js';
 import { STUDIO_PROFILES } from './src/lang/profiles.js';
 import { setAssetSource } from './src/lang/arcade/editor.js';
 import { inputHints, scanArcade, scanRoles } from './src/lang/arcade/arcade-scan.js';
@@ -25,11 +26,13 @@ import { createSymbolsTool } from './src/tools/symbols.js';
 import * as P from './src/arcade-project.js';
 import { drawModelPreview } from './src/tools/model-preview.js';
 import { newSong, toSong, fromSong, songInfo } from './src/tools/music-model.js';
+import { PALETTE } from './src/tools/sprite-model.js';
 
 const profile = STUDIO_PROFILES[0];
 
 // ── State ────────────────────────────────────────────────────────
-let project = P.loadProject() ?? P.newProject();
+const restored = P.loadProject();
+let project = restored ?? P.newProject();
 let activeFile = P.MAIN_FILE;
 let emulator = null;
 let lang = null;                 // profile.attach(): {compileProject, runtime, ...}
@@ -39,6 +42,7 @@ let version = 0;                 // bumped by every change to the project; compi
 let compiledVersion = -1;
 let loading = false;             // the editor is being given a file: not a user edit
 let emuState = 'booting';
+let booted = false;              // boot() has shown the project's main file in the editor (before that the editor does not hold the project)
 let selected = null;             // {kind, name} in the project panel
 let savedHash = null;            // hash of the project as last saved / opened (the unsaved mark)
 const $ = (id) => document.getElementById(id);
@@ -54,6 +58,7 @@ const el = (tag, cls, text) => {
   return n;
 };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const refreshes = (n) => `${n} refresh${n === 1 ? '' : 'es'}`;
 
 function hashOf(p) {
   const s = JSON.stringify(p);
@@ -66,19 +71,27 @@ function writeSaved(h) { try { localStorage.setItem(SAVED_KEY, h); } catch { /* 
 
 // ── Status ───────────────────────────────────────────────────────
 let statusOverride = null;       // a one-off message (Saved…, Opened…) shown until the next change
+let statusHoldUntil = 0;         // a message with `hold` is also shown over a compile error until then (so a question's follow-up is read)
 function setStatus(text, mode = 'idle') {
   $('status-text').textContent = text;
   $('sb-state').textContent = text;
   $('status-chip').className = 'status-chip ' + mode;
   $('sb-state').classList.toggle('has-error', mode === 'error' && !!firstProblem());
 }
-function say(text, mode = 'idle') { statusOverride = { text, mode }; setStatus(text, mode); }
+/** `hold` (ms): keep the message on the status line even when the compile that follows has errors (the error is in the problems list and the bar after that). */
+function say(text, mode = 'idle', hold = 0) {
+  statusOverride = { text, mode };
+  statusHoldUntil = hold ? Date.now() + hold : 0;
+  setStatus(text, mode);
+  if (hold) setTimeout(() => { if (Date.now() >= statusHoldUntil) refreshStatus(); }, hold + 20);
+}
 
 const STATE_TEXT = {
   booting: ['Starting…', 'idle'], ready: ['Ready', 'idle'], paused: ['Paused', 'run'], error: ['Error', 'error'],
 };
 function refreshStatus() {
   const res = lastCompile;
+  if (statusOverride && Date.now() < statusHoldUntil) { setStatus(statusOverride.text, statusOverride.mode); return; }
   if (res && res.errors.length) {
     const d = res.errors[0];
     setStatus(`${plural(res.errors.length, 'error')}: ${d.message} (${d.file} line ${d.line})`, 'error');
@@ -86,7 +99,7 @@ function refreshStatus() {
   }
   if (statusOverride) { setStatus(statusOverride.text, statusOverride.mode); return; }
   const warn = res && res.warnings.length ? ` · ${plural(res.warnings.length, 'warning')}` : '';
-  if (emuState === 'cartridge') setStatus(`Running ${project.name}${warn}`, 'run');
+  if (emuState === 'cartridge') setStatus(`${emulator?.held ? 'Paused' : 'Running'} ${project.name}${warn}`, 'run');
   else if (emuState === 'error') setStatus(emuMessage || 'Error', 'error');
   else setStatus((STATE_TEXT[emuState]?.[0] ?? 'Ready') + (res ? ` · compiles${warn}` : ''), STATE_TEXT[emuState]?.[1] ?? 'idle');
 }
@@ -163,21 +176,14 @@ function emit(ev) {
 /** Something in the project changed: unsaved mark, auto-save, a diagnostics compile, the lists. */
 function changed(ev) {
   version++;
-  statusOverride = null;
+  statusOverride = null; statusHoldUntil = 0;
+  if (booted) syncEditor();              // (the unsaved mark compares the text in the editor)
   renderProject();
   updateDirty();
   scheduleAutosave();
   scheduleAnalyze();
   if (ev) emit(ev);
 }
-
-/** The 16 TS2068 colours as the display shows them (TSRun's idealized palette: BRIGHT adds a constant); index = ink + 8 * bright. */
-const COLOUR_NAMES = ['black', 'blue', 'red', 'magenta', 'green', 'cyan', 'yellow', 'white'];
-const TS_RGB = Array.from({ length: 16 }, (_, i) => {
-  const level = (bit) => Math.min(255, (i & bit ? 0xCC : 0) + (i & 8 ? 0x33 : 0));      // ink bits: 1 blue, 2 red, 4 green
-  const hex = (n) => n.toString(16).padStart(2, '0');
-  return { name: (i & 8 ? 'bright ' : '') + COLOUR_NAMES[i & 7], rgb: '#' + hex(level(2)) + hex(level(4)) + hex(level(1)) };
-});
 
 // ── Source roles, asset warnings, "used by" (docs/ARCADE_STUDIO_S2_CONTRACT.md sections 3 and 7) ──
 let rolesCache = { version: -1, value: null, warnings: [] };
@@ -208,6 +214,33 @@ function usedBy(kind, name) {
   return out;
 }
 
+/**
+ * Replace the open file's text as ONE editor edit (one undo step; the cursor stays on its line), and keep the project's copy in step.
+ * (Other files are not in the editor: callers change those in the project.)
+ */
+function editActiveFile(text) {
+  const m = /^Ln (\d+), Col (\d+)/.exec($('sb-cursor').textContent);
+  window.leapEditor.setSource(text);               // a plain replacement (not {fresh}): undoable, history kept
+  project.files[activeFile] = text;
+  if (m) { try { window.leapEditor.setCursor(Math.min(Number(m[1]), window.leapEditor.getSource().split('\n').length), Number(m[2]) - 1); } catch { /* the cursor stays where the edit left it */ } }
+}
+
+/** Make the declarations of asset `oldName` (of `kind`) say `newName`, in every file; the open file by one editor edit. Returns the number of lines changed. */
+function rewriteDeclarations(kind, oldName, newName) {
+  let total = 0;
+  for (const file of Object.keys(project.files)) {
+    const r = P.rewriteAssetReferences(project.files[file], kind, oldName, newName);
+    if (!r.count) continue;
+    total += r.count;
+    if (file === activeFile) editActiveFile(r.text);
+    else project.files[file] = r.text;
+  }
+  return total;
+}
+
+/** The names the scanner finds declared in the source: [{kind: 'SPRITE', name, asset}] (the compiler's reading, comments and strings aside). */
+const declaredAssets = () => scanArcade(P.buildSource(project).text).assets;
+
 function makeHost(id) {
   const fire = (ev) => changed({ ...ev, source: id });
   return {
@@ -230,9 +263,17 @@ function makeHost(id) {
       if (r.ok) {
         if (selected && selected.kind === kind && selected.name === oldName) selected = { kind, name: newName };
         syncEditor();
+        // The source names the asset in its SPRITE / SFX / ... declarations: offer to follow the rename (asked now, before the compile can
+        // report the missing asset over the question). Yes rewrites them as one edit in the open file and in the project's other files.
         const refs = P.assetReferences(project, kind, oldName);
-        if (refs.length) say(`${plural(refs.length, 'source line')} still name "${oldName}" (${refs[0].file} line ${refs[0].line}): edit them to "${newName}"`, 'idle');
+        let fixed = 0;
+        if (refs.length && window.confirm(`Also change the ${plural(refs.length, 'source line')} that name${refs.length === 1 ? 's' : ''} it?\n\n"${oldName}" is now "${newName}"; ${P.describeReferences(refs)} still say "${oldName}", and the game will not compile until they are changed.`)) {
+          fixed = rewriteDeclarations(kind, oldName, newName);
+        }
         fire({ type: 'asset', kind, name: newName, oldName });
+        const left = refs.length - fixed;
+        if (fixed) say(`Renamed ${oldName} to ${newName} and changed ${plural(fixed, 'source line')}`, 'idle', 6000);
+        else if (left > 0) say(`${plural(left, 'source line')} still name "${oldName}" (${P.describeReferences(refs, 1)}): edit them to "${newName}"`, 'idle', 8000);
       }
       return r;
     },
@@ -246,7 +287,14 @@ function makeHost(id) {
     soundCount: () => scanArcade(P.buildSource(project).text).assets.filter((a) => a.kind === 'SFX').length,
     songCount: () => scanArcade(P.buildSource(project).text).assets.filter((a) => a.kind === 'MUSIC').length,
     status: (text) => say(String(text), 'idle'),
-    palette: TS_RGB,
+    palette: PALETTE,            // the sprite editor's own palette ({name, rgb: [r, g, b]}, index = ink + 8 * bright)
+    flagNames: () => P.flagNamesOf(project),
+    setFlagNames(names) {
+      const r = P.setFlagNames(project, names);
+      if (r.ok) fire({ type: 'project' });
+      return r;
+    },
+    exampleEffects: () => exampleEffects(),
   };
 }
 const studioHost = makeHost('studio');
@@ -272,7 +320,22 @@ function newAssetUi(kind) {
   if (Object.keys(project.assets[kind]).some((n) => n.toUpperCase() === name.toUpperCase())) { say(`There is already a ${kind} asset "${name}"`, 'error'); return; }
   const r = studioHost.setAsset(kind, name, NEW_ASSET[kind]());
   if (!r.ok) { say(r.error, 'error'); return; }
+  offerDeclaration(kind, name);
   selectAsset(kind, name);
+}
+
+/** N2: a new asset does nothing until the source declares it: offer the line (one edit in main.arc, one undo step when main.arc is open). */
+function offerDeclaration(kind, name) {
+  const word = P.DECLARATION_WORD[kind];
+  if (!word || !Object.hasOwn(project.files, P.MAIN_FILE)) return;
+  const taken = declaredAssets().some((a) => a.name.toUpperCase() === name.toUpperCase() || (a.kind === word && a.asset.toUpperCase() === name.toUpperCase()));
+  if (taken) return;
+  if (!window.confirm(`Add \`${word} ${name} = "${name}"\` to ${P.MAIN_FILE}?\n\nA ${KIND_WORD[kind] ?? kind} does nothing in the game until the source declares it.`)) return;
+  syncEditor();
+  const r = P.addDeclaration(project.files[P.MAIN_FILE], kind, name);
+  if (P.MAIN_FILE === activeFile) editActiveFile(r.text);
+  else { project.files[P.MAIN_FILE] = r.text; changed({ type: 'source', source: 'studio' }); }
+  say(`Added ${word} ${name} = "${name}" to ${P.MAIN_FILE} (line ${r.line})`, 'idle', 5000);
 }
 
 function renameAssetUi(kind, name) {
@@ -282,8 +345,21 @@ function renameAssetUi(kind, name) {
   if (!r.ok) say(r.error, 'error');
 }
 
+function duplicateAssetUi(kind, name) {
+  const r = P.duplicateAsset(project, kind, name);
+  if (!r.ok) { say(r.error, 'error'); return; }
+  changed({ type: 'asset', kind, name: r.name, source: 'studio' });
+  selectAsset(kind, r.name);
+  say(`Duplicated ${name} as ${r.name}: rename it with the pencil, and declare it in the source to use it`, 'idle', 5000);
+}
+
 function deleteAssetUi(kind, name) {
-  if (!window.confirm(`Delete the ${KIND_WORD[kind] ?? kind} "${name}"?`)) return;
+  const refs = P.assetReferences(project, kind, name);
+  const maps = usedBy(kind, name).assets;
+  let q = `Delete the ${KIND_WORD[kind] ?? kind} "${name}"?`;
+  if (refs.length) q += `\n\nThe source names it on ${plural(refs.length, 'line')}: ${P.describeReferences(refs)}. The game will not compile until you change ${refs.length === 1 ? 'it' : 'them'}.`;
+  if (maps.length) q += `\n\nThe ${maps.length === 1 ? 'map' : 'maps'} ${maps.slice(0, 3).join(', ')}${maps.length > 3 ? ` and ${maps.length - 3} more` : ''} ${maps.length === 1 ? 'is' : 'are'} drawn with it.`;
+  if (!window.confirm(q)) return;
   studioHost.deleteAsset(kind, name);
 }
 
@@ -358,9 +434,8 @@ function selectAsset(kind, name) {
     showTab(def.tab);
     ensureEditor(kind).then((api) => api?.select?.(name, kind));
   } else {
-    say(kind === 'models'
-      ? `Model ${name}: there is no model editor yet; the project file holds its points and edges, and the source uses it by name (MODEL x = "${name}")`
-      : `Editing ${kind === 'tilesets' ? 'tile sets' : kind === 'maps' ? 'maps' : 'sound effects'} comes with a later Studio slice; ${name} is used by name in the source`, 'idle');
+    // (only models have no editor yet)
+    say(`Model ${name}: there is no model editor yet; the project file holds its points and edges, and the source uses it by name (MODEL x = "${name}")`, 'idle');
   }
 }
 
@@ -442,15 +517,24 @@ function renderProject() {
     groups.append(head);
     const ul = el('ul', 'proj-list');
     for (const name of names) {
-      const li = el('li', 'proj-row' + (selected && selected.kind === kind && selected.name === name ? ' active' : ''));
+      const li = el('li', 'proj-row asset-row' + (selected && selected.kind === kind && selected.name === name ? ' active' : ''));
       li.dataset.asset = `${kind}/${name}`;
       if (kind === 'models') li.append(modelPreviewCanvas(project.assets.models[name]));
-      li.append(el('span', 'proj-name', name), el('span', 'proj-meta', assetMeta(kind, project.assets[kind][name])));
+      // the name takes the room; the details (size, ticks...) go on a second line and in the tooltip
+      const meta = assetMeta(kind, project.assets[kind][name]);
+      const main = el('span', 'proj-main');
+      main.append(el('span', 'proj-name', name), el('span', 'proj-meta', meta));
+      li.title = meta ? `${name} — ${meta}` : name;
+      li.append(main);
+      const acts = el('span', 'proj-acts');
       const ren = el('button', 'proj-act', '✎'); ren.title = 'Rename';
+      const dup = el('button', 'proj-act', '⧉'); dup.title = 'Duplicate'; dup.dataset.act = 'duplicate';
       const del = el('button', 'proj-act', '✕'); del.title = 'Delete';
       ren.addEventListener('click', (e) => { e.stopPropagation(); renameAssetUi(kind, name); });
+      dup.addEventListener('click', (e) => { e.stopPropagation(); duplicateAssetUi(kind, name); });
       del.addEventListener('click', (e) => { e.stopPropagation(); deleteAssetUi(kind, name); });
-      li.append(ren, del);
+      acts.append(ren, dup, del);
+      li.append(acts);
       li.addEventListener('click', () => selectAsset(kind, name));
       ul.append(li);
     }
@@ -465,18 +549,19 @@ function renderProject() {
 }
 
 // ── Scenes group (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md section 11) ──
-const DISPLAY_CHOICES = [
-  ['auto', 'Auto'], ['buffers', 'Two buffers'], ['fine', '8x1 colour (not built yet)'], ['hires', 'Hi-res text (not built yet)'],
-];
-const DISPLAY_SUIT = { fine: '8x1 colour', hires: 'hi-res text' };
+// Only the display setups that are built are offered (a loaded project may carry another one: it is shown, as "unknown" or "not built yet").
+const DISPLAY_CHOICES = [['auto', 'Automatic'], ['buffers', 'Two screen buffers']];
+const DISPLAY_LABEL = { fine: 'finer colour (not built yet)', hires: 'wider text (not built yet)' };
 
 /** The scenes of the last compile that got as far as reading them, else of the last good one (a broken edit keeps the panel). */
 const currentScenes = () => lastCompile?.scenes ?? lastGood?.scenes ?? [];
 
-/** `auto: two buffers, because sprites move`, or, when something else would suit, `auto: a static picture: ... (would suit 8x1 colour, built as two buffers)`. */
+/** Plain words for how a scene is drawn (the compiler's reason, said without the technical names). */
 function planText(sc) {
-  if (sc.auto === 'buffers') return `auto: ${sc.reason.replace(/^two display files flipped each tick, /, 'two buffers, ')}`;
-  return `auto: ${sc.reason} — would suit ${DISPLAY_SUIT[sc.auto]}, built as two buffers`;
+  const why = sc.reason.replace(/^two display files flipped each tick, because /, '');
+  if (sc.auto === 'buffers') return `Drawn with two screen buffers, swapped every tick, because ${why.replace(/^FRAME redraws/, 'the frame redraws')}.`;
+  if (sc.auto === 'fine') return 'A still picture. For now it is drawn with two screen buffers (a finer colour mode is planned).';
+  return 'Text only. For now it is drawn with two screen buffers (a wider text mode is planned).';
 }
 
 function setSceneDisplayUi(name, value) {
@@ -506,11 +591,10 @@ function renderScenes() {
     sel.dataset.scene = sc.name;
     const current = Object.hasOwn(project.scenes ?? {}, sc.name) ? (project.scenes[sc.name]?.display ?? 'auto') : 'auto';
     const choices = DISPLAY_CHOICES.slice();
-    if (!choices.some(([v]) => v === current)) choices.push([current, `${current} (unknown)`]);   // a loaded project may carry any text
+    if (!choices.some(([v]) => v === current)) choices.push([current, DISPLAY_LABEL[current] ?? `${current} (unknown)`]);   // a loaded project may carry any text
     for (const [value, label] of choices) {
       const o = el('option', null, label);
       o.value = value;
-      if (value === 'fine' || value === 'hires') o.disabled = current !== value;
       if (value === current) o.selected = true;
       sel.append(o);
     }
@@ -524,7 +608,7 @@ function renderScenes() {
 let analyzeTimer = null;
 function scheduleAnalyze() {
   clearTimeout(analyzeTimer);
-  analyzeTimer = setTimeout(() => { analyze(); window.leapEditor.relint(); }, ANALYZE_MS);
+  analyzeTimer = setTimeout(() => { analyze(); window.leapEditor.relint(); refreshSymbols(); }, ANALYZE_MS);
 }
 
 /** Compile the project as it is now (cached until something changes). Null until the compiler is loaded. */
@@ -546,14 +630,14 @@ const firstProblem = () => lastCompile?.errors?.[0] ?? null;
 
 function renderResult() {
   const res = lastCompile;
-  const box = $('problems');
-  box.replaceChildren();
+  const box = $('problems'), rows = $('problems-list');
+  rows.replaceChildren();
   const list = allProblems();
   for (const d of list) {
     const row = el('div', `problem ${d.severity}`);
     row.append(el('span', 'p-sev', d.severity), el('span', 'p-where', `${d.file}:${d.line}`), el('span', 'p-msg', d.message));
     row.addEventListener('click', () => jumpTo(d));
-    box.append(row);
+    rows.append(row);
   }
   // asset warnings the compile does not report itself (docs/ARCADE_STUDIO_S2_CONTRACT.md section 3); a click selects the asset
   const assetWarns = projectAssetWarnings().filter((w) => !w.compilerAlso);
@@ -563,13 +647,14 @@ function renderResult() {
     row.dataset.asset = `${w.kind}/${w.asset}`;
     row.append(el('span', 'p-sev', w.severity), el('span', 'p-where', `${assetLabel[w.kind] ?? w.kind}: ${w.asset}`), el('span', 'p-msg', w.message));
     row.addEventListener('click', () => selectAsset(w.kind, w.asset));
-    box.append(row);
+    rows.append(row);
   }
   box.hidden = list.length + assetWarns.length === 0;
+  renderProblemsHead(res.errors.length, res.warnings.length + assetWarns.length);
   const nWarn = res.warnings.length + assetWarns.length;
   $('editor-title').textContent = list.length || assetWarns.length ? `${activeFile} — ${plural(res.errors.length, 'error')}${nWarn ? `, ${plural(nWarn, 'warning')}` : ''}` : activeFile;
   $('sb-prog').textContent = res.ok
-    ? `${res.usage.total} of ${res.usage.total + res.usage.free} bytes${res.usage.banked?.used ? ` + ${res.usage.banked.used} banked` : ''} · ${Math.max(1, Math.round(res.ms))} ms`
+    ? `${fmt(res.usage.total)} of ${fmt(res.usage.total + res.usage.free)} bytes${res.usage.banked?.used ? ` + ${fmt(res.usage.banked.used)} banked` : ''} · ${Math.max(1, Math.round(res.ms))} ms`
     : `${plural(res.errors.length, 'error')}`;
   $('btn-run').disabled = !emulator;
   $('btn-dck').disabled = !res.ok;
@@ -577,6 +662,47 @@ function renderResult() {
   renderProject();
   if (!(statusOverride && !res.errors.length)) refreshStatus();
 }
+
+// E3: the problems list folds (a button with the count) and resizes (a drag handle on its top edge); both are remembered
+const PROBLEMS_H_KEY = 'leap-studio.problemsHeight', PROBLEMS_FOLD_KEY = 'leap-studio.problemsFolded';
+let problemsHeight = 0, problemsFolded = false;    // height 0 = the default (a share of the editor panel, see studio.css)
+try { problemsHeight = Number(localStorage.getItem(PROBLEMS_H_KEY)) || 0; problemsFolded = localStorage.getItem(PROBLEMS_FOLD_KEY) === '1'; } catch { /* storage blocked */ }
+let problemsCount = [0, 0];
+function renderProblemsHead(nErr, nWarn) {
+  problemsCount = [nErr, nWarn];
+  const parts = [];
+  if (nErr) parts.push(plural(nErr, 'error'));
+  if (nWarn) parts.push(plural(nWarn, 'warning'));
+  $('problems-head').textContent = `${problemsFolded ? '▸' : '▾'} Problems: ${parts.join(', ') || 'none'}`;
+}
+function applyProblemsLayout() {
+  const box = $('problems');
+  const max = Math.round($('editor-panel').clientHeight * 0.7);
+  box.classList.toggle('folded', problemsFolded);
+  box.style.height = !problemsFolded && problemsHeight ? Math.max(60, Math.min(problemsHeight, max || problemsHeight)) + 'px' : '';
+  $('problems-head').setAttribute('aria-expanded', String(!problemsFolded));
+  renderProblemsHead(...problemsCount);
+}
+$('problems-head').addEventListener('click', () => {
+  problemsFolded = !problemsFolded;
+  try { localStorage.setItem(PROBLEMS_FOLD_KEY, problemsFolded ? '1' : '0'); } catch { /* storage blocked */ }
+  applyProblemsLayout();
+});
+$('problems-grip').addEventListener('pointerdown', (e) => {
+  if (problemsFolded) return;
+  e.preventDefault();
+  const grip = $('problems-grip');
+  grip.setPointerCapture?.(e.pointerId);
+  const startY = e.clientY, startH = $('problems').getBoundingClientRect().height;
+  const move = (ev) => { problemsHeight = Math.round(startH + (startY - ev.clientY)); applyProblemsLayout(); };
+  const up = () => {
+    grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+    try { localStorage.setItem(PROBLEMS_H_KEY, String(problemsHeight)); } catch { /* storage blocked */ }
+  };
+  grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+});
+window.addEventListener('resize', () => applyProblemsLayout());
+applyProblemsLayout();
 
 const fmt = (n) => n.toLocaleString('en-US');
 function renderSizes() {
@@ -685,17 +811,24 @@ async function runProject() {
     return;
   }
   try {
+    setPaused(false);                 // a new run starts running, at normal speed, with a fresh meter
+    setSpeed(1);
     await emulator.runCartridge(res.dck);
   } catch (e) {
     say(e.message, 'error');
     return;
   }
+  hasRun = true;
+  meter.reset();
+  updateRunUi();
   refreshStatus();
   $('ts-bezel').focus();
 }
 
 function stopProject() {
-  if (emulator) emulator.stop();
+  if (!emulator) return;
+  setPaused(false);
+  emulator.stop();
 }
 
 function download(blob, name) {
@@ -717,11 +850,161 @@ function downloadDck() {
 function onEmulatorState(state, detail) {
   emuState = state;
   emuMessage = detail?.message ?? '';
+  if (state !== 'cartridge' && emulator?.held) emulator.holdFrames(false);   // the game is gone (Stop, Reset): nothing to hold
+  updateRunUi();
   $('btn-stop').disabled = state !== 'cartridge' && state !== 'paused';
   $('btn-run').disabled = !lang;
   if (state === 'cartridge') statusOverride = null;
   refreshStatus();
 }
+
+// ── Run controls and the frame budget (R1, R2, R5, N3) ───────────
+const REFRESH_HZ = cpuHz / tStatesPerFrame;      // TSRun's TS2068 refreshes 60.12 times a second (3.528 MHz / 58,688 T-states: NTSC-like, not 50 Hz)
+const METER_WINDOW = 60;                         // "now" is the last 60 refreshes (about a second)
+let hasRun = false;                              // N3: no Run yet this session
+
+function symbolAddr(name) { return lang?.runtime?.symbols?.[name] ?? null; }
+function readByte(name) { const a = symbolAddr(name); return a === null || !emulator ? null : emulator.machine.bus.read(a); }
+function readWord(name) { const a = symbolAddr(name); if (a === null || !emulator) return null; const bus = emulator.machine.bus; return bus.read(a) | (bus.read(a + 1) << 8); }
+
+/**
+ * R1: the frame budget. Everything is counted in refreshes (one emulated frame each), sampled once per frame by the emulator's
+ * onFrameDone, from the runtime's V_TICKS (ticks the game has completed) and V_DIV (refreshes per tick: 60 / FRAMERATE).
+ *  - a tick's length is the number of refreshes between two increments of V_TICKS;
+ *  - it is over budget when that length is more than V_DIV;
+ *  - fps now = ticks completed in the last 60 refreshes, per second of emulated time (x 60.12 / 60: the refresh rate is TSRun's);
+ *  - budget used = the mean length of the ticks completed in that window / V_DIV (over 100 % means the game falls behind);
+ *  - worst tick and ticks over budget count from the start of the run.
+ * The first tick after a (re)start is not counted (it began before the sampling did), and V_TICKS going back or jumping by more
+ * than 8 starts the count again: the stock ROM leaves RAM garbage there until the game zeroes it.
+ */
+const meter = (() => {
+  let M = null;
+  const reset = () => { M = { frame: 0, base: 0, prev: null, lastFrame: 0, armed: false, log: [], worst: 0, over: 0, total: 0 }; };
+  reset();
+  function sample() {
+    const v = readWord('V_TICKS');
+    if (v === null) return;
+    M.frame++;
+    if (M.prev === null || v < M.prev || v - M.prev > 8) {
+      M.prev = v; M.lastFrame = M.frame; M.base = M.frame; M.armed = false; M.log.length = 0;
+    } else if (v > M.prev) {
+      const d = v - M.prev, len = M.frame - M.lastFrame;
+      M.prev = v; M.lastFrame = M.frame;
+      if (M.armed) {
+        for (let i = 0; i < d; i++) { M.log.push({ frame: M.frame, len: len / d }); M.total++; }
+        const div = readByte('V_DIV') || 2;
+        M.worst = Math.max(M.worst, Math.ceil(len / d));
+        if (len / d > div) M.over += d;
+      }
+      M.armed = true;
+    }
+    while (M.log.length && M.log[0].frame <= M.frame - METER_WINDOW) M.log.shift();
+    if (M.frame % 6 === 0) render();
+  }
+  /** The numbers now, or null before the first counted tick. */
+  function stats() {
+    if (!M.total) return null;
+    const div = readByte('V_DIV') || 2;
+    const win = Math.max(1, Math.min(METER_WINDOW, M.frame - M.base));
+    const n = M.log.length;
+    const mean = n ? M.log.reduce((a, e) => a + e.len, 0) / n : M.frame - M.lastFrame;
+    return { framerate: 60 / div, div, fps: n * REFRESH_HZ / win, used: mean / div, worst: M.worst, over: M.over, total: M.total };
+  }
+  function render() {
+    const box = $('run-meter');
+    const show = emuState === 'cartridge';
+    box.hidden = !show;
+    if (!show) return;
+    const st = stats();
+    const rate = readByte('V_DIV') ? +(60 / readByte('V_DIV')).toFixed(1) : '?';
+    if (!st) { box.textContent = `FRAMERATE ${rate}: measuring…`; box.className = 'run-meter'; return; }
+    box.textContent = `FRAMERATE ${+st.framerate.toFixed(1)}: ${st.fps.toFixed(1)} fps now, budget used ${Math.round(st.used * 100)} %, ` +
+      `worst tick ${refreshes(st.worst)}, ${plural(st.over, 'tick')} over budget`;
+    box.className = `run-meter${st.over ? ' over' : ''}${st.used > 1 ? ' behind' : ''}`;
+    box.title = `A tick is the refreshes between two V_TICKS increments (budget ${st.div} refreshes). ${st.over} of ${st.total} ticks this run were longer. Refresh rate ${REFRESH_HZ.toFixed(2)} Hz.`;
+  }
+  return { reset, sample, stats, render };
+})();
+
+function ticksNow() { return readWord('V_TICKS'); }
+
+function setPaused(on) {
+  if (!emulator || on === emulator.held) return;
+  emulator.holdFrames(on);
+  if (!on) { joyHeld.clear(); syncJoystick(); }     // a key held across the hold must not come back
+  updateRunUi();
+  refreshStatus();
+}
+function togglePause() { if (emuState === 'cartridge') setPaused(!emulator.held); }
+
+/** F10: hold, then run frames (silently) until the game completes a tick, at most 120 refreshes. */
+function stepTick() {
+  if (!emulator || emuState !== 'cartridge') return;
+  setPaused(true);
+  const before = ticksNow();
+  let n = 0;
+  while (n < 120) { emulator.stepFrame(); n++; if (ticksNow() !== before) break; }
+  const moved = ticksNow() !== before;
+  say(moved ? `Stepped one tick (${refreshes(n)}); F8 continues` : 'No tick finished within 120 refreshes; F8 continues', 'run', 4000);
+}
+
+function setSpeed(f) {
+  if (!emulator) return;
+  emulator.setSpeed(f);
+  for (const b of document.querySelectorAll('.speed-btn')) b.classList.toggle('active', Number(b.dataset.speed) === f);
+}
+
+/** The buttons, the meter and the first-run line follow the emulator's state. */
+function updateRunUi() {
+  const running = emuState === 'cartridge';
+  const held = !!emulator?.held;
+  $('btn-pause').disabled = !running;
+  $('btn-pause').textContent = held ? 'Continue' : 'Pause';
+  $('btn-pause').title = held ? 'Continue the game (F8)' : 'Pause the game (F8); again to continue';
+  $('btn-step').disabled = !running;
+  for (const b of document.querySelectorAll('.speed-btn')) b.disabled = !running;
+  $('first-run').hidden = hasRun;
+  meter.render();
+}
+
+/**
+ * R5: the screen and its border as a PNG, 320 x 240, as shown. TSRun keeps the picture as palette indices, one per buffer pixel
+ * (640 x 240: every normal pixel is two buffer pixels wide), so this takes every other column; a hi-res row (512 wide) is
+ * sampled the same way. The colours are the idealized palette the shader uses with the CRT filter off (the Studio has no CRT switch).
+ */
+function screenPng() {
+  const px = emulator.machine.pixels, W = 320, H = 240, BW = 640;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = px[y * BW + x * 2];
+      const lvl = (bit) => bit * 204 + ((i >> 3) & 1) * 51;
+      const o = (y * W + x) * 4;
+      img.data[o] = lvl((i >> 1) & 1); img.data[o + 1] = lvl((i >> 2) & 1); img.data[o + 2] = lvl(i & 1); img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return new Promise((resolve) => cv.toBlob(resolve, 'image/png'));
+}
+async function saveScreen() {
+  if (!emulator) { say('The TS2068 is not ready yet', 'error'); return; }
+  const blob = await screenPng();
+  const base = P.projectFileName(project).replace(/\.leapgame$/, '');
+  download(blob, `${base}-screen.png`);
+  say(`Saved ${base}-screen.png (320 x 240)`, 'idle', 4000);
+}
+
+$('btn-pause').addEventListener('click', togglePause);
+$('btn-step').addEventListener('click', stepTick);
+$('btn-save-screen').addEventListener('click', saveScreen);
+for (const b of document.querySelectorAll('.speed-btn')) b.addEventListener('click', () => setSpeed(Number(b.dataset.speed)));
+// (the buttons do not take the focus from the screen, so the joystick keeps working after a click)
+for (const id of ['btn-pause', 'btn-step', 'btn-save-screen']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
+for (const b of document.querySelectorAll('.speed-btn')) b.addEventListener('mousedown', (e) => e.preventDefault());
 
 // ── Files: new, open, save, examples ─────────────────────────────
 let autosaveTimer = null;
@@ -729,14 +1012,19 @@ function scheduleAutosave() {
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(autosaveNow, AUTOSAVE_MS);
 }
+let autosaveRefused = false;     // the browser refused the last auto-save (storage full or blocked): the work is only in this page
 function autosaveNow() {
   clearTimeout(autosaveTimer);
   syncEditor();
-  P.storeProject(project);
+  const ok = P.storeProject(project);
+  if (!ok && !autosaveRefused) say('The browser would not keep a copy of this project (its storage is full or blocked): use Save to keep your work in a file', 'error', 12000);
+  autosaveRefused = !ok;
   updateDirty();
 }
 function updateDirty() {
+  // (a refused auto-save never clears the mark: only a Save to a file or an Open does)
   $('dirty-mark').hidden = hashOf(project) === savedHash;
+  $('dirty-mark').title = autosaveRefused ? 'Not saved to a file, and the browser refused the auto-save: use Save' : 'Not saved to a file';
 }
 const isDirty = () => { syncEditor(); return hashOf(project) !== savedHash; };
 function confirmDiscard() {
@@ -744,8 +1032,10 @@ function confirmDiscard() {
 }
 
 /** Make `p` the project: new editor text, fresh lists, a compile. */
-function openProject(p, { saved = true, message = null } = {}) {
+function openProject(p, { saved = true, message = null, handle = null } = {}) {
   project = p;
+  fileHandle = handle;                           // Save writes back to the file the project was opened from (File System Access API), else asks
+  autosaveRefused = false;
   version++;
   selected = null;
   lastCompile = null; lastGood = null; compiledVersion = -1;
@@ -766,16 +1056,39 @@ function newProjectUi() {
   openProject(P.newProject(), { message: 'New project: press Run (F5)' });
 }
 
-function saveProject() {
+// Save in place where the browser has the File System Access API (Chromium): the first Save asks where, later ones write to the same file;
+// everywhere else (and when the browser refuses), Save downloads a file as before. The handle lives for the session (a reload asks again).
+let fileHandle = null;
+const SAVE_TYPES = [{ description: 'Leap Arcade project', accept: { 'application/json': ['.leapgame'] } }];
+
+async function saveProject() {
   syncEditor();
   const text = P.serializeProject(project);
   const name = P.projectFileName(project);
-  download(new Blob([text], { type: 'application/json' }), name);
-  savedHash = hashOf(project);
+  const hash = hashOf(project);                 // what is being saved (the project may change while a file dialog is open)
+  let where = null;
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      if (!fileHandle) fileHandle = await window.showSaveFilePicker({ suggestedName: name, types: SAVE_TYPES });
+      const w = await fileHandle.createWritable();
+      await w.write(text);
+      await w.close();
+      where = `${fileHandle.name ?? name}`;
+    } catch (e) {
+      if (e?.name === 'AbortError') { say('Save cancelled', 'idle'); return; }
+      console.warn('[Studio] save in place failed; downloading instead', e);
+      fileHandle = null;
+    }
+  }
+  if (where === null) {
+    download(new Blob([text], { type: 'application/json' }), name);
+    where = `${name} to your downloads`;
+  }
+  savedHash = hash;
   writeSaved(savedHash);
   P.storeProject(project);
   updateDirty();
-  say(`Saved ${name} to your downloads`, 'idle');
+  say(`Saved ${where}`, 'idle');
 }
 
 function renameProjectUi() {
@@ -788,7 +1101,25 @@ function renameProjectUi() {
 async function onFileChosen(e) {
   const file = e.target.files[0];
   e.target.value = '';
-  if (!file) return;
+  if (file) await openFileObject(file, null);
+}
+
+/** Open (the Open button, Ctrl+O): the browser's file picker with a handle to save back to, where it has one, else the file input. */
+async function chooseFile() {
+  if (typeof window.showOpenFilePicker === 'function') {
+    try {
+      const [h] = await window.showOpenFilePicker({ types: [{ description: 'Leap Arcade project or source', accept: { 'application/json': ['.leapgame', '.json'], 'text/plain': ['.arc'] } }] });
+      await openFileObject(await h.getFile(), h);
+      return;
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      console.warn('[Studio] the file picker failed; using the file input', e);
+    }
+  }
+  $('file-input').click();
+}
+
+async function openFileObject(file, handle) {
   let text;
   try { text = await file.text(); } catch (err) { say(`Could not read ${file.name}: ${err.message}`, 'error'); return; }
   if (/\.arc$/i.test(file.name)) {
@@ -805,7 +1136,7 @@ async function onFileChosen(e) {
   const r = P.parseProject(text);
   if (!r.ok) { say(`${file.name} is not a usable project: ${r.errors[0]}`, 'error'); return; }
   if (!confirmDiscard()) { say('Kept your project; the file was not opened', 'idle'); return; }
-  openProject(r.project, { message: `Opened ${file.name}${r.warnings.length ? ` (${r.warnings[0]})` : ''}: press Run (F5)` });
+  openProject(r.project, { message: `Opened ${file.name}${r.warnings.length ? ` (${r.warnings[0]})` : ''}: press Run (F5)`, handle });
 }
 
 const examplesBtn = $('btn-examples');
@@ -854,6 +1185,39 @@ async function openExample(ex) {
   }
 }
 
+/**
+ * Every sound effect of every example game: Promise<[{game, name, sfx}]> (game = the example's title; sfx = the asset, a copy), for the sound
+ * editor's "copy from an example". Fetched once (all the .leapgame files of arcade/dist/examples/index.json); a failure gives what could be read.
+ */
+let effectsCache = null;
+function exampleEffects() {
+  effectsCache ??= (async () => {
+    const out = [];
+    try {
+      const resp = await fetch('arcade/dist/examples/index.json');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const index = await resp.json();
+      const games = await Promise.all(index.map(async (ex) => {
+        try {
+          const r = await fetch(`arcade/dist/examples/${ex.file}`);
+          if (!r.ok) return null;
+          const parsed = P.parseProject(await r.text());
+          return parsed.ok ? { ex, project: parsed.project } : null;
+        } catch { return null; }
+      }));
+      for (const g of games) {
+        if (!g) continue;
+        for (const name of P.listAssets(g.project, 'sfx')) out.push({ game: g.ex.title, name, sfx: P.getAsset(g.project, 'sfx', name) });
+      }
+    } catch (e) {
+      console.warn('[Studio] the example effects could not be listed', e);
+    }
+    if (out.length === 0) effectsCache = null;      // nothing read: try again next time
+    return out;
+  })();
+  return effectsCache;
+}
+
 examplesBtn.addEventListener('click', async (e) => {
   e.stopPropagation();
   const opening = examplesMenu.hidden;
@@ -871,11 +1235,12 @@ examplesMenu.addEventListener('keydown', (e) => {
 
 // ── Right-hand tabs ──────────────────────────────────────────────
 let symbolsTool = null;
+const TAB_KEY = 'leap-studio.tab';
 function showTab(name) {
   for (const t of document.querySelectorAll('#right-panel .panel-tab')) t.classList.toggle('active', t.dataset.tab === name);
   for (const b of document.querySelectorAll('#right-panel .tab-body')) b.hidden = b.dataset.tab !== name;
   $('display-btns').hidden = name !== 'display';
-  try { localStorage.setItem('leap-studio.tab', name); } catch { /* storage blocked */ }
+  try { localStorage.setItem(TAB_KEY, name); } catch { /* storage blocked */ }
   if (name === 'symbols') refreshSymbols();
   const kind = Object.keys(ASSET_EDITORS).find((k) => ASSET_EDITORS[k].tab === name);
   if (kind) ensureEditor(kind).then((api) => api?.refresh?.());
@@ -909,7 +1274,7 @@ applyTheme();
 
 // ── Display zoom (as ide.js: a whole number of device pixels per frame pixel) ──
 const FRAME_W = 320, FRAME_H = 240;
-const PANEL_CHROME = 24 + 22 + 4;
+const PANEL_CHROME = 24 + 22 + 4 + 16;     // the display body's padding, the bezel's own padding and border, a spare 4, and the vertical scrollbar the tab can show (E2)
 const MIN_SIDE_ROOM = 210 + 420;           // the project panel + the least editor width to keep
 const ZOOM_KEY = 'leap-studio.zoom';
 let zoom = 2, shownZoom = 2;
@@ -949,11 +1314,12 @@ const joyHeld = new Set();
 function syncJoystick() {
   if (!emulator) return;
   let v = 0xFF;
-  for (const k of joyHeld) v &= ~(1 << JOY_BITS[k]);
+  if (!emulator.held) for (const k of joyHeld) v &= ~(1 << JOY_BITS[k]);      // a hold sends nothing
   emulator.joystick[0] = v;
 }
 $('ts-bezel').addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey || !(e.key in JOY_BITS)) return;
+  if (emulator?.held) return;
   joyHeld.add(e.key); syncJoystick();
 });
 $('ts-bezel').addEventListener('keyup', (e) => { if (joyHeld.delete(e.key)) syncJoystick(); });
@@ -962,10 +1328,14 @@ $('ts-bezel').addEventListener('blur', () => { joyHeld.clear(); syncJoystick(); 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'F5') { e.preventDefault(); runProject(); }
   if (e.key === 'F6') { e.preventDefault(); stopProject(); }
+  if ((e.key === 'F8' || e.key === 'F10') && !e.target.closest?.('input, textarea, select')) {
+    e.preventDefault();
+    if (e.key === 'F8') togglePause(); else stepTick();
+  }
   if (e.key === 'F1') { e.preventDefault(); toggleHelp(); }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
     if (e.key === 's') { e.preventDefault(); saveProject(); }
-    if (e.key === 'o') { e.preventDefault(); $('file-input').click(); }
+    if (e.key === 'o') { e.preventDefault(); chooseFile(); }
     if ((e.key === 'f' || e.key === 'h') && !e.defaultPrevented && !e.target.closest?.('input, textarea')) {
       e.preventDefault();
       window.leapEditor?.find({ replace: e.key === 'h' });
@@ -979,7 +1349,7 @@ $('btn-stop').addEventListener('click', stopProject);
 $('btn-dck').addEventListener('click', downloadDck);
 $('btn-help').addEventListener('click', toggleHelp);
 $('btn-new').addEventListener('click', newProjectUi);
-$('btn-open').addEventListener('click', () => $('file-input').click());
+$('btn-open').addEventListener('click', chooseFile);
 $('btn-save').addEventListener('click', saveProject);
 $('file-input').addEventListener('change', onFileChosen);
 $('btn-add-file').addEventListener('click', addFile);
@@ -988,7 +1358,23 @@ $('btn-reset-emu').addEventListener('click', () => { if (emulator) { emulator.re
 $('sb-state').addEventListener('click', () => { const d = firstProblem(); if (d) jumpTo(d); });
 $('status-chip').addEventListener('click', () => { const d = firstProblem(); if (d) jumpTo(d); });
 // The editor panel's buttons keep the editor focused (as ide.js)
-for (const id of ['btn-undo', 'btn-redo', 'btn-find', 'btn-tidy']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
+for (const id of ['btn-undo', 'btn-redo', 'btn-cut', 'btn-copy', 'btn-paste', 'btn-find', 'btn-tidy']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
+// The browser may refuse the clipboard (paste usually asks first); the keys work regardless (as ide.js)
+for (const [id, op, keys] of [['btn-cut', 'cut', 'Ctrl+X'], ['btn-copy', 'copy', 'Ctrl+C'], ['btn-paste', 'paste', 'Ctrl+V']]) {
+  $(id).addEventListener('click', async () => {
+    if (await window.leapEditor[op]()) return;
+    say(`The browser did not allow the clipboard: use ${keys} in the editor`, 'error', 6000);
+  });
+}
+// Lint: the first problem of the open file (the project's compile), or "No errors"
+$('btn-lint').addEventListener('click', () => {
+  const res = analyze();
+  if (!res) { say('The compiler is not ready yet', 'error'); return; }
+  window.leapEditor.relint();
+  const first = res.errors[0] ?? res.warnings[0];
+  if (!first) { say('No errors', 'idle', 4000); return; }
+  say(`${first.file} line ${first.line}: ${first.message}`, res.errors.length ? 'error' : 'idle', 6000);
+});
 $('btn-undo').addEventListener('click', () => window.leapEditor.undo());
 $('btn-redo').addEventListener('click', () => window.leapEditor.redo());
 $('btn-find').addEventListener('click', () => window.leapEditor.find());
@@ -1000,11 +1386,29 @@ setAssetSource((kind) => P.listAssets(project, kind));
 // The project is kept in this browser (and reopens after a reload), so leaving the page needs no "discard?" question.
 window.addEventListener('beforeunload', autosaveNow);
 
+// The Symbols tab lists the names of ALL the files: the tool is given the joined source the compiler gets (P.buildSource), so the line numbers it
+// shows and passes back are lines of that text; the build's line map turns them into a file and a line (the label and the click).
 symbolsTool = createSymbolsTool($('tool-symbols'), {
-  getSource: () => window.leapEditor.getSource(),
-  goToLine: (line) => { window.leapEditor.setCursor(line, 0); window.leapEditor.focus(); },
+  getSource: () => { if (booted) syncEditor(); return P.buildSource(project).text; },   // (before boot the editor does not hold the project yet)
+  goToLine: (joined) => {
+    const at = P.buildSource(project).lineMap[joined - 1];
+    if (!at) return;
+    if (at.file !== activeFile) switchFile(at.file, { line: at.line, col: 0 });
+    else { window.leapEditor.setCursor(at.line, 0); window.leapEditor.focus(); }
+  },
   getProfile: () => profile,
 });
+/** In a project of several files a row says which file its line is in ("extra.arc line 3"), not the joined text's line. */
+function labelSymbolRows() {
+  if (Object.keys(project.files).length < 2) return;
+  const map = P.buildSource(project).lineMap;
+  for (const span of $('tool-symbols').querySelectorAll('.sym-row .sym-line')) {
+    const m = /^line (\d+)$/.exec(span.textContent);
+    const at = m && map[Number(m[1]) - 1];
+    if (at) span.textContent = `${at.file} line ${at.line}`;
+  }
+}
+new MutationObserver(labelSymbolRows).observe($('tool-symbols'), { childList: true, subtree: true });
 
 // ── Boot ─────────────────────────────────────────────────────────
 async function fetchAsset(path) {
@@ -1015,8 +1419,10 @@ async function fetchAsset(path) {
 
 async function boot() {
   savedHash = readSaved();                       // null when nothing was saved to a file: the unsaved mark shows
+  if (!restored && savedHash === null) { savedHash = hashOf(project); writeSaved(savedHash); }   // a brand-new first visit has nothing to save
   setHelpProfile(profile);
   showFile(P.MAIN_FILE);
+  booted = true;
   updateDirty();
   setStatus('Starting…', 'idle');
   try {
@@ -1031,7 +1437,8 @@ async function boot() {
     emuState = 'error'; emuMessage = err.message;
     setStatus(err.message, 'error');
   }
-  if (emulator) { emuState = 'ready'; syncJoystick(); }
+  if (emulator) { emuState = 'ready'; syncJoystick(); emulator.onFrameDone(() => { if (emuState === 'cartridge') meter.sample(); }); }
+  updateRunUi();
   try {
     lang = await profile.attach({ fetchAsset });
   } catch (err) {
@@ -1044,9 +1451,10 @@ async function boot() {
   window.leapEditor.relint();
   $('sb-runtime').textContent = lang.runtimeLabel();
   refreshStatus();
+  // the right-hand tab open when the page was left (any of them)
   let tab = null;
-  try { tab = localStorage.getItem('leap-studio.tab'); } catch { /* storage blocked */ }
-  if (tab === 'symbols') showTab('symbols');
+  try { tab = localStorage.getItem(TAB_KEY); } catch { /* storage blocked */ }
+  if (tab && tab !== 'display' && document.querySelector(`#right-panel .panel-tab[data-tab="${CSS.escape(tab)}"]`)) showTab(tab);
 }
 
 // The editor's linter and tests reach the Studio through these.
@@ -1064,6 +1472,9 @@ window.leapStudio = {
   get lang() { return lang; },
   get lastCompile() { return lastCompile; },
   get lastGood() { return lastGood; },
+  /** The frame budget meter's numbers {framerate, div, fps, used, worst, over, total}, or null before the first counted tick. */
+  meterStats: () => meter.stats(),
+  screenPng,
   /** Game ticks the running cartridge has completed (V_TICKS), or null. */
   ticks() {
     if (!emulator || !lang) return null;

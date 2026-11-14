@@ -20,6 +20,8 @@
 import * as M from './map-model.js';
 import * as T from './tile-model.js';
 import { mapRole, effectiveTileset } from '../lang/arcade/arcade-assetcheck.js';
+import { paletteRgb } from './sprite-model.js';
+import { createWarningList, warningListCss } from './warning-list.js';
 
 const PREF_KEY = 'leap-studio.mapd';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -28,7 +30,8 @@ const WORLD_TILES = 32;
 const ANY_LIMITS = Object.freeze({ role: 'any', minW: 1, maxW: 128, minH: 1, maxH: 32, maxTile: 127 });   // a map the source does not use
 const FP_COLOURS = [null, 13, 12, 9, 11];                       // floor plan wall codes 1..4 as palette indices (bright cyan, green, blue, magenta; red is for errors)
 const FP_NAMES = ['empty', 'wall 1', 'wall 2', 'wall 3', 'wall 4'];
-const FLAG_COLOURS = [['#ff4d4d', 'solid'], ['#ffb000', 'hazard'], ['#3fe06a', 'pickup']];
+const FLAG_COLOURS = [['#ff4d4d', 'solid'], ['#ffb000', 'hazard'], ['#3fe06a', 'pickup'], ['#4da6ff', ''], ['#c07cff', ''], ['#00d8d8', ''], ['#ff7ab8', ''], ['#b0b0b0', '']];   // tint per flag bit; the name is the default when the project gives none
+const FLAG_NAME_MAX = 12;
 
 function el(tag, cls, text, attrs) {
   const n = document.createElement(tag);
@@ -92,6 +95,9 @@ const CSS = `
 .mapd-warn li { padding: 2px 6px; border-left: 3px solid var(--mp-amber); color: var(--mp-fg); background: var(--mp-surface); margin-bottom: 2px; }
 .mapd-warn li.err { border-left-color: var(--mp-red); }
 .mapd-warn li.note { border-left-color: var(--mp-border-hi); color: var(--mp-muted); }
+${warningListCss('warnl', '.mapd-warn', { fg: '--mp-fg', muted: '--mp-muted', border: '--mp-border-hi', hover: '--mp-hover' })}
+.mapd-flegend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--mp-fg); }
+.mapd-flegend span.sw { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
 .mapd-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
 .mapd-main { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .mapd-side { flex: 0 1 236px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -261,7 +267,7 @@ export function createMapEditor(container, host) {
   zoomSel.dataset.role = 'zoom-select';
   const [gridLabel, gridChk] = checkbox('Grid', 'Show the cell grid (G)', (on) => { showGrid = on; keepPrefs(); drawMap(); });
   gridChk.dataset.role = 'grid-check';
-  const [flagLabel, flagChk] = checkbox('Flags', 'Tint tiles by flag: solid red, hazard amber, pickup green', (on) => { showFlags = on; keepPrefs(); drawMap(); });
+  const [flagLabel, flagChk] = checkbox('Flags', 'Tint tiles by flag (the legend under the map names each colour; the names are set in the tile editor)', (on) => { showFlags = on; keepPrefs(); drawFlagLegend(); drawMap(); });
   flagChk.dataset.role = 'flags-check';
   const [warnLabel, warnChk] = checkbox('Warnings', 'Outline cells whose colours differ from the rest of the background; undefined tiles get a red cross', (on) => { showWarn = on; keepPrefs(); drawMap(); });
   warnChk.dataset.role = 'warn-check';
@@ -314,7 +320,9 @@ export function createMapEditor(container, host) {
   scroll.append(stack);
   const readout = el('div', 'mapd-readout', '');
   readout.dataset.role = 'readout';
-  main.append(camRow, scroll, readout);
+  const flagLegend = el('div', 'mapd-flegend');
+  flagLegend.dataset.role = 'flag-legend';
+  main.append(camRow, scroll, readout, flagLegend);
 
   // palette
   const side = el('div', 'mapd-side');
@@ -329,10 +337,32 @@ export function createMapEditor(container, host) {
   const emptyNote = el('div', 'mapd-empty', 'No maps in this project yet. Press New to create one.');
   const warnList = el('ul', 'mapd-warn');
   warnList.dataset.role = 'warnings';
+  const warnView = createWarningList(warnList, { idAttr: 'data-id' });
   const msg = el('div', 'mapd-msg');
   msg.dataset.role = 'message';
   root.append(bar, newBox, sizeRow, toolRow, emptyNote, body, warnList, msg);
 
+  /** The 8 flag names: the host's (project.flagNames) when it offers them, else the defaults; an unnamed flag shows its number. */
+  function flagNames() {
+    let n = null;
+    try { n = host?.flagNames?.(); } catch { n = null; }
+    return FLAG_COLOURS.map(([, d], i) => (Array.isArray(n) && typeof n[i] === 'string' && n[i] ? n[i] : d || String(i)).slice(0, FLAG_NAME_MAX));
+  }
+  const flagsOf = (tt) => { const names = flagNames(); return names.filter((_, b) => tt.flags & (1 << b)); };
+  function drawFlagLegend() {
+    const on = showFlags && !!map && !!tiles && role !== 'floorplan';
+    flagLegend.hidden = !on;
+    flagLegend.replaceChildren();
+    if (!on) return;
+    flagNames().forEach((n, bit) => {
+      const it = el('span', null, null, { title: `flag ${bit}` });
+      it.dataset.role = 'flag-legend-item'; it.dataset.flag = String(bit);
+      const sw = el('span', 'sw'); sw.style.background = FLAG_COLOURS[bit][0];
+      it.append(sw, n);
+      flagLegend.append(it);
+    });
+  }
+  let namesKey = flagNames().join('\n');
   function say(text, kind = '') {
     msg.textContent = text;
     msg.className = 'mapd-msg ' + kind;
@@ -399,7 +429,7 @@ export function createMapEditor(container, host) {
     const v = m.cells[y * m.w + x], px = x * cp, py = y * cp;
     if (role === 'floorplan') {
       const code = v < 0 ? 0 : v;
-      ctx.fillStyle = code === 0 ? '#14161c' : code <= 4 ? rgbCss(pal[FP_COLOURS[code]].rgb) : '#7a3cff';
+      ctx.fillStyle = code === 0 ? '#14161c' : code <= 4 ? rgbCss(paletteRgb(pal[FP_COLOURS[code]])) : '#7a3cff';
       ctx.fillRect(px, py, cp, cp);
       if (cp >= 10) {
         ctx.fillStyle = code === 0 ? '#5d6470' : '#000';
@@ -473,7 +503,7 @@ export function createMapEditor(container, host) {
           if (!(tt.flags & (1 << bit))) return;
           ctx.fillStyle = col; ctx.globalAlpha = 0.2; ctx.fillRect(x * cp, y * cp, cp, cp);
           ctx.globalAlpha = 1; ctx.strokeStyle = col; ctx.lineWidth = 1;
-          ctx.strokeRect(x * cp + inset + 0.5, y * cp + inset + 0.5, cp - 2 * inset - 1, cp - 2 * inset - 1);
+          if (cp - 2 * inset - 1 > 0) ctx.strokeRect(x * cp + inset + 0.5, y * cp + inset + 0.5, cp - 2 * inset - 1, cp - 2 * inset - 1);
           inset += 2;
         });
       }
@@ -550,7 +580,7 @@ export function createMapEditor(container, host) {
       palTitle.textContent = 'Wall codes';
       for (let code = 0; code <= 4; code++) {
         mk(code, String(code), (ctx) => {
-          ctx.fillStyle = code === 0 ? '#14161c' : rgbCss(pal[FP_COLOURS[code]].rgb); ctx.fillRect(0, 0, 24, 24);
+          ctx.fillStyle = code === 0 ? '#14161c' : rgbCss(paletteRgb(pal[FP_COLOURS[code]])); ctx.fillRect(0, 0, 24, 24);
           ctx.fillStyle = code === 0 ? '#5d6470' : '#000'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(code), 12, 13);
         }, `${code} (${FP_NAMES[code]})`);
       }
@@ -566,7 +596,7 @@ export function createMapEditor(container, host) {
       for (let i = 0; i < n; i++) {
         const tt = tiles.tiles[i];
         mk(i, String(i), (ctx) => { ctx.imageSmoothingEnabled = false; ctx.drawImage(tileCanvases[i], 0, 0, 8, 8, 0, 0, 24, 24); },
-          `tile ${i}${tt.flags & 1 ? ', solid' : ''}${tt.flags & 2 ? ', hazard' : ''}${tt.flags & 4 ? ', pickup' : ''}${tt.fg ? ', foreground' : ''}`);
+          `tile ${i}${flagsOf(tt).map((n) => ', ' + n).join('')}${tt.fg ? ', foreground' : ''}`);
       }
     }
     syncPalette();
@@ -639,9 +669,9 @@ export function createMapEditor(container, host) {
     for (const f of warnings) {
       if (f.id === 'background-attr-mix') for (const i of f.cells ?? []) markers.minority.push([i % map.w, (i / map.w) | 0]);
     }
-    warnList.replaceChildren();
-    const add = (text, cls) => { const li = el('li', cls, text); warnList.append(li); return li; };
-    if (!map) return;
+    const items = [];
+    const add = (text, cls, id) => items.push({ message: text, id, severity: cls === 'err' ? 'error' : undefined, note: cls === 'note' });
+    if (!map) { warnView.render([]); return; }
     if (roles && !roleKnown) add(`The program's source does not use the map "${name}": it is shown as a cell map. Declare it with MAP ... = "${name}" (and WINDOW or VIEW3D for a world or a floor plan).`, 'note');
     if (!roles && host.roles) add('The source does not parse yet, so the role of this map (cell map, world, floor plan) is not known.', 'note');
     if (role === 'floorplan' && ringBad().length) add(`${ringBad().length} empty cell${ringBad().length > 1 ? 's' : ''} on the outer ring (red): the outer ring of a floor plan must be walls, 1..4.`, 'err');
@@ -649,10 +679,10 @@ export function createMapEditor(container, host) {
     if (undef.length && !warnings.some((f) => f.id === 'map-undefined-tile')) add(`${undef.length} cell${undef.length > 1 ? 's use' : ' uses'} a tile the tile set does not define (red cross).`, 'err');
     if (w === null && roleKnown) for (const m of M.validateMap(map, role, { tileCount: tiles ? tileCanvases.length : null })) add(m, 'err');
     for (const f of warnings) {
-      if (role === 'floorplan' && f.id === 'floorplan-shape' && ringBad().length && /outer ring/.test(f.message)) { add(f.message, 'err').dataset.id = f.id; continue; }
-      const li = add(f.message, f.severity === 'error' ? 'err' : '');
-      li.dataset.id = f.id;
+      if (role === 'floorplan' && f.id === 'floorplan-shape' && ringBad().length && /outer ring/.test(f.message)) { add(f.message, 'err', f.id); continue; }
+      add(f.message, f.severity === 'error' ? 'err' : '', f.id);
     }
+    warnView.render(items);
   }
 
   // ── loading and saving ──
@@ -701,6 +731,7 @@ export function createMapEditor(container, host) {
     syncControls();
     refreshWarnings();
     buildPalette();
+    drawFlagLegend();
     drawMap();
     showReadout();
   }
@@ -810,7 +841,7 @@ export function createMapEditor(container, host) {
     const tt = tiles?.tiles[v];
     if (!tiles) return `tile ${v}`;
     if (!tt) return `tile ${v} (not in the tile set)`;
-    const fl = ['solid', 'hazard', 'pickup'].filter((_, b) => tt.flags & (1 << b));
+    const fl = flagsOf(tt);
     return `tile ${v}${fl.length ? ' (' + fl.join(', ') + ')' : ''}`;
   }
   function showReadout() {
@@ -963,7 +994,9 @@ export function createMapEditor(container, host) {
   const unsub = [];
   try {
     const u = host?.onProjectChange?.((ev) => {
-      if (destroyed || !ev || ev.source === hostId) return;
+      if (destroyed || !ev) return;
+      if (namesKey !== flagNames().join('\n')) { namesKey = flagNames().join('\n'); if (map) { buildPalette(); drawFlagLegend(); drawMap(); showReadout(); } }   // the tile editor renamed a flag
+      if (ev.source === hostId) return;
       if (ev.type === 'source') {
         if (map && JSON.stringify(H.roles()) !== rolesKey) renderAll();
         return;

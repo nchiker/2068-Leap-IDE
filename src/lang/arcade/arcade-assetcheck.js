@@ -12,9 +12,10 @@
  *
  * `roles` is scanRoles(sourceText) (arcade-scan.js): {tileset, maps, world, floorplans, view}. With `roles` null the checks that depend on the
  * program's role for a map (every map check) are skipped, never guessed; tile-set and sound checks still run.
- * Finding ids: black-bright-mix, background-attr-mix, tile0-not-blank, world-shape, floorplan-shape, map-tileset-mismatch, map-undefined-tile,
+ * Finding ids: black-bright-mix, bright-black-paper, background-attr-mix, tile0-not-blank, world-shape, floorplan-shape, map-tileset-mismatch, map-undefined-tile,
  * sfx-unstorable, tileset-size (the contract's), plus map-shape (a cell map the compiler cannot take) and asset-malformed (an asset that cannot be read).
- * Extra fields by id: tiles / bright0 / bright1 / view (black-bright-mix), groups / tiles / cells / majorityAttr (background-attr-mix),
+ * Extra fields by id: tiles / bright0 / bright1 / view (black-bright-mix), tiles (bright-black-paper, K3: one finding per tile set, the tiles with paper 0, BRIGHT 1 and a clear bit; reported
+ * in addition to black-bright-mix when a set also mixes, since each says something else), groups / tiles / cells / majorityAttr (background-attr-mix),
  * tile (tile0-not-blank), cells (map-undefined-tile, world-shape, floorplan-shape), ticks (sfx-unstorable: the indices of ONE channel; `channel` 'A' | 'B' | 'C' is
  * present when the effect has channels B or C, one finding per channel with a bad tick), count (tileset-size).
  * Songs (kind 'music', docs/ARCADE_MUSIC_CONTRACT.md sections 3 and 7): music-unstorable (error; `pattern`, `channel` 'A' | 'B' | 'C' and `ticks`, one finding
@@ -89,6 +90,13 @@ export function tileUsesBlack(tile) {
   if (attr === null || bits === null) return false;
   const ink = attr & 7, paper = (attr >> 3) & 7;
   return (paper === 0 && bits.some((b) => b !== 0xFF)) || (ink === 0 && bits.some((b) => b !== 0));
+}
+
+/** K3: paper 0 with BRIGHT 1 (the attribute is row 0's) and at least one clear bit, so the black paper shows. */
+function tilePaperBrightBlack(tile) {
+  const attr = tileAttr(tile), bits = tileBits(tile);
+  if (attr === null || bits === null) return false;
+  return ((attr >> 3) & 7) === 0 && ((attr >> 6) & 1) === 1 && bits.some((b) => b !== 0xFF);
 }
 
 const brightOf = (tile) => (tileAttr(tile) >> 6) & 1;
@@ -184,6 +192,18 @@ function checkTileset(name, asset, roles, project, out) {
       bright0: dark[0].filter((x) => x !== 'view'), bright1: dark[1].filter((x) => x !== 'view'), tiles: [...dark[0], ...dark[1]].filter((x) => x !== 'view'),
       message: `tile set "${name}" mixes plain black and BRIGHT black. Black with BRIGHT 0: ${names(dark[0])}. Black with BRIGHT 1: ${names(dark[1])}${viewNote ? ` (counting ${viewNote})` : ''}. ` +
         'TSRun draws BRIGHT black as dark grey and plain black as black (Fuse and ZEsarUX draw both as black), so a screen that mixes them looks patchy in the Studio.',
+      compilerAlso: false,
+    });
+  }
+  // bright-black-paper (K3): paper 0 with BRIGHT 1 and a clear bit (the paper shows). Independent of black-bright-mix: a set that mixes the two blacks and also has such tiles reports both
+  // (the mix says the screen looks patchy, this one names the tiles to change and the fix; both name tiles, so the tile editor marks the union).
+  const brightPaper = [];
+  tiles.forEach((t, i) => { if (tilePaperBrightBlack(t)) brightPaper.push(i); });
+  if (brightPaper.length) {
+    out.push({
+      id: 'bright-black-paper', severity: 'warning', kind: 'tilesets', asset: name, tiles: brightPaper,
+      message: `tile set "${name}": ${brightPaper.length > 1 ? 'tiles' : 'tile'} ${list(brightPaper)} ${brightPaper.length > 1 ? 'have' : 'has'} paper 0 (black) with BRIGHT 1. ` +
+        'TSRun shows BRIGHT 1 on black paper as dark grey next to a black border (Fuse and ZEsarUX show black): use BRIGHT 0 on black paper.',
       compilerAlso: false,
     });
   }

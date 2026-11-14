@@ -17,7 +17,7 @@
 
 "use strict";
 
-import { EditorState, Prec } from '@codemirror/state';
+import { EditorState, StateField, Prec } from '@codemirror/state';
 import { EditorView, hoverTooltip } from '@codemirror/view';
 import { isolateHistory } from '@codemirror/commands';
 import { autocompletion, snippetCompletion } from '@codemirror/autocomplete';
@@ -322,23 +322,35 @@ const autoCaps = EditorView.updateListener.of((update) => {
 const INDENT = '  ';
 const linesOf = (doc) => doc.toString().split('\n');
 
-const arcadeFolding = foldService.of((state, lineStart) => {
-  const n = state.doc.lineAt(lineStart).number - 1;
-  const { blocks } = blockLines(linesOf(state.doc));
-  const b = blocks.filter((x) => x.open === n && x.close !== null && x.close > n + 1).sort((a, c) => c.close - a.close)[0];
-  if (!b) return null;
-  return { from: state.doc.line(n + 1).to, to: state.doc.line(b.close).to };
+// The block structure of the whole file (arcade-scan.js blockLines: depth, dedent and blocks per line) is computed ONCE per document change and kept in the state; fold,
+// indent and Tidy read it. (Before, the fold gutter rescanned the whole file for every visible line on every keystroke: 50-80 ms a key in Vaults, review item B2.)
+// blockLines reads each line's words from a cache keyed by the line's text, so the scan of an edit re-tokenises only the lines that changed.
+const blocksField = StateField.define({
+  create: (state) => blockLines(linesOf(state.doc)),
+  update: (value, tr) => (tr.docChanged ? blockLines(linesOf(tr.state.doc)) : value),
 });
 
+// a block folds from the end of its opening line to the end of its closing line; of several blocks that open on a line the outermost wins
+const arcadeFolding = foldService.of((state, lineStart) => {
+  const n = state.doc.lineAt(lineStart).number - 1;
+  const { blocks } = state.field(blocksField);
+  let best = null;
+  for (const x of blocks) if (x.open === n && x.close !== null && x.close > n + 1 && (best === null || x.close > best.close)) best = x;
+  if (!best) return null;
+  return { from: state.doc.line(n + 1).to, to: state.doc.line(best.close).to };
+});
+
+// Depth and dedent of line i depend only on the lines up to i, so the whole-file structure serves for a line anywhere in it. Only Enter (simulateBreak: the line is split at
+// the cursor, which shifts every later line) rescans, and then only the lines up to the new one.
 const arcadeIndent = Prec.high(indentService.of((cx, pos) => {
   const dl = cx.state.doc.lineAt(pos);
-  const lines = linesOf(cx.state.doc);
-  let n = dl.number - 1;
+  const n = dl.number - 1;
   if (cx.options.simulateBreak === pos) {
-    lines.splice(n, 1, dl.text.slice(0, pos - dl.from), dl.text.slice(pos - dl.from));
-    n++;
+    const lines = linesOf(cx.state.doc).slice(0, n);
+    lines.push(dl.text.slice(0, pos - dl.from), dl.text.slice(pos - dl.from));
+    return indentLevel(blockLines(lines), n + 1) * cx.unit;
   }
-  return indentLevel(blockLines(lines.slice(0, n + 1)), n) * cx.unit;
+  return indentLevel(cx.state.field(blocksField), n) * cx.unit;
 }));
 // Typing ENDIF, ENDP, NEXT, ... or ELSE / CASE dedents the line (indentOnInput in src/editor.js asks languageData).
 const arcadeIndentOnInput = EditorState.languageData.of(() => [{
@@ -347,13 +359,12 @@ const arcadeIndentOnInput = EditorState.languageData.of(() => [{
 
 function tidy(view) {
   const { state } = view;
-  const lines = linesOf(state.doc);
-  const st = blockLines(lines);
+  const st = state.field(blocksField);
   const changes = [];
-  for (let n = 0; n < lines.length; n++) {
-    const body = lines[n].replace(/^\s+/, '');
-    const want = body === '' ? '' : INDENT.repeat(indentLevel(st, n));
+  for (let n = 0; n < state.doc.lines; n++) {
     const line = state.doc.line(n + 1);
+    const body = line.text.replace(/^\s+/, '');
+    const want = body === '' ? '' : INDENT.repeat(indentLevel(st, n));
     const have = line.text.slice(0, line.text.length - body.length);
     if (have !== want) changes.push({ from: line.from, to: line.from + have.length, insert: want });
   }
@@ -427,6 +438,7 @@ export const arcadeEditor = {
     arcadeHover,
     autocompletion({ override: [arcadeComplete] }),
     autoCaps,
+    blocksField,
     arcadeFolding,
     arcadeIndent,
     arcadeIndentOnInput,

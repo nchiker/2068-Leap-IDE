@@ -760,7 +760,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     try {
       const r0 = pick(wireDecl.r0, 0, 0, 20, 'the first row'), r1 = pick(wireDecl.r1, 0, 0, 23, 'the last row');
       if (r1 < r0 + 3) throw new Error(`ROWS ${r0} TO ${r1}: the play area needs at least 4 rows`);
-      const ink = pick(wireDecl.ink, 7, 0, 7, 'INK'), paper = pick(wireDecl.paper, 0, 0, 7, 'PAPER'), bright = pick(wireDecl.bright, 1, 0, 1, 'BRIGHT');
+      const ink = pick(wireDecl.ink, 7, 0, 7, 'INK'), paper = pick(wireDecl.paper, 0, 0, 7, 'PAPER'), bright = pick(wireDecl.bright, 0, 0, 1, 'BRIGHT');
       wire = { r0, r1, ink, paper, bright, attr: (bright << 6) | (paper << 3) | ink, area: wireAreaOf(r0, r1) };
     } catch (ex) { err(wireDecl, `WIRE3D: ${ex.message}`); }
   }

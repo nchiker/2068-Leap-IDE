@@ -18,10 +18,13 @@
 import * as T from './tile-model.js';
 import * as M from './map-model.js';
 import { colourKey } from './sprite-model.js';
+import { createWarningList, warningListCss } from './warning-list.js';
 
 const PREF_KEY = 'leap-studio.tiled';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
 const UNDO_STEPS = 200;
+const FLAG_NAME_MAX = 12;           // a flag name is cut to this many characters (a rename that is longer is truncated, not refused)
+const DEFAULT_FLAG_NAMES = ['solid', 'hazard', 'pickup', '', '', '', '', ''];   // what flags 0..2 are called without a project setting; 3..7 show their number
 
 // ── DOM helpers (no innerHTML anywhere: user data only goes through textContent / value) ─────────────────────────
 function el(tag, cls, text, attrs) {
@@ -64,6 +67,7 @@ const CSS = `
 .tiled-warn li.err { border-left-color: var(--td-red); }
 .tiled-warn li.note { border-left-color: var(--td-border-hi); color: var(--td-muted); }
 .tiled-warn li .tiled-links { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+${warningListCss('warnl', '.tiled-warn', { fg: '--td-fg', muted: '--td-muted', border: '--td-border-hi', hover: '--td-hover' })}
 .tiled-body { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
 .tiled-col { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
 .tiled-strip-col { flex: 0 1 372px; }
@@ -87,7 +91,10 @@ const CSS = `
 .tiled-palrow { display: flex; gap: 3px; align-items: center; }
 .tiled-sw { width: 22px; height: 22px; padding: 0; border: 1px solid var(--td-border-hi); border-radius: 3px; cursor: pointer; }
 .tiled-sw.sel { outline: 2px solid var(--td-amber); outline-offset: 1px; }
-.tiled-flags { display: grid; grid-template-columns: repeat(3, auto); gap: 3px 12px; }
+.tiled-flags { display: grid; grid-template-columns: repeat(2, auto); gap: 3px 12px; }
+.tiled-flag { display: flex; align-items: center; gap: 4px; }
+.tiled-flag .tiled-btn { padding: 0 4px; font-size: 10px; }
+.tiled-flag input[type=text] { width: 9ch; font: 11px var(--font-ui, system-ui, sans-serif); color: var(--td-fg); background: var(--td-bg); border: 1px solid var(--td-amber); border-radius: 3px; padding: 1px 3px; }
 .tiled-prev { image-rendering: pixelated; border: 1px solid var(--td-border-hi); display: block; }
 .tiled-info { font: 11px/1.5 var(--font-code, monospace); color: var(--td-fg); margin: 0; white-space: pre-wrap; max-width: 100%; }
 .tiled-msg { min-height: 16px; color: var(--td-muted); font-size: 11px; }
@@ -196,6 +203,7 @@ export function createTileEditor(container, host) {
 
   const warnList = el('ul', 'tiled-warn');
   warnList.dataset.role = 'warnings';
+  const warnView = createWarningList(warnList, { idAttr: 'data-warning' });
   const emptyNote = el('div', 'tiled-empty', '');
   const msg = el('div', 'tiled-msg');
   msg.dataset.role = 'message';
@@ -213,6 +221,7 @@ export function createTileEditor(container, host) {
   btnAdd.dataset.role = 'tile-add'; btnDup.dataset.role = 'tile-dup'; btnLast.dataset.role = 'tile-del-last';
   stripBtns.append(btnAdd, btnDup, btnLast);
   const legend = el('div', 'tiled-label', 'S solid, H hazard, P pickup, F foreground, ! warning');
+  legend.dataset.role = 'flag-legend';
   stripCol.append(el('div', 'tiled-h', 'Tiles'), strip, stripBtns, legend);
 
   // middle: tools, grid, operations
@@ -284,14 +293,71 @@ export function createTileEditor(container, host) {
   const flagBox = el('div', 'tiled-flags');
   flagBox.dataset.role = 'flags';
   const flagChks = [];
-  const flagTitles = ['solid: the player and enemies stop at it', 'hazard: touching it hurts', 'pickup: it can be collected', 'user bit 3 (game-defined)', 'user bit 4 (game-defined)', 'user bit 5 (game-defined)', 'user bit 6 (game-defined)', 'user bit 7 (game-defined)'];
+  const flagLabels = [];                // per bit: {name span, rename button, label}
+  const flagTitles = ['the player and enemies stop at it', 'touching it hurts', 'it can be collected', 'game-defined', 'game-defined', 'game-defined', 'game-defined', 'game-defined'];
+  /** The 8 flag names: the host's (project.flagNames) when it offers them, else the defaults. Each is cut to FLAG_NAME_MAX. */
+  function flagNames() {
+    let n = null;
+    try { n = host?.flagNames?.(); } catch { n = null; }
+    return DEFAULT_FLAG_NAMES.map((d, i) => (Array.isArray(n) && typeof n[i] === 'string' ? n[i] : d).slice(0, FLAG_NAME_MAX));
+  }
+  const flagShown = (names, bit) => names[bit] || String(bit);
+  function renameFlag(bit, text) {
+    const v = text.trim().slice(0, FLAG_NAME_MAX);
+    if (!v) { say('A flag name cannot be empty', 'err'); return false; }
+    const names = flagNames(); names[bit] = v;
+    let r;
+    try { r = host.setFlagNames(names) ?? { ok: true }; } catch (e) { r = { ok: false, error: e.message }; }
+    if (r.ok === false) { say(r.error ?? 'The flag name was refused', 'err'); return false; }
+    say(`Flag ${bit} is now called "${v}"`);
+    drawFlagNames(); if (set) drawStrip();
+    return true;
+  }
+  function editFlagName(bit) {
+    const fl = flagLabels[bit];
+    const inp = el('input', null, null, { type: 'text', maxlength: String(FLAG_NAME_MAX), 'aria-label': `Name of flag ${bit}` });
+    inp.dataset.role = 'flag-name-input'; inp.dataset.flag = String(bit);
+    inp.value = flagNames()[bit];
+    let done = false;
+    const finish = (commit) => {
+      if (done) return; done = true;
+      if (commit && !renameFlag(bit, inp.value)) { done = false; inp.focus(); return; }
+      inp.replaceWith(fl.name);
+      drawFlagNames();
+    };
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+    inp.addEventListener('blur', () => finish(false));
+    fl.name.replaceWith(inp);
+    inp.focus(); inp.select();
+  }
   for (let bit = 0; bit < 8; bit++) {
     const chk = el('input', null, null, { type: 'checkbox' });
     chk.dataset.flag = String(bit);
     chk.addEventListener('change', () => { const on = chk.checked; edit(() => T.setFlag(tile(), bit, on)); });
-    const l = el('label', 'tiled-check'); l.title = flagTitles[bit]; l.append(chk, bit < 3 ? ['solid', 'hazard', 'pickup'][bit] : String(bit));
+    const wrap = el('div', 'tiled-flag');
+    wrap.dataset.role = 'flag-row';
+    const l = el('label', 'tiled-check');
+    const nameSpan = el('span', null, '');
+    nameSpan.dataset.role = 'flag-name'; nameSpan.dataset.flag = String(bit);
+    l.append(chk, nameSpan);
+    wrap.append(l);
+    let ren = null;
+    if (host?.setFlagNames) {
+      ren = button('✎', `Rename flag ${bit}`, () => editFlagName(bit), 'sm');
+      ren.dataset.role = 'flag-rename'; ren.dataset.flag = String(bit);
+      wrap.append(ren);
+    }
+    flagLabels.push({ name: nameSpan, label: l, rename: ren });
     flagChks.push(chk);
-    flagBox.append(l);
+    flagBox.append(wrap);
+  }
+  function drawFlagNames() {
+    const names = flagNames();
+    flagLabels.forEach((fl, bit) => {
+      fl.name.textContent = flagShown(names, bit);
+      fl.label.title = `flag ${bit} (${flagShown(names, bit)}): ${flagTitles[bit]}`;
+    });
+    legend.textContent = `${names[0] ? names[0][0].toUpperCase() : 'S'} ${flagShown(names, 0)}, ${names[1] ? names[1][0].toUpperCase() : 'H'} ${flagShown(names, 1)}, ${names[2] ? names[2][0].toUpperCase() : 'P'} ${flagShown(names, 2)}, F foreground, ! warning`;
   }
   const fgChk = el('input', null, null, { type: 'checkbox' });
   fgChk.dataset.role = 'fg';
@@ -571,7 +637,8 @@ export function createTileEditor(container, host) {
       c.width = c.height = 32;
       paintTile(c.getContext('2d'), t, 0, 0, 4);
       const marks = el('div', 'tiled-marks');
-      for (const [on, ch, cls, what] of [[t.flags & 1, 'S', 'm-s', 'solid'], [t.flags & 2, 'H', 'm-h', 'hazard'], [t.flags & 4, 'P', 'm-p', 'pickup'], [t.fg, 'F', 'm-f', 'foreground'], [byTile.has(i), '!', 'm-w', 'has a warning']]) {
+      const fn = flagNames();
+      for (const [on, ch, cls, what] of [[t.flags & 1, fn[0] ? fn[0][0].toUpperCase() : 'S', 'm-s', fn[0] || 'solid'], [t.flags & 2, fn[1] ? fn[1][0].toUpperCase() : 'H', 'm-h', fn[1] || 'hazard'], [t.flags & 4, fn[2] ? fn[2][0].toUpperCase() : 'P', 'm-p', fn[2] || 'pickup'], [t.fg, 'F', 'm-f', 'foreground'], [byTile.has(i), '!', 'm-w', 'has a warning']]) {
         if (on) { const m = el('span', cls, ch, { title: what }); marks.append(m); }
       }
       const n = cellsOfTile(i);
@@ -587,27 +654,23 @@ export function createTileEditor(container, host) {
   }
   function drawLive() { drawStripOne(); drawPreview(); }
   function drawWarnings() {
-    warnList.replaceChildren();
-    if (!set) return;
-    for (const w of warns) {
-      const li = el('li', w.severity === 'error' ? 'err' : '');
-      li.dataset.warning = w.id;
-      li.append(el('span', null, w.message));
+    if (!set) { warnView.render([]); return; }
+    const items = warns.map((w) => {
       const tl = tilesOfWarning(w);
-      if (tl.length) {
-        const links = el('div', 'tiled-links');
-        for (const i of tl.slice(0, 24)) { const b = button(`tile ${i}`, `Select tile ${i}`, () => { sel = i; renderAll(); }, 'sm'); b.dataset.tile = String(i); links.append(b); }
-        li.append(links);
-      }
-      warnList.append(li);
-    }
+      return {
+        id: w.id, message: w.message, severity: w.severity,
+        extra: tl.length ? () => {
+          const links = el('div', 'tiled-links');
+          for (const i of tl.slice(0, 24)) { const b = button(`tile ${i}`, `Select tile ${i}`, () => { sel = i; renderAll(); }, 'sm'); b.dataset.tile = String(i); links.append(b); }
+          return links;
+        } : null,
+      };
+    });
     if (differing.length) {
-      const li = el('li', 'note', `Tile${differing.length > 1 ? 's' : ''} ${differing.slice(0, 12).join(', ')}${differing.length > 12 ? ', …' : ''} had rows with different colours. A tile has one colour cell (the compiler reads row 0), so the editor shows row 0's colours and will unify the rows when you change this set.`);
-      li.dataset.role = 'rows-note';
-      warnList.append(li);
+      items.push({ role: 'rows-note', note: true, message: `Tile${differing.length > 1 ? 's' : ''} ${differing.slice(0, 12).join(', ')}${differing.length > 12 ? ', …' : ''} had rows with different colours. A tile has one colour cell (the compiler reads row 0), so the editor shows row 0's colours and will unify the rows when you change this set.` });
     }
-    const lim = set.tiles.length;
-    if (lim >= T.MAX_TILES) warnList.append(el('li', 'note', `This set has the most tiles a map cell can hold (${T.MAX_TILES}).`));
+    if (set.tiles.length >= T.MAX_TILES) items.push({ note: true, message: `This set has the most tiles a map cell can hold (${T.MAX_TILES}).` });
+    warnView.render(items);
   }
   function drawInfo() {
     const t = tile(), sm = T.tileSummary(t, sel);
@@ -658,7 +721,8 @@ export function createTileEditor(container, host) {
     const show = !!set;
     body.hidden = !show; emptyNote.hidden = show;
     emptyNote.textContent = name && !show ? `The tile set "${name}" cannot be edited (see the message below).` : 'No tile sets in this project yet. Press New to create one.';
-    if (!show) { warnList.replaceChildren(); syncControls(); return; }
+    drawFlagNames();
+    if (!show) { warnView.render([]); syncControls(); return; }
     collectWarnings();
     collectUsage();
     layoutGrid();
@@ -692,6 +756,7 @@ export function createTileEditor(container, host) {
   try {
     const u = host?.onProjectChange?.((ev) => {
       if (destroyed || !ev || ev.source === hostId) return;
+      if (ev.type === 'flagNames' || ev.type === 'project') { drawFlagNames(); if (set) drawStrip(); }
       if (ev.type === 'source' || (ev.type === 'asset' && ev.kind && ev.kind !== 'tilesets')) { lightRefresh(); return; }
       outsideChange(ev);
     });
@@ -705,6 +770,7 @@ export function createTileEditor(container, host) {
   /** The source or a map changed: only what depends on them (warnings, markers, usage) is redrawn, and only while the tab is shown. */
   function lightRefresh() {
     if (!set || root.offsetParent === null) return;
+    drawFlagNames();
     collectWarnings(); collectUsage();
     drawStrip(); drawWarnings(); drawInfo();
   }

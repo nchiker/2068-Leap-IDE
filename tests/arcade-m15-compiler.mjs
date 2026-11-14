@@ -31,6 +31,9 @@ import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
 import { convertSfx, convertSfxC, convertMusic, sfxRefreshRegisters, assetTables } from '../src/lang/arcade/arcade-assets.js';
 import { createSoundChip, SB_FX, SB_MUS, SB_SYNC } from '../src/lang/arcade/arcade-sound.js';
 import { ASSETS15, T, expectChip, songRow, rng, ROOT, stripMusic, musicWordsIn } from './arcade-m15-common.mjs';
+// TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
+// a statement with no BRIGHT clause gets an explicit `BRIGHT 1` (the old default) for BOTH compilers, so the identity still covers it byte for byte.
+const pinOldBright = (text) => text.split('\n').map((l) => (/^\s*(VIEW3D|WIRE3D)\b/i.test(l) && !/\bBRIGHT\b/i.test(l.replace(/\bREM\b.*$/i, '')) ? l.replace(/(\s*\bREM\b.*)?$/i, (rem) => ` BRIGHT 1${rem}`) : l)).join('\n');
 
 const QUICK = !!process.env.ARCADE_QUICK;
 let passed = 0, failed = 0, skipped = 0;
@@ -305,13 +308,14 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
       if (hasSongs) {
         songGames++;
         const left = musicWordsIn(text), Rq = RT[requiredRuntime(text, assets).version] ?? RT[2], w = compile(text, { runtime: Rq.rt, image: Rq.img, assets });
-        if (left.length || w.errors.length || w.warnings.length) strayBad += `${p.src}: ${left.length ? left.join(' ') + ' left; ' : ''}${w.errors.length ? 'errors ' + errText(w) + '; ' : ''}${w.warnings.length ? 'warnings ' + w.warnings.map((x) => x.message).join(' | ') + '; ' : ''}`;
+        const ws = w.warnings.filter((x) => !/BRIGHT 1 on black paper/.test(x.message));      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the two-blacks warning is expected on today's games (fixed in stage 3, K4)
+        if (left.length || w.errors.length || ws.length) strayBad += `${p.src}: ${left.length ? left.join(' ') + ' left; ' : ''}${w.errors.length ? 'errors ' + errText(w) + '; ' : ''}${ws.length ? 'warnings ' + ws.map((x) => x.message).join(' | ') + '; ' : ''}`;
       }
       for (const v of [2, 3, 4]) {
         if (!RT[v]) continue;
         if (/^\s*WIRE3D\b/im.test(text)) continue;      // a wireframe game (docs/ARCADE_WIREFRAME_CONTRACT.md): the previous compiler cannot build it
         if ((v === 2 || v === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(text)) continue;      // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10) changed COSA / SINA / FXMUL on v2 (allowed by the checker) and v3 (new message) on purpose
-        const a = oldCompile(text, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets, ...CODEGEN_OFF }), d = compile(text, { runtime: RT[v].rt, image: RT[v].img, assets });
+        const src = pinOldBright(text), a = oldCompile(src, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(src, { runtime: RT[v].rt, image: RT[v].img, assets, ...CODEGEN_OFF }), d = compile(src, { runtime: RT[v].rt, image: RT[v].img, assets });
         if (a.errors.length || b.errors.length) { if (a.errors.length !== b.errors.length) bad += `${p.src} v${v}: errors ${a.errors.length} vs ${b.errors.length}; `; continue; }
         nd++;
         // the default build: no errors either, a DCK, and no more code than the old compiler's
@@ -322,7 +326,7 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
     }
     check_(`${n} builds (every example and fixture that compiles, on v2 / v3 / v4; the examples with songs on their text without MUSIC, NOMUSIC and PLAY <song>) give a DCK byte-identical to the compiler of ${ref} (CODEGEN_OFF)`, bad === '' && n >= 15, bad || `${n} builds`);
     check_(`the default build of the same ${nd} programs compiles with no errors, gives a DCK and never has more code than the compiler of ${ref}; most have less`, badD === '' && nd === n && smaller >= n / 2, badD || `${smaller} of ${nd} smaller`);
-    check_(`stripMusic of each of the ${songGames} examples with songs leaves no MUSIC / NOMUSIC word in the code and compiles (on the runtime it needs) with no errors and no warnings`, songGames >= 4 && strayBad === '', strayBad || `${songGames} examples`);
+    check_(`stripMusic of each of the ${songGames} examples with songs leaves no MUSIC / NOMUSIC word in the code and compiles (on the runtime it needs) with no errors and no warnings but the two-blacks one (stage 1 K1)`, songGames >= 4 && strayBad === '', strayBad || `${songGames} examples`);
   }
   if (tmp) rmSync(tmp, { recursive: true, force: true });
 }

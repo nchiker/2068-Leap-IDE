@@ -339,6 +339,31 @@ try {
   const darkBg = await evaluate("getComputedStyle(document.querySelector('.sprited')).backgroundColor");
   check('the editor follows the theme variables (light and dark backgrounds differ)', lightBg !== darkBg, `${lightBg} / ${darkBg}`);
 
+  // ── B1: a host whose palette is [{name, rgb: '#rrggbb'}] (what the Studio used to pass) still draws in colour ──
+  await evaluate(`(async () => {
+    const { createSpriteEditor } = await import('../src/tools/sprite-editor.js');
+    const S = t.S;
+    const sp = S.newSprite(16, 16, { ink: 2, paper: 4, bright: 1 });
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) S.paintRole(sp, 0, x, y, (x + y) % 2 ? 'paper' : 'ink');
+    t.externalSet('probe', S.toAsset(sp));
+    const m2 = document.createElement('div'); m2.id = 'm2'; m2.style.width = '1000px'; document.body.append(m2);
+    const hex = S.PALETTE.map((p) => ({ name: p.name, rgb: '#' + p.rgb.map((v) => v.toString(16).padStart(2, '0')).join('') }));
+    const host2 = Object.assign(Object.create(t.host), { id: 'sprite-editor-2', palette: hex });
+    window.t2 = { editor: createSpriteEditor(m2, host2) };
+    t2.editor.select('probe');
+    return true;
+  })()`);
+  const sp2 = await evaluate(`(() => { const st = t2.editor.getState(), keys = t.S.framePixels(st.sprite, 0), g = document.querySelector('#m2 [data-role=grid]'), z = st.zoom, ctx = g.getContext('2d'), out = [];
+    for (const [x, y] of [[0, 0], [1, 0], [5, 7], [8, 8], [15, 15], [3, 12]]) {
+      const d = ctx.getImageData(x * z + (z >> 1), y * z + (z >> 1), 1, 1).data, want = t.S.keyRGB(keys[y * 16 + x], t.S.PALETTE);
+      out.push({ x, y, got: [d[0], d[1], d[2]], want });
+    }
+    const sw = [...document.querySelectorAll('#m2 [data-role=palette] [data-key]')].map((b) => getComputedStyle(b).backgroundColor);
+    return { out, swatches: sw.length, empty: sw.filter((c) => !c || c === 'rgba(0, 0, 0, 0)').length, red: getComputedStyle(document.querySelector('#m2 [data-role=palette] [data-key="2"]')).backgroundColor, brightRed: getComputedStyle(document.querySelector('#m2 [data-role=palette] [data-key="10"]')).backgroundColor }; })()`);
+  check('B1: the grid pixels of a cell equal the palette colour (ink bright red / paper bright green, with a hex-object palette)', sp2.out.every((o) => o.got.join() === o.want.join()) && sp2.out.some((o) => o.want.join() === '252,56,51'), JSON.stringify(sp2.out.filter((o) => o.got.join() !== o.want.join())));
+  check('B1: the 15 palette swatches have a background colour (red is rgb(201, 5, 0), bright red rgb(252, 56, 51))', sp2.swatches === 15 && sp2.empty === 0 && sp2.red === 'rgb(201, 5, 0)' && sp2.brightRed === 'rgb(252, 56, 51)', JSON.stringify({ n: sp2.swatches, empty: sp2.empty, red: sp2.red, br: sp2.brightRed }));
+  await evaluate("(t2.editor.destroy(), document.getElementById('m2').remove(), true)");
+
   // ── destroy ──
   await evaluate("(t.editor.destroy(), true)");
   check('destroy removes the editor and its host listeners', await evaluate("!document.querySelector('.sprited')"));

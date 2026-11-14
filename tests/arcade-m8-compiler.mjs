@@ -330,7 +330,7 @@ const dckArea = (res) => res.dck.slice(9 + 2 * 8192, 9 + 4 * 8192);        // ch
   check_('header: 20 bytes: sprite_count +5, sprite_table +6 = $8014, map_table +16 = 0, view_desc +18, inst_table +14', m[0x8005] === 1 && rd(0x8006) === 0x8014 && rd(0x8010) === 0 && rd(0x8012) > 0x8014 && rd(0x800E) > 0x8014);
   const vd = rd(0x8012);
   const maze = ASSETS.maps.maze;
-  check_('view_desc: colw 4, map_w 12, map_h 12, attr_top $47, attr_bottom $4F, patterns 0, flags 0', [m[vd], m[vd + 1], m[vd + 2], m[vd + 3], m[vd + 4], rd(vd + 7), m[vd + 9]].join() === [4, 12, 12, 0x47, 0x4F, 0, 0].join(), [...m.slice(vd, vd + 10)].join());
+  check_('view_desc: colw 4, map_w 12, map_h 12, attr_top $07, attr_bottom $0F (default BRIGHT 0 since stage 1 K2), patterns 0, flags 0', [m[vd], m[vd + 1], m[vd + 2], m[vd + 3], m[vd + 4], rd(vd + 7), m[vd + 9]].join() === [4, 12, 12, 0x07, 0x0F, 0, 0].join(), [...m.slice(vd, vd + 10)].join());
   check_('map_src points at the byte-RLE of the 144-cell map in row-major order (stride = map_w) and the descriptor follows it', (() => {
     const at = rd(vd + 5), stream = []; let p = at;
     while (m[p] !== 0) { stream.push(m[p], m[p + 1]); p += 2; }
@@ -344,9 +344,9 @@ const dckArea = (res) => res.dck.slice(9 + 2 * 8192, 9 + 4 * 8192);        // ch
   const c2 = cm(MIN('', 'VIEW3D level COLW 2 INK 3 CEIL 4 FLOOR 6 BRIGHT 0'));
   const v2 = c2.memory[0x8012] | (c2.memory[0x8013] << 8);
   check_('clauses: COLW 2 INK 3 CEIL 4 FLOOR 6 BRIGHT 0 gives colw 2, attr_top $23, attr_bottom $33', [c2.memory[v2], c2.memory[v2 + 3], c2.memory[v2 + 4]].join() === [2, 0x23, 0x33].join(), errText(c2));
-  const c3 = cm(MIN('CONST K = 5\n', 'VIEW3D level FLOOR K INK K + 1 CEIL K - 4'));
+  const c3 = cm(MIN('CONST K = 5\n', 'VIEW3D level FLOOR K INK K + 1 CEIL K - 4 BRIGHT 1'));
   const v3 = c3.memory[0x8012] | (c3.memory[0x8013] << 8);
-  check_('clause values are folded constants: FLOOR 5, INK 6, CEIL 1 with BRIGHT 1 gives $4E and $6E', c3.memory[v3 + 3] === (0x40 | 8 | 6) && c3.memory[v3 + 4] === (0x40 | 5 << 3 | 6), errText(c3));
+  check_('clause values are folded constants: FLOOR 5, INK 6, CEIL 1, BRIGHT 1 gives $4E and $6E', c3.memory[v3 + 3] === (0x40 | 8 | 6) && c3.memory[v3 + 4] === (0x40 | 5 << 3 | 6), errText(c3));
   const pat = [255, 255, 170, 85, 238, 187, 136, 34, 255, 0, 170, 0, 204, 204, 136, 136];
   const c4 = cm(MIN('', `VIEW3D level PATTERNS ${pat.join(', ')} COLW 2`));
   const v4 = c4.memory[0x8012] | (c4.memory[0x8013] << 8), pp = c4.memory[v4 + 7] | (c4.memory[v4 + 8] << 8);

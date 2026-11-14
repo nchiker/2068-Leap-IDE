@@ -63,8 +63,8 @@ for (const id of EX) {
   const r = (id) => scanRoles(examples[id].text);
   check('scanRoles shooter: a cell map "sky", tile set gfx, no world, no floor plan, no view', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky' }, world: null, worlds: [], floorplans: [], view: null }), JSON.stringify(r('shooter')));
   check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', worlds: ['pf_world'], floorplans: [], view: null }), JSON.stringify(r('platformer')));
-  check('scanRoles vaults: floor plan vl_maze, cell maps vl_panel and vl_title (the NOVIEW title picture), view BRIGHT 1 (default) CEIL 0 FLOOR 1',
-    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze', splash: 'vl_title' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 1, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
+  check('scanRoles vaults: floor plan vl_maze, cell maps vl_panel and vl_title (the NOVIEW title picture), view BRIGHT 0 (default, since K2) CEIL 0 FLOOR 1',
+    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze', splash: 'vl_title' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 0, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
   check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null }));
   const src = [
     'CONST dark = 0', 'CONST lite = 5 + 1', 'TILESET t = "ts"', 'MAP m = "m1"', 'MAP Maze = "mz"', 'MAP other = "o"',
@@ -74,7 +74,7 @@ for (const id of EX) {
     eq(scanRoles(src), { tileset: 'ts', maps: { m: 'm1', Maze: 'mz', other: 'o' }, world: 'o', worlds: ['o'], floorplans: ['mz'], view: { bright: 0, ceil: 0, floor: 6 } }), JSON.stringify(scanRoles(src)));
   const v2 = scanRoles('TILESET t = "ts"\nMAP m = "m1"\nVIEW3D m CEIL FLOOR2 FLOOR 9 BRIGHT 7\n');
   check('scanRoles: a clause that is not a constant 0..7 (or BRIGHT 0..1) is null for that field, the others keep their defaults', eq(v2.view, { bright: null, ceil: null, floor: null }) || (v2.view !== null && v2.view.bright === null && v2.view.floor === null), JSON.stringify(v2));
-  check('scanRoles: WINDOW / VIEW3D naming an undeclared MAP give world null / no floor plan (the view is still read)', eq(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: { bright: 1, ceil: 3, floor: 1 } }), JSON.stringify(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3')));
+  check('scanRoles: WINDOW / VIEW3D naming an undeclared MAP give world null / no floor plan (the view is still read)', eq(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: { bright: 0, ceil: 3, floor: 1 } }), JSON.stringify(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3')));
   let threw = false, junk;
   try { junk = [scanRoles(''), scanRoles(undefined), scanRoles(null), scanRoles('TILESET'), scanRoles('\u0000"""((('), scanRoles('MAP = "x"\nWINDOW\nVIEW3D'), scanRoles(5)]; } catch { threw = true; }
   // maps a WORLD statement loads (banking contract section 4, batch 6): worlds with a WINDOW, floor plans with a VIEW3D, as the compiler's checker says
@@ -122,7 +122,8 @@ const blackA = (bright, extra = {}) => tile({ paper: 0, bits: '00', ink: 7, brig
 const plain = (extra = {}) => tile({ paper: 6, ink: 1, bits: 'AA', ...extra });                        // no black anywhere
 {
   // black-bright-mix
-  const mix = (tiles, rl = null) => checkAssets(mkProject({ tilesets: { ts: { tiles } } }), rl);
+  // (only black-bright-mix findings: bright-black-paper, K3, is tested below and also fires on a BRIGHT 1 black tile)
+  const mix = (tiles, rl = null) => checkAssets(mkProject({ tilesets: { ts: { tiles } } }), rl).filter((x) => x.id === 'black-bright-mix');
   let f = mix([blackA(0), blackA(1), plain()]);
   check('black-bright-mix: one BRIGHT 0 and one BRIGHT 1 black tile warn (warning, not compilerAlso, kind tilesets)', f.length === 1 && f[0].id === 'black-bright-mix' && f[0].severity === 'warning' && f[0].asset === 'ts' && f[0].kind === 'tilesets' && f[0].compilerAlso === false && eq(f[0].bright0, [0]) && eq(f[0].bright1, [1]), JSON.stringify(f.map((x) => x.id)));
   check('black-bright-mix: the text says why (TSRun dark grey, Fuse and ZEsarUX black)', /dark grey/.test(f[0].message) && /Fuse/.test(f[0].message) && /ZEsarUX/.test(f[0].message));
@@ -132,12 +133,29 @@ const plain = (extra = {}) => tile({ paper: 6, ink: 1, bits: 'AA', ...extra }); 
     has(mix([tile({ ink: 0, paper: 6, bits: '18', bright: 1 }), blackA(0)]), 'black-bright-mix') && mix([tile({ ink: 0, paper: 6, bits: '00', bright: 1 }), blackA(0)]).length === 0);
   f = mix(Array.from({ length: 20 }, (_, i) => blackA(i < 10 ? 0 : 1)));
   check('black-bright-mix: names at most 6 tiles of each kind in the text, all of them in the details', f.length === 1 && /tiles 0, 1, 2, 3, 4, 5 and 4 more/.test(f[0].message) && f[0].bright0.length === 10 && f[0].bright1.length === 10, f[0]?.message.slice(0, 160));
-  const withView = (tiles, view, tileset = 'ts') => checkAssets(mkProject({ tilesets: { ts: { tiles } } }), roles({ tileset, view }));
+  const withView = (tiles, view, tileset = 'ts') => checkAssets(mkProject({ tilesets: { ts: { tiles } } }), roles({ tileset, view })).filter((x) => x.id === 'black-bright-mix');
   check('black-bright-mix + VIEW3D: CEIL 0 with BRIGHT 1 counts as a BRIGHT 1 black, so a BRIGHT 0 black tile makes the mix', has(withView([blackA(0), plain()], { bright: 1, ceil: 0, floor: 1 }), 'black-bright-mix') && withView([blackA(0), plain()], { bright: 1, ceil: 0, floor: 1 })[0].view === true);
   check('black-bright-mix + VIEW3D: FLOOR 0 with BRIGHT 0 counts as a BRIGHT 0 black', has(withView([blackA(1)], { bright: 0, ceil: 3, floor: 0 }), 'black-bright-mix'));
   check('black-bright-mix + VIEW3D: the same brightness is quiet; neither CEIL nor FLOOR 0 is quiet; null fields are quiet',
     withView([blackA(1)], { bright: 1, ceil: 0, floor: 1 }).length === 0 && withView([blackA(0)], { bright: 1, ceil: 2, floor: 1 }).length === 0 && withView([blackA(0)], { bright: null, ceil: 0, floor: 1 }).length === 0 && withView([blackA(0)], { bright: 1, ceil: null, floor: null }).length === 0);
   check('black-bright-mix + VIEW3D: only the program\'s tile set takes the view into account', mix([blackA(0), plain()], roles({ tileset: 'other', view: { bright: 1, ceil: 0, floor: 1 } })).length === 0);
+
+  // bright-black-paper (K3)
+  const bbp = (tiles, rl = null) => checkAssets(mkProject({ tilesets: { ts: { tiles } } }), rl).filter((x) => x.id === 'bright-black-paper');
+  f = bbp([blackA(1), plain(), blackA(1), blackA(0)]);
+  check('bright-black-paper: one finding per tile set, `tiles` lists the BRIGHT 1 paper-0 tiles (warning, kind tilesets, not compilerAlso)', f.length === 1 && f[0].severity === 'warning' && f[0].kind === 'tilesets' && f[0].asset === 'ts' && f[0].compilerAlso === false && eq(f[0].tiles, [0, 2]), JSON.stringify(f));
+  check('bright-black-paper: the text says why and the fix (TSRun dark grey, Fuse and ZEsarUX black, use BRIGHT 0)', /dark grey/.test(f[0].message) && /Fuse/.test(f[0].message) && /ZEsarUX/.test(f[0].message) && /BRIGHT 0 on black paper/.test(f[0].message), f[0]?.message);
+  check('bright-black-paper: paper 0 with BRIGHT 0 is quiet; BRIGHT 1 with paper 1 is quiet', bbp([blackA(0), tile({ paper: 1, ink: 7, bits: '00', bright: 1 })]).length === 0);
+  check('bright-black-paper: BRIGHT 1 paper 0 with every bit set (no paper shows) is quiet; one clear bit is enough', bbp([tile({ paper: 0, ink: 5, bits: 'FF', bright: 1 })]).length === 0 && bbp([tile({ paper: 0, ink: 5, bits: ['FF', 'FF', 'FF', 'FF', 'FF', 'FF', 'FF', 'FE'], bright: 1 })]).length === 1);
+  check('bright-black-paper: ink 0 with BRIGHT 1 (black ink, not black paper) is not this finding', bbp([tile({ ink: 0, paper: 6, bits: '18', bright: 1 })]).length === 0);
+  check('bright-black-paper: the attribute is row 0\'s (a later row with paper 0 BRIGHT 1 does not count)', bbp([{ rows: Array.from({ length: 8 }, (_, y) => ({ bits: '00', ink: 7, paper: y === 0 ? 3 : 0, bright: y === 0 ? 0 : 1 })), flags: 0 }]).length === 0);
+  check('bright-black-paper: a set that also mixes the two blacks reports both findings', (() => { const all = checkAssets(mkProject({ tilesets: { ts: { tiles: [blackA(0), blackA(1)] } } }), null); return has(all, 'black-bright-mix') && has(all, 'bright-black-paper') && eq(all.find((x) => x.id === 'bright-black-paper').tiles, [1]); })());
+  check('bright-black-paper: malformed tiles are skipped, never thrown', bbp([null, 5, { rows: [] }, tile({ paper: 9, bright: 1 }), blackA(1)]).length === 1);
+  check('bright-black-paper: names at most 6 tiles in the text, all of them in `tiles`', (() => { const g = bbp(Array.from({ length: 20 }, () => blackA(1))); return g.length === 1 && g[0].tiles.length === 20 && /tiles 0, 1, 2, 3, 4, 5 and 14 more/.test(g[0].message); })());
+  check('bright-black-paper: a several-tile finding says "tiles 0, 1 have"', (() => { const g = bbp([blackA(1), blackA(1)]); return g.length === 1 && /tiles 0, 1 have paper 0/.test(g[0].message); })());
+  check('bright-black-paper: a tile with a malformed bitmap (7 rows) is not flagged', bbp([{ rows: Array.from({ length: 7 }, () => ({ bits: '00', ink: 7, paper: 0, bright: 1 })), flags: 0 }]).length === 0 && bbp([{ rows: Array.from({ length: 8 }, (_, y) => ({ bits: y === 3 ? 'ZZ' : '00', ink: 7, paper: 0, bright: 1 })), flags: 0 }]).length === 0);
+  check('bright-black-paper: a one-tile finding says "tile 3 has"', (() => { const g = bbp([plain(), plain(), plain(), blackA(1)]); return g.length === 1 && /tile 3 has paper 0/.test(g[0].message); })());
+  check('bright-black-paper: BRIGHT given as true or 1 both count', bbp([tile({ paper: 0, bits: '00', bright: true })]).length === 1);
 
   // background-attr-mix
   const bg1 = plain({ ink: 1, paper: 6 }), bg2 = plain({ ink: 2, paper: 6 }), solid = plain({ ink: 3, paper: 6, flags: 1 });
@@ -326,10 +344,16 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   }
   console.log('');
   const summary = EX.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
+  // K3 (stage 1 of the Studio completion) and K2's default (the VIEW3D is BRIGHT 0 now): Starfall's, Vaults' and Blockfall's tiles are BRIGHT 1 on black paper, and Vaults' BRIGHT 1 tiles
+  // now also mix with its view. Stage 3 (K4) fixes the games and removes these entries.
   const EXPECTED = [
+    'shooter: bright-black-paper gfx',
     'platformer: background-attr-mix pf_world',
+    'vaults: black-bright-mix vl_tiles',
+    'vaults: bright-black-paper vl_tiles',
     'vaults: background-attr-mix vl_panel',
     'vaults: background-attr-mix vl_title',
+    'blockfall: bright-black-paper gfx',
   ];
   check('the examples produce exactly the expected warnings (no errors, no tile0-not-blank, no shape or undefined-tile findings)', eq(summary, EXPECTED), JSON.stringify(summary));
   check('no example finding is an error or a compilerAlso finding', EX.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
@@ -341,9 +365,17 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   check('breakout bricks / blockfall gfx / vaults vl_tiles: no tile set mixes BRIGHT 0 and BRIGHT 1 black, recomputed from the JSON',
     noMix('breakout', 'bricks') && noMix('blockfall', 'gfx') && noMix('vaults', 'vl_tiles'), JSON.stringify([black('breakout', 'bricks'), black('blockfall', 'gfx'), black('vaults', 'vl_tiles')]));
   const vb = black('vaults', 'vl_tiles');
-  check('vaults vl_tiles: every black tile is BRIGHT 1 like the VIEW3D (CEIL 0, default BRIGHT 1), so the view does not mix either',
-    vb[0].length === 0 && vb[1].length > 0 && /VIEW3D/.test(examples.vaults.arc) && /CEIL 0/.test(examples.vaults.arc) && !/BRIGHT 0/.test(examples.vaults.arc.split('\n').filter((l) => /VIEW3D/.test(l)).join('')));
-  check('no example reports black-bright-mix', EX.every((id) => !out[id].some((f) => f.id === 'black-bright-mix')));
+  check('vaults vl_tiles: every black tile is BRIGHT 1 while the VIEW3D (CEIL 0, no BRIGHT clause) is BRIGHT 0 now, so the view mixes with them (until K4)',
+    vb[0].length === 0 && vb[1].length > 0 && /VIEW3D/.test(examples.vaults.arc) && /CEIL 0/.test(examples.vaults.arc) && !/BRIGHT/.test(examples.vaults.arc.split('\n').filter((l) => /VIEW3D/.test(l)).join('')) && out.vaults.some((f) => f.id === 'black-bright-mix' && f.view === true));
+  check('no example other than vaults reports black-bright-mix', EX.every((id) => id === 'vaults' || !out[id].some((f) => f.id === 'black-bright-mix')));
+  // bright-black-paper, independently: the tiles with paper 0, BRIGHT 1 and a clear bit, from the JSON
+  const bbpRaw = (id, ts) => examples[id].assets.tilesets[ts].tiles.map((t, i) => [raw(t), i]).filter(([r]) => r.paper === 0 && r.bright === 1 && r.clear > 0).map(([, i]) => i);
+  const bbpOf = (id, ts) => out[id].filter((f) => f.id === 'bright-black-paper' && f.asset === ts).flatMap((f) => f.tiles);
+  check('bright-black-paper on the examples: Starfall all 16, Vaults 28, Blockfall tiles 0, 10, 11; recomputed from the JSON',
+    eq(bbpOf('shooter', 'gfx'), bbpRaw('shooter', 'gfx')) && bbpOf('shooter', 'gfx').length === 16 && eq(bbpOf('vaults', 'vl_tiles'), bbpRaw('vaults', 'vl_tiles')) && bbpOf('vaults', 'vl_tiles').length === 28 && eq(bbpOf('blockfall', 'gfx'), bbpRaw('blockfall', 'gfx')) && eq(bbpOf('blockfall', 'gfx'), [0, 10, 11]),
+    JSON.stringify([bbpOf('shooter', 'gfx').length, bbpOf('vaults', 'vl_tiles').length, bbpOf('blockfall', 'gfx')]));
+  check('every example tile set: the bright-black-paper tiles equal the independent reading of the JSON (none for breakout and the platformer)',
+    EX.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => eq(bbpOf(id, ts), bbpRaw(id, ts)))) && bbpRaw('breakout', 'bricks').length === 0 && bbpRaw('platformer', 'pf_tiles').length === 0);
   // background-attr-mix, independently: the used non-foreground tiles of the map grouped by attribute
   const groupsOf = (id, tsName, mapName, world) => {
     const ts = examples[id].assets.tilesets[tsName].tiles, cells = cellsRaw(examples[id].assets.maps[mapName]);
@@ -378,14 +410,18 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   // speed
   // the best of up to 40 tries spread over about 2 s, stopping at the first under the bound: a property of the code, so the measurement must not
   // depend on a busy host (best of 6 back to back gave 23.7 ms beside 8 parallel verify jobs, 11 ms alone)
+  // Skipped under ARCADE_QUICK=1, the mode the mutation suites run this file in (m18c): a wall-clock bound there turns host load into a false kill or a
+  // false baseline failure (seen 2026-11-14: 21.5 ms beside 8 verify jobs, 4.8 ms alone). verify.mjs's own step of this file keeps the check.
   let best = 1e9, tries = 0;
-  for (; tries < 40 && best >= 20; tries++) {
+  if (process.env.ARCADE_QUICK) { best = 0; tries = -1; }
+  for (; tries >= 0 && tries < 40 && best >= 20; tries++) {
     if (tries) await new Promise((r) => setTimeout(r, 50));
     const t = performance.now();
     for (const id of ['shooter', 'platformer', 'vaults']) checkAssets(examples[id].project, scanRoles(examples[id].text));
     best = Math.min(best, performance.now() - t);
   }
-  check('all three example projects (scanRoles + checkAssets) take under 20 ms together', best < 20, `${best.toFixed(2)} ms, best of ${tries}`);
+  if (tries < 0) console.log('SKIP  the 20 ms speed check (ARCADE_QUICK=1: a mutation run)');
+  else check('all three example projects (scanRoles + checkAssets) take under 20 ms together', best < 20, `${best.toFixed(2)} ms, best of ${tries}`);
 }
 
 // ═══ 5  agreement with the compiler ═════════════════════════════════════════════════════════════════════════════

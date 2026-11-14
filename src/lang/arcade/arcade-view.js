@@ -18,7 +18,7 @@ export const VIEW_STRIDE = 32;              // the runtime's map array: 32 x 32 
 export const VIEW_RAM_BYTES = 1024;
 export const VIEW_DESC_BYTES = 10;
 export const VIEW_PATTERN_BYTES = 16;
-export const VIEW_DEFAULTS = Object.freeze({ colw: 4, ink: 7, ceil: 0, floor: 1, bright: 1 });
+export const VIEW_DEFAULTS = Object.freeze({ colw: 4, ink: 7, ceil: 0, floor: 1, bright: 0 });
 /** Billboard half-size of the collision test in 1/256 cells: R = h * 4 (contract section 3: half the world side, h / 32 cells). */
 export const billboardRadius = (h) => h * 4;
 

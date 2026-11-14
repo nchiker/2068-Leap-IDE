@@ -178,6 +178,37 @@ export function validateAsset(kind, value) {
   }
 }
 
+// ── Flag names ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The names the eight tile flags have until a project gives its own (flags 0..2 are the ones the games use). */
+export const DEFAULT_FLAG_NAMES = Object.freeze(['solid', 'hazard', 'pickup', 'flag 3', 'flag 4', 'flag 5', 'flag 6', 'flag 7']);
+export const FLAG_NAME_MAX = 12;
+
+/** null when `names` is exactly 8 strings of 1..12 printable ASCII characters (not all blanks), else the reason ("must be ..."). */
+export function validateFlagNames(names) {
+  if (!Array.isArray(names) || names.length !== 8) return 'must be a list of exactly 8 names';
+  for (let i = 0; i < 8; i++) {
+    const n = names[i];
+    if (typeof n !== 'string' || n.length < 1 || n.length > FLAG_NAME_MAX) return `name ${i} must be 1 to ${FLAG_NAME_MAX} characters`;
+    if (!/^[\x20-\x7E]+$/.test(n) || n.trim() === '') return `name ${i} must be printable characters (letters, digits, punctuation, spaces)`;
+  }
+  return null;
+}
+
+/** The project's eight flag names (the defaults when it has none). */
+export function flagNamesOf(project) {
+  return validateFlagNames(project.flagNames) === null ? [...project.flagNames] : [...DEFAULT_FLAG_NAMES];
+}
+
+/** Set the flag names; names equal to the defaults remove the key. @returns {{ok: true} | {ok: false, error: string}} */
+export function setFlagNames(project, names) {
+  const bad = validateFlagNames(names);
+  if (bad) return { ok: false, error: `flag names ${bad}` };
+  if (names.every((n, i) => n === DEFAULT_FLAG_NAMES[i])) delete project.flagNames;
+  else project.flagNames = [...names];
+  return { ok: true };
+}
+
 // ── Validate / migrate a whole project ───────────────────────────────────────────────────────────────────────
 
 /**
@@ -250,8 +281,18 @@ export function validateProject(doc) {
     }
     scenes[sname] = e;
   }
+  // flagNames (optional): the names of the eight tile flags, shown in the tile editor and the map editor's Flags view. A bad value is dropped with a warning
+  // (a cosmetic field must not make a project unreadable).
+  let flagNames;
+  if (doc.flagNames !== undefined) {
+    const bad = validateFlagNames(doc.flagNames);
+    if (bad) warnings.push(`"flagNames" ${bad}; the default names are used`);
+    else flagNames = [...doc.flagNames];
+  }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, project: { format: FORMAT, name, framerate, files, assets, scenes }, warnings };
+  const project = { format: FORMAT, name, framerate, files, assets, scenes };
+  if (flagNames) project.flagNames = flagNames;
+  return { ok: true, project, warnings };
 }
 
 /** Parse the text of a `.leapgame` file. Same result shape as validateProject(). */
@@ -404,16 +445,76 @@ export function renameAsset(project, kind, oldName, newName) {
   return { ok: true };
 }
 
-/** Source references to an asset name that has no asset: [{line, name}] (the Studio warns after a rename). */
+/** The word that declares each asset kind in the source: `SPRITE name = "asset"` (docs/ARCADE_LANGUAGE.md; a model is `MODEL`, a song `MUSIC`). */
+export const DECLARATION_WORD = Object.freeze({ sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX', music: 'MUSIC', models: 'MODEL' });
+
+const declarationRe = (word, asset) => new RegExp(`^(\\s*${word}\\s+[A-Za-z]\\w*\\s*(?:\\(\\s*\\d+\\s*\\))?\\s*=\\s*")(${asset.replace(/[^\w]/g, '\\$&')})(")`, 'i');
+
+/** Source lines that declare an asset by name, as `KIND x = "name"`: [{file, line}] (the Studio warns after a rename, and names them when you delete). */
 export function assetReferences(project, kind, name) {
-  const word = { sprites: 'SPRITE', tilesets: 'TILESET', maps: 'MAP', sfx: 'SFX', music: 'MUSIC', models: 'MODEL' }[kind];
+  const word = DECLARATION_WORD[kind];
   if (!word) return [];
-  const re = new RegExp(`^\\s*${word}\\s+[A-Za-z]\\w*\\s*(\\(\\s*\\d+\\s*\\))?\\s*=\\s*"${name.replace(/[^\w]/g, '\\$&')}"`, 'i');
+  const re = declarationRe(word, name);
   const out = [];
   for (const [file, text] of Object.entries(project.files)) {
     text.split('\n').forEach((l, i) => { if (re.test(l)) out.push({ file, line: i + 1 }); });
   }
   return out;
+}
+
+/** "main.arc:6, main.arc:9, extra.arc:2 and 4 more" for a list of {file, line}. */
+export function describeReferences(refs, first = 3) {
+  const shown = refs.slice(0, first).map((r) => `${r.file}:${r.line}`);
+  const more = refs.length - shown.length;
+  return shown.join(', ') + (more > 0 ? ` and ${more} more` : '');
+}
+
+/** One file's text with every declaration of asset `oldName` (of this kind) pointing at `newName`. @returns {{text: string, count: number}} */
+export function rewriteAssetReferences(text, kind, oldName, newName) {
+  const word = DECLARATION_WORD[kind];
+  if (!word) return { text, count: 0 };
+  const re = declarationRe(word, oldName);
+  let count = 0;
+  const out = text.split('\n').map((l) => (re.test(l) ? (count++, l.replace(re, `$1${newName}$3`)) : l));
+  return { text: out.join('\n'), count };
+}
+
+/**
+ * The source text with the declaration `WORD name = "asset"` added: after the last top-level declaration of the same word, else after the last
+ * of any asset declaration, else after FRAMERATE, else after GAME, else at the top. Returns {text, line} (line = the new line's number, 1-based).
+ */
+export function addDeclaration(text, kind, name, asset = name) {
+  const word = DECLARATION_WORD[kind];
+  if (!word) return { text, line: 0 };
+  const lines = text.split('\n');
+  const lastMatch = (re) => { let at = -1; lines.forEach((l, i) => { if (re.test(l)) at = i; }); return at; };
+  let at = lastMatch(new RegExp(`^${word}\\s+[A-Za-z]`, 'i'));
+  if (at < 0) at = lastMatch(new RegExp(`^(?:${Object.values(DECLARATION_WORD).join('|')})\\s+[A-Za-z]`, 'i'));
+  if (at < 0) at = lastMatch(/^FRAMERATE\s/i);
+  if (at < 0) at = lastMatch(/^GAME\s/i);
+  lines.splice(at + 1, 0, `${word} ${name} = "${asset}"`);
+  return { text: lines.join('\n'), line: at + 2 };
+}
+
+/** A free asset name for a copy: "ball" -> "ball2", "ball3"... (case-insensitive, up to 31 characters). */
+export function copyName(project, kind, name) {
+  const taken = new Set(Object.keys(project.assets[kind] ?? {}).map((n) => n.toUpperCase()));
+  for (let i = 2; i < 1000; i++) {
+    const tail = String(i);
+    const cand = name.slice(0, MAX_NAME - tail.length) + tail;
+    if (!taken.has(cand.toUpperCase())) return cand;
+  }
+  return name;
+}
+
+/** Duplicate an asset under a free name (or `newName`). @returns {{ok: true, name: string} | {ok: false, error: string}} */
+export function duplicateAsset(project, kind, name, newName) {
+  if (!ASSET_KINDS.includes(kind) || !Object.hasOwn(project.assets[kind], name)) return { ok: false, error: `no ${kind} asset "${name}"` };
+  const to = newName ?? copyName(project, kind, name);
+  if (!isAssetName(to)) return { ok: false, error: `"${to}" is not a valid asset name` };
+  if (Object.keys(project.assets[kind]).some((n) => n.toUpperCase() === to.toUpperCase())) return { ok: false, error: `there is already a ${kind} asset called "${to}"` };
+  project.assets[kind][to] = clone(project.assets[kind][name]);
+  return { ok: true, name: to };
 }
 
 /** File names in compile order: main.arc first, the rest alphabetical. */

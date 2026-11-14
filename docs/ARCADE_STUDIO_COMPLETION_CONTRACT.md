@@ -215,6 +215,45 @@ The finding and the suggested fix of each id are in the review doc; this section
   place), the download otherwise.
 * **E1 to E4, E6** as the doc says. **X1** as section 3.
 
+#### As built (stage 1, 2026-11-14, branch `studio-stage1`)
+
+All stage 1 items are done. Sonnet agents built them with disjoint files, Claude reviewed and re-ran every suite, and a Haiku agent ran `verify --all`.
+* **B1.** `paletteRgb(entry)` in `sprite-model.js` reads `[r, g, b]`, `'#rrggbb'` or `{rgb}`. `keyRGB` goes through it, so all three editors accept either form, and the Studio now passes `PALETTE`. New canvas-pixel checks in the three editor smokes and `studio-smoke`. They fail on the old `keyRGB` (checked).
+* **B2.** The Arcade editor keeps its block structure in a `StateField`. `tests/arcade-editor-perf.mjs` types 10 keys in Vaults and asserts no key handler or long task over 30 ms (best of 3; Chrome's long-task observer starts at 50 ms, so it also reads Event Timing). Measured with the old editor: 34-66 ms.
+* **B4-B7.** Rename asks "Also change the N source lines that name it?" (one edit in the open file; other files are changed in the project). The delete question names `file:line` (first three). A refused auto-save shows a warning. Symbols lists all files and opens the right one (the joined source and its line map; `symbols.js` is unchanged).
+* **K1.** `arcade-check.js` `startColour` / `trackColour`. Scene and game-level INIT / FRAME start at PAPER 7 BRIGHT 0. Other PROCs start unknown, which cannot change any warning (a warning needs both colours set by the body). Values are folded with `cfold`.
+* **K2.** Both defaults are `BRIGHT 0` (`VIEW_DEFAULTS`, the WIRE3D default in the codegen, interpreter and `scanRoles`). Only Vaults relies on a default: its DCK differs from the previous compiler's in exactly the 2 view attribute bytes (`$45`/`$4D` -> `$05`/`$0D`). Starfall, Blockfall and both Leap Runners compile to identical bytes and only gain warnings. `regen-baselines --accept-codegen-change HEAD --dry-run`: 23 programs equal the interpreter, 0 records changed (Vaults is in no hash baseline). The byte-identity sections of `arcade-m11`, `arcade-m15` and `arcade-m17` give a VIEW3D / WIRE3D with no BRIGHT clause an explicit `BRIGHT 1` for both compilers (`pinOldBright`), so they still cover every program byte for byte (98, 30 and 70 compilations, all identical).
+* **K3.** `bright-black-paper` (field `tiles`). A set that also mixes the two blacks reports both findings.
+* **Today's games fire them (the stage 1 sample).**
+
+  | Game | K1 | K3 |
+  |---|---|---|
+  | Starfall | 3 | 16 / 16 tiles |
+  | Vaults | 4 | 28 / 28 tiles |
+  | Blockfall | 6 | 3 / 12 tiles |
+  | Leap Runner (platformer and runner) | 4 each | none |
+  | Bounce, Breakout, Orbit Gates | 0 | 0 |
+
+  The R2 speed check passes if any of 5 attempts gives a 2× / 1× frame ratio in [1.5, 2.6] (a loaded page cannot emulate 120 frames a second). Every test that expected "no warnings" from an example now allows only this warning, marked `TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4)`, and so does `publish-runtime --check`. **Stage 3 removes every allowance** (`grep -rn "TWO-BLACKS ALLOWANCE"`).
+* **Mutants.** `arcade/tests/m18c-mutations.mjs` (K1-K3): 72 mutants, 69 killed, 3 equivalent (documented in the file), 4 shards.
+* **N2.** `P.DECLARATION_WORD` (`SPRITE TILESET MAP SFX MUSIC MODEL`) and `P.addDeclaration` insert the line after the last declaration of that word.
+* **N3.** "Press Run (F5)" shows until the first Run.
+* **T1.** `src/tools/warning-list.js` (`createWarningList`) shows the first sentence plus a details toggle, in the tile and map editors.
+* **T3.** `project.flagNames` (8 names, 1-12 printable characters; a bad value is dropped with a warning, not refused). Host `flagNames()` / `setFlagNames()`. A rename button per flag in the tile editor, a legend in the map editor's Flags view. ⧉ Duplicate works on every asset row.
+* **A2.** The keyboard piano uses the note row's octave for Z..M and one octave higher for Q..U. It always plays. The new "keys enter" box (off by default, remembered) also writes the note through `enterNote`.
+* **A3.** Six more presets, and "Copy from example" (host `exampleEffects()`: 41 effects from 7 games).
+* **R1.** The meter is fed by emulator `onFrameDone`. A tick lasts from one `V_TICKS` increment to the next, measured in refreshes. A tick is over budget when it is longer than `V_DIV` = 60 / FRAMERATE. "fps now" counts the ticks of the last 60 refreshes (TSRun refreshes at 60.12 Hz). Vaults: 15 fps most of the time, 9-12 in some windows, worst tick up to 20 refreshes, 1 -> 6 ticks over budget in 27 s.
+* **R2.** Emulator `holdFrames` / `stepFrame` / `setSpeed` (additive; the IDE calls none of them). A hold clears the keys and the joystick and silences the audio. Sound is muted at speeds other than 1×. Step runs to the next `V_TICKS` (at most 120 frames).
+* **R5.** "Save screen" writes `<project>-screen.png`, 320 × 240, from TSRun's pixel buffer in the shader's palette.
+* **P2.** File System Access save in place, with the handle kept for the session. The download is the fallback.
+* **E1-E4, E6, X1.**
+  * E1: long names, with the details on a second line and in the tooltip.
+  * E2: the screen controls moved to a row of their own, the tab strip scrolls, and nothing overflows at 1280 or 1600 px.
+  * E3: the problems list folds (with a count) and resizes.
+  * E4: plain wording, and only the setups that are built.
+  * E6: as listed in the review doc.
+  * X1: Cut / Copy / Paste / Lint.
+
 ### Stage 3
 * **K4.** Starfall, Vaults, Blockfall, Leap Runner (both) use BRIGHT 0 on every black-paper area, in code and tiles; Vaults' `VIEW3D` gets
   `BRIGHT 0` (or relies on the new default). The colour choices keep each game's look as close as the hardware allows (a bright colour becomes

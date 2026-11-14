@@ -65,6 +65,7 @@ export const SUITES = [
   'tests/arcade-m15-compiler.mjs',
   'tests/arcade-m17-compiler.mjs',
   'tests/arcade-m17-interp.mjs',
+  'tests/arcade-k-warnings.mjs',                 // stage 1 K1 / K2: the two-blacks warnings (and that they fire on today's games)
   'tests/arcade-orbit.mjs',                      // the wireframe sample game "Orbit Gates" on the reference interpreter (the runtime part is a TODO in the file)
   'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
   'tests/arcade-codegen-exhaustive.mjs',        // compiler size pass: F1 / F3 / F6 / F8 / F9 for every 16-bit value
@@ -144,6 +145,7 @@ export const MUTATION_SUITES = [
   { file: 'arcade/tests/m17-mutations.mjs', shards: 33, runtimes: ['v2'], tests: ['arcade/tests/m17-runtime-wire.mjs', 'arcade/tests/m17-runtime-tick.mjs'] },
   { file: 'arcade/tests/m15c-mutations.mjs', shards: 2, src: ['src/lang/arcade/'], tests: ['tests/arcade-m15-compiler.mjs', 'tests/arcade-m15-differential.mjs', 'tests/arcade-m10-compiler.mjs'] },
   { file: 'arcade/tests/m16c-mutations.mjs', shards: 8, src: ['src/lang/arcade/'], tests: ['tests/arcade-emitter-opt.mjs', 'tests/arcade-codegen-exhaustive.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m5.mjs'] },
+  { file: 'arcade/tests/m18c-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-k-warnings.mjs', 'tests/arcade-assetcheck.mjs'] },
 ];
 
 /** Steps in this group never run at once: the browser tests choose Chrome's remote-debugging port at random (9300 + random 500, the sound editor's 9800 + random 500), so two together can collide. */
@@ -156,6 +158,7 @@ export const OTHER_SUITES = [
   { file: 'tests/tile-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/map-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/sound-editor-smoke.mjs', group: BROWSER_GROUP },
+  { file: 'tests/arcade-editor-perf.mjs', group: BROWSER_GROUP },   // stage 1 B2: typing in Vaults makes no long task
   { file: 'tests/arcade-project.mjs' },
   { file: 'tests/arcade-assetcheck.mjs' },
   { file: 'tests/sprite-model.mjs' },

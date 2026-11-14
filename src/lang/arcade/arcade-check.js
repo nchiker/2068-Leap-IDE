@@ -129,6 +129,9 @@ class Scope {
 }
 
 const up = s => String(s).toUpperCase();
+/** K1 / K2: the warning for BRIGHT 1 on black paper (the Studio's emulator, TSRun, keeps BRIGHT black as dark grey; Fuse and ZEsarUX draw black). */
+const BRIGHT_BLACK_WHY = 'TSRun shows it as dark grey next to a black border (Fuse and ZEsarUX show black); use BRIGHT 0 on black paper';
+const BRIGHT_BLACK_TEXT = `BRIGHT 1 on black paper: ${BRIGHT_BLACK_WHY}`;
 const ast_bands = (ast) => ast?.bands ?? [];
 const typeOfName = name => name.endsWith('$') ? 'str' : 'num';
 const typeWord = t => t === 'str' ? 'a string' : 'a number';
@@ -415,6 +418,9 @@ class Checker {
     else if (r0 !== undefined && r1 !== undefined && r1 < r0 + 3) this.err(w.r1, `WIRE3D ROWS ${r0} TO ${r1}: the play area needs at least 4 rows (the last row must be at least ${r0 + 3})`);
     const ink = val(w.ink, 'the WIRE3D INK', 0, 7), paper = val(w.paper, 'the WIRE3D PAPER', 0, 7), bright = val(w.bright, 'the WIRE3D BRIGHT', 0, 1);
     w.vals = { r0, r1, ink, paper, bright };
+    // K2: black paper (the default is PAPER 0) with BRIGHT 1; a clause that is not constant is unknown, so no warning
+    const wp = w.paper ? paper : 0, wb = w.bright ? bright : 0;
+    if (wp === 0 && wb === 1) this.warn(w.bright ?? w, `WIRE3D PAPER ${w.paper ? '0' : '(the default, 0)'} with BRIGHT 1 is BRIGHT 1 on black paper: ${BRIGHT_BLACK_WHY}`);
   }
   /** The rows of the play area when they are known good constants, else null. */
   wireRows() {
@@ -458,6 +464,9 @@ class Checker {
       else if (list.every((x) => x !== undefined)) vals.patterns = list;
     }
     v.vals = vals;
+    // K2: a black CEIL or FLOOR (the defaults are CEIL 0, FLOOR 1) with BRIGHT 1 (the default is BRIGHT 0); a clause that is not constant is unknown, so no warning
+    const vb = c.bright ? vals.bright : 0, vc = c.ceil ? vals.ceil : 0, vf = c.floor ? vals.floor : 1;
+    if (vb === 1 && (vc === 0 || vf === 0)) this.warn(c.bright ?? v, `VIEW3D ${vc === 0 && vf === 0 ? 'CEIL and FLOOR are' : vc === 0 ? 'CEIL is' : 'FLOOR is'} 0 (black) with BRIGHT 1 is BRIGHT 1 on black paper: ${BRIGHT_BLACK_WHY}`);
     // the refresh budget of the picture (contract R3): colw 4 needs a divisor of 3 or more, colw 2 of 5
     const rate = (this.ast.items ?? []).find((i) => i.type === 'Framerate');
     const fps = rate ? rate.value : 30;
@@ -730,6 +739,34 @@ class Checker {
     if (t === 'str') this.err(d.body, `DEF FN ${d.name} must give a number`);
   }
 
+  // ── K1: BRIGHT 1 on black paper (TSRun shows that paper as dark grey; Fuse and ZEsarUX show black) ──
+  /**
+   * The PAPER and BRIGHT a body starts with: {paper, bright}, each a number or null (unknown). A scene's PROC INIT and PROC FRAME (and a game-level one) start at
+   * PAPER 7 BRIGHT 0, the state the ENTER driver sets (the boot state for the first scene's INIT; FRAME is taken as starting there too, a hint, not a proof). Any other PROC
+   * can be called from anywhere, so both start unknown: it warns only when its own statements make paper 0 and bright 1 hold together.
+   */
+  startColour(proc) {
+    const name = proc?.name ? up(proc.name) : '';
+    const entry = (name === 'INIT' || name === 'FRAME') && (this.curScene ? (this.curScene.procs ?? []).includes(proc) : (this.ast?.procs ?? []).includes(proc));
+    return entry ? { paper: 7, bright: 0 } : { paper: null, bright: null };
+  }
+  /**
+   * A PAPER / BRIGHT statement: update the constant colours in effect, text order, no branch analysis (an IF, WHILE or FOR body is followed as if it ran). A value that is not
+   * a constant makes that colour unknown (no warning while unknown). The warning is at the statement that makes paper 0 and bright 1 hold together (not at the statements after it).
+   * INK, FLASH and everything else leave PAPER and BRIGHT alone; warnings never change the code.
+   */
+  trackColour(s, ctx) {
+    const c = ctx.colour;
+    if (!c || (s.which !== 'PAPER' && s.which !== 'BRIGHT')) return;
+    const was = c.paper === 0 && c.bright === 1;
+    // a constant expression (literal, CONST, + - * DIV MOD, bit functions) is known; anything else, or a value out of range (already an error), leaves the colour unknown
+    let v;
+    try { v = this.cfold(s.value, ctx.scope); } catch (x) { if (!(x instanceof NotConst)) throw x; }
+    const known = v === undefined || v < 0 || v > (s.which === 'PAPER' ? 7 : 1) ? null : v;
+    if (s.which === 'PAPER') c.paper = known; else c.bright = known;
+    if (!was && c.paper === 0 && c.bright === 1) this.warn(s, BRIGHT_BLACK_TEXT);
+  }
+
   checkProc(scope, proc) {
     const ps = this.newScope(scope);
     const params = proc.params ?? (proc.param ? [{ name: proc.param, ...(proc.paramPos ?? proc) }] : []);
@@ -744,7 +781,7 @@ class Checker {
       else if (hidden) this.warn(p, `parameter '${p.name}' hides the variable of the same name (line ${hidden.pos.line})`);
       ps.vars.set(key, { name: p.name, type: typeOfName(p.name), kind: 'param', pos: p, used: true });
     }
-    const ctx = { scope: ps, forDepth: 0, whileDepth: 0, reported: new Set(), proc, touched: new Set(), nest: 0 };
+    const ctx = { scope: ps, forDepth: 0, whileDepth: 0, reported: new Set(), proc, touched: new Set(), nest: 0, colour: this.startColour(proc) };
     this.stmts(proc.body ?? [], ctx);
   }
 
@@ -948,6 +985,7 @@ class Checker {
         this.numArg(s.value, ctx, 'the value');
         const hi = s.which === 'BRIGHT' || s.which === 'FLASH' ? 1 : 7;
         this.range(s.value, 0, hi, `${s.which} (0..${hi})`);
+        this.trackColour(s, ctx);
         return;
       }
       case 'Border': this.numArg(s.value, ctx, 'the value'); this.range(s.value, 0, 7, 'BORDER (0..7)'); return;
