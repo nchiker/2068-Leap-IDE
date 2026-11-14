@@ -14,6 +14,7 @@
 // `ay` (it has, exactly when the game has songs) at the level of tests/arcade-m15-differential.mjs: V_SFX_ACTIVE (all bits) = ay.flags, AY_SHADOW = ay.regs, chip = AY_SHADOW, every tick.
 //
 // A snapshot has: vars {NAME: value}, arrays {NAME: [flat values]}, cells, attrs (768 bytes each), cursor {row, col}, textAttr, border (V_BORDER), sprites [{visible, x, y}].
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -70,13 +71,7 @@ const KEYPOS = new Map(); KEYROWS.forEach((r, row) => [...r].forEach((ch, bit) =
 /** Boot the cartridge and run until `ticks` ticks have completed. */
 export function runReal(res, { ticks, stick = null, keys = null, measure = false, hooks = null, R: Rov = null } = {}) {
   const R = Rov ?? real(), SYM = R.SYM;
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(TSRUN, 'roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const nInst = res.gen.v2 ? res.gen.v2.ninst : 4;
   const snap = () => ({

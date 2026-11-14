@@ -567,7 +567,7 @@ function game4({ view = true, segs, seed, bootOff = false, div = 3, badView = fa
  * attribute bytes; with the deferred attribute write there are none: the check wants 0) and the TSRun colours compared after every refresh.
  */
 function observe4(game, nframes, { script = [], hooks = null, ModelClass = Mode8, onTick = null } = {}) {
-  const S = game.syms, m = W4.newMachine(game.dck);
+  const S = game.syms, m = W4.newMachine(game.dck, { video: true });          // the picture check reads m.pixels
   for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) break; }
   const model = new ModelClass(game.spec);
   const st = { m, frames: 0, ticks: 0, ok: 0, bad: 0, flash: 0, pixelBad: 0, pixelFlash: 0, firstBad: null, writeViolations: 0, model };

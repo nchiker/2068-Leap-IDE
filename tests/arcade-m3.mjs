@@ -29,6 +29,7 @@
 //     (it stops at the refresh that meets the terminator). The state right at played == N is ambiguous (a runtime may stop one
 //     refresh early): it is not compared. PLAY in PROC INIT is not tested (INIT and tick 1 share a refresh).
 //   - MAP: tile cells get the tile's attribute at boot (ambiguous in the contract: reported as a NOTE, not a failure, on the real runtime).
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -1006,12 +1007,7 @@ if (existsSync(RT_JSON)) {
     const ROMDIR = join(TSRUN, 'roms');
     const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
     function runReal(res, { ticks, stick = null }) {
-      const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-      const must = (e) => { if (e) throw new Error(e); };
-      must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-      must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-      must(M_.insertDock(m, res.dck));
-      M_.resetMachine(m);
+      const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
       const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
       const snap = () => ({
         vars: Object.fromEntries(Object.entries(res.map.vars).map(([k, a]) => [k, s16(rd16(a))])),

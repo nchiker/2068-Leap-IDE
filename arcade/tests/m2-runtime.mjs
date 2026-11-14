@@ -23,10 +23,10 @@ console.log('');
  */
 function observe(game, nframes, { model = true, kinds = ['ball', 'box'], calls: callsModel = C.gameCalls, usesRnd = true } = {}) {
   const S = game.syms, GS = game.gsyms;
-  const m = C.newMachine(game.dck);
+  const m = C.newMachine(game.dck, { video: true });                         // the picture check reads m.pixels (shownPlane)
   // run (unobserved) until the cartridge entry; from there every instruction is hooked, so tick 0 is seen
   let entryFrame = -1;
-  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f; break; } }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f + C.bootSkip(m); break; } }
   const boot = { entryFrame, bootFrames: 0 };
   const st = {
     m, boot, S, frames: [], ticks: [], isr: [], work: [], writeViolations: 0, spMin: 0xFFFF, spMax: 0, imBad: 0,
@@ -184,7 +184,7 @@ console.log('1. Boot and the runtime alone (placeholder game: 0 sprites)');
   const S = g.syms;
   const m0 = C.newMachine(g.dck);
   let entryFrame = -1;
-  for (let f = 1; f <= 400; f++) { M.runFrame(m0); if (rd16(m0, S.HO_MARK) === 0x5AA5) { entryFrame = f; break; } }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m0); if (rd16(m0, S.HO_MARK) === 0x5AA5) { entryFrame = f + C.bootSkip(m0); break; } }
   check('the cartridge entry is reached from reset, about 103 frames (98..110)', entryFrame >= 98 && entryFrame <= 110, `frame ${entryFrame}`);
   check('hand-off: interrupts enabled (IFF2 = 1), $F4 = $43, $FF = $00, SP = $61FE',
     rd8(m0, S.HO_IFF) === 1 && rd8(m0, S.HO_F4) === 0x43 && rd8(m0, S.HO_FF) === 0 && rd16(m0, S.HO_SP) === 0x61FE,

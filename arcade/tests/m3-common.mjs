@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { buildRuntime, assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runtime-v1.mjs';
 import * as C2 from './m2-runtime-common.mjs';
 
-export const { M, Z, FRAME_T, FIRST_PIXEL_T, SCR_X0, SCR_Y0, FRAME_W, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine } = C2;
+export const { M, Z, FRAME_T, FIRST_PIXEL_T, SCR_X0, SCR_Y0, FRAME_W, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine, bootSkip } = C2;
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 let _rt = null;
@@ -267,9 +267,10 @@ export function colourPlane({ bitmap, attrs }) {
 }
 /** The frame buffer as a 256x192 colour plane, or null when a pixel pair is uneven. */
 export function shownColours(m) {
+  const px = C2.pixelsOf(m);                                // throws when the machine was made with video off (V8)
   const out = new Uint8Array(256 * 192);
   for (let y = 0; y < 192; y++) for (let x = 0; x < 256; x++) {
-    const a = m.pixels[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x], b = m.pixels[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x + 1];
+    const a = px[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x], b = px[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x + 1];
     if (a !== b) return null;
     out[y * 256 + x] = a;
   }
@@ -302,9 +303,9 @@ export function ayWritesFor(regs, rec) {
  */
 export function observe(game, nframes, { script = null, checkPicture = true, pixels = true, hooks = null } = {}) {
   const S = game.syms, GS = game.gsyms;
-  const m = newMachine(game.dck);
+  const m = newMachine(game.dck, { video: pixels && checkPicture });         // the picture check reads m.pixels
   let entryFrame = -1;
-  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f; break; } }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f + bootSkip(m); break; } }
   const rows = spriteRowsOf(game);
   const model = new Model(game.spec);
   const st = {

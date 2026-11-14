@@ -17,6 +17,7 @@
 // does not have them yet make sections 2 to 5 print a SKIP line naming them (section 2 still runs); nothing crashes. Until the real routines have run this file, the machine sections are UNVERIFIED.
 //
 // How a tick is sampled: when PROC FRAME is entered, so sample k is the state after tick k - 1 (sample 0: after INIT), as tests/arcade-m13-differential.mjs does.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 
@@ -165,13 +166,7 @@ console.log('1. The reference interpreter: the mode per scene');
 /** Boot the cartridge and sample at every entry of PROC FRAME (state and the picture: both display files). */
 function runFramed(R, res, { ticks }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const ent = SYM.SPR_ENT ?? 6, hasFrame = ent >= 8;
   const nInst = Math.max(res.gen.v2 ? res.gen.v2.ninst : 4, 4);

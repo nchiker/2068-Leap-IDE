@@ -16,6 +16,7 @@
 //   4  (4a, 4b) v3 (WINDOW) and v4 (VIEW3D) spot programs using TIMER / KEYPRESS / JOYPRESS / USING
 //
 // Input: the first scene's INIT runs while the harness holds the keys of tick 1 and the interpreter asks for tick 0: the programs' key / stick functions answer both the same (they use max(1, t)).
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 
@@ -292,13 +293,7 @@ const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
 
 function runFramed(R, res, { ticks, stick, keys, ray }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const ent = SYM.SPR_ENT ?? 6, hasFrame = ent >= 8;
   const nInst = Math.max(res.gen.v2 ? res.gen.v2.ninst : 4, 4);

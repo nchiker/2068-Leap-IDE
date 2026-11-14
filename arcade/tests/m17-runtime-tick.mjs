@@ -28,7 +28,7 @@ import { assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runti
 import * as C from './m4-common.mjs';
 import { rng, randomTiles } from './m3-scenes.mjs';
 import * as W from '../../src/lang/arcade/arcade-wire.js';
-const { M, Z, FRAME_T, hex, makeChecks, rd8, rd16, newMachine, callRoutine, Model2, randomAsset, assetBytes, SCRIPT, C3 } = C;
+const { M, Z, FRAME_T, hex, makeChecks, rd8, rd16, newMachine, bootSkip, callRoutine, Model2, randomAsset, assetBytes, SCRIPT, C3 } = C;
 const { rowAddr, BG_ATTR } = C3;
 
 const QUICK = !!process.env.M17_QUICK;
@@ -218,7 +218,7 @@ class Expect {
 // ---- the runner --------------------------------------------------------------------------------------------------------------------------
 function entryFrame(dck) {
   const m = newMachine(dck);
-  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) return f; }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) return f + bootSkip(m); }   // counted from reset, as a cold boot
   throw new Error('the cartridge entry was not reached');
 }
 /**
@@ -228,7 +228,7 @@ function entryFrame(dck) {
 function run(game, exp, nframes, { poison = null, onTick = null, onStart = null } = {}) {
   const F = entryFrame(game.dck);
   const m = newMachine(game.dck);
-  for (let f = 1; f < F; f++) M.runFrame(m);
+  for (let f = 1 + bootSkip(m); f < F; f++) M.runFrame(m);        // F counts from reset; the machine starts bootSkip(m) frames in
   const cpu = m.cpu;
   const st = { m, refreshes: 0, accepted: 0, isrEntries: 0, framesAdv: 0, bad: 0, skipped: 0, firstBad: [], ticks: 0, clearStart: [], clearEnd: [],
     clearOff: [], workToFrame: [], anySkip: 0, onTicks: 0, offTicks: 0, opsBad: 0 };
@@ -514,7 +514,7 @@ console.log('\n--- 5. RT_WIREMODE called directly: cost, registers, exactly what
 function bootTo(game) {
   const m = newMachine(game.dck);
   const F = entryFrame(game.dck);
-  for (let f = 0; f < F + 4; f++) M.runFrame(m);
+  for (let f = bootSkip(m); f < F + 4; f++) M.runFrame(m);
   for (let i = 0; i < 3000000 && !(m.cpu.pc === S.TICK_LOOP && !m.cpu.halted); i++) Z.runZ80(m.cpu, m.bus, 1, m);
   if (m.cpu.pc !== S.TICK_LOOP) throw new Error('TICK_LOOP not reached');
   return m;

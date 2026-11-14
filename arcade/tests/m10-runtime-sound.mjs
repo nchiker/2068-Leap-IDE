@@ -670,11 +670,7 @@ ENDSCENE
     const res = compile(E2E_SRC, { runtime: vv.rt.json, image: vv.rt.img, assets: E2E_ASSETS });
     if (res.errors.length) { check(`v${v}: end to end: the game compiles`, false, JSON.stringify(res.errors[0])); continue; }
     const S = vv.S;
-    const m = M.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-    const rom = (f) => readFileSync(join(new URL('../../tsrun/roms', import.meta.url).pathname, f));
-    M.setHomeRom(m, rom('ts2068-0.rom')); M.setExRom(m, rom('ts2068-1.rom'));
-    M.insertDock(m, res.dck);
-    M.resetMachine(m);
+    const m = newMachine(res.dck);                                                       // restored from the boot snapshot (V9), video off (V8)
     for (let f = 0; f < 400 && rd16(m, S.HO_MARK) !== 0x5AA5; f++) M.runFrame(m);
     for (let f = 0; f < 4; f++) M.runFrame(m);                                          // (boot: the runtime zeroes the AY and AY_SHADOW)
     // RT_PLAY's entry: remember the interrupt count and the effect index (A), so the entries applied since are known

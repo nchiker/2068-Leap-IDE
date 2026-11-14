@@ -26,7 +26,7 @@ const run = (g, frames = 40) => { const m = C.newMachine(g.dck); C.bootMachine(m
 // ==================================================================================================================
 console.log('1. Boot state (placeholder game; chunk 6, the pools and the display files are filled with garbage when the cartridge starts)');
 {
-  const m = C.newMachine(rt.dck);
+  const m = C.newMachine(rt.dck, { video: true });                           // the screen is read below (shownColours)
   let seen = false;
   for (let f = 0; f < 400 && !seen; f++) {
     const end = m.frameStart + FRAME_T;

@@ -35,6 +35,7 @@
 //     not scan (not A-Z, 0-9, 32, 13, 1, 2) gives a WARNING and is never held.
 //   - The contract's "bullets 6, enemies 8, shots 4 and the player" are 19 instances, more than the 16 the runtime has: the pool game of
 //     section 5 runs with 19 on a mock whose cap is raised to 24, and with 16 (4 bullets, 8 enemies, 3 shots, 1 ship) on the real runtime.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -967,12 +968,7 @@ if (existsSync(RT_JSON)) {
     }
     /** Boot the DCK and run until `ticks` ticks have completed; one snapshot per tick, optional displayed pictures and tick costs. */
     function runReal(res, { ticks, stick = null, keys = null, pictures = false, measure = false }) {
-      const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-      const must = (e) => { if (e) throw new Error(e); };
-      must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-      must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-      must(M_.insertDock(m, res.dck));
-      M_.resetMachine(m);
+      const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
       const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
       const nInst = res.gen.v2 ? res.gen.v2.ninst : 4;
       const snap = () => ({

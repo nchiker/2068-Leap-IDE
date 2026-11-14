@@ -17,6 +17,7 @@
 // How a tick is sampled: v2 (arcade-m5-harness.mjs): after the tick's refresh, when V_TICKS has gone up; v3 / v4: when PROC FRAME (the driver's frame$entry) is entered, so the k-th sample is the state
 // after tick k - 1 (the first: after INIT).
 // Input: the first scene's INIT runs while the harness holds the keys of tick 1 and the interpreter asks for tick 0: the programs' key / stick functions answer both the same.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -239,13 +240,7 @@ const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
 
 function runFramed(R, res, { ticks, stick, keys, ray }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const ent = SYM.SPR_ENT ?? 6, hasFrame = ent >= 8;
   const nInst = Math.max(res.gen.v2 ? res.gen.v2.ninst : 4, 4);

@@ -10,7 +10,7 @@ import { buildM1, printUsage } from '../tools/build-m1.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TSRUN = join(HERE, '../../tsrun');
-const M = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
+import { M, bootedMachine, bootSkip, pixelsOf } from './fast-boot.mjs';
 const Z = await import(pathToFileURL(join(TSRUN, 'z80.js')).href);
 const FRAME_T = M.tStatesPerFrame;                    // 58,688 on TSRun
 const FIRST_PIXEL_T = 40 * 224 + 32;                  // TSRun's raster: first pixel line, T after the frame interrupt
@@ -33,12 +33,7 @@ console.log('');
 
 const keyMatrix = new Uint8Array(9).fill(0x1F);
 const joystick = new Uint8Array(2).fill(0xFF);
-const m = M.createMachine(keyMatrix, joystick);
-const must = (e) => { if (e) throw new Error(e); };
-must(M.setHomeRom(m, readFileSync(join(TSRUN, 'roms/ts2068-0.rom'))));
-must(M.setExRom(m, readFileSync(join(TSRUN, 'roms/ts2068-1.rom'))));
-must(M.insertDock(m, dck));
-M.resetMachine(m);
+const m = bootedMachine(dck, { keyMatrix, joystick, video: true });      // restored from the boot snapshot (V9); this test reads m.pixels, so video is on (V8)
 
 const rd8 = (a) => m.ram[a];
 const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
@@ -49,7 +44,7 @@ console.log('Entry');
 let entryFrame = -1;
 for (let f = 1; f <= 400; f++) {
   M.runFrame(m);
-  if (rd16(syms.HO_MARK) === 0x5AA5) { entryFrame = f; break; }
+  if (rd16(syms.HO_MARK) === 0x5AA5) { entryFrame = f + bootSkip(m); break; }
 }
 check('the cartridge entry is reached from reset', entryFrame > 0, `after ${entryFrame} frames (map says about 103)`);
 check('entry frame is about 103 (98..110)', entryFrame >= 98 && entryFrame <= 110, `frame ${entryFrame}`);
@@ -85,9 +80,10 @@ function expectedPlane(sx, sy) {
 }
 /** Screen pixel plane from the frame buffer (ink colour 0 = black -> 1, paper 7 = white -> 0), or null if a pixel is neither. */
 function shownPlane() {
+  const px = pixelsOf(m);                                   // throws when the machine was made with video off (V8)
   const plane = new Uint8Array(256 * 192);
   for (let y = 0; y < 192; y++) for (let x = 0; x < 256; x++) {
-    const a = m.pixels[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x], b = m.pixels[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x + 1];
+    const a = px[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x], b = px[(SCR_Y0 + y) * FRAME_W + SCR_X0 + 2 * x + 1];
     if (a !== b) return null;
     plane[y * 256 + x] = a === 0 ? 1 : a === 7 ? 0 : 2;
   }

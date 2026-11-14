@@ -21,6 +21,7 @@
 //      runtime exists), also for the title / demo alternation and the start from the demo. The per-tick COSTS on the real runtime are measured by tests/arcade-m8-vaults-perf.mjs (not part of run-all: it is a measurement, and slow)
 //   7  the title on the real runtime: the 3D view is OFF (V_RAY = 0) in the title and ON in the demo and the game, the title's sprites are drawn (pixels in the corridor the picture leaves blank),
 //      the gems' tiles sparkle, in the scene order title -> demo -> title
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -346,13 +347,7 @@ function loadRuntime(dir) {
 /** Boot the cartridge, run until PROC FRAME has been entered ticks + 1 times; one snapshot at each entry. */
 function runReal(R, built, { ticks, stick, extra }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, built.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(built.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const s16 = (v) => ((v & 0xFFFF) ^ 0x8000) - 0x8000;
   const ent = SYM.SPR_ENT ?? 8, bbEnt = SYM.BB_ENT ?? 4;

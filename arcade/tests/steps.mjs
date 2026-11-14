@@ -65,6 +65,7 @@ export const SUITES = [
   'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
   'tests/arcade-codegen-exhaustive.mjs',        // compiler size pass: F1 / F3 / F6 / F8 / F9 for every 16-bit value
   'tests/arcade-m15-differential.mjs',
+  'arcade/tests/boot-snapshot.mjs',              // V9: the boot-once snapshot equals a cold boot (every example, every runtime)
   'arcade/tests/m1.mjs',
   'tests/arcade-m8-vaults.mjs',
   'arcade/tests/m1-overrun.mjs',

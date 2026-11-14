@@ -14,6 +14,7 @@
 //
 // How a tick is sampled: when PROC FRAME (or the driver's frame$entry) is entered, so sample k is the state after tick k - 1 (sample 0: after INIT), as tests/arcade-m9-differential.mjs does for v3 / v4.
 // Input: the same scripted stick / keys for both builds of a program.
+import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 
@@ -55,13 +56,7 @@ const contact = (v) => (~((v & 15) | (v & 16 ? 0x80 : 0))) & 0xFF;
 /** Boot the cartridge (the DCK as built: chunks 2 / 3 too when banked) and sample at every entry of PROC FRAME. */
 function runFramed(R, res, { ticks, stick, keys }) {
   const SYM = { ...R.rt.symbols, ...(R.rt.constants ?? {}) };
-  const m = M_.createMachine(new Uint8Array(9).fill(0x1F), new Uint8Array(2).fill(0xFF));
-  const must = (e) => { if (e) throw new Error(e); };
-  const ROMDIR = join(ROOT, 'tsrun/roms');
-  must(M_.setHomeRom(m, readFileSync(join(ROMDIR, 'ts2068-0.rom'))));
-  must(M_.setExRom(m, readFileSync(join(ROMDIR, 'ts2068-1.rom'))));
-  must(M_.insertDock(m, res.dck));
-  M_.resetMachine(m);
+  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const ent = SYM.SPR_ENT ?? 6, hasFrame = ent >= 8;
   const nInst = Math.max(res.gen.v2 ? res.gen.v2.ninst : 4, 4);

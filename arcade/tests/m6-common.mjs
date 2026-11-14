@@ -13,7 +13,7 @@ const { buildRuntime, assembleGame, linkGame, dckOf, RUNTIME_DIR } = await impor
 export const RUNTIME_VERSION = process.env.ARCADE_V4 ? 4 : 3;
 import * as C3 from './m3-common.mjs';
 
-export const { M, Z, FRAME_T, FIRST_PIXEL_T, SCR_X0, SCR_Y0, FRAME_W, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine,
+export const { M, Z, FRAME_T, FIRST_PIXEL_T, SCR_X0, SCR_Y0, FRAME_W, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, callRoutine, bootSkip,
   FONT, fontGlyph, ZERO8, rowAddr, BG_ATTR, clamp, colourPlane, shownColours, dfileOf, diffCount, glyphOfValue, avg } = C3;
 export { C3 };
 
@@ -304,9 +304,9 @@ export class Model6 extends C3.Model {
  */
 export function observe6(game, nframes, { script = null, checkPicture = true, pixels = true, hooks = null, onTick = null, untilTicks = 0, ModelClass = Model6 } = {}) {
   const S = game.syms;
-  const m = newMachine(game.dck);
+  const m = newMachine(game.dck, { video: pixels && checkPicture });         // the picture check reads m.pixels
   let entryFrame = -1;
-  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f; break; } }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f + bootSkip(m); break; } }
   const model = new ModelClass(game.spec);
   const st = {
     m, entryFrame, frames: 0, ticks: [], work: [], eraseT: [], drawT: [], redrawT: [], writeViolations: 0, spMin: 0xFFFF, spMax: 0, pictureOk: 0, pictureBad: 0,

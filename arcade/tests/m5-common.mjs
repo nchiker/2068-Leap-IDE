@@ -10,7 +10,7 @@ import { assembleGame, linkGame, dckOf, RUNTIME_DIR } from '../tools/build-runti
 import * as C4 from './m4-common.mjs';
 
 export const C = C4;
-export const { M, Z, FRAME_T, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, BG_ATTR } = C4;
+export const { M, Z, FRAME_T, hex, int16, makeChecks, rd8, rd16, newMachine, bootMachine, bootSkip, BG_ATTR } = C4;
 export const rt = () => C4.runtime();
 
 export const OPS = { SPRTAB: 0x8800, HOT: 0x8840, INST: 0x8860, SPRDATA: 0x8960, TILESET: 0x8B60, SFXTAB: 0x9300, SFXDATA: 0x9340, MAPTAB: 0x9800,
@@ -232,9 +232,9 @@ export function setCells(m, S, tile, attr) { m.ram.set(tile, S.CELL_TILE); m.ram
  */
 export function observe5(game, nframes, { script = null, hooks = null, pixels = true, keyMatrix = null, picEvery = 1 } = {}) {
   const S = game.syms;
-  const m = C4.newMachine(game.dck);
+  const m = C4.newMachine(game.dck, { video: pixels });                      // the picture check reads m.pixels
   let entryFrame = -1;
-  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f; break; } }
+  for (let f = 1; f <= 400; f++) { M.runFrame(m); if (rd16(m, S.HO_MARK) === 0x5AA5) { entryFrame = f + bootSkip(m); break; } }
   const model = new Model5(game.spec);
   const st = { m, entryFrame, frames: 0, pictureOk: 0, pictureBad: 0, pixelBad: 0, firstBad: null, flipMismatch: 0, missed: 0, skippedFlips: 0, writeViolations: 0,
     work: [], snapshots: [null, null], spMin: 0xFFFF, spMax: 0, ticksSeen: [], model, shadowBad: 0 };
