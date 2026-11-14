@@ -288,6 +288,58 @@ const throwing = { getItem() { throw new Error('blocked'); }, setItem() { throw 
 check('blocked or full storage never throws', P.loadProject(throwing) === null && P.storeProject(np, throwing) === false && P.loadProject(null) === null && P.storeProject(np, null) === false);
 check('no storage at all (Node): loadProject / storeProject are harmless', P.loadProject() === null && P.storeProject(np) === false);
 
+// ── Stage 1 (docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md): flag names, source declarations, duplicate ──
+{
+  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  check('flagNames: absent -> the defaults (solid, hazard, pickup, flag 3 .. flag 7)', eq(P.flagNamesOf(np), ['solid', 'hazard', 'pickup', 'flag 3', 'flag 4', 'flag 5', 'flag 6', 'flag 7']) && !('flagNames' in P.validateProject(np).project));
+  const withNames = { ...np, flagNames: names };
+  const vn = P.validateProject(withNames);
+  check('flagNames: 8 good names are kept by validateProject and read back', vn.ok && eq(vn.project.flagNames, names) && eq(P.flagNamesOf(vn.project), names) && vn.warnings.length === 0);
+  const rt = P.parseProject(P.serializeProject(vn.project));
+  check('flagNames survive a serialize / parse round trip', rt.ok && eq(rt.project.flagNames, names));
+  const badFlags = [['7 names', names.slice(0, 7)], ['9 names', [...names, 'i']], ['an empty name', ['', 'b', 'c', 'd', 'e', 'f', 'g', 'h']], ['13 characters', ['abcdefghijklm', 'b', 'c', 'd', 'e', 'f', 'g', 'h']],
+    ['a control character', ['a\tb', 'b', 'c', 'd', 'e', 'f', 'g', 'h']], ['a non-ASCII letter', ['café', 'b', 'c', 'd', 'e', 'f', 'g', 'h']], ['blanks only', ['   ', 'b', 'c', 'd', 'e', 'f', 'g', 'h']],
+    ['a number', [1, 'b', 'c', 'd', 'e', 'f', 'g', 'h']], ['not a list', 'solid']];
+  for (const [what, value] of badFlags) {
+    const r = P.validateProject({ ...np, flagNames: value });
+    check(`flagNames: ${what} is dropped with a warning (the project still opens, default names)`, r.ok && !('flagNames' in r.project) && r.warnings.some((w) => /flagNames/.test(w)) && eq(P.flagNamesOf(r.project), [...P.DEFAULT_FLAG_NAMES]), JSON.stringify(r.warnings));
+  }
+  check('flagNames: 12 characters are allowed', P.validateFlagNames(['abcdefghijkl', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) === null);
+  const pf = P.newProject();
+  check('setFlagNames: good names are stored; bad ones refused and nothing changes', P.setFlagNames(pf, names).ok && eq(pf.flagNames, names) && !P.setFlagNames(pf, ['x']).ok && eq(pf.flagNames, names));
+  check('setFlagNames: the default names remove the key', P.setFlagNames(pf, [...P.DEFAULT_FLAG_NAMES]).ok && !('flagNames' in pf));
+
+  // declarations: the word per kind, naming lines, rewriting them
+  check('DECLARATION_WORD: SPRITE TILESET MAP SFX MUSIC MODEL', eq(P.ASSET_KINDS.map((k) => P.DECLARATION_WORD[k]), ['SPRITE', 'TILESET', 'MAP', 'SFX', 'MUSIC', 'MODEL']));
+  const proj = P.newProject();
+  proj.files['main.arc'] = 'GAME "t"\nFRAMERATE 30\nSPRITE ball = "ball"\nSPRITE wk(4) = "Ball"\nSFX hit = "ball"\nSCENE s\n  PROC INIT():\n  ENDP\n  PROC FRAME():\n    SHOW ball AT 1, 1\n  ENDP\nENDSCENE\n';
+  P.setFile(proj, 'extra.arc', 'SPRITE other = "ball"\nREM SPRITE not = "ball"\n');
+  const refs = P.assetReferences(proj, 'sprites', 'ball');
+  check('assetReferences: every SPRITE declaration of the asset (case-insensitive, with a count), not other kinds, not comments', eq(refs, [{ file: 'main.arc', line: 3 }, { file: 'main.arc', line: 4 }, { file: 'extra.arc', line: 1 }]), JSON.stringify(refs));
+  check('describeReferences: the first three, then "and N more"', P.describeReferences(refs) === 'main.arc:3, main.arc:4, extra.arc:1' && P.describeReferences([...refs, ...refs]) === 'main.arc:3, main.arc:4, extra.arc:1 and 3 more' && P.describeReferences(refs, 1) === 'main.arc:3 and 2 more');
+  const rw = P.rewriteAssetReferences(proj.files['main.arc'], 'sprites', 'ball', 'nu');
+  check('rewriteAssetReferences: changes the asset in those lines only (the SFX with the same name, the SHOW line and the text around stay)',
+    rw.count === 2 && rw.text === proj.files['main.arc'].replace('SPRITE ball = "ball"', 'SPRITE ball = "nu"').replace('SPRITE wk(4) = "Ball"', 'SPRITE wk(4) = "nu"'), JSON.stringify(rw.text.split('\n').slice(2, 5)));
+  check('rewriteAssetReferences: nothing to change -> the same text, count 0', P.rewriteAssetReferences('GAME "x"\n', 'sprites', 'ball', 'nu').count === 0);
+  const ad = P.addDeclaration('REM x\nGAME "t"\nFRAMERATE 30\n\nSPRITE ball = "ball"\nSFX hit = "hit"\n\nSCENE s\nENDSCENE\n', 'sprites', 'pew');
+  check('addDeclaration: after the last declaration of the same word, one line, the line number returned', ad.text === 'REM x\nGAME "t"\nFRAMERATE 30\n\nSPRITE ball = "ball"\nSPRITE pew = "pew"\nSFX hit = "hit"\n\nSCENE s\nENDSCENE\n' && ad.line === 6, JSON.stringify(ad));
+  check('addDeclaration: no declaration of the word -> after the last declaration of any kind', P.addDeclaration('GAME "t"\nFRAMERATE 30\nSPRITE ball = "ball"\n\nSCENE s\nENDSCENE\n', 'maps', 'lvl').text === 'GAME "t"\nFRAMERATE 30\nSPRITE ball = "ball"\nMAP lvl = "lvl"\n\nSCENE s\nENDSCENE\n');
+  check('addDeclaration: no declaration at all -> after FRAMERATE, else after GAME, else at the top',
+    P.addDeclaration('GAME "t"\nFRAMERATE 30\nSCENE s\nENDSCENE\n', 'music', 'tune').text === 'GAME "t"\nFRAMERATE 30\nMUSIC tune = "tune"\nSCENE s\nENDSCENE\n' &&
+    P.addDeclaration('GAME "t"\nSCENE s\nENDSCENE\n', 'models', 'cube').text === 'GAME "t"\nMODEL cube = "cube"\nSCENE s\nENDSCENE\n' && P.addDeclaration('', 'tilesets', 'gfx').text === 'TILESET gfx = "gfx"\n');
+  check('addDeclaration: the line it adds is what assetReferences finds', (() => { const q = P.newProject(); const r = P.addDeclaration(q.files['main.arc'], 'sfx', 'pew'); q.files['main.arc'] = r.text; return eq(P.assetReferences(q, 'sfx', 'pew'), [{ file: 'main.arc', line: r.line }]); })());
+
+  // duplicate
+  const dp = P.newProject();
+  const d1 = P.duplicateAsset(dp, 'sprites', 'ball');
+  check('duplicateAsset: a deep copy under a free name (ball2, then ball3)', d1.ok && d1.name === 'ball2' && eq(dp.assets.sprites.ball2, dp.assets.sprites.ball) && dp.assets.sprites.ball2 !== dp.assets.sprites.ball && P.duplicateAsset(dp, 'sprites', 'ball').name === 'ball3');
+  check('duplicateAsset: a named copy; a taken or invalid name, or a missing asset, is refused', P.duplicateAsset(dp, 'sprites', 'ball', 'solo').ok && !P.duplicateAsset(dp, 'sprites', 'ball', 'SOLO').ok && !P.duplicateAsset(dp, 'sprites', 'ball', '9x').ok && !P.duplicateAsset(dp, 'sprites', 'nope').ok && !P.duplicateAsset(dp, 'bogus', 'ball').ok);
+  const long = 'a'.repeat(31);
+  P.setAsset(dp, 'tilesets', long, { tiles: [{ rows: Array.from({ length: 8 }, () => ({ bits: '00' })) }] });
+  const dl = P.duplicateAsset(dp, 'tilesets', long);
+  check('duplicateAsset: a 31-character name is shortened to make room for the number', dl.ok && dl.name.length === 31 && dl.name.endsWith('2') && P.validateAsset('tilesets', dp.assets.tilesets[dl.name]) === null, dl.name);
+}
+
 // ── The published examples and the template compile ──
 const dist = ROOT + 'arcade/dist/';
 if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.json')) {

@@ -443,6 +443,14 @@ try {
   st = await state();
   check('vl_panel is an ordinary cell map with the example\'s own background-attr-mix warning', st.role === 'cell' && st.warnings.includes('background-attr-mix') && st.minority > 0, JSON.stringify(st.warnings));
 
+  // T1: a warning is one line (its first sentence) with a details toggle
+  const mw = await evaluate(`(() => { const li = document.querySelector('[data-role=warnings] li[data-id=background-attr-mix]'), d = li.querySelector('[data-role=warn-detail]'), tg = li.querySelector('[data-role=warn-toggle]');
+    return { head: li.querySelector('[data-role=warn-head]').textContent, full: t.host.assetWarnings('maps', 'vl_panel').find((w) => w.id === 'background-attr-mix').message, hidden: d.hidden, h: d.getBoundingClientRect().height, tg: tg.textContent, aria: tg.getAttribute('aria-expanded') }; })()`);
+  check('T1: the warning is one collapsed line (its first sentence); the details are hidden behind a "details" toggle', mw.hidden && mw.h === 0 && mw.tg === 'details' && mw.aria === 'false' && mw.full.startsWith(mw.head) && mw.head.endsWith('.') && mw.head.length < mw.full.length, mw.head);
+  await click('[data-role=warnings] li[data-id=background-attr-mix] [data-role=warn-toggle]');
+  const mw2 = await evaluate(`(() => { const d = document.querySelector('[data-role=warnings] li[data-id=background-attr-mix] [data-role=warn-detail]'); return { hidden: d.hidden, h: d.getBoundingClientRect().height, text: d.textContent }; })()`);
+  check('T1: the toggle shows the rest of the message, and a second click hides it again', !mw2.hidden && mw2.h > 0 && mw.full.endsWith(mw2.text.trim().slice(-20)) && (await (async () => { await click('[data-role=warnings] li[data-id=background-attr-mix] [data-role=warn-toggle]'); return evaluate("document.querySelector('[data-role=warnings] li[data-id=background-attr-mix] [data-role=warn-detail]').hidden"); })()));
+
   // ── both themes ──
   await evaluate("(t.editor.select('vl_panel'), document.documentElement.dataset.theme = 'light', true)");
   const lightBg = await evaluate("getComputedStyle(document.querySelector('.mapd')).backgroundColor");
@@ -462,6 +470,48 @@ try {
   await clickCell(2, 2);
   check('painting still works and the host gets valid data', cellAt(await asset('pf_world'), 2, 2) === 3 && (await evaluate('t.log.bad.length')) === 0);
   await shot('10-noroles-light');
+
+  // ── B1: a host whose palette is [{name, rgb: '#rrggbb'}] draws in colour; T3: flag names in the Flags view ──
+  await evaluate(`(async () => {
+    const { createMapEditor } = await import('../src/tools/map-editor.js');
+    const S = await import('../src/tools/sprite-model.js');
+    const m2 = document.createElement('div'); m2.id = 'm2'; m2.style.width = '1000px'; document.body.append(m2);
+    const hex = S.PALETTE.map((p) => ({ name: p.name, rgb: '#' + p.rgb.map((v) => v.toString(16).padStart(2, '0')).join('') }));
+    let names = ['wall', 'spike', 'coin', 'ladder', '', '', '', ''];
+    const host2 = Object.assign(Object.create(t.host), { id: 'map-editor-2', palette: hex, flagNames: () => names.slice() });
+    window.t2 = { editor: createMapEditor(m2, host2), setNames: (n) => { names = n; } };
+    return true;
+  })()`);
+  await evaluate("(t2.editor.select('pf_world'), true)");
+  const pal2 = await evaluate(`(() => { const st = t2.editor.getState(), ts = t.T.fromAsset(t.project.assets.tilesets[st.tileset]), out = [];
+    for (const pi of document.querySelectorAll('#m2 .mapd-pi[data-tile]')) {
+      const i = +pi.dataset.tile; if (!(i >= 0) || !ts.tiles[i]) continue;
+      const c = pi.querySelector('canvas'), d = c.getContext('2d').getImageData(1, 1, 1, 1).data, want = t.T.keyRGB(t.T.tilePixels(ts.tiles[i])[0], t.T.PALETTE);
+      out.push({ i, got: [d[0], d[1], d[2]], want, black: want[0] + want[1] + want[2] === 0 });
+    }
+    return out; })()`);
+  check('B1: with a hex-object palette the tile palette draws in the palette colours (pixel 0,0 of every tile)', pal2.length >= 16 && pal2.every((p) => p.got.join() === p.want.join()) && pal2.some((p) => !p.black), JSON.stringify(pal2.find((p) => p.got.join() !== p.want.join())));
+  const cell2 = await evaluate(`(() => { const st = t2.editor.getState(), m = st.map, ts = t.T.fromAsset(t.project.assets.tilesets[st.tileset]), c = document.querySelector('#m2 [data-role=map-canvas]'), z = st.cellPx, out = [];
+    for (let y = 0; y < m.h && out.length < 12; y++) for (let x = 0; x < m.w && out.length < 12; x++) {
+      const v = m.cells[y * m.w + x]; if (v < 0 || !ts.tiles[v]) continue;
+      const want = t.T.keyRGB(t.T.tilePixels(ts.tiles[v])[3 * 8 + 3], t.T.PALETTE), px = c.getContext('2d').getImageData(x * z + Math.floor(3.5 * z / 8), y * z + Math.floor(3.5 * z / 8), 1, 1).data;
+      out.push({ x, y, ok: px[0] === want[0] && px[1] === want[1] && px[2] === want[2], black: want[0] + want[1] + want[2] === 0 });
+    }
+    return out; })()`);
+  check('B1: and so do the map canvas cells (a pixel inside 12 cells of pf_world equals the palette colour; some are not black)', cell2.length > 0 && cell2.filter((c) => c.ok).length >= cell2.length - 2 && cell2.some((c) => c.ok && !c.black), JSON.stringify(cell2.filter((c) => !c.ok).slice(0, 3)));
+  const sw2 = await evaluate("[...document.querySelectorAll('#m2 .mapd-pi[data-tile]')].length > 0");
+  check('B1: the editor drew palette entries', sw2);
+  // the Flags view: the legend names the 8 flags
+  check('T3: the flag legend is hidden while the Flags view is off', await evaluate("document.querySelector('#m2 [data-role=flag-legend]').hidden"));
+  await evaluate("(document.querySelector('#m2 [data-role=flags-check]').click(), true)");
+  const leg = () => evaluate("[...document.querySelectorAll('#m2 [data-role=flag-legend-item]')].map((e) => e.textContent)");
+  check('T3: with Flags on, the legend lists all 8 flags by the host\'s names (unnamed ones by number)', JSON.stringify(await leg()) === JSON.stringify(['wall', 'spike', 'coin', 'ladder', '4', '5', '6', '7']), JSON.stringify(await leg()));
+  check('T3: a tile\'s hover text uses the names (a solid tile 1 says "wall")', await evaluate("(() => { const p = document.querySelector('#m2 .mapd-pi[data-tile=\"1\"]'); return /wall/.test(p.title) && !/solid/.test(p.title); })()"));
+  await evaluate("(t2.setNames(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']), t.setSource(t.project.files['main.arc']), true)");
+  check('T3: renamed flags show on the next host change event (the tile editor renamed them)', JSON.stringify(await leg()) === JSON.stringify(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']), JSON.stringify(await leg()));
+  check('T3: the default editor (host without flagNames) still uses solid / hazard / pickup',
+    await evaluate("(() => { const p = document.querySelector('.mapd:not(#m2 .mapd) .mapd-pi[data-tile=\"1\"]'); return !!p && /solid/.test(p.title); })()"));
+  await evaluate("(t2.editor.destroy(), document.getElementById('m2').remove(), true)");
 
   // ── destroy ──
   await evaluate("(t.editor.destroy(), true)");

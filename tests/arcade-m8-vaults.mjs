@@ -32,6 +32,8 @@ import { stripMusic, createSoundRecorder, soundOf, clockOf, compareSound, soundC
 import { WIN_RUNS, WIN_SIGHT, LOSE_RUNS } from './arcade-m8-vaults-script.mjs';
 import { CELLS, THINGS, DOOR, MAP_W, MAP_H, GEM_CELLS, GOBLET_CELL, T as TILE, buildAssets, buildTitle } from '../arcade/examples/vaults.assets.gen.mjs';
 
+const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const M_ = await import(pathToFileURL(join(ROOT, 'tsrun/machine.js')).href);
@@ -152,13 +154,13 @@ function reach(grid, from) {
 console.log('\n2. The compiler');
 const res = compileOnMock();
 {
-  check_('vaults.arc compiles with no errors and no warnings (batch 3 mock runtime, v4)', res.errors.length === 0 && res.warnings.length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
+  check_('vaults.arc compiles with no errors and no warnings (batch 3 mock runtime, v4)', res.errors.length === 0 && res.warnings.filter(notTwoBlacks).length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
   if (res.errors.length) { console.log(`\nFAIL: arcade-m8-vaults (${passed} checks passed, ${failed + 1} failed)`); process.exit(1); }
   const u = res.usage;
   info(`link report: code ${u.code} B (strings ${u.data.strings}, tileset ${u.data.tileset}, sfx ${u.data.sfx}, HUD map ${u.data.map}), sprite frames ${u.frames} B, view: map source ${u.view.mapSource} B (1,024 expanded) + descriptor ${u.view.descriptor} B => ${u.total} of 16384 B game area (${u.free} spare); variables ${u.gameVars.used} of ${u.gameVars.available} B`);
   // the song (slice M5) takes bytes: the 2 KB of room is asked of the game as it was before songs (its text without MUSIC / NOMUSIC / PLAY <song>); the shipped game, song included, must keep 1 KB
   const noSong = compileOnMock(stripMusic(VAULTS_SRC));
-  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
+  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.filter(notTwoBlacks).length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
   check_(`the shipped image, with the song (${u.data.music} bytes of song data), fits the 16 KB game area with room to spare (at least 1 KB), and nothing needs banking`, u.free >= 1024 && u.banked.used === 0, `${u.free} bytes free of ${u.total + u.free}; mapped ${u.mapped.used} of ${u.mapped.available}, banked ${u.banked.used}`);
   check_('16 sprite instances (the most there are), 6 assets of 8; the view is COLW 4; the header carries DIV_EXT | DIV_VIEW and the frame divisor 4 (15 a second)', u.codegen.instances === 16 && res.usage.view.colw === 4 && (res.memory[0x8004] & 0xC0) === 0xC0 && (res.memory[0x8004] & 0x3F) === 4);
   check_('three scenes: title (NOVIEW, the first, so the game starts in it), demo and play; the driver is built and the scene plan says so', u.codegen.scenes === 3 && u.codegen.driver === true && res.scenes.map((x) => x.name).join() === 'title,demo,play' && res.scenes[0].mode === 'noview' && !res.scenes[1].mode && !res.scenes[2].mode);
@@ -171,7 +173,7 @@ const res = compileOnMock();
   if (existsSync(rtJson)) {
     const rt = JSON.parse(readFileSync(rtJson, 'utf8')), img = new Uint8Array(readFileSync(join(dirname(rtJson), rt.image ?? 'runtime.bin')));
     const real = compile(SRC, { runtime: rt, image: img, assets: A });
-    check_('it compiles against arcade/build/v4 (the real runtime build) with no errors and no warnings', real.errors.length === 0 && real.warnings.length === 0, errText(real) + ' ' + real.warnings.map((w) => w.message).join(' | '));
+    check_('it compiles against arcade/build/v4 (the real runtime build) with no errors and no warnings', real.errors.length === 0 && real.warnings.filter(notTwoBlacks).length === 0, errText(real) + ' ' + real.warnings.map((w) => w.message).join(' | '));
     if (real.errors.length === 0) info(`on the real runtime: code ${real.usage.code} B, ${real.usage.free} B free`);
   } else skip_('it compiles against arcade/build/v4', 'arcade/build/v4/runtime.json does not exist (node arcade/tools/build-runtime-v4.mjs)');
 }

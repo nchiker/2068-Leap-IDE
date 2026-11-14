@@ -214,7 +214,7 @@ console.log('\n3. Operations on tick ranges');
   let bad = 0, steps = 0;
   const pick = (n) => Math.floor(rnd() * n);
   for (let round = 0; round < 60; round++) {
-    const e = S.newSfx(S.PRESETS[pick(6)]);
+    const e = S.newSfx(S.PRESETS[pick(S.PRESETS.length)]);
     for (let k = 0; k < 40; k++) {
       const n = e.ticks.length, a = pick(n), b = pick(n);
       switch (pick(10)) {
@@ -251,7 +251,13 @@ console.log('\n4. Notes, presets, info, validation');
   ok('note -> tone -> note returns the same note across the range', rt === Math.floor((3000 - 20) / 7) + 1);
   ok('a different clock moves the note (1,773,400 Hz is about +7 cents)', S.noteOfTone(251, 1773400).cents !== S.noteOfTone(251).cents);
 
-  ok('PRESETS lists beep laser blip explosion powerup hurt', same(S.PRESETS, ['beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt']));
+  ok('PRESETS lists the six originals then coin jump step door shield chime', same(S.PRESETS, ['beep', 'laser', 'blip', 'explosion', 'powerup', 'hurt', 'coin', 'jump', 'step', 'door', 'shield', 'chime']));
+  ok('the 12 presets all differ from one another', new Set(S.PRESETS.map((p) => JSON.stringify(S.newSfx(p)))).size === 12);
+  ok('coin rises in pitch in two steps (two tones), jump rises, step is under 5 ticks, door and chime and shield validate with noise / vol shapes', (() => {
+    const c = S.newSfx('coin'), j = S.newSfx('jump'), st = S.newSfx('step'), sh = S.newSfx('shield'), ch = S.newSfx('chime');
+    return new Set(c.ticks.map((t) => t.tone)).size === 2 && c.ticks.at(-1).tone < c.ticks[0].tone && tones(j).every((v, i, a) => i === 0 || v <= a[i - 1])
+      && st.ticks.length < 5 && Math.max(...sh.ticks.map((t) => t.vol)) > sh.ticks[0].vol && sh.ticks.at(-1).vol < Math.max(...sh.ticks.map((t) => t.vol)) && new Set(ch.ticks.map((t) => t.tone)).size === 2;
+  })());
   for (const p of S.PRESETS) {
     const e = S.newSfx(p);
     const v = S.validateSfx(e);

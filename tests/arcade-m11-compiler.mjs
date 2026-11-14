@@ -34,6 +34,9 @@ import { convertViewMap, clampPose } from '../src/lang/arcade/arcade-view.js';
 import { ARCADE_WORDS, RESERVED, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { ASSETS, ASSETS11, withBank, mkMap, world, plan, screenMap, HEAD, scene, win3, view4, plain2, mapDecls } from './arcade-m11-common.mjs';
 import { stripMusic } from './arcade-m15-common.mjs';
+// TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
+// a statement with no BRIGHT clause gets an explicit `BRIGHT 1` (the old default) for BOTH compilers, so the identity still covers it byte for byte.
+const pinOldBright = (text) => text.split('\n').map((l) => (/^\s*(VIEW3D|WIRE3D)\b/i.test(l) && !/\bBRIGHT\b/i.test(l.replace(/\bREM\b.*$/i, '')) ? l.replace(/(\s*\bREM\b.*)?$/i, (rem) => ` BRIGHT 1${rem}`) : l)).join('\n');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -544,16 +547,18 @@ console.log('\n7. Programs with no WORLD, at most 8 maps and nothing banked comp
     const stand = (version) => ({ rt: { version, symbols: Object.fromEntries(NAMES.map((n) => [n, 0xC000 + (fnv(n) % 0x2000)])), constants: { GAME_BASE: 0x8000, GAME_VARS_BASE: 0xE100, GAME_VARS_LIMIT: 0xEFFF, MAX_SPRITES: version >= 2 ? 16 : 4, MAX_ASSETS: 8 } }, img: new Uint8Array(65536) });
     const targets = [['stand-in v0', stand(0)], ['stand-in v1', stand(1)], ['real v2', REAL[2]], ['real v3', REAL[3]], ['real v4', REAL[4]]].filter(([, R]) => R);
     let n = 0, same = 0, built = 0, bad = '', nd = 0, sameD = 0, smaller = 0, badD = '';
+    const notTwoBlacks = (ws) => ws.filter((w) => !/BRIGHT 1 on black paper/.test(w.message));      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the new warning is not in the previous compiler's output
     const eqb = (x, y) => (!x && !y) || (!!x && !!y && sameBytes(x, y));
     for (const p of progs) for (const [tn, R] of targets) {
       if (/^\s*WIRE3D\b/im.test(p.text)) continue;      // a wireframe game (docs/ARCADE_WIREFRAME_CONTRACT.md): the previous compiler cannot build it
       if ((R.rt.version === 2 || R.rt.version === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(p.text)) continue;      // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10) changed COSA / SINA / FXMUL on v2 (allowed by the checker) and v3 (new message) on purpose
-      const o = oldCompile(p.text, { runtime: R.rt, image: R.img, assets: p.assets }), w = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets, ...CODEGEN_OFF }), wd = compile(p.text, { runtime: R.rt, image: R.img, assets: p.assets });
+      const src = pinOldBright(p.text);
+      const o = oldCompile(src, { runtime: R.rt, image: R.img, assets: p.assets }), w = compile(src, { runtime: R.rt, image: R.img, assets: p.assets, ...CODEGEN_OFF }), wd = compile(src, { runtime: R.rt, image: R.img, assets: p.assets });
       n++;
       // the default build (every size-pass fix on) against the previous compiler: the same diagnostics, a cartridge exactly when the previous one built one, and never more code
       nd++;
-      if (JSON.stringify(o.errors) === JSON.stringify(wd.errors) && JSON.stringify(o.warnings) === JSON.stringify(wd.warnings) && !!o.memory === !!wd.memory && (!o.gen || wd.gen.code.length <= o.gen.code.length)) { sameD++; if (o.gen && wd.gen.code.length < o.gen.code.length) smaller++; } else badD += `${p.src} on ${tn}; `;
-      const ok = eqb(o.memory, w.memory) && eqb(o.dck, w.dck) && JSON.stringify(o.errors) === JSON.stringify(w.errors) && JSON.stringify(o.warnings) === JSON.stringify(w.warnings) && (!o.gen || sameBytes(o.gen.code, w.gen.code)) && (!o.usage || JSON.stringify({ ...o.usage, codegen: undefined }) === JSON.stringify(Object.fromEntries(Object.entries({ ...w.usage, codegen: undefined }).filter(([k]) => !['mapped', 'banked', 'shippedChunks'].includes(k)))));
+      if (JSON.stringify(o.errors) === JSON.stringify(wd.errors) && JSON.stringify(o.warnings) === JSON.stringify(notTwoBlacks(wd.warnings)) && !!o.memory === !!wd.memory && (!o.gen || wd.gen.code.length <= o.gen.code.length)) { sameD++; if (o.gen && wd.gen.code.length < o.gen.code.length) smaller++; } else badD += `${p.src} on ${tn}; `;
+      const ok = eqb(o.memory, w.memory) && eqb(o.dck, w.dck) && JSON.stringify(o.errors) === JSON.stringify(w.errors) && JSON.stringify(o.warnings) === JSON.stringify(notTwoBlacks(w.warnings)) && (!o.gen || sameBytes(o.gen.code, w.gen.code)) && (!o.usage || JSON.stringify({ ...o.usage, codegen: undefined }) === JSON.stringify(Object.fromEntries(Object.entries({ ...w.usage, codegen: undefined }).filter(([k]) => !['mapped', 'banked', 'shippedChunks'].includes(k)))));
       if (ok) { same++; if (w.memory) built++; } else bad += `${p.src} on ${tn}; `;
     }
     check_(`${progs.length} programs (every example, every fixture, the batch 4 / 5 generated v3 / v4 programs) on ${targets.length} runtime tables: ${n} compilations, the image, the DCK, the code, the errors, the warnings and the usage fields are identical`, same === n && n > 0, bad);

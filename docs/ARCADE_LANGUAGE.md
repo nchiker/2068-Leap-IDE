@@ -88,13 +88,13 @@ ENDSCENE
 
 *Wireframe 3D is built* (2026-11-12; contract `docs/ARCADE_WIREFRAME_CONTRACT.md` sections 1 to 3 and the as-built notes 7a / 7b; runtime `docs/ARCADE_RUNTIME_API_V2.md` "As built: wireframe 3D"):
 ```
-WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 1       REM top level, once: the play area is character rows 2..21, all 32 columns
+WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 0       REM top level, once: the play area is character rows 2..21, all 32 columns
 MODEL gate = "gate"                              REM a wireframe model asset (up to 32)
   EYE ex, 0, ez, ea                              REM the viewer: world position and heading
   DRAWMODEL gate AT gx, 0, gz YAW t PITCH p SCALE 2
   LINE 120, 96 TO 136, 96                        REM a 2-D line in screen pixels
 ```
-`WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]` gives the game a play area (r0 >= 0, r0 + 3 <= r1 <= 23, so at least 4 rows; defaults `INK 7 PAPER 0 BRIGHT 1`) in which only lines are drawn,
+`WIRE3D ROWS r0 TO r1 [INK n] [PAPER n] [BRIGHT n]` gives the game a play area (r0 >= 0, r0 + 3 <= r1 <= 23, so at least 4 rows; defaults `INK 7 PAPER 0 BRIGHT 0`; since stage 1 of the Studio completion the default is plain black, and `PAPER 0` with `BRIGHT 1` is a warning) in which only lines are drawn,
 in one colour for the whole area (the attribute is set once; lines are not coloured per model). `MODEL name = "asset"` declares a model: 1..128 points, 1..255 edges, coordinates -64..64, x right, y up, z forward (`docs/ARCADE_ASSETS.md`).
 `EYE x, y, z, a` sets the viewer (signed 16-bit position, heading `a` taken AND 255, 256 to a turn; it is 0, 0, 0, 0 at the start and after `ENTER`). `DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]`
 draws model `m` at once, seen from the eye: turned by PITCH about its own x axis, then by YAW about the vertical axis (both AND 255, default 0), scaled by the constant 1, 2, 4 or 8 (default 1); its clauses may come in any order and
@@ -156,3 +156,9 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
   `DRAWMODEL m AT x, y, z [YAW a] [PITCH p] [SCALE s]` and `LINE x0, y0 TO x1, y1` (a new use of the word `LINE`, which was already reserved); `SCENE name NOVIEW` also in a `WIRE3D` game; `COSA`, `SINA`, `FXMUL` on the v2 runtime as well as v4
   (before: v4 only; `requiredRuntime` no longer forces v4 for them, a program that used them only with `VIEW3D` is unchanged). Needs the v2 runtime for `WIRE3D`. New reserved words WIRE3D MODEL EYE DRAWMODEL; contextual ROWS YAW PITCH SCALE.
   Detail in the paragraph "Wireframe 3D is built" above.
+* 0.9 (2026-11-14, Studio completion stage 1, K1 and K2; contract `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md`, tests `tests/arcade-k-warnings.mjs`): compiler **warning** "BRIGHT 1 on black paper" (TSRun
+  shows BRIGHT black as dark grey next to a black border; Fuse and ZEsarUX show black). The checker walks each PROC body in text order (no branch analysis) with the constant `PAPER` and `BRIGHT` in effect and warns at
+  the statement that makes paper 0 and bright 1 hold together; a value that is not a constant makes that colour unknown (no warning while unknown). A scene's `PROC INIT` and `PROC FRAME` (and a game-level one)
+  start at `PAPER 7 BRIGHT 0` (the state `ENTER` sets); any other PROC starts with both unknown, because a caller can leave any colours. `WIRE3D` warns for `PAPER 0` (explicit or the default) with `BRIGHT 1`,
+  `VIEW3D` for `BRIGHT 1` with a black `CEIL` or `FLOOR`. The defaults changed: `WIRE3D` is now `BRIGHT 0` (was 1) and `VIEW3D` is now `BRIGHT 0` (was 1), so a program that relied on either default
+  gets different bytes (attribute `$07` / `$0F` instead of `$47` / `$4F`). Warnings never change generated code.

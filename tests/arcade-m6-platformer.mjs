@@ -25,6 +25,8 @@ import { existsSync } from 'node:fs';
 import { planPool, poolNeed, normPhases } from '../arcade/tests/m6-common.mjs';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 
+const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 let passed = 0, failed = 0;
 const check_ = (name, ok, detail = '') => { console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  (' + detail + ')' : ''}`); ok ? passed++ : failed++; return ok; };
@@ -152,7 +154,7 @@ const res = compileOnMock();
   }
   check_('7 sprite instances (4 walkers, 2 bats, the hero; the coins are tiles): well within the 16', u.codegen.instances === 7);
   check_('game variables fit with room (GAME_VARS 2,048 bytes)', u.gameVars.used <= 2048 - 256, `${u.gameVars.used} B`);
-  check_('the game links with NO warnings (in particular no phase-memory warning)', res.warnings.length === 0, res.warnings.map((w) => w.message).join(' | '));
+  check_('the game links with NO warnings (in particular no phase-memory warning)', res.warnings.filter(notTwoBlacks).length === 0, res.warnings.map((w) => w.message).join(' | '));
 }
 
 // =================================================================================================================

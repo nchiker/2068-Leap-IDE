@@ -25,8 +25,8 @@ FUNCTION word cannot be indexed as a pool inside an expression (`seen(1)` there 
 **Syntax and checks**
 1. `VIEW3D` stands anywhere at the top level (like `WINDOW`); its clauses come in any order, each at most once (a repeat is an error at the repeated word). The clause values are **constant expressions** (literals,
    CONSTs, `+ - * DIV MOD`, the bit functions). `COLW` must be 2 or 4, `INK` `CEIL` `FLOOR` 0..7, `BRIGHT` 0 or 1; each error names the clause and the allowed values.
-2. **Defaults** (the contract's): `COLW 4`, `INK 7`, `CEIL 0` (black), `FLOOR 1` (blue), `BRIGHT 1`. `attr_top = BRIGHT << 6 | CEIL << 3 | INK`, `attr_bottom = BRIGHT << 6 | FLOOR << 3 | INK` (flash 0): the defaults
-   give `$47` and `$4F`. The compiler does not "choose better ones".
+2. **Defaults** (the contract's): `COLW 4`, `INK 7`, `CEIL 0` (black), `FLOOR 1` (blue), `BRIGHT 0` (changed from `BRIGHT 1` in stage 1 of the Studio completion, K2: BRIGHT 1 on black paper is dark grey in TSRun, black in Fuse and ZEsarUX). `attr_top = BRIGHT << 6 | CEIL << 3 | INK`, `attr_bottom = BRIGHT << 6 | FLOOR << 3 | INK` (flash 0): the defaults
+   give `$07` and `$0F` (they were `$47` and `$4F`). A `BRIGHT 1` with a black `CEIL` or `FLOOR` is a compiler warning. The compiler does not "choose better ones".
 3. **`PATTERNS`** (optional, added here): 16 constant bytes `b0 ... b15`; pattern index `pi = (type - 1) * 2 + side`, the even-row byte at `2 * pi`, the odd-row byte at `2 * pi + 1`, side 0 = a wall facing east or west
    (the ray hit an x-facing wall), 1 = north or south. The 16 bytes are written between `map_src` and `view_desc` and `view_desc +7` points at them; without the clause `+7` is 0 (the runtime's default `PAT`).
    Not 16 values, or a value outside 0..255, is an error.

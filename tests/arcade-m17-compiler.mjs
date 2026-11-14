@@ -24,6 +24,9 @@ import { check } from '../src/lang/arcade/arcade-check.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, ASSET_KINDS, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
+// TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
+// a statement with no BRIGHT clause gets an explicit `BRIGHT 1` (the old default) for BOTH compilers, so the identity still covers it byte for byte.
+const pinOldBright = (text) => text.split('\n').map((l) => (/^\s*(VIEW3D|WIRE3D)\b/i.test(l) && !/\bBRIGHT\b/i.test(l.replace(/\bREM\b.*$/i, '')) ? l.replace(/(\s*\bREM\b.*)?$/i, (rem) => ` BRIGHT 1${rem}`) : l)).join('\n');
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 let passed = 0, failed = 0, skipped = 0;
@@ -32,7 +35,8 @@ const skip_ = (name, why) => { console.log(`  SKIP  ${name}  (${why})`); skipped
 const eq = (name, got, want) => check_(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 
 // ── source helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-const HEAD = 'GAME "w"\nFRAMERATE 20\nWIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 1\nMODEL gate = "gate"\nMODEL rock = "rock"\n';
+// (BRIGHT 0 since stage 1 K2: BRIGHT 1 on black paper is now a warning, and these checks expect none)
+const HEAD = 'GAME "w"\nFRAMERATE 20\nWIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 0\nMODEL gate = "gate"\nMODEL rock = "rock"\n';
 const game = (frame, { head = HEAD, init = '', decl = 'DIM t, x, y, z\n', mode = '' } = {}) => `${head}${decl}SCENE s${mode}\n  PROC INIT()\n${init}  ENDP\n  PROC FRAME()\n    t = t + 1\n${frame}  ENDP\nENDSCENE\n`;
 const diag = (src, version) => { const p = parse(src); return [...p.errors, ...check(p.ast, version === undefined ? undefined : { version })]; };
 const errs = (src, v) => diag(src, v).filter((d) => d.severity === 'error');
@@ -71,7 +75,7 @@ console.log('1. parser');
   eq('the full example parses with no error', p.errors, []);
   const w = p.ast.wires[0];
   check_('WIRE3D: node Wire3d, in program.wires and program.items', w?.type === 'Wire3d' && p.ast.items.includes(w) && p.ast.wires.length === 1);
-  check_('WIRE3D: r0 r1 ink paper bright are expression nodes', w.r0.value === 2 && w.r1.value === 21 && w.ink.value === 5 && w.paper.value === 0 && w.bright.value === 1);
+  check_('WIRE3D: r0 r1 ink paper bright are expression nodes', w.r0.value === 2 && w.r1.value === 21 && w.ink.value === 5 && w.paper.value === 0 && w.bright.value === 0);
   eq('WIRE3D: clausePos has ink, paper and bright', Object.keys(w.clausePos), ['ink', 'paper', 'bright']);
   const m = p.ast.assets.filter((a) => a.kind === 'MODEL');
   eq('MODEL: two Asset nodes of kind MODEL with name and asset', m.map((a) => [a.type, a.name, a.asset]), [['Asset', 'gate', 'gate'], ['Asset', 'rock', 'rock']]);
@@ -340,7 +344,7 @@ console.log('\n5. code generator and linker');
       check_('the header is 20 bytes: frame_div | DIV_EXT | DIV_WIRE (bit 6), the sprite descriptors and the code follow', r.gen.headerLen === 20 && m[G + 4] === (3 | div) && r.gen.base === G + 20, `frame_div byte ${m[G + 4]}, base ${r.gen.base}`);
       check_('DIV_WIRE is bit 6 ($40) in the real runtime (or the constant is absent: $40 is assumed)', (cst.DIV_WIRE ?? 0x40) === 0x40);
       const d = u16(m, G + 18);
-      check_('+18 is DW wire_desc: DB r0, DB r1, DB attr, DB 0 (defaults INK 7 PAPER 0 BRIGHT 1 = $47)', d === r.gen.wire.descAt && Array.from(m.slice(d, d + 4)).join() === '2,21,71,0', Array.from(m.slice(d, d + 4)).join());
+      check_('+18 is DW wire_desc: DB r0, DB r1, DB attr, DB 0 (defaults INK 7 PAPER 0 BRIGHT 0 = $07 since stage 1 K2)', d === r.gen.wire.descAt && Array.from(m.slice(d, d + 4)).join() === '2,21,7,0', Array.from(m.slice(d, d + 4)).join());
       check_('+16 (the map table) is 0 when the game has no maps', u16(m, G + 16) === 0);
       const c = build(wprog('    DRAWMODEL gate AT 1, 2, 3\n    DRAWMODEL rock AT 1, 2, 3\n', { head: 'GAME "w"\nFRAMERATE 30\nWIRE3D ROWS 0 TO 23 INK 5 PAPER 1 BRIGHT 0\nMODEL gate = "gate"\nMODEL rock = "rock"\nDIM t, x\n' }));
       const d2 = u16(c.memory, G + 18);
@@ -520,6 +524,8 @@ console.log('\n6. byte identity with the compiler before the code generator (con
     }
     let n = 0, bad = '', built = 0;
     const same = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+    // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): Stage 1 K1 / K2 (docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md): the two-blacks warnings are new; every other warning must stay the same.
+    const notTwoBlacks = (ws) => ws.filter((w) => !/BRIGHT 1 on black paper/.test(w.message));
     for (const dir of ['arcade/examples', 'arcade/tests/fixtures']) for (const f of readdirSync(join(ROOT, dir))) {
       if (!f.endsWith('.arc')) continue;
       const base = f.replace(/\.arc$/, '');
@@ -529,11 +535,12 @@ console.log('\n6. byte identity with the compiler before the code generator (con
         if (!RT[v]) continue;
         if ((v === 2 || v === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(text)) continue;      // COSA / SINA / FXMUL changed on v2 (allowed) and v3 (new message) on purpose
         for (const variant of [{}, { bankAll: true }]) {
-          const a = oldCompile(text, { ...RT[v], assets, ...variant }), b = compile(text, { ...RT[v], assets, ...variant });
+          const src = pinOldBright(text), a = oldCompile(src, { ...RT[v], assets, ...variant }), b = compile(src, { ...RT[v], assets, ...variant });
           n++;
           if (a.errors.length || b.errors.length) { if (JSON.stringify(a.errors) !== JSON.stringify(b.errors)) bad += `${dir}/${f} v${v}: errors differ; `; continue; }
           built++;
-          if (!same(a.dck, b.dck) || !same(a.memory, b.memory) || JSON.stringify(a.warnings) !== JSON.stringify(b.warnings)) bad += `${dir}/${f} v${v}${variant.bankAll ? ' bankAll' : ''}: bytes differ; `;
+          if (!same(a.dck, b.dck) || !same(a.memory, b.memory)) bad += `${dir}/${f} v${v}${variant.bankAll ? ' bankAll' : ''}: bytes differ; `;
+          else if (JSON.stringify(a.warnings) !== JSON.stringify(notTwoBlacks(b.warnings))) bad += `${dir}/${f} v${v}${variant.bankAll ? ' bankAll' : ''}: warnings differ; `;
         }
       }
     }

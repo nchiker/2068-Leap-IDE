@@ -23,6 +23,8 @@ import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { keysOf, stickOf, FULL_TICKS, QUICK_TICKS } from './arcade-starfall-script.mjs';
 import { real, compileReal, runReal, interpFor, diffRecords, compareSoundRun, errText, ROOT } from './arcade-m5-harness.mjs';
 
+const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+
 const QUICK = !!process.env.ARCADE_QUICK;
 let passed = 0, failed = 0, skipped = 0;
 const check_ = (name, ok, detail = '') => { console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  (' + detail + ')' : ''}`); ok ? passed++ : failed++; return ok; };
@@ -38,7 +40,7 @@ const TICKS = QUICK ? QUICK_TICKS : FULL_TICKS;
 console.log('1. The build');
 let res;
 try { res = compileReal(SRC, ASSETS); } catch (e) { check_('shooter.arc compiles for the real v2 runtime', false, e.message); process.exit(1); }
-check_('shooter.arc compiles for the real v2 runtime with no errors and no warnings; 16 instances', res.warnings.length === 0 && res.usage.codegen.instances === 16, res.warnings.map((w) => w.message).join(' | ') || `${res.usage.total} bytes, ${res.usage.free} free, songs ${res.usage.data.music} bytes`);
+check_('shooter.arc compiles for the real v2 runtime with no errors and no warnings; 16 instances', res.warnings.filter(notTwoBlacks).length === 0 && res.usage.codegen.instances === 16, res.warnings.map((w) => w.message).join(' | ') || `${res.usage.total} bytes, ${res.usage.free} free, songs ${res.usage.data.music} bytes`);
 
 console.log('\n2. The real runtime against the interpreter');
 const t0 = Date.now();

@@ -59,8 +59,24 @@ export const colourKey = (c, bright) => (c === 0 ? 0 : c + 8 * (bright ? 1 : 0))
 export const normKey = (key) => (key === 8 ? 0 : key);
 export const keyParts = (key) => ({ ink: key & 7, bright: key >> 3 });
 export const keyName = (key) => PALETTE[normKey(key)].name;
-/** RGB of a key, from `pal` ([{rgb}], default PALETTE; index = ink + 8 * bright). Black is black in both brightnesses. */
-export function keyRGB(key, pal = PALETTE) { return (pal[normKey(key)] ?? PALETTE[normKey(key)]).rgb; }
+/**
+ * One palette entry as [r, g, b] (0..255). Accepts [r, g, b], '#rrggbb' / '#rgb', or {rgb: either of those} (what PALETTE has, or the
+ * Studio's older {name, rgb: '#rrggbb'}). Anything unreadable gives [0, 0, 0] so a bad host palette draws black, never throws.
+ */
+export function paletteRgb(entry) {
+  const v = entry && !Array.isArray(entry) && typeof entry === 'object' ? entry.rgb : entry;
+  if (Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((n) => Number.isFinite(+n))) return [v[0] | 0, v[1] | 0, v[2] | 0];
+  if (typeof v === 'string') {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v.trim());
+    if (m) {
+      const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    }
+  }
+  return [0, 0, 0];
+}
+/** RGB ([r, g, b]) of a key, from `pal` (index = ink + 8 * bright; entries as paletteRgb reads them; default PALETTE). Black is black in both brightnesses. */
+export function keyRGB(key, pal = PALETTE) { return paletteRgb(pal[normKey(key)] ?? PALETTE[normKey(key)]); }
 const RGB15 = (key) => (key === 0 ? [0, 0, 0] : RGB16[key]);          // for quantising: the real 15 colours
 
 // ── small integer helpers (bits are unsigned up to 32 wide) ──────────────────────────────────────────────────

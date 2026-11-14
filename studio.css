@@ -43,14 +43,26 @@
   background: var(--bg-panel); color: var(--fg); font: 11px var(--font-ui);
 }
 
-/* Centre: the editor, with the problems list under it */
+/* Centre: the editor, with the problems list under it (E3: a drag handle on its top edge, a fold button with the count) */
 .studio-root .panel-editor { min-width: 320px; }
 .problems {
-  flex: 0 0 auto; max-height: 28%; overflow-y: auto;
+  flex: 0 0 auto; max-height: 70%; min-height: 0; display: flex; flex-direction: column;
   border-top: 1px solid var(--border); background: var(--bg-panel);
-  font: 11px var(--font-code);
+  font: 11px var(--font-code); position: relative;
 }
+.problems:not([style*="height"]) { max-height: 28%; }      /* the default share until it has been dragged */
 .problems[hidden] { display: none; }
+.problems-grip { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: ns-resize; z-index: 2; touch-action: none; }
+.problems-grip:hover { background: var(--hover-sel); }
+.problems.folded .problems-grip { cursor: default; pointer-events: none; }
+.problems-head {
+  flex: none; text-align: left; border: none; border-bottom: 1px solid var(--border); background: var(--bg-panel);
+  color: var(--fg-muted); font: 700 10px var(--font-ui); letter-spacing: .05em; text-transform: uppercase; padding: 4px 12px; cursor: pointer;
+}
+.problems-head:hover { background: var(--bg-hover); color: var(--fg); }
+.problems.folded .problems-head { border-bottom: none; }
+.problems.folded .problems-list { display: none; }
+.problems-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .problem {
   display: flex; gap: 8px; padding: 3px 12px; cursor: pointer; align-items: baseline;
 }
@@ -68,8 +80,26 @@
 .panel-right .tab-body { flex: 1; min-height: 0; overflow-y: auto; }
 .panel-right .tab-body[hidden] { display: none; }
 .display-body { display: flex; flex-direction: column; }
-.display-body .emulator-body { flex: 0 0 auto; padding-bottom: 8px; }
+.display-body .emulator-body { flex: 0 0 auto; padding-bottom: 8px; overflow: visible; }   /* the tab scrolls, not the screen's own box (E2) */
 #display-btns[hidden] { display: none; }
+/* E2: the six tab names have the header to themselves and scroll sideways if the panel is narrower still */
+.panel-right > .panel-header { padding: 0 6px; }
+.panel-right .panel-tabs { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.panel-right .panel-tabs::-webkit-scrollbar { display: none; }
+.panel-right .panel-tab { padding: 0 6px; white-space: nowrap; flex: none; }
+.display-tools { display: flex; align-items: center; gap: 4px; padding: 6px 12px 0; flex: none; }
+.display-tools-label { margin-right: auto; font: 700 10px var(--font-ui); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-muted); }
+
+/* R2: run controls; R1: the budget meter; N3: the first-run line. Colours from the ide.css variables. */
+.run-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 0 12px 6px; }
+.run-speed { display: inline-flex; gap: 2px; }
+.speed-btn.active { background: var(--hover-sel); color: var(--fg); }
+.run-meter { margin: 0 12px 8px; padding: 4px 8px; border-radius: 4px; background: var(--bg-surface); border: 1px solid var(--border);
+  font: 11px/1.4 var(--font-code); color: var(--fg); overflow-wrap: anywhere; }
+.run-meter.over { border-color: var(--amber-fg); }
+.run-meter.behind { color: var(--amber-fg); }
+.run-meter[hidden], .first-run[hidden] { display: none; }
+.first-run { margin: 0 12px 8px; font: 12px var(--font-ui); color: var(--fg-muted); text-align: center; }
 .asset-tool { padding: 0; }
 .asset-tool .tool-note { padding: 12px; }
 
@@ -106,3 +136,12 @@
 /* Model previews: a small turning wireframe on each model row (studio.js paintPreviews); the line colour comes from --blue-fg */
 .proj-row .model-preview { width: 28px; height: 28px; flex: none; margin: -2px 4px -2px 0; }
 .proj-row[data-asset^="models/"] .proj-meta { white-space: nowrap; }
+
+/* Asset rows (E1): the name takes the room, the details sit on a second line (and in the row's tooltip); the buttons float over the right end on hover */
+.proj-row.asset-row { position: relative; }
+.proj-row.asset-row .proj-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.proj-row.asset-row .proj-name { flex: none; }
+.proj-row.asset-row .proj-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-row.asset-row .proj-acts { display: none; position: absolute; right: 4px; top: 2px; gap: 2px; padding: 0 2px; border-radius: 3px; background: var(--bg-hover); }
+.proj-row.asset-row:hover .proj-acts, .proj-row.asset-row:focus-within .proj-acts { display: flex; }
+.proj-row.asset-row .proj-act { visibility: visible; }

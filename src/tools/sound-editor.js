@@ -14,6 +14,12 @@
  * selection with the operations of contract section 6, a numeric row editor, presets, Play (Web Audio), a waveform thumbnail,
  * size / count readouts and the effect's warnings.  A stroke or an operation is one undo step and one host.setAsset().
  *
+ * Keyboard piano (A2): with the editor focused (no text field, no Ctrl / Alt / Meta) Z S X D C V G B H N J M play C..B of the note row's octave and
+ * Q 2 W 3 E R 5 T 6 Y 7 U C..B one octave higher, with the row's instrument, length and peak; with the "keys enter" box on a key also writes the note at
+ * "at tick" through the note entry (one undo step).  Keys are read as characters (e.key), so they follow the printed keys on any layout.
+ * Presets (A3): the model's PRESETS; "Copy from example" appears when host.exampleEffects?.() resolves to [{game, name, sfx}] and replaces the effect
+ * shown by the chosen one (one undo step).
+ *
  * Three tracks (language batch 5): tabs A / B / C pick the AY channel being edited (B and C start empty and are stored only when they hold ticks); every
  * lane, operation and the row editor work on the selected track; the timeline is as long as the longest track and its tone lane shows all three
  * curves, the selected one bright; painting a track past its end extends it with silent ticks; Play mixes the channels.
@@ -39,7 +45,7 @@ const UNDO_STEPS = 200;
 const BLANK_TICK = { tone: 200, vol: 0, noise: 0, mix: 6 };
 const TRACK_NAMES = M.TRACKS.map((t) => t.name);
 const TRACK_COLOUR = ['ok', 'blue', 'amber'];          // the tone lane's curve colour of channel A, B, C (CSS variable families of the theme)
-const PRESET_LABELS = { beep: 'beep', laser: 'laser', blip: 'blip', explosion: 'explosion (noise)', powerup: 'power-up', hurt: 'hurt' };
+const PRESET_LABELS = { beep: 'beep', laser: 'laser', blip: 'blip', explosion: 'explosion (noise)', powerup: 'power-up', hurt: 'hurt', coin: 'coin', jump: 'jump', step: 'step', door: 'door', shield: 'shield', chime: 'chime' };
 
 // Lane geometry (canvas pixels, top to bottom); labels in the label column use the same numbers.
 const LANES = {
@@ -247,7 +253,8 @@ export function createSoundEditor(container, host) {
   let actx = null, src = null, playing = false, playStart = 0, playDur = 0, raf = 0, playX = -1;
   let playWhat = 'effect', playPos = -1;        // what is playing: 'effect' | 'pattern' | 'song'; the order position playing (a song)
 
-  const keepPrefs = () => savePrefs({ zoom });
+  let pianoEnter = prefs.pianoEnter === true;    // the keyboard piano also writes the note at the cursor (the note row's "keys enter" box)
+  const keepPrefs = () => savePrefs({ zoom, pianoEnter });
 
   // ── skeleton ──
   const root = el('div', 'sfxed', null, { tabindex: '0' });
@@ -267,7 +274,10 @@ export function createSoundEditor(container, host) {
   const btnDup = button('Duplicate', 'Copy this effect under a new name', () => duplicateCmd(), '', 'dup');
   const btnRen = button('Rename', 'Rename this effect', () => renameCmd(), '', 'rename');
   const btnDel = button('Delete', 'Delete this effect', () => deleteCmd(), '', 'delete');
-  bar.append(btnModeSfx, btnModeMusic, sep(), nameSel, presetLabel, presetSel, btnNew, btnDup, btnRen, btnDel);
+  // "Copy from example": the examples' effects, offered by host.exampleEffects?.() (-> Promise<[{game, name, sfx}]>); hidden without it
+  const exSel = select([['', 'Copy from example…']], '', (v) => copyExample(v), 'Replace this effect with one of the example games\' effects (one undo step)', 'example-copy');
+  exSel.hidden = true;
+  bar.append(btnModeSfx, btnModeMusic, sep(), nameSel, presetLabel, presetSel, btnNew, exSel, btnDup, btnRen, btnDel);
 
   // the song panel (song mode only): patterns, the order list and the loop, the song's size and length
   const songBox = el('div', 'sfxed-song');
@@ -412,6 +422,16 @@ export function createSoundEditor(container, host) {
   notes.append(el('b', null, 'Note'), noteSel, label('octave'), noteOct, label('length'), noteLen, noteInst, label('peak'), noteVol, label('at tick'), noteAtIn,
     button('Enter', 'Write the note into the selected channel from that tick (it overwrites, and extends the channel when needed)', () => noteCmd(false), '', 'note-enter'),
     button('Rest', 'Write silence of that length into the selected channel', () => noteCmd(true), '', 'note-rest'));
+  // keyboard piano (A2): Z S X D C V G B H N J M = C..B of the octave above, Q 2 W 3 E R 5 T 6 Y 7 U = C..B one octave higher; with this box on, a key also writes its note
+  const pianoBox = el('input', null, null, { type: 'checkbox' });
+  pianoBox.dataset.role = 'piano-enter';
+  pianoBox.checked = pianoEnter;
+  pianoBox.title = 'Keyboard piano: Z S X D C V G B H N J M play the note row\'s octave, Q 2 W 3 E R 5 T 6 Y 7 U the octave above, with the instrument shown. With this box on, a key also writes its note at "at tick" (one undo step)';
+  pianoBox.addEventListener('change', () => { pianoEnter = pianoBox.checked; keepPrefs(); });
+  const pianoLab = el('label', 'sfxed-label', null);
+  pianoLab.title = pianoBox.title;
+  pianoLab.append(pianoBox, ' keys enter');
+  notes.append(sep(), pianoLab);
 
   // range operations
   const ops = el('div', 'sfxed-ops');
@@ -621,22 +641,87 @@ export function createSoundEditor(container, host) {
     if (v === null || v === undefined) return;
     edit(() => MM.labelPattern(song, pat, v));
   }
-  /** Note entry: the note (or a rest) of the note row into the selected track from tick noteAt; the next entry goes after it. */
-  function noteCmd(rest) {
-    if (!sfx) return;
+  /**
+   * Note entry: the note (or a rest) of the note row into the selected track from tick noteAt; the next entry goes after it.
+   * `forced` (the keyboard piano): a note name such as 'C#5' used instead of the row's note and octave.  -> true when something was written.
+   */
+  function noteCmd(rest, forced = null) {
+    if (!sfx) return false;
     const len = parseNum(noteLen.value);
-    if (!Number.isFinite(len) || len < 1) { say('The length is a number of refreshes, 1 or more', 'err'); return; }
+    if (!Number.isFinite(len) || len < 1) { say('The length is a number of refreshes, 1 or more', 'err'); return false; }
     const oct = parseNum(noteOct.value);
-    if (!rest && !(Number.isInteger(oct) && oct >= 0 && oct <= 8)) { say('The octave is a whole number 0..8', 'err'); return; }
-    if (!rest) { const low = MM.noteRefusal(`${noteSel.value}${oct}`, noteInst.value); if (low) { say(low, 'err'); return; } }
+    if (!rest && !forced && !(Number.isInteger(oct) && oct >= 0 && oct <= 8)) { say('The octave is a whole number 0..8', 'err'); return false; }
+    const noteName = forced ?? `${noteSel.value}${oct}`;
+    if (!rest) { const low = MM.noteRefusal(noteName, noteInst.value); if (low) { say(low, 'err'); return false; } }
     const pk = parseNum(noteVol.value);
     const opts = Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 1, 15) } : {};
     const at = noteAt;
-    edit(() => {
-      const r = rest ? MM.enterRest(V(), at, len) : MM.enterNote(V(), at, `${noteSel.value}${oct}`, len, noteInst.value, opts);
+    return edit(() => {
+      const r = rest ? MM.enterRest(V(), at, len) : MM.enterNote(V(), at, noteName, len, noteInst.value, opts);
       noteNext = r.next;
       return r;
     });
+  }
+
+  // ── keyboard piano (A2) ──
+  /** Piano key (the character the key produces, lower case) -> semitone above C of its octave row: 0 for the lower row (octave of the note row), 12 and up for the upper (one octave higher). */
+  const PIANO = {};
+  'zsxdcvgbhnjm'.split('').forEach((c, i) => { PIANO[c] = i; });
+  'q2w3er5t6y7u'.split('').forEach((c, i) => { PIANO[c] = 12 + i; });
+  /** Play (and, with "keys enter" on, write) the note of a piano key: the note row's octave for Z..M, one higher for Q..U; the instrument, length and peak are the row's. */
+  function pianoKey(k) {
+    const semi = PIANO[k];
+    const oct = parseNum(noteOct.value);
+    const base = Number.isInteger(oct) && oct >= 0 && oct <= 8 ? oct : 4;
+    const midi = 12 * (base + 1) + semi;
+    if (midi > 12 * 9 + 11) { say('The octave of the note row is too high for the upper row of keys (C0..B8)', 'err'); return; }
+    const noteName = M.noteNameOfMidi(midi);
+    const low = MM.noteRefusal(noteName, noteInst.value);
+    if (low) { say(low, 'err'); return; }
+    const at = noteAt;
+    if (pianoEnter) { if (!noteCmd(false, noteName)) return; }
+    if (!audioContext()) return;
+    const len = parseNum(noteLen.value);
+    const pk = parseNum(noteVol.value);
+    let recs;
+    try { recs = MM.noteRecords(noteName, Number.isFinite(len) && len >= 1 ? Math.min(Math.round(len), 60) : 8, noteInst.value, Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 1, 15) } : {}); } catch (e) { say(e.message, 'err'); return; }
+    stopPlay();
+    const rate = actx.sampleRate || 44100;
+    playWhat = 'note';
+    startAudio(M.renderSfx({ ticks: recs }, { rate }), rate, () => {});
+    say(pianoEnter ? `${noteName} written at tick ${at}` : noteName);
+  }
+
+  // ── copy from example (A3) ──
+  let exampleList = null, exampleLoading = false;
+  /** Fill the example select once (host.exampleEffects is a promise of [{game, name, sfx}]); a host without it, or one that fails, leaves it hidden. */
+  function loadExamples() {
+    if (exampleList || exampleLoading || typeof host?.exampleEffects !== 'function') return;
+    exampleLoading = true;
+    let p;
+    try { p = Promise.resolve(host.exampleEffects()); } catch { exampleLoading = false; return; }
+    p.then((list) => {
+      exampleLoading = false;
+      if (destroyed || !Array.isArray(list)) return;
+      exampleList = list.filter((x) => x && typeof x.name === 'string' && x.sfx && Array.isArray(x.sfx.ticks));
+      exSel.replaceChildren(el('option', null, 'Copy from example…'));
+      exSel.firstChild.value = '';
+      exampleList.forEach((x, i) => { const o = el('option', null, `${x.game}: ${x.name}`); o.value = String(i); exSel.append(o); });
+      syncControls();
+    }).catch(() => { exampleLoading = false; });
+  }
+  /** Replace the effect shown by example `i`'s effect (the three channels; the other keys stay): one undo step. */
+  function copyExample(v) {
+    exSel.value = '';
+    if (v === '' || !exampleList || kind !== 'sfx' || !sfx) return;
+    const ex = exampleList[Number(v)];
+    if (!ex) return;
+    let d;
+    try { d = M.fromAsset(ex.sfx); } catch (e) { say(`That example cannot be copied: ${e.message}`, 'err'); return; }
+    const val = M.validateSfx(d);
+    if (!val.ok) { say('That example is not valid here', 'err'); return; }
+    stopPlay();
+    if (edit(() => { for (const { key } of M.TRACKS) sfx[key] = d[key].map((t) => ({ ...t })); return { range: [0, 0] }; })) say(`Copied "${ex.name}" from ${ex.game} into "${name}": Ctrl+Z undoes it`);
   }
 
   // ── commands: new, duplicate, rename, delete ──
@@ -1009,6 +1094,9 @@ export function createSoundEditor(container, host) {
     if (has) trackNote.textContent = `ticks: A ${lens[0]}, B ${lens[1]}, C ${lens[2]}; the ${music ? `pattern` : 'effect'} lasts ${Math.max(...lens)}`;
     for (const [b, k] of [[btnModeSfx, 'sfx'], [btnModeMusic, 'music']]) { b.classList.toggle('on', kind === k); b.setAttribute('aria-pressed', String(kind === k)); }
     presetLabel.hidden = presetSel.hidden = music;
+    if (!exampleList) loadExamples();
+    exSel.hidden = music || !exampleList || !exampleList.length;
+    exSel.disabled = !has;
     nameSel.setAttribute('aria-label', music ? 'Song' : 'Sound effect');
     btnNew.title = music ? 'Create a song (one pattern, played in a loop)' : 'Create an effect from the preset';
     btnDup.title = `Copy this ${music ? 'song' : 'effect'} under a new name`;
@@ -1238,6 +1326,7 @@ export function createSoundEditor(container, host) {
     if (mod && k === 'y') { e.preventDefault(); redo(); return; }
     if (mod && k === 'a') { if (sfx) { e.preventDefault(); anchor = 0; rng = [0, tickCount() - 1]; cur = rng[1]; renderAll(); } return; }
     if (mod || e.altKey || !sfx) return;
+    if (!e.repeat && !(t && t.isContentEditable) && Object.prototype.hasOwnProperty.call(PIANO, k)) { e.preventDefault(); pianoKey(k); return; }
     if (k === ' ' || k === 'spacebar') { if (t && t.tagName === 'BUTTON') return; e.preventDefault(); if (playing) stopPlay(); else play(false); }
     else if (k === 'arrowleft') { e.preventDefault(); e.shiftKey ? extendTo(cur - 1) : selectTick(cur - 1); }
     else if (k === 'arrowright') { e.preventDefault(); e.shiftKey ? extendTo(cur + 1) : selectTick(cur + 1); }
