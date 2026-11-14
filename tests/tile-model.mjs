@@ -91,7 +91,7 @@ const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFil
       if (t.flags !== conv.flags[i]) attrs = false;
     });
   }
-  ok(`toAsset(fromAsset(x)) deep-equals x for all ${sets} tile sets (${tiles} tiles) of the ${EXAMPLES.length} example assets files`, deep && sets === 6, `${sets} sets`);
+  ok(`toAsset(fromAsset(x)) deep-equals x for all ${sets} tile sets (${tiles} tiles) of the ${EXAMPLES.length} example assets files`, deep && sets === 7, `${sets} sets`);
   ok('... and serialises to the same JSON text (key order kept)', text);
   ok('attrByte and flags equal the compiler\'s (convertTileset) for every tile; bits equal its bitmap bytes', attrs && bytes);
   ok('an assets file without tile sets (bounce) has nothing to round-trip', !exAssets.bounce.tilesets);
@@ -470,7 +470,7 @@ console.log('\nC. The real compiler: byte-identical cartridges from assets writt
         a.errors.length === 0 && b.errors.length === 0 && !!a.dck && Buffer.compare(Buffer.from(a.dck), Buffer.from(a2.dck)) === 0 && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0 && same(a.warnings.map((w) => w.message), b.warnings.map((w) => w.message)),
         a.errors.concat(b.errors).map((e) => e.message).join('; '));
     }
-    ok('all six example projects with tile sets were built', withSets === 6, `${withSets}`);
+    ok('all seven example projects with tile sets were built', withSets === 7, `${withSets}`);
     // the model reduces odd stored forms to what the compiler reads, so the cartridge does not change
     {
       const odd = JSON.parse(JSON.stringify(exAssets.platformer));

@@ -78,10 +78,19 @@ const MUTANTS = [
   ['skip: the join of a changed instance forgets to widen by 2 cells (rows)', [E('skip.asm', '.r0lo:\n    ld e,d\n    inc e\n    inc e\n    ld d,a', '.r0lo:\n    ld e,d\n    ld d,a')]],
   // ---- shared v1 code the v2 pictures depend on ----
   ['mark_dirty marks only file 1', [E('text.asm', '    inc h                       ; DIRTY1 = DIRTY0 + $100\n    pop af\n    or (hl)\n    ld (hl),a\n    ret', '    pop af\n    ret')]],
-  ['sound tick forgets to preserve DE', [E('sound.asm', '    push bc\n    push de\n    push hl\n    ld hl,(V_SFX_PTR)', '    push bc\n    push hl\n    ld hl,(V_SFX_PTR)'), E('sound.asm', '.out:\n    pop hl\n    pop de\n    pop bc', '.out:\n    pop hl\n    pop bc')]],
+  ['sound tick forgets to preserve DE', [E('sound.asm', '    push bc\n    push de\n    push hl\n    cp 1<<SB_SYNC', '    push bc\n    push hl\n    cp 1<<SB_SYNC'), E('sound.asm', '.out:\n    pop hl\n    pop de\n    pop bc', '.out:\n    pop hl\n    pop bc')]],
   ['RT_STICK without DI', [E('api.asm', '    di                          ; v1:', '    nop                         ; v1:')]],
 ];
 
+if (only === '--check') {                                                    // patterns only: each must be found exactly once
+  let bad = 0;
+  for (const [name, edits] of MUTANTS) for (const e of edits) {
+    const n = readFileSync(join(ARCADE, 'runtime/v2', e.file), 'utf8').split(e.from).length - 1;
+    if (n !== 1) { console.log(`  ?? ${name}: pattern found ${n} times in ${e.file}`); bad++; }
+  }
+  console.log(`${bad ? 'FAIL' : 'PASS'}: m4-mutations --check (${MUTANTS.length} mutants, ${bad} bad patterns)`);
+  process.exit(bad ? 1 : 0);
+}
 const tmp = mkdtempSync(join(tmpdir(), 'm4mut-'));
 let killed = 0, survived = [], broken = [];
 try {

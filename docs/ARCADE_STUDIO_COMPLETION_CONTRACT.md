@@ -87,6 +87,14 @@ goes (Node CPU profiles, quick mode):
 * Found on the way: `ARCADE_QUICK=1 node tests/arcade-orbit.mjs` crashes in section 8b (`rec` undefined at line 493: the rising-challenge check
   needs more ticks than quick mode gives). Fixed in stage 0.
 
+**Baseline 2 (2026-11-13, detached, `arcade/spike/verify/measure-baseline.sh` at `8967134`):** the suites outside `run-all`, one at a time,
+take 161 s together (`studio-smoke` 62 s, `browser-smoke` 48 s, `rom-checks` 23 s, `sound-editor-smoke` 10 s, the rest under 5 s each).
+`run-all --full --jobs 4`: **108 min wall, 367 min CPU**, 94 of 100 steps passed. The failures were the test tooling, not the product:
+`tile-model`, `map-model` and `arcade-project` still counted seven examples (Orbit Gates is the eighth); six mutants had patterns the
+MUSIC and wireframe changes had moved (m4 1, m9 4, m15c 2: they were reported as "bad pattern" / "not run", never run); and m14, m15
+and m17 hit run-all's one-hour step limit (239, 92 and 357 mutants run whole inside one step). All fixed on `arcade-verify` (counts and
+patterns; m4 got the `--check` mode the others have); the step limit is V3's job (each mutation shard is its own pool step).
+
 Added rules from these measurements:
 
 * **V8. No picture unless a check looks at it.** The harnesses create machines with video off; a check that reads `m.pixels` turns it on for

@@ -1,0 +1,163 @@
+started 2026-11-13T00:13:56-05:00
+PASS  tests/arcade-parse.mjs                      0.6 s  210/210 checks passed
+PASS  tests/arcade-compile.mjs                   28.5 s  PASS: arcade-compile (200 checks passed, 0 failed)
+PASS  tests/arcade-m3.mjs                        14.2 s  PASS: arcade-m3 (135 checks passed, 0 failed)
+PASS  tests/arcade-m4.mjs                        31.9 s  PASS: arcade-m4 (180 checks passed, 0 failed)
+PASS  tests/arcade-m5.mjs                        96.4 s  PASS: arcade-m5 (231 checks passed, 0 failed)
+PASS  tests/arcade-blockfall.mjs                 22.2 s  PASS: arcade-blockfall (45 checks passed, 0 failed)
+PASS  tests/arcade-starfall.mjs                  13.4 s  PASS: arcade-starfall (6 checks passed, 0 failed)
+PASS  tests/arcade-m6-compiler.mjs                3.4 s  PASS: arcade-m6-compiler (287 checks passed, 0 failed)
+PASS  tests/arcade-m6-platformer.mjs             19.2 s  PASS: arcade-m6-platformer (48 checks passed, 0 failed)
+PASS  tests/arcade-runner.mjs                    82.3 s  PASS: arcade-runner (107 checks passed, 0 failed, 0 skipped)
+PASS  tests/arcade-m6-differential.mjs           16.3 s  PASS: arcade-m6-differential (5 checks passed, 0 failed, 0 skipped)
+PASS  tests/arcade-m8-compiler.mjs                2.6 s  PASS: arcade-m8-compiler (282 checks passed, 0 failed)
+PASS  tests/arcade-m8-differential.mjs            8.0 s  PASS: arcade-m8-differential (3 checks passed, 0 failed, 0 skipped)
+PASS  tests/arcade-display.mjs                    0.1 s  All 73 checks passed
+PASS  tests/arcade-m9-compiler.mjs                4.5 s  205 passed, 0 failed
+PASS  tests/arcade-m9-differential.mjs          342.3 s  31 passed, 0 failed
+PASS  tests/arcade-m10-compiler.mjs               5.0 s  310 passed, 0 failed
+PASS  tests/arcade-m10-differential.mjs         378.4 s  84 passed, 0 failed
+PASS  tests/arcade-m11-compiler.mjs               2.7 s  OK: 143 checks passed
+PASS  tests/arcade-m11-differential.mjs         139.7 s  OK: 32 checks passed
+PASS  tests/arcade-m12-compiler.mjs               1.1 s  OK: 189 checks passed, 1 skipped
+PASS  tests/arcade-m12-differential.mjs         108.4 s  OK: 21 checks passed
+PASS  tests/arcade-m13-compiler.mjs               0.5 s  OK: 124 checks passed, 1 skipped
+PASS  tests/arcade-m13-differential.mjs          70.0 s  OK: 74 checks passed
+PASS  tests/arcade-m14-compiler.mjs               0.4 s  OK: 102 checks passed, 1 skipped
+PASS  tests/arcade-m14-differential.mjs          15.1 s  OK: 39 checks passed
+PASS  tests/arcade-m15-compiler.mjs               7.6 s  124 passed, 0 failed
+PASS  tests/arcade-m17-compiler.mjs               4.6 s  227 passed, 0 failed
+PASS  tests/arcade-m17-interp.mjs                 0.3 s  54 passed, 0 failed
+PASS  tests/arcade-orbit.mjs                    272.1 s  PASS: arcade-orbit (72 checks passed, 0 failed)
+PASS  tests/arcade-emitter-opt.mjs                5.5 s  90 passed, 0 failed
+PASS  tests/arcade-codegen-exhaustive.mjs       179.3 s  PASS: arcade-codegen-exhaustive (29 checks passed, 0 failed)
+PASS  tests/arcade-m15-differential.mjs          92.4 s  19 passed, 0 failed
+PASS  arcade/tests/m1.mjs                         1.4 s  PASS: M1 (24 checks passed, 0 failed)
+PASS  tests/arcade-m8-vaults.mjs                 52.4 s  PASS: arcade-m8-vaults (85 checks passed, 0 failed, 0 skipped)
+PASS  arcade/tests/m1-overrun.mjs                 8.6 s  PASS: M1 overrun (16 checks passed, 0 failed)
+PASS  arcade/tests/extra-regs.mjs                 0.9 s  PASS: extra-regs (3 checks passed, 0 failed)
+PASS  arcade/tests/m2-runtime.mjs                 9.5 s  PASS: M2 runtime (63 checks passed, 0 failed)
+PASS  arcade/tests/m2-runtime-math.mjs            2.7 s  PASS: M2 runtime math/API (35 checks passed, 0 failed)
+PASS  arcade/tests/m2-runtime-regs.mjs            9.0 s  PASS: M2 runtime regs (10 checks passed, 0 failed)
+PASS  arcade/tests/m3-runtime.mjs                11.2 s  PASS: M3 runtime (79 checks passed, 0 failed)
+PASS  arcade/tests/m3-runtime-text.mjs            3.1 s  PASS: M3 runtime text (23 checks passed, 0 failed)
+PASS  arcade/tests/m3-runtime-sound.mjs           3.4 s  PASS: M3 runtime sound (16 checks passed, 0 failed)
+PASS  arcade/tests/m3-runtime-regs.mjs           16.0 s  PASS: M3 runtime regs (16 checks passed, 0 failed)
+PASS  arcade/tests/m3-runtime-perf.mjs            3.6 s  PASS: M3 runtime perf (6 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime.mjs                14.7 s  PASS: M4a runtime (105 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime-api.mjs             5.7 s  PASS: M4a runtime API (32 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime-mem.mjs             3.4 s  PASS: M4a runtime memory map (16 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime-regs.mjs           19.5 s  PASS: M4a runtime regs (16 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime-skip.mjs           25.3 s  PASS: M4a skip (44 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime-perf.mjs            5.7 s  PASS: M4a runtime perf (3 checks passed, 0 failed)
+PASS  arcade/tests/m4-runtime-stick.mjs           1.0 s  PASS: M4a RT_STICK (4 checks passed, 0 failed)
+PASS  arcade/tests/m5-runtime.mjs                24.8 s  PASS: M5 runtime routines (29 checks passed, 0 failed)
+PASS  arcade/tests/m5-runtime-pic.mjs             8.0 s  PASS: M5 runtime frame loop (16 checks passed, 0 failed)
+PASS  arcade/tests/m5-runtime-mem.mjs             2.6 s  PASS: M5 runtime memory (9 checks passed, 0 failed)
+PASS  arcade/tests/m5-runtime-regs.mjs           10.7 s  PASS: M5 runtime register discipline (13 checks passed, 0 failed)
+PASS  arcade/tests/m5-runtime-perf.mjs            1.1 s  PASS: M5 runtime performance (6 checks passed, 0 failed)
+PASS  arcade/tests/m6-runtime.mjs                51.2 s  PASS: runtime v3 part 1 (61 checks passed, 0 failed)
+PASS  arcade/tests/m6-runtime-pic.mjs            20.1 s  PASS: runtime v3 part 1, pictures (36 checks passed, 0 failed)
+PASS  arcade/tests/m6-runtime-mem.mjs             5.6 s  PASS: runtime v3 part 1, memory map (18 checks passed, 0 failed)
+PASS  arcade/tests/m6-runtime-regs.mjs            9.6 s  PASS: runtime v3 part 1, register discipline (12 checks passed, 0 failed)
+PASS  arcade/tests/m6-runtime-perf.mjs           15.8 s  PASS: runtime v3 part 1 perf (9 checks passed, 0 failed)
+PASS  arcade/tests/m7-runtime.mjs                62.8 s  PASS: runtime v3 part 2, the window (75 checks passed, 0 failed)
+PASS  arcade/tests/m7-runtime-api.mjs            14.2 s  PASS: runtime v3 part 2, routines (21 checks passed, 0 failed)
+PASS  arcade/tests/m7-runtime-mem.mjs             5.5 s  PASS: runtime v3 part 2, memory (17 checks passed, 0 failed)
+PASS  arcade/tests/m7-runtime-regs.mjs           27.3 s  PASS: runtime v3 part 2, register discipline (15 checks passed, 0 failed)
+PASS  arcade/tests/m7-runtime-perf.mjs          178.1 s  PASS: runtime v3 part 2 perf (17 checks passed, 0 failed)
+PASS  arcade/tests/m8-runtime.mjs                34.5 s  PASS: runtime v4, pictures and boot (84 checks passed, 0 failed)
+PASS  arcade/tests/m8-runtime-api.mjs             2.6 s  PASS: runtime v4, routines (13 checks passed, 0 failed)
+PASS  arcade/tests/m8-runtime-mem.mjs             4.9 s  PASS: runtime v4, memory (34 checks passed, 0 failed)
+PASS  arcade/tests/m8-runtime-regs.mjs           12.1 s  PASS: runtime v4, register discipline (19 checks passed, 0 failed)
+PASS  arcade/tests/m8-runtime-perf.mjs            7.1 s  PASS: runtime v4, measured budgets (14 checks passed, 0 failed)
+PASS  arcade/tests/m8-runtime-v3compat.mjs       32.6 s  PASS: runtime v4 as v3 without a window (4 suites passed, 0 failed)
+PASS  arcade/tests/m10-runtime-sound.mjs         95.0 s  PASS: M10 runtime sound (67 checks passed, 0 failed)
+PASS  arcade/tests/m11-runtime-bank.mjs          48.2 s  PASS: M11 runtime banking (35 checks passed, 0 failed)
+PASS  arcade/tests/m12-runtime-table.mjs         15.2 s  PASS: M12 runtime tables (12 checks passed, 0 failed)
+PASS  arcade/tests/m14-runtime-mode.mjs          19.7 s  PASS: M14 runtime: scene display modes (57 checks passed, 0 failed)
+PASS  arcade/tests/m15-runtime-music.mjs        408.9 s  PASS: M15 runtime music (21 checks passed, 0 failed)
+PASS  arcade/tests/m17-runtime-wire.mjs          44.9 s  PASS: m17 runtime wireframe (W1) (103 checks passed, 0 failed)
+PASS  arcade/tests/m17-runtime-tick.mjs          40.2 s  PASS: m17 runtime wireframe tick (W2) (38 checks passed, 0 failed)
+PASS  arcade/tests/m3-mutations.mjs             331.7 s  PASS: mutation test (29 killed, 0 survived, 0 not run)
+FAIL  arcade/tests/m4-mutations.mjs             836.1 s  FAIL: mutation test (51 killed, 0 survived, 1 not run)
+  killed       blit: first group has one row too few (INC A lost)  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       blit: next cell row 7 instead of 8 (ADJUST_DE)  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       blit: ROW3 steps back only once  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       blit: mask applied with OR  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       blit: whole last group dropped (JP run -> RET)  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       blit: the 8-row middle group runs 7 rows  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       draw: x not rounded to the phase granularity  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       draw: an aligned sprite gets one byte too many (JR Z -> JR NZ)  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       draw: phase pointer ignores the shift  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       draw: the record forgets the height  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       draw: the hidden file offset is dropped from the screen address  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+  killed       erase: next cell row advances 32 - cols instead of 33 - cols  <- m4-runtime.mjs: FAIL  the picture on screen equals the model (cells, then masked instances in index order) in 100 % of the 200
+PASS  arcade/tests/m5-mutations.mjs             441.2 s  PASS: mutation test (55 killed, 0 survived, 3 equivalent mutants survived as expected, 0 not run)
+PASS  arcade/tests/m6-mutations.mjs             773.9 s  PASS: mutation test (49 killed, 0 survived, 0 equivalent mutants survived as expected, 0 not run)
+PASS  arcade/tests/m7-mutations.mjs            1232.7 s  PASS: mutation test (107 killed, 0 survived, 4 equivalent mutants survived as expected, 0 not run)
+PASS  arcade/tests/m8-mutations.mjs             964.1 s  PASS: mutation test (86 killed, 0 survived, 4 equivalent mutants survived as expected, 0 not run)
+FAIL  arcade/tests/m9-mutations.mjs             791.5 s  47 mutants run: 43 killed, 0 survived, 4 with a bad pattern
+  killed       frame dispatch: the first test is DEC A instead of OR A (scene 0 is entered at index 1)  <- arcade-m9-compiler.mjs: FAIL  frame$entry dispatch (contract listing for 3 scenes): LD A,(scn$cur); OR A; JP Z,s0; DEC A; JP Z,s1; JP 
+  killed       frame dispatch: the last scene is the fall-through of scene 0  <- arcade-m9-compiler.mjs: FAIL  frame$entry dispatch (contract listing for 3 scenes): LD A,(scn$cur); OR A; JP Z,s0; DEC A; JP Z,s1; JP 
+  killed       frame dispatch: the stack pointer is not saved at the frame entry (ENTER from FRAME returns to a stale SP)  <- arcade-m9-compiler.mjs: FAIL  frame$entry begins LD (scn$sp),SP (ED 73 nn nn) with nn a hidden slot  (3a 26 -> 0xb7e1)
+  killed       entry$init: the stack pointer is not saved (ENTER from the first INIT)  <- arcade-m9-compiler.mjs: FAIL  entry$init ends with LD (scn$sp),SP ; JP P$s0$INIT (the INIT's RET returns to the runtime), INIT with a 
+  killed       scn$enter: the stack is not cut back (the abandoned PROCs stay on it)  <- arcade-m9-compiler.mjs: FAIL  scn$enter begins LD SP,(scn$sp) (ED 7B nn nn, the same slot) ; PUSH AF ; CALL scn$reset ; POP AF ; LD (s
+  killed       scn$enter: the current scene is not stored  <- arcade-m9-compiler.mjs: FAIL  scn$enter begins LD SP,(scn$sp) (ED 7B nn nn, the same slot) ; PUSH AF ; CALL scn$reset ; POP AF ; LD (s
+  killed       scn$enter: the machine is not reset  <- arcade-m9-compiler.mjs: FAIL  scn$enter begins LD SP,(scn$sp) (ED 7B nn nn, the same slot) ; PUSH AF ; CALL scn$reset ; POP AF ; LD (s
+  killed       scn$enter: the target is looked up with DEC at the first test (scene 0 is skipped)  <- arcade-m9-differential.mjs: FAIL  reset: 40 ticks equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, tex
+  killed       ENTER: the scene index is one too high  <- arcade-m9-compiler.mjs: FAIL  each ENTER k is LD A,k ; JP scn$enter (3E k C3 nn nn, or 3E k 18 d on the default build): found for k = 
+  killed       ENTER: a CALL instead of a jump (the abandoned PROC could resume)  <- arcade-m9-compiler.mjs: FAIL  each ENTER k is LD A,k ; JP scn$enter (3E k C3 nn nn, or 3E k 18 d on the default build): found for k = 
+  killed       scene variables: the clear loses its last byte  <- arcade-m9-differential.mjs: FAIL  reset: 40 ticks equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, tex
+  killed       scene variables: not cleared at an entry  <- arcade-m9-differential.mjs: FAIL  vars: 40 ticks equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, text
+PASS  arcade/tests/m10c-mutations.mjs          1197.4 s  31 mutants run: 29 killed, 2 equivalent (expected to survive), 0 survived
+PASS  arcade/tests/m11-mutations.mjs            967.9 s  PASS: mutation test (78 killed of 78 run, 0 survived, 0 not run)
+PASS  arcade/tests/m12-mutations.mjs            229.3 s  PASS: mutation test (96 killed of 96 run, 0 survived, 0 not run)
+FAIL  arcade/tests/m14-mutations.mjs           3600.0 s    killed       v4 OFF: the second piece is not set  <- m14-runtime-mode.mjs: FAIL  v4 view game: on -> off -> on -> off + RT_PLANLOAD -> on -> on again -> off -> off again -> on: 67 ticks
+  killed       v3 RT_WINMODE: A = 0 means on (the test inverted)  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+  killed       v3 RT_WINMODE: every call goes to ON (the A test missing)  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+  killed       v3 ON: the no-op guard is gone (on already: the switch is made again)  <- m14-runtime-mode.mjs: FAIL  v3 a game WITHOUT a window (DIV_EXT only): ON / OFF are no-ops, the picture stays the screen model: 4 ti
+  killed       v3 ON: the guard tests V_WIN (a switched-off window never comes back)  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+  killed       v3 ON: V_WINOFF is not cleared  <- m14-runtime-mode.mjs: FAIL  v3 ON after ticks without the window (10 sprite records in the two files): V_WIN 1, V_WINOFF 0, W_AC all
+  killed       v3 ON: the ring records are not emptied  <- m14-runtime-mode.mjs: FAIL  v3 ON after ticks without the window (10 sprite records in the two files): V_WIN 1, V_WINOFF 0, W_AC all
+  killed       v3 ON: the attribute caches are not invalidated  <- m14-runtime-mode.mjs: FAIL  v3 ON after ticks without the window (10 sprite records in the two files): V_WIN 1, V_WINOFF 0, W_AC all
+  killed       v3 ON: the 2D sprite records are not turned into dirty cells  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+  killed       v3 ON: V_WIN is not set  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+  killed       v3 OFF: the guard tests V_WINOFF (a switched-off window is switched off again)  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+  killed       v3 OFF: the no-op guard is gone (off already: the switch is made again)  <- m14-runtime-mode.mjs: FAIL  v3 a game WITHOUT a window (DIV_EXT only): ON / OFF are no-ops, the picture stays the screen model: 13 t
+  killed       v3 OFF: V_WIN is not cleared  <- m14-runtime-mode.mjs: FAIL  v3 window game: on -> off -> on -> off + RT_WORLDLOAD -> on -> on again -> off -> off again -> on: 75 ti
+FAIL  arcade/tests/m15-mutations.mjs           3600.0 s    killed       SND_SYNC: song: an effect's register is given back too  <- m15-runtime-music.mjs: FAIL  v2: 9/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MUS
+  killed       RT_PLAY: SB_FX not cleared before the type and pointer change (no song)  <- m15-runtime-music.mjs: FAIL  v2: 20/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       RT_PLAY: with a song the effect is changed under the interrupt instead of posted  <- m15-runtime-music.mjs: FAIL  v2: 9/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MUS
+  killed       RT_PLAY: the posted effect is never flagged (SB_NEW not set)  <- m15-runtime-music.mjs: FAIL  v2: 9/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MUS
+  killed       tick: the shortcut skips a pending request (SYNC or a posted effect never taken)  <- m15-runtime-music.mjs: FAIL  v2: 8/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MUS
+  killed       tick: a posted effect is never installed  <- m15-runtime-music.mjs: FAIL  v2: 8/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MUS
+  killed       tick: a posted RT_SILENCE (type 0) is installed as an effect  <- m15-runtime-music.mjs: FAIL  v2: 17/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       tick: the posted effect does not get its owners  <- m15-runtime-music.mjs: FAIL  v2: 15/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       tick: no chip synchronisation after installing a posted effect  <- m15-runtime-music.mjs: FAIL  v2: 17/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       tick: the old effect keeps playing after a posted RT_SILENCE (SB_FX not cleared)  <- m15-runtime-music.mjs: FAIL  v2: 18/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       RT_PLAY: byte 3 = 4 not recognised (channel C plays as records)  <- m15-runtime-music.mjs: FAIL  v2: 11/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       RT_PLAY: the noise flag not added (type 5 never)  <- m15-runtime-music.mjs: FAIL  v2: 19/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MU
+  killed       RT_PLAY: a channel-C stream starts at its header  <- m15-runtime-music.mjs: FAIL  v2: 7/21 hand scenarios equal the model on every call and refresh (writes in order, chip, AY_SHADOW, MUS
+FAIL  arcade/tests/m17-mutations.mjs           3600.0 s  (no output)
+
+FAIL  arcade/tests/m15c-mutations.mjs           414.1 s  52 mutants run: 44 killed, 6 equivalent (expected to survive), 0 survived, 2 with a bad pattern
+  killed       chip: a noisy channel-C effect does not own R6  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY hiss (noise: R6 borrowed too): 25 snapshots equal to expectChip  (tick 15: [44,1,88,2,18
+  killed       chip: the channel-C bits of R7 are $04 only  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY blip at tick 3 (channel C borrowed for 6 refreshes, the song plays on A and B): 21 snaps
+  killed       chip: SYNC without a song zeroes the effect's volume too  <- arcade-m15-compiler.mjs: FAIL  120 random scripts: the chip after every call and refresh equals expectChip  (seed 2 refresh 26: 0,0,0,0
+  killed       chip: calls never post (always sync at once)  <- arcade-m15-compiler.mjs: FAIL  120 random scripts: the chip after every call and refresh equals expectChip  (seed 100 refresh 267: 232,
+  killed       chip: an effect's end keeps its ownership  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY blip at tick 3 (channel C borrowed for 6 refreshes, the song plays on A and B): 21 snaps
+  killed       chip: a channel-C R7 replaces the song's bits  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY blip at tick 3 (channel C borrowed for 6 refreshes, the song plays on A and B): 21 snaps
+  killed       chip: a wait holds one refresh more  <- arcade-m15-compiler.mjs: FAIL  tune alone, PLAYed in INIT: 61 snapshots equal to expectChip  (tick 5: [44,1,88,2,150,0,0,56,12,8,7] wan
+  killed       chip: the loop goes to order position 0  <- arcade-m15-compiler.mjs: FAIL  tune alone, PLAYed in INIT: 61 snapshots equal to expectChip  (tick 25: [44,1,88,2,150,0,0,56,12,8,7] wa
+  killed       chip: a song that ends leaves its volumes up  <- arcade-m15-compiler.mjs: FAIL  jingle (no loop): 7 rows, then it ends: 13 snapshots equal to expectChip  (tick 8: [194,1,0,0,0,0,0,62,1
+  killed       chip: a three-channel effect does not pause the song  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY chord at tick 5: the song pauses for 8 refreshes and resumes where it was: 31 snapshots 
+  killed       chip: the song writes the shared R7 whole  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY blip at tick 3 (channel C borrowed for 6 refreshes, the song plays on A and B): 21 snaps
+  killed       chip: the song writes the effect's registers  <- arcade-m15-compiler.mjs: FAIL  tune, then PLAY blip at tick 3 (channel C borrowed for 6 refreshes, the song plays on A and B): 21 snaps
+PASS  arcade/tests/m16c-mutations.mjs          2128.0 s  67 mutants run: 66 killed, 1 equivalent (expected to survive), 0 survived
+(4 jobs: 6487 s for the suites)
+
+94/100 steps passed; FAILED: arcade/tests/m4-mutations.mjs, arcade/tests/m9-mutations.mjs, arcade/tests/m14-mutations.mjs, arcade/tests/m15-mutations.mjs, arcade/tests/m17-mutations.mjs, arcade/tests/m15c-mutations.mjs
+Command exited with non-zero status 1
+wall 6488.22 s, user 22011.84 s, sys 261.33 s, max RSS 688976 KB
+finished 2026-11-13T02:02:05-05:00
