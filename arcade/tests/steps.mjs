@@ -24,6 +24,10 @@ export const RUNTIME_BUILDS = [
 ];
 
 // Steps that write shared files (arcade/build/*.dck; blockfall also builds v2 if it is missing): never beside another step.
+// Suites that verify.mjs runs as N steps `<file> --shard=i/N` (V3: they set the floor of a parallel run; run-all runs them whole).
+// Shard i runs every N-th random program; shard 0 also runs the other sections.  (2026-11-14 under 8 jobs: m10 544 s, m9 486 s whole.)
+export const SHARDED_SUITES = new Map([['tests/arcade-m10-differential.mjs', 4], ['tests/arcade-m9-differential.mjs', 4]]);
+
 export const EXCLUSIVE = new Set(['tests/arcade-blockfall.mjs']);
 
 // The slowest steps (sequential run, 2026-11-11: 270, 198, 139, 114, 53, 44, 42, 37 s) start first, so none of them is the tail.

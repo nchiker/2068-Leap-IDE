@@ -376,13 +376,16 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
     cellsRaw(examples.platformer.assets.maps.pf_world).every((v) => v === 255 || (v >= 0 && v <= 31)) && !out.vaults.some((f) => f.asset === 'vl_maze') && !out.platformer.some((f) => f.id.includes('shape')));
   check('the platformer has tile 0 blank in the JSON (so no tile0-not-blank)', raw(pfTs[0]).set === 0);
   // speed
-  let best = 1e9;
-  for (let k = 0; k < 6; k++) {
+  // the best of up to 40 tries spread over about 2 s, stopping at the first under the bound: a property of the code, so the measurement must not
+  // depend on a busy host (best of 6 back to back gave 23.7 ms beside 8 parallel verify jobs, 11 ms alone)
+  let best = 1e9, tries = 0;
+  for (; tries < 40 && best >= 20; tries++) {
+    if (tries) await new Promise((r) => setTimeout(r, 50));
     const t = performance.now();
     for (const id of ['shooter', 'platformer', 'vaults']) checkAssets(examples[id].project, scanRoles(examples[id].text));
     best = Math.min(best, performance.now() - t);
   }
-  check('all three example projects (scanRoles + checkAssets) take under 20 ms together', best < 20, `${best.toFixed(2)} ms`);
+  check('all three example projects (scanRoles + checkAssets) take under 20 ms together', best < 20, `${best.toFixed(2)} ms, best of ${tries}`);
 }
 
 // ═══ 5  agreement with the compiler ═════════════════════════════════════════════════════════════════════════════

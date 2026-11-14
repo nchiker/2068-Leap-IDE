@@ -1,0 +1,141 @@
+verify --all (mutation shards of 0 suites whose code changed; --full for all): 124 steps (0 of 5 runtime builds to run), 8 jobs
+      skipped, inputs unchanged: build v0, build v1, build v2, build v3, build v4
+PASS  tests/arcade-blockfall.mjs                                        21.0 s  45 checks
+PASS  tests/arcade-m5.mjs                                              126.1 s  231 checks
+PASS  tests/studio-smoke.mjs                                           154.9 s  109 PASS lines
+PASS  tests/arcade-m11-differential.mjs                                180.6 s  32 checks
+PASS  tests/arcade-runner.mjs                                           90.5 s  107 checks
+PASS  tests/arcade-orbit.mjs                                           235.0 s  72 checks
+PASS  arcade/tests/m7-runtime.mjs                                       95.6 s  75 checks
+PASS  tests/arcade-m15-differential.mjs                                 86.4 s  19 checks
+PASS  arcade/tests/m17-runtime-wire.mjs                                 57.0 s  103 checks
+PASS  tests/arcade-codegen-exhaustive.mjs                              282.9 s  29 checks
+PASS  tests/arcade-m12-differential.mjs                                 79.0 s  21 checks
+PASS  arcade/tests/m15-runtime-music.mjs                                71.2 s  21 checks
+PASS  arcade/tests/m10-runtime-sound.mjs                                68.7 s  67 checks
+PASS  tests/rom-checks.mjs                                              70.0 s  156 PASS lines
+PASS  arcade/tests/m7-runtime-perf.mjs                                 371.4 s  17 checks
+PASS  tests/arcade-m8-vaults-perf.mjs                                   57.0 s  
+PASS  tests/arcade-codegen-perf.mjs --compare arcade/spike/codegen/perf-reference.json   144.9 s  
+PASS  tests/arcade-m8-vaults.mjs                                        53.4 s  85 checks
+PASS  arcade/tests/m17-runtime-tick.mjs                                 46.3 s  38 checks
+PASS  tests/tsrun-ay-silent.mjs                                         54.9 s  114916 checks
+PASS  tests/browser-smoke.mjs                                          113.3 s  64 PASS lines
+PASS  tests/arcade-m6-platformer-perf.mjs                               34.1 s  
+PASS  tests/arcade-m13-differential.mjs                                 41.7 s  74 checks
+PASS  arcade/tests/m8-runtime-v3compat.mjs                              41.6 s  4 checks
+PASS  arcade/tests/m6-runtime.mjs                                       44.2 s  61 checks
+PASS  tests/arcade-m4.mjs                                               32.7 s  180 checks
+PASS  arcade/tests/m8-runtime.mjs                                       35.0 s  84 checks
+PASS  arcade/tests/boot-snapshot.mjs                                    38.3 s  121 checks
+PASS  arcade/tests/m4-runtime-skip.mjs                                  30.0 s  44 checks
+PASS  arcade/tests/m5-runtime.mjs                                       31.1 s  29 checks
+PASS  arcade/tests/m7-runtime-regs.mjs                                  31.9 s  15 checks
+PASS  tests/arcade-m9-differential.mjs                                 486.2 s  31 checks
+PASS  arcade/tests/m14-runtime-mode.mjs                                 23.1 s  57 checks
+PASS  tests/arcade-compile.mjs                                          19.6 s  200 checks
+PASS  arcade/tests/m4-runtime-regs.mjs                                  26.2 s  16 checks
+PASS  tests/arcade-m6-platformer.mjs                                    28.9 s  48 checks
+PASS  arcade/tests/m6-runtime-pic.mjs                                   24.4 s  36 checks
+PASS  arcade/tests/m3-runtime-regs.mjs                                  23.1 s  16 checks
+PASS  arcade/tests/m3-runtime.mjs                                       15.3 s  79 checks
+PASS  arcade/tests/m8-runtime-regs.mjs                                  16.9 s  19 checks
+PASS  tests/arcade-starfall.mjs                                         19.9 s  6 checks
+PASS  tests/arcade-m6-differential.mjs                                  20.0 s  5 checks
+PASS  arcade/tests/m7-runtime-api.mjs                                   20.4 s  21 checks
+PASS  arcade/tests/m11-runtime-bank.mjs                                 25.8 s  35 checks
+PASS  tests/arcade-m3.mjs                                               15.0 s  135 checks
+PASS  tests/arcade-runner-perf.mjs --check                              13.2 s  
+PASS  arcade/tests/m2-runtime-regs.mjs                                  15.4 s  10 checks
+PASS  tests/music-stream.mjs                                            11.2 s  19 checks
+PASS  arcade/tests/m5-runtime-regs.mjs                                  16.7 s  13 checks
+PASS  arcade/tests/m6-runtime-perf.mjs                                  16.4 s  9 checks
+PASS  arcade/tests/m4-runtime.mjs                                       18.2 s  105 checks
+PASS  tests/arcade-m14-differential.mjs                                 15.9 s  39 checks
+PASS  arcade/tests/m5-runtime-pic.mjs                                   11.1 s  16 checks
+PASS  tests/arcade-m15-compiler.mjs                                     16.0 s  124 checks
+PASS  arcade/tests/m1-overrun.mjs                                       14.8 s  16 checks
+PASS  arcade/tests/m6-runtime-regs.mjs                                  14.8 s  12 checks
+PASS  tests/arcade-m8-differential.mjs                                  13.6 s  3 checks
+PASS  arcade/tests/m2-runtime.mjs                                       13.1 s  63 checks
+PASS  tests/arcade-m10-compiler.mjs                                     12.3 s  310 checks
+PASS  tests/arcade-m10-differential.mjs                                543.8 s  84 checks
+PASS  tests/tile-model.mjs                                               7.8 s  137 checks
+PASS  tests/arcade-emitter-opt.mjs                                       8.7 s  90 checks
+PASS  tests/arcade-m9-compiler.mjs                                      10.5 s  205 checks
+PASS  tests/arcade-m17-compiler.mjs                                     11.1 s  227 checks
+PASS  arcade/tests/m7-runtime-mem.mjs                                    8.5 s  17 checks
+PASS  tests/music-model.mjs                                              4.7 s  123 checks
+PASS  arcade/tests/m12-runtime-table.mjs                                13.8 s  12 checks
+PASS  arcade/tests/m6-runtime-mem.mjs                                    8.6 s  18 checks
+PASS  tests/sprite-model.mjs                                             4.9 s  97 checks
+PASS  arcade/tests/m4-runtime-api.mjs                                    8.5 s  32 checks
+PASS  tests/sfx-stream.mjs                                               5.1 s  19 checks
+PASS  tests/map-model.mjs                                                3.7 s  143 checks
+PASS  tests/arcade-m11-compiler.mjs                                      7.6 s  143 checks
+PASS  tests/arcade-m8-compiler.mjs                                       6.0 s  282 checks
+PASS  tests/sound-model.mjs                                              3.0 s  158 checks
+PASS  tests/arcade-m6-compiler.mjs                                       7.6 s  287 checks
+PASS  arcade/tests/m3-runtime-text.mjs                                   4.2 s  23 checks
+PASS  tests/sound-editor-smoke.mjs                                      24.5 s  176 checks
+PASS  arcade/tests/m8-runtime-perf.mjs                                   7.6 s  14 checks
+PASS  arcade/tests/m5-runtime-mem.mjs                                    4.4 s  9 checks
+PASS  arcade/tests/m4-runtime-perf.mjs                                   6.3 s  3 checks
+PASS  arcade/tests/m8-runtime-mem.mjs                                    5.0 s  34 checks
+PASS  arcade/tests/m4-runtime-mem.mjs                                    5.3 s  16 checks
+PASS  tests/arcade-assetcheck.mjs                                       11.4 s  148 PASS lines
+PASS  arcade/tests/m3-runtime-sound.mjs                                  4.4 s  16 checks
+PASS  arcade/tests/m3-runtime-perf.mjs                                   3.3 s  6 checks
+PASS  tests/arcade-project.mjs                                           2.9 s  106 PASS lines
+PASS  arcade/tests/m8-runtime-api.mjs                                    3.8 s  13 checks
+PASS  arcade/tests/m2-runtime-math.mjs                                   4.5 s  35 checks
+PASS  arcade/tools/publish-runtime.mjs --check                           2.4 s  
+PASS  arcade/tests/m5-runtime-perf.mjs                                   1.7 s  6 checks
+PASS  arcade/tests/extra-regs.mjs                                        1.5 s  3 checks
+PASS  tests/arcade-m12-compiler.mjs                                      3.3 s  189 checks
+PASS  arcade/tests/m1.mjs                                                3.0 s  24 checks
+PASS  arcade/tests/m10c-mutations.mjs --check                            0.4 s  31 mutants
+PASS  tests/arcade-m14-compiler.mjs                                      0.7 s  102 checks
+PASS  tools/stamp-modules.py --check                                     0.5 s  
+PASS  arcade/tests/m17-mutations.mjs --check                             0.3 s  357 mutants
+PASS  arcade/tests/m4-runtime-stick.mjs                                  1.9 s  4 checks
+PASS  arcade/tests/m7-mutations.mjs --check                              0.2 s  111 mutants
+PASS  arcade/tests/m14-mutations.mjs --check                             0.1 s  239 mutants
+PASS  arcade/tests/m11-mutations.mjs --check                             0.2 s  78 mutants
+PASS  tests/arcade-m13-compiler.mjs                                      1.2 s  124 checks
+PASS  arcade/tests/m15c-mutations.mjs --check                            0.2 s  52 mutants
+PASS  arcade/tests/m9-mutations.mjs --check                              0.4 s  47 mutants
+PASS  arcade/tests/m5-mutations.mjs --check                              0.1 s  58 mutants
+PASS  arcade/tests/m16c-mutations.mjs --check                            0.2 s  67 mutants
+PASS  arcade/tests/m4-mutations.mjs --check                              0.2 s  52 mutants
+PASS  arcade/tests/m3-mutations.mjs --check                              0.3 s  29 mutants
+PASS  tests/arcade-m17-interp.mjs                                        0.6 s  54 checks
+PASS  arcade/tests/m6-mutations.mjs --check                              0.1 s  49 mutants
+PASS  arcade/tests/m8-mutations.mjs --check                              0.2 s  90 mutants
+PASS  tests/arcade-display.mjs                                           0.4 s  73 checks
+PASS  tests/arcade-parse.mjs                                             2.5 s  210 checks
+PASS  arcade/tests/m15-mutations.mjs --check                             0.1 s  92 mutants
+PASS  arcade/tests/m12-mutations.mjs --check                             0.1 s  96 mutants
+PASS  tests/tile-editor-smoke.mjs                                       11.4 s  73 PASS lines
+PASS  tests/map-editor-smoke.mjs                                         5.3 s  83 checks
+PASS  tests/sprite-editor-smoke.mjs                                      3.8 s  51 PASS lines
+
+119/119 steps passed (5 builds skipped: inputs unchanged); 602 s wall, 4583 s of step time, 8 jobs
+checks passed: 121931 in 98 suites (some counted as PASS lines); suites that state no count: tests/arcade-m8-vaults-perf.mjs, tests/arcade-codegen-perf.mjs --compare arcade/spike/codegen/perf-reference.json, tests/arcade-m6-platformer-perf.mjs, tests/arcade-runner-perf.mjs --check, arcade/tools/publish-runtime.mjs --check, tools/stamp-modules.py --check
+  ok   m10c-mutations.mjs     0 killed + 0 equivalent = 0 of 31 mutants (0 of 5 shards run)
+  ok   m17-mutations.mjs      0 killed + 0 equivalent = 0 of 357 mutants (0 of 33 shards run)
+  ok   m7-mutations.mjs       0 killed + 0 equivalent = 0 of 111 mutants (0 of 5 shards run)
+  ok   m14-mutations.mjs      0 killed + 0 equivalent = 0 of 239 mutants (0 of 12 shards run)
+  ok   m11-mutations.mjs      0 killed + 0 equivalent = 0 of 78 mutants (0 of 4 shards run)
+  ok   m15c-mutations.mjs     0 killed + 0 equivalent = 0 of 52 mutants (0 of 2 shards run)
+  ok   m9-mutations.mjs       0 killed + 0 equivalent = 0 of 47 mutants (0 of 3 shards run)
+  ok   m5-mutations.mjs       0 killed + 0 equivalent = 0 of 58 mutants (0 of 2 shards run)
+  ok   m16c-mutations.mjs     0 killed + 0 equivalent = 0 of 67 mutants (0 of 8 shards run)
+  ok   m4-mutations.mjs       0 killed + 0 equivalent = 0 of 52 mutants (0 of 4 shards run)
+  ok   m3-mutations.mjs       0 killed + 0 equivalent = 0 of 29 mutants (0 of 2 shards run)
+  ok   m6-mutations.mjs       0 killed + 0 equivalent = 0 of 49 mutants (0 of 3 shards run)
+  ok   m8-mutations.mjs       0 killed + 0 equivalent = 0 of 90 mutants (0 of 4 shards run)
+  ok   m15-mutations.mjs      0 killed + 0 equivalent = 0 of 92 mutants (0 of 15 shards run)
+  ok   m12-mutations.mjs      0 killed + 0 equivalent = 0 of 96 mutants (0 of 1 shards run)
+mutants: 0 killed of 0 accounted for, in 15 suites
+wall 602.09 s, user 3051.22 s

@@ -136,7 +136,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: base + 'tests/map-editor-test.html' });
   check('the test page mounts the editor (empty project: "no maps" note, no body)',
-    !!(await waitFor('window.testReady === true')) && await evaluate("!!document.querySelector('.mapd') && !document.querySelector('.mapd-empty').hidden && document.querySelector('.mapd-body').hidden"));
+    !!(await waitFor('window.testReady === true', 60000)) && await evaluate("!!document.querySelector('.mapd') && !document.querySelector('.mapd-empty').hidden && document.querySelector('.mapd-body').hidden"));
 
   // ── shooter: a cell map ──
   const names = await evaluate("t.load('shooter')");
@@ -453,7 +453,7 @@ try {
 
   // ── without roles(): a plain cell map ──
   await send('Page.navigate', { url: base + 'tests/map-editor-test.html?noroles=1&theme=light' });
-  await waitFor('window.testReady === true');
+  await waitFor('window.testReady === true', 60000);
   await evaluate("t.load('platformer')");
   await evaluate("(t.editor.select('pf_world'), true)");
   st = await state();

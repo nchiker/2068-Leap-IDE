@@ -31,6 +31,13 @@ import { genV3, genV4 } from './arcade-m9-common.mjs';
 import { ASSETS, HAND10, USING_PATTERNS, modelUsing, genProgram10, genV3x, genV4x, sweepProgram, sweepBases, foldProgram, rowText, rng, ri } from './arcade-m10-common.mjs';
 
 const QUICK = !!process.env.ARCADE_QUICK;
+// --shard=i/n (tools/verify.mjs): shard i runs every n-th random program of section 2 (the long part); shard 0 also runs every other section.
+// Run whole (no --shard) it is unchanged.  Every program and tick is compared across the shards, as in one run.
+const SHARD = ((process.argv.find((a) => a.startsWith('--shard=')) ?? '').slice(8).split('/').map(Number));
+const SH = SHARD.length === 2 && SHARD[1] > 0 && SHARD[0] >= 0 && SHARD[0] < SHARD[1] ? { i: SHARD[0], n: SHARD[1] } : null;
+const mine = (k) => !SH || k % SH.n === SH.i;
+const rest = !SH || SH.i === 0;
+if (SH) console.log(`shard ${SH.i}/${SH.n}: random programs ${SH.i}, ${SH.i + SH.n}, ...${rest ? ' and the other sections' : ''}`);
 let passed = 0, failed = 0, skipped = 0;
 const check_ = (name, ok, detail = '') => { console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  (' + detail + ')' : ''}`); ok ? passed++ : failed++; return ok; };
 const skip_ = (name, why) => { console.log(`  SKIP  ${name}  (${why})`); skipped++; };
@@ -122,6 +129,7 @@ if (!R2.ok) {
   console.log('1-3. Sections on the v2 runtime');
   skip_('every v2 section', R2.why || 'arcade/build/v2/runtime.json is not a usable v2 runtime');
 } else {
+  if (rest) {
   console.log('1. Hand-written programs, one per rule (the interpreter AND values computed by hand, read off the machine)');
   const H = {};
   for (const [name, h] of Object.entries(HAND10)) {
@@ -158,6 +166,7 @@ if (!R2.ok) {
     eq('timer: set to 4 at tick 6 it reads 3 2 1 0 at ticks 7 8 9 10 (0 exactly at the 4th later FRAME) and stays 0', g.ticks.slice(5, 11).map((t) => t.vars.CD), [4, 3, 2, 1, 0, 0]);
   }
 
+  }
   // =================================================================================================================
   // 2. Random programs
   // =================================================================================================================
@@ -167,7 +176,10 @@ if (!R2.ok) {
     const N = seedRange ? Number(seedRange[2]) - Number(seedRange[1]) + 1 : (QUICK ? 30 : 200), first = seedRange ? Number(seedRange[1]) : 1, T = QUICK ? 40 : 60;
     let bad = 0, switches = 0, multi = 0, timerHits = 0, keyEdges = 0, usingProg = 0, playIdx = 0;
     const firstBad = [], t0 = Date.now(), kinds = {};
+    let NR = 0;
     for (let s = first; s < first + N; s++) {
+      if (!mine(s - first)) continue;
+      NR++;
       const g = genProgram10(s);
       const r = compareV2(g.src, { ticks: T, keys: g.keys, stick: g.stick });
       if (r.scenes) { let prev = 0; for (const x of r.scenes) { if (x !== prev) switches++; prev = x; } }
@@ -184,10 +196,10 @@ if (!R2.ok) {
       }
       if (!seedRange && (s - first + 1) % 50 === 0) info(`${s - first + 1} programs done, ${bad} failed, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     }
-    info(`${N} programs x ${T} ticks; ${switches} scene switches seen on the machine; ${multi} with 2 or more scenes; ${usingProg} with USING, ${playIdx} with PLAY by index, ${keyEdges} with KEYPRESS / JOYPRESS; a timer counted down to 0 in ${timerHits} programs`);
-    check_(`${N} random programs x ${T} ticks: every tick equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, text attribute, V_BORDER, SPR_TAB, sound)`, bad === 0, `${bad} failed ${JSON.stringify(kinds)}${firstBad[0] ? '; first: seed ' + firstBad[0].seed + ': ' + firstBad[0].r.detail : ''}`);
-    check_('the random programs really switch scenes (a switch in 1 of 3 programs on average)', switches >= N / 3, `${switches} switches in ${N} programs`);
-    check_('... and their timers really count down to 0 (in at least a third of the programs)', timerHits >= N / 3, `${timerHits} of ${N}`);
+    info(`${NR} programs x ${T} ticks; ${switches} scene switches seen on the machine; ${multi} with 2 or more scenes; ${usingProg} with USING, ${playIdx} with PLAY by index, ${keyEdges} with KEYPRESS / JOYPRESS; a timer counted down to 0 in ${timerHits} programs`);
+    check_(`${NR} random programs x ${T} ticks: every tick equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, text attribute, V_BORDER, SPR_TAB, sound)`, bad === 0, `${bad} failed ${JSON.stringify(kinds)}${firstBad[0] ? '; first: seed ' + firstBad[0].seed + ': ' + firstBad[0].r.detail : ''}`);
+    check_('the random programs really switch scenes (a switch in 1 of 3 programs on average)', switches >= NR / 3, `${switches} switches in ${NR} programs`);
+    check_('... and their timers really count down to 0 (in at least a third of the programs)', timerHits >= NR / 3, `${timerHits} of ${NR}`);
     for (const f of firstBad.slice(0, 3)) {
       console.log(`\n  ---- failing program, seed ${f.seed} (${f.r.kind}): ${f.r.detail}`);
       console.log(`  reproduce: ARCADE_M10_SEEDS=${f.seed}-${f.seed} node tests/arcade-m10-differential.mjs`);
@@ -200,6 +212,7 @@ if (!R2.ok) {
   // =================================================================================================================
   // 3. USING on the machine
   // =================================================================================================================
+  if (rest) {
   console.log('\n3. PRINT ... USING on the machine: 64 run-time values a tick, 8 patterns, against the interpreter and the independent model');
   {
     const field = (cells, sp, i) => { const { row, col } = sp.cellsAt(i); let s = ''; for (let c = 0; c < sp.w; c++) s += String.fromCharCode(cells[row * 32 + col + c]); return s; };
@@ -277,6 +290,7 @@ if (!R2.ok) {
         eq('... which is "8108 ******"', row2, '8108 ******');
       }
     }
+  }
   }
 }
 
@@ -390,6 +404,7 @@ for (const [label, dir, gen, ray, needs, version, num] of [
   ['v3', process.env.ARCADE_M10_V3 ?? 'arcade/build/v3', genV3x, false, ['RT_CAMERA', 'RT_WORLDTILE', 'RT_TILEFLAGS', 'RT_SETWORLD', 'RT_SHOWF'], 3, '4a'],
   ['v4', process.env.ARCADE_M10_V4 ?? 'arcade/build/v4', genV4x, true, ['RT_VIEW', 'RT_COSA', 'RT_SINA', 'RT_FXMUL', 'RT_WALL', 'RT_SETWALL', 'RT_SHOWF'], 4, '4b'],
 ]) {
+  if (!rest) break;
   console.log(`\n${num}. ${label}: ${ray ? 'VIEW3D' : 'a WINDOW'} games with TIMER, KEYPRESS, JOYPRESS and USING`);
   const R = loadRuntime(dir);
   const missing = R ? needs.filter((n) => R.rt.symbols[n] === undefined && R.rt.constants?.[n] === undefined) : needs;

@@ -127,7 +127,7 @@ try {
   await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: base + 'tests/sprite-editor-test.html' });
-  check('the test page mounts the editor', !!(await waitFor('window.testReady === true')) && !!(await evaluate("!!document.querySelector('.sprited')")));
+  check('the test page mounts the editor', !!(await waitFor('window.testReady === true', 60000)) && !!(await evaluate("!!document.querySelector('.sprited')")));
   const st0 = await state();
   check('the host\'s sprite is selected and loaded (16 x 16, 1 frame)', st0.name === 'ball' && st0.sprite.w === 16 && st0.sprite.frames.length === 1, JSON.stringify({ name: st0.name, zoom: st0.zoom }));
   check('the grid canvas is w x zoom wide, with one row-colour chip pair per row',

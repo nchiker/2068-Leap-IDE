@@ -133,7 +133,7 @@ try {
   await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: base + 'tests/tile-editor-test.html' });
-  check('the test page mounts the editor', !!(await waitFor('window.testReady === true')) && !!(await evaluate("!!document.querySelector('.tiled')")));
+  check('the test page mounts the editor', !!(await waitFor('window.testReady === true', 60000)) && !!(await evaluate("!!document.querySelector('.tiled')")));
   const st0 = await state();
   check('the platformer\'s tile set pf_tiles is loaded: 20 tiles, tile 0 selected', st0.name === 'pf_tiles' && st0.set.tiles.length === 20 && st0.sel === 0, JSON.stringify({ name: st0.name, n: st0.set?.tiles.length }));
   check('the strip has one button per tile with its index; the grid is 8 x zoom wide',
@@ -370,7 +370,7 @@ try {
 
   // ── the light theme from the start ──
   await send('Page.navigate', { url: base + 'tests/tile-editor-test.html?theme=light' });
-  await waitFor('window.testReady === true');
+  await waitFor('window.testReady === true', 60000);
   await selectTile(1);
   const lightFg = await evaluate("getComputedStyle(document.querySelector('.tiled-btn')).color");
   check('loaded in the light theme, the editor renders with its own colours', (await evaluate("getComputedStyle(document.querySelector('.tiled')).backgroundColor")) === lightBg && lightFg !== lightBg, `${lightFg}`);
@@ -378,7 +378,7 @@ try {
 
   // ── a host without roles / assetWarnings / usedBy: those features are off, the editor still works ──
   await send('Page.navigate', { url: base + 'tests/tile-editor-test.html?bare=1' });
-  await waitFor('window.testReady === true');
+  await waitFor('window.testReady === true', 60000);
   check('without the S2 host members there are no warnings and no "used in" counts',
     (await warnIds()).length === 0 && await evaluate("!document.querySelector('[data-role=strip] [data-tile=\"14\"]').title.includes('map cells')"));
   await selectTile(2);

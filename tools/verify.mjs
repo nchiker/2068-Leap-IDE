@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // verify.mjs -- the one driver for every check of the repository (docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md, stage 0, rules V1 to V7).
 //
-//   node tools/verify.mjs --all                 every step, in one parallel pool: the five runtime builds, every Arcade suite, the Studio / editor /
-//                                               model tests, tests/rom-checks.mjs, tests/browser-smoke.mjs, every mutation suite (as shards),
-//                                               `stamp-modules.py --check` and `publish-runtime.mjs --check`.  Required before every PR and merge.
+//   node tools/verify.mjs --all                 every suite, in one parallel pool: the five runtime builds, every Arcade suite, the Studio / editor /
+//                                               model tests, tests/rom-checks.mjs, tests/browser-smoke.mjs, the perf checks, `stamp-modules.py --check`,
+//                                               `publish-runtime.mjs --check`, every mutation suite's `--check` (patterns still found), and the mutation
+//                                               shards of the suites whose mutated code changed since the merge base with main (the owner's rule:
+//                                               mutation runs for new code).  Required before every PR and merge.  About 8 minutes on 8 cores.
+//   node tools/verify.mjs --all --full          ... and every mutant of every suite (1,448 mutants; about 80 minutes on 8 cores, 2026-11-14)
 //   node tools/verify.mjs --changed [<ref>]     only the steps that read a file changed since <ref> (default: `git merge-base HEAD main`; committed,
 //                                               working-tree and untracked changes).  The table is CHANGE_RULES below plus the import graph.
 //   node tools/verify.mjs --list ...            print the selected steps and why, run nothing
@@ -25,7 +28,7 @@ import { cpus, freemem } from 'node:os';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RUNTIME_BUILDS, SUITES, MUTATION_SUITES, EXCLUSIVE, SLOW_FIRST, OTHER_SUITES, CHECKS } from '../arcade/tests/steps.mjs';
+import { RUNTIME_BUILDS, SUITES, MUTATION_SUITES, EXCLUSIVE, SLOW_FIRST, OTHER_SUITES, CHECKS, SHARDED_SUITES } from '../arcade/tests/steps.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD_DIR = join(ROOT, 'arcade/build');
@@ -62,7 +65,11 @@ function allSteps() {
     steps.push({ id: `build ${b.id}`, kind: 'build', cmd: 'node', file: b.file, args: [], est: 15, roots: [b.file, 'arcade/tools/mkdck.mjs'], rts: [b.id], prefixes: [b.dir + '/'], build: b });
   }
   const slow = (f) => { const i = SLOW_FIRST.indexOf(f); return i < 0 ? 5 : 1000 - i; };
-  for (const f of SUITES) steps.push({ id: f, kind: 'suite', cmd: 'node', file: f, args: [], exclusive: EXCLUSIVE.has(f), est: slow(f), roots: [f], rts: [] });
+  for (const f of SUITES) {
+    const n = SHARDED_SUITES.get(f);
+    if (!n) { steps.push({ id: f, kind: 'suite', cmd: 'node', file: f, args: [], exclusive: EXCLUSIVE.has(f), est: slow(f), roots: [f], rts: [] }); continue; }
+    for (let i = 0; i < n; i++) steps.push({ id: `${f} --shard=${i}/${n}`, kind: 'suite', cmd: 'node', file: f, args: [`--shard=${i}/${n}`], est: slow(f) / n, roots: [f], rts: [] });
+  }
   for (const o of OTHER_SUITES) steps.push({ id: [o.file, ...(o.args ?? [])].join(' '), kind: 'suite', cmd: 'node', file: o.file, args: o.args ?? [], group: o.group, est: 5, roots: [o.file, ...(o.args ?? []).filter((x) => x.includes('/'))], rts: [] });
   for (const m of MUTATION_SUITES) {
     const roots = [m.file, ...m.tests];
@@ -87,14 +94,15 @@ function allSteps() {
 
 function usage(msg) {
   if (msg) console.error(`verify: ${msg}`);
-  console.error('usage: node tools/verify.mjs (--all | --changed [<ref>]) [--list] [--files a,b,c] [--only a,b] [--jobs N] [--rebuild] [--quick]');
+  console.error('usage: node tools/verify.mjs (--all [--full] | --changed [<ref>]) [--list] [--files a,b,c] [--only a,b] [--jobs N] [--rebuild] [--quick]');
   process.exit(2);
 }
 const argv = process.argv.slice(2);
-const opt = { all: false, changed: false, ref: null, list: false, files: null, only: null, jobs: null, rebuild: false, quick: false };
+const opt = { full: false, all: false, changed: false, ref: null, list: false, files: null, only: null, jobs: null, rebuild: false, quick: false };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i], val = () => argv[++i] ?? usage(`${a} needs a value`);
   if (a === '--all') opt.all = true;
+  else if (a === '--full') opt.full = true;
   else if (a === '--changed') { opt.changed = true; if (argv[i + 1] && !argv[i + 1].startsWith('--')) opt.ref = argv[++i]; }
   else if (a === '--list') opt.list = true;
   else if (a === '--files') opt.files = val().split(',').filter(Boolean);
@@ -106,6 +114,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '-h' || a === '--help') usage();
   else usage(`unknown argument ${a}`);
 }
+if (opt.full && !opt.all) usage('--full goes with --all');
 if (opt.all === opt.changed) usage(opt.all ? '--all and --changed are exclusive' : 'say --all or --changed');
 if (opt.jobs !== null && !(opt.jobs >= 1)) usage('--jobs needs a number of at least 1');
 
@@ -265,6 +274,23 @@ function mentionsFile(info, f) {
   return info.texts.some(({ rel, src }) => TEST_FILE.test(rel) && needles.some((n) => src.includes(n)));
 }
 
+/**
+ * Why a mutation shard must run for a change list (--all without --full), or null.  Its mutants are worth re-running when the code it mutates
+ * changed (its prefixes: the runtime or the compiler files it edits), the suite itself, a test or test helper it runs (test files only: product
+ * code its tests merely import, the compiler under a runtime suite, does not make those mutants more relevant), or TSRun (every machine test).
+ */
+function mutationReason(step, files) {
+  const info = analyse(step);
+  for (const f of files) {
+    if (f === 'tsrun' || f.startsWith('tsrun/') || f === '.gitmodules') return `${f}: TSRun`;
+    if (f === step.file) return `${f}: the suite itself`;
+    const pre = step.prefixes?.find((p) => f.startsWith(p));
+    if (pre) return `${f}: mutated source (${pre})`;
+    if (TEST_FILE.test(f) && info.closure.has(f)) return `${f}: a test it runs`;
+  }
+  return null;
+}
+
 /** Choose the steps for a change list. @returns {Map<Step, string>} step -> reason */
 function selectByChanges(steps, files) {
   const chosen = new Map();
@@ -415,7 +441,16 @@ function logFailure(step, out) {
 
 const steps = allSteps();
 let selected, modeText;
-if (opt.all) { selected = new Map(steps.map((s) => [s, 'all'])); modeText = '--all'; }
+if (opt.all) {
+  selected = new Map(steps.map((s) => [s, 'all']));
+  modeText = opt.full ? '--all --full' : '--all';
+  if (!opt.full) {                               // mutation shards only for the suites whose mutated code (or the suite) changed on the branch
+    const { files, base } = opt.files ? { files: opt.files, base: null } : gitChanged(opt.ref);
+    for (const s of steps) if (s.kind === 'mutation') { const why = mutationReason(s, files); if (why) selected.set(s, why); else selected.delete(s); }
+    const nSuites = new Set([...selected.keys()].filter((s) => s.kind === 'mutation').map((s) => s.suite.file)).size;
+    modeText += ` (mutation shards of ${nSuites} suite${nSuites === 1 ? '' : 's'} whose code changed${base ? ` since ${base.slice(0, 10)}` : ''}; --full for all)`;
+  }
+}
 else {
   const { files, base } = opt.files ? { files: opt.files, base: null } : gitChanged(opt.ref);
   modeText = `--changed ${opt.files ? '(file list given)' : `since ${base.slice(0, 10)}`}: ${files.length} file${files.length === 1 ? '' : 's'}`;

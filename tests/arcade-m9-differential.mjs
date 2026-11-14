@@ -32,6 +32,13 @@ import { diffV4 } from './arcade-m8-common.mjs';
 import { ASSETS, HAND, genProgram, genV3, genV4, sceneKeys } from './arcade-m9-common.mjs';
 
 const QUICK = !!process.env.ARCADE_QUICK;
+// --shard=i/n (tools/verify.mjs): shard i runs every n-th random program of section 2 (the long part); shard 0 also runs every other section.
+// Run whole (no --shard) it is unchanged.  Every program and tick is compared across the shards, as in one run.
+const SHARD = ((process.argv.find((a) => a.startsWith('--shard=')) ?? '').slice(8).split('/').map(Number));
+const SH = SHARD.length === 2 && SHARD[1] > 0 && SHARD[0] >= 0 && SHARD[0] < SHARD[1] ? { i: SHARD[0], n: SHARD[1] } : null;
+const mine = (k) => !SH || k % SH.n === SH.i;
+const rest = !SH || SH.i === 0;
+if (SH) console.log(`shard ${SH.i}/${SH.n}: random programs ${SH.i}, ${SH.i + SH.n}, ...${rest ? ' and the other sections' : ''}`);
 let passed = 0, failed = 0, skipped = 0;
 const check_ = (name, ok, detail = '') => { console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  (' + detail + ')' : ''}`); ok ? passed++ : failed++; return ok; };
 const skip_ = (name, why) => { console.log(`  SKIP  ${name}  (${why})`); skipped++; };
@@ -128,6 +135,7 @@ const R2 = real();
 if (!R2.ok) {
   skip_('every section on v2', R2.why || 'arcade/build/v2/runtime.json is not a usable v2 runtime');
 } else {
+  if (rest) {
   const N0 = QUICK ? 10 : 40, T0 = QUICK ? 30 : 50;
   let bad = 0, why = '';
   for (let s = 1; s <= N0; s++) {
@@ -191,6 +199,7 @@ if (!R2.ok) {
     check_('vars: back in a (tick 5): A.T = 0 again, A.U = 100 again (200 would be an old value kept), A.ARR re-initialised and then INIT\'s +1 on element 1: [5, 7, 7, 8]', S('vars', 5) === 0 && t5.vars['A.T'] === 0 && t5.vars['A.U'] === 100 && JSON.stringify(t5.arrays['A.ARR']) === JSON.stringify([5, 7, 7, 8]), JSON.stringify({ s: S('vars', 5), t: t5.vars['A.T'], u: t5.vars['A.U'], arr: t5.arrays['A.ARR'] }));
   }
 
+  }
   // =================================================================================================================
   // 2. Random programs
   // =================================================================================================================
@@ -200,7 +209,10 @@ if (!R2.ok) {
     const N = seedRange ? Number(seedRange[2]) - Number(seedRange[1]) + 1 : (QUICK ? 40 : 300), first = seedRange ? Number(seedRange[1]) : 1, T = QUICK ? 40 : 60;
     let bad = 0, switches = 0, ticksTotal = 0, multi = 0, enterIn = { init: 0 };
     const firstBad = [], t0 = Date.now(), kinds = {};
+    let NR = 0;
     for (let s = first; s < first + N; s++) {
+      if (!mine(s - first)) continue;
+      NR++;
       const g = genProgram(s);
       const r = compareV2(g.src, { ticks: T, keys: g.keys, stick: g.stick });
       if (r.scenes) { let prev = 0; for (const x of r.scenes) { if (x !== prev) switches++; prev = x; } ticksTotal += r.scenes.length; }
@@ -213,9 +225,9 @@ if (!R2.ok) {
       if (!seedRange && s % 50 === 0) info(`${s - first + 1} programs done, ${bad} failed, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     }
     void enterIn;
-    info(`${N} programs x ${T} ticks; ${switches} scene switches seen on the machine (scene index changes between two ticks; a restart of the same scene or a switch within INIT is not counted); ${multi} with 2 or more scenes`);
-    check_(`${N} random programs of 2 to 4 scenes x ${T} ticks: every tick equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, text attribute, V_BORDER, SPR_TAB, sound)`, bad === 0, `${bad} failed ${JSON.stringify(kinds)}${firstBad[0] ? '; first: seed ' + firstBad[0].seed + ': ' + firstBad[0].r.detail : ''}`);
-    check_('the random programs really switch scenes (at least one switch in 1 of 3 programs, on average)', switches >= N / 3, `${switches} switches in ${N} programs`);
+    info(`${NR} programs x ${T} ticks; ${switches} scene switches seen on the machine (scene index changes between two ticks; a restart of the same scene or a switch within INIT is not counted); ${multi} with 2 or more scenes`);
+    check_(`${NR} random programs of 2 to 4 scenes x ${T} ticks: every tick equal to the interpreter (scene index, variables, arrays, cells, attributes, cursor, text attribute, V_BORDER, SPR_TAB, sound)`, bad === 0, `${bad} failed ${JSON.stringify(kinds)}${firstBad[0] ? '; first: seed ' + firstBad[0].seed + ': ' + firstBad[0].r.detail : ''}`);
+    check_('the random programs really switch scenes (at least one switch in 1 of 3 programs, on average)', switches >= NR / 3, `${switches} switches in ${NR} programs`);
     for (const f of firstBad.slice(0, 3)) {
       console.log(`\n  ---- failing program, seed ${f.seed} (${f.r.kind}): ${f.r.detail}`);
       console.log(`  reproduce: ARCADE_M9_SEEDS=${f.seed}-${f.seed} node tests/arcade-m9-differential.mjs`);
@@ -331,8 +343,8 @@ function cellsComparable(R, oneScene, opts) {
 // =================================================================================================================
 // 3. v3
 // =================================================================================================================
-console.log('\n3. v3: frames and a WINDOW (SPR_TAB asset / x / y / frame of every instance, WORLD_RAM, V_CAM)');
-{
+if (rest) console.log('\n3. v3: frames and a WINDOW (SPR_TAB asset / x / y / frame of every instance, WORLD_RAM, V_CAM)');
+if (rest) {
   const R = loadRuntime(process.env.ARCADE_M9_V3 ?? 'arcade/build/v3');
   const needs = ['RT_CAMERA', 'RT_WORLDTILE', 'RT_TILEFLAGS', 'RT_TILEHIT', 'RT_SETWORLD', 'RT_SHOWF'];
   const missing = R ? needs.filter((n) => R.rt.symbols[n] === undefined) : needs;
@@ -376,8 +388,8 @@ console.log('\n3. v3: frames and a WINDOW (SPR_TAB asset / x / y / frame of ever
 // =================================================================================================================
 // 4. v4
 // =================================================================================================================
-console.log('\n4. v4: VIEW3D (SPR_TAB entries, the map array, the pose)');
-{
+if (rest) console.log('\n4. v4: VIEW3D (SPR_TAB entries, the map array, the pose)');
+if (rest) {
   const R = loadRuntime(process.env.ARCADE_M9_V4 ?? 'arcade/build/v4');
   const needs = ['RT_VIEW', 'RT_COSA', 'RT_SINA', 'RT_FXMUL', 'RT_WALL', 'RT_SETWALL', 'RT_SHOWF', 'BB_TAB'];
   const missing = R ? needs.filter((n) => R.rt.symbols[n] === undefined && R.rt.constants?.[n] === undefined) : needs;
@@ -415,8 +427,8 @@ console.log('\n4. v4: VIEW3D (SPR_TAB entries, the map array, the pose)');
   }
 }
 
-console.log('\n5. v2: two scenes each with a 2-D array of the same name (each gets its own access routines; found 2026-11-12: they shared one, the second array\'s)');
-{
+if (rest) console.log('\n5. v2: two scenes each with a 2-D array of the same name (each gets its own access routines; found 2026-11-12: they shared one, the second array\'s)');
+if (rest) {
   const src = `DIM t
 SCENE one
   DIM g(3, 3), i, j, s
