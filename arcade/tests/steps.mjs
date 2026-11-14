@@ -162,6 +162,11 @@ export const OTHER_SUITES = [
   { file: 'tests/sfx-stream.mjs' },               // (not in the 2026-11-13 checklist: batch 5's delta-stream encoder against an independent player, 0.x s)
   { file: 'tests/tsrun-ay-silent.mjs' },          // V10: TSRun's closed-form silent AY equals the per-tick advance (random register histories)
   { file: 'tests/rom-checks.mjs' },
+  // the perf checks of the owner's checklist (T-states a tick of the recorded game runs: deterministic, so they can run beside other steps)
+  { file: 'tests/arcade-runner-perf.mjs', args: ['--check'] },
+  { file: 'tests/arcade-m6-platformer-perf.mjs' },
+  { file: 'tests/arcade-m8-vaults-perf.mjs' },
+  { file: 'tests/arcade-codegen-perf.mjs', args: ['--compare', 'arcade/spike/codegen/perf-reference.json'] },   // no recorded tick slower than the reference (re-save it after an intended change: --save)
   { file: 'tests/browser-smoke.mjs', group: BROWSER_GROUP },
 ];
 

@@ -63,7 +63,7 @@ function allSteps() {
   }
   const slow = (f) => { const i = SLOW_FIRST.indexOf(f); return i < 0 ? 5 : 1000 - i; };
   for (const f of SUITES) steps.push({ id: f, kind: 'suite', cmd: 'node', file: f, args: [], exclusive: EXCLUSIVE.has(f), est: slow(f), roots: [f], rts: [] });
-  for (const o of OTHER_SUITES) steps.push({ id: o.file, kind: 'suite', cmd: 'node', file: o.file, args: [], group: o.group, est: 5, roots: [o.file], rts: [] });
+  for (const o of OTHER_SUITES) steps.push({ id: [o.file, ...(o.args ?? [])].join(' '), kind: 'suite', cmd: 'node', file: o.file, args: o.args ?? [], group: o.group, est: 5, roots: [o.file, ...(o.args ?? []).filter((x) => x.includes('/'))], rts: [] });
   for (const m of MUTATION_SUITES) {
     const roots = [m.file, ...m.tests];
     const rts = m.runtimes ?? [];
@@ -149,6 +149,7 @@ const CHANGE_RULES = [
   [['index.html'], 'steps:^tests/browser-smoke\\.mjs$', 'the IDE entry page'],
   [['tools/stamp-modules.py'], 'steps:stamp-modules', 'the fingerprint tool'],
   [['tools/gen-*.py', 'tools/*-rom-entry.py', 'tools/pre-commit', 'cartridge-build/**'], 'none', 'generators / cartridge build tooling: their output is checked in and tested as output'],
+  [['arcade/spike/codegen/perf-reference.json'], 'steps:arcade-codegen-perf', 'the saved tick costs the codegen perf check compares with'],
   [['arcade/tools/{gen-font,listing-diff,regen-baselines,song-wav}.mjs', 'arcade/tools/xemu/**', 'arcade/spike/**'], 'none', 'developer tools and spikes no test runs'],
   [['tools/verify.mjs', 'arcade/tests/steps.mjs', 'arcade/tests/run-all.mjs'], 'none', 'the drivers themselves (run --list to see what they select)'],
   [['.claude/**', '.gitignore', '.nojekyll', 'README.md', 'CLAUDE.md', 'LICENSE*'], 'none', 'repository notes'],
