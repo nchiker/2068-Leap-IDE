@@ -145,7 +145,7 @@ Leap-IDE/
 │   ├── LEAP_FORTH_REFERENCE.md, LEAP_C_REFERENCE.md, DEBUGGER.md, EXPORT_FORMATS.md, TESTS.md, BUILD_PHASES.md ← sections moved out of this file to keep it under the 150k-character limit
 │   ├── LEAP_CARTRIDGE_BUILD.md ← Spec: Leap runtime cartridge build for 2.1 (what DCK export needed; now built)
 │   └── mockup.html   ← Visual mock-up
-└── tsrun/            ← git submodule: TSRun fork, pinned at 89208e8 (closed-form silent AY, on 9893b46)
+└── tsrun/            ← git submodule: TSRun fork, pinned at 6ccf56e (the fork's main)
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
@@ -159,14 +159,13 @@ ROMs. The 2.1.0-emu.1 pair (`8c3d6c81…`, `e46e2065…`; key `5a42872e…`) and
 
 **TSRun** is the fork https://github.com/nchiker/TSRun (upstream
 josef-jelinek/TSRun), included as the git submodule `tsrun/` pinned at commit
-`89208e8` ("AY: closed-form silent advance", 2026-11-14: the AY's silent advance
-in closed form, chip state identical; it speeds the Node test suites), on top of
-`9893b46` (Leap V2 2.1.2-emu.1 ROMs) and `c52f272` (Leap V2 2.1.1-emu.1 as
-`roms/leap-*.rom`, with the READMEs). `89208e8` is on the fork's branch
-`silent-ay`; the fork's `main` has the same change as `6ccf56e`, on top of
-two LeapG commits (Kempston mouse, host bridge on ports $6D / $6F) that the
-IDE has not been verified with, so the pin stays on `silent-ay` until a move
-to `main` is verified (`node tools/verify.mjs --all --full`). **Never push the IDE with a submodule
+`6ccf56e`, the fork's `main` (2026-11-14): "AY: closed-form silent advance" (the
+AY's silent advance in closed form, chip state identical; it speeds the Node test
+suites) on top of two Leap Desktop (LeapG) commits, `d9302b8` Kempston mouse and
+`b4dc564` host bridge on ports $6D / $6F, both off by default (a detached mouse
+and no host leave those ports floating high, as before; the IDE uses neither),
+then `9893b46` (Leap V2 2.1.2-emu.1 ROMs) and `c52f272` (Leap V2 2.1.1-emu.1 as
+`roms/leap-*.rom`, with the READMEs). Verified with `node tools/verify.mjs --all --full`. **Never push the IDE with a submodule
 commit that is not pushed to nchiker/TSRun**, or GitHub Pages gets a submodule
 commit it cannot fetch. `34b0794` carries the
 Leap-C 1.2.0 ROMs (`roms/leapc-*.rom`) and, below it, `02e5325` the 2068-Forth
@@ -1185,7 +1184,7 @@ Studio") and `docs/ARCADE_PLAN.md`. Test everything (Arcade, Studio, editors, mo
 - **Leap** (ROM source, manual): https://github.com/nchiker/2068-Leap, local
   clone `~/2068-Leap`. V1 is archived; ignore it.
 - **TSRun** (emulator): fork https://github.com/nchiker/TSRun, git submodule
-  `./tsrun` pinned at `89208e8`.
+  `./tsrun` pinned at `6ccf56e`.
 - **This project on GitHub**: https://github.com/nchiker/2068-Leap-IDE, live at
   https://nchiker.github.io/2068-Leap-IDE/.
 - **This project**: `/home/charlie.day/Projects/Leap-IDE`
