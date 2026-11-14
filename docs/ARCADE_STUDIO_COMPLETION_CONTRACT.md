@@ -113,6 +113,46 @@ Added rules from these measurements:
 **Projection** (to be measured, not promised): V8 + V9 cut the emulator suites' CPU by half or more; with V3 sharding and 8 jobs, `--all` in
 about 5 minutes; `--changed` for a Studio-only change under 2 minutes.
 
+### 2.2 As built (stage 0, 2026-11-14, branch `arcade-verify`)
+
+* **V1, V2, V4, V5, V7:** `tools/verify.mjs` with the steps in `arcade/tests/steps.mjs` (run-all imports the same lists). `--all`: every suite
+  (the run-all steps, the Studio / editor / model tests, `rom-checks`, `browser-smoke`, the perf checks incl. `arcade-codegen-perf --compare
+  arcade/spike/codegen/perf-reference.json`, the AY and boot proof tests), `stamp-modules.py --check`, `publish-runtime.mjs --check`, every
+  mutation suite's `--check`, and the mutation shards of the suites whose mutated code, own file or tests changed since the merge base (the
+  owner's rule: mutation runs for new code). `--all --full`: every mutant. `--changed [ref]`: an import graph plus a rule table. Runtime builds
+  are skipped by input hash; jobs default to the cores; the longest known steps start first (`arcade/build/verify-times.json`). `arcadec
+  --runtime` defaults to `auto`. Decision (Claude): `--all` without `--full` runs mutation shards for changed code only; the 84-minute full run
+  is for branches that change the runtimes, the harnesses or TSRun (this one did, and ran it).
+* **V3:** every mutation suite is N shard steps (m17 33, m15 15, m14 12, ...); m9 and m10 differential are 4 shards each (shard 0 also runs
+  the other sections; run whole they are unchanged, output identical).
+* **V8, V9:** `arcade/tests/fast-boot.mjs` (video off unless a check reads the screen through `pixelsOf`; the stock ROM booted once per process
+  to the start of frame 98, where it first writes port $F4 / $FF, then restored per case). Proof `arcade/tests/boot-snapshot.mjs`: 121 checks,
+  cold boot = snapshot at the cartridge entry and 50 frames on, every example and runtime. TSRun has no contention or raster stall, so video
+  off does not change timing (the codegen perf compare passed against a reference saved before the change).
+* **V10:** TSRun `89208e8` "AY: closed-form silent advance" (`ay.js` only): all but the last 120 ticks of a silent span jumped
+  arithmetically; chip state bit-identical, the analogue filter within 2.2e-16. Proof `tests/tsrun-ay-silent.mjs` (114,916 checks). AY alone
+  25-28x faster.
+* **V11:** interpreter: memoised upper-casing, names cached on AST nodes (non-enumerable), snapshot templates; records identical.
+  `ARCADE_QUICK` arcade-orbit no longer crashes.
+* **Found and fixed on the way:** three model tests counting seven examples (Orbit Gates is the eighth); seven mutants never run since MUSIC /
+  wireframe moved their patterns (all re-run and killed); m14 / m15 / m17 never finished inside run-all's one-hour step limit; a stale perf
+  reference (re-saved at main's runtimes); two timing checks that failed under 8 parallel jobs (page-ready waits now 60 s; the 20 ms asset
+  check takes the best of tries spread over 2 s).
+
+**Measured (8 logical CPUs, 8 jobs):**
+
+| Run | Before | After |
+|---|---|---|
+| every suite (the old checklist: run-all + hand-run suites + perf checks) | about 19.5 min (run-all 14:40 at 4 jobs + 2:41 + about 2:10) | **10.2 min** `--all` (125 steps, 121,946 checks) |
+| every suite + every mutant | 108 min, and m14 / m15 / m17 never finished | **84 min** `--all --full` (all 1,448 mutants accounted for) |
+| a Studio-only change | the whole checklist | **63-68 s** `--changed` |
+| a game cartridge in TSRun (Node) | 22-27 MT/s (8-9x real time) | 41-47 MT/s (14-16x) |
+| m15-runtime-music, CPU | 216 s | 29 s |
+
+Against the targets: `--changed` under 2 minutes is met; `--all` is 52 % of the old time (target "at most half": just over). The run is now
+bound by total work (4,688 s of step time / 8 jobs), not by one step; the next cuts would be `m7-runtime-perf` (380 s), `arcade-codegen-
+exhaustive` (320 s) and `arcade-orbit` (290 s, now TSRun-bound in its sections 9-12).
+
 ## 3. Backfeeds
 
 Improvements made later that never reached earlier code, found by checking the code (not from memory):
