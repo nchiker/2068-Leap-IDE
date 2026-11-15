@@ -8,7 +8,7 @@
 //   1  the build: the assets file is the generator's output and agrees with the numbers written into lumen.arc; compiles for v2 with no errors and no warnings; every scene is built fine; 10 sprite
 //      instances, 28 sprite phases (a fine game may have 32); the two mazes of the generator are the maps' wall / orb / prism / door blocks
 //   2  a bot plays the game on the real runtime (it reads the game's variables and the cells from RAM, walks the maze to the nearest orb or prism by a breadth-first search, avoids the shades and
-//      hunts the pale ones; it uses Q A O P, SPACE and the joystick), 99 lives so that the run goes on.  The interpreter then plays the same script: every tick's variables, arrays, cells,
+//      hunts the pale ones; it uses Q A O P, SPACE (to start) and the joystick), 99 lives so that the run goes on.  The interpreter then plays the same script: every tick's variables, arrays, cells,
 //      attributes, sprites equal the real runtime's (the "records"), and the sound at song level
 //   3  the game's rules, read off the real runtime's records (all of them on the full mazes AND on mazes with only a few orbs, so that caves are cleared inside the run): an orb eaten = +10 and its
 //      four cells become tile 0; a prism = +50, every shade outside the lair turns pale; a pale shade touched scores 200 / 400 / 800 / 1600 in one prism and goes back to the lair; a shade touching the
@@ -474,7 +474,7 @@ console.log('\n7. The real game (3 lives): a bot that eats a few orbs, then stan
     } else check_('two game overs', false, `game overs at ${overs.map((i) => i + 1)}`);
     // the title: its tile maps and text
     const t1 = got.ticks[2];
-    check_('the title shows the LUMEN logo, PRESS FIRE TO PLAY (tile maps), the rules and BEST', [3, 4, 15].every((r) => t1.cells.slice(r * 32 + (r === 15 ? 7 : 11), r * 32 + (r === 15 ? 25 : 21)).every((c) => c >= 128)) && text(t1, 6) === 'EAT ALL THE LIGHT ORBS.' && text(t1, 21) === 'BEST 0' && text(t1, 18) === 'Q A O P MOVE   SPACE FIRE', [6, 18, 21].map((r) => `"${text(t1, r)}"`).join(' / '));
+    check_('the title shows the LUMEN logo, PRESS FIRE TO PLAY (tile maps), the rules and BEST', [3, 4, 15].every((r) => t1.cells.slice(r * 32 + (r === 15 ? 7 : 11), r * 32 + (r === 15 ? 25 : 21)).every((c) => c >= 128)) && text(t1, 6) === 'EAT ALL THE LIGHT ORBS.' && text(t1, 21) === 'BEST 0' && text(t1, 18) === 'MOVE WITH Q A O P' && text(t1, 19) === 'OR JOYSTICK 1', [6, 18, 19, 21].map((r) => `"${text(t1, r)}"`).join(' / '));
   }
 }
 

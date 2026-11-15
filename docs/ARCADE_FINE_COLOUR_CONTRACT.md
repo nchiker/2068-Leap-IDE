@@ -2,8 +2,7 @@
 
 The item after Studio completion stage 2 (`docs/ARCADE_FINE_COLOUR_PLAN.md`; the owner approved its decisions on 2026-11-14:
 **inside runtime v2, per scene; one buffer, sprites drawn straight after the frame interrupt, a RAM-shadow compose only if the F1 spike shows
-flicker; Starfall's play scene first, then a new showcase game**). Branch `arcade-fine` from `main` `c245446`. Binding. "As built" notes are added
-when each slice is done. **Owner's rule: every improvement is used in the sample games, and each new feature has a sample game that shows it off**
+flicker; Starfall's play scene first, then a new showcase game**). Branch `arcade-fine` from `main` `c245446`. Binding. **All slices F0 to F5 and the rework are built (section 11, 2026-11-15; PR pending).** **Owner's rule: every improvement is used in the sample games, and each new feature has a sample game that shows it off**
 (section 10 is not optional). Claude's own calls are listed in section 12 for the owner's review; the work does not wait for that review.
 
 ## 0. What exists (checked for this contract)
@@ -194,35 +193,102 @@ changes. Runtime changes: `--all --full` once before the PR.
 
 ## 8. Performance targets (TSRun; real hardware unmeasured)
 
+Each target is followed by its result (section 11 has the sources).
+
 * A game with no fine scene: +30 T per tick at most; every recorded run of every example as fast as on `main` (`arcade-codegen-perf --compare`).
+  **Met: +0 T.** `fine.asm` sits after `wiretick.asm` and no byte below it changes; the main tick has no test (section 11, F2, deviation 1); a game
+  without fine colour never runs a byte of fine.asm (`m19-runtime-fine` check 6). (`arcade-codegen-perf --compare` was run by the slices' `verify`, not for this write-up.)
 * Starfall's fine play scene keeps **FRAMERATE 20 in >= 95 % of its ticks** over its recorded runs (report median, 95th percentile, worst, ticks
-  over budget), with as many sprites at once as that allows (section 3a.3).
+  over budget), with as many sprites at once as that allows (section 3a.3). **Met:** 99.8 % of the script's 1,333 play ticks (1,331); 98.1 %, 98.5 %,
+  98.6 % in waves 3, 6, 10 of the worst-play bot (844 ticks each). Tick cost over the script: median 60,723 T, 95th 155,036, worst 692,876 (budget 176,064;
+  2 ticks started late); the late waves' median 120,627 to 138,466 T.
 * F2 reports the compose + publish cost per moving 16x16 and 8x8 sprite, so F5 can size the games (the spike's unoptimised BD: about 23k T a
-  16x16 sprite; the target after F2's optimisation is <= 12k).
-* The showcase game holds its own `FRAMERATE` in >= 99 % of its ticks.
-* `RT_FINEMODE` on or off: at most 30 refreshes (a scene switch).
+  16x16 sprite; the target after F2's optimisation is <= 12k). **Reported; the 12k target is MISSED:** 25,224 T per moving 16x16 sprite (8 phases; 23,895
+  byte aligned) and 12,595 T per moving 8x8. The spike's 23k was an average over a mix with seven 8x8 sprites, so the 16x16 sprite alone was not better to start with; the speed pass
+  took the figure from 28,634 to 25,224 T. The pure work alone is about 11k a sprite (`NOTES-FINE.md`, "Why the target was not met"): the target is out of reach for method BD as built.
+  The games were sized with 25k a 16x16 sprite (Starfall 7 instances, Lumen 5 moving at once).
+* The showcase game holds its own `FRAMERATE` in >= 99 % of its ticks. **Met by LUMEN:** 99.9 % (2,191 play ticks) and 99.7 % (3,191, small caves); the 599 heaviest
+  ticks (all four shades out) 599 of 599 on time, median 124,687 T, 95th 143,540, worst 151,694 (budget 176,064).
+* `RT_FINEMODE` on or off: at most 30 refreshes (a scene switch). **Met:** on 843,308 T and off 821,386 T, 14 refreshes each. A whole switch tick of a game
+  (`ENTER` redraws the whole screen) is longer: 26 to 31 refreshes on TSRun and 23 to 27 on ZEsarUX (cross-emulator check, section 11).
 
 ## 9. Tests (summary; each named in its slice)
 Runtime: m19 picture / beam / regs / mem / perf + mutations. Compiler: m19 compiler and differential + mutations. Studio smoke. Every example's
 recorded runs unchanged (hash baselines; Starfall's are re-recorded in F5 because its play scene changes, with the old ones kept as the
 `shooter-v1` / two-buffer fixtures). Cross-emulator: the sample games' pictures on TSRun, ZEsarUX and Fuse after scripted ticks (as Orbit Gates).
 
-## 10. Sample games
+## 10. Sample games (as built)
 
-1. **Starfall's play scene in fine colour** (`arcade/examples/shooter.*`): `scenes.play.display = 'fine'`; the title and game over stay two
-   buffers (a game mixes scenes). New 8x1 art: the ship, scouts, heavies, bullets and shots shaded per row (a highlight row, body rows, a dark
-   engine row), the sky tiles with a per-row star twinkle and a horizon glow band, the explosion tiles hot at the core. The HUD stays text.
-   Recorded runs re-made; cross-emulator check; Fuse command for the owner.
-2. **A new showcase game, "Prism Catch"** (`arcade/examples/prism.*`; title / play / over, play in fine colour): a sunset sky of 8x1 gradient
-   rows (blue, magenta, red, yellow bands, BRIGHT alternating) over a dark sea; gems of four colours, each shaded per row, fall in waves; the
-   player's catcher (O / P or the joystick) takes one of the four colours (Q / A or fire cycles it; four catcher assets, one shown): **catch a gem
-   of your colour for points, a wrong colour or a missed gem costs one of three lives**. Rising challenge: each wave the gems fall faster, more come
-   at once, and from wave 3 a gem changes colour as it crosses a glow band of the sky. Goal: the best score; a "WAVE n" banner and a short tune
-   between waves (`MUSIC`, effects on channel C). It shows: per-row paper gradients in tiles, per-row shaded sprites over them, text HUD in fine
-   colour, scenes mixing fine and two-buffer. Owner's sample-game rule: a clear goal, live controls, rising challenge.
+The owner played the first set (2026-11-15) and changed it: Prism Catch was dropped and Starfall's art redone (section 11, "Rework"). What exists now:
+
+1. **Starfall, every scene in fine colour** (`arcade/examples/shooter.*`; the assets file's `"scenes"` key sets title, play and over to `fine`; the
+   `.arc` header says so). The sky is a starfield with a **shaded planet lit from the upper left** (black, blue, red, magenta bands joined by checkerboard seams), the title and the game
+   over carry a **rainbow logo** and graded text (maps of tiles loaded over the sky), the border is black, and the ship, scouts, heavies, bullets and shots are shaded row by row.
+   All art is generated by `shooter.assets.gen.mjs` with the helpers of `arcade/examples/fineart.mjs` (a full-colour picture, ordered dither between neighbouring colours, then cut into the
+   8 x 1 groups and the de-duplicated tileset, at most 128 tiles). **7 instances of 5 assets (ship 1, bullets 2, scouts 2, heavy 1, shot 1) and 32 phases (ship 8, bullet 4, scout 8, heavy 8, shot 4)**: the
+   cap in full. The HUD prints only the number that changed (a text cell costs about 1,800 T). Code 11,741 bytes, game 12,055 of 16,384, 4,329 free (`arcadec ... --runtime v2`). The old one-scene
+   two-buffer game's assets are kept as `arcade/tests/fixtures/shooter-v1.assets.json` for the baselines that pin it. `tests/arcade-starfall-fine.mjs` (14 checks) and `tests/arcade-starfall.mjs` (9).
+2. **LUMEN, the showcase** (`arcade/examples/lumen.*`, design in `lumen.md`): a **maze chase** (the owner chose the genre), every scene fine colour. A wisp eats light orbs in a cave maze; four
+   horned shades (Ember, Bloom, Moss, Frost) hunt it; a prism in each corner turns them pale for a while (200, 400, 800, 1600 points); the caves alternate between two mazes (rainbow tubes, ice
+   tubes) and the shades get faster each cave; the goal is the best score. Controls Q A O P or joystick 1, fire starts and restarts. 10 instances of 7 assets (wisp 2, shades 4, pale 4) and
+   28 phases, at most 5 moving at once; code 12,018 bytes, game 12,540 of 16,384, 3,844 free; songs on channels A and B with the effects on C. `tests/arcade-lumen.mjs` (bots on the real runtime
+   against the interpreter, the rules, the picture against `finePicture` every tick, the rate, the beam).
+3. **Prism Catch** (the earlier design) is **gone**: its files, test and dist entry were removed (`3e89557`). Its shaded gems and sunset gradient read as random colours to the owner.
+
+What the games show together: per-row colour in tiles and sprites, shaded sprites over per-row backgrounds, graded text, scenes of the same game (here all fine; the mix of fine and two-buffer
+scenes is tested by `tests/arcade-m19-differential.mjs`, not shown by a sample).
 
 ## 11. As built
-(Filled in per slice.)
+
+Branch `arcade-fine` from `main` `c245446`; done 2026-11-14 / 15, PR pending. Runtime details (method, RAM, per-routine times): `arcade/runtime/v2/NOTES-FINE.md` and
+`docs/ARCADE_RUNTIME_API_V2.md` ("As built: fine colour"). Every figure below is from the commit message named, a test run for this write-up (2026-11-15, TSRun) or the file named.
+
+**F0, the contract** (`3b399e5`). This file and the resume note.
+
+**F1, the spike** (`5c25607`; `arcade/spike/fine/`, `RESULTS.md`). Methods A, B0, B80, B and BD measured on TSRun's beam and on Fuse; the figures and the owner's three decisions are section 3a.
+The same screens on ZEsarUX and Fuse as on TSRun (0 pixels off).
+
+**F2, the runtime** (`25c6101`; `arcade/runtime/v2/fine.asm`, `layout.inc`, `test_fine.asm`, `NOTES-FINE.md`). Method BD. `RT_FINEMODE` is `$328A` (the old `RT_END`) and `RT_END` is now `$3BD4` (`runtime.json`):
+**`fine.asm` is 2,378 bytes (bound 2,500) and leaves 1,068 bytes free after `RT_END` (bound >= 900)**: 3,446 - 2,378. Costs on TSRun (`m19-runtime-perf`, 12 checks): 25,224 T per moving
+16x16 sprite (**the 12k target missed**, section 8), 23,895 T when byte aligned, 12,595 T per 8x8, 1,761 T per dirty text cell, 46 T per published group, 3,724 T for an empty fine tick; `RT_FINEMODE` on
+843,308 T and off 821,386 T (14 refreshes each). Starfall-like ticks (compose + publish, median / 95th): 8 sprites (5 16x16, 3 8x8) 171,601 / 178,094 T against the 20 Hz tick of 176,064 T; 10 sprites 215,596 /
+228,462; 12 sprites 233,849 / 257,494; 16 sprites 314,681 / 329,683. Beam (1,500 frames, frame_div 3): 8 sprites 1,482 clean, 0 torn, 0 broken; 16 sprites 1,476 clean, 3 torn, 0 broken (the 3 ticks whose
+update did not fit the 660-group list). Deviations from the contract (`NOTES-FINE.md`): (1) **no test in `main.asm`**: `RT_FINEMODE` on replaces the return address `main.asm` left on the stack, so a game
+without fine colour pays +0 T instead of +27 and the call is allowed only inside `init_entry` or a `frame_entry` (the compiler's `ENTER` always is); (2) row ranges per cell row; (3) the 12k target; (4) a list overflow
+composes the leftover rows during the publish (the contract's rule), about 1 tick in 70 with 16 moving sprites. Tests: `m19-runtime-fine` (27 checks: pictures against the reference after every update of random scenes,
+switches, interrupts injected at every instruction of fine.asm, memory confinement, a game without fine colour; 27 passed again for this write-up with `M19_QUICK=1`), `m19-runtime-perf` (12), `m19-mutations` (186 mutants: 177 killed,
+9 equivalent). Baselines regenerated against `c245446` (`regen-baselines.mjs --old c245446`): byte identity held.
+
+**F3a, the compiler and interpreter** (`d00c842`; `src/lang/arcade/`). The setting from the assets file's `"scenes"` key or `arcadec --scenes <file>`; `sceneDisplayPlan` gives `built: 'fine'` for a fine scene of a v2 game;
+`convertTileset` keeps the tile's eight row attributes and `convertSprite` its row inks; the fine descriptor (`fine$desc`: `DW tile_rows`, `DW sprite_inks`) and the `RT_FINEMODE` calls (`A` = 1 / 0, `HL` = the descriptor) at every `ENTER`
+and at the start of `init_entry` for a fine first scene; the 32-phase cap in `arcade-link.js` (`FINE_MAX_PHASES`); the errors of section 1; the reference `finePicture` in `src/lang/arcade/arcade-fine.js`; the interpreter's
+records carry the scene mode. `tests/arcade-m19-compiler.mjs`: 120 checks then, 153 now (153 passed for this write-up).
+
+**F3b, mutation and differential suites** (`b296fb7`, `3869654`). `arcade/tests/m19c-mutations.mjs`: 238 mutants, 0 survived. `tests/arcade-m19-differential.mjs`: fine <-> two-buffer switching in every
+direction against the interpreter, state and picture every tick, and the frames around a switch: **36,050 checks in 65 s** (quick mode 3,699 in 7 s): 79 runs, 6,796 ticks, 239 plain->fine, 237 fine->plain,
+321 fine->fine, 230 plain->plain switches, no mismatch. It found the split writes of decision 12.9.
+
+**F4, the Studio** (`b296fb7`, `9a053ac`; `studio.js`, `studio.html`, `src/tools/`, `docs/ARCADE_STUDIO.md`). "Finer colour" is offered for a v2 game without WIRE3D (the plan text, no "not built yet"), the
+sprite editor's fine preview is checked against `finePicture`, the tile editor notes the 8 x 1 rule; after the owner's play `9a053ac` made a tile **keep its eight row colours** (`rowColours` in `tile-model.js`:
+every example round-trips), added the tile editor's 8 x 1 colour view (on for a fine project), "Rows -> one colour", the map editor's thumbnails in fine colour, and taught the asset check that a fine scene's sprites carry
+their own ink (no `background-attr-mix`) and that `black-bright-mix` / `bright-black-paper` read every row. Tests: tile-model 162/162, map-editor 95/95, studio / tile / sprite / map smokes, m18c 99 killed + 3 equivalent of 102 (per the commit message).
+
+**F5, the sample games** (`47bba69`). Starfall's play scene in fine colour (7 sprites at 20 Hz: bullets 2, scouts 2, heavy 1, shot 1; 97 to 100 % of ticks at 20 Hz, 0 broken frames, every fine picture equal to the interpreter's)
+and Prism Catch (MAXGEMS 5, 20 phases; 99.9 to 100 % at 20 Hz). The new Starfall and Prism compiled byte-identically with the compiler of `c245446` (the m19 non-fine baseline, `m19-nonfine-baseline.json`).
+
+**Rework after the owner played (2026-11-15).** The owner played F5 and answered: Prism Catch is dropped (the art read as random colours); Starfall's art is redone with every scene fine and a black border;
+the showcase is a maze chase.
+* `b86c885`: Starfall's new art (shaded planet, rainbow logo, graded text), `arcade/examples/fineart.mjs`, `lumen.md`; the owner approved the stills. `tests/arcade-starfall-fine.mjs` 14 checks and
+  `tests/arcade-starfall.mjs` 9 checks (this run: 1,340 fine ticks started, 717 play gaps, 716 of 3 refreshes (20 Hz) and 1 of 4).
+* `3e89557`: **LUMEN** added, Prism Catch's files, test and dist entry removed, the example counts (Studio, map / tile models, m17) updated. `tests/arcade-lumen.mjs` was 25/25 at that commit
+  ("99.6-99.9 % of play ticks at 20 Hz, beam 0 broken"). (The title's keys line became `MOVE WITH Q A O P` / `OR JOYSTICK 1` after a review of the title, since fire only starts the game; the test follows.)
+* `3869654`: the differential suite (F3b above). `9a053ac`: the Studio fixes (F4 above).
+* **Cross-emulator check** (`arcade/spike/fine/RESULTS.md`, "Cross-emulator check of the fine games (2026-11-15)"; scripts `arcade/tools/xemu/fine-*`): Starfall (347 ticks, 40 sampled for state) and Lumen
+  (687 ticks, 57 sampled) match on TSRun, ZEsarUX and Fuse: **0 of 2,131,968 (Starfall) and 0 of 4,220,928 (Lumen) 8x1 groups differ between TSRun and ZEsarUX, state bytes identical at every sampled
+  tick, and every one of the 347 / 687 tick pictures appears in Fuse in order with 0 of 49,152 pixels off.** Differences are in time only: a switch tick takes 26 to 31 refreshes on TSRun and 23 to 27 on
+  ZEsarUX (its 48K-like timing); Fuse's PPM paints the runtime's switch border (colour 1) red, border only. **A scene switch between two fine scenes shows a top-to-bottom wipe** (10 to 17 Fuse frames
+  per switch; TSRun's beam 14 and 47 frames for the two games): every group is the picture before or after, never another colour (decision 12.10).
+* Not verified: real hardware; ZEsarUX frame by frame (its memory at the sampling point only); Fuse's state (frames only); a joystick on ZEsarUX / Fuse.
 
 ## 12. Decisions for the owner's review (Claude's calls; the work proceeds on them)
 
@@ -245,5 +311,11 @@ recorded runs unchanged (hash baselines; Starfall's are re-recorded in F5 becaus
    per 1,000 of the frames around a switch (one group, one frame, always a mix of the old and the new picture). The suite asserts that no group is
    anything but a picture around the switch, black or such a split write, at most 2 split groups a frame and at most 2 % of the switch frames;
    the play-time target of section 3 is unchanged (the games measure 0).
-7. ~~The showcase game is "Prism Catch"~~ (section 10.2): built, played by the owner and dropped (2026-11-15: the art read as random colours); the
+10. **A switch between two fine scenes shows a top-to-bottom wipe, accepted as the transition** (found by the cross-emulator check of 2026-11-15, `arcade/spike/fine/RESULTS.md`). `ENTER` redraws the whole screen
+   in the one switch tick; the update list cannot hold it, so the publish writes the rest straight, top to bottom, across 10 to 17 refreshes (Fuse; TSRun's beam shows the same, about one frame fewer). Every group
+   of every such frame is the picture before or the picture after (no plain frame, no wrong colour), so section 4.3's letter ("the old picture, a frame of plain colour or the new picture") does not list it
+   but its point (never garbage colours) holds. Claude's call: **accept it as a transition** (0.17 s Starfall's title to play, 0.28 s Lumen); the owner judges it by playing. A plain-colour step first (as the
+   two-buffer to fine switch does) would be a runtime change. Same on every emulator checked, so not an emulator difference. Related timing: the switch tick costs 26 to 31 refreshes on TSRun against 23 to 27 on
+   ZEsarUX, and Fuse colours the runtime's switch border (colour 1) red in its PPM (border only).
+7. ~~The showcase game is "Prism Catch"~~ (section 10, then item 2): built, played by the owner and dropped (2026-11-15: the art read as random colours); the
    showcase is now **LUMEN**, a maze chase (the owner chose the genre), `arcade/examples/lumen.*`.

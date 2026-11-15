@@ -334,3 +334,48 @@ No `RT_*` contract changed; the `RT_*` entries moved, so compiled v2 programs ch
   the font packing (not needed).
 * **Tests:** mutation patterns re-pointed, none deleted (m4 7 re-pointed + 9 added, m5 9 re-pointed, m17 re-pointed and added: 388 mutants, 377
   killed, 11 equivalent); `m5-runtime-regs.mjs` injects interrupts in the new `M_GAPA` too.
+
+## As built: fine colour (8 x 1 colour scenes, 2026-11-15, branch `arcade-fine`)
+
+Contract and decisions: `docs/ARCADE_FINE_COLOUR_CONTRACT.md` (sections 3a, 5, 11); the module's own notes, with the per-routine times and the speed pass: `arcade/runtime/v2/NOTES-FINE.md`.
+Code: `arcade/runtime/v2/fine.asm` (after `wiretick.asm`, before `RT_END`), the variables and areas in `layout.inc` (additive: nothing above changed), `test_fine.asm`. Sizes (`arcade/dist/v2/runtime.json`,
+`NOTES-FINE.md`): **fine.asm 2,378 bytes; `RT_FINEMODE` `$328A` (the former `RT_END`), `RT_END` `$3BD4`: 1,068 bytes free after it** (3,446 before; the contract's bounds: <= 2,500 added, >= 900 free).
+
+* **`RT_FINEMODE`** (`$328A`): `A` = 1 on / 0 off, `HL` = the game's **fine descriptor** (on only). It may clobber AF, BC, DE, HL, IX, IY and the alternates. The compiler's `ENTER` sequence calls it where it calls
+  `RT_WIREMODE` (after the reset, before the scene's `INIT`), and `init_entry` calls it first when the first scene is fine; a game with no fine scene never calls it (and its code is byte-identical to a build without
+  fine.asm: +0 T a tick). **It may be called only inside `init_entry` or a `frame_entry`** (the compiler's `ENTER` always is): the call replaces the return address `main.asm` left at `STACK_TOP - 2`
+  (`FINE_RES_INIT` / `FINE_RES_TICK`), so the tick needs no test of `V_FINE` (the contract's `main.asm` test is not there; NOTES-FINE.md "Deviations" 1). On from anywhere else, with `V_WIRE` <> 0, or with more
+  than 32 phase slots handed out by the boot (`V_SLOT` > 32), is **refused: fine colour stays off**. On when on / off when off writes nothing (no port `$FF` write).
+* **The descriptor** (the game's mapped image, never banked; `fine$desc`): `DW tile_rows` (tile t's eight row attributes `bright << 6 | paper << 3 | ink` at `tile_rows + 8 t`; 0 = no tileset: tile cells then draw their
+  cell attribute on all rows), `DW sprite_inks` (`MAX_ASSETS` x 16 bytes: the ink of asset a's row k at `sprite_inks + 16 a + k`; 0 = no sprites).
+* **The picture** (contract section 2, the reference `src/lang/arcade/arcade-fine.js` `finePicture`): `$FF` = 2, bitmap at `$4000`, colour of group (y, c) at its pixel address + `$2000`. A font cell has its attribute on all
+  8 rows, a tile cell its tile's 8 row attributes. A sprite blits `(screen AND mask) OR image` and recolours the **ink only** (`(c AND $F8) OR ink_k`) of each byte whose mask byte is not `$FF`.
+* **Variables and areas** (`layout.inc`; only while `V_FINE` = 1 are the areas fine's): `V_FINE` `$E062` (0 / 1), `F_TBASE` (tile_rows - 1024), `F_INKS`, `F_LIST`, `F_OVF`, `F_NOVF` (ticks whose update did not fit the list: the
+  tests read it), `F_SP`, `F_R`, `F_M` in `$E063-$E06F`. The strip `$5800-$59FF` (file 1's attributes: one cell row, column c pixel row k at `$5800 + 8 c + k`, colours at `+ $100`); `F_INFO` `$5A00-$5AFF` (16 bytes
+  an instance); `F_RL` `$7800-$797F` (24 row lists of 16); `F_RMASK` `$7980`; `F_FV` `$79E0`; `F_LOWBIT` `$7A00-$7AFF`; `F_CMAP` = `DIRTY1`; `DIRTY0` read and cleared a cell row at a time; `F_REC` / `F_RLC` / `F_RBITS` /
+  `F_COLS` in `SPR_DRAWN` (128 bytes); **the update list in phase pool B (`$F000-$FA7F`, pushed downwards from `$FA80`; up to 660 groups of 4 bytes above a 48-byte guard)**. Nothing else is touched (`$5B00-$5FFF`,
+  `$7B00-$7FFF`, `T2`, `V_FREE2`, pools A and C: `m19-runtime-fine` memory check).
+* **The 32-phase cap:** pool B is never phase art in a fine game, so a game with a fine scene may have at most **32 sprite phases in all** (the pre-shifted copies; `arcade-link.js` `FINE_MAX_PHASES`; the linker's error is
+  `sprite art too large for a fine-colour game: N phases, at most 32; use fewer phases`, and `RT_FINEMODE` refuses on at the boot's `V_SLOT` > 32). Starfall uses all 32, LUMEN 28.
+* **The tick** (method BD, contract 3a): `FINE_LOOP` (a copy of `TICK_LOOP`'s wait for `V_SYNC` = ready, the period and the canary check) -> `FINE_WORK` (every fine tick passes it: the tests read a tick's start there) ->
+  `fine_publish` (the list the previous tick composed, written **right after the frame interrupt**, top to bottom, only the 8 x 1 groups that differ from the screen: `POP HL` address, `POP DE`, bitmap byte, `SET 5,H`, colour
+  byte, 15 T apart; unrolled 8 times) -> the game's `frame_entry` (`FINE_FRAME`) -> `fine_compose` -> `V_TICKS` + 1 -> `V_SYNC` = busy (**no flip request**: the ISR never writes `$FF` in a fine scene, apart from the switch's own
+  flips) -> `FINE_LOOP`. The update starts 386 to 442 T after the interrupt (frame_div 3). So the screen update uses the positions the previous tick's `FRAME` set (contract decision 12.5).
+* **`fine_compose`** works off screen: the instances' state against their records (`F_REC`), the cells under the old and the new window marked in `F_CMAP` (one mark over both windows of a small move), the pixel rows each
+  marked cell needs (`F_RMASK`; all 8 for a text / tile cell), then per cell row from 23 up to 0 the background of the marked cells into the strip, the instances of the row's list blitted over it (bitmap and ink),
+  each group compared with the screen and, if different, **PUSHed** as (address, bitmap, colour). When the list is full the rows left are composed again and written straight during the next publish (`F_OVF`, `F_NOVF`;
+  with 16 moving sprites about 1 tick in 70, which tears a frame; 8 never overflow). No `DI`, no self-modifying code; the ISR pushes below SP into the guard (deepest push measured 12 bytes with the three-channel sound tick);
+  the compose uses the alternates, IX and IY (the ISR touches none of them).
+* **Switch on:** the hidden file's attributes to 0 (plain black) and that file shown by the ISR's flip; the fine picture of the cell map (no sprites) built into `$4000` / `$6000` behind it; `$FF` = 2 by the ISR's flip
+  (`V_SYNC` = 4); records and dirty maps cleared; `V_FINE` = 1. **Switch off:** file 2's attributes to 0 and shown; file 1 drawn from the cell map and shown; file 2 drawn; `SPR_DRAWN` cleared. Every frame of a switch is the
+  old picture, plain black or the new picture. A switch **between two fine scenes** (`ENTER` redraws the whole screen in the one tick) is published straight, top to bottom, across 10 to 17 refreshes: a wipe, every group
+  the picture before or after (contract decision 12.10). Switch on or off (`RT_FINEMODE` alone): 843,308 T / 821,386 T, 14 refreshes each; a whole switch tick of a game 26 to 31 refreshes on TSRun.
+* **Costs** (TSRun, `node arcade/tests/m19-runtime-perf.mjs`, 12 checks, 2026-11-15): compose + publish per moving 16x16 sprite **25,224 T** (8 phases, moving 2 px; publish 2,160 of it), 23,895 T byte aligned; per moving 8x8
+  12,595 T; per dirty text cell 1,761 T; 46 T per published group; an empty fine tick 3,724 T. **The contract's 12k T target per 16x16 sprite is missed.** A tick with a HUD counter, a tiled sky and every sprite moving: 8 sprites
+  (5 16x16, 3 8x8) median 171,601 / 95th 178,094 T (a 20 Hz tick is 176,064 T, so 4,463 T are left for `FRAME` at the median); 10 sprites 215,596; 12 sprites 233,849; 16 sprites 314,681 (medians). A game's real tick
+  also holds its `FRAME` and the interrupts: Starfall's median 60,723 T and 95th 155,036 T, LUMEN's heaviest ticks median 124,687 and 95th 143,540 (`tests/arcade-starfall-fine.mjs`, `tests/arcade-lumen.mjs`).
+* **The beam** (every painted frame classified against the pictures before and after the update, `arcade/spike/fine/fine-check.mjs`): 8 sprites at 20 Hz 1,482 clean, 0 torn, 0 broken; 16 sprites 1,476 clean, 3 torn
+  (the overflow ticks), 0 broken; Starfall 4,088 frames and LUMEN's heaviest 1,790 frames all clean.
+* **Tests:** `m19-runtime-fine` (27), `m19-runtime-perf` (12), `m19-mutations` (186 mutants: 177 killed, 9 equivalent), `tests/arcade-m19-compiler.mjs` (153), `tests/arcade-m19-differential.mjs` (36,050 checks), `arcade/tests/m19c-mutations.mjs`
+  (238 mutants, 0 survived). `m17-runtime-wire` now measures the wireframe addition up to `M_WTICK_E` so that fine.asm is not counted in it (still 4,731 bytes).
+
