@@ -68,6 +68,10 @@ SYMBOLS = {
     'symGlo':         ('SYM_GLO', 'home'),
     'rtRun':          ('RT_RUN', 'home'),
     'rtErrPc':        ('RT_ERRPC', 'home'),
+    # Debugger locals: the compiler's block scopes (src/compiler/symtab.asm)
+    'scopeOpen':      ('SCOPE_OPEN', 'home'),
+    'scopeClose':     ('SCOPE_CLOSE', 'home'),
+    'symLoc':         ('SYM_LOC', 'home'),
     # Cartridge (C9): the compiled image's cells (src/cart/cart.asm)
     'runMain':        ('RUN_MAIN', 'home'),
     'runVoid':        ('RUN_VOID', 'home'),

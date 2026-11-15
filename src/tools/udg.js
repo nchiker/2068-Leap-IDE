@@ -1,12 +1,15 @@
 /**
- * src/tools/udg.js — the UDG tab: draw Leap's user-defined characters.
+ * src/tools/udg.js — the UDG tab: draw the user-defined characters.
  *
- * Leap V2 has 21 user-defined characters, codes 144–164, 8 bytes each in the
- * table at UDG_TABLE ($F180 in 2.0.2; manual, "User-defined characters").
- * A program defines them with POKE, so the tool works on the program text:
- * "Insert POKEs" adds the lines that define a character, and "Load from
- * program" reads the POKEs already there back into the grid. "Send to TS2068"
- * also writes the table into the running machine for a quick look.
+ * All three ROMs have 21 user-defined characters, codes 144–164, 8 bytes each
+ * in the table at UDG_TABLE ($F180; the ROM entry says). A program defines
+ * them in its own language (BASIC POKEs them, Leap-C copies them with memcpy,
+ * Forth stores them with C!), so the tool works on the program text through
+ * the active profile's `tools.udg` (src/lang/<id>/tool-code.js: `generate`,
+ * `read` and the button texts); this file knows no language. "Insert" adds the
+ * lines that define a character and "Load from program" reads such lines back
+ * into the grid. "Send to TS2068" also writes the table into the running
+ * machine for a quick look.
  *
  * Designs are kept in this browser between visits (localStorage).
  */
@@ -16,7 +19,6 @@
 const STORE_KEY = 'leap-ide.udg';
 const CELL = 22;                 // grid cell size, CSS px
 const THUMB = 3;                 // thumbnail scale
-const POKES_PER_LINE = 4;        // ~70 characters a line, inside Leap's 127
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -32,40 +34,11 @@ function button(label, title, onClick) {
   return b;
 }
 
-/** The POKE lines that define the given characters (slot indexes). */
-export function udgPokes(bytes, slots, table, codeBase) {
-  const lines = [];
-  for (const slot of slots) {
-    lines.push(`REM character ${codeBase + slot}: PRINT CHR$(${codeBase + slot})`);
-    for (let row = 0; row < 8; row += POKES_PER_LINE) {
-      const pokes = [];
-      for (let r = row; r < row + POKES_PER_LINE; r++) pokes.push(`POKE ${table + slot * 8 + r}, ${bytes[slot * 8 + r]}`);
-      lines.push(pokes.join(' : '));
-    }
-  }
-  return lines.join('\n');
-}
-
-/**
- * POKEs of constant values into the table, found in program text.
- * @returns {Map<number, number>} table offset -> byte
- */
-export function pokesInSource(text, table, size) {
-  const found = new Map();
-  for (const raw of text.split('\n')) {
-    const line = raw.replace(/"[^"]*"?/g, '""').replace(/\bREM\b.*$/i, '');
-    for (const m of line.matchAll(/\bPOKE\s+(\d+)\s*,\s*(\d+)\b/gi)) {
-      const addr = Number(m[1]), value = Number(m[2]);
-      if (addr >= table && addr < table + size && value <= 255) found.set(addr - table, value);
-    }
-  }
-  return found;
-}
-
 /**
  * @param {HTMLElement} container
  * @param {{
- *   rom: {udgTable: number, udgCodeBase: number, udgCount: number},
+ *   getRom: () => {udgTable: number, udgCodeBase: number, udgCount: number},
+ *   getCodegen: () => (object|null),   // the active profile's tools.udg (src/lang/profiles.js, "tools")
  *   getSource: () => string,
  *   insertCode: (text: string) => void,
  *   writeToMachine: (addr: number, bytes: Uint8Array) => boolean,
@@ -73,7 +46,10 @@ export function pokesInSource(text, table, size) {
  * }} opts
  */
 export function createUdgTool(container, opts) {
-  const { udgTable: table, udgCodeBase: codeBase, udgCount: count } = opts.rom;
+  // The three ROMs share the code range and the count; the table address follows the ROM (refresh()).
+  const { udgCodeBase: codeBase, udgCount: count } = opts.getRom();
+  let table = opts.getRom().udgTable;
+  let gen = opts.getCodegen();
   const size = count * 8;
   const bytes = new Uint8Array(size);
   try {
@@ -92,15 +68,13 @@ export function createUdgTool(container, opts) {
   };
 
   // ── layout ──
-  container.append(el('p', 'tool-note',
-    `${count} characters, codes ${codeBase}–${codeBase + count - 1}. Click or drag on the grid to draw; ` +
-    'Insert POKEs adds the lines that define them to your program.'));
+  const note = el('p', 'tool-note');
+  container.append(note);
 
   const thumbs = el('div', 'udg-thumbs');
   const thumbCanvases = [];
   for (let s = 0; s < count; s++) {
     const b = el('button', 'udg-thumb');
-    b.title = `CHR$(${codeBase + s})`;
     const c = el('canvas');
     c.width = 8; c.height = 8;
     c.style.width = c.style.height = (8 * THUMB) + 'px';
@@ -137,24 +111,27 @@ export function createUdgTool(container, opts) {
 
   const used = () => [...Array(count).keys()].filter(s => bytes.subarray(s * 8, s * 8 + 8).some(v => v));
   const codeRow = el('div', 'udg-buttons');
+  const insertBtn = button('', '', () => {
+    if (gen) opts.insertCode(gen.generate(bytes, [slot], table, codeBase));
+  });
+  const insertAllBtn = button('', '', () => {
+    if (!gen) return;
+    const s = used();
+    if (s.length === 0) { opts.setStatus('No characters drawn yet', 'idle'); return; }
+    opts.insertCode(gen.generate(bytes, s, table, codeBase));
+  });
+  const loadBtn = button('', '', () => {
+    if (!gen) return;
+    const found = gen.read(opts.getSource(), table, size);
+    if (found.size === 0) { opts.setStatus(gen.load.none, 'idle'); return; }
+    for (const [offset, value] of found) bytes[offset] = value;
+    save();
+    render();
+    const chars = new Set([...found.keys()].map(o => o >> 3)).size;
+    opts.setStatus(`Loaded ${chars} character${chars === 1 ? '' : 's'} from the program`, 'idle');
+  });
   codeRow.append(
-    button('Insert POKEs', 'Add the POKE lines for this character to the program', () => {
-      opts.insertCode(udgPokes(bytes, [slot], table, codeBase));
-    }),
-    button('Insert all', 'Add the POKE lines for every character you have drawn', () => {
-      const s = used();
-      if (s.length === 0) { opts.setStatus('No characters drawn yet', 'idle'); return; }
-      opts.insertCode(udgPokes(bytes, s, table, codeBase));
-    }),
-    button('Load from program', 'Read the characters the program POKEs into the table', () => {
-      const found = pokesInSource(opts.getSource(), table, size);
-      if (found.size === 0) { opts.setStatus('The program POKEs no user-defined characters', 'idle'); return; }
-      for (const [offset, value] of found) bytes[offset] = value;
-      save();
-      render();
-      const chars = new Set([...found.keys()].map(o => o >> 3)).size;
-      opts.setStatus(`Loaded ${chars} character${chars === 1 ? '' : 's'} from the program`, 'idle');
-    }),
+    insertBtn, insertAllBtn, loadBtn,
     button('Send to TS2068', 'Write all characters into the emulated machine now', () => {
       if (opts.writeToMachine(table, bytes)) opts.setStatus(`Characters ${codeBase}–${codeBase + count - 1} written to the TS2068`, 'idle');
     }),
@@ -197,6 +174,7 @@ export function createUdgTool(container, opts) {
   function render() {
     thumbCanvases.forEach(({ b, c }, s) => {
       b.classList.toggle('active', s === slot);
+      b.title = gen ? gen.show(codeBase + s) : String(codeBase + s);
       drawChar(c.getContext('2d'), s, 1);
     });
     const g = grid.getContext('2d');
@@ -208,8 +186,22 @@ export function createUdgTool(container, opts) {
       g.beginPath(); g.moveTo(0, i * CELL + 0.5); g.lineTo(8 * CELL, i * CELL + 0.5); g.stroke();
     }
     const v = [...bytes.subarray(slot * 8, slot * 8 + 8)];
-    title.textContent = `CHR$(${codeBase + slot}) at ${table + slot * 8}: ${v.join(', ')}`;
+    title.textContent = `${gen ? gen.show(codeBase + slot) : codeBase + slot} at ${table + slot * 8}: ${v.join(', ')}`;
   }
-  render();
-  return { render };
+
+  /** The active language (or its ROM) changed: take its table address, button texts and code. */
+  function refresh() {
+    table = opts.getRom().udgTable;
+    gen = opts.getCodegen();
+    note.textContent = `${count} characters, codes ${codeBase}–${codeBase + count - 1}. Click or drag on the grid to draw; ` +
+      (gen ? gen.hint : '');
+    for (const [btn, text] of [[insertBtn, gen?.insert], [insertAllBtn, gen?.insertAll], [loadBtn, gen?.load]]) {
+      btn.textContent = text?.label ?? '';
+      btn.title = text?.title ?? '';
+      btn.disabled = !gen;
+    }
+    render();
+  }
+  refresh();
+  return { render, refresh };
 }

@@ -31,11 +31,12 @@ import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC, librariesUsed } from './leapc-scan.js';
 import { LEAPC_EXAMPLES } from './examples.js';
 import { SPIN_DEMO } from '../spin-demo.js';
-import { createLineTable, readGlobals, readCallStack } from './leapc-debug.js';
+import { createLineTable, readVariables, readCallStack } from './leapc-debug.js';
 import { romIdentity, programImage, buildCartridge as packCartridge, isLeapcCartridge } from './cartridge.js';
 import { blankOut } from './leapc-scan.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
 import { tapeToText } from '../../files.js';
+import { leapcUdgTool, leapcDrawTool } from './tool-code.js';
 
 /** Leap-C's tape format word (LEAPC_TAPE_VERSION), in the header's autostart field. */
 const LEAPC_TAPE_WORD = 0x8C00;
@@ -171,9 +172,9 @@ function createDebugAdapter(rom) {
       return pc && l > 0 ? l - 1 : -1;
     },
     halt: () => false,                 // Stop while paused: BREAK, as when running
-    variables: m => readGlobals(m, t),
+    variables: m => readVariables(m, t),
     callStack: (m, toEditorLine) => readCallStack(m, t, toEditorLine),
-    labels: { variables: 'Globals', step: 'statement' },
+    labels: { variables: rom.scopeClose ? 'Variables' : 'Globals', step: 'statement' },
   };
 }
 
@@ -246,7 +247,8 @@ export const leapcProfile = {
   symbolsEmpty: 'No functions, globals, macros or types yet.',
   help,
   examples: [...LEAPC_EXAMPLES, SPIN_DEMO.c],   // + the speed test shared by the three languages
-  tools: { udg: false, draw: false },
+  /** Right-panel tools that generate this language's code (src/tools/udg.js, draw.js). */
+  tools: { udg: leapcUdgTool, draw: leapcDrawTool },
   /** ⬇ TAP: the program as Leap-C's SAVE writes it (V2's two blocks, format word $8C00). */
   hasTape: true,
   /** ⬇ DCK / ▶ Test DCK: the compiled program on Leap-C's cartridge build (src/lang/c/cartridge.js). */

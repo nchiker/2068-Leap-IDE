@@ -49,8 +49,11 @@ The original spec is [`docs/LEAP_CARTRIDGE_BUILD.md`](docs/LEAP_CARTRIDGE_BUILD.
 The release's `roms/leap_v2_exrom.dck` is not this: it is only the EXROM as a
 cartridge for EightyOne 1.41.
 
-**Images.** `cartridge/2.1.1-emu.1/` (the current one, built with `make cart`
-from the patch rebased onto `v2.1.1-emu.1`; `cart_check` OK) holds
+**Images.** `cartridge/2.1.2-emu.1/` (the current one, built with `make cart`
+from the patch rebased onto `v2.1.2-emu.1`; `cart_check` OK per `063afb7`) holds
+`leap_v2_cart_home.bin` (16384 bytes, SHA-256 `5c5c8e89…`) and
+`leap_v2_cart_exrom.bin` (8192 bytes, SHA-256 `e43a842a…`) plus a README.
+`cartridge/2.1.1-emu.1/` holds
 `leap_v2_cart_home.bin` (16384 bytes, SHA-256 `14d50f5f…`) and
 `leap_v2_cart_exrom.bin` (8192 bytes, SHA-256 `2058303e…`) plus a README.
 `cartridge/2.1.0-emu.1/` holds the 2.1.0 build: HOME SHA-256 `307b0616…`, EXROM
@@ -79,7 +82,7 @@ absent chunk is `$FF`.
 **Program image** at `$6000`, format 2, 19-byte header: `"LEAPPROG"`, format
 LE16 = 2, identity LE16, bytecode length LE16 (1 to 4011), `SYM_COUNTS` (5
 bytes), then the bytecode, then the package length LE16 (0 = none, at most
-1024) and the package image. The identity (the IDE's `romIdentity`, equal to `cartIdentity` of the cartridge HOME, checked) for 2.1.0-emu.1 is `$E0A5` and for 2.1.1-emu.1 `$4E00` (unchanged by packages). (The Leap project's answer file quotes "identity CRC $2A70 (was $0AEF)": that is a different CRC of theirs, not this identity.) The
+1024) and the package image. The identity (the IDE's `romIdentity`, equal to `cartIdentity` of the cartridge HOME, checked) for 2.1.0-emu.1 is `$E0A5`, for 2.1.1-emu.1 `$4E00` (unchanged by packages) and for 2.1.2-emu.1 `$04B2`. (The Leap project's answer file quotes "identity CRC $2A70 (was $0AEF)": that is a different CRC of theirs, not this identity.) The
 cartridge refuses any other signature, format, identity or length and shows
 `NO PROGRAM`. At run time it uses HSR (port `$F4`) = `$43` and DECR (port
 `$FF`) bit 7 = 0. The stock ROM starts it after about 2 s (103 frames). After
@@ -95,16 +98,16 @@ registry as on the IDE's checker (which does `EXT2_CLEAR_ALL` and then the
 install before compiling), so the bytecode's package calls, with slot and
 generation baked in, match. Free space left in the cartridge images: HOME 174
 bytes, EXROM 63. `leap.patch` is two commits on the tag; refresh it with
-`git -C leap format-patch --stdout v2.1.1-emu.1..HEAD > leap.patch`. A fresh
+`git -C leap format-patch --stdout v2.1.2-emu.1..HEAD > leap.patch`. A fresh
 clone from GitHub plus `setup.sh` reproduces both images byte for byte.
 `cartridge-build/tools/leap2cart.mjs` takes `--package PKG.bin`.
 
 **Checker.** `compile(store, symCountsSize, pkg)` in `src/lang/basic/leap-check.js` runs
 `check(store, pkg)` (the package is installed first, as in "Packages") and, on code 0, also returns `bytecode`
 (RAM from `VM_CODE_BASE` to `EMIT_PTR`) and `symCounts` (from `SYM_COUNTS`).
-`src/lang/basic/leap-roms.js`: the 2.1.1-emu.1 entry has `symCounts: 0xB800` and
-`cartridgeDir: 'cartridge/2.1.1-emu.1/'` (the 2.1.0-emu.1 entry the same with its
-own directory); the 2.0.2 entry has neither, so
+`src/lang/basic/leap-roms.js`: the 2.1.2-emu.1 entry has `symCounts: 0xB800` and
+`cartridgeDir: 'cartridge/2.1.2-emu.1/'` (the 2.1.1-emu.1 and 2.1.0-emu.1 entries the same with their
+own directories); the 2.0.2 entry has neither, so
 export says "There is no cartridge build for Leap 2.0.2-emu.1".
 `tools/leap-rom-entry.py` emits `symCounts` and a `cartridgeDir` line (with a
 comment to leave it out when a release has no cartridge build).

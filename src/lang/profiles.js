@@ -26,7 +26,10 @@
  *   symbolGroups(text), symbolsEmpty     the Symbols tab
  *   help                                 the Help overlay (src/help.js)
  *   examples                             the Examples menu
- *   tools {udg, draw}                    which code-generating tools apply
+ *   tools {udg, draw}                    the UDG and Draw tabs' half of the language, or null (tab hidden):
+ *     udg {show(code), hint, insert{label,title}, insertAll{label,title}, load{label,title,none},
+ *          generate(bytes, slots, table, codeBase) -> text, read(text, table, size) -> Map(offset -> byte)}
+ *     draw {hint, generate(paths) -> text}     (src/lang/<id>/tool-code.js; src/tools/ know no language)
  *   waitingText                          status while the program waits for keys
  *   tapeToText(bytes), ownsTape(bytes)   Open of a .tap
  *   hasTape, hasCartridge, hasSession    which buttons apply (⬇ TAP; ⬇ DCK / ▶ Test DCK; Import)

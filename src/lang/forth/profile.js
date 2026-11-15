@@ -36,6 +36,7 @@ import { readWords } from './forth-debug.js';
 import { cartImages, homeIdentity, programImage, buildForthCartridge, isForthCartridge, UDG_BYTES } from './cartridge.js';
 import { buildForthTap, forthTapeToText, isForthTape, textStore, LOAD_TEXT_MAX } from './tape.js';
 import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
+import { forthUdgTool, forthDrawTool } from './tool-code.js';
 
 // ── Errors (LAST_ERROR, ANS numbering; LEAP_FORTH_ANSWERS.md Q2.2) ──
 const THROW_BREAK = -28;
@@ -306,7 +307,8 @@ export const forthProfile = {
   symbolsEmpty: 'No words, variables or constants defined yet.',
   help,
   examples: [...FORTH_EXAMPLES, SPIN_DEMO.forth],   // + the speed test shared by the three languages
-  tools: { udg: false, draw: false },
+  /** Right-panel tools that generate this language's code (src/tools/udg.js, draw.js). */
+  tools: { udg: forthUdgTool, draw: forthDrawTool },
   /** ⬇ TAP: a TEXT tape, as SAVE-TEXT writes it (src/lang/forth/tape.js). */
   hasTape: true,
   /** ⬇ DCK / ▶ Test DCK: the program on Forth's cartridge build (src/lang/forth/cartridge.js). */

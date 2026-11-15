@@ -57,6 +57,10 @@ export const KNOWN_ROMS = {
     symGlo:           0x5E38,   // SYM_GLO
     rtRun:            0x363B,   // RT_RUN
     rtErrPc:          0x5EB8,   // RT_ERRPC
+    // Debugger locals: the compiler's block scopes
+    scopeOpen:        0x10CB,   // SCOPE_OPEN
+    scopeClose:       0x10E0,   // SCOPE_CLOSE
+    symLoc:           0x5E3A,   // SYM_LOC
     runMain:          0x5E9C,   // RUN_MAIN
     runVoid:          0x5E9E,   // RUN_VOID
     imgLim:           0x5E72,   // IMG_LIM
@@ -143,6 +147,10 @@ export const KNOWN_ROMS = {
     symGlo:           0x5E38,   // SYM_GLO
     rtRun:            0x35A6,   // RT_RUN
     rtErrPc:          0x5EB8,   // RT_ERRPC
+    // Debugger locals: the compiler's block scopes
+    scopeOpen:        0x1036,   // SCOPE_OPEN
+    scopeClose:       0x104B,   // SCOPE_CLOSE
+    symLoc:           0x5E3A,   // SYM_LOC
     runMain:          0x5E9C,   // RUN_MAIN
     runVoid:          0x5E9E,   // RUN_VOID
     imgLim:           0x5E72,   // IMG_LIM

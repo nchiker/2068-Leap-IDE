@@ -559,7 +559,7 @@ try {
   // the preview paints lines and turns: two snapshots of the canvas differ, both have ink
   const snap = () => evaluate(`(() => { const c = document.querySelector('.proj-row[data-asset="models/cube"] canvas.model-preview'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     let n = 0, h = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) { n++; h = (h * 31 + i + d[i]) | 0; } return { n, h }; })()`);
-  for (let i = 0; i < 40 && (await snap()).n === 0; i++) await sleep(100);   // the first frame of the loop
+  for (let i = 0; i < 150 && (await snap()).n === 0; i++) await sleep(100);  // the first frame of the loop (up to 15 s: 4 s was too short under 8 verify jobs)
   const sn1 = await snap(); await sleep(1500); const sn2 = await snap();
   check('the model preview draws a wireframe and it turns (the picture changes over 1.5 s)', sn1.n > 20 && sn2.n > 20 && sn1.h !== sn2.h, JSON.stringify([sn1, sn2]));
   // the colour is the page's, from a CSS variable: no pixel is the default black of a canvas stroke

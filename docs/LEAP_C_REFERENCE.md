@@ -1,8 +1,8 @@
-# Leap-C (`src/lang/c/`, stages C1 to C7 and C9)
+# Leap-C (`src/lang/c/`, stages C1 to C9)
 
 > Moved verbatim out of `CLAUDE.md` to keep it under the 150k-character limit. `CLAUDE.md` still has the heading and a pointer.
 
-### Leap-C (`src/lang/c/`, stages C1 to C7 and C9)
+### Leap-C (`src/lang/c/`, stages C1 to C9)
 
 Leap-C **v1.2.0** (released 2026-11-02, tag `v1.2.0`, commit `e5cc932`): the
 display code of Forth 2.0 ported (D25 to D29: `draw()` about 4 times faster;
@@ -251,12 +251,33 @@ Plan: [`docs/LEAP_C_PLAN.md`](docs/LEAP_C_PLAN.md).
     (`EXIT 12`, a circle drawn); also the identity `$E90E`, the DCK layout, a
     compile error refused with its line and `outp(244, …)` asking first. The
     browser test runs ▶ Test DCK and Stop. Not tried: real hardware.
-- **Not yet.** Locals in the debugger (a second version: `IX` + the symbol's
-  value for `SF_AUTO` entries, with each block's code range from
-  `SCOPE_OPEN` / `SCOPE_CLOSE`); driving the tape example (`a-score-on-tape`)
+- **Locals in the debugger** (2026-11-15): parameters, autos and block-scope
+  statics of the current function, from each block's `SYM_LOC` chain at
+  `SCOPE_CLOSE` and its code range (`SCOPE_OPEN` .. `SCOPE_CLOSE`, split at
+  region jumps); see `docs/DEBUGGER.md`. Checked in `tests/rom-checks.mjs`
+  section 9 (each kind, shadowing, a function whose code crosses into the next
+  region) and the browser test.
+- **Not yet.** Driving the tape example (`a-score-on-tape`)
   in the tests; running the C examples from cartridges against the manual (as
-  V2's 695-program comparison); C8 (UDG and Draw tools) is optional and not
-  started.
+  V2's 695-program comparison).
+- **Tools (C8, the UDG and Draw tabs).** Done. `src/lang/c/tool-code.js` (pure)
+  gives `src/tools/udg.js` and `draw.js` (which know no language) Leap-C's code
+  through the profile's `tools {udg, draw}`: the UDG tab inserts, per character,
+  `// character 144: putchar(144);` and `memcpy((char *)0xF180, "\x3C\x42…", 8);`
+  (the manual's Part 7 example 13 idiom, a pointer write; the string literal
+  rather than the example's global `char face[8]` because the tool inserts
+  inside a function, and the eight bytes are copied whatever they are, a 0
+  included), and the Draw tab inserts `plot(x, y);` and `draw(x0, y0, x1, y1);`
+  (y from the top; `draw` is pixel-for-pixel Bresenham, as the preview).
+  "Load from program" reads that `memcpy` form and the manual's (a global
+  `char` array with an initialiser list, then `memcpy`), ignoring comments and
+  addresses outside the table. The table is `$F180`, codes 144-164, from the
+  ROM entry's `udgTable` / `udgCodeBase` / `udgCount` (the same in all three
+  entries). "Send to TS2068" writes the live machine; Leap-C keeps the UDGs
+  between runs. Checked in `tests/rom-checks.mjs` section 11 (the generated
+  program through the profile's Run path: the table bytes, the printed
+  characters, the bitmap equal to the preview, the checker clean) and
+  `tests/browser-smoke.mjs`.
 - **Moving to a later release** (done for 1.2.0 on 2026-11-02: the library
   image `libs/c/1.2.0/shapes.bin` is the data block of the pack's
   `libs/shapes.tap`, byte-identical to 1.0.0's since the library ABI did not

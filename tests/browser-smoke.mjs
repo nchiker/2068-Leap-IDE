@@ -109,6 +109,45 @@ function check(name, ok, detail = '') {
   if (!ok) failed++;
 }
 const status = () => evaluate("document.getElementById('status-text').textContent");
+/**
+ * The UDG and Draw tabs of the active language (stages C8 / F7): both tabs are shown, a pixel drawn in the UDG grid
+ * is inserted as that language's code and read back by Load from program, and two clicks in the Draw area insert its
+ * line code. `want` has the button texts and the code each must produce; the Debugger tab is shown again at the end.
+ */
+async function toolsSmoke(name, want) {
+  const mouse = async (x, y) => {
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+      await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });
+    }
+  };
+  const press = (box, text) => evaluate(`[...document.querySelectorAll('${box} .tool-btn')].find(b => b.textContent === ${JSON.stringify(text)}).click()`);
+  const tabs = await evaluate("[...document.querySelectorAll('.panel-tab')].filter(t => !t.hidden).map(t => t.dataset.tab).join()");
+  await evaluate("(leapEditor.setSource('', {fresh: true}), document.querySelector('[data-tab=udg].panel-tab').click())");
+  await press('#tool-udg', 'Clear');
+  const cell = await evaluate("(r => [r.left + 22 + 11, r.top + 11])(document.querySelector('#tool-udg .udg-grid').getBoundingClientRect())");
+  await mouse(cell[0], cell[1]);                       // slot 0, column 1 of row 0: the byte 0x40
+  const labels = await evaluate("[...document.querySelectorAll('#tool-udg .udg-buttons:last-child .tool-btn')].map(b => b.textContent).join('|')");
+  await evaluate("document.querySelector('#tool-udg .udg-buttons:last-child .tool-btn').click()");
+  const inserted = await evaluate('leapEditor.getSource()');
+  await press('#tool-udg', 'Clear');
+  const cleared = await evaluate("document.querySelector('#tool-udg .udg-title').textContent");
+  await press('#tool-udg', 'Load from program');
+  const loaded = await evaluate("document.querySelector('#tool-udg .udg-title').textContent");
+  check(`${name}: the UDG tab inserts the language's code for a drawn pixel and loads it back`,
+    /(^|,)udg(,|$)/.test(tabs) && /(^|,)draw(,|$)/.test(tabs) && labels === want.udgButtons && inserted.includes(want.udg) &&
+    / 0, 0, 0, 0, 0, 0, 0, 0$/.test(cleared) && / 64, 0, 0, 0, 0, 0, 0, 0$/.test(loaded),
+    `${tabs} | ${labels} | ${JSON.stringify(inserted)} | ${cleared} | ${loaded}`);
+  await evaluate("(leapEditor.setSource('', {fresh: true}), document.querySelector('[data-tab=draw].panel-tab').click())");
+  await press('#tool-draw', 'Clear');
+  const area = await evaluate("(r => [r.left, r.top, r.width / 256])(document.querySelector('#tool-draw .draw-overlay').getBoundingClientRect())");
+  await mouse(area[0] + (10 + 0.5) * area[2], area[1] + (20 + 0.5) * area[2]);
+  await mouse(area[0] + (50 + 0.5) * area[2], area[1] + (60 + 0.5) * area[2]);
+  await press('#tool-draw', 'Insert into program');
+  const drawn = await evaluate('leapEditor.getSource()');
+  check(`${name}: the Draw tab inserts the language's line code for two clicks`, drawn.trim() === want.draw, JSON.stringify(drawn));
+  await evaluate("document.querySelector('[data-tab=debugger].panel-tab').click()");
+}
+
 /** Put a program in the editor, Run it and wait for the run to settle; returns the status text. */
 /** Run lines (or, with null, the editor's program) to a status matching done. */
 async function runProgram(lines, done = /Finished|error|Stopped/) {
@@ -348,6 +387,9 @@ try {
     check(`tab ${tab} shows its panel`, shown === tab, shown);
   }
 
+  await toolsSmoke('BASIC', { udgButtons: 'Insert POKEs|Insert all|Load from program|Send to TS2068',
+    udg: 'POKE 61824, 64 : POKE 61825, 0 : POKE 61826, 0 : POKE 61827, 0', draw: 'LINE 10, 20 TO 50, 60' });
+
   // Draw zoom (1920 wide: there is room for 2x and 3x)
   const zoom = await evaluate(`(() => {
     document.querySelector('[data-tab=draw].panel-tab').click();
@@ -456,6 +498,8 @@ try {
   const sent = await waitFor(`/^OK$|THROW/.test(document.getElementById('status-text').textContent) && [document.getElementById('status-text').textContent, leapEditor.getSource().split('\\n').length].join(' | ')`, 8000);
   check('Forth: Ctrl+Enter sends the cursor\'s line only (and inserts nothing)', sent === 'OK | 3', String(sent));
 
+  await toolsSmoke('Forth', { udgButtons: 'Insert C! lines|Insert all|Load from program|Send to TS2068',
+    udg: '64 0 UDG C!  0 0 UDG 1 + C!  0 0 UDG 2 + C!  0 0 UDG 3 + C!', draw: '10 20 50 60 LINE' });
   await evaluate("document.getElementById('btn-help').click()");
   const forthHelp = await evaluate("document.querySelectorAll('.help-overlay .help-item').length");
   await evaluate("document.querySelector('.help-close').click()");
@@ -483,7 +527,7 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
   check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
-  // C4: a breakpoint in a function pauses there, with the globals and the call stack.
+  // C4: a breakpoint in a function pauses there, with its locals (the parameter), the globals and the call stack.
   await evaluate(`(leapEditor.setSource(${JSON.stringify(['int total;', 'int sq(int n)', '{', '    return n * n;', '}', 'int main(void)', '{', '    total = sq(3) + sq(4);', '    return total;', '}'].join('\n'))}, {fresh: true}), leapEditor.toggleBreakpoint(4))`);
   await evaluate("document.getElementById('btn-run').click()");
   const cPaused = await waitFor("/^Paused at line/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 15000);
@@ -492,8 +536,8 @@ try {
   await evaluate("document.getElementById('btn-pause').click()");
   const cDone = await waitFor("/^Finished|error/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 15000);
   const cDoneWhy = await status();
-  check('Leap-C: a breakpoint in a function pauses with the globals and call stack; toggling it clears it; Continue finishes with the exit status',
-    cPaused === 'Paused at line 4' && cPanel === 'Globals | total int 0 | sq() line 4 < main() line 8' && cDone === 'Finished: exit 25' && bpOff === '[[4],[]]', `${cPaused} | ${cPanel} | ${cDone} | ${cDoneWhy} | ${bpOff}`);
+  check('Leap-C: a breakpoint in a function pauses with its locals, the globals and the call stack; toggling it clears it; Continue finishes with the exit status',
+    cPaused === 'Paused at line 4' && cPanel === 'Variables | Locals of sq() n int (param) 3 Globals total int 0 | sq() line 4 < main() line 8' && cDone === 'Finished: exit 25' && bpOff === '[[4],[]]', `${cPaused} | ${cPanel} | ${cDone} | ${cDoneWhy} | ${bpOff}`);
   // C9: ▶ Test DCK runs the compiled program from Leap-C's cartridge on the stock ROMs; Stop goes back.
   await evaluate(`(leapEditor.setSource(${JSON.stringify(['int main(void)', '{', '    cls();', '    draw(16, 60, 239, 150);', '    return 7;', '}'].join('\n'))}, {fresh: true}), document.getElementById('btn-dck-test').click())`);
   const cCart = await waitFor(`leapIDE.emulator.cartridge && ((leapIDE.emulator.machine.bus.read(0x4000 | (60 & 0xC0) << 5 | (60 & 7) << 8 | (60 & 0x38) << 2 | (16 >> 3)) >> (7 - (16 & 7))) & 1) === 1 && document.getElementById('emu-rom').textContent`, 20000);
@@ -506,6 +550,8 @@ try {
   await evaluate("window.confirm = () => true, document.querySelector('[data-example=fibonacci-numbers]').click()");
   const cExRun = await runProgram(null, /Finished|error|Stopped/);
   check('Leap-C: the Examples menu lists 19 programs (the manual\'s 18 and the speed test), and Fibonacci runs', cExamples === 19 && cExRun === 'Finished: exit 55', `${cExamples} | ${cExRun}`);
+  await toolsSmoke('Leap-C', { udgButtons: 'Insert memcpy|Insert all|Load from program|Send to TS2068',
+    udg: 'memcpy((char *)0xF180, "\\x40\\x00\\x00\\x00\\x00\\x00\\x00\\x00", 8);', draw: 'draw(10, 20, 50, 60);' });
   // C6: a program calling circle() runs with LIB "shapes" loaded by the IDE.
   const cLib = await runProgram(['int main(void)', '{', '    cls();', '    circle(128, 96, 20);', '    return 0;', '}'], /Finished|error|Stopped/);
   const cLibPixel = await evaluate('(leapIDE.emulator.machine.bus.read(0x4000 | (96 & 0xC0) << 5 | (96 & 7) << 8 | (96 & 0x38) << 2 | (148 >> 3)) >> (7 - (148 & 7))) & 1');

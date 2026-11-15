@@ -237,9 +237,24 @@ Plan: [`docs/LEAP_FORTH_PLAN.md`](docs/LEAP_FORTH_PLAN.md).
     `~/2068-forth/build/forth_boot.sym`, whose HOME ROM is byte-identical to
     v2.0's, SHA-256 `730c86d0…`) and `$0710` for 2.0.1. A new Forth release
     needs its entry, here and in `FORTH_TAPE_SYMBOLS`.
-- **Not yet.** F7 (UDG and Draw tools) is optional and not started; the
-  optional LIB tape (`SAVE-LIB` format) and the optional watches of F1 are not
-  built.
+- **Tools (F7, the UDG and Draw tabs).** Done. `src/lang/forth/tool-code.js`
+  (pure) gives `src/tools/udg.js` and `draw.js` (which know no language)
+  Forth's code through the profile's `tools {udg, draw}`: the UDG tab inserts,
+  per character, `\ character 144: 144 EMIT` and two lines of four stores
+  `60 0 UDG C!  66 0 UDG 1 + C! …` (`byte n UDG [row +] C!`; `n UDG` is the
+  slot's address, row 0 first; about 70 characters a line, inside the
+  prompt's 128), and the Draw tab inserts `x y PLOT` and `x0 y0 x1 y1 LINE`
+  (y from the top; `LINE` is pixel-for-pixel Bresenham, as the preview).
+  "Load from program" reads the constant stores back (comments, `( )` and
+  strings ignored). Because Run sends a program a line at a time and the
+  prompt echoes each line onto the screen, a picture drawn by top-level lines
+  is overprinted by the lines after it; the Draw tab's hint says to put the
+  lines in a word (`: PIC … ;`) and run it after `CLS`, and the test does.
+  The UDGs are outside the dictionary (`SAVE-LIB` does not save them; the
+  cartridge image carries them, F8). Checked in `tests/rom-checks.mjs`
+  section 11 and `tests/browser-smoke.mjs`.
+- **Not yet.** The optional LIB tape (`SAVE-LIB` format) and the optional
+  watches of F1 are not built.
 - **Adding a Forth release.** Unpack its zip; move the TSRun pin to a commit
   carrying its ROMs (the pair in `tsrun/roms/` must match `forth-roms.js`);
   run `tools/forth-rom-entry.py <unpacked zip> <version>` and paste the entry;
