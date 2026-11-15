@@ -161,8 +161,8 @@ const one = (text, scenes) => plan(text, scenes)[0];
   const buf = plan(text, { b: { display: 'buffers' } });
   check('"buffers" on a scene whose auto is fine: setting buffers, no note, auto unchanged', buf[1].auto === 'fine' && buf[1].setting === 'buffers' && buf[1].override === 'buffers' && buf[1].notes.length === 0, json(buf[1]));
   const fine = plan(text, { a: { display: 'fine' } });
-  check('"fine": setting fine, built stays buffers, the exact not-built note',
-    fine[0].setting === 'fine' && fine[0].built === 'buffers' && fine[0].override === 'fine' && json(fine[0].notes) === json(["scene 'a': display 'fine' (8 x 1 colour) is not built into any runtime yet; the scene is built with two buffers"]), json(fine[0]));
+  check('"fine": setting fine, built fine (runtime v2 since fine colour, F3), no note any more',
+    fine[0].setting === 'fine' && fine[0].built === 'fine' && fine[0].override === 'fine' && fine[0].notes.length === 0 && fine.every((s, i) => i === 0 || s.built === 'buffers'), json(fine[0]));
   const hires = plan(text, { c: { display: 'hires' } });
   check('"hires": the exact not-built note with 512 x 192 hi-res',
     hires[2].setting === 'hires' && json(hires[2].notes) === json(["scene 'c': display 'hires' (512 x 192 hi-res) is not built into any runtime yet; the scene is built with two buffers"]), json(hires[2]));
@@ -205,16 +205,16 @@ const one = (text, scenes) => plan(text, scenes)[0];
 {
   const runtime = { version: 2, symbols: {} };
   const text = 'GAME "x"\n' + HEAD + scene('a', '', '    SHOW ball AT 1, 1\n') + scene('b', '    TILE 1, 1 = 1\n');
-  const out = compile(text, { scenes: { b: { display: 'fine' }, a: { display: 'q' } } });
+  const out = compile(text, { scenes: { b: { display: 'hires' }, a: { display: 'q' } } });
   check('compile: out.scenes is set when the program checks (even though no runtime is given)', Array.isArray(out.scenes) && out.scenes.length === 2, json(out.errors));
-  check('compile: out.scenes carries the plan', out.scenes[0].auto === 'buffers' && out.scenes[1].auto === 'fine' && out.scenes[1].setting === 'fine');
+  check('compile: out.scenes carries the plan', out.scenes[0].auto === 'buffers' && out.scenes[1].auto === 'fine' && out.scenes[1].setting === 'hires');
   const w = out.warnings.filter((d) => /display/.test(d.message));
   const lineA = text.split('\n').findIndex((l) => l.startsWith('SCENE a')) + 1;
   const lineB = text.split('\n').findIndex((l) => l.startsWith('SCENE b')) + 1;
   check('compile: both display warnings, severity "warning", at the scene\'s name',
     w.length === 2 && w.every((d) => d.severity === 'warning') &&
     w.some((d) => d.line === lineA && d.col === 6 && d.endCol === 7 && d.message === "scenes.a.display: 'q' is not a display setup (auto, buffers, fine, hires); ignored") &&
-    w.some((d) => d.line === lineB && d.col === 6 && d.endCol === 7 && d.message === "scene 'b': display 'fine' (8 x 1 colour) is not built into any runtime yet; the scene is built with two buffers"), json(w));
+    w.some((d) => d.line === lineB && d.col === 6 && d.endCol === 7 && d.message === "scene 'b': display 'hires' (512 x 192 hi-res) is not built into any runtime yet; the scene is built with two buffers"), json(w));
   check('compile: the warnings are sorted by position', out.warnings.every((d, i, l) => i === 0 || l[i - 1].line < d.line || (l[i - 1].line === d.line && l[i - 1].col <= d.col)));
   const noOverride = compile(text, {});
   check('compile: without scenes there is no display warning', noOverride.warnings.every((d) => !/display/.test(d.message)) && noOverride.scenes.length === 2);

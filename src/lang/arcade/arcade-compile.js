@@ -8,6 +8,7 @@
  *   scenes   the project's scenes object ({name: {display: 'auto'|'buffers'|'fine'|'hires'}}), optional; `out.scenes` is the per-scene display plan
  *            (arcade-display.js, language batch 4 section 10), set as soon as the program checks without errors (absent before that, also
  *            when a later stage fails), and its notes are warnings
+ *            A scene the project sets to 'fine' (8 x 1 colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md) is built fine in a game for runtime v2 without WIRE3D (`out.scenes[i].built === 'fine'`); anywhere else it is an error on the scene's line
  *   bankAll  test option (docs/ARCADE_BANKING_CONTRACT.md section 5): bank every bankable asset (every MAP) into the window $4000-$7FFF; `out.shipped` lists the DOCK chunks of `out.dck`
  *   assets   {sprites: {name: {w, h, rows: [{bits, mask}]}}} (or that sprites map itself); since M3 also
  *            {sprites, tilesets: {name: {tiles}}, sfx: {name: {ticks}}, maps: {name: {w, h, cells, bank?: 'auto' | 'mapped' | 'banked'}}} (arcade-assets.js)
@@ -128,17 +129,30 @@ export function compile(text, { runtime, image, assets, scenes, bankAll = false,
   if (out.errors.length) { sort(out.errors); return out; }
   take(check(ast, { version: runtime?.version ?? 0 }));
   if (out.errors.length) { sort(out.errors); sort(out.warnings); return out; }
-  out.scenes = sceneDisplayPlan(ast, { scenes });
+  out.scenes = sceneDisplayPlan(ast, { scenes, version: runtime ? (runtime.version ?? 0) : 2 });      // (no runtime: the plan of the least a game needs; the error below says the runtime is missing)
   for (const sc of out.scenes) {
     for (const message of sc.notes) out.warnings.push({ line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'warning', message });
   }
   sort(out.warnings);
+  // fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 1.2): a scene the project sets to 'fine' needs a game for runtime v2 without WIRE3D; anywhere else it is an error on the scene's line
+  // (only the project's own setting counts: a scene whose automatic choice is 'fine' is built with two buffers like any other)
+  for (const sc of out.scenes) {
+    if (!runtime || sc.override !== 'fine' || sc.built === 'fine') continue;
+    const version = runtime.version ?? 0;
+    const head = `scene '${sc.name}': fine colour (display 'fine')`;
+    const why = version >= 3 ? requiredRuntime(text, assets).reasons : [];
+    const uses = ['WINDOW', 'VIEW3D'].find((w) => why.includes(w)) ?? why.find((r) => /^[A-Z][A-Z0-9]*(\(\))?$/.test(r));      // (the word that decides: WINDOW or VIEW3D first, else another word; a reason such as a big sprite has no word)
+    const message = version === 2 ? `${head} cannot be used in a WIRE3D game`
+      : uses ? `${head} needs runtime v2; this game uses ${uses} (runtime v${version})` : `${head} needs runtime v2; this game is built for runtime v${version}`;
+    out.errors.push({ line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'error', message });
+  }
+  if (out.errors.length) { sort(out.errors); return out; }
   if (!runtime || !image) {
     out.errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message: 'no runtime image: build the runtime first (arcade/build/runtime.json and runtime.bin)' });
     return out;
   }
 
-  const gen = generate(ast, runtime, assets, { bankAll, emit, cg });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
+  const gen = generate(ast, runtime, assets, { bankAll, emit, cg, ...(out.scenes.some((sc) => sc.built === 'fine') ? { fine: out.scenes.map((sc) => sc.built === 'fine') } : {}) });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
   take(gen.errors ?? []);
   take(gen.warnings ?? []);
   if (out.errors.length || !gen.code) { sort(out.errors); sort(out.warnings); return out; }

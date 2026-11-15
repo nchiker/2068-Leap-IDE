@@ -173,6 +173,9 @@
  *     width, 1 outside it; contract image = (asset bits AND asset mask), left-aligned in 16 bits. A row without a
  *     mask covers its whole width. Sprites of 8..16 pixels wide and 1..16 high only (M2).
  *  3. Sprite index = order of the SPRITE declarations (0..3); descriptors are `16, height, data, 0`.
+ *  F3. Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 4.1, 5.2; `opts.fine` = one boolean per scene, set by compile() from the display plan): in a program with a fine scene the game image holds the fine descriptor
+ *     (`fine$desc`: DW tile_rows (count x 8 row attributes, 0 = no tileset), DW sprite_inks (MAX_ASSETS x 16 row inks, 0 = no sprites)) and every ENTER sequence, plus the start of init_entry when the first scene is fine, calls
+ *     `LD A,1|0 / LD HL,fine$desc / CALL RT_FINEMODE` (A = 1 for a fine scene). A program without a fine scene emits none of it (the same bytes as before). No RT_FINEMODE in the runtime: an error on the scene's line.
  *  4. Variables start at 0 (init_entry clears them); the contract does not say who clears $E100.. .
  *  5. FOR: from, to, step are evaluated once in that order, then the variable is assigned. A step >= 0 loops while
  *     v <= to, a negative step while v >= to (step 0 never advances, as in V2). If v + step leaves the 16-bit
@@ -228,7 +231,11 @@ function parseBits(v, what) {
   throw new Error(`${what} must be a number or a hex string of up to 4 digits, got ${JSON.stringify(v)}`);
 }
 
-/** Asset sprite -> {w, h, data: Uint8Array(h*4)} in the runtime's row format (mask_hi, mask_lo, image_hi, image_lo). */
+/**
+ * Asset sprite -> {w, h, data: Uint8Array(h*4), srcW, inks, inkProblem} in the runtime's row format (mask_hi, mask_lo, image_hi, image_lo).
+ * `inks` (fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md 6): 16 bytes, the ink 0..7 of each art row as authored (default 7), 0 beyond the height; `inkProblem` is the first
+ * ink that is not a whole number 0..7 (or null): it is only an error in a fine game (the ink of such a row is then `& 7`), so a sprite that never was fine converts as before.
+ */
 export function convertSprite(asset) {
   const rows = asset.rows ?? asset.frames?.[0]?.rows;
   if (!Array.isArray(rows)) throw new Error('the sprite has no rows');
@@ -238,14 +245,19 @@ export function convertSprite(asset) {
   if (rows.length !== h) throw new Error(`the sprite says h = ${h} but has ${rows.length} rows`);
   const wmask = (1 << w) - 1, shift = 16 - w;
   const data = new Uint8Array(h * 4);
+  const inks = new Uint8Array(16);
+  let inkProblem = null;
   rows.forEach((r, i) => {
+    const ink = r.ink === undefined || r.ink === null ? 7 : r.ink;
+    if (!Number.isInteger(ink) || ink < 0 || ink > 7) inkProblem ??= `row ${i} ink must be a whole number 0..7, got ${JSON.stringify(r.ink)}`;
+    inks[i] = Number.isInteger(ink) ? ink & 7 : 7;
     const bits = parseBits(r.bits, `row ${i} bits`) & wmask;
     const covers = (r.mask === undefined || r.mask === null ? wmask : parseBits(r.mask, `row ${i} mask`)) & wmask;
     const mask = (~(covers << shift)) & 0xFFFF;
     const image = ((bits & covers) << shift) & 0xFFFF;
     data.set([mask >> 8, mask & 0xFF, image >> 8, image & 0xFF], i * 4);
   });
-  return { w: 16, h, data, srcW: w };
+  return { w: 16, h, data, srcW: w, inks, inkProblem };
 }
 
 // ── the generator ───────────────────────────────────────────────────────────────────────────────────────────
@@ -1057,6 +1069,16 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       asked.add(rt);
       err(sc.modePos ?? sc, `SCENE '${sc.name}' ${sceneModes[k] === 'nowindow' ? 'NOWINDOW' : 'NOVIEW'} needs ${rt}, which this runtime does not provide (${rt === 'RT_WIREMODE' ? 'rebuild the v2 runtime: this build predates the wireframe tick integration' : 'build with a runtime of language batch 7'})`);
     });
+  }
+  // fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 4.1, 5.2, 6): `opts.fine` (set by compile() when the plan builds a scene fine) is one boolean per scene. In a program with at least one fine scene every ENTER sequence
+  // (after the reset and the mode calls, before the target's INIT) and the start of init_entry (a fine first scene) call RT_FINEMODE (A = 1 fine / 0 not, HL = the fine descriptor); a program without one emits nothing of it.
+  const fineScenes = scenes.map((_, k) => !!opts.fine?.[k]);
+  const hasFine = fineScenes.some(Boolean);
+  if (hasFine) {
+    if (!v2 || v3 || wireDecl) err(scenes[fineScenes.indexOf(true)], 'fine colour needs the v2 runtime and no WIRE3D');
+    if (tileset?.rowAttrsProblem) err(tileset.node, `tileset "${tileset.node.asset}": ${tileset.rowAttrsProblem}`);
+    for (const sp of sprites) if (sp.inkProblem) err(sp.node, `sprite "${sp.asset}": ${sp.inkProblem}`);
+    scenes.forEach((sc, k) => { if (fineScenes[k] && sym.RT_FINEMODE === undefined) err(sc.namePos ?? sc, `scene '${sc.name}': fine colour needs RT_FINEMODE, which this runtime does not provide (rebuild the v2 runtime)`); });
   }
   if (cst.MAX_MAPS !== undefined && mapList.length > cst.MAX_MAPS) err(mapList[cst.MAX_MAPS].node, `this runtime build holds at most ${cst.MAX_MAPS} maps in its map table (MAX_MAPS); the game has ${mapList.length}`);
   const bankedMaps = plan ? mapList.filter((m) => plan.at.has(up(m.node.name))).length : 0;
@@ -2508,6 +2530,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.call(need(modeRt));
   }
 
+  /** Fine colour: A = 1 (the scene is fine) or 0, HL = the fine descriptor, then RT_FINEMODE. Nothing at all in a program without a fine scene. */
+  function emitFineMode(k) {
+    if (!hasFine) return;
+    e.ld('a', fineScenes[k] ? 1 : 0);
+    e.ld('hl', L('fine$desc'));
+    e.call(need('RT_FINEMODE'));
+  }
+
   /** Language batch 4, contract section 5: the frame entry that dispatches on the current scene, scn$enter (the switch) and scn$reset (the machine back to the game start state). */
   function emitDriver() {
     const n = scenes.length, curAddr = sceneCurSlot, spAddr = sceneSpSlot;
@@ -2531,6 +2561,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       if (end > first) { e.ld('hl', slotAddr(first)); e.ld('de', slotAddr(first) + 1); e.ld('bc', 2 * (end - first) - 1); e.ld('(hl)', 0); e.ldir(); }
       for (const seg of initSegments) if (seg.scene === k) { e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
       emitSceneMode(k);                                                          // batch 7: the target's display mode, after the reset, before its INIT
+      emitFineMode(k);                                                           // fine colour: the same place (a fine game has no window, view or play area)
       e.jp(labelOf('P', 'INIT', k));
     }
     e.label('scn$reset');
@@ -2556,6 +2587,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   try {
     // init_entry: clear the variable slots, then PROC INIT (tail jump)
     e.label('entry$init');
+    if (hasFine && fineScenes[0]) emitFineMode(0);                               // fine colour: a fine first scene switches before anything else of init_entry
     e.ld('hl', L('vars$base')); e.ld('de', L('vars$base', 1)); e.ld('bc', L('vars$len1'));
     e.ld('(hl)', 0); e.ldir();
     for (const seg of initSegments) { if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
@@ -2791,6 +2823,13 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       modelList.forEach((m, i) => { e.label(`model$${i}`); for (const b of m.bytes) e.db(b); });
       dataSize.wire = 4; dataSize.models = modelList.reduce((n, m) => n + m.bytes.length, 0);
     }
+    if (hasFine) {                                  // fine colour: the fine descriptor (DW tile_rows, DW sprite_inks), the tiles' row attributes and the sprites' row inks, in the mapped game area (never banked)
+      const rowAttrs = tileset ? tileset.rowAttrs : null;
+      e.label('fine$desc'); e.dw(rowAttrs ? L('fine$rows') : 0); e.dw(sprites.length ? L('fine$inks') : 0);
+      if (rowAttrs) { e.label('fine$rows'); for (const b of rowAttrs) e.db(b); }
+      if (sprites.length) { e.label('fine$inks'); for (let a = 0; a < MAXASSETS; a++) for (let r = 0; r < 16; r++) e.db(sprites[a]?.inks?.[r] ?? 0); }
+      dataSize.fine = 4 + (rowAttrs ? rowAttrs.length : 0) + (sprites.length ? 16 * MAXASSETS : 0);
+    }
     if (initSegments.length) {
       const m0 = e.size;
       for (const seg of initSegments) { e.label(seg.label); for (const v of seg.values) e.dw(v & 0xFFFF); }
@@ -2908,6 +2947,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,
     window: win,
     view,
+    ...(hasFine ? { fine: { scenes: fineScenes, descAt: e.addressOf('fine$desc') } } : {}),
     ...(wire ? { wire: { r0: wire.r0, r1: wire.r1, attr: wire.attr, ink: wire.ink, paper: wire.paper, bright: wire.bright, descAt: e.addressOf('wire$desc'), models: modelList.map((m, i) => ({ name: m.name, at: e.addressOf(`model$${i}`), points: m.points.length, edges: m.edges.length, bytes: m.bytes.length })) } } : {}),
     sprites,
     symbols,

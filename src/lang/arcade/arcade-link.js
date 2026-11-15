@@ -54,6 +54,8 @@ import { layoutOf, shippedChunks, BANK_BASE, BANK_BYTES, GAME_AREA_BYTES, CHUNK 
 export { CHUNK };
 /** A WIRE3D game's sprite assets may have this many phases in all (contract 3.2): above it the phase slots would reach the runtime's wireframe RAM. */
 export const WIRE_MAX_PHASES = 45;
+/** Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 3a.2 and 6): a game with a fine scene has at most this many sprite phases (pre-shifted copies) in all, so phase pool B is never handed out and its RAM is the fine buffer's. */
+export const FINE_MAX_PHASES = 32;
 /** The chunks every build ships; a build with banked assets also ships chunk 2 (and 3 past 8,192 banked bytes): see shippedChunks() in arcade-bank.js and `link().shipped`. */
 export const SHIPPED_CHUNKS = [0, 1, 4, 5];
 
@@ -119,6 +121,10 @@ export function link(gen, runtime, image) {
   if (gen.wire) {
     const phases = gen.sprites.reduce((a, sp) => a + (sp.phases ?? 8), 0);
     if (phases > WIRE_MAX_PHASES) return fail(`sprite art too large for a WIRE3D game: ${phases} phases, at most ${WIRE_MAX_PHASES}; use fewer phases`);
+  }
+  if (gen.fine) {                                  // fine colour: the sprite-art cap (the same sum as the WIRE3D one: every asset's phases, 8 when the asset does not say)
+    const phases = gen.sprites.reduce((a, sp) => a + (sp.phases ?? 8), 0);
+    if (phases > FINE_MAX_PHASES) return fail(`sprite art too large for a fine-colour game: ${phases} phases, at most ${FINE_MAX_PHASES}; use fewer phases`);
   }
   if (gen.phase && !gen.phase.ok) {
     return fail(`${gen.phase.miss} bytes of sprite art do not fit in the phase pool (${runtime.constants?.PHASE_POOL_BYTES ?? gen.phase.pieces.reduce((n, [, l]) => n + l, 0)} bytes): the runtime would stop at boot with a magenta border; use fewer phases, fewer instances or smaller sprites (the frame tables and one frame slot per instance must fit)`);

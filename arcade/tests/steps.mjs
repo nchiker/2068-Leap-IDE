@@ -65,6 +65,7 @@ export const SUITES = [
   'tests/arcade-m15-compiler.mjs',
   'tests/arcade-m17-compiler.mjs',
   'tests/arcade-m17-interp.mjs',
+  'tests/arcade-m19-compiler.mjs',              // fine colour F3a: the scenes setting, plan, errors, descriptor and RT_FINEMODE calls, finePicture, the interpreter's fine records, byte identity of every non-fine program
   'tests/arcade-k-warnings.mjs',                 // stage 1 K1 / K2: the two-blacks warnings (and that they fire on today's games)
   'tests/arcade-orbit.mjs',                      // the wireframe sample game "Orbit Gates" on the reference interpreter (the runtime part is a TODO in the file)
   'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
