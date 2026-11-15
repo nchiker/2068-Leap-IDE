@@ -1309,7 +1309,8 @@ All of it is pushed (TSRun `c52f272` first). Remaining (details in
 - **Leap-C:** driving the tape example
   (`a-score-on-tape`) in the tests; running the C examples
   from cartridges against the manual's results (as V2's 695-program
-  comparison) (C8, the UDG and Draw tools, is done). The Leap-C cartridge has run on
+  comparison) (C8, the UDG and Draw tools, and locals in the debugger are
+  done). The Leap-C cartridge has run on
   TSRun's stock TS2068 only (Fuse / ZEsarUX with it were the Leap-C project's
   own; real hardware not tried).
 
