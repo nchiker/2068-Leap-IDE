@@ -528,13 +528,34 @@ const d2 = (a, b) => 2 * (a[0] - b[0]) ** 2 + 4 * (a[1] - b[1]) ** 2 + 3 * (a[2]
 const luma = (rgb) => 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2];
 
 /**
+ * What a FINE scene (8 x 1 colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md section 2) draws for the sprite, shown at an 8-aligned position on an empty background (blank bitmap, paper `paper`,
+ * BRIGHT `bright`): one colour key per pixel (row-major, w * h; never transparent: the background shows through). A set pixel of the image (covered and ink) takes the INK of its row as
+ * authored; every other pixel shows the background's paper. The sprite's authored paper and BRIGHT are not used: a byte the sprite covers gets (background colour AND $F8) OR row ink, so
+ * the paper and BRIGHT stay the background's. (arcade-fine.js finePicture is the reference; tests/sprite-model.mjs section 6b compares the two.)
+ */
+export function finePixels(s, f, { paper = 0, bright = 0 } = {}) {
+  const out = new Int8Array(s.w * s.h), pk = colourKey(paper & 7, bright ? 1 : 0);
+  for (let y = 0; y < s.h; y++) {
+    const r = frameOf(s, f).rows[y];
+    for (let x = 0; x < s.w; x++) out[y * s.w + x] = bitAt(r.mask, s.w, x) && bitAt(r.bits, s.w, x) ? colourKey(r.ink & 7, bright ? 1 : 0) : pk;
+  }
+  return out;
+}
+
+/**
  * The frame as one display family shows it (docs/ARCADE_ASSETS.md, "Colour model"):
  *   ecm    as authored (8x1 colour)
  *   flip   each 8x8 cell (aligned to the sprite's top-left corner) keeps two colours of ONE brightness: the two most used hues
  *   hires  one ink / paper pair for the whole screen: the picture is reduced to 1 bit by luminance
  * Returns {pixels, lostPixels, lostCells, colours, warning} (pixels as framePixels; warning is null when nothing is lost).
+ * `onto` ({paper, bright}, 'ecm' only): the picture a FINE scene draws (fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md section 2) for the sprite shown at an 8-aligned position on an
+ * empty background of that paper and BRIGHT; see finePixels. Without `onto` 'ecm' is the sprite as authored (every row's own ink, paper and bright).
  */
-export function familyPixels(s, f, family = 'ecm', { hiresInk = 7, hiresPaper = 0 } = {}) {
+export function familyPixels(s, f, family = 'ecm', { hiresInk = 7, hiresPaper = 0, onto = null } = {}) {
+  if (family === 'ecm' && onto) {
+    const pixels = finePixels(s, f, onto);
+    return { pixels, lostPixels: 0, lostCells: 0, colours: new Set(pixels).size, warning: null };
+  }
   const src = framePixels(s, f), w = s.w, h = s.h;
   const covered = src.reduce((n, k) => n + (k >= 0 ? 1 : 0), 0);
   const colours = new Set([...src].filter((k) => k >= 0));

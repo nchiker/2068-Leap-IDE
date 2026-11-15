@@ -667,7 +667,7 @@ export function createTileEditor(container, host) {
       };
     });
     if (differing.length) {
-      items.push({ role: 'rows-note', note: true, message: `Tile${differing.length > 1 ? 's' : ''} ${differing.slice(0, 12).join(', ')}${differing.length > 12 ? ', …' : ''} had rows with different colours. A tile has one colour cell (the compiler reads row 0), so the editor shows row 0's colours and will unify the rows when you change this set.` });
+      items.push({ role: 'rows-note', note: true, message: `Tile${differing.length > 1 ? 's' : ''} ${differing.slice(0, 12).join(', ')}${differing.length > 12 ? ', …' : ''} had rows with different colours. A tile has one colour cell (the compiler reads row 0), so the editor shows row 0's colours and will unify the rows when you change this set. (A fine scene, 8 x 1 colour, draws each row in its own colours; other scenes use row 0's.)` });
     }
     if (set.tiles.length >= T.MAX_TILES) items.push({ note: true, message: `This set has the most tiles a map cell can hold (${T.MAX_TILES}).` });
     warnView.render(items);

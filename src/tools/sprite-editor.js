@@ -20,7 +20,7 @@ import * as S from './sprite-model.js';
 const PREF_KEY = 'leap-studio.sprited';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
 const FAMILY_TEXT = {
-  ecm: ['ecm: 8x1 colour', 'as authored: every row keeps its own ink, paper and bright'],
+  ecm: ['ecm: 8x1 colour', 'what a fine scene draws, on black paper: every row keeps its own ink; the paper and BRIGHT under the sprite are the background\'s'],
   flip: ['flip: 8x8 colour', 'each 8x8 cell keeps two colours of one brightness'],
   hires: ['hires: 1 bit', 'one ink / paper pair for the whole screen'],
 };
@@ -731,7 +731,7 @@ export function createSpriteEditor(container, host) {
     if (!sprite) return;
     const sc = Math.max(1, Math.floor(96 / Math.max(sprite.w, sprite.h)));
     for (const f of S.FAMILIES) {
-      const r = S.familyPixels(sprite, frame, f);
+      const r = S.familyPixels(sprite, frame, f, f === 'ecm' ? { onto: { paper: 0, bright: 0 } } : undefined);
       const { c, note } = famView[f];
       c.width = sprite.w * sc; c.height = sprite.h * sc;
       const ctx = c.getContext('2d');

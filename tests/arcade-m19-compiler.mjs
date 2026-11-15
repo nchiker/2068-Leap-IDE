@@ -27,7 +27,7 @@ import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { sceneDisplayPlan, rowOff } from '../src/lang/arcade/arcade-display.js';
 import { tileRowAttrs, convertTileset, tileAttr } from '../src/lang/arcade/arcade-assets.js';
-import { convertSprite } from '../src/lang/arcade/arcade-codegen.js';
+import { convertSprite, generate } from '../src/lang/arcade/arcade-codegen.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { finePicture, spriteColour, phaseX, glyphSource, fineOfRun, FINE_BYTES } from '../src/lang/arcade/arcade-fine.js';
 import { ASSETS11, HEAD, scene, win3, view4 } from './arcade-m11-common.mjs';
@@ -516,6 +516,112 @@ console.log('\n8. byte identity: a program without a fine scene compiles to the 
     }
     if (tmp) rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+// =================================================================================================================
+// 9. boundaries (the cases arcade/tests/m19c-mutations.mjs needs: a bug in each of them passed every check above)
+// =================================================================================================================
+console.log('\n9. boundaries: ink range, glyph source, sprite window, generator refusals, interpreter, arcadec precedence');
+{
+  const bad = (f) => { try { f(); return 'no error'; } catch (e) { return e.message; } };
+  // -- assets
+  eq('tileRowAttrs of a tile with no rows (or no tile): the defaults, nothing throws', [Array.from(tileRowAttrs(undefined)), Array.from(tileRowAttrs({}))], [Array(8).fill(0x38), Array(8).fill(0x38)]);
+  const two = convertTileset({ tiles: [{ rows: Array.from({ length: 8 }, (_, k) => ({ bits: 1, ink: k === 4 ? 9 : 1 })) }, { rows: Array.from({ length: 8 }, (_, k) => ({ bits: 1, ink: k === 2 ? 9 : 1 })) }] });
+  eq('two tiles with a bad row: the first one in tile order is the one reported', two.rowAttrsProblem, 'tile 0 row 4 ink must be a whole number 0..7, got 9');
+  // -- convertSprite inks
+  const ink = (v) => { const c = convertSprite({ w: 8, h: 1, rows: [{ bits: 1, ink: v }] }); return [c.inks[0], c.inkProblem]; };
+  eq('ink 0 and 7 are fine; 8, -1 and 1.5 are refused (the ink is then 0 & 7 = 0, 7 and 7 for the fraction)', [ink(0), ink(7), ink(8), ink(-1), ink(1.5)],
+    [[0, null], [7, null], [0, 'row 0 ink must be a whole number 0..7, got 8'], [7, 'row 0 ink must be a whole number 0..7, got -1'], [7, 'row 0 ink must be a whole number 0..7, got 1.5']]);
+  eq('ink null is the default 7 (JSON null), not a problem', ink(null), [7, null]);
+  eq('two bad rows: the first is the one reported; a bad ink is cut with & 7', (() => { const c = convertSprite({ w: 8, h: 3, rows: [{ bits: 1, ink: 2 }, { bits: 1, ink: 11 }, { bits: 1, ink: 13 }] }); return [c.inkProblem, Array.from(c.inks.slice(0, 3))]; })(), ['row 1 ink must be a whole number 0..7, got 11', [2, 3, 5]]);
+  // -- arcade-fine.js
+  eq('phaseX: the default is 8 phases (x is kept)', [phaseX(13), phaseX(15), phaseX(1)], [13, 15, 1]);
+  eq('spriteColour: the ink is cut to 3 bits (an ink of 9 is 1, not 9)', [spriteColour(0x00, 9), spriteColour(0xC0, 0xFF), spriteColour(0x47, 0x0A)], [1, 0xC7, 0x42]);
+  const zeros = Array(8).fill(0);
+  const font = Array.from({ length: 96 }, (_, i) => Array.from({ length: 8 }, (_, k) => (i + 1) & 0xFF));              // every code has a non-empty glyph: code c is the byte c - 31
+  const tb70 = new Uint8Array(70 * 9); for (let t = 0; t < 70; t++) for (let k = 0; k < 8; k++) tb70[9 * t + k] = (t * 3 + k + 1) & 0xFF;
+  const g70 = glyphSource({ font, tileBytes: tb70 });
+  eq('glyphSource: code 32 and 127 are the font\'s first and last glyph, 31 and 0 are blank', [Array.from(g70(32)), Array.from(g70(127)), Array.from(g70(31)), Array.from(g70(0))], [Array(8).fill(1), Array(8).fill(96), zeros, zeros]);
+  eq('glyphSource: tile 64 and tile 127 (the index is v AND $7F, not AND $3F)', [Array.from(g70(128 + 64)), Array.from(g70(128 + 69))], [Array.from({ length: 8 }, (_, k) => (64 * 3 + k + 1) & 0xFF), Array.from({ length: 8 }, (_, k) => (69 * 3 + k + 1) & 0xFF)]);
+  eq('glyphSource: tile 70 (beyond the 70 tiles) is blank', Array.from(g70(128 + 70)), zeros);
+  eq('glyphSource: no tile bytes: a tile cell is blank (an array of 8 zeros)', glyphSource({ font })(130), zeros);
+  eq('glyphSource: a font of 10 glyphs: code 60 is blank, code 41 (index 9) is the font\'s', [glyphSource({ font: font.slice(0, 10) })(60), Array.from(glyphSource({ font: font.slice(0, 10) })(41))], [zeros, Array(8).fill(10)]);
+  eq('glyphSource: a tile whose bitmap is the last 8 bytes of the table (no attribute byte after it) is still read', Array.from(glyphSource({ font, tileBytes: Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]) })(128)), [1, 2, 3, 4, 5, 6, 7, 8]);
+  const blank = () => ({ cells: new Uint8Array(768).fill(32), attrs: new Uint8Array(768).fill(0x38) });
+  const row = (ink_, bits = 'FFFF', mask = 'FFFF') => ({ bits, mask, ink: ink_ });
+  const mk = (w, rows, phases) => { const c = convertSprite({ w, h: rows.length, rows }); return { h: c.h, data: c.data, inks: c.inks, ...(phases === undefined ? {} : { phases }) }; };
+  const A1 = mk(16, [row(1), row(1)]), A6 = mk(16, [row(6), row(6)]);
+  const pic = (o) => finePicture({ glyph: g70, tileRows: null, assets: [], instAsset: [], sprites: [], ...blank(), ...o });
+  const inkAt = (p, y, c) => p.colours[rowOff(y, c)] & 7;
+  check_('a sprite record\'s own `asset` wins over instAsset; instAsset serves a record without one', (() => { const p = pic({ assets: [A1, A6], instAsset: [0, 0], sprites: [{ visible: 1, x: 0, y: 0, asset: 1 }, { visible: 1, x: 64, y: 0 }] }); return inkAt(p, 0, 0) === 6 && inkAt(p, 0, 8) === 1; })());
+  check_('an absent sprite record (null) is skipped, the next one is drawn', (() => { const p = pic({ assets: [A1], instAsset: [0, 0], sprites: [null, { visible: 1, x: 0, y: 0 }] }); return inkAt(p, 0, 0) === 1; })());
+  check_('an asset without `phases` is drawn as 8 phases: x 5 is kept (a 4-phase sprite would be at 4)', (() => { const a = mk(16, [{ bits: '8000', mask: 'FFFF', ink: 1 }]); const p = pic({ assets: [a], instAsset: [0], sprites: [{ visible: 1, x: 5, y: 0 }] }); return p.bits[rowOff(0, 0)] === 0x04 && pic({ assets: [{ ...a, phases: 4 }], instAsset: [0], sprites: [{ visible: 1, x: 5, y: 0 }] }).bits[rowOff(0, 0)] === 0x08; })());
+  check_('a sprite entirely above the screen (y -67, 6 rows: rows -67..-62) draws nothing (a negative pixel row must not wrap into the third below)', (() => { const a = mk(16, Array.from({ length: 6 }, () => row(2))); const p = pic({ assets: [a], instAsset: [0], sprites: [{ visible: 1, x: 0, y: -67 }] }); const q = pic({}); return p.bits.every((v, i) => v === q.bits[i]) && p.colours.every((v, i) => v === q.colours[i]); })());
+  check_('the blit is (bits AND mask) OR image over a kept background: an image bit over a set background bit stays set (not XOR)', (() => {
+    const a = { h: 1, data: Uint8Array.from([0xFF, 0xFF, 0xFF, 0xFF]), inks: Uint8Array.from([3, ...Array(15).fill(0)]), phases: 8 };      // hand-made: mask all ones AND image all ones
+    const p = pic({ assets: [a], instAsset: [0], sprites: [{ visible: 1, x: 0, y: 0 }], glyph: () => Array(8).fill(0xFF) });
+    return p.bits[rowOff(0, 0)] === 0xFF && p.bits[rowOff(0, 1)] === 0xFF;
+  })());
+  // fineOfRun with a tile cell: the tile's bitmap comes from run.fine.tileBytes
+  check_('fineOfRun draws a tile cell\'s bitmap from the run\'s tileBytes and its colours from tileRows', (() => {
+    const run = { fine: { tileRows: Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 1]), tileBytes: Uint8Array.from([9, 8, 7, 6, 5, 4, 3, 2, 0x38]), assets: [], instAsset: [] } };
+    const rec = { fine: true, cells: new Uint8Array(768).fill(32), attrs: new Uint8Array(768).fill(0x38), sprites: [] }; rec.cells[0] = 128;
+    const p = fineOfRun(run, rec, font);
+    return Array.from({ length: 8 }, (_, k) => p.bits[rowOff(k, 0)] === 9 - k && p.colours[rowOff(k, 0)] === run.fine.tileRows[k]).every(Boolean);
+  })());
+
+  // -- the compiler: no runtime image, a reason without a word
+  const nort = compile(TWO, { assets: FA, scenes: FINE('a') });
+  eq('a fine setting with no runtime image: the usual "no runtime image" error, no crash', nort.errors.map((e) => e.message.slice(0, 23)), ['no runtime image: build']);
+  const wideA = { ...FA, sprites: { ...FA.sprites, wide: { w: 24, h: 4, rows: [1, 2, 3, 4].map(() => ({ bits: 'FFFFFF', ink: 1 })) } } };
+  const wideSrc = ONE.replace('SPRITE s = "sp"', 'SPRITE s = "wide"');
+  eq('a v3 game for a reason that is not a word (a 24-pixel sprite): "built for runtime v3", no word named', build(wideSrc, REAL[3], wideA, FINE('a')).errors.map((e) => e.message), ["scene 'a': fine colour (display 'fine') needs runtime v2; this game is built for runtime v3"]);
+
+  // -- the generator's own refusals and records (compile() never lets these cases through, so generate() is called directly with the plan's flags)
+  const gen = (src, R, assets, fine) => generate(parse(src).ast, R.rt, assets, { fine });
+  const WR = withWire(FAKE2);
+  const gMsg = (g) => (g.errors ?? []).map((e) => `${e.line}:${e.message}`);
+  const NEED = 'fine colour needs the v2 runtime and no WIRE3D';
+  const v3fake = { ...REAL[3], rt: { ...REAL[3].rt, symbols: { ...REAL[3].rt.symbols, RT_FINEMODE: FINEMODE } } }, v4fake = { ...REAL[4], rt: { ...REAL[4].rt, symbols: { ...REAL[4].rt.symbols, RT_FINEMODE: FINEMODE } } };
+  eq('generate with a fine scene for a v3 runtime, a v4 runtime and a WIRE3D game: the same error, on the first fine scene (the second scene, line of SCENE b)',
+    [gen(TWO, v3fake, FA, [false, true]), gen(TWO, v4fake, FA, [false, true]), gen(WIREG, WR, WIREA, [true])].map((g) => gMsg(g).filter((m) => m.endsWith(NEED)).map((m) => m.split(':')[0]).join()),
+    [String(lineOf(TWO, 'SCENE b')), String(lineOf(TWO, 'SCENE b')), String(lineOf(WIREG, 'SCENE x'))]);
+  const v1fake = { ...FAKE2, rt: { ...FAKE2.rt, version: 1 } };
+  check_('generate with a fine scene for a runtime of version 1: the same error (fine colour is v2 only)', gMsg(gen(TWO, v1fake, FA, [true, false])).some((m) => m.endsWith(NEED)), gMsg(gen(TWO, v1fake, FA, [true, false])).join(' | '));
+  check_('generate with a fine scene for a plain v2 game: no such error', !gMsg(gen(TWO, FAKE2, FA, [true, false])).some((m) => m.endsWith(NEED)), gMsg(gen(TWO, FAKE2, FA, [true, false])).join(' | '));
+  const s2 = { ...FA, sprites: { sp: { ...FA.sprites.sp, rows: FA.sprites.sp.rows.map((r) => ({ ...r, ink: 9 })) }, big: { ...FA.sprites.big, rows: FA.sprites.big.rows.map((r) => ({ ...r, ink: -1 })) } } };
+  const src2 = ONE.replace('SPRITE s = "sp"', 'SPRITE s = "sp"\nSPRITE g = "big"').replace('SHOW s AT 10, 10', 'SHOW s AT 10, 10\n    SHOW g AT 50, 50');
+  eq('two sprites with a bad ink in a fine game: both are reported, each at its own SPRITE line, with the first bad row', build(src2, FAKE2, s2, FINE('a')).errors.map((e) => `${e.line}:${e.message}`),
+    [`${lineOf(src2, 'SPRITE s')}:sprite "sp": row 0 ink must be a whole number 0..7, got 9`, `${lineOf(src2, 'SPRITE g')}:sprite "big": row 0 ink must be a whole number 0..7, got -1`]);
+  check_('a bad ink with no fine scene is no error', build(src2, FAKE2, s2).errors.length === 0 && build(src2, FAKE2, s2, { a: { display: 'buffers' } }).errors.length === 0);
+  const g1 = build(TWO, FAKE2, FA, FINE('a')), desc1 = g1.gen.emitter.addressOf('fine$desc');
+  eq('the generator\'s `fine` record: the per-scene flags and the descriptor address', g1.gen.fine, { scenes: [true, false], descAt: desc1 });
+  check_('no tileset: no row table label in the image; no sprites: no ink table label (the pointers are 0)', !/fine_rows/.test(build(`GAME "f"\nFRAMERATE 20\nSPRITE s = "sp"\nSCENE a\n  PROC INIT():\n  ENDP\n  PROC FRAME():\n    SHOW s AT 10, 10\n  ENDP\nENDSCENE\n`, FAKE2, FA, FINE('a')).gen.emitter.asm())
+    && !/fine_inks/.test(build(`GAME "f"\nFRAMERATE 20\nTILESET ts = "ts"\nSCENE a\n  PROC INIT():\n    TILE 1, 1 = 0\n  ENDP\n  PROC FRAME():\n  ENDP\nENDSCENE\n`, FAKE2, FA, FINE('a')).gen.emitter.asm()));
+
+  // -- the interpreter
+  const ast = parse(TWO).ast;
+  const rNo = interpret(ast, { ticks: 2, assets: FA, scenes: FINE('a') });
+  check_('interpret without `version` is a game for runtime v2: the fine record and result are there', !!rNo.fine && rNo.init.fine === true, JSON.stringify(Object.keys(rNo)));
+  eq('the result\'s tileBytes are the tileset\'s bytes (9 per tile) and its tileRows the row attributes', [Array.from(rNo.fine.tileBytes), Array.from(rNo.fine.tileRows)], [Array.from(convertTileset(FA.tilesets.ts).bytes), Array.from(convertTileset(FA.tilesets.ts).rowAttrs)]);
+  const wideRun = interpret(parse(ONE.replace('SPRITE s = "sp"', 'SPRITE s = "wide"')).ast, { ticks: 1, assets: wideA, scenes: FINE('a'), version: 2 });
+  eq('an asset convertSprite cannot read (24 pixels wide): its entry is null, the run still goes', [wideRun.fine.assets, wideRun.fine.instAsset], [[null], [0]]);
+
+  // -- arcadec: --scenes replaces the assets file's scenes as a whole (no merging)
+  const tmp = mkdtempSync(join(tmpdir(), 'm19-cli2-'));
+  try {
+    const rtDir = join(tmp, 'rt'); mkdirSync(rtDir);
+    writeFileSync(join(rtDir, 'runtime.json'), JSON.stringify(FAKE2.rt));
+    copyFileSync(join(REAL[2].dir, REAL[2].rt.image ?? 'runtime.bin'), join(rtDir, REAL[2].rt.image ?? 'runtime.bin'));
+    const src = join(tmp, 'g.arc'); writeFileSync(src, TWO);
+    const put = (name, obj) => { const p = join(tmp, name); writeFileSync(p, JSON.stringify(obj)); return p; };
+    const run = (assets, ...more) => { const out = join(tmp, `o${Math.random().toString(36).slice(2)}.dck`); const r = spawnSync(process.execPath, [join(ROOT, 'arcade/tools/arcadec.mjs'), src, '--assets', assets, '--runtime', rtDir, '-o', out, ...more], { encoding: 'utf8' }); return { status: r.status, dck: existsSync(out) ? new Uint8Array(readFileSync(out)) : null, out: r.stdout + r.stderr }; };
+    const same = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+    const bothFine = put('both.json', { ...FA, scenes: FINE('a', 'b') }), plainA = put('plain.json', FA), sBufA = put('s.json', { a: { display: 'buffers' } }), sFineA = put('sf.json', FINE('a'));
+    const merged = run(bothFine, '--scenes', sBufA), onlyA = run(plainA, '--scenes', sFineA), plain = run(plainA), viaAssets = run(bothFine);
+    check_('--scenes {a: buffers} with the assets file saying a and b fine: the whole file is replaced (no fine scene left: the plain build)', merged.status === 0 && same(merged.dck, plain.dck) && !same(merged.dck, viaAssets.dck), merged.out);
+    check_('--scenes {a: fine} alone builds a fine game that differs from the plain one and from "a and b fine"', onlyA.status === 0 && !same(onlyA.dck, plain.dck) && !same(onlyA.dck, viaAssets.dck), onlyA.out);
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
 console.log(`\n${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ''}`);

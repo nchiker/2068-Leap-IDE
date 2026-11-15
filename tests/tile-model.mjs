@@ -22,6 +22,7 @@ import * as T from '../src/tools/tile-model.js';
 import * as S from '../src/tools/sprite-model.js';
 import * as P from '../src/arcade-project.js';
 import { convertTileset } from '../src/lang/arcade/arcade-assets.js';
+import { finePicture, glyphSource, rowOff } from '../src/lang/arcade/arcade-fine.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -254,6 +255,46 @@ console.log('\n4. Colours, flags, fg, summary');
 }
 
 // ── 5 ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+console.log('\n4b. The editor\'s tile picture is what a fine scene draws (arcade-fine.js finePicture is the reference)');
+{
+  // one cell showing tile `t` (cell value 128 + t) of a tile set; the 64 colour keys read back pixel by pixel
+  const sceneKeys = (conv, tIdx) => {
+    const cells = new Uint8Array(768); cells[0] = 128 + tIdx;
+    const pic = finePicture({ cells, attrs: new Uint8Array(768).fill(0x07), tileRows: conv.rowAttrs, sprites: [], instAsset: [], assets: [], glyph: glyphSource({ font: [], tileBytes: conv.bytes }) });
+    const keys = new Int8Array(64);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      const o = rowOff(y, 0), set = (pic.bits[o] >> (7 - x)) & 1, c = pic.colours[o];
+      keys[y * 8 + x] = S.colourKey(set ? c & 7 : (c >> 3) & 7, (c >> 6) & 1);
+    }
+    return keys;
+  };
+  let n = 0, bad = 0, first = '', rowsKept = 0, rowsBad = 0;
+  for (const [id, a] of Object.entries(exAssets)) for (const [name, ts] of Object.entries(a.tilesets ?? {})) {
+    const conv = convertTileset(ts), model = T.fromAsset(ts), differ = new Set(T.rowsDiffer(ts));
+    model.tiles.forEach((tile, i) => {
+      const want = sceneKeys(conv, i);
+      if (differ.has(i)) {         // the editor reduces the tile to row 0; the scene draws each row as authored: its eight attributes are what convertTileset carries
+        rowsKept++;
+        const px = T.tilePixels(tile);
+        const authoredOk = ts.tiles[i].rows.every((r, y) => conv.rowAttrs[8 * i + y] === (((+(r.bright ?? 0)) << 6) | ((r.paper ?? 7) << 3) | (r.ink ?? 0)));
+        if (!authoredOk || px.length !== 64) rowsBad++;
+        return;
+      }
+      n++;
+      if (!same([...T.tilePixels(tile)], [...want])) { bad++; first ||= `${id}/${name}#${i}`; }
+    });
+  }
+  ok('tilePixels equals the pixels finePicture draws for every tile of the example sets whose rows share one colour (the tile\'s 8 rows)', n > 20 && bad === 0, `${bad} of ${n} differ ${first}`);
+  ok('a tile whose rows differ: the fine scene\'s colours are the authored row attributes (the editor shows row 0 and notes it)', rowsBad === 0, `${rowsKept} tiles, ${rowsBad} differ`);
+  // hand case: eight rows, eight colours
+  const rainbow = { tiles: [{ rows: Array.from({ length: 8 }, (_, k) => ({ bits: k & 1 ? 'AA' : '55', ink: k, paper: 7 - k, bright: k & 1 })) }] };
+  const conv = convertTileset(rainbow), keys = sceneKeys(conv, 0);
+  ok('hand case: eight rows in eight colours: pixel (x, y) is row y\'s ink or paper with its own brightness, as authored', keys.every((k, i) => {
+    const y = i >> 3, x = i & 7, set = ((y & 1 ? 0xAA : 0x55) >> (7 - x)) & 1;
+    return k === S.colourKey(set ? y : 7 - y, y & 1);
+  }));
+}
+
 console.log('\n5. Set operations');
 {
   const s = T.newTileset();
