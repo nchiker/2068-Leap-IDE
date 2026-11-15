@@ -93,6 +93,22 @@ F1 may refine either (a better order, publishing per cell row, waiting a measure
 as nothing needs more than "the update starts within a few thousand T of an interrupt". **The decision and its figures go to section 3a ("F1 as
 built") and to the owner in the slice report; changing the order of A and B, or choosing neither, is a stop-and-ask.**
 
+### 3a. F1 as built and the owner's decisions (2026-11-14)
+The spike (`arcade/spike/fine/RESULTS.md`, re-run by the main thread on 1,500 frames: same figures) measured on TSRun's beam and on Fuse's frames:
+**A (direct)** 419 non-split broken frames per 1,000: it misses the target by far. **B** (compose, publish whole cells) 0 non-split broken,
+2.5 split and 19 torn per 1,000 at 20 Hz, about 2.8 KB of buffer. **BD** (B, publishing only the 8x1 groups that differ from the screen):
+**0 broken, 0 torn** in 9,000 TSRun frames and 1,363 Fuse frames, publish 24k T (worst 32k), about 4.8 KB of buffer on the 16-sprite scene;
+compose 250k (B) to 350k T (BD) a tick for 16 moving sprites, unoptimised. ZEsarUX and Fuse show mode 2 exactly as TSRun (0 pixels off).
+**The owner chose (asked, 2026-11-14, "what gives the most impressive screen results?" -> "yes" to the recommendation):**
+1. **Method BD** for F2: compose off screen into a buffer, then right after the next interrupt publish, top to bottom, only the groups that
+   change (bitmap and colour byte back to back). A tick that changes more groups than the buffer holds publishes the rest directly (counted).
+2. **The RAM comes from a sprite-art cap:** a game with a fine scene has **at most 32 sprite phases in all** (the pre-shifted copies; e.g. 4
+   assets x 8 phases, or 8 x 4), so phase pool B (`$F000-$FA7F`, 2,688 bytes) is never handed out; with the two free attribute areas (1,536),
+   the second dirty map (96) and the second half of `SPR_DRAWN` (64) the buffer has about 4.3 KB. The linker refuses more (section 6).
+   This replaces section 5.3's "anything more is a stop-and-ask" for these areas.
+3. **Starfall's fine play scene keeps 20 Hz with fewer sprites at once** (smaller waves, fewer shots: the count F2's figures allow); the
+   showcase game is designed from the start for about 8 to 10 large shaded sprites at 20 Hz.
+
 ## 4. Entering and leaving a fine scene
 
 1. **`RT_FINEMODE`**: A = 0 off / 1 on, HL = the game's **fine descriptor** (on only; section 5.2). Called by the compiler's `ENTER` sequence
@@ -139,6 +155,8 @@ erase and draw (aligned and not), 8x8 sprites, the worst-case tick (16 visible 1
 
 * **Assets:** `convertTileset` gains the eight row attributes per tile (`tileRowAttrs`, `arcade-assets.js`) for the descriptor; `convertSprite`
   gains the row inks (rows beyond the art: 0). Other scenes still reduce to 8x8 (a tile's row 0 attribute), unchanged.
+* **Phase cap (3a.2):** the linker refuses a game with a fine scene whose sprite assets have more than 32 phases in all: `"sprite art too large
+  for a fine-colour game: N phases, at most 32; use fewer phases"`.
 * **Codegen / link** (`arcade-codegen.js`, `arcade-link.js`): the fine descriptor, `RT_FINEMODE` in `emitSceneMode`'s place (A, HL) for every
   `ENTER` of a game with a fine scene and at the start of `init_entry` for a fine first scene; the errors of section 1. The build's `CONSTANTS`
   (`arcade/tools/build-runtime-v2.mjs`) learn the new names.
@@ -178,7 +196,9 @@ changes. Runtime changes: `--all --full` once before the PR.
 
 * A game with no fine scene: +30 T per tick at most; every recorded run of every example as fast as on `main` (`arcade-codegen-perf --compare`).
 * Starfall's fine play scene keeps **FRAMERATE 20 in >= 95 % of its ticks** over its recorded runs (report median, 95th percentile, worst, ticks
-  over budget). If the method cannot, the slice report says by how much, and the owner decides (15 fps, fewer sprites, or the method).
+  over budget), with as many sprites at once as that allows (section 3a.3).
+* F2 reports the compose + publish cost per moving 16x16 and 8x8 sprite, so F5 can size the games (the spike's unoptimised BD: about 23k T a
+  16x16 sprite; the target after F2's optimisation is <= 12k).
 * The showcase game holds its own `FRAMERATE` in >= 99 % of its ticks.
 * `RT_FINEMODE` on or off: at most 30 refreshes (a scene switch).
 
@@ -217,6 +237,7 @@ recorded runs unchanged (hash baselines; Starfall's are re-recorded in F5 becaus
    needs it.
 5. **The screen update moves before `FRAME`** in a fine scene (it uses the positions of the previous tick's `FRAME`). The time from a key press to
    the picture stays about one tick, as with two buffers (draw, then the flip).
+8. (Owner-decided after F1, section 3a: method BD, the 32-phase cap, Starfall at 20 Hz with fewer sprites.)
 6. **The flicker targets** of section 3 (broken 0 except split writes, torn reported), measured on TSRun's beam, which is the only beam-accurate
    emulator we have; ZEsarUX's 48K timing and Fuse are checked by eye.
 7. **The showcase game is "Prism Catch"** (section 10.2), a catcher rather than another shooter, because colour is its rule.
