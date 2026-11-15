@@ -1,0 +1,855 @@
+diff --git a/arcade/examples/blockfall.arc b/arcade/examples/blockfall.arc
+index 35414a8..54fb521 100644
+--- a/arcade/examples/blockfall.arc
++++ b/arcade/examples/blockfall.arc
+@@ -6,7 +6,7 @@ REM   Keys: O left, P right, Q turn, A soft drop, SPACE hard drop, H pause.   Jo
+ REM   Holding left or right moves at once, then after 8 ticks repeats every 2 ticks; holding A drops a row every 2 ticks.
+ REM   Ten columns by twenty rows, seven pieces in four turns each, dealt from a 7-bag; the next piece is shown; every 10 lines make a level
+ REM   and the piece falls faster; a piece that has landed waits 15 ticks (a lock delay) and moving it in that time restarts the wait (12 times at most).
+-REM   A cleared line flashes (a bright tile), then the rows above fall one source row at a time; one to four lines have their own sound.
++REM   A cleared line flashes (a white tile), then the rows above fall one source row at a time; one to four lines have their own sound.
+ REM   Scoring: 40 / 100 / 300 / 1200 for 1 / 2 / 3 / 4 lines times (level + 1, at most 20); 1 point a row of soft drop, 2 a row of hard drop.
+ REM   States: 0 title, 1 clearing the well for a new game, 2 waiting for the next piece, 3 falling, 4 flashing lines, 5 collapsing, 6 game over, 7 paused.
+ REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/blockfall.arc --assets arcade/examples/blockfall.assets.json --runtime v2
+@@ -48,8 +48,10 @@ CONST FREESEED = 1
+ 
+ SCENE play
+   DIM st, tt, kl, kr, ku, kd, kf, kh, pu, pf, ph, ef, er, eh, hdir, hcnt, scnt
+-  DIM pc, nx, rot, px, py, fit, gcnt, ldly, lres, wt
+-  DIM shi, slo, hhi, hlo, lv, lns, nlin, mult, lvup, low, fr0, fr1, ft, cr, cw, wr, gor, hud, bagpos
++  DIM pc, nx, rot, px, py, fit, gcnt, ldly, lres
++  REM timers, counted down by the runtime once a tick: wt, the ticks to wait for the next piece; ft, the ticks of the line flash (13 when it starts, the rows flash at 12 and 6, the blocks come back at 9 and 3, the collapse starts at 1)
++  TIMER wt, ft
++  DIM shi, slo, hhi, hlo, lv, lns, nlin, mult, lvup, low, fr0, fr1, cr, cw, wr, gor, hud, bagpos
+   REM sh: the 7 pieces (I O T S Z J L) x 4 turns as masks of a 4 x 4 box, bit (y * 4 + x); sdx, sdy: the 4 cells of each, decoded at the start (sdx already
+   REM includes the board's wall, BX0, so that a board index is x + sdx(...) with no addition; on the screen it is WX - BX0 + x + sdx(...))
+   REM I: 240 17476 3840 8738      O: 102 x 4      T: 114 610 624 562      S: 54 1122 864 561      Z: 99 612 1584 306      J: 113 550 1136 802      L: 116 1570 368 547
+@@ -124,7 +126,7 @@ SCENE play
+     FILL WX, FRT, BW, 1 = 9
+     FILL WX, FRB, BW, 1 = 9
+     FILL WX, WY, BW, BH = 0
+-    BRIGHT 1 : PAPER 0
++    BRIGHT 0 : PAPER 0
+     INK 6 : PRINT AT 0, 11; "BLOCKFALL";
+     INK 5 : PRINT AT 3, 24; "NEXT";
+     INK 5 : PRINT AT 10, 23; "SCORE";
+@@ -140,7 +142,7 @@ SCENE play
+   ENDP
+ 
+   PROC SHOWTITLE():
+-    BRIGHT 1 : PAPER 0
++    BRIGHT 0 : PAPER 0
+     INK 2 : PRINT AT 6, 13; "B";
+     INK 6 : PRINT "L";
+     INK 4 : PRINT "O";
+@@ -173,16 +175,14 @@ SCENE play
+   PROC PSCORE(r, c, hi, lo):
+     PRINT AT r, c;
+     IF hi > 0 THEN
+-      PRINT hi;
+-      IF lo < 1000 THEN PRINT "0"; ENDIF
+-      IF lo < 100 THEN PRINT "0"; ENDIF
+-      IF lo < 10 THEN PRINT "0"; ENDIF
++      PRINT hi; lo USING "0000"; "   ";
++    ELSE
++      PRINT lo; "   ";
+     ENDIF
+-    PRINT lo; "   ";
+   ENDP
+ 
+   PROC SHOWHUD():
+-    BRIGHT 1 : PAPER 0 : INK 7
++    BRIGHT 0 : PAPER 0 : INK 7
+     CALL PSCORE(11, 23, shi, slo)
+     PRINT AT 14, 23; lv + 1; "   ";
+     PRINT AT 17, 23; lns; "   ";
+@@ -309,7 +309,7 @@ SCENE play
+     CALL CHECKLINES()
+     IF nlin > 0 THEN
+       CALL SCORELINES()
+-      st = 4 : ft = 0
++      st = 4 : ft = 13
+     ELSE
+       PLAY thud
+       st = 2 : wt = 4
+@@ -426,8 +426,7 @@ SCENE play
+   ENDP
+ 
+   PROC WAITTICK():
+-    wt = wt - 1
+-    IF wt <= 0 THEN CALL SPAWN() ENDIF
++    IF wt = 0 THEN CALL SPAWN() ENDIF
+   ENDP
+ 
+   PROC HANDLEINPUT():
+@@ -484,7 +483,7 @@ SCENE play
+     IF eh THEN
+       st = 7
+       NOMUSIC
+-      INK 2 : BRIGHT 1 : PAPER 0 : PRINT AT 16, 0; "PAUSED";
++      INK 2 : BRIGHT 0 : PAPER 0 : PRINT AT 16, 0; "PAUSED";
+     ELSE
+       CALL HANDLEINPUT()
+       IF st = 3 THEN CALL GRAVITY() ENDIF
+@@ -499,12 +498,11 @@ SCENE play
+     ENDIF
+   ENDP
+ 
+-  REM The full rows flash (a bright tile for 3 ticks, the blocks for 3, twice), then they go.
++  REM The full rows flash (a white tile for 3 ticks, the blocks for 3, twice), then they go.
+   PROC FLASHTICK():
+     IF ft MOD 6 = 0 THEN CALL FLASHROWS(8) ENDIF
+     IF ft MOD 6 = 3 THEN CALL FLASHROWS(-1) ENDIF
+-    ft = ft + 1
+-    IF ft >= 12 THEN
++    IF ft = 1 THEN
+       cr = low : cw = low
+       st = 5
+     ENDIF
+@@ -538,7 +536,7 @@ SCENE play
+       NEXT i
+       gor = gor - 1
+       IF gor < 0 THEN
+-        BRIGHT 1 : PAPER 0
++        BRIGHT 0 : PAPER 0
+         INK 2 : PRINT AT 10, 11; "GAME OVER";
+         INK 7 : PRINT AT 12, 13; "PRESS";
+         INK 7 : PRINT AT 13, 13; "SPACE";
+@@ -552,7 +550,7 @@ SCENE play
+     CALL SETSHAPES()
+     CALL CLEARBOARD()
+     hhi = 0 : hlo = 0 : bagpos = 7
+-    PAPER 0 : INK 7 : BRIGHT 1
++    PAPER 0 : INK 7 : BRIGHT 0
+     CLS
+     CALL DRAWSTATIC()
+     CALL SHOWTITLE()
+diff --git a/arcade/examples/blockfall.assets.gen.mjs b/arcade/examples/blockfall.assets.gen.mjs
+index 15a5541..dc436e1 100644
+--- a/arcade/examples/blockfall.assets.gen.mjs
++++ b/arcade/examples/blockfall.assets.gen.mjs
+@@ -54,12 +54,12 @@ if (MAIN && process.argv.includes('--masks')) {
+ const tile = (bytes, ink, paper, bright) => ({ rows: bytes.map((b) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })), flags: 0 });
+ const BLOCK = [0xFF, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0xFF];            // black outline, coloured inside
+ const tiles = [
+-  tile([0, 0, 0, 0, 0x10, 0, 0, 0], 1, 0, 1),                                // 0 empty well cell: a dark blue dot
+-  ...PIECES.map((p) => tile(BLOCK, 0, p.paper, 1)),                          // 1..7 blocks (all BRIGHT 1: one black everywhere; the flash tile is a checker, so L stays told apart by its outline)
+-  tile([0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55], 0, 7, 1),          // 8 flash: bright white checker
++  tile([0, 0, 0, 0, 0x10, 0, 0, 0], 1, 0, 0),                                // 0 empty well cell: a dark blue dot (BRIGHT 0 on black paper: TSRun draws bright black as grey, Fuse as black)
++  ...PIECES.map((p) => tile(BLOCK, 0, p.paper, 0)),                          // 1..7 blocks: plain colours, BRIGHT 0 like every tile that has black in it (a black outline), so that the set has one black (TSRun draws BRIGHT black as grey)
++  tile([0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55], 0, 7, 0),          // 8 flash: white / black checker (BRIGHT 0: it has black)
+   tile([0xFE, 0xFE, 0xFE, 0x00, 0xEF, 0xEF, 0xEF, 0x00], 5, 1, 1),          // 9 frame: cyan bricks on blue
+-  tile([0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA], 1, 0, 1),          // 10 dimmed block: blue dither (BRIGHT stays 1: bright black and plain black differ on some displays)
+-  tile([0, 0, 0, 0, 0, 0, 0, 0], 0, 0, 1),                                   // 11 blank (black, bright like the rest)
++  tile([0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA], 1, 0, 0),          // 10 dimmed block: blue dither on black paper (BRIGHT 0, like every black-paper area)
++  tile([0, 0, 0, 0, 0, 0, 0, 0], 0, 0, 0),                                   // 11 blank (black, BRIGHT 0)
+ ];
+ 
+ // ── sounds: one record per refresh (60 per second), on one AY channel; mix 6 = tone, 5 = noise, 4 = both ───────────────────────────
+diff --git a/arcade/examples/blockfall.assets.json b/arcade/examples/blockfall.assets.json
+index 95f8e4a..e4583d3 100644
+--- a/arcade/examples/blockfall.assets.json
++++ b/arcade/examples/blockfall.assets.json
+@@ -9,49 +9,49 @@
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "10",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -62,49 +62,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 5,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -115,49 +115,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 6,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -168,49 +168,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 3,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -221,49 +221,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 4,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -274,49 +274,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 2,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -327,49 +327,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 1,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -380,49 +380,49 @@
+        "bits": "FF",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -433,49 +433,49 @@
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 0,
+        "paper": 7,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -539,49 +539,49 @@
+        "bits": "55",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -592,49 +592,49 @@
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 0,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+diff --git a/tests/arcade-blockfall.mjs b/tests/arcade-blockfall.mjs
+index da02f2b..29529e6 100644
+--- a/tests/arcade-blockfall.mjs
++++ b/tests/arcade-blockfall.mjs
+@@ -39,7 +39,11 @@ import { compile } from '../src/lang/arcade/arcade-compile.js';
+ import { convertSfx, convertTileset } from '../src/lang/arcade/arcade-assets.js';
+ import { PIECES, cellsOf, MASKS, ASSETS as GEN_ASSETS } from '../arcade/examples/blockfall.assets.gen.mjs';
+ 
+-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
++// The FIXTURE (blockfall-v0.arc, the game before language batch 1; not ours to change) still has BRIGHT 1 on black paper; the shipped example and its variant must give no warning at all.
++const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // used for the fixture's compile only
++// K4 (stage 3): the shipped example keeps BRIGHT 0 on everything with black in it (paper 0 or ink 0). The fixture has BRIGHT 1 there, so its tiles and attributes are compared after taking that bit off:
++const plainBlackAttr = (a) => ((((a >> 3) & 7) === 0 || (a & 7) === 0) ? a & ~0x40 : a);
++const plainBlackTiles = (assets) => { const c = JSON.parse(JSON.stringify(assets)); for (const set of Object.values(c.tilesets ?? {})) for (const t of set.tiles) for (const r of t.rows) if (r.paper === 0 || r.ink === 0) r.bright = 0; return c; };
+ 
+ const HERE = dirname(fileURLToPath(import.meta.url));
+ const ROOT = join(HERE, '..');
+@@ -87,7 +91,9 @@ const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/blockfa
+ const ASSETS_EX = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/blockfall.assets.json'), 'utf8'));
+ check_('blockfall.assets.json is what blockfall.assets.gen.mjs makes', JSON.stringify(ASSETS_EX) === JSON.stringify(JSON.parse(JSON.stringify(GEN_ASSETS))), 'run: node arcade/examples/blockfall.assets.gen.mjs');
+ { const { music: song, ...exNoMusic } = ASSETS_EX;      // the example has the song (its `music` key) since MUSIC (slice M5); the fixture is the game before songs
+-  check_('the fixture\'s assets (blockfall-v0.assets.json) are the example\'s without the `music` key (the song)', JSON.stringify(ASSETS) === JSON.stringify(exNoMusic) && !!song && Object.keys(song).length >= 1); }
++  check_('the fixture\'s assets (blockfall-v0.assets.json), with BRIGHT 0 on every tile row that has black in it (K4), are the example\'s without the `music` key (the song)', JSON.stringify(plainBlackTiles(ASSETS)) === JSON.stringify(exNoMusic) && !!song && Object.keys(song).length >= 1); }
++{ const sets = Object.values(ASSETS_EX.tilesets), bad = sets.flatMap((s) => s.tiles.map((t, i) => [t, i])).filter(([t]) => t.rows.some((r) => (r.paper === 0 || r.ink === 0) && r.bright !== 0)).map(([, i]) => i);
++  check_('K4: no tile of the example has black (paper 0 or ink 0) with BRIGHT 1', bad.length === 0, 'tiles ' + bad.join(', ')); }
+ const res = compile(SRC, { runtime: rt, image: img, assets: ASSETS });
+ const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
+ check_('blockfall-v0.arc compiles for runtime v2 with no errors and no warnings', rt.version === 2 && res.errors.length === 0 && res.warnings.filter(notTwoBlacks).length === 0, errText(res) + res.warnings.map((w) => w.message).join(' | '));
+@@ -755,7 +761,7 @@ console.log('\n4b. Rules of the game on the interpreter\'s records');
+     if (V(t + 11).ST !== 4 || V(t + 12).ST !== 5) fBad = `clear at ${t}: flash lasts ${[...Array(20).keys()].find((k) => V(t + k).ST !== 4)} ticks`;
+     flashes++;
+   }
+-  check_(`line clear animation: ${flashes} clears flash their rows (bright tile on ticks 1 and 7, the blocks on 4 and 10), then 12 ticks later the rows above fall`, fBad === '' && flashes >= 15, fBad);
++  check_(`line clear animation: ${flashes} clears flash their rows (white tile on ticks 1 and 7, the blocks on 4 and 10), then 12 ticks later the rows above fall`, fBad === '' && flashes >= 15, fBad);
+ }
+ 
+ 
+@@ -971,10 +977,10 @@ console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on t
+   // -- on the interpreter: cells, attributes, score, and every variable both versions have
+   const interpNew = (src, ticks, extra = {}) => interpret(parse(src).ast, { version: 2, ticks, assets: ASSETS_EX, maxSteps: 400_000_000, rnd: xorshift(SEED()), keys: keysFn, stick: stickFn, ...extra });
+   const wantNew = interpNew(variantSrc, NT);
+-  const SHARED = ['ST', 'TT', 'PC', 'NX', 'ROT', 'PX', 'PY', 'SHI', 'SLO', 'HHI', 'HLO', 'LV', 'LNS', 'NLIN', 'LVUP', 'LOW', 'FR0', 'FR1', 'FT', 'CR', 'CW', 'WR', 'GOR', 'BAGPOS', 'PU', 'PF', 'PH', 'HDIR', 'HCNT', 'SCNT', 'GCNT', 'LDLY', 'LRES', 'WT', 'HUD', 'FIT'];
++  const SHARED = ['ST', 'TT', 'PC', 'NX', 'ROT', 'PX', 'PY', 'SHI', 'SLO', 'HHI', 'HLO', 'LV', 'LNS', 'NLIN', 'LVUP', 'LOW', 'FR0', 'FR1', 'CR', 'CW', 'WR', 'GOR', 'BAGPOS', 'PU', 'PF', 'PH', 'HDIR', 'HCNT', 'SCNT', 'GCNT', 'LDLY', 'LRES', 'WT', 'HUD', 'FIT'];
+   const sameAs = (label, a, b) => {            // a: old record, b: new record
+     for (let i = 0; i < 768; i++) if (a.cells[i] !== b.cells[i]) return `${label}: cell (row ${(i / 32) | 0}, col ${i % 32}) = ${b.cells[i]}, old ${a.cells[i]}`;
+-    for (let i = 0; i < 768; i++) if (a.attrs[i] !== b.attrs[i]) return `${label}: attribute (row ${(i / 32) | 0}, col ${i % 32}) = $${b.attrs[i].toString(16)}, old $${a.attrs[i].toString(16)}`;
++    for (let i = 0; i < 768; i++) if (plainBlackAttr(a.attrs[i]) !== b.attrs[i]) return `${label}: attribute (row ${(i / 32) | 0}, col ${i % 32}) = $${b.attrs[i].toString(16)}, old $${a.attrs[i].toString(16)} (as BRIGHT 0 where black: $${plainBlackAttr(a.attrs[i]).toString(16)})`;
+     if (a.vars.SHI * 10000 + a.vars.SLO !== b.vars.SHI * 10000 + b.vars.SLO) return `${label}: score ${b.vars.SHI * 10000 + b.vars.SLO}, old ${a.vars.SHI * 10000 + a.vars.SLO}`;
+     return null;
+   };
+@@ -989,11 +995,13 @@ console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on t
+     const a = WANT.ticks[t], b = wantNew.ticks[t];
+     for (const k of SHARED) if (a.vars[k] !== b.vars[k]) { d2 = `tick ${t + 1}: ${k} = ${b.vars[k]}, old ${a.vars[k]}`; break; }
+     if (d2) break;
++    // FT is a TIMER now (G3): it holds 13 when the flash starts and counts down by itself, the old FT counted up from 0 and stopped at 12.  While the flash runs (and in the tick that ends it) new = 13 - old.
++    if ((a.vars.ST === 4 || (t > 0 && WANT.ticks[t - 1].vars.ST === 4 && a.vars.ST === 5)) && b.vars.FT !== 13 - a.vars.FT) { d2 = `tick ${t + 1}: FT (a timer) = ${b.vars.FT}, old FT ${a.vars.FT} (expected 13 - old)`; break; }
+     for (let r = 0; r < 24 && !d2; r++) for (let c = 0; c < 14; c++) if (a.arrays.BD[r * 14 + c] !== b.arrays.BD[c * 24 + r]) { d2 = `tick ${t + 1}: board (${c}, ${r}) = ${b.arrays.BD[c * 24 + r]}, old ${a.arrays.BD[r * 14 + c]}`; break; }
+     if (!d2 && (a.arrays.CL.some((v, i) => v !== b.arrays.CL[i]) || a.arrays.BAG.some((v, i) => v !== b.arrays.BAG[i]))) d2 = `tick ${t + 1}: a flag row or the bag differs`;
+     if (!d2 && a.sfx.index !== b.sfx.index) d2 = `tick ${t + 1}: sound effect ${b.sfx.index}, old ${a.sfx.index}`;
+   }
+-  check_(`interpreter: also the state, piece, counters, the 14 x 24 board (as bd(c, r) against the old bd(r * 14 + c)), the bag and the sound effect heard agree on all ${NT} ticks (${SHARED.length} variables)`, d2 === null, d2 ?? '');
++  check_(`interpreter: also the state, piece, counters, the 14 x 24 board (as bd(c, r) against the old bd(r * 14 + c)), the bag and the sound effect heard agree on all ${NT} ticks (${SHARED.length} variables; WT is a TIMER now and equal to the old counter on every tick; FT is a TIMER, equal to 13 - the old counter while a flash runs)`, d2 === null, d2 ?? '');
+   // the shipped version differs from the variant only in how the piece order is seeded
+   check_('the variant plays exactly the same piece order as the old version (same RNG draws) while the shipped one draws none on the title', wantNew.ticks.slice(0, 40).every((r, i) => r.vars.TT === WANT.ticks[i].vars.TT));
+ 

@@ -39,7 +39,11 @@ import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { convertSfx, convertTileset } from '../src/lang/arcade/arcade-assets.js';
 import { PIECES, cellsOf, MASKS, ASSETS as GEN_ASSETS } from '../arcade/examples/blockfall.assets.gen.mjs';
 
-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+// The FIXTURE (blockfall-v0.arc, the game before language batch 1; not ours to change) still has BRIGHT 1 on black paper; the shipped example and its variant must give no warning at all.
+const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // used for the fixture's compile only
+// K4 (stage 3): the shipped example keeps BRIGHT 0 on everything with black in it (paper 0 or ink 0). The fixture has BRIGHT 1 there, so its tiles and attributes are compared after taking that bit off:
+const plainBlackAttr = (a) => ((((a >> 3) & 7) === 0 || (a & 7) === 0) ? a & ~0x40 : a);
+const plainBlackTiles = (assets) => { const c = JSON.parse(JSON.stringify(assets)); for (const set of Object.values(c.tilesets ?? {})) for (const t of set.tiles) for (const r of t.rows) if (r.paper === 0 || r.ink === 0) r.bright = 0; return c; };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -87,7 +91,9 @@ const ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/blockfa
 const ASSETS_EX = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/blockfall.assets.json'), 'utf8'));
 check_('blockfall.assets.json is what blockfall.assets.gen.mjs makes', JSON.stringify(ASSETS_EX) === JSON.stringify(JSON.parse(JSON.stringify(GEN_ASSETS))), 'run: node arcade/examples/blockfall.assets.gen.mjs');
 { const { music: song, ...exNoMusic } = ASSETS_EX;      // the example has the song (its `music` key) since MUSIC (slice M5); the fixture is the game before songs
-  check_('the fixture\'s assets (blockfall-v0.assets.json) are the example\'s without the `music` key (the song)', JSON.stringify(ASSETS) === JSON.stringify(exNoMusic) && !!song && Object.keys(song).length >= 1); }
+  check_('the fixture\'s assets (blockfall-v0.assets.json), with BRIGHT 0 on every tile row that has black in it (K4), are the example\'s without the `music` key (the song)', JSON.stringify(plainBlackTiles(ASSETS)) === JSON.stringify(exNoMusic) && !!song && Object.keys(song).length >= 1); }
+{ const sets = Object.values(ASSETS_EX.tilesets), bad = sets.flatMap((s) => s.tiles.map((t, i) => [t, i])).filter(([t]) => t.rows.some((r) => (r.paper === 0 || r.ink === 0) && r.bright !== 0)).map(([, i]) => i);
+  check_('K4: no tile of the example has black (paper 0 or ink 0) with BRIGHT 1', bad.length === 0, 'tiles ' + bad.join(', ')); }
 const res = compile(SRC, { runtime: rt, image: img, assets: ASSETS });
 const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
 check_('blockfall-v0.arc compiles for runtime v2 with no errors and no warnings', rt.version === 2 && res.errors.length === 0 && res.warnings.filter(notTwoBlacks).length === 0, errText(res) + res.warnings.map((w) => w.message).join(' | '));
@@ -755,7 +761,7 @@ console.log('\n4b. Rules of the game on the interpreter\'s records');
     if (V(t + 11).ST !== 4 || V(t + 12).ST !== 5) fBad = `clear at ${t}: flash lasts ${[...Array(20).keys()].find((k) => V(t + k).ST !== 4)} ticks`;
     flashes++;
   }
-  check_(`line clear animation: ${flashes} clears flash their rows (bright tile on ticks 1 and 7, the blocks on 4 and 10), then 12 ticks later the rows above fall`, fBad === '' && flashes >= 15, fBad);
+  check_(`line clear animation: ${flashes} clears flash their rows (white tile on ticks 1 and 7, the blocks on 4 and 10), then 12 ticks later the rows above fall`, fBad === '' && flashes >= 15, fBad);
 }
 
 
@@ -971,10 +977,10 @@ console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on t
   // -- on the interpreter: cells, attributes, score, and every variable both versions have
   const interpNew = (src, ticks, extra = {}) => interpret(parse(src).ast, { version: 2, ticks, assets: ASSETS_EX, maxSteps: 400_000_000, rnd: xorshift(SEED()), keys: keysFn, stick: stickFn, ...extra });
   const wantNew = interpNew(variantSrc, NT);
-  const SHARED = ['ST', 'TT', 'PC', 'NX', 'ROT', 'PX', 'PY', 'SHI', 'SLO', 'HHI', 'HLO', 'LV', 'LNS', 'NLIN', 'LVUP', 'LOW', 'FR0', 'FR1', 'FT', 'CR', 'CW', 'WR', 'GOR', 'BAGPOS', 'PU', 'PF', 'PH', 'HDIR', 'HCNT', 'SCNT', 'GCNT', 'LDLY', 'LRES', 'WT', 'HUD', 'FIT'];
+  const SHARED = ['ST', 'TT', 'PC', 'NX', 'ROT', 'PX', 'PY', 'SHI', 'SLO', 'HHI', 'HLO', 'LV', 'LNS', 'NLIN', 'LVUP', 'LOW', 'FR0', 'FR1', 'CR', 'CW', 'WR', 'GOR', 'BAGPOS', 'PU', 'PF', 'PH', 'HDIR', 'HCNT', 'SCNT', 'GCNT', 'LDLY', 'LRES', 'WT', 'HUD', 'FIT'];
   const sameAs = (label, a, b) => {            // a: old record, b: new record
     for (let i = 0; i < 768; i++) if (a.cells[i] !== b.cells[i]) return `${label}: cell (row ${(i / 32) | 0}, col ${i % 32}) = ${b.cells[i]}, old ${a.cells[i]}`;
-    for (let i = 0; i < 768; i++) if (a.attrs[i] !== b.attrs[i]) return `${label}: attribute (row ${(i / 32) | 0}, col ${i % 32}) = $${b.attrs[i].toString(16)}, old $${a.attrs[i].toString(16)}`;
+    for (let i = 0; i < 768; i++) if (plainBlackAttr(a.attrs[i]) !== b.attrs[i]) return `${label}: attribute (row ${(i / 32) | 0}, col ${i % 32}) = $${b.attrs[i].toString(16)}, old $${a.attrs[i].toString(16)} (as BRIGHT 0 where black: $${plainBlackAttr(a.attrs[i]).toString(16)})`;
     if (a.vars.SHI * 10000 + a.vars.SLO !== b.vars.SHI * 10000 + b.vars.SLO) return `${label}: score ${b.vars.SHI * 10000 + b.vars.SLO}, old ${a.vars.SHI * 10000 + a.vars.SLO}`;
     return null;
   };
@@ -989,11 +995,13 @@ console.log('\n7. blockfall.arc (language batch 1) against blockfall-v0.arc on t
     const a = WANT.ticks[t], b = wantNew.ticks[t];
     for (const k of SHARED) if (a.vars[k] !== b.vars[k]) { d2 = `tick ${t + 1}: ${k} = ${b.vars[k]}, old ${a.vars[k]}`; break; }
     if (d2) break;
+    // FT is a TIMER now (G3): it holds 13 when the flash starts and counts down by itself, the old FT counted up from 0 and stopped at 12.  While the flash runs (and in the tick that ends it) new = 13 - old.
+    if ((a.vars.ST === 4 || (t > 0 && WANT.ticks[t - 1].vars.ST === 4 && a.vars.ST === 5)) && b.vars.FT !== 13 - a.vars.FT) { d2 = `tick ${t + 1}: FT (a timer) = ${b.vars.FT}, old FT ${a.vars.FT} (expected 13 - old)`; break; }
     for (let r = 0; r < 24 && !d2; r++) for (let c = 0; c < 14; c++) if (a.arrays.BD[r * 14 + c] !== b.arrays.BD[c * 24 + r]) { d2 = `tick ${t + 1}: board (${c}, ${r}) = ${b.arrays.BD[c * 24 + r]}, old ${a.arrays.BD[r * 14 + c]}`; break; }
     if (!d2 && (a.arrays.CL.some((v, i) => v !== b.arrays.CL[i]) || a.arrays.BAG.some((v, i) => v !== b.arrays.BAG[i]))) d2 = `tick ${t + 1}: a flag row or the bag differs`;
     if (!d2 && a.sfx.index !== b.sfx.index) d2 = `tick ${t + 1}: sound effect ${b.sfx.index}, old ${a.sfx.index}`;
   }
-  check_(`interpreter: also the state, piece, counters, the 14 x 24 board (as bd(c, r) against the old bd(r * 14 + c)), the bag and the sound effect heard agree on all ${NT} ticks (${SHARED.length} variables)`, d2 === null, d2 ?? '');
+  check_(`interpreter: also the state, piece, counters, the 14 x 24 board (as bd(c, r) against the old bd(r * 14 + c)), the bag and the sound effect heard agree on all ${NT} ticks (${SHARED.length} variables; WT is a TIMER now and equal to the old counter on every tick; FT is a TIMER, equal to 13 - the old counter while a flash runs)`, d2 === null, d2 ?? '');
   // the shipped version differs from the variant only in how the piece order is seeded
   check_('the variant plays exactly the same piece order as the old version (same RNG draws) while the shipped one draws none on the title', wantNew.ticks.slice(0, 40).every((r, i) => r.vars.TT === WANT.ticks[i].vars.TT));
 
