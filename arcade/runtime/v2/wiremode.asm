@@ -111,6 +111,13 @@ wire_boot:
     ld hl,V_WIRE
     ld (hl),WIRE_HAS
     jr RT_WIREMODE.on
+
+; Two pieces of wire.asm in the rest of the gap (each byte here is one more free after RT_END):
+W_SHKTAB:                       ; RT_DRAWMODEL: the rows' SCALE shift for log2 SCALE = 0..3
+    DW w_shk0, w_shk1, w_shk2, w_shk3
+w_ls_rej:                       ; w_line_setup's exit: CY = nothing visible
+    scf
+    ret
 M_WMODE_E:
     ASSERT M_WMODE_E <= RT_ENTRY
     ASSERT DATTR1 == DATTR0+$2000 && (DATTR0 & $2000) == 0 && DIRTY1 == DIRTY0+$100 && (DIRTY0 & $FF) == 0 && WIRE_HAS == 2

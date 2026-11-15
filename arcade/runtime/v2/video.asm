@@ -1,6 +1,6 @@
 ; video.asm -- display files, the cell map and its renderer, row table (v2: the sprite tables, blitters and erase are in assets.asm and
 ; sprite.asm).  From arcade/runtime/v1/video.asm: the screen is a 32x24 CELL MAP (CELL_TILE / CELL_ATTR, layout.inc) drawn into the
-; hidden display file by draw_cell; a sprite is erased by redrawing the cells it covered (sprite.asm).  Lives in DOCK chunks 0-1 ($0200..).
+; hidden display file by draw_cell; a sprite is erased by redrawing the cells it covered (sprite.asm).  Lives in DOCK chunks 0-1 (after boot.asm).
 ; Everything here is called with the play mapping ($F4 = $33), after boot.
 ;
 ; Banking notes: the display files ($4000-$7AFF) and the tables ($C000+) are RAM chunks 2, 3 and 6 and are never
@@ -10,7 +10,7 @@
 ; Pixel format after pre-shifting (see layout.inc): per row  m0 i0 m1 i1 m2 i2 : three screen bytes, each a
 ; (mask, image) pair, mask 1 = keep the background, image 1 = ink.  Phase p is the 16-bit sprite shifted right by p
 ; pixels inside a 24-bit window (mask fills with 1s, image with 0s).  Rows below the sprite's height are transparent.
-    ORG RT_VIDEO
+    ORG M_BOOT_E                ; directly after boot.asm (the fixed $0200 left a gap)
 M_VIDEO_S:
 
 ; ---------------------------------------------------------------------------------------------------------------
@@ -18,29 +18,62 @@ M_VIDEO_S:
 ; its tables, the row table and the pre-shifted sprite tables.  Clobbers everything.  Boot only (uses IX, IY).
 ; ---------------------------------------------------------------------------------------------------------------
 video_init:
-    ld hl,DFILE0
-    ld de,DFILE0+1
-    ld bc,DFILE_LEN-1
-    ld (hl),0
-    ldir
-    ld hl,DFILE1
-    ld de,DFILE1+1
-    ld bc,DFILE_LEN-1
-    ld (hl),0
-    ldir
-    ld hl,DATTR0                ; attributes of file 1: one value for all 768 cells
-    ld de,DATTR0+1
-    ld bc,DATTR_LEN-1
-    ld (hl),BG_ATTR
-    ldir
-    ld hl,DATTR1                ; attributes of file 2
-    ld de,DATTR1+1
-    ld bc,DATTR_LEN-1
-    ld (hl),BG_ATTR
-    ldir
+    ld hl,FILL_BOOT
+    call fill_tab
     call build_row_table
     call cells_init
     jp build_assets
+
+; fill_tab: HL -> entries of  DW address, DW length - 1, DB value  ended by a word 0;  each range is filled with its value (LDIR from the first
+; byte), in table order.  Boot only.  Clobbers AF, BC, DE, HL.
+fill_tab:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl                      ; DE = the address (every range is above $3FFF: a zero high byte ends the table)
+    ld a,d
+    or a
+    ret z
+    ld c,(hl)
+    inc hl
+    ld b,(hl)
+    inc hl                      ; BC = length - 1
+    ld a,(hl)
+    inc hl                      ; A = the value
+    push hl                     ; the next entry
+    ld h,d
+    ld l,e
+    inc de
+    ld (hl),a
+    ldir
+    pop hl
+    jr fill_tab
+
+; The ranges video_init fills: both display files all-blank (pixels 0, attribute BG_ATTR); chunk 6 from CELL_TILE up (the cell map every cell a
+; space with attribute BG_ATTR, the rest from DIRTY0 to $DFFF cleared: empty dirty maps, SPR_TAB, AST, SPR_DRAWN, POOL_C, the glyph table),
+; TILE_ATTR = BG_ATTR for every tile, and PHASE_PTR cleared (no shift of any asset yet).
+FILL_BOOT:
+    DW DFILE0, DFILE_LEN-1
+    DB 0
+    DW DFILE1, DFILE_LEN-1
+    DB 0
+    DW DATTR0, DATTR_LEN-1
+    DB BG_ATTR
+    DW DATTR1, DATTR_LEN-1
+    DB BG_ATTR
+    DW DIRTY0, $E000-DIRTY0-1           ; (the cell map, CELL_TILE..DIRTY0-1, is filled below, not cleared first)
+    DB 0
+    DW CELL_TILE, CELL_COUNT-1
+    DB CELL_BLANK
+    DW CELL_ATTR, CELL_COUNT-1
+    DB BG_ATTR
+    DW TILE_ATTR, MAX_TILES-1
+    DB BG_ATTR
+    DW PHASE_PTR, PHASE_PTR_LEN-1
+    DB 0
+    DW 0
+    ASSERT CHUNK6_CLEAR == CELL_TILE && CELL_ATTR == CELL_TILE+CELL_COUNT && DIRTY0 == CELL_ATTR+CELL_COUNT && CHUNK6_CLEAR+CHUNK6_CLEAR_LEN == $E000
+    ASSERT TILE_ATTR > DIRTY0 && TILE_ATTR+MAX_TILES <= $E000
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; cells_init: clear and fill RAM chunk 6 from CELL_TILE up: the cell map (every cell a space, attribute BG_ATTR), empty
@@ -48,27 +81,7 @@ video_init:
 ; the game's tileset), TILE_ATTR, and the game's initial map if it has one (then every cell is dirty in both files, so
 ; the first two ticks draw it).  Header values are clamped like v0's: a tile count above 128 is read as 128.
 ; ---------------------------------------------------------------------------------------------------------------
-cells_init:
-    ld hl,CHUNK6_CLEAR
-    ld de,CHUNK6_CLEAR+1
-    ld bc,CHUNK6_CLEAR_LEN-1
-    ld (hl),0
-    ldir
-    ld hl,CELL_TILE
-    ld de,CELL_TILE+1
-    ld bc,CELL_COUNT-1
-    ld (hl),CELL_BLANK
-    ldir
-    ld hl,CELL_ATTR
-    ld de,CELL_ATTR+1
-    ld bc,CELL_COUNT-1
-    ld (hl),BG_ATTR
-    ldir
-    ld hl,TILE_ATTR
-    ld de,TILE_ATTR+1
-    ld bc,MAX_TILES-1
-    ld (hl),BG_ATTR
-    ldir
+cells_init:                     ; (chunk 6 from CELL_TILE up and TILE_ATTR were filled by video_init's table)
     ld hl,FONT_GLYPHS           ; glyphs of codes 32..127 (codes 0..31 stay blank: the table was cleared)
     ld e,32
     ld b,96
@@ -131,31 +144,26 @@ cells_init:
     ld a,h
     cp (CELL_TILE>>8)+3
     jr nz,.attr
-    ld hl,DIRTY0                ; everything is dirty in both files
-    ld de,DIRTY0+1
-    ld bc,DIRTY_LEN-1
-    ld (hl),$FF
-    ldir
-    ld hl,DIRTY1
-    ld de,DIRTY1+1
-    ld bc,DIRTY_LEN-1
-    ld (hl),$FF
-    ldir
-    ret
+    ld hl,FILL_DIRTY            ; everything is dirty in both files
+    jp fill_tab
+FILL_DIRTY:
+    DW DIRTY0, DIRTY_LEN-1
+    DB $FF
+    DW DIRTY1, DIRTY_LEN-1
+    DB $FF
+    DW 0
 
 ; glyph_put: HL = 8 glyph bytes (rows 0..7), E = the cell value (glyph code).  Writes row k to GLYPH_TAB + 256 k + E ("planes": the cell
-; renderers index a row of a glyph with B = plane, C = code).  HL advances by 8.  Clobbers AF, D.
+; renderers index a row of a glyph with B = plane, C = code).  HL advances by 8.  Clobbers AF, C, D.
 glyph_put:
     ld d,GLYPH_TAB>>8
-    ld a,8
+    ld c,8
 .row:
-    push af
     ld a,(hl)
     ld (de),a
     inc hl
     inc d
-    pop af
-    dec a
+    dec c
     jr nz,.row
     ret
 
@@ -163,13 +171,15 @@ glyph_put:
 ; Walks the Spectrum-style screen layout with the usual "one row down" step.
 build_row_table:
     ld hl,DFILE0
-    ld ix,ROW_TAB
+    ld de,ROW_TAB
     ld b,192
 .row:
-    ld (ix+0),l
-    ld (ix+1),h
-    inc ix
-    inc ix
+    ex de,hl
+    ld (hl),e
+    inc hl
+    ld (hl),d
+    inc hl
+    ex de,hl
     inc h                       ; next pixel row inside the character cell: H + 1
     ld a,h
     and 7

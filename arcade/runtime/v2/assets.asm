@@ -18,12 +18,7 @@ M_ASSETS_S:
 
 VBUF            EQU $FC00       ; boot scratch: 96 bytes inside the stack area (the stack is at $FF00 and the boot uses < 32 bytes of it)
 
-build_assets:
-    ld hl,PHASE_PTR             ; no shift of any asset yet
-    ld de,PHASE_PTR+1
-    ld bc,PHASE_PTR_LEN-1
-    ld (hl),0
-    ldir
+build_assets:                   ; (PHASE_PTR was cleared by video_init's table: no shift of any asset yet)
     ld a,(GAME_NSPR)
     cp MAX_ASSETS+1
     jr c,.nok
@@ -41,6 +36,9 @@ build_assets:
     xor a
     ld (V_SLOT),a
     ld (V_ASSET),a
+    exx
+    ld hl,POOL_A                ; HL' = the next free phase slot (pack_phase; the boot does not use the alternate set otherwise)
+    exx
 .next:
     ld a,(V_NAST)
     ld hl,V_ASSET
@@ -118,21 +116,18 @@ build_asset:
     inc a
 .w8:
     ld (iy+AST_WB),a
-    ld a,(ix+SD_PHASES)         ; phases: the largest of 1, 2, 4, 8 not above the value
-    ld b,1
-    ld c,$F8
-    cp 2
-    jr c,.pdone
-    ld b,2
-    ld c,$FC
-    cp 4
-    jr c,.pdone
-    ld b,4
-    ld c,$FE
-    cp 8
-    jr c,.pdone
-    ld b,8
-    ld c,$FF
+    ld a,(ix+SD_PHASES)         ; phases: the largest of 1, 2, 4, 8 not above the value (0 is read as 1)
+    or a
+    jr nz,.p1
+    inc a
+.p1:
+    ld bc,$08FF                 ; B = phases, C = AST_XMASK: 8 / $FF, 4 / $FE, 2 / $FC, 1 / $F8
+.pl:
+    cp b
+    jr nc,.pdone
+    srl b
+    sla c
+    jr .pl
 .pdone:
     ld (iy+AST_PHASES),b
     ld (iy+AST_XMASK),c
@@ -160,17 +155,13 @@ build_asset:
     ld (iy+AST_HOT+3),a         ; height
     jr .hotdone
 .hot:
-    ld a,(hl)
-    inc hl
-    ld (iy+AST_HOT),a
-    ld a,(hl)
-    inc hl
-    ld (iy+AST_HOT+1),a
-    ld a,(hl)
-    inc hl
-    ld (iy+AST_HOT+2),a
-    ld a,(hl)
-    ld (iy+AST_HOT+3),a
+    push iy
+    pop de
+    ld a,e
+    add a,AST_HOT
+    ld e,a                      ; DE = the record's hot box (AST lies in one page: asserted in sprite.asm)
+    ld bc,4
+    ldir                        ; x, y, w, h
 .hotdone:
     ld l,(ix+SD_DATA)           ; ---- the art into VBUF ----
     ld h,(ix+SD_DATA+1)
@@ -261,19 +252,23 @@ pack_phase:
 .wb:
     add a,a
     ld (V_NEXT),a               ; bytes copied per row: 2 x wb  (2, 4 or 6)
+    exx                         ; HL' = this slot; then on to the next: POOL_A's 32 slots, POOL_B's 28, then POOL_C's 4
+    push hl
+    ld de,PHASE_LEN
+    add hl,de
     ld a,(V_SLOT)
-    ld c,a
     inc a
     ld (V_SLOT),a
-    ld a,c
-    add a,a
-    ld l,a
-    ld h,0
-    ld de,SLOT_TAB
-    add hl,de
-    ld e,(hl)
-    inc hl
-    ld d,(hl)                   ; DE = the slot
+    cp POOL_A_SLOTS
+    jr nz,.nb
+    ld hl,POOL_B
+.nb:
+    cp POOL_A_SLOTS+POOL_B_SLOTS
+    jr nz,.nc
+    ld hl,POOL_C
+.nc:
+    exx
+    pop de                      ; DE = the slot
     ld a,(V_ASSET)
     rlca
     rlca
@@ -337,16 +332,4 @@ shift_vbuf:
     inc hl                      ; the next row
     djnz .row
     ret
-
-; The slots: SLOT_TAB[n] = the address of phase slot n (POOL_A, POOL_B, then POOL_C).
-SLOT_TAB:
-    DUP POOL_A_SLOTS, n
-    DW POOL_A+n*PHASE_LEN
-    EDUP
-    DUP POOL_B_SLOTS, n
-    DW POOL_B+n*PHASE_LEN
-    EDUP
-    DUP POOL_C_SLOTS, n
-    DW POOL_C+n*PHASE_LEN
-    EDUP
 M_ASSETS_E:

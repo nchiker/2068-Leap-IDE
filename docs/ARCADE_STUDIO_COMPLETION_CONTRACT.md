@@ -168,6 +168,16 @@ Improvements made later that never reached earlier code, found by checking the c
   **Targets:** at least 1,200 bytes freed; no recorded tick slower (`tests/arcade-codegen-perf.mjs --compare`, the `m*-runtime-perf` suites,
   `tests/arcade-m4.mjs`); boot within its frame bound; every suite and the v2 mutation runs green; programs that use no new words compile to the
   same bytes except for moved `RT_*` addresses (`regen-baselines.mjs --old <ref>`); the cross-emulator checks re-run for every v2 game.
+* **Z as built (stage 2, 2026-11-14, branch `arcade-v2-size`):** `runtime (chunks 0-1)` 15,378 -> **12,935** bytes (**-2,443**, target 1,200);
+  `RT_END` `$3CAA` -> `$328A` (3,446 free after it). Details: `ARCADE_RUNTIME_API_V2.md` "As built: size pass", per change `arcade/spike/v2size/`.
+  Every target met: no measured figure slower except boot-only code (m4 worst tick 105,930 -> 103,772 T; `arcade-codegen-perf --compare` passes;
+  Orbit Gates' worst play tick 340,848 -> 334,812, ticks over budget 29 -> 22); boot 11 -> 10 frames (bound 14); the font not packed (not
+  needed); compiled programs equal except the moved `RT_*` addresses (10 hashes, `regen-baselines.mjs --old c985065`). **Verified:**
+  `verify --all` 188/188 steps, 122,216 checks, the six changed suites' mutants 756 killed + 15 equivalent, 0 survivors (each worker's own run
+  covered every v2 mutant: m17 377 killed + 11 equivalent); Orbit Gates on TSRun, ZEsarUX and Fuse: all 315 ticks identical (screens byte for
+  byte, state at 73 sampled ticks). **Owner, 2026-11-14:** `--all` instead of `--all --full` (the extra mutants are those of v3, v4 and the
+  compiler, unchanged) and Orbit Gates alone for the emulator check (the only change with a new hardware-facing part: RCPT in RAM); no Fuse
+  launch this stage (no game changed; stage 3 launches them all).
 * **G. The example games use the later words** (stage 3, with K4):
   * G1 Starfall and Orbit Gates hand-code "fire released, then pressed again" with a `rel` variable: use `KEYPRESS(" ") OR BIT(JOYPRESS(1), 4)`.
   * G2 Blockfall pads its score with three `IF`s in `PSCORE`: use `PRINT ... USING`; Starfall's `score; "  "` likewise.
