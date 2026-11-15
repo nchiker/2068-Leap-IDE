@@ -300,7 +300,9 @@ before game over) and is fixed.
 
 ### Stage 4
 * **N1. Starters.** `src/arcade-starters.js` (pure, Node-importable): `STARTERS = [{id, title, about, runtime, make() -> project}]`, assets built
-  by code. Six: blank, sprites-tiles, scenes-music, platformer, raycaster, wireframe (contents in the review doc). New opens a dialog (title, one
+  by code. Seven: blank, sprites-tiles, scenes-music, platformer, raycaster, wireframe (contents in the review doc), and **fine-colour** (owner,
+  2026-11-15: "N1 should also include hi color like our recent examples": a v2 game whose scenes are 8 x 1 colour, `scenes.<n>.display = 'fine'`,
+  art drawn with `arcade/examples/fineart.mjs`'s method, within the fine rules: at most 32 sprite phases, about 7 moving 16 x 16 sprites at 20 Hz). New opens a dialog (title, one
   line, runtime, a screenshot made with R5 and committed under `arcade/dist/starters/`). Every starter: under 150 lines of commented source,
   compiles with no warnings, is a game with a goal (owner's rule for samples: a clear goal, live controls, a rising challenge, a score), and
   follows the two-blacks rule.
@@ -334,7 +336,7 @@ JS reference of `arcade/tests/m8-common.mjs`, moved into `src/`).
 | 1 | the examples open in the editors in colour (B1); R1's meter shown on Vaults, the game that runs over its budget; K1 to K3 fire on today's games (the warnings are the proof that stage 3 is needed) |
 | 2 | the v2 games (Bounce, Breakout, Starfall, Blockfall, Orbit Gates) on the smaller runtime, same play, same or better tick times |
 | 3 | Starfall, Vaults, Blockfall and both Leap Runners in one black; `KEYPRESS` / `JOYPRESS` / `TIMER` / `USING` in Starfall, Orbit Gates, Blockfall and Vaults; Breakout and Bounce with a title scene and a song. All launched in Fuse for the owner |
-| 4 | the six starters are small games themselves (one per game type); Orbit Gates' models open and edit in W1; Leap Runner's levels come from M2's object layers; one example song re-entered in A1's note view plays the same bytes |
+| 4 | the seven starters are small games themselves (one per game type, fine colour included); Orbit Gates' models open and edit in W1; Leap Runner's levels come from M2's object layers; one example song re-entered in A1's note view plays the same bytes |
 | 5 | a starter's title screen made by picture import (M3); Vaults' floor plan shown in M4's preview |
 
 ## 6. Verification (every stage)
