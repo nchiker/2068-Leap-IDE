@@ -59,7 +59,7 @@ function loadReal(version) {
 
 export const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
 export function compileReal(src, assets, { R = real(), compile: compileFn = compile } = {}) {      // (R: another runtime table, compile: another compiler; tools/regen-baselines.mjs)
-  const res = compileFn(src, { runtime: R.rt, image: R.img, assets });
+  const res = compileFn(src, { runtime: R.rt, image: R.img, assets, ...(assets?.scenes ? { scenes: assets.scenes } : {}) });      // (the assets file's top-level "scenes" key is the project's per-scene display setting: fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md 1)
   if (res.errors.length) throw new Error('compile: ' + errText(res));
   return res;
 }
@@ -69,9 +69,10 @@ const KEYROWS = ['\x01ZXCV', 'ASDFG', 'QWERT', '12345', '09876', 'POIUY', '\rLKJ
 const KEYPOS = new Map(); KEYROWS.forEach((r, row) => [...r].forEach((ch, bit) => KEYPOS.set(ch.charCodeAt(0), [row, bit])));
 
 /** Boot the cartridge and run until `ticks` ticks have completed. */
-export function runReal(res, { ticks, stick = null, keys = null, measure = false, hooks = null, R: Rov = null } = {}) {
+export function runReal(res, { ticks, stick = null, keys = null, measure = false, hooks = null, R: Rov = null, video = false } = {}) {
   const R = Rov ?? real(), SYM = R.SYM;
-  const m = bootedMachine(res.dck);                       // restored from the boot snapshot (V9), video off (V8)
+  const m = bootedMachine(res.dck, video ? { video: true } : {});      // restored from the boot snapshot (V9), video off (V8) unless the run looks at the picture (`video`; hooks.onBoot(m) and hooks.afterFrame(m, f) are for the beam: tests/arcade-starfall-fine.mjs)
+  hooks?.onBoot?.(m);
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);
   const nInst = res.gen.v2 ? res.gen.v2.ninst : 4;
   const snap = () => ({
@@ -149,6 +150,7 @@ export function runReal(res, { ticks, stick = null, keys = null, measure = false
     m.joystick[0] = contact(typeof sv === 'number' ? sv : sv[1] | 0);
     m.joystick[1] = contact(typeof sv === 'number' ? 0 : sv[2] | 0);
     M_.runFrame(m);
+    hooks?.afterFrame?.(m, f);
     if (rd16(SYM.V_FRAMES) === 0) continue;
     const nt = rd16(SYM.V_TICKS);
     if (nt === k - 1) continue;

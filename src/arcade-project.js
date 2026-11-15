@@ -381,6 +381,7 @@ export function exampleProject(name, arcText, assets = {}) {
   p.files = { [MAIN_FILE]: arcText.replace(/\r\n?/g, '\n') };
   p.assets = { sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {}, models: {} };
   for (const kind of ASSET_KINDS) if (isObj(assets[kind])) p.assets[kind] = clone(assets[kind]);
+  if (isObj(assets.scenes)) p.scenes = clone(assets.scenes);      // the per-scene display setting an assets file may carry (fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md section 1)
   const framerate = /^\s*FRAMERATE\s+(\d+)/im.exec(arcText);
   if (framerate) p.framerate = Number(framerate[1]);
   return p;

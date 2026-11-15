@@ -6,8 +6,12 @@
 // '.' = transparent. The big sprites (16 x 16) and the two small ones (8 x 8) are drawn as the LEFT half and mirrored.
 // Format: docs/ARCADE_ASSETS.md (rows with bits / mask in hex, MSB = leftmost pixel; mask 1 = the sprite covers the background;
 // `hot` = the collision box [x, y, w, h]; `phases` = pre-shifted horizontal positions (8, 4, 2 or 1), see
-// docs/ARCADE_RUNTIME_API_V2.md). Each row also says ink / paper / bright as the Studio would author it; the v2 build takes the
-// colour of a sprite from the screen cell under it (all the playfield cells are white on black), so these are for the Studio.
+// docs/ARCADE_RUNTIME_API_V2.md). Each row also says ink / paper / bright as the Studio would author it.
+// Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md; the top-level "scenes" key below makes the play scene 8 x 1 colour): a sprite's colour
+// there is the INK of each of its pixel rows (the paper and BRIGHT under it are the background's), so every sprite is shaded per row
+// (SHIP_INK ... SHOT_INK), and a tile has eight row attributes, so the sky has stars of several inks, a dithered nebula and a planet's
+// horizon, and the explosions are hot at the core.  Everything is black paper, BRIGHT 0 (TSRun shows BRIGHT black grey).  The title and
+// the game over scenes stay two-buffer: they show each tile's row 0 attribute.
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,11 +45,13 @@ const EXPLOSION = [
 ];
 for (const f of EXPLOSION) if (f.length !== 16 || f.some((r) => r.length !== 16)) throw new Error('explosion frame is not 16 x 16');
 
-function sprite(rows, { hot, phases, ink = 7, paper = 0, bright = 1 }) {
+function sprite(rows, { hot, phases, inks, paper = 0, bright = 0 }) {
+  if (inks.length !== rows.length) throw new Error(`${inks.length} row inks for ${rows.length} rows`);
   const h = rows.length, w = rows[0].length;
   if (rows.some((r) => r.length !== w)) throw new Error('ragged sprite');
   const hex = (v) => v.toString(16).toUpperCase().padStart(w / 4, '0');
-  const outRows = rows.map((r) => {
+  const outRows = rows.map((r, k) => {
+    const ink = inks[k];
     let bits = 0, mask = 0;
     for (const ch of r) { bits <<= 1; mask <<= 1; if (ch === '#') { bits |= 1; mask |= 1; } else if (ch === '-') mask |= 1; }
     return { bits: hex(bits), mask: hex(mask), ink, paper, bright };
@@ -53,24 +59,45 @@ function sprite(rows, { hot, phases, ink = 7, paper = 0, bright = 1 }) {
   return { w, h, frames: [{ rows: outRows }], hot, phases };
 }
 
-const tileRows = (bytes, ink, paper = 0, bright = 1) => ({ rows: bytes.map((b) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })), flags: 0 });
+// a tile: eight row attributes (docs/ARCADE_ASSETS.md: bits, ink, paper, bright per row); `inks` / `papers` are one number or one value a row
+const per = (v, k) => (Array.isArray(v) ? v[k] : v);
+const tileRows = (bytes, inks, paper = 0) => ({ rows: bytes.map((b, k) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink: per(inks, k), paper: per(paper, k), bright: 0 })), flags: 0 });
+// a sky tile (one the map uses): its row 0 is ink 7 on paper 0 (BRIGHT 0) whatever the other rows are, because the title and the game over scenes are two-buffer and show a tile by its row 0 attribute,
+// and the asset check (background-attr-mix) wants one background attribute for the cell map; the art of a sky tile therefore keeps its row 0 empty
+const sky = (bytes, inks, paper = 0) => { if (bytes[0] !== 0) throw new Error('a sky tile has an empty row 0'); return tileRows(bytes, Array.from({ length: 8 }, (_, k) => (k === 0 ? 7 : per(inks, k))), Array.from({ length: 8 }, (_, k) => (k === 0 ? 0 : per(paper, k)))); };
 const quad = (rows16, qx, qy) => rows16.slice(qy * 8, qy * 8 + 8).map((r) => parseInt([...r.slice(qx * 8, qx * 8 + 8)].map((c) => (c === '#' ? '1' : '0')).join(''), 2));
 const tiles = [
-  tileRows([0, 0, 0, 0, 0, 0, 0, 0], 7, 0, 1),                    // 0 empty sky
-  tileRows([0, 0, 0, 0, 0, 0x04, 0, 0], 7, 0, 1),                 // 1 dim star (a single pixel). Every sky tile has the SAME attribute (ink 7, paper 0, BRIGHT 1): a sprite is coloured from the cell under it, so a different ink or bright here would recolour sprites passing over the star; and bright black and normal black paper are different blacks on some displays
-  tileRows([0, 0, 0x20, 0, 0, 0, 0, 0], 7, 0, 1),                 // 2 dim star (same attribute as every sky tile: see tile 1)
-  tileRows([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], 7, 0, 1),           // 3 bright star
+  sky([0, 0, 0, 0, 0, 0, 0, 0], 7),                               // 0 empty sky
+  sky([0, 0, 0, 0, 0, 0x04, 0, 0], 1),                            // 1 dim blue star (a single pixel)
+  sky([0, 0, 0x20, 0, 0, 0, 0, 0], 5),                            // 2 dim cyan star
+  sky([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], [7, 5, 7, 5, 7, 7, 7, 7]),   // 3 bright star: a cross, white core and cyan arms
 ];
-const EXP_INK = [7, 6, 2];
-EXPLOSION.forEach((f, k) => { for (const [qx, qy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) tiles.push(tileRows(quad(f, qx, qy), EXP_INK[k], 0, 1)); });
+// 4 .. 15: the explosion, 3 frames of 2 x 2 tiles; each pixel row has its own ink, hot (white) at the core and cooling outwards
+const expInk = (f, r) => { const d = Math.abs(r - 7.5); return f === 0 ? (d <= 2 ? 7 : 6) : f === 1 ? (d <= 2 ? 7 : d <= 4 ? 6 : d <= 6 ? 2 : 3) : (d <= 3 ? 6 : d <= 5 ? 2 : 3); };
+EXPLOSION.forEach((f, k) => { for (const [qx, qy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) tiles.push(tileRows(quad(f, qx, qy), Array.from({ length: 8 }, (_, r) => expInk(k, qy * 8 + r)))); });
+tiles.push(sky([0, 0, 0, 0x08, 0, 0, 0, 0], 6));                // 16 dim yellow star
+tiles.push(sky([0, 0, 0, 0, 0, 0, 0x40, 0], 3));               // 17 dim magenta star
+// 18 .. 29: the nebula, a dither of 3 densities in 4 colourings (blue, blue to magenta, magenta, magenta to blue: a gradient down the band)
+const NEB_DENSITY = [[0, 0, 0x44, 0, 0, 0, 0x11, 0], [0, 0x44, 0, 0x11, 0, 0x44, 0, 0x11], [0, 0x88, 0x22, 0x88, 0x22, 0x88, 0x22, 0x88]];
+const NEB_INKS = [Array(8).fill(1), [1, 1, 1, 1, 3, 3, 3, 3], Array(8).fill(3), [3, 3, 3, 3, 1, 1, 1, 1]];
+for (const inks of NEB_INKS) for (const d of NEB_DENSITY) tiles.push(sky(d, inks));
+// 30, 31: the horizon of a planet along the two lowest cell rows: the PAPER climbs from black through blue and magenta to red, line by line
+tiles.push(sky([0, 0, 0, 0, 0, 0, 0, 0], 7, [0, 0, 0, 0, 0, 1, 1, 1]));
+tiles.push(sky([0, 0, 0, 0, 0, 0, 0, 0], 7, [0, 1, 1, 3, 3, 3, 2, 2]));
+const T_STARS = [1, 2, 3, 16, 17], T_NEB0 = 18, T_HOR = 30;
 
-// the sky: row 0 is the HUD; a few stars (a fixed pseudo-random sequence, so the file is the same every time)
+// the sky: row 0 is the HUD; a few stars (a fixed pseudo-random sequence, so the file is the same every time), the nebula in cell rows 5 .. 13, the horizon in 22, 23
 let seed = 7;
 const rnd = () => { seed = (seed * 25173 + 13849) & 0xFFFF; return seed / 65536; };
+const NEB_ZONE = (r) => (r <= 6 ? 0 : r === 7 ? 1 : r <= 10 ? 2 : r === 11 ? 3 : 0);
 const cells = [];
 for (let r = 0; r < 24; r++) for (let c = 0; c < 32; c++) {
-  const v = rnd();
-  cells.push(r === 0 ? 0 : v < 0.025 ? 3 : v < 0.07 ? 1 : v < 0.12 ? 2 : 0);
+  const v = rnd(), w = rnd(), n = rnd();
+  let t = 0;
+  if (r === 22 || r === 23) t = T_HOR + (r - 22);
+  else if (r >= 5 && r <= 13 && n < 0.8 * (1 - Math.abs(r - 9) / 5)) t = T_NEB0 + 3 * NEB_ZONE(r) + (w < 0.45 ? 0 : w < 0.85 ? 1 : 2);
+  else if (r > 0) t = v < 0.025 ? 3 : v < 0.07 ? 1 : v < 0.12 ? 2 : v < 0.15 ? 16 : v < 0.18 ? 17 : 0;
+  cells.push(t);
 }
 
 const ticks = (n, f) => Array.from({ length: n }, (_, k) => f(k));
@@ -109,13 +136,20 @@ const music = {
   ], [0, 1, 0, 2], 0),
 };
 
+// the ink of each pixel row of a sprite (a fine scene colours a sprite by its rows): lit from above, so the light rows are the top ones
+const SHIP_INK = [7, 7, 7, 7, 5, 5, 5, 5, 5, 5, 1, 1, 1, 2, 6, 6];
+const SCOUT_INK = [4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 2, 2, 2, 2, 2, 2];
+const HEAVY_INK = [7, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 6, 6, 6, 6, 6];
+const BULLET_INK = [7, 7, 6, 6, 6, 2, 2, 2];
+const SHOT_INK = [6, 6, 2, 2, 2, 2, 3, 3];
 const assets = {
+  scenes: { play: { display: 'fine' } },          // the play scene is 8 x 1 colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 1); the title and over scenes are two-buffer
   sprites: {
-    ship: sprite(SHIP, { hot: [3, 3, 10, 11], phases: 8, ink: 7 }),
-    bullet: sprite(BULLET, { hot: [2, 0, 4, 8], phases: 4, ink: 6 }),
-    scout: sprite(SCOUT, { hot: [1, 2, 14, 11], phases: 8, ink: 5 }),
-    heavy: sprite(HEAVY, { hot: [1, 0, 14, 14], phases: 8, ink: 3 }),
-    shot: sprite(SHOT, { hot: [2, 2, 4, 4], phases: 4, ink: 2 }),
+    ship: sprite(SHIP, { hot: [3, 3, 10, 11], phases: 8, inks: SHIP_INK }),
+    bullet: sprite(BULLET, { hot: [2, 0, 4, 8], phases: 4, inks: BULLET_INK }),
+    scout: sprite(SCOUT, { hot: [1, 2, 14, 11], phases: 8, inks: SCOUT_INK }),
+    heavy: sprite(HEAVY, { hot: [1, 0, 14, 14], phases: 8, inks: HEAVY_INK }),
+    shot: sprite(SHOT, { hot: [2, 2, 4, 4], phases: 4, inks: SHOT_INK }),
   },
   tilesets: { gfx: { tiles } },
   sfx,

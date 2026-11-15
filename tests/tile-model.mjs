@@ -80,11 +80,15 @@ const EXAMPLES = readdirSync(join(ROOT, 'arcade/examples')).filter((f) => f.ends
 const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFileSync(join(ROOT, `arcade/examples/${id}.assets.json`), 'utf8'))]));
 {
   let sets = 0, tiles = 0, deep = true, text = true, attrs = true, bytes = true;
+  const withRows = [];      // the sets whose tiles have a colour of their own in each pixel row (Starfall's fine-colour sky: the editor reduces them to row 0, a tile with rows that differ is listed by rowsDiffer)
   for (const [id, a] of Object.entries(exAssets)) for (const [name, ts] of Object.entries(a.tilesets ?? {})) {
     sets++; tiles += ts.tiles.length;
     const m = T.fromAsset(ts), back = T.toAsset(m);
-    if (!same(back, ts)) deep = false;
-    if (JSON.stringify(back, null, 1) !== JSON.stringify(ts, null, 1)) text = false;
+    if (T.rowsDiffer(ts).length) withRows.push(`${id}/${name}`);
+    else {
+      if (!same(back, ts)) deep = false;
+      if (JSON.stringify(back, null, 1) !== JSON.stringify(ts, null, 1)) text = false;
+    }
     const conv = convertTileset(ts);
     m.tiles.forEach((t, i) => {
       if (T.attrByte(t) !== conv.bytes[i * 9 + 8]) attrs = false;
@@ -92,7 +96,8 @@ const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFil
       if (t.flags !== conv.flags[i]) attrs = false;
     });
   }
-  ok(`toAsset(fromAsset(x)) deep-equals x for all ${sets} tile sets (${tiles} tiles) of the ${EXAMPLES.length} example assets files`, deep && sets === 7, `${sets} sets`);
+  ok(`toAsset(fromAsset(x)) deep-equals x for all ${sets} tile sets (${tiles} tiles) of the ${EXAMPLES.length} example assets files`, deep && sets === 8, `${sets} sets`);
+  ok('... except the tile sets whose tiles have their own colours in each pixel row: Starfall\'s and Prism Catch\'s fine-colour skies (the editor reduces such a tile to row 0 and lists it)', JSON.stringify(withRows) === '["prism/prism","shooter/gfx"]', JSON.stringify(withRows));
   ok('... and serialises to the same JSON text (key order kept)', text);
   ok('attrByte and flags equal the compiler\'s (convertTileset) for every tile; bits equal its bitmap bytes', attrs && bytes);
   ok('an assets file without tile sets (bounce) has nothing to round-trip', !exAssets.bounce.tilesets);
@@ -511,7 +516,7 @@ console.log('\nC. The real compiler: byte-identical cartridges from assets writt
         a.errors.length === 0 && b.errors.length === 0 && !!a.dck && Buffer.compare(Buffer.from(a.dck), Buffer.from(a2.dck)) === 0 && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0 && same(a.warnings.map((w) => w.message), b.warnings.map((w) => w.message)),
         a.errors.concat(b.errors).map((e) => e.message).join('; '));
     }
-    ok('all seven example projects with tile sets were built', withSets === 7, `${withSets}`);
+    ok('all eight example projects with tile sets were built', withSets === 8, `${withSets}`);
     // the model reduces odd stored forms to what the compiler reads, so the cartridge does not change
     {
       const odd = JSON.parse(JSON.stringify(exAssets.platformer));

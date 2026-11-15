@@ -344,10 +344,9 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   }
   console.log('');
   const summary = EX.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
-  // K3 (stage 1 of the Studio completion) and K2's default (the VIEW3D is BRIGHT 0 now): Starfall's, Vaults' and Blockfall's tiles are BRIGHT 1 on black paper, and Vaults' BRIGHT 1 tiles
+  // K3 (stage 1 of the Studio completion) and K2's default (the VIEW3D is BRIGHT 0 now): Vaults' and Blockfall's tiles are BRIGHT 1 on black paper, and Vaults' BRIGHT 1 tiles
   // now also mix with its view. Stage 3 (K4) fixes the games and removes these entries.
   const EXPECTED = [
-    'shooter: bright-black-paper gfx',
     'platformer: background-attr-mix pf_world',
     'vaults: black-bright-mix vl_tiles',
     'vaults: bright-black-paper vl_tiles',
@@ -371,8 +370,8 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   // bright-black-paper, independently: the tiles with paper 0, BRIGHT 1 and a clear bit, from the JSON
   const bbpRaw = (id, ts) => examples[id].assets.tilesets[ts].tiles.map((t, i) => [raw(t), i]).filter(([r]) => r.paper === 0 && r.bright === 1 && r.clear > 0).map(([, i]) => i);
   const bbpOf = (id, ts) => out[id].filter((f) => f.id === 'bright-black-paper' && f.asset === ts).flatMap((f) => f.tiles);
-  check('bright-black-paper on the examples: Starfall all 16, Vaults 28, Blockfall tiles 0, 10, 11; recomputed from the JSON',
-    eq(bbpOf('shooter', 'gfx'), bbpRaw('shooter', 'gfx')) && bbpOf('shooter', 'gfx').length === 16 && eq(bbpOf('vaults', 'vl_tiles'), bbpRaw('vaults', 'vl_tiles')) && bbpOf('vaults', 'vl_tiles').length === 28 && eq(bbpOf('blockfall', 'gfx'), bbpRaw('blockfall', 'gfx')) && eq(bbpOf('blockfall', 'gfx'), [0, 10, 11]),
+  check('bright-black-paper on the examples: Starfall none (its fine-colour art is all BRIGHT 0), Vaults 28, Blockfall tiles 0, 10, 11; recomputed from the JSON',
+    eq(bbpOf('shooter', 'gfx'), bbpRaw('shooter', 'gfx')) && bbpOf('shooter', 'gfx').length === 0 && eq(bbpOf('vaults', 'vl_tiles'), bbpRaw('vaults', 'vl_tiles')) && bbpOf('vaults', 'vl_tiles').length === 28 && eq(bbpOf('blockfall', 'gfx'), bbpRaw('blockfall', 'gfx')) && eq(bbpOf('blockfall', 'gfx'), [0, 10, 11]),
     JSON.stringify([bbpOf('shooter', 'gfx').length, bbpOf('vaults', 'vl_tiles').length, bbpOf('blockfall', 'gfx')]));
   check('every example tile set: the bright-black-paper tiles equal the independent reading of the JSON (none for breakout and the platformer)',
     EX.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => eq(bbpOf(id, ts), bbpRaw(id, ts)))) && bbpRaw('breakout', 'bricks').length === 0 && bbpRaw('platformer', 'pf_tiles').length === 0);

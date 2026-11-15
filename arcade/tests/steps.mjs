@@ -43,6 +43,8 @@ export const SUITES = [
   'tests/arcade-m5.mjs',
   'tests/arcade-blockfall.mjs',
   'tests/arcade-starfall.mjs',
+  'tests/arcade-starfall-fine.mjs',            // Starfall's fine-colour play scene: every picture against the interpreter's, >= 95 % of the ticks at 20 Hz (the script and late waves), 0 broken frames on the beam
+  'tests/arcade-prism.mjs',                      // Prism Catch (the fine colour showcase): a bot plays it on the real runtime, interpreter equal, the rules, the picture, 20 Hz, the beam
   'tests/arcade-m6-compiler.mjs',
   'tests/arcade-m6-platformer.mjs',
   'tests/arcade-runner.mjs',

@@ -142,8 +142,8 @@ try {
   const names = await evaluate("t.load('shooter')");
   check('loading the shooter project (a "project" event) selects its map "sky"', names.join() === 'sky' && (await state()).name === 'sky');
   let st = await state();
-  check('"sky" is a cell map the source uses, drawn with the tile set "gfx" (16 tiles + a blank entry in the palette)',
-    st.role === 'cell' && st.roleKnown && st.tileset === 'gfx' && st.tileCount === 16 && st.paletteCount === 17, JSON.stringify({ role: st.role, ts: st.tileset, pal: st.paletteCount }));
+  check('"sky" is a cell map the source uses, drawn with the tile set "gfx" (32 tiles + a blank entry in the palette)',
+    st.role === 'cell' && st.roleKnown && st.tileset === 'gfx' && st.tileCount === 32 && st.paletteCount === 33, JSON.stringify({ role: st.role, ts: st.tileset, pal: st.paletteCount }));
   check('the canvas is w x cellPx wide, the ruler and the camera row are hidden for a cell map',
     await evaluate("(() => { const c = document.querySelector('[data-role=map-canvas]'), z = t.editor.getState().cellPx; return c.width === 32 * z && c.height === 24 * z && document.querySelector('[data-role=ruler]').hidden && document.querySelector('[data-role=camera-row]').hidden; })()"));
   check('no warnings for the shooter\'s own map', (await warnIds()).length === 0, (await warnIds()).join());

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 "use strict";
-// arcade-starfall.mjs -- the shipped example arcade/examples/shooter.arc ("Starfall", three scenes, two songs) on the REAL v2 runtime (arcade/build/v2): boot the DCK on a stock TS2068 in TSRun, run a
-// scripted game tick by tick and compare every tick with the reference interpreter (the older suite, tests/arcade-m4.mjs section 8, runs the one-scene fixture shooter-v1.arc without songs).
+// arcade-starfall.mjs -- the shipped example arcade/examples/shooter.arc ("Starfall", three scenes, two songs; the play scene is FINE COLOUR, 8 x 1 colour: shooter.assets.json has "scenes": {"play": {"display": "fine"}}) on the REAL v2 runtime
+// (arcade/build/v2): boot the DCK on a stock TS2068 in TSRun, run a scripted game tick by tick and compare every tick with the reference interpreter (the older suite, tests/arcade-m4.mjs section 8, runs the one-scene
+// fixture shooter-v1.arc without songs, with the pre-fine-colour assets arcade/tests/fixtures/shooter-v1.assets.json).  The pictures, the beam and the tick costs of the fine play scene are tests/arcade-starfall-fine.mjs.
 //
 //   node tests/arcade-starfall.mjs        (ARCADE_QUICK=1: the first 700 ticks only)
 //
@@ -9,12 +10,12 @@
 // lives lost (PLAY hurt), then the ship stands still and stops shooting until it is shot down: GAME OVER (NOMUSIC, then PLAY over), fire held through it (no restart until released and pressed again), a
 // new game (DRIVE again).  It is tests/arcade-m4.mjs' shooterInput, 40 ticks later.
 //
-//   1  the build: compiles on v2 with no errors and no warnings, 16 instances; the interpreter's run covers the title, the play with all five effects, the game over and the restart, and both songs
+//   1  the build: compiles on v2 with no errors and no warnings, 7 instances (the fine play scene holds few sprites at once); the interpreter's run covers the title, the play with all five effects, the game over and the restart, and both songs
 //   2  the real runtime: every tick's state equals the interpreter's (variables, arrays, cells, attributes, cursor, text attribute, border, sprites)
 //   3  the sound at SONG LEVEL, every sample: V_SFX_ACTIVE (all bits) = the interpreter's ay.flags, AY_SHADOW R0..R10 = ay.regs, the chip's R0..R10 = AY_SHADOW (the level of
 //      tests/arcade-m15-differential.mjs); every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call is timed by the frame counter (clock.play / music / sample) and the comparison stops at the first call a
 //      frame interrupt cut.  The counts (samples, with a song, with a channel-C effect over a song) must be above 0
-//   4  the tick costs on the real runtime (median, 95th, worst, ticks over the budget of 3 refreshes = 176,064 T), as tests/arcade-m4.mjs prints them for the fixture
+//   4  the tick rate on the real runtime: >= 95 % of the play ticks (a fine scene: the tick's own cost is measured by tests/arcade-starfall-fine.mjs) finish within the 3 refreshes of FRAMERATE 20; the title and over ticks (two-buffer) fit their budget
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -22,8 +23,6 @@ import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { keysOf, stickOf, FULL_TICKS, QUICK_TICKS } from './arcade-starfall-script.mjs';
 import { real, compileReal, runReal, interpFor, diffRecords, compareSoundRun, errText, ROOT } from './arcade-m5-harness.mjs';
-
-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
 
 const QUICK = !!process.env.ARCADE_QUICK;
 let passed = 0, failed = 0, skipped = 0;
@@ -40,13 +39,17 @@ const TICKS = QUICK ? QUICK_TICKS : FULL_TICKS;
 console.log('1. The build');
 let res;
 try { res = compileReal(SRC, ASSETS); } catch (e) { check_('shooter.arc compiles for the real v2 runtime', false, e.message); process.exit(1); }
-check_('shooter.arc compiles for the real v2 runtime with no errors and no warnings; 16 instances', res.warnings.filter(notTwoBlacks).length === 0 && res.usage.codegen.instances === 16, res.warnings.map((w) => w.message).join(' | ') || `${res.usage.total} bytes, ${res.usage.free} free, songs ${res.usage.data.music} bytes`);
+check_('shooter.arc compiles for the real v2 runtime with no errors and no warnings; 7 instances; the play scene is built fine', res.warnings.length === 0 && res.usage.codegen.instances === 7 && res.scenes.find((x) => x.name === 'play')?.built === 'fine', res.warnings.map((w) => w.message).join(' | ') || `${res.usage.total} bytes, ${res.usage.free} free, songs ${res.usage.data.music} bytes`);
 
 console.log('\n2. The real runtime against the interpreter');
 const t0 = Date.now();
-const got = runReal(res, { ticks: TICKS, keys: keysOf, stick: stickOf, measure: true });
+// (the start of each fine tick, in refreshes: the fine tick starts right after a frame interrupt, at FINE_WORK; the next one 3 refreshes later when FRAMERATE 20 holds)
+const fineStarts = [];
+const S = R.SYM;
+const hooks = { onBoot(m) { const o = m.bus.read; m.bus.read = function (a) { if (a === S.FINE_WORK && m.cpu.pc === a) fineStarts.push(m.ram[S.V_FRAMES] | (m.ram[S.V_FRAMES + 1] << 8)); return o.call(this, a); }; } };
+const got = runReal(res, { ticks: TICKS, keys: keysOf, stick: stickOf, measure: true, hooks });
 if (got.error) { check_('the cartridge runs', false, got.error); process.exit(1); }
-const want = interpFor(SRC, ASSETS, got)(TICKS, { keys: (t, c) => keysOf(t).includes(c), stick: stickOf });
+const want = interpFor(SRC, ASSETS, got, { scenes: ASSETS.scenes })(TICKS, { keys: (t, c) => keysOf(t).includes(c), stick: stickOf });
 // what the run covers (read from the interpreter's records)
 const sc = want.ticks.map((q) => q.scene);
 const sceneNames = want.scenes ?? [];
@@ -62,7 +65,7 @@ check_(`${TICKS} ticks on the real runtime: variables, arrays, cells, attributes
 
 console.log('\n3. The sound at song level');
 {
-  const sw = compareSoundRun(got, TICKS, (clock, n) => interpFor(SRC, ASSETS, got)(n, { keys: (t, c) => keysOf(t).includes(c), stick: stickOf, clock }));
+  const sw = compareSoundRun(got, TICKS, (clock, n) => interpFor(SRC, ASSETS, got, { scenes: ASSETS.scenes })(n, { keys: (t, c) => keysOf(t).includes(c), stick: stickOf, clock }));
   check_('V_SFX_ACTIVE (all bits), AY_SHADOW R0..R10 and the chip equal the interpreter\'s chip model on every sample (title FANFARE, play DRIVE with the shots borrowing channel C, game over NOMUSIC then the over effect, the new game)', sw.ok, sw.d ?? sw.text);
   // the song handing over: DRIVE is the song on its first play-scene sample, NOMUSIC + the over effect leave no song flag, the new game plays DRIVE again
   const songAt = want.ticks.map((q, i) => (q.music?.active ? q.music.index : -1));
@@ -70,18 +73,23 @@ console.log('\n3. The sound at song level');
   check_('the song heard in the title is FANFARE (0), in play DRIVE (1), none in the game over (NOMUSIC), and DRIVE again after the restart', songAt[0] === 0 && songAt.slice(0, 10).every((x) => x === 0 || x === -1) && songAt.includes(1) && (QUICK || (overAt > 0 && songAt.slice(overAt + 1, overAt + 15).every((x) => x === -1) && songAt.slice(overAt + 20).includes(1))), `first over at tick ${overAt + 1}`);
 }
 
-console.log('\n4. The tick costs on the real runtime');
+console.log('\n4. The tick rate on the real runtime');
 {
-  const overTicks = got.costs.map((c, i) => [c, i + 1]).filter(([c, k]) => k > 2 && c > 3 * 58688).map(([c, k]) => `tick ${k} (scene ${sceneNames[sc[k - 1]]}${sc[k - 1] !== sc[k - 2] ? ', a scene change' : ''}) ${c} T`);
-  info(`ticks over the budget: ${overTicks.join('; ') || 'none'}`);
-  const cs = got.costs.slice(2).sort((a, b) => a - b);        // the first two ticks draw the whole map into both files
-  const frame = 58688, div = res.memory[0x8004] & 0x3F, budget = div * frame;
-  const med = cs[cs.length >> 1], p95 = cs[Math.floor(cs.length * 0.95)], worst = cs.at(-1), over = cs.filter((x) => x > budget).length;
-  info(`tick cost over ${cs.length} ticks (the 2 map-drawing ones left out: ${got.costs.slice(0, 2).join(', ')} T): median ${med} T, 95% ${p95} T, worst ${worst} T = ${(worst / frame).toFixed(2)} refreshes; frame_div ${div} = ${budget} T available; ticks over the budget: ${over}`);
-  // a scene change redraws the sky map into both display files (the same two-tick cost as the 2 first ticks): those ticks, and only those, run over the budget
-  const changeAt = sc.map((x, i) => (i === 0 || x !== sc[i - 1] ? i + 1 : 0)).filter((k) => k > 0);
-  const strays = got.costs.map((c, i) => [c, i + 1]).filter(([c, k]) => k > 2 && c > budget && !changeAt.some((a) => k === a || k === a + 1));
-  check_(`every tick fits the budget of ${div} refreshes = ${budget} T except the two ticks of each scene change (${over} over, ${changeAt.length - 1} scene changes; worst ${worst} T)`, div === 3 && budget === 176064 && strays.length === 0 && over <= 2 * (changeAt.length - 1), strays.map(([c, k]) => `tick ${k}: ${c} T`).join('; '));
+  // the play scene is fine colour: its tick is publish + PROC FRAME + compose, and the runtime starts the next one at its period (3 refreshes at FRAMERATE 20), so a tick that runs over starts the next one late.
+  // (the tick's own cost and the beam: tests/arcade-starfall-fine.mjs; a tick's end is not seen by the flip request here, so got.costs holds the two-buffer ticks of the title and the game over only)
+  const gaps = [];
+  for (let i = 1; i < fineStarts.length; i++) gaps.push(fineStarts[i] - fineStarts[i - 1]);
+  const pg = gaps.filter((g, i) => i >= 3 && g >= 3 && g <= 12);          // (a scene switch is 14 refreshes: not a play tick)
+  const at20 = pg.filter((g) => g === 3).length;
+  info(`${fineStarts.length} fine ticks started; ${pg.length} play gaps: ${at20} of 3 refreshes (20 Hz), ${pg.length - at20} longer (${[...new Set(pg.filter((g) => g > 3))].join(', ') || 'none'})`);
+  check_(`>= 95 % of the play ticks start 3 refreshes after the one before (FRAMERATE 20 held): ${(100 * at20 / pg.length).toFixed(1)} % of ${pg.length}`, pg.length > (QUICK ? 300 : 600) && at20 >= 0.95 * pg.length);
+  check_('no play tick starts more than one refresh late', pg.every((g) => g <= 4), `longest ${Math.max(...pg)}`);
+  // the two-buffer ticks (title, game over; got.costs holds one cost for each of them and for the ticks that flip): every one fits the budget except the ticks of a scene switch (a switch into or out of fine colour takes 14 refreshes, a
+  // scene change redraws the map into both display files: the same two ticks as in every scene change)
+  const twoBuf = got.costs.slice(2), changes = sc.filter((x, i) => i > 0 && x !== sc[i - 1]).length;
+  const over = twoBuf.filter((c) => c > 3 * 58688);
+  info(`two-buffer ticks (title and game over, measured by their flip): ${twoBuf.length}; ${over.length} over the budget of 3 refreshes (${over.join(', ') || 'none'}); ${changes} scene changes`);
+  check_(`the two-buffer ticks of the title and the game over fit their budget of 3 refreshes (176,064 T) except those of the ${changes} scene switches (at most 2 each)`, over.length <= 2 * changes && twoBuf.filter((c) => c <= 3 * 58688).length > (QUICK ? 200 : 500), over.join(', '));
 }
 
 console.log(`\n${failed ? 'FAIL' : 'PASS'}: arcade-starfall (${passed} checks passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ''})`);

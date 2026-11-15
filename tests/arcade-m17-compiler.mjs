@@ -277,7 +277,7 @@ console.log('\n3. word tables');
 // =================================================================================================================
 console.log('\n4. requiredRuntime');
 {
-  const expectExample = { bounce: 2, 'bounce-static': 2, breakout: 2, shooter: 2, blockfall: 2, platformer: 3, runner: 3, vaults: 4, orbit: 2 };
+  const expectExample = { bounce: 2, 'bounce-static': 2, breakout: 2, shooter: 2, blockfall: 2, platformer: 3, runner: 3, vaults: 4, orbit: 2, prism: 2 };
   const dir = join(ROOT, 'arcade/examples');
   const names = readdirSync(dir).filter((f) => f.endsWith('.arc')).map((f) => f.slice(0, -4)).sort();
   eq('the examples are the ones this test knows', names, Object.keys(expectExample).sort());

@@ -1,4 +1,9 @@
 {
+ "scenes": {
+  "play": {
+   "display": "fine"
+  }
+ },
  "sprites": {
   "ship": {
    "w": 16,
@@ -11,112 +16,112 @@
        "mask": "0180",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0180",
        "mask": "0180",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03C0",
        "mask": "03C0",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03C0",
        "mask": "03C0",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "07E0",
        "mask": "07E0",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0660",
        "mask": "07E0",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "2664",
        "mask": "27E4",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "2E74",
        "mask": "2FF4",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "6FF6",
        "mask": "6FF6",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7BDE",
        "mask": "7FFE",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FDBF",
        "mask": "FFFF",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FFFF",
        "mask": "FFFF",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "E7E7",
        "mask": "E7E7",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "C3C3",
        "mask": "C3C3",
-       "ink": 7,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "8181",
        "mask": "8181",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0180",
        "mask": "0180",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ]
     }
@@ -138,58 +143,58 @@
       {
        "bits": "18",
        "mask": "18",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "18",
        "mask": "18",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3C",
        "mask": "3C",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3C",
        "mask": "3C",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3C",
        "mask": "3C",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3C",
        "mask": "3C",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "18",
        "mask": "18",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "mask": "00",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ]
     }
@@ -211,114 +216,114 @@
       {
        "bits": "0000",
        "mask": "0000",
-       "ink": 5,
+       "ink": 4,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "07E0",
        "mask": "07E0",
-       "ink": 5,
+       "ink": 4,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1FF8",
        "mask": "1FF8",
-       "ink": 5,
+       "ink": 4,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3FFC",
        "mask": "3FFC",
-       "ink": 5,
+       "ink": 4,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "799E",
        "mask": "7FFE",
-       "ink": 5,
+       "ink": 4,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "E7E7",
        "mask": "FFFF",
-       "ink": 5,
+       "ink": 4,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FFFF",
        "mask": "FFFF",
-       "ink": 5,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FFFF",
        "mask": "FFFF",
-       "ink": 5,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "6FF6",
        "mask": "6FF6",
-       "ink": 5,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "27E4",
        "mask": "27E4",
-       "ink": 5,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "23C4",
        "mask": "23C4",
-       "ink": 5,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1248",
        "mask": "1248",
-       "ink": 5,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1008",
        "mask": "1008",
-       "ink": 5,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "300C",
        "mask": "300C",
-       "ink": 5,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0000",
        "mask": "0000",
-       "ink": 5,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0000",
        "mask": "0000",
-       "ink": 5,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ]
     }
@@ -340,114 +345,114 @@
       {
        "bits": "300C",
        "mask": "300C",
-       "ink": 3,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "33CC",
        "mask": "33CC",
        "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "37EC",
        "mask": "37EC",
        "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3FFC",
        "mask": "3FFC",
        "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7FFE",
        "mask": "7FFE",
        "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FE7F",
        "mask": "FFFF",
        "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "E667",
        "mask": "FFFF",
-       "ink": 3,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "EFF7",
        "mask": "FFFF",
-       "ink": 3,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FFFF",
        "mask": "FFFF",
-       "ink": 3,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FFFF",
        "mask": "FFFF",
-       "ink": 3,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "BFFD",
        "mask": "BFFD",
-       "ink": 3,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "9FF9",
        "mask": "9FF9",
-       "ink": 3,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "93C9",
        "mask": "93C9",
-       "ink": 3,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "D18B",
        "mask": "D18B",
-       "ink": 3,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "500A",
        "mask": "500A",
-       "ink": 3,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0000",
        "mask": "0000",
-       "ink": 3,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ]
     }
@@ -469,58 +474,58 @@
       {
        "bits": "00",
        "mask": "00",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3C",
        "mask": "3C",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7E",
        "mask": "7E",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7E",
        "mask": "7E",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7E",
        "mask": "7E",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7E",
        "mask": "7E",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3C",
        "mask": "3C",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "mask": "00",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ]
     }
@@ -543,49 +548,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -596,49 +601,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 1,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -649,49 +654,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -702,49 +707,49 @@
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "38",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
-       "ink": 7,
+       "ink": 5,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -753,51 +758,51 @@
      "rows": [
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "07",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0F",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -806,51 +811,51 @@
      "rows": [
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "E0",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "E8",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -861,49 +866,49 @@
        "bits": "07",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "03",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -914,49 +919,49 @@
        "bits": "E0",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "D0",
        "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -965,51 +970,51 @@
      "rows": [
       {
        "bits": "00",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "11",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0F",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "2F",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1F",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "3F",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "7F",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1018,51 +1023,51 @@
      "rows": [
       {
        "bits": "00",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "88",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "D0",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "F0",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FA",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FC",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FC",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1071,51 +1076,51 @@
      "rows": [
       {
        "bits": "3F",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "5F",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "1F",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "0F",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "27",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "05",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1124,51 +1129,51 @@
      "rows": [
       {
        "bits": "FD",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "F8",
-       "ink": 6,
+       "ink": 7,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "FA",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "F0",
        "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "E4",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
-       "ink": 6,
+       "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 6,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1177,51 +1182,51 @@
      "rows": [
       {
        "bits": "20",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "01",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "22",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "41",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1230,51 +1235,51 @@
      "rows": [
       {
        "bits": "20",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "24",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "80",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1283,51 +1288,51 @@
      "rows": [
       {
        "bits": "08",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "22",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "02",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "04",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1336,51 +1341,899 @@
      "rows": [
       {
        "bits": "20",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "48",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "00",
-       "ink": 2,
+       "ink": 6,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "22",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "10",
        "ink": 2,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "20",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "08",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
       },
       {
        "bits": "40",
-       "ink": 2,
+       "ink": 3,
        "paper": 0,
-       "bright": 1
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "08",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 6,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "40",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "44",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "11",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 3,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "22",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "88",
+       "ink": 1,
+       "paper": 0,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 1,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 1,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 1,
+       "bright": 0
+      }
+     ],
+     "flags": 0
+    },
+    {
+     "rows": [
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 0,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 1,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 1,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 3,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 3,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 3,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 2,
+       "bright": 0
+      },
+      {
+       "bits": "00",
+       "ink": 7,
+       "paper": 2,
+       "bright": 0
       }
      ],
      "flags": 0
@@ -1833,277 +2686,7 @@
     0,
     0,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    2,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    1,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    3,
-    0,
-    0,
-    2,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
     0,
     0,
     0,
@@ -2114,12 +2697,11 @@
     0,
     0,
     3,
-    0,
-    0,
+    16,
+    16,
     1,
     0,
     0,
-    1,
     0,
     0,
     0,
@@ -2127,63 +2709,47 @@
     0,
     0,
     0,
-    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    17,
+    0,
+    0,
+    0,
     0,
     0,
     3,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     2,
     0,
     0,
     0,
     0,
-    0,
-    1,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    17,
     0,
     0,
     1,
-    1,
+    0,
+    16,
     0,
     0,
     0,
@@ -2199,15 +2765,15 @@
     0,
     0,
     0,
-    1,
-    1,
-    2,
     0,
     0,
     0,
     0,
     0,
     0,
+    0,
+    0,
+    17,
     0,
     0,
     0,
@@ -2218,7 +2784,12 @@
     0,
     0,
     0,
+    17,
     0,
+    2,
+    0,
+    0,
+    17,
     0,
     0,
     0,
@@ -2226,50 +2797,14 @@
     0,
     0,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    17,
+    2,
     2,
     0,
     0,
-    2,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    17,
     0,
     2,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     0,
     0,
     0,
@@ -2277,63 +2812,263 @@
     0,
     0,
     3,
-    0,
-    0,
     2,
     0,
     0,
     0,
     0,
     0,
+    18,
+    19,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    1,
+    19,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    19,
+    0,
+    0,
+    0,
+    18,
     0,
     1,
     0,
     0,
     0,
+    20,
+    0,
+    0,
+    0,
+    19,
     0,
     0,
     0,
     0,
+    18,
+    19,
     0,
+    19,
     0,
-    0,
-    0,
-    0,
-    1,
     0,
     0,
     3,
+    19,
+    0,
+    16,
+    0,
+    19,
+    17,
+    19,
+    22,
     0,
     0,
     0,
     0,
     0,
     0,
+    21,
+    22,
+    0,
+    0,
+    1,
+    0,
+    0,
+    22,
+    21,
+    0,
+    22,
+    21,
+    0,
+    0,
+    21,
+    3,
+    22,
+    21,
     0,
     0,
     0,
+    21,
+    21,
+    1,
+    22,
+    25,
+    0,
+    25,
+    26,
+    24,
+    24,
+    25,
     0,
     0,
+    24,
+    25,
+    3,
+    24,
+    0,
+    24,
+    24,
+    24,
     0,
     0,
+    24,
+    0,
+    26,
+    24,
+    24,
+    24,
+    24,
+    24,
+    2,
+    24,
+    24,
+    24,
+    24,
+    26,
+    24,
+    24,
+    0,
+    25,
+    25,
+    17,
+    24,
+    24,
+    0,
+    3,
+    24,
+    24,
+    24,
+    16,
+    25,
+    24,
     0,
     0,
+    25,
+    24,
+    24,
+    25,
+    24,
+    24,
+    0,
+    24,
+    24,
+    24,
+    24,
+    26,
+    0,
+    26,
+    25,
+    24,
+    0,
+    24,
     0,
     0,
+    24,
+    25,
+    26,
     0,
+    24,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    24,
+    1,
+    24,
+    26,
+    24,
     0,
     2,
-    0,
-    0,
-    0,
-    0,
+    26,
+    25,
+    24,
+    24,
+    24,
     2,
+    0,
+    25,
+    16,
+    26,
+    0,
+    26,
+    27,
+    27,
+    29,
+    0,
+    0,
+    0,
+    27,
+    0,
+    29,
+    0,
+    28,
+    29,
+    0,
+    27,
+    0,
+    27,
+    0,
+    0,
+    28,
+    27,
+    0,
+    28,
+    0,
+    27,
+    0,
+    0,
+    0,
+    0,
+    28,
+    0,
+    0,
+    29,
+    18,
+    17,
+    18,
+    0,
+    0,
+    0,
+    0,
+    0,
+    16,
+    0,
+    19,
+    19,
+    19,
+    2,
+    18,
+    0,
+    0,
+    0,
+    18,
+    0,
+    0,
+    0,
+    19,
+    19,
+    0,
+    0,
+    18,
+    0,
+    19,
+    18,
+    0,
+    19,
+    0,
     0,
     0,
     1,
@@ -2341,7 +3076,10 @@
     0,
     0,
     0,
-    1,
+    0,
+    0,
+    19,
+    20,
     0,
     0,
     0,
@@ -2349,29 +3087,8 @@
     0,
     0,
     0,
+    18,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    2,
-    0,
-    2,
     0,
     0,
     0,
@@ -2387,41 +3104,7 @@
     0,
     2,
     0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    17,
     0,
     0,
     0,
@@ -2445,7 +3128,106 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
     1,
+    2,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    17,
+    0,
+    0,
+    0,
+    16,
+    0,
+    0,
+    16,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    16,
+    0,
+    2,
+    17,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    17,
     0,
     3,
     0,
@@ -2457,7 +3239,14 @@
     0,
     0,
     0,
-    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    17,
     0,
     0,
     0,
@@ -2467,6 +3256,23 @@
     0,
     0,
     0,
+    16,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    17,
     0,
     0,
     0,
@@ -2491,7 +3297,46 @@
     0,
     0,
     0,
+    1,
     0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    17,
+    1,
+    0,
+    17,
+    0,
+    0,
+    2,
+    0,
+    2,
     0,
     0,
     2,
@@ -2504,69 +3349,77 @@
     0,
     0,
     0,
+    16,
+    0,
+    16,
     1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    3,
-    0,
-    0,
-    0,
-    0,
     0,
     0,
     2,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    1,
-    0,
-    0,
-    0,
-    0,
-    2
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    30,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31,
+    31
    ]
   }
  },

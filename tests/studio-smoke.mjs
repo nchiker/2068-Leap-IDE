@@ -855,7 +855,7 @@ try {
   // host: exampleEffects()
   const fx = await evaluate(`(async () => { const h = leapStudio.makeHost('smoke-fx'); const a = h.exampleEffects(), b = h.exampleEffects(); const list = await a;
     return { same: a === b, n: list.length, games: [...new Set(list.map((x) => x.game))].length, shape: list.every((x) => typeof x.game === 'string' && typeof x.name === 'string' && Array.isArray(x.sfx?.ticks)), one: list[0] && Object.keys(list[0]).join() }; })()`);
-  check('host: exampleEffects() lists the 41 sound effects of the 7 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 41 && fx.games === 7 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
+  check('host: exampleEffects() lists the 47 sound effects of the 8 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 47 && fx.games === 8 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
 
   // P2: Save in place with the File System Access API where there is one; the download otherwise
   await evaluate(`(() => { window.__saves = []; window.__pickerCalls = 0; window.__written = null; window.__downloads = [];

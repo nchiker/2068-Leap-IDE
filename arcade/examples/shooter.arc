@@ -7,19 +7,22 @@ REM   Three scenes (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md): title -> 
 REM   (the over scene shows them); everything of the game itself lives in the play scene, whose variables ENTER zeroes at every start.  ENTER puts the screen
 REM   (the sky, from the first MAP), the sprites and the sound back to the start state, so no scene cleans up after the one before.
 REM   The version with one scene and a state variable is kept as arcade/tests/fixtures/shooter-v1.arc.
-REM   The ship shoots a pool of 4 bullets; waves of scouts (types 0 and 1) and heavies (types 2 and 3) come down, shoot back
-REM   with a pool of 3 shots, and get faster, more numerous and more varied each wave. Explosions are 2 x 2 tiles in 3 frames.
-REM   The v2 runtime has 16 sprite instances in all (the contract's "bullets 6, enemies 8, shots 4, ship 1" would be 19), so:
-REM   ship 1 + bullets 4 + scouts 4 + heavies 4 (the 8 enemies) + shots 3 = 16.
+REM   FINE COLOUR (docs/ARCADE_FINE_COLOUR_CONTRACT.md): the play scene is an 8 x 1 colour scene (shooter.assets.json says so: "scenes": {"play": {"display": "fine"}}):
+REM   every pixel row of every sprite and every tile has its own colour, so the ship, the enemies and the shots are shaded row by row over a sky with a nebula and
+REM   a planet's horizon, all on black paper with BRIGHT 0.  The screen is then updated in the one picture the viewer sees (about 25,000 T for each moving 16 x 16
+REM   sprite, 12,500 T for an 8 x 8 one), so a 20 Hz tick holds only a few sprites at once: the ship, 2 bullets, 2 enemies at a time (2 scouts and a heavy to pick from) and 1 enemy shot.
+REM   A game with a fine scene has at most 32 sprite phases in all (ship 8, bullet 4, scout 8, heavy 8, shot 4 = 32).  The bullets are fast (16 pixels a tick)
+REM   so two of them keep a steady fire; the waves make up for the three enemy slots by speed, shots, the heavies' dives and the number of enemies a wave.
+REM   The HUD costs about 1,800 T for each text cell it prints, so only the number that changed is printed (the labels once).
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/shooter.arc --assets arcade/examples/shooter.assets.json --runtime v2
 GAME "Starfall"
 FRAMERATE 20
 
 SPRITE ship = "ship"
-SPRITE bul(4) = "bullet"
-SPRITE scout(4) = "scout"
-SPRITE heavy(4) = "heavy"
-SPRITE shot(3) = "shot"
+SPRITE bul(2) = "bullet"
+SPRITE scout(2) = "scout"
+SPRITE heavy(1) = "heavy"
+SPRITE shot(1) = "shot"
 TILESET gfx = "gfx"
 MAP sky = "sky"
 SFX pew = "pew"
@@ -36,7 +39,7 @@ DIM score, wv
 SCENE title
   PROC INIT():
     PLAY fanfare
-    INK 6 : PAPER 0 : BRIGHT 1
+    INK 6 : PAPER 0 : BRIGHT 0
     PRINT AT 8, 12; "STARFALL";
     INK 5 : PRINT AT 11, 7; "PRESS FIRE TO PLAY";
     INK 4 : PRINT AT 15, 4; "Q A O P MOVE   SPACE FIRE";
@@ -49,18 +52,20 @@ SCENE title
 ENDSCENE
 
 SCENE play
-  DIM px, py, lives, js, inv, cool, spl, spt, alive, wt, hud
-  DIM lf, rg, up, dn, fire, vs, fr, sp0, ssp, sw, fb, ax, ay, i, j, k, m, c, q, f, x, y, ee
-  REM bullets 0..3, enemies 0..7 (0..3 scouts, 4..7 heavies), enemy shots 0..2, explosions 0..3
-  DIM bx(3), by(3), bon(3)
-  DIM ex(7), ey(7), et(7), ep(7), es(7), ed(7), eh(7)
-  DIM sx(2), sy(2), sdx(2), son(2)
-  DIM xc(3), yc(3), ef(3)
+  DIM px, py, lives, js, inv, cool, spl, spt, alive, wt, hs, hl, hw
+  DIM lf, rg, up, dn, fire, vs, fr, sp0, ssp, sw, fb, ax, ay, i, j, k, m, c, q, f, g, x, y, ee, o, u
+  REM bullets 0..1, enemies 0..2 (0..1 scouts, 2 the heavy; two of them at a time at most), the enemy shot 0 (the arrays have a slot 1 too: a DIM has at least 2 elements), explosions 0..1
+  DIM bx(1), by(1), bon(1)
+  DIM ex(2), ey(2), et(2), ep(2), es(2), ed(2), eh(2)
+  DIM sx(1), sy(1), sdx(1), son(1)
+  DIM xc(1), yc(1), ef(1)
+  REM the 4 map tiles under each explosion, put back when it is over (the sky, the nebula, the horizon)
+  DIM st(7)
   REM the zigzag pattern's sideways offsets
   DIM wob(15)
 
-  REM Does the ship touch enemy k?  (scout(k) is outside its pool for k > 3 and heavy(k - 4) for k < 4, which HIT answers with 0)
-  DEF FN touch(n) = HIT(ship, scout(n)) OR HIT(ship, heavy(n - 4))
+  REM Does the ship touch enemy k?  (scout(k) is outside its pool for k > 1 and heavy(k - 2) for k < 2, which HIT answers with 0)
+  DEF FN touch(n) = HIT(ship, scout(n)) OR HIT(ship, heavy(n - 2))
 
   PROC INIT():
     wob(0) = 0 : wob(1) = 6 : wob(2) = 11 : wob(3) = 14 : wob(4) = 16 : wob(5) = 14 : wob(6) = 11 : wob(7) = 6
@@ -74,6 +79,9 @@ SCENE play
     score = 0 : lives = 3 : wv = 0
     px = 120 : py = 160 : inv = 0 : cool = 0 : alive = 0
     SHOW ship AT px, py
+    INK 6 : PAPER 0 : BRIGHT 0
+    PRINT AT 0, 0; "SCORE"; : PRINT AT 0, 14; "LIVES"; : PRINT AT 0, 24; "WAVE";
+    hs = 1 : hl = 1
     CALL NEXTWAVE()
   ENDP
 
@@ -81,21 +89,21 @@ SCENE play
     wv = wv + 1
     spl = 4 + wv * 2 : IF spl > 20 THEN spl = 20 ENDIF
     spt = 24 : wt = 0
-    vs = 2 + wv DIV 3 : IF vs > 5 THEN vs = 5 ENDIF
-    fr = 80 - wv * 6 : IF fr < 16 THEN fr = 16 ENDIF
+    vs = 2 + wv DIV 2 : IF vs > 5 THEN vs = 5 ENDIF
+    fr = 70 - wv * 8 : IF fr < 10 THEN fr = 10 ENDIF
     sp0 = 16 - wv : IF sp0 < 5 THEN sp0 = 5 ENDIF
-    ssp = 3 + wv DIV 3 : IF ssp > 6 THEN ssp = 6 ENDIF
+    ssp = 4 + wv DIV 2 : IF ssp > 8 THEN ssp = 8 ENDIF
     sw = 1 + wv DIV 4 : IF sw > 3 THEN sw = 3 ENDIF
-    hud = 1
+    hw = 1
     PLAY wave
   ENDP
 
+  REM Print the HUD numbers that changed (the labels were printed once): every text cell costs about 1,800 T in a fine scene.
   PROC SHOWHUD():
-    INK 6 : PAPER 0 : BRIGHT 1
-    PRINT AT 0, 0; "SCORE "; score; "  ";
-    PRINT AT 0, 14; "LIVES "; lives;
-    PRINT AT 0, 24; "WAVE "; wv; " ";
-    hud = 0
+    INK 6 : PAPER 0 : BRIGHT 0
+    IF hs THEN PRINT AT 0, 6; score; : hs = 0 ENDIF
+    IF hl THEN PRINT AT 0, 20; lives; : hl = 0 ENDIF
+    IF hw THEN PRINT AT 0, 29; wv; : hw = 0 ENDIF
   ENDP
 
   PROC FRAME():
@@ -134,25 +142,26 @@ SCENE play
     CALL ENEMIES()
     CALL SHOTS()
     CALL SPAWNER()
-    IF hud = 1 THEN CALL SHOWHUD() ENDIF
+    IF hs + hl + hw > 0 THEN CALL SHOWHUD() ENDIF
   ENDP
 
   PROC FIREBULLET():
-    FOR i = 0 TO 3
+    FOR i = 0 TO 1
       IF bon(i) = 0 THEN
         bon(i) = 1 : bx(i) = px + 4 : by(i) = py - 6
         SHOW bul(i) AT bx(i), by(i)
-        cool = 3
+        cool = 4
         PLAY pew
         EXIT FOR
       ENDIF
     NEXT i
   ENDP
 
+  REM A bullet climbs 16 pixels a tick, so two of them keep a steady fire.
   PROC BULLETS():
-    FOR i = 0 TO 3
+    FOR i = 0 TO 1
       IF bon(i) = 1 THEN
-        by(i) = by(i) - 8
+        by(i) = by(i) - 16
         IF by(i) < 8 THEN
           bon(i) = 0
           HIDE bul(i)
@@ -166,7 +175,7 @@ SCENE play
 
   REM Bullet n against every enemy (a box test on the arrays, the HIT calls are kept for the ship).
   PROC BULLETHIT(n):
-    FOR j = 0 TO 7
+    FOR j = 0 TO 2
       IF es(j) = 1 AND ABS(bx(n) + 4 - ex(j) - 8) < 12 AND ABS(by(n) + 4 - ey(j) - 8) < 12 THEN
         bon(n) = 0
         HIDE bul(n)
@@ -185,27 +194,34 @@ SCENE play
   PROC KILL(n):
     score = score + (et(n) + 1) * 10
     IF score > 30000 THEN score = 30000 ENDIF
-    hud = 1
+    hs = 1
     es(n) = 0
     ax = ex(n) : ay = ey(n)
     CALL EXPLODE()
     PLAY boom
     HIDE scout(n)
-    HIDE heavy(n - 4)
+    HIDE heavy(n - 2)
   ENDP
 
-  REM Start an explosion at (ax, ay): 2 x 2 tiles, 3 frames, drawn by UPDATEEXP.
+  REM Start an explosion at (ax, ay): 2 x 2 tiles, 3 frames, drawn by UPDATEEXP; the tiles under it are kept.
   PROC EXPLODE():
-    FOR c = 0 TO 3
+    FOR c = 0 TO 1
       IF ef(c) = 0 THEN
         ef(c) = 1 : xc(c) = (ax + 4) DIV 8 : yc(c) = (ay + 4) DIV 8
+        IF yc(c) > 22 THEN yc(c) = 22 ENDIF
+        x = xc(c) : y = yc(c) : o = 4 * c
+        st(o) = TILEAT(x, y) : st(o + 1) = TILEAT(x + 1, y) : st(o + 2) = TILEAT(x, y + 1) : st(o + 3) = TILEAT(x + 1, y + 1)
+        REM (a tile that is part of another explosion, or a text cell or a cell off the screen, is not kept: -1 stays -1, an explosion tile becomes the empty sky)
+        FOR u = 0 TO 3
+          IF st(o + u) >= 4 AND st(o + u) <= 15 THEN st(o + u) = 0 ENDIF
+        NEXT u
         EXIT FOR
       ENDIF
     NEXT c
   ENDP
 
   PROC UPDATEEXP():
-    FOR ee = 0 TO 3
+    FOR ee = 0 TO 1
       IF ef(ee) > 0 THEN
         SELECT CASE ef(ee)
           CASE 1
@@ -223,11 +239,14 @@ SCENE play
     NEXT ee
   ENDP
 
-  REM The four tiles of an explosion frame starting at tile fb, or empty sky when fb < 0.
+  REM The four tiles of an explosion frame starting at tile fb, or the tiles that were there when fb < 0.
   PROC DRAWEXP(n):
-    x = xc(n) : y = yc(n)
+    x = xc(n) : y = yc(n) : o = 4 * n
     IF fb < 0 THEN
-      TILE x, y = 0 : TILE x + 1, y = 0 : TILE x, y + 1 = 0 : TILE x + 1, y + 1 = 0
+      IF st(o) >= 0 THEN TILE x, y = st(o) ENDIF
+      IF st(o + 1) >= 0 THEN TILE x + 1, y = st(o + 1) ENDIF
+      IF st(o + 2) >= 0 THEN TILE x, y + 1 = st(o + 2) ENDIF
+      IF st(o + 3) >= 0 THEN TILE x + 1, y + 1 = st(o + 3) ENDIF
     ELSE
       TILE x, y = fb : TILE x + 1, y = fb + 1 : TILE x, y + 1 = fb + 2 : TILE x + 1, y + 1 = fb + 3
     ENDIF
@@ -235,13 +254,13 @@ SCENE play
 
   PROC ENEMIES():
     alive = 0
-    FOR k = 0 TO 7
+    FOR k = 0 TO 2
       IF es(k) = 1 THEN
         alive = alive + 1
         CALL MOVEENEMY(k)
         IF es(k) = 1 THEN
           SHOW scout(k) AT ex(k), ey(k)
-          SHOW heavy(k - 4) AT ex(k), ey(k)
+          SHOW heavy(k - 2) AT ex(k), ey(k)
           IF ey(k) > 16 AND ey(k) < 130 THEN
             IF RND(fr) = 0 THEN CALL ESHOOT(k) ENDIF
           ENDIF
@@ -267,7 +286,7 @@ SCENE play
         ex(n) = ed(n) + wob(ep(n) MOD 16)
       CASE 2
         REM slide in, hover, then dive at the ship
-        IF ep(n) < 22 + n * 2 THEN
+        IF ep(n) < 26 THEN
           IF ey(n) < 40 THEN ey(n) = ey(n) + 2 ENDIF
         ELSE
           ey(n) = ey(n) + 5
@@ -283,12 +302,12 @@ SCENE play
     IF ey(n) > 180 THEN
       es(n) = 0
       HIDE scout(n)
-      HIDE heavy(n - 4)
+      HIDE heavy(n - 2)
     ENDIF
   ENDP
 
   PROC ESHOOT(n):
-    FOR m = 0 TO 2
+    FOR m = 0 TO 0
       IF son(m) = 0 THEN
         son(m) = 1 : sx(m) = ex(n) + 4 : sy(m) = ey(n) + 12
         sdx(m) = SGN(px - ex(n))
@@ -298,7 +317,7 @@ SCENE play
   ENDP
 
   PROC SHOTS():
-    FOR i = 0 TO 2
+    FOR i = 0 TO 0
       IF son(i) = 1 THEN
         sx(i) = sx(i) + sdx(i) * sw
         sy(i) = sy(i) + ssp
@@ -319,7 +338,7 @@ SCENE play
 
   PROC PLAYERHIT():
     lives = lives - 1
-    hud = 1
+    hl = 1
     ax = px : ay = py
     CALL EXPLODE()
     IF lives <= 0 THEN
@@ -328,15 +347,15 @@ SCENE play
       inv = 40 : px = 120 : py = 160
       PLAY hurt
     ENDIF
-    CALL SHOWHUD()
   ENDP
 
-  REM Place the next enemy of the wave: its type, a free slot of its pool (types 0, 1 = scouts, 2, 3 = heavies).
+  REM Place the next enemy of the wave: its type, the free slot of its pool (types 0, 1 = the scouts' slots 0 and 1, types 2, 3 = the heavy's slot 2).
   PROC SPAWN():
     q = wv + 1 : IF q > 4 THEN q = 4 ENDIF
     q = RND(q)
-    f = (q DIV 2) * 4
-    FOR m = f TO f + 3
+    f = 2 : g = 2
+    IF q < 2 THEN f = 0 : g = 1 ENDIF
+    FOR m = f TO g
       IF es(m) = 0 THEN
         es(m) = 1 : et(m) = q : ep(m) = 0 : eh(m) = 1
         ex(m) = 24 + RND(176) : ey(m) = 8 : ed(m) = ex(m)
@@ -350,7 +369,7 @@ SCENE play
   PROC SPAWNER():
     IF spl > 0 THEN
       spt = spt - 1
-      IF spt <= 0 THEN CALL SPAWN() ENDIF
+      IF spt <= 0 AND alive < 2 THEN CALL SPAWN() ENDIF
     ELSE
       IF alive = 0 THEN
         wt = wt + 1
@@ -365,7 +384,7 @@ SCENE over
   PROC INIT():
     NOMUSIC
     PLAY over
-    INK 6 : PAPER 0 : BRIGHT 1
+    INK 6 : PAPER 0 : BRIGHT 0
     PRINT AT 0, 0; "SCORE "; score; "  ";
     PRINT AT 0, 24; "WAVE "; wv; " ";
     INK 2 : PRINT AT 10, 11; "GAME OVER";

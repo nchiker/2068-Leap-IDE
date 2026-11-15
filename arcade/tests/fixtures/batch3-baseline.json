@@ -3,7 +3,7 @@
  "programs": [
   {
    "src": "arcade/tests/fixtures/shooter-v1.arc",
-   "assets": "arcade/examples/shooter.assets.json",
+   "assets": "arcade/tests/fixtures/shooter-v1.assets.json",
    "runtime": 2,
    "bytes": 6472,
    "dckBytes": 32777,
@@ -73,7 +73,7 @@
   },
   {
    "src": "arcade/tests/fixtures/shooter-v1.arc",
-   "assets": "arcade/examples/shooter.assets.json",
+   "assets": "arcade/tests/fixtures/shooter-v1.assets.json",
    "runtime": 3,
    "bytes": 6472,
    "dckBytes": 32777,

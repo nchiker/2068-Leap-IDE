@@ -201,17 +201,17 @@ if (builds[2] && builds[3] && builds[4]) {
     info(`${id}: K1 ${out[id].k1.length} (lines ${out[id].k1.map((w) => w.line).join(', ') || '-'}), K2 ${out[id].k2.length}, K3 ${out[id].k3.length} finding(s) naming ${tiles} tile(s)${out[id].k3.map((f) => ` [${f.asset}: ${f.tiles.length} of ${tilesOf(out[id].project, f.asset)}]`).join('')}`);
   }
   function tilesOf(project, name) { return (project.assets.tilesets?.[name]?.tiles ?? []).length; }
-  for (const id of ['bounce', 'breakout', 'orbit']) {
+  for (const id of ['bounce', 'breakout', 'orbit', 'shooter']) {      // (Starfall since fine colour: black paper with BRIGHT 0 in its text, sprites and every tile row)
     check_(`${id}: no K1, K2 or K3 finding`, out[id].r.errors.length === 0 && out[id].k1.length === 0 && out[id].k2.length === 0 && out[id].k3.length === 0, out[id].r.errors.map((e) => e.message).join(' | '));
   }
-  for (const id of ['shooter', 'vaults', 'blockfall', 'platformer', 'runner']) {
+  for (const id of ['vaults', 'blockfall', 'platformer', 'runner']) {
     check_(`${id}: compiles, and K1 fires in its code (PAPER 0 with BRIGHT 1)`, out[id].r.errors.length === 0 && out[id].k1.length > 0, `${out[id].k1.length} warning(s)`);
   }
-  for (const id of ['shooter', 'vaults', 'blockfall']) {
+  for (const id of ['vaults', 'blockfall']) {
     check_(`${id}: K3 fires (a tile set with paper 0, BRIGHT 1 and paper pixels)`, out[id].k3.length > 0 && out[id].k3.every((f) => f.severity === 'warning' && f.tiles.length > 0), `${out[id].k3.length}`);
   }
   const tilesNamed = (id, name) => new Set(out[id].k3.filter((f) => f.asset === name).flatMap((f) => f.tiles)).size;
-  check_('Starfall (shooter): all 16 tiles of its tile set are bright-black-paper', tilesNamed('shooter', 'gfx') === 16 && tilesOf(out.shooter.project, 'gfx') === 16, `${tilesNamed('shooter', 'gfx')} of ${tilesOf(out.shooter.project, 'gfx')}`);
+  check_('Starfall (shooter): none of the 32 tiles of its tile set is bright-black-paper (all its rows are BRIGHT 0: fine colour, K3 clean)', tilesNamed('shooter', 'gfx') === 0 && tilesOf(out.shooter.project, 'gfx') === 32, `${tilesNamed('shooter', 'gfx')} of ${tilesOf(out.shooter.project, 'gfx')}`);
   check_('Vaults: 28 tiles of vl_tiles are bright-black-paper', tilesNamed('vaults', 'vl_tiles') === 28, String(tilesNamed('vaults', 'vl_tiles')));
   check_('Blockfall: 3 of its 12 tiles are bright-black-paper', tilesNamed('blockfall', 'gfx') === 3 && tilesOf(out.blockfall.project, 'gfx') === 12, `${tilesNamed('blockfall', 'gfx')} of ${tilesOf(out.blockfall.project, 'gfx')}`);
   check_('Vaults (VIEW3D with no BRIGHT clause): the descriptor has BRIGHT 0: attr_top $05 (INK 5, CEIL 0), attr_bottom $0D (FLOOR 1)', out.vaults.r.gen?.view?.bright === 0 && out.vaults.r.gen.view.attrTop === 0x05 && out.vaults.r.gen.view.attrBottom === 0x0D, JSON.stringify([out.vaults.r.gen?.view?.bright, out.vaults.r.gen?.view?.attrTop, out.vaults.r.gen?.view?.attrBottom]));

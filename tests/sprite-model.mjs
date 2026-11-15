@@ -78,8 +78,8 @@ console.log('\n1. Creation and the stored form');
   ok(`fromAsset -> toAsset reproduces bits, mask, size, hot and phases of every sprite in the example assets (${all} sprites)`, all >= 8 && exact === all);
   const shooter = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/shooter.assets.json'), 'utf8')).sprites;
   const ship = M.fromAsset(shooter.ship);
-  ok('the shooter ship keeps its row colours (ink 7, paper 0, bright 1) and an asset without colours gets the defaults',
-    ship.frames[0].rows.every((r) => r.ink === 7 && r.paper === 0 && r.bright === 1) && M.fromAsset({ w: 8, h: 1, frames: [{ rows: [{ bits: 'FF' }] }] }).frames[0].rows[0].mask === 255);
+  ok('the shooter ship keeps its row colours (a shaded ship for fine colour: each row its own ink, white at the top, paper 0, BRIGHT 0) and an asset without colours gets the defaults',
+    ship.frames[0].rows.every((r, k) => r.ink === shooter.ship.frames[0].rows[k].ink && r.ink >= 1 && r.ink <= 7 && r.paper === 0 && r.bright === 0) && ship.frames[0].rows[0].ink === 7 && new Set(ship.frames[0].rows.map((r) => r.ink)).size >= 3 && M.fromAsset({ w: 8, h: 1, frames: [{ rows: [{ bits: 'FF' }] }] }).frames[0].rows[0].mask === 255);
   ok('fromAsset reads the M2 shape (top-level rows) and numeric bits; it names the problem otherwise',
     M.fromAsset({ w: 8, h: 2, rows: [{ bits: 0x81, mask: 0xFF }, { bits: '18' }] }).frames[0].rows[0].bits === 0x81
     && throws(() => M.fromAsset({ w: 8, h: 2, frames: [{ rows: [{ bits: 'FF' }] }] })) && throws(() => M.fromAsset({ w: 8, h: 1, frames: [{ rows: [{ bits: 'ZZ' }] }] })) && throws(() => M.fromAsset(null)));

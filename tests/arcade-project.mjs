@@ -162,6 +162,10 @@ check('validateAsset: the flat "rows" form is accepted too', P.validateAsset('sp
   const v = (x) => P.validateAsset('models', x);
   check('ASSET_KINDS has models as the sixth kind; new / example projects start with an empty models table',
     P.ASSET_KINDS.length === 6 && P.ASSET_KINDS[5] === 'models' && eq(P.newProject('m').assets.models, {}) && eq(P.exampleProject('m', 'GAME "m"\n').assets.models, {}));
+  {
+    const sc = { play: { display: 'fine' } }, ex = P.exampleProject('f', 'GAME "f"\n', { scenes: sc });
+    check('exampleProject copies the assets file\'s "scenes" (a deep copy) and starts with {} without it', eq(ex.scenes, sc) && ex.scenes !== sc && ex.scenes.play !== sc.play && eq(P.exampleProject('g', 'GAME "g"\n').scenes, {}));
+  }
   check('validateAsset models: a good model (unknown keys kept); refuses missing or malformed points / edges',
     v(cube) === null && /needs "points"/.test(v({ edges: [] })) && /needs "edges"/.test(v({ points: [] })) && /point 1 must be \[x, y, z\]/.test(v({ points: [[0, 0, 0], [1, 2]], edges: [] }))
     && /edge 0 must be \[i, j\]/.test(v({ points: [], edges: [[0]] })) && v({ points: [[0.5, 0, 0]], edges: [] }) !== null);
@@ -375,7 +379,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
     check('empty ticksB / ticksC compile to exactly the one-channel size and image', sfxBytes(empties) === sfxBytes(one) && Buffer.compare(Buffer.from(empties.dck), Buffer.from(one.dck)) === 0);
   }
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
-  check('the examples index lists bounce, breakout, shooter, blockfall, platformer, runner, vaults, orbit', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'orbit', 'platformer', 'runner', 'shooter', 'vaults']));
+  check('the examples index lists bounce, breakout, shooter, blockfall, platformer, runner, vaults, orbit, prism', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'orbit', 'platformer', 'prism', 'runner', 'shooter', 'vaults']));
   for (const ex of index) {
     const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
     const res = doc.ok ? build(doc.project) : null;
