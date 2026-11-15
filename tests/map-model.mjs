@@ -9,7 +9,7 @@
 //   4  role limits and validateMap
 //   5  windowFrame
 //   6  history
-//   7  the seven example assets files: round trip (deep equal) and compiled cartridges byte-identical
+//   7  the nine example assets files: round trip (deep equal) and compiled cartridges byte-identical
 //   8  validateMap against the REAL compiler: tiny programs with a WINDOW, a cell map, a VIEW3D (runtimes of arcade/dist)
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -279,7 +279,7 @@ const compileWith = (text, assets) => {
     compiled++;
     ok(`${name}: compiles, and the cartridge from the round-tripped assets is byte-identical`, a.errors.length === 0 && b.errors.length === 0 && !!a.dck && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0, `${a.dck?.length} bytes`);
   }
-  ok('all eleven maps of the examples were seen (pf_world, sky, vl_maze, vl_panel, vl_title; runner: pf_world, rn_world2, rn_world3, rn_world4, rn_title: the title pictures of batch 7; prism\'s sky)', maps === 11, String(maps));
+  ok('all eighteen maps of the examples were seen (pf_world; shooter: sky, logo, press, gameover; vl_maze, vl_panel, vl_title; runner: pf_world, rn_world2, rn_world3, rn_world4, rn_title: the title pictures of batch 7; lumen: maze1, maze2, logo, press, over)', maps === 18, String(maps));
 
   // the blank forms: the compiler treats -1, null, 255 and 'ff' alike, so the normalisation cannot change a cartridge
   const sh = JSON.parse(readFileSync(join(dir, 'shooter.assets.json'), 'utf8')), shText = readFileSync(join(dir, 'shooter.arc'), 'utf8');

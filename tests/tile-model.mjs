@@ -97,7 +97,7 @@ const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFil
     });
   }
   ok(`toAsset(fromAsset(x)) deep-equals x for all ${sets} tile sets (${tiles} tiles) of the ${EXAMPLES.length} example assets files`, deep && sets === 8, `${sets} sets`);
-  ok('... except the tile sets whose tiles have their own colours in each pixel row: Starfall\'s and Prism Catch\'s fine-colour skies (the editor reduces such a tile to row 0 and lists it)', JSON.stringify(withRows) === '["prism/prism","shooter/gfx"]', JSON.stringify(withRows));
+  ok('... except the tile sets whose tiles have their own colours in each pixel row: the fine-colour games Lumen and Starfall (the editor reduces such a tile to row 0 and lists it)', JSON.stringify(withRows) === '["lumen/gfx","shooter/gfx"]', JSON.stringify(withRows));
   ok('... and serialises to the same JSON text (key order kept)', text);
   ok('attrByte and flags equal the compiler\'s (convertTileset) for every tile; bits equal its bitmap bytes', attrs && bytes);
   ok('an assets file without tile sets (bounce) has nothing to round-trip', !exAssets.bounce.tilesets);

@@ -42,15 +42,15 @@
   "file": "blockfall.leapgame"
  },
  {
+  "id": "lumen",
+  "title": "Lumen (maze chase)",
+  "about": "A maze chase in fine colour (8 x 1 colour): eat every light orb, take a prism to turn the four shades pale and send them home for 200 to 1600 points, clear caves that get faster and alternate between two mazes; title and in-game songs (MUSIC). Keys: Q A O P move; Space or fire starts the game.",
+  "file": "lumen.leapgame"
+ },
+ {
   "id": "orbit",
   "title": "Orbit Gates (wireframe 3D)",
   "about": "A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.",
   "file": "orbit.leapgame"
- },
- {
-  "id": "prism",
-  "title": "Prism Catch (fine colour)",
-  "about": "Gems of four colours fall from a sunset sky in fine colour (SCLD mode 2, 8 x 1 colour: every pixel row of the sky has its own colour): catch the gems that match your catcher's colour, a wrong colour or a miss costs one of three lives; from wave 3 the gems change colour in the glow band; songs and effects. Keys: O P move, 1 2 3 4 or Q A or Space pick the colour. The play scene is fine colour; the title and the game over are the two-buffer setup. Needs the v2 runtime.",
-  "file": "prism.leapgame"
  }
 ]
