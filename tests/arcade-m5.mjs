@@ -48,7 +48,7 @@ import { ARCADE_WORDS, RESERVED, FUNCTIONS, NOT_IN_ARCADE } from '../src/lang/ar
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
 import { real, compileReal, runReal, interpFor, diffRecords, compareSoundRun, differential, errText, XS, s16, hex, ROOT } from './arcade-m5-harness.mjs';
 
-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const QUICK = !!process.env.ARCADE_QUICK;
@@ -1011,13 +1011,17 @@ console.log('\n8. Old programs compile to identical bytes (SHA-256 of the game a
   const fakeRuntime = (version) => ({ version, symbols: Object.fromEntries(NAMES.map((n) => [n, 0xC000 + (fnv(n) % 0x2000)])), constants: { GAME_BASE: 0x8000, GAME_VARS_BASE: 0xE100, GAME_VARS_LIMIT: 0xEFFF, MAX_SPRITES: version >= 2 ? 16 : 4, MAX_ASSETS: 8 } });
   const baseline = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/batch1-baseline.json'), 'utf8'));
   let same = 0, bad = '';
-  for (const p of baseline.programs) {
+  // Stage 3 (G4) gave arcade/examples/breakout.arc and bounce.arc a title scene and a song, which this stand-in runtime (no RT_MUSIC) cannot build, and their old bytes are gone with
+  // the old sources (the fixtures keep the batch-1 hash only). They are skipped here; the shipped examples are compiled and run against the interpreter on the real runtime in arcade-m4 section 9.
+  const REWRITTEN = new Set(['arcade/examples/breakout.arc', 'arcade/examples/bounce.arc']);
+  const pinned = baseline.programs.filter((p) => !REWRITTEN.has(p.src));
+  for (const p of pinned) {
     const r = compile(readFileSync(join(ROOT, p.src), 'utf8'), { runtime: fakeRuntime(p.runtime), image: new Uint8Array(65536), assets: JSON.parse(readFileSync(join(ROOT, p.assets), 'utf8')) });
     const sha = r.memory ? createHash('sha256').update(r.memory.slice(0x8000, 0xC000)).digest('hex') : '';
     if (r.errors.length || sha !== p.sha256 || r.gen.code.length !== p.bytes) bad += `${p.src} (runtime v${p.runtime}): ${r.errors[0]?.message ?? `${r.gen.code.length} bytes, hash differs`}; `;
     else same++;
   }
-  check_(`${baseline.programs.length} programs (breakout, bounce, shooter, blockfall-v0, breakout-v1 on v1 and v2 runtimes, bounce-static on v0) compile to the same bytes as before`, bad === '' && same === baseline.programs.length, bad);
+  check_(`${pinned.length} programs (shooter-v1, blockfall-v0, breakout-v1 on v1 and v2 runtimes, bounce-static on v0; breakout and bounce, rewritten in stage 3, are not pinned) compile to the same bytes as before`, bad === '' && same === pinned.length && pinned.length === baseline.programs.length - REWRITTEN.size, bad);
   // and the real runtime, with a hash made now of the same programs compiled twice (the compiler is deterministic)
   if (R.ok) {
     const sha = (src, assets) => createHash('sha256').update(compile(src, { runtime: R.rt, image: R.img, assets }).memory.slice(0x8000, 0xC000)).digest('hex');
@@ -1050,19 +1054,21 @@ console.log('\n9. Blockfall (batch 1 version) in brief');
   };
   const NT = QUICK ? 500 : 900;
   const run = (src) => interpret(parse(src).ast, { version: 2, ticks: NT, assets: bfa, maxSteps: 400_000_000, rnd: (() => { const x = new XS(0xACE1); return () => x.next(); })(), keys: (t, c) => keys(t).includes(c) });
+  // K4 (stage 3): the example has BRIGHT 0 on every attribute with black in it (paper 0 or ink 0); the old fixture has BRIGHT 1 there, so its attributes are compared with that bit taken off
+  const plainBlackAttr = (v) => ((((v >> 3) & 7) === 0 || (v & 7) === 0) ? v & ~0x40 : v);
   const a = run(old), b = run(variant);
   let bad = null;
   for (let t = 0; t < NT && !bad; t++) {
     const x = a.ticks[t], y = b.ticks[t];
     if (x.cells.some((v, i) => v !== y.cells[i])) bad = `tick ${t + 1}: a cell differs`;
-    else if (x.attrs.some((v, i) => v !== y.attrs[i])) bad = `tick ${t + 1}: an attribute differs`;
+    else if (x.attrs.some((v, i) => plainBlackAttr(v) !== y.attrs[i])) bad = `tick ${t + 1}: an attribute differs`;
     else if (x.vars.SHI !== y.vars.SHI || x.vars.SLO !== y.vars.SLO) bad = `tick ${t + 1}: the score differs`;
   }
   const final = b.ticks.at(-1).vars;
   check_(`blockfall.arc (FREESEED = 0) and blockfall-v0.arc: cells, attributes and score equal on ${NT} ticks of a short script (score ${final.SHI * 10000 + final.SLO}, ${final.LNS} lines, piece ${final.PC})`, bad === null && final.LNS + final.SLO + final.PY > 0, bad ?? '');
   if (R.ok) {
     const shipped = compile(neu, { runtime: R.rt, image: R.img, assets: bfa });
-    check_('the shipped blockfall.arc compiles with no errors and no warnings', shipped.errors.length === 0 && shipped.warnings.filter(notTwoBlacks).length === 0, errText(shipped));
+    check_('the shipped blockfall.arc compiles with no errors and no warnings', shipped.errors.length === 0 && shipped.warnings.length === 0, errText(shipped));
     const got = runReal(shipped, { ticks: NT, keys });
     const want = interpFor(neu, bfa, got)(NT, { keys: (t, c) => keys(t).includes(c) });
     const d = got.error ?? diffRecords(got.ticks, want, { skip: ['sound'] });

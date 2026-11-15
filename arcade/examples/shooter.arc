@@ -136,8 +136,8 @@ SCENE play
     IF py < 96 THEN py = 96 ENDIF
     IF py > 168 THEN py = 168 ENDIF
     IF fire AND cool = 0 THEN CALL FIREBULLET() ENDIF
-    REM while inv counts down the ship blinks (hidden in the 2nd half of every 4 ticks); at 0 it is shown
-    IF inv MOD 4 > 1 THEN
+    REM while inv counts down the ship blinks (hidden in the 2nd half of every 4 ticks: bit 1 of inv, which as a TIMER is never negative); at 0 it is shown
+    IF BAND(inv, 2) <> 0 THEN
       HIDE ship
     ELSE
       SHOW ship AT px, py

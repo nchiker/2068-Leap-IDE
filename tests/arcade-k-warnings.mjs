@@ -201,14 +201,11 @@ if (builds[2] && builds[3] && builds[4]) {
     info(`${id}: K1 ${out[id].k1.length} (lines ${out[id].k1.map((w) => w.line).join(', ') || '-'}), K2 ${out[id].k2.length}, K3 ${out[id].k3.length} finding(s) naming ${tiles} tile(s)${out[id].k3.map((f) => ` [${f.asset}: ${f.tiles.length} of ${tilesOf(out[id].project, f.asset)}]`).join('')}`);
   }
   function tilesOf(project, name) { return (project.assets.tilesets?.[name]?.tiles ?? []).length; }
-  for (const id of ['bounce', 'breakout', 'orbit', 'shooter', 'lumen']) {      // (Starfall and Lumen, fine colour: black paper with BRIGHT 0 in their text, sprites and every tile row)
-    check_(`${id}: no K1, K2 or K3 finding`, out[id].r.errors.length === 0 && out[id].k1.length === 0 && out[id].k2.length === 0 && out[id].k3.length === 0, out[id].r.errors.map((e) => e.message).join(' | '));
-  }
-  for (const id of ['vaults', 'blockfall', 'platformer', 'runner']) {
-    check_(`${id}: compiles, and K1 fires in its code (PAPER 0 with BRIGHT 1)`, out[id].r.errors.length === 0 && out[id].k1.length > 0, `${out[id].k1.length} warning(s)`);
-  }
-  for (const id of ['vaults', 'blockfall']) {
-    check_(`${id}: K3 fires (a tile set with paper 0, BRIGHT 1 and paper pixels)`, out[id].k3.length > 0 && out[id].k3.every((f) => f.severity === 'warning' && f.tiles.length > 0), `${out[id].k3.length}`);
+  // Stage 3 (K4, E5) fixed every example: none gives a K1, K2 or K3 finding, no compiler warning at all, and no asset-check finding of any kind
+  for (const id of ['bounce', 'breakout', 'shooter', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit']) {
+    const o = out[id], any = checkAssets(o.project, scanRoles(P.buildSource(o.project).text));
+    check_(`${id}: compiles, no K1, K2 or K3 finding, no warning of any kind, no asset-check finding`, o.r.errors.length === 0 && o.k1.length === 0 && o.k2.length === 0 && o.k3.length === 0 && o.r.warnings.length === 0 && any.length === 0,
+      [o.r.errors.map((e) => e.message), o.r.warnings.map((w) => `${w.line}: ${w.message}`), any.map((f) => f.id)].flat().join(' | '));
   }
   const tilesNamed = (id, name) => new Set(out[id].k3.filter((f) => f.asset === name).flatMap((f) => f.tiles)).size;
   check_('Starfall (shooter): none of the 116 tiles of its tile set is bright-black-paper (all its rows are BRIGHT 0: fine colour, K3 clean, looked at row by row)', tilesNamed('shooter', 'gfx') === 0 && tilesOf(out.shooter.project, 'gfx') === 116, `${tilesNamed('shooter', 'gfx')} of ${tilesOf(out.shooter.project, 'gfx')}`);
@@ -221,8 +218,8 @@ if (builds[2] && builds[3] && builds[4]) {
     const k3 = (p) => checkAssets(p, roles).filter((f) => f.id === 'bright-black-paper').flatMap((f) => f.tiles);
     check_('K3 per pixel row: a row-5 paper 0 BRIGHT 1 in a Starfall tile is found (tile 3), and is not found once no scene is fine', k3(fineP).includes(3) && !k3(plainP).includes(3), JSON.stringify([k3(fineP), k3(plainP)]));
   }
-  check_('Vaults: 28 tiles of vl_tiles are bright-black-paper', tilesNamed('vaults', 'vl_tiles') === 28, String(tilesNamed('vaults', 'vl_tiles')));
-  check_('Blockfall: 3 of its 12 tiles are bright-black-paper', tilesNamed('blockfall', 'gfx') === 3 && tilesOf(out.blockfall.project, 'gfx') === 12, `${tilesNamed('blockfall', 'gfx')} of ${tilesOf(out.blockfall.project, 'gfx')}`);
+  check_('Vaults: none of the 28 tiles of vl_tiles is bright-black-paper (BRIGHT 0 on black paper since stage 3)', tilesNamed('vaults', 'vl_tiles') === 0 && tilesOf(out.vaults.project, 'vl_tiles') === 28, `${tilesNamed('vaults', 'vl_tiles')} of ${tilesOf(out.vaults.project, 'vl_tiles')}`);
+  check_('Blockfall: none of its 12 tiles is bright-black-paper', tilesNamed('blockfall', 'gfx') === 0 && tilesOf(out.blockfall.project, 'gfx') === 12, `${tilesNamed('blockfall', 'gfx')} of ${tilesOf(out.blockfall.project, 'gfx')}`);
   check_('Vaults (VIEW3D with no BRIGHT clause): the descriptor has BRIGHT 0: attr_top $05 (INK 5, CEIL 0), attr_bottom $0D (FLOOR 1)', out.vaults.r.gen?.view?.bright === 0 && out.vaults.r.gen.view.attrTop === 0x05 && out.vaults.r.gen.view.attrBottom === 0x0D, JSON.stringify([out.vaults.r.gen?.view?.bright, out.vaults.r.gen?.view?.attrTop, out.vaults.r.gen?.view?.attrBottom]));
   check_('Vaults: no K2 (its VIEW3D has no BRIGHT clause, and the default is BRIGHT 0 now); no example has an explicit K2 clause', Object.values(out).every((o) => o.k2.length === 0));
 } else {

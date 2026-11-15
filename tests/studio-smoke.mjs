@@ -411,9 +411,8 @@ try {
   await evaluate("document.getElementById('btn-examples').click()");
   await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="platformer"]\')', 5000);
   await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="platformer"]\').click()');
-  // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the two-blacks warning is expected on today's games
-  const pf = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name.startsWith('Leap Runner') && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.filter((w) => !/BRIGHT 1 on black paper/.test(w.message)).length, blacks: leapStudio.lastCompile.warnings.filter((w) => /BRIGHT 1 on black paper/.test(w.message)).length, rt: leapStudio.lang.runtimeLabel(), bytes: leapStudio.lastCompile.usage?.total })", 20000);
-  check('Leap Runner compiles on its own with the v3 runtime, no errors, and no warnings but the two-blacks K1 ones (stage 1: they fire on today\'s games until stage 3 fixes them)', !!pf && pf.errors === 0 && pf.warnings === 0 && pf.blacks > 0 && pf.rt === 'runtime v3', JSON.stringify(pf));
+  const pf = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name.startsWith('Leap Runner') && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length, rt: leapStudio.lang.runtimeLabel(), bytes: leapStudio.lastCompile.usage?.total })", 20000);
+  check('Leap Runner compiles on its own with the v3 runtime, no errors and no warnings', !!pf && pf.errors === 0 && pf.warnings === 0 && pf.rt === 'runtime v3', JSON.stringify(pf));
   await evaluate("document.getElementById('btn-run').click()");
   const pt = await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 8 && leapStudio.ticks() < 400 && leapStudio.ticks()', 25000);
   check('Leap Runner runs on the TS2068 (V_TICKS advances)', !!pt, `tick ${pt}`);
@@ -436,9 +435,8 @@ try {
   await evaluate("document.getElementById('btn-examples').click()");
   await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="vaults"]\')', 5000);
   await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="vaults"]\').click()');
-  // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the two-blacks warning is expected on today's games
-  const vl = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name.startsWith('Vaults') && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.filter((w) => !/BRIGHT 1 on black paper/.test(w.message)).length, blacks: leapStudio.lastCompile.warnings.filter((w) => /BRIGHT 1 on black paper/.test(w.message)).length, rt: leapStudio.lang.runtimeLabel() })", 20000);
-  check('Vaults compiles on its own with the v4 runtime, no errors, and no warnings but the two-blacks K1 ones (stage 1: they fire on today\'s games until stage 3 fixes them)', !!vl && vl.errors === 0 && vl.warnings === 0 && vl.blacks > 0 && vl.rt === 'runtime v4', JSON.stringify(vl));
+  const vl = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name.startsWith('Vaults') && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length, rt: leapStudio.lang.runtimeLabel() })", 20000);
+  check('Vaults compiles on its own with the v4 runtime, no errors and no warnings', !!vl && vl.errors === 0 && vl.warnings === 0 && vl.rt === 'runtime v4', JSON.stringify(vl));
   await evaluate("document.getElementById('btn-run').click()");
   const vt = await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 8 && leapStudio.ticks() < 400 && leapStudio.ticks()', 30000);
   check('Vaults runs on the TS2068 (V_TICKS advances)', !!vt, `tick ${vt}`);

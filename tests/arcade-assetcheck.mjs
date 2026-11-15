@@ -59,7 +59,14 @@ for (const id of EX) {
   const project = P.exampleProject('runner', arc, assets);
   examples.runner = { arc, assets, project, text: P.buildSource(project).text };
 }
-// Lumen (fine colour in every scene): its own entry too
+// Orbit Gates and Lumen: their own entries too
+{
+  const arc = readFileSync(ROOT + 'arcade/examples/orbit.arc', 'utf8').replace(/\r\n?/g, '\n');
+  const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/orbit.assets.json', 'utf8'));
+  const project = P.exampleProject('orbit', arc, assets);
+  examples.orbit = { arc, assets, project, text: P.buildSource(project).text };
+}
+// Lumen (fine colour in every scene)
 {
   const arc = readFileSync(ROOT + 'arcade/examples/lumen.arc', 'utf8').replace(/\r\n?/g, '\n');
   const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/lumen.assets.json', 'utf8'));
@@ -72,7 +79,7 @@ for (const id of EX) {
   check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', worlds: ['pf_world'], floorplans: [], view: null, scenes: ['play'] }), JSON.stringify(r('platformer')));
   check('scanRoles vaults: floor plan vl_maze, cell maps vl_panel and vl_title (the NOVIEW title picture), view BRIGHT 0 (default, since K2) CEIL 0 FLOOR 1',
     eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze', splash: 'vl_title' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 0, ceil: 0, floor: 1 }, scenes: ['title', 'demo', 'play'] }), JSON.stringify(r('vaults')));
-  check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }));
+  check('scanRoles blockfall / breakout: a tile set and nothing else (breakout has a title scene since stage 3); bounce: nothing but its title and play scenes', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['title', 'play'] }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['title', 'play'] }));
   const src = [
     'CONST dark = 0', 'CONST lite = 5 + 1', 'TILESET t = "ts"', 'MAP m = "m1"', 'MAP Maze = "mz"', 'MAP other = "o"',
     'VIEW3D maze FLOOR lite CEIL dark BRIGHT 0 COLW 2', 'WINDOW OTHER',
@@ -93,8 +100,8 @@ for (const id of EX) {
   const rr = r('runner');
   check('scanRoles runner: the four level maps are worlds (WINDOW level, WORLD lv OF level, level2, level3, level4)', eq(rr.worlds, ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4']), JSON.stringify(rr.worlds));
   const rw = checkAssets(examples.runner.project, rr);
-  check('runner: no map-shape error for its 128 x 16 level maps (they were checked as cell maps before), each world has its background-attr-mix warning, no error at all',
-    !rw.some((w) => w.severity === 'error') && ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'].every((m) => mapRole(m, rr) === 'world' && rw.some((w) => w.id === 'background-attr-mix' && w.asset === m)), JSON.stringify(rw.map((w) => [w.id, w.asset])));
+  check('runner: no map-shape error for its 128 x 16 level maps (they were checked as cell maps before), each world has the world role, and there is no finding at all (stage 3: the background tiles share one attribute, the rest are marked fg)',
+    rw.length === 0 && ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'].every((m) => mapRole(m, rr) === 'world'), JSON.stringify(rw.map((w) => [w.id, w.asset])));
   check('mapRole: roles without `worlds` (the older shape) still give the WINDOW\'s map the world role', mapRole('o', { world: 'o' }) === 'world' && mapRole('p', { world: 'o' }) === 'cell');
   check('scanRoles never throws on empty / broken / non-string input and always has its seven fields', !threw && junk.every((x) => ['tileset', 'maps', 'world', 'worlds', 'floorplans', 'view', 'scenes'].every((k) => k in x)));
 }
@@ -387,30 +394,23 @@ const usesBlackRaw = (t) => { const r = raw(t); return (r.paper === 0 && r.clear
 const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map((x) => parseInt(x, 16)) : m.cells);
 {
   const out = {};
-  for (const id of EX) {
+  const ALL = ['bounce', 'breakout', 'shooter', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit'];      // all nine examples
+  for (const id of ALL) {
     const { project, text } = examples[id];
     const rl = scanRoles(text);
     out[id] = checkAssets(project, rl);
   }
   console.log('\nWhat the example projects really produce:');
-  for (const id of EX) {
+  for (const id of ALL) {
     if (!out[id].length) console.log(`  ${id}: no warnings`);
     for (const f of out[id]) console.log(`  ${id}: [${f.severity}${f.compilerAlso ? ', compilerAlso' : ''}] ${f.id} ${f.kind}/${f.asset}: ${f.message}`);
   }
   console.log('');
-  const summary = EX.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
-  // K3 (stage 1 of the Studio completion) and K2's default (the VIEW3D is BRIGHT 0 now): Vaults' and Blockfall's tiles are BRIGHT 1 on black paper, and Vaults' BRIGHT 1 tiles
-  // now also mix with its view. Stage 3 (K4) fixes the games and removes these entries.
-  const EXPECTED = [
-    'platformer: background-attr-mix pf_world',
-    'vaults: black-bright-mix vl_tiles',
-    'vaults: bright-black-paper vl_tiles',
-    'vaults: background-attr-mix vl_panel',
-    'vaults: background-attr-mix vl_title',
-    'blockfall: bright-black-paper gfx',
-  ];
-  check('the examples produce exactly the expected warnings (no errors, no tile0-not-blank, no shape or undefined-tile findings)', eq(summary, EXPECTED), JSON.stringify(summary));
-  check('no example finding is an error or a compilerAlso finding', EX.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
+  const summary = ALL.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
+  // Stage 3 (K4, E5) fixed every example: BRIGHT 0 on black paper, tiles marked fg or colours unified. No example gives a finding of any kind. The rules themselves are
+  // tested on hand-built projects in section 3 (black-bright-mix, bright-black-paper, background-attr-mix and the per-row rules), not on the examples.
+  check('all nine examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
+  check('no example finding is an error or a compilerAlso finding', ALL.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
 
   // each one is TRUE, recomputed from the raw JSON
   const black = (id, ts) => { const o = { 0: [], 1: [] }; examples[id].assets.tilesets[ts].tiles.forEach((t, i) => { if (usesBlackRaw(t)) o[raw(t).bright].push(i); }); return o; };
@@ -419,17 +419,17 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   check('breakout bricks / blockfall gfx / vaults vl_tiles: no tile set mixes BRIGHT 0 and BRIGHT 1 black, recomputed from the JSON',
     noMix('breakout', 'bricks') && noMix('blockfall', 'gfx') && noMix('vaults', 'vl_tiles'), JSON.stringify([black('breakout', 'bricks'), black('blockfall', 'gfx'), black('vaults', 'vl_tiles')]));
   const vb = black('vaults', 'vl_tiles');
-  check('vaults vl_tiles: every black tile is BRIGHT 1 while the VIEW3D (CEIL 0, no BRIGHT clause) is BRIGHT 0 now, so the view mixes with them (until K4)',
-    vb[0].length === 0 && vb[1].length > 0 && /VIEW3D/.test(examples.vaults.arc) && /CEIL 0/.test(examples.vaults.arc) && !/BRIGHT/.test(examples.vaults.arc.split('\n').filter((l) => /VIEW3D/.test(l)).join('')) && out.vaults.some((f) => f.id === 'black-bright-mix' && f.view === true));
-  check('no example other than vaults reports black-bright-mix', EX.every((id) => id === 'vaults' || !out[id].some((f) => f.id === 'black-bright-mix')));
+  check('vaults vl_tiles: every black tile is BRIGHT 0, recomputed from the JSON, and so is the VIEW3D (CEIL 0, no BRIGHT clause: the default is BRIGHT 0), so nothing mixes',
+    vb[0].length > 0 && vb[1].length === 0 && /VIEW3D/.test(examples.vaults.arc) && /CEIL 0/.test(examples.vaults.arc) && !/BRIGHT/.test(examples.vaults.arc.split('\n').filter((l) => /VIEW3D/.test(l)).join('')) && !out.vaults.some((f) => f.id === 'black-bright-mix'));
+  check('no example reports black-bright-mix', ALL.every((id) => !out[id].some((f) => f.id === 'black-bright-mix')));
   // bright-black-paper, independently: the tiles with paper 0, BRIGHT 1 and a clear bit, from the JSON
   const bbpRaw = (id, ts) => examples[id].assets.tilesets[ts].tiles.map((t, i) => [raw(t), i]).filter(([r]) => r.paper === 0 && r.bright === 1 && r.clear > 0).map(([, i]) => i);
   const bbpOf = (id, ts) => out[id].filter((f) => f.id === 'bright-black-paper' && f.asset === ts).flatMap((f) => f.tiles);
-  check('bright-black-paper on the examples: Starfall none (its fine-colour art is all BRIGHT 0), Vaults 28, Blockfall tiles 0, 10, 11; recomputed from the JSON',
-    eq(bbpOf('shooter', 'gfx'), bbpRaw('shooter', 'gfx')) && bbpOf('shooter', 'gfx').length === 0 && eq(bbpOf('vaults', 'vl_tiles'), bbpRaw('vaults', 'vl_tiles')) && bbpOf('vaults', 'vl_tiles').length === 28 && eq(bbpOf('blockfall', 'gfx'), bbpRaw('blockfall', 'gfx')) && eq(bbpOf('blockfall', 'gfx'), [0, 10, 11]),
-    JSON.stringify([bbpOf('shooter', 'gfx').length, bbpOf('vaults', 'vl_tiles').length, bbpOf('blockfall', 'gfx')]));
-  check('every example tile set: the bright-black-paper tiles equal the independent reading of the JSON (none for breakout and the platformer)',
-    EX.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => eq(bbpOf(id, ts), bbpRaw(id, ts)))) && bbpRaw('breakout', 'bricks').length === 0 && bbpRaw('platformer', 'pf_tiles').length === 0);
+  check('bright-black-paper on the examples: none in any tile set of the nine examples; each tile set is also clean when read independently from the JSON (paper 0, BRIGHT 1 and a clear bit in row 0)',
+    ALL.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => bbpOf(id, ts).length === 0 && bbpRaw(id, ts).length === 0)) && Object.keys(examples.vaults.assets.tilesets).length > 0,
+    JSON.stringify(ALL.map((id) => [id, Object.keys(examples[id].assets.tilesets ?? {}).map((ts) => bbpRaw(id, ts).length)])));
+  check('every example tile set: the bright-black-paper tiles equal the independent reading of the JSON (none for any)',
+    ALL.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => eq(bbpOf(id, ts), bbpRaw(id, ts)))));
   // background-attr-mix, independently: the used non-foreground tiles of the map grouped by attribute
   const groupsOf = (id, tsName, mapName, world) => {
     const ts = examples[id].assets.tilesets[tsName].tiles, cells = cellsRaw(examples[id].assets.maps[mapName]);
@@ -443,19 +443,17 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
     }
     return [...byAttr].map(([attr, g]) => ({ attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells })).sort((x, y) => y.cells - x.cells || x.attr - y.attr);
   };
-  const gp = groupsOf('platformer', 'pf_tiles', 'pf_world', true);
-  const fpf = out.platformer[0];
-  check('platformer pf_world: background attribute groups (attribute, tiles, cell count) recomputed from the JSON (blank = tile 0, solid tiles left out)',
-    eq(gp, fpf.groups.map((g) => ({ attr: g.attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells }))) && gp.length === 5 && gp[0].attr === 104 && eq(gp[0].tiles, [0, 4, 9]) && gp[0].cells === 1105, JSON.stringify(gp));
+  // Stage 3 (E5): each cell map's used background tiles share one attribute (or are marked foreground), so there is no background-attr-mix finding; recomputed from the JSON
   const pfTs = examples.platformer.assets.tilesets.pf_tiles.tiles;
-  check('platformer: the solid tiles (1, 2, 3 ...) are foreground and are not among the groups; the flags say so in the JSON', pfTs[1].flags % 2 === 1 && pfTs[2].flags % 2 === 1 && !gp.some((g) => g.tiles.includes(1) || g.tiles.includes(2)));
-  const gv = groupsOf('vaults', 'vl_tiles', 'vl_panel', false);
-  const fvp = out.vaults.find((f) => f.id === 'background-attr-mix');
-  check('vaults vl_panel: background attribute groups recomputed from the JSON', eq(gv, fvp.groups.map((g) => ({ attr: g.attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells }))) && gv.length === 4, JSON.stringify(gv));
-  const gt = groupsOf('vaults', 'vl_tiles', 'vl_title', false);
-  const fvt = out.vaults.filter((f) => f.id === 'background-attr-mix').find((f) => f.asset === 'vl_title');
-  check('vaults vl_title (the title picture: black, cyan wall textures, brass door and goblet; the title\'s sprites only move over its black corridor): background attribute groups recomputed from the JSON',
-    eq(gt, fvt.groups.map((g) => ({ attr: g.attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells }))) && gt.length === 3, JSON.stringify(gt));
+  const gp = groupsOf('platformer', 'pf_tiles', 'pf_world', true);
+  check('platformer pf_world: one background attribute group (blank = tile 0, solid and fg tiles left out), recomputed from the JSON: attribute 104, tiles 0, 4, 9, 14', gp.length === 1 && gp[0].attr === 104 && eq(gp[0].tiles, [0, 4, 9, 14]), JSON.stringify(gp));
+  check('platformer: the solid tiles (1, 2, 3 ...) are foreground and are not among the groups; the flags say so in the JSON; some tiles are marked fg: true (stage 3)', pfTs[1].flags % 2 === 1 && pfTs[2].flags % 2 === 1 && !gp.some((g) => g.tiles.includes(1) || g.tiles.includes(2)) && pfTs.some((t) => t.fg === true));
+  const gr = ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'].map((m) => groupsOf('runner', 'pf_tiles', m, true));
+  check('runner: each of the four worlds has one background attribute group (104), recomputed from the JSON', gr.every((g) => g.length === 1 && g[0].attr === 104), JSON.stringify(gr));
+  const gv = groupsOf('vaults', 'vl_tiles', 'vl_panel', false), gt = groupsOf('vaults', 'vl_tiles', 'vl_title', false);
+  check('vaults vl_panel and vl_title: one background attribute group each (attribute 7: the blank tile 0), recomputed from the JSON',
+    gv.length === 1 && gv[0].attr === 7 && gt.length === 1 && gt[0].attr === 7, JSON.stringify([gv, gt]));
+  check('no example has a background-attr-mix finding, and no map of the three games above has a second group', ALL.every((id) => !out[id].some((f) => f.id === 'background-attr-mix')));
   // The two fine-colour games (every scene fine): their cell maps use several background attributes, which does not matter in a fine scene, and no pixel row of any tile
   // shows black with the other BRIGHT or black paper with BRIGHT 1 (an independent reading of the JSON, row by row)
   const rowsRaw = (t) => t.rows.map((r) => ({ ink: r.ink ?? 0, paper: r.paper ?? 7, bright: r.bright ? 1 : 0, bits: hexb(r.bits) }));

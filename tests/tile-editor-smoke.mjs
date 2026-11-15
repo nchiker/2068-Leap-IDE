@@ -138,12 +138,19 @@ try {
   check('the platformer\'s tile set pf_tiles is loaded: 20 tiles, tile 0 selected', st0.name === 'pf_tiles' && st0.set.tiles.length === 20 && st0.sel === 0, JSON.stringify({ name: st0.name, n: st0.set?.tiles.length }));
   check('the strip has one button per tile with its index; the grid is 8 x zoom wide',
     await evaluate("(() => { const g = document.querySelector('[data-role=grid]'); return document.querySelectorAll('[data-role=strip] [data-tile]').length === 20 && g.width === 8 * t.editor.getState().zoom; })()"));
-  check('markers: tile 1 and 3 are solid (S), tile 5 hazard (H), tile 6 pickup (P), tile 10 has no flag marker',
-    await evaluate("(() => { const m = (i) => [...document.querySelectorAll(`[data-role=strip] [data-tile=\"${i}\"] .tiled-marks span`)].map((s) => s.textContent).join(''); return m(1).includes('S') && m(3).includes('S') && m(5).includes('H') && m(6).includes('P') && !/[SHPF]/.test(m(10)); })()"));
+  // Stage 3 marked tile 10 (and 5, 6, 7, 8, 15 ...) fg: true in the platformer. The editing checks below use tile 10 as a plain blank scratch tile, so it is made a plain one here
+  // (a replaced project; the fg marking itself is tested through the fg checkbox below and on tile 5 in the "two warnings" block)
+  await evaluate(`(() => { const p = JSON.parse(JSON.stringify(t.project)); delete p.assets.tilesets.pf_tiles.tiles[10].fg;
+    const m = p.assets.maps.pf_world, cells = typeof m.cells === 'string' ? m.cells.match(/../g).map((x) => parseInt(x, 16)) : m.cells.slice();
+    for (let i = 0; i < cells.length; i++) if (cells[i] === 10) cells[i] = 0;      // a plain tile 10 of its own colours in the map would be a second background attribute (a warning)
+    m.cells = typeof m.cells === 'string' ? cells.map((c) => c.toString(16).toUpperCase().padStart(2, '0')).join('') : cells;
+    t.replaceProject(p); return true; })()`);
+  check('markers: tile 1 and 3 are solid (S), tile 5 hazard (H, and F: fg since stage 3), tile 6 pickup (P), tile 10 (made a plain scratch tile above) has no flag marker',
+    await evaluate("(() => { const m = (i) => [...document.querySelectorAll(`[data-role=strip] [data-tile=\"${i}\"] .tiled-marks span`)].map((s) => s.textContent).join(''); return m(1).includes('S') && m(3).includes('S') && m(5).includes('H') && m(5).includes('F') && m(6).includes('P') && !/[SHPF]/.test(m(10)); })()"));
   check('"used in N cells" comes from the maps drawn with the set: tile 14 is used by 328 cells of pf_world',
     await evaluate("document.querySelector('[data-role=strip] [data-tile=\"14\"]').title.includes('328 map cells') && document.querySelector('[data-role=strip] [data-tile=\"14\"] span').textContent.includes('328')"));
-  check('the platformer\'s real background-attr-mix warning (from its map) shows in the tile editor, naming tiles, and marks them in the strip',
-    (await warnIds()).includes('background-attr-mix') && await evaluate("document.querySelector('[data-role=strip] [data-tile=\"5\"]').classList.contains('warned') && !!document.querySelector('[data-role=warnings] [data-tile=\"5\"]')"));
+  check('the platformer has no background-attr-mix warning since stage 3 (its background tiles share one attribute, the rest are fg): none in the editor, none on the strip, none from the host',
+    !(await warnIds()).includes('background-attr-mix') && !(await hostWarnIds()).includes('background-attr-mix') && await evaluate("!document.querySelector('[data-role=strip] [data-tile=\"5\"]').classList.contains('warned')"), JSON.stringify([await warnIds(), await hostWarnIds()]));
   await shot('01-dark');
 
   // ── drawing ──
@@ -349,6 +356,7 @@ try {
     const w = 48, h = 16, cells = new Array(w * h).fill(0);
     for (let x = 0; x < w; x++) cells[15 * w + x] = 1;
     for (let x = 4; x < 12; x++) cells[10 * w + x] = 5;
+    delete p.assets.tilesets.pf_tiles.tiles[5].fg;      // stage 3 marked tile 5 fg (foreground tiles are left out of the check); here it is a background tile again
     p.assets.maps.pf_world = { w, h, cells: cells.map((c) => c.toString(16).toUpperCase().padStart(2, '0')).join('') };
     t.replaceProject(p);
     return true;

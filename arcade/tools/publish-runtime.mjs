@@ -66,10 +66,8 @@ for (const ex of EXAMPLES) {
   const v = requiredRuntime(arc, assets).version, need = v >= 2 && v <= 4 ? v : 2;
   const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets, scenes: assets.scenes });
   if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
-  // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the "BRIGHT 1 on black paper" warning fires on today's example games; it is printed, not fatal. Any other warning fails.
-  const otherWarnings = [];
-  for (const w of res.warnings) { if (/BRIGHT 1 on black paper/.test(w.message)) console.error(`${ex.id}: warning: ${w.message}`); else otherWarnings.push(w); }
-  if (otherWarnings.length) { console.error(`${ex.id}: warning: ${otherWarnings[0].message}`); process.exit(1); }
+  // Any warning is fatal: every example opens with no warnings.
+  if (res.warnings.length) { console.error(`${ex.id}: warning: ${res.warnings[0].message}`); process.exit(1); }
   put(join(ARCADE, 'dist/examples', `${ex.id}.leapgame`), serializeProject(project));
   index.push({ id: ex.id, title: ex.title, about: ex.about, file: `${ex.id}.leapgame` });
 }
