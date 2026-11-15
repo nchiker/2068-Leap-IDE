@@ -272,6 +272,32 @@ All stage 1 items are done. Sonnet agents built them with disjoint files, Claude
   Claude's choice per tile, listed in the as-built notes); every example opens with no warnings.
 * **G1 to G4** as section 3.
 
+#### As built (stage 3, 2026-11-15, branch `studio-stage3`)
+Five Sonnet agents in disposable worktrees (one per game group, patches kept in `arcade/spike/stage3/`), one for the shared tests, one for the
+cross-emulator tools; Claude reviewed each diff and re-measured. Every example now compiles with no warning and no asset finding; every
+`TWO-BLACKS ALLOWANCE` is gone. The comparisons with an older compiler (m11 / m15 / m17 compiler tests) and with the old fixtures in
+`arcade/tests/fixtures/` keep a permanent, documented filter for the two-blacks warning: the older compiler has no such warning and the fixtures
+are historical.
+
+| Game | Items | Choices | Code bytes |
+|---|---|---|---|
+| Leap Runner (platformer, runner) | K4, E5 | HUD `BRIGHT 0` on black. Tile 14 (blank cloud band) takes the sky's attribute. `fg` on the mountains and clouds (only a jump from the top plank reaches them) and on spikes, coins, pole and flag: a sprite over one is being hurt, paid or finishing, so its brief change of ink is **an accepted colour change** (the art rules already said so), not a claim that no sprite passes | 7,179 / 9,095, unchanged |
+| Blockfall | K4, G2, G3 | Every black attribute `BRIGHT 0` (tiles 0-8, 10, 11, six code spots): the blocks are plain colours now. `PSCORE` with `USING "0000"`. `wt`, `ft` as `TIMER`s; `gcnt`, `ldly`, key-repeat counters stay (they pause or reset conditionally) | 10,033 -> 10,180 (`lib$fmt` +179) |
+| Vaults | K4, E5, G3 | All 28 tiles `BRIGHT 0`; tiles 1-27 `fg` (the panel's sprites are billboards inside the view; the title's sprites stay over blank cells). `inv`, `cool`, `bt`, `mt` and the demo's `left` as `TIMER`s. Play identical tick by tick | 11,205 -> 11,187 |
+| Starfall | G1, G2, G3 | Game over: `KEYPRESS(" ") OR BIT(JOYPRESS(1), 4)` after a 21-tick `TIMER`; score and wave right-aligned with `USING`; `inv`, `cool`, `spt` as `TIMER`s; the blink by `BAND(inv, 2)` (Claude: the agent's `inv MOD 4` ran a division every tick, ~900 T) | 11,741 -> 11,896 (`lib$fmt`) |
+| Orbit Gates | G1, G3 | Title and game over by `KEYPRESS` / `JOYPRESS`; `inv`, `fl`, `cd`, `sb`, `ow`, `bl` as `TIMER`s (`lz` replaced by `cd > 3`). Fire held from power-on now starts at once (KEYPRESS counts a key held at boot) | 8,263 -> 8,212 |
+| Breakout, Bounce | G4 | A `title` scene each (name, PRESS FIRE TO PLAY; Breakout draws three brick rows), a song written with `songs.mjs` in new asset generators (Bounce 4 bars C-Am-F-G, 4.3 s; Breakout 8 bars D minor, 8.5 s), `NOMUSIC` in play; Bounce is no longer v0-only (MUSIC needs v2) | 414 -> 1,449 (song 758); 1,338 -> 3,481 (song 1,805) |
+
+Deliberate changes of play: a fire pressed during a game-over wait no longer counts (a fresh press is needed); Orbit's title blink is one tick
+later; Starfall's game-over numbers are right-aligned. **Time** (`tests/arcade-codegen-perf.mjs`, reference re-saved): medians +77 (platformer),
++41 (Vaults), +112 (Blockfall), +657 T (Starfall: the `KEYPRESS` / `JOYPRESS` snapshot, `RT_KEYDOWN` + `RT_STICK` every tick in every scene, is
+~600 T of it), Runner -16; no tick newly over budget; Orbit faster (median 195,360 -> 194,268, worst 340,848 -> 335,463, over budget 29 -> 23).
+The size goal ("should make the code smaller") is met by Vaults and Orbit, not by Blockfall and Starfall, where `lib$fmt` costs more than the
+code it replaces. **Cross-emulator:** Starfall (fine pipeline, keys, script, joystick) TSRun = ZEsarUX at all 347 ticks, Fuse shows every
+picture; Breakout (now pressing fire to leave its title) TSRun = ZEsarUX, Fuse shows ticks 1-60; `fine-compare.mjs` leaves out only the
+joystick-only bytes (`JS` and the KEYPRESS / JOYPRESS slots). `shooter-scenario-make.mjs` was broken before stage 3 (its still phase ended
+before game over) and is fixed.
+
 ### Stage 4
 * **N1. Starters.** `src/arcade-starters.js` (pure, Node-importable): `STARTERS = [{id, title, about, runtime, make() -> project}]`, assets built
   by code. Six: blank, sprites-tiles, scenes-music, platformer, raycaster, wireframe (contents in the review doc). New opens a dialog (title, one
