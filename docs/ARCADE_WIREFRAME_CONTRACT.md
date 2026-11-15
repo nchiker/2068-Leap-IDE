@@ -136,7 +136,7 @@ Registers: every entry may clobber AF, BC, DE, HL, IX, IY and the alternate set 
 never emits IX, IY, `EXX` or `EX AF,AF'`; a later change that does must make these entries save them). Interrupts stay on
 except in the clear.
 Tables (constant, in the runtime's ROM; page-aligned where the spike needs it): QSL / QSH 512, SIN8 256, RCPT 128 (the upper
-half of a page: its lower half may hold code). **Size bound: the whole addition <= 5,300 bytes, leaving >= 870 free**; report
+half of a page: its lower half may hold code; **amended by the v2 size pass, 2026-11-14:** RCPT is built in RAM by `wire_setup` in the upper half of the `W_SXL` page, and SIN8 is the high byte of the stored `QTAB` entry: `ARCADE_RUNTIME_API_V2.md` "As built: size pass"). **Size bound: the whole addition <= 5,300 bytes, leaving >= 870 free**; report
 the figure.
 
 ### 3.2 RAM (`layout.inc`)

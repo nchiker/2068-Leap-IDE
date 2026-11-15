@@ -297,3 +297,40 @@ interrupts on, so **that must stay so** (m17 checks it with the real handler).
 * Equality with the reference: 2,000 random scenes (4,089 `DRAWMODEL`s, 150 models up to 128 points / 255 edges, 2,032 `LINE`s), 2,000 random `LINE`s, `COSA` / `SINA` for every angle, 10,324 `FXMUL` pairs against v4, the matrix for all 65,536 yaw / pitch
   pairs: 73 checks, 0 mismatches (m17-runtime-wire); 26 checks and two negative controls (m17-runtime-tick); the v2 tick suites m4 / m5 are unchanged.
 * Deviations from the contract text: the eye transform uses three products where the contract writes four, with equal results (the reference keeps the four); `SIN8` is stored as a quarter table.
+
+## As built: size pass (stage 2 "Z", 2026-11-14, branch `arcade-v2-size`)
+
+Contract: `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` section 3 (Z). Two Opus workers followed the shrink-z80 skill in disposable worktrees, on
+disjoint files, one change at a time (each built and quick-tested); the main thread combined the two patches. Each change, with its bytes and
+T effect, is in `arcade/spike/v2size/NOTES-A.md` (core modules) and `NOTES-B.md` (wireframe); the figures before / after are in the `perf-*`
+files beside them. **`runtime (chunks 0-1)` 15,378 -> 12,935 bytes (-2,443); `RT_END` `$3CAA` -> `$328A`: 3,446 bytes free after it (was 854).**
+No `RT_*` contract changed; the `RT_*` entries moved, so compiled v2 programs change only in those addresses (10 hashes of `batch2-` /
+`batch3-baseline.json` regenerated with `regen-baselines.mjs --old c985065`: the old and new compiler agree byte for byte).
+
+* **The low pages are a fixed layout** (`boot.asm`): `MASK_TAB` at `$0005` (between the header and the ISR); `wiremode.asm` from `$0068` ends
+  exactly at `$0100` (it now also holds `W_SHKTAB` and `w_ls_rej`); page `$01` = `BIT_TAB`, `BLK3`, `ENT3`, `run3`, then `RT_BORDER`, `KEY_ROWSEL`,
+  `walk_sent`, `delta_axis` (to `$0200`); page `$02` = `BLK2`, `BLK1`, `ENT2`, `ENT1`, `run2`, `run1`, then the cold start (`ENTRY` `$02D4`; the
+  LROS header names it) and `video.asm` after it. The entry tables hold the low bytes of the entry points and share their block's page, so
+  `run1..3` set B once (7 T faster). Every page constraint is asserted. `RT_ENTRY` (`$0100`) and `RT_VIDEO` (`$0200`) are now only names.
+  The 557 bytes of alignment padding in these modules are gone.
+* **Core modules** (-1,309 bytes of code): the sprite erase variants nested per width and falling through, cells in alternating direction (-768;
+  16x16 erase 2,096 -> 1,986 T); `tileops` with v3's word layout of its scratch, one shared `mask_done` that also marks the dirty cells, and
+  `row_at` for the row prologues (-225; every FILL / COPY / LOADMAP faster, LOADMAP 147,908 -> 140,900 T); table-driven boot fills, the cell
+  map no longer cleared before it is filled, `SLOT_TAB` replaced by a running pointer (-204, boot only; **boot 11 -> 10 frames**); smaller
+  ones (draw_all's skip test, RT_SHOW, RT_TILEAT, hit_box, RT_DIV / RT_MOD sharing `udiv_abs`, skip.asm, glyph_put, the row table), all equal
+  or faster.
+* **Wireframe** (`wire.asm` 5,101 -> 4,514 including its padding): the character-row step out of line (-187), `w_draw_fast` without IX, the clip's
+  compares without the overflow fix (the differences cannot overflow), the clip ordering the ends in place, a shared multiply-divide tail, `QTAB`
+  stored as 4 Q + 128 so the separate `SIN8Q` table is gone, the matrix factors as words. **`RCPT` (128 bytes) is built in RAM by `wire_setup`** in
+  the upper half of the `W_SXL` page (`W_REC` + `$80..$FF`: the point records use offsets 0..127, `W_MAXPTS` = 128 is asserted), which costs
+  `wire_setup` about 14,400 T once (1,444 -> 15,877 T; amends `ARCADE_WIREFRAME_CONTRACT.md` 3.1). The routines placed around the page-aligned
+  tables are measured and chosen by the assembler for whatever address wire starts at (code + tables the same for every start 0..255, padding
+  0..16 bytes), so a later change elsewhere needs no retuning; how to add a relocatable routine is in `NOTES-B.md`. `W_SADX`, `W_SADY`, `W_SY`,
+  `W_SP` in `layout.inc` are now unused; `W_SU0..W_SV1` (`W_VARS` + 28..35) hold the matrix's factors (+28..32).
+* **Speed:** no measured figure got slower except the cold ones named above. m4 worst tick 105,930 -> 103,772 T; `arcade-codegen-perf --compare`
+  passes (Starfall median 52,423 -> 51,656, Blockfall 11,026 -> 10,942); sloped 40 px lines 20-80 T faster, clipped lines 200-600 T faster, the
+  ship's 18 edges 23,772 -> 22,801 T; Orbit Gates' play ticks median 195,360 -> 193,617, worst 340,848 -> 334,812, ticks over the budget 29 -> 22.
+* **Not done** (each would slow a routine or saves under ~35 bytes): RT_KEYDOWN's table packed, RT_COPY's two axis blocks as one subroutine,
+  the font packing (not needed).
+* **Tests:** mutation patterns re-pointed, none deleted (m4 7 re-pointed + 9 added, m5 9 re-pointed, m17 re-pointed and added: 388 mutants, 377
+  killed, 11 equivalent); `m5-runtime-regs.mjs` injects interrupts in the new `M_GAPA` too.
