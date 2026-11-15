@@ -21,6 +21,19 @@
  * types and static addresses; include/leapc_decl.inc) and the functions'
  * names are copied then.
  *
+ * Locals do not survive the compile: SCOPE_CLOSE reclaims each block's
+ * entries (src/compiler/symtab.asm). So the table also watches the scopes:
+ * SCOPE_OPEN starts a block's code range at CG_PC, SCOPE_CLOSE ends it and,
+ * before it runs, reads the SYM_LOC chain, which then holds every entry in
+ * scope there (the block's own, then the enclosing blocks', then the
+ * function's parameters; innermost first, so the first of a name wins). A
+ * range is split where CG_UNIT moves the code to the next region. A local's
+ * place (src/compiler/expr.asm, spec.md 5.2): a parameter (SF_PARAM) at
+ * IX + 4 + value, an automatic object (SF_AUTO) at IX - (value + size), a
+ * block-scope static at its address. The type is decoded at SCOPE_CLOSE,
+ * while the workspace holds its nodes. Optional ROM-entry fields scopeOpen,
+ * scopeClose and symLoc (an entry without them has globals only).
+ *
  * Code regions $6000-$77FF, $C000-$DFFF, $E000-$F17F and $F400-$F7FF are
  * RAM, but $C000-$DFFF is the EXROM whenever the shell or an EXROM library
  * routine runs: a position counts only when its 8K chunk is paged to RAM
@@ -105,6 +118,8 @@ export function createLineTable(rom) {
   let running = false;        // RT_RUN reached: the program's code runs
   let functions = [];         // {addr, line, name} by address
   let globals = [];           // {name, type, addr, show}
+  let scopes = [];            // closed blocks: {segs: [{from, to}], size, vars: [{name, type, where, off, show}]}
+  let open = [];              // blocks being compiled: {segs, from}
 
   const add = (addr, line) => {
     records.push({ addr, line });
@@ -112,6 +127,28 @@ export function createLineTable(rom) {
     lastLine = line;
     sorted = null;
   };
+  /** The entries in scope at SCOPE_CLOSE (SYM_LOC, innermost first), as locals. */
+  function readScope(m) {
+    const vars = [], seen = new Set();
+    for (let e = r16(m, rom.symLoc), n = 0; e && n < 500; e = r16(m, e + S_LINK), n++) {
+      if (mem(m, e + S_KIND) !== SK_OBJ) continue;
+      const len = mem(m, e + S_LEN) & 0x1F, flags = mem(m, e + S_FLAGS);
+      let name = '';
+      for (let i = 0; i < len; i++) name += String.fromCharCode(mem(m, e + S_NAME + i));
+      if (!name || seen.has(name)) continue;    // an unnamed prototype parameter; a shadowed name
+      seen.add(name);
+      const t = typeOf(m, r16(m, e + S_TYPE));
+      const val = r16(m, e + S_VAL);
+      let where, off;
+      if (flags & (1 << SF_PARAM)) { where = 'param'; off = 4 + (val & 0xFF); }
+      else if (flags & (1 << SF_AUTO)) { where = 'auto'; off = -((val & 0xFF) + t.size); }
+      else if (!(flags & (1 << SF_NOADDR)) && val) { where = 'static'; off = val; }
+      else continue;
+      vars.push({ name, type: t.text, where, off, show: t.show });
+    }
+    return vars.reverse();                     // parameters first, then outer to inner, each in declaration order
+  }
+
   const bySorted = () => sorted ?? (sorted = records.map((r, i) => ({ ...r, i })).sort((a, b) => a.addr - b.addr || a.i - b.i));
 
   /** At RT_RUN: the function table and the globals, while the workspace holds them. */
@@ -142,7 +179,7 @@ export function createLineTable(rom) {
   const table = {
     reset() {
       records = []; starts = new Set(); sorted = null; lastLine = 0;
-      running = false; functions = []; globals = [];
+      running = false; functions = []; globals = []; scopes = []; open = [];
     },
 
     observe(m) {
@@ -151,7 +188,22 @@ export function createLineTable(rom) {
       if (pc === rom.statement || pc === rom.dclAutoinit || pc === rom.stmtDoCond) {
         add(r16(m, rom.cgPc), r16(m, rom.tokLine));
       } else if (pc === rom.cgUnitFound) {
-        add((m.cpu.d << 8) | m.cpu.e, lastLine);
+        const to = (m.cpu.d << 8) | m.cpu.e;
+        add(to, lastLine);
+        const at = r16(m, rom.cgPc);           // the code moves on: split the open blocks' ranges
+        for (const b of open) { b.segs.push({ from: b.from, to: at + 3 }); b.from = to; }
+      } else if (rom.scopeOpen && pc === rom.scopeOpen) {
+        open.push({ segs: [], from: r16(m, rom.cgPc) });
+      } else if (rom.scopeClose && pc === rom.scopeClose) {
+        const b = open.pop();
+        if (b) {
+          b.segs.push({ from: b.from, to: r16(m, rom.cgPc) });
+          const segs = b.segs.filter(r => r.to > r.from);
+          if (segs.length) {
+            const vars = readScope(m);
+            if (vars.length) scopes.push({ segs, size: segs.reduce((n, r) => n + r.to - r.from, 0), vars });
+          }
+        }
       } else if (pc === rom.rtRun) {
         snapshot(m);
         running = true;
@@ -190,6 +242,15 @@ export function createLineTable(rom) {
       return best;
     },
 
+    /** The locals in scope at a code address (the innermost block holding it), or null. */
+    scopeAt(addr) {
+      let best = null;
+      for (const b of scopes) {
+        if (b.segs.some(r => addr >= r.from && addr < r.to) && (!best || b.size < best.size)) best = b;
+      }
+      return best;
+    },
+
     get running() { return running; },
     get globals() { return globals; },
     get functions() { return functions; },
@@ -200,6 +261,29 @@ export function createLineTable(rom) {
 /** The globals with their current values: {name, type, value}. */
 export function readGlobals(m, table) {
   return table.globals.map(g => ({ name: g.name, type: g.type, value: g.show(m, g.addr) }));
+}
+
+/**
+ * The current function's locals (parameters and the blocks around the PC)
+ * with their values, then the globals; each row {name, type, value, group}.
+ * At a function's first instruction (before its ENTER) IX is still the
+ * caller's, so no locals are shown there.
+ */
+export function readVariables(m, table) {
+  const rows = [];
+  const pc = m.cpu.pc;
+  const fn = table.functionAt(pc);
+  const scope = fn && pc !== fn.addr && inRam(m, pc) ? table.scopeAt(pc) : null;
+  if (scope) {
+    const ix = (m.cpu.xh << 8) | m.cpu.xl;
+    const group = `Locals of ${fn.name}()`;
+    for (const v of scope.vars) {
+      const addr = v.where === 'static' ? v.off : (ix + v.off) & 0xFFFF;
+      rows.push({ name: v.name, type: v.where === 'param' ? `${v.type} (param)` : v.where === 'static' ? `static ${v.type}` : v.type, value: v.show(m, addr), group });
+    }
+  }
+  for (const g of readGlobals(m, table)) rows.push({ ...g, group: 'Globals' });
+  return rows;
 }
 
 /**

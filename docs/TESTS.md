@@ -13,7 +13,8 @@
   them), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
-  helpers, every Examples-menu program (section 3b: each finishes with no
+  helpers (BASIC's; section 11 runs the UDG and Draw code of all three
+  languages on their ROMs and compares the table and the bitmap), every Examples-menu program (section 3b: each finishes with no
   error; `guess` stops at its `INPUT`), share links (round trip with the name,
   shorter than the program, a fragment without a program ignored, a damaged
   link refused), and (section 7, "Cartridge") the
@@ -73,7 +74,9 @@
   `LEAPC_ROMS=<dir>` do the same for Forth and Leap-C (with `LEAPC_ROMS` on the
   beta.2 ROMs 128 of the first 150 checks ran: libraries, the debugger, tapes
   and the cartridge are skipped; not recounted since). All 156 pass on the
-  default ROMs (Leap 2.1.1-emu.1, Forth 2.0.1, Leap-C 1.2.0); they also passed
+  default ROMs of that count (Leap 2.1.1-emu.1, Forth 2.0.1, Leap-C 1.2.0; the
+  default Leap ROMs are 2.1.2-emu.1 since the pin moved to `9893b46`, where
+  `063afb7` records them passing; the count was not redone for this note); they also passed
   with `LEAP_ROMS` on the 2.1.1 ROMs before the pin moved and on the 2.1.0 ROMs
   after it (it was 157 while the `KNOWN` Forth difference had its check on every
   run). With `LEAP_ROMS` pointing at the 2.0.2 ROMs

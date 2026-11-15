@@ -5,7 +5,7 @@
 ## Debugger (Phase 3 — done, `src/lang/basic/leap-debug.js` + `src/debugger.js`)
 
 Verified in headless Chromium and Node against the real 2.0.2 ROM; all Node
-checks also pass on 2.1.0-emu.1 and 2.1.1-emu.1 (after the dispatch change
+checks also pass on 2.1.0-emu.1, 2.1.1-emu.1 and 2.1.2-emu.1 (after the dispatch change
 below). The program
 is bytecode run by a VM, so everything is read from the ROM's own state, not
 from Z80 `CALL`/`RET`.
@@ -68,14 +68,25 @@ shows:
 | Line table | built by the compiler, once per run, before the VM starts | built **while the program is sent** (Forth compiles as it reads); grows during the run, `version()` makes the controller place breakpoints again | built by the compiler's hooks, plus `RUN_FNLINES` at `RT_RUN` |
 | Position | VM instruction (`VM_IP`, `vmNext`) | a record's address, or `TOP` (`0x10000`) + n for line n being sent | a statement's code address (native Z80) |
 | Step | next statement | next token (word), and each line sent | next statement, into called functions |
-| Variables section | "Variables" | "Stacks and words": data and float stack, the session's words with values; `live`, also between runs | "Globals" (copied at `RT_RUN`); read from `m.ram` |
+| Variables section | "Variables" | "Stacks and words": data and float stack, the session's words with values; `live`, also between runs | "Variables": the current function's locals (group "Locals of f()": parameters, then the blocks around the PC, innermost name wins), then "Globals" (copied at `RT_RUN`); read from `m.ram` |
 | Call stack | VM frames | user words on the return stack, then the line sent | the `IX` frame chain |
 | Run-time error line | `stopLine` via `VM_IP` | none (Run stops at the error line, which the driver names) | `stopLine` via `RT_ERRPC` |
 | Stop while paused | sets VM error 66 | BREAK | BREAK |
 
 Forth's breakpoints apply only to the words the **latest Run or Send** defined
-(its records are reset by each); Leap-C's debugger shows globals only (no
-locals yet).
+(its records are reset by each). Leap-C's locals (2026-11-15): the compiler
+reclaims a block's symbols at `SCOPE_CLOSE`, so the line table also watches
+`SCOPE_OPEN` (a block's code range starts at `CG_PC`) and `SCOPE_CLOSE` (it ends
+there; the `SYM_LOC` chain, read before it runs, holds every name in scope:
+the block's, the enclosing blocks', the parameters'), splitting a range where
+`CG_UNIT.found` jumps to the next region (the 3-byte `jp` at the old `CG_PC`).
+At a pause the innermost recorded block holding the PC gives the locals: a
+parameter at `IX + 4 + value`, an automatic object at `IX - (value + size)`,
+a block-scope static at its address (`src/compiler/expr.asm`). None at a
+function's first instruction (before its `ENTER`, `IX` is the caller's). The
+panel shows a row's `group` as a heading row (`renderVariables`). ROM-entry
+fields `scopeOpen`, `scopeClose`, `symLoc` (1.0.0 and 1.2.0; an entry without
+them shows the globals only, titled "Globals").
 
 **Panel** (`#debugger-mount`; every value HTML-escaped, since strings can hold
 any character):

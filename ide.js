@@ -97,7 +97,8 @@ async function bootEmulator() {
   }, DEBUG_REFRESH_MS);
 
   udgTool = createUdgTool(document.getElementById('tool-udg'), {
-    rom: emulator.rom,
+    getRom: () => emulator.rom,
+    getCodegen: () => profile.tools.udg,
     getSource,
     insertCode: text => window.leapEditor.insertLines(text),
     writeToMachine: (addr, bytes) => {
@@ -594,6 +595,7 @@ const symbolsTool = createSymbolsTool(document.getElementById('tool-symbols'), {
 const drawTool = createDrawTool(document.getElementById('tool-draw'), {
   insertCode: text => window.leapEditor.insertLines(text),
   onZoom: delta => setDrawZoom(shownDrawZoom + delta),
+  getCodegen: () => profile.tools.draw,
 });
 
 function showTab(name) {
@@ -737,8 +739,10 @@ langSelect.addEventListener('change', async () => {
   window.leapEditor.focus();
 });
 
-/** The right-panel tools that generate code only exist for languages that have them. */
+/** The right-panel tools that generate code only exist for languages that have them; each writes that language's code. */
 function showLanguageTools() {
+  udgTool?.refresh();
+  drawTool.refresh();
   for (const [tab, on] of [['udg', profile.tools.udg], ['draw', profile.tools.draw]]) {
     document.querySelector(`.panel-tab[data-tab="${tab}"]`).hidden = !on;
     if (!on && activeTab === tab) showTab('debugger');

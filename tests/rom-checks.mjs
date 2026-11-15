@@ -40,8 +40,8 @@ const { buildTAP } = await import(join(ROOT, 'src/lang/basic/export.js'));
 const C = await import(join(ROOT, 'src/lang/basic/cartridge.js'));
 const { insertDock } = await import(join(ROOT, 'tsrun/machine.js'));
 const { tapeToText, encodeShare, decodeShare } = await import(join(ROOT, 'src/files.js'));
-const { bresenham, pathsToCode } = await import(join(ROOT, 'src/tools/draw.js'));
-const { udgPokes, pokesInSource } = await import(join(ROOT, 'src/tools/udg.js'));
+const { bresenham } = await import(join(ROOT, 'src/tools/draw.js'));
+const { udgPokes, pokesInSource, pathsToCode } = await import(join(ROOT, 'src/lang/basic/tool-code.js'));
 const { EXAMPLES } = await import(join(ROOT, 'src/lang/basic/examples.js'));
 const { createPcKeyboard } = await import(join(ROOT, 'src/pc-keyboard.js'));
 
@@ -984,7 +984,9 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     const r = debugRun(prog, [3], s => { seen.push([s.line0 + 1, s.vars.map(v => `${v.name} ${v.type} ${v.value}`).join(), s.stack.map(f => `${f.label}@${f.line}`).join(' < ')]); return 'continue'; });
     same('C4: a breakpoint in a function stops at each call, with the globals and the call stack',
       [r.stops, seen, cl.describeResult(P.driver.result(m, crom), r.start.editorLine, null, r.start.job).text],
-      [3, [[4, 'total int 0', 'sq()@4 < main()@10'], [4, 'total int 1', 'sq()@4 < main()@10'], [4, 'total int 5', 'sq()@4 < main()@10']], fin(14)]);
+      crom.scopeClose
+        ? [3, [[4, 'n int (param) 1,total int 0', 'sq()@4 < main()@10'], [4, 'n int (param) 2,total int 1', 'sq()@4 < main()@10'], [4, 'n int (param) 3,total int 5', 'sq()@4 < main()@10']], fin(14)]
+        : [3, [[4, 'total int 0', 'sq()@4 < main()@10'], [4, 'total int 1', 'sq()@4 < main()@10'], [4, 'total int 5', 'sq()@4 < main()@10']], fin(14)]);
     const steps = [];
     debugRun(prog, [8], s => { steps.push(s.line0 + 1); return steps.length < 8 ? 'step' : 'quit'; });
     {
@@ -1002,6 +1004,33 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     debugRun(g, [10], s => { gv.push(...s.vars.map(v => `${v.name}: ${v.type} = ${v.value.replace(/\$[0-9A-F]{4}/, '$addr')}`)); return 'continue'; });
     same('C4: globals of each type with their values', gv,
       ['name: char[8] = "LEAP"', 'half: float = 0.5', 'big: unsigned = 50000', 'arr: int[3] = {7, -8, 9}', 'p: struct (4 bytes) = at $addr', 'ptr: int * = $addr']);
+    if (crom.scopeClose) {
+      // Locals: parameters (a word, a float, a char), autos, a block-scope static, a char array,
+      // an inner block that shadows x; the innermost block around the PC decides what is shown.
+      const lp = ['int f(int a, float b, char c)', '{', '    int x = a + 1;', '    static int s = 7;', '    char buf[4];', '    buf[0] = c; buf[1] = 0;', '    {',
+        '        int x = 99;', '        int y = 5;', '        s = s + x + y;', '    }', '    return x + s;', '}', 'int main(void)', '{', '    int r;',
+        '    r = f(3, 2.5, \'Z\');', '    return r;', '}'].join('\n');
+      const lv = [];
+      const lr = debugRun(lp, [9, 11, 17], s => { lv.push([s.line0 + 1, s.vars.map(v => `${v.group}|${v.name}: ${v.type} = ${v.value}`)]); return 'continue'; });
+      const L = 'Locals of f()|', G = [];
+      same('C4: locals of each kind, the innermost block deciding (parameters, autos, static, shadowing)',
+        [lv, cl.describeResult(P.driver.result(m, crom), lr.start.editorLine, null, lr.start.job).text],
+        [[[10, [L + 'a: int (param) = 3', L + 'b: float (param) = 2.5', L + "c: char (param) = 90 'Z'", L + 's: static int = 7', L + 'buf: char[4] = "Z"',
+          L + 'x: int = 99', L + 'y: int = 5', ...G]],
+        [12, [L + 'a: int (param) = 3', L + 'b: float (param) = 2.5', L + "c: char (param) = 90 'Z'", L + 'x: int = 4', L + 's: static int = 111', L + 'buf: char[4] = "Z"', ...G]],
+        [18, ['Locals of main()|r: int = 115']]], fin(115)]);
+    }
+    if (crom.scopeClose) {
+      // A function whose code runs past its region ($C000-$DFFF) into the next: its block's range is split at
+      // CG_UNIT's jump, and a statement after the jump still has the locals (640 x 16 bytes of code).
+      const big = ['int f(int k)', '{', '    int x = 1;', ...Array.from({ length: 80 }, () => '    ' + 'x = x + 7; '.repeat(8).trimEnd()), '    return x + k;', '}',
+        'int main(void)', '{', '    return f(2) - 4000;', '}'].join('\n');
+      const bv = [];
+      const br = debugRun(big, [83], s => { bv.push([s.line0 + 1, s.vars.map(v => `${v.name}=${v.value}`).join(), s.stack.map(f => f.label).join(' < ')]); return 'continue'; });
+      same('C4: locals after the code moves on to the next region',
+        [bv, cl.describeResult(P.driver.result(m, crom), br.start.editorLine, null, br.start.job).text, A.breakPositions(m, 83).map(a => a >= 0xE000)],
+        [[[84, 'k=2,x=4481', 'f() < main()']], fin(483), [true]]);
+    }
     const deep = 'int main(void)\n{\n    float f = 1.0;\n    float z = 0.0;\n    f = f / z;\n    return 0;\n}';
     const dr = debugRun(deep, [], () => 'continue');
     same('C4: a run-time error names its statement\'s line (RT_ERRPC in the line table)',
@@ -1235,7 +1264,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
 console.log('\nSpeed test in three languages (src/lang/spin-demo.js)');
 {
   const { SPIN_DEMO } = await import(join(ROOT, 'src/lang/spin-demo.js'));
-  const FRAMES = { basic: 0x8175, forth: 0x80F4 };          // FRAMES in Leap 2.x's and Forth 2.0's .sym
+  const FRAMES = { basic: 0x8175, forth: 0x80F4, c: 0x5C75 }; // FRAMES in Leap 2.x's, Forth 2.0's and Leap-C 1.2.0's .sym (leapc_home.sym: FRAMES = $5C75)
   const shots = {}, notes = [];
   for (const id of ['basic', 'c', 'forth']) {
     const P = profileById(id);
@@ -1265,12 +1294,109 @@ console.log('\nSpeed test in three languages (src/lang/spin-demo.js)');
     const status = ended ? L.describeResult(P.driver.result(m, r, start.job), start.editorLine, null, start.job).text : 'did not end';
     if (lint.length || !/^(Finished|OK)/.test(status)) notes.push(`${id}: ${lint.length ? lint[0].message : status}`);
     if (counter && process.env.VERBOSE) console.log(`      (${id}: ${counter() - c0} frames from the start of the run to its end)`);
-    if (counter && !(counter() - c0 > 100 && ex.text.includes(String(FRAMES[id])))) notes.push(`${id}: the frame counter it reads (${FRAMES[id]}) did not count, or the program does not read it`);
+    // BASIC and Forth read the counter by address, so their text must contain it; Leap-C calls frames(), which reads the same cell
+    if (counter && !(counter() - c0 > 100 && (id === 'c' || ex.text.includes(String(FRAMES[id]))))) notes.push(`${id}: the frame counter it reads (${FRAMES[id]}) did not count, or the program does not read it`);
     shots[id] = [...Array.from({ length: (184 - 8) * 32 }, (_, i) => { const y = 8 + (i >> 5); return m.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (i & 31)); }),
       ...Array.from({ length: 22 * 32 }, (_, i) => m.bus.read(0x5820 + i))].join();
   }
   same('each version runs to its end with no error, timed by a counter that counts', notes, []);
   same('BASIC, C and Forth draw exactly the same picture in the same colours', [shots.basic === shots.c, shots.c === shots.forth, shots.c.split(',').slice(0, 5632).filter(v => v !== '0').length > 300], [true, true, true]);
+}
+
+// ── 11. The UDG and Draw tabs in three languages (src/lang/<id>/tool-code.js; stages C8 and F7) ──
+// The code each language's tool writes for one design is run through that profile's real Run
+// path on its own ROMs: the UDG table must hold the designed bytes, the printed characters must
+// show them, and the bitmap must be exactly the Bresenham picture the Draw tab previews. The
+// generated lines must fit the profile's lineLimit and pass its checker, and "Load from
+// program" must read the code back.
+console.log('\nUDG and Draw tools in three languages (src/lang/<id>/tool-code.js)');
+{
+  const bytes = new Uint8Array(21 * 8);
+  bytes.set([0x3C, 0x42, 0xA5, 0x81, 0xA5, 0x99, 0x42, 0x3C], 0);          // the manual's face (Leap-C example 13)
+  bytes.set([0x00, 0xFF, 0x22, 0x5C, 0x80, 0x01, 0x00, 0x7E], 2 * 8);      // a 0, a quote, a backslash, 0xFF: awkward bytes
+  bytes.set([1, 2, 4, 8, 16, 32, 64, 128], 20 * 8);                         // the last slot
+  const slots = [0, 2, 20];
+  const paths = [[[10, 30]], [[0, 8], [255, 183]], [[100, 150], [30, 170], [30, 100]], [[40, 60], [200, 60]]];
+  const expectBits = new Set();
+  for (const path of paths) {
+    if (path.length === 1) expectBits.add(path[0].join());
+    for (let i = 1; i < path.length; i++) for (const p of bresenham(...path[i - 1], ...path[i])) expectBits.add(p.join());
+  }
+  const out = {};
+  for (const id of ['basic', 'c', 'forth']) {
+    const P = profileById(id);
+    const dir = { basic: process.env.LEAP_ROMS, c: process.env.LEAPC_ROMS, forth: process.env.FORTH_ROMS }[id] ?? join(ROOT, 'tsrun/roms');
+    const h = new Uint8Array(readFileSync(join(dir, P.romFiles.home.split('/').pop())));
+    const x = new Uint8Array(readFileSync(join(dir, P.romFiles.exrom.split('/').pop())));
+    const r = P.knownRoms[await romPairHash(h, x)];
+    const L = await P.attach({ rom: r, romImages: { home: h, exrom: x }, fetchAsset: async p => new Uint8Array(readFileSync(join(ROOT, p))) });
+    const T = P.tools;
+    const udgText = T.udg.generate(bytes, slots, r.udgTable, r.udgCodeBase);
+    const drawText = T.draw.generate(paths);
+    const tooLong = [...udgText.split('\n'), ...drawText.split('\n')].filter(l => l.length > P.lineLimit);
+    const show = { basic: 'PRINT CHR$(144);CHR$(146);CHR$(164)', c: '    putchar(144);\n    putchar(146);\n    putchar(164);', forth: '144 EMIT 146 EMIT 164 EMIT' }[id];
+    const indent = t => t.split('\n').map(l => '    ' + l).join('\n');
+    const program = {
+      basic: `CLS\n${udgText}\n${drawText}\n${show}`,
+      c: `int main(void)\n{\n    cls();\n${indent(udgText)}\n${indent(drawText)}\n${show}\n    return 0;\n}`,
+      // Forth echoes every line it is sent onto the screen, so the drawing goes in a word, run after CLS.
+      forth: `${udgText}\n: PIC\n${drawText}\n;\nCLS PIC ${show}`,
+    }[id];
+    out[id] = { udgText, drawText };
+
+    const m = createMachine(new Uint8Array(8).fill(0x1F), new Uint8Array(2).fill(0xFF));
+    setHomeRom(m, h); setExRom(m, x); resetMachine(m);
+    const atW = () => m.cpu.pc >= r.keyWait && m.cpu.pc < r.keyWaitEnd && P.driver.safe(m, r);
+    run(m, atW, 600);
+    const lint = L.lint(program);
+    const start = L.startRun(program);
+    P.driver.inject(m, r, start.job);
+    let ended = false;
+    for (;;) {
+      run(m, () => false, 1);
+      if (!run(m, atW, 6000)) break;
+      if (P.driver.runState(m, r) === 'ended' && P.driver.next?.(m, r, start.job)) continue;
+      ended = P.driver.runState(m, r) === 'ended';
+      break;
+    }
+    const status = ended ? L.describeResult(P.driver.result(m, r, start.job), start.editorLine, null, start.job).text : 'did not end';
+    const table = Array.from({ length: 168 }, (_, i) => m.bus.read(r.udgTable + i));
+    const pix = (px, py) => (m.bus.read(0x4000 | ((py & 0xC0) << 5) | ((py & 7) << 8) | ((py & 0x38) << 2) | (px >> 3)) >> (7 - (px & 7))) & 1;
+    // The three characters were printed side by side at the top left: read the 8x8 cells back as bytes.
+    const shown = [0, 1, 2].flatMap(cell => Array.from({ length: 8 }, (_, row) => Array.from({ length: 8 }, (_, col) => pix(cell * 8 + col, row)).reduce((a, b) => a * 2 + b)));
+    const got = new Set();
+    for (let py = 8; py < 184; py++) for (let px = 0; px < 256; px++) if (pix(px, py)) got.add(`${px},${py}`);
+    const missing = [...expectBits].filter(k => !got.has(k)).length, extra = [...got].filter(k => !expectBits.has(k)).length;
+    const back = T.udg.read(program, r.udgTable, 168);
+    const want = new Map();
+    for (const s of slots) for (let i = 0; i < 8; i++) want.set(s * 8 + i, bytes[s * 8 + i]);
+
+    same(`${id}: the generated lines fit the line limit (${P.lineLimit}), and the program checks clean`, [tooLong, lint.map(d => d.message)], [[], []]);
+    same(`${id}: the program runs to its end with no error`, [ended, /^(Finished|OK)/.test(status)], [true, true]);
+    same(`${id}: the UDG table holds the designed bytes (slots 0, 2, 20; the others stay blank)`,
+      table.map((v, i) => (slots.includes(i >> 3) ? v === bytes[i] : v === 0) ? 0 : 1).reduce((a, b) => a + b), 0);
+    same(`${id}: printing the three characters shows their pixels`, shown, slots.flatMap(s => [...bytes.subarray(s * 8, s * 8 + 8)]));
+    same(`${id}: the drawn picture is exactly the Draw tab's Bresenham preview (missing, extra pixels)`, [missing, extra, expectBits.size > 500], [0, 0, true]);
+    same(`${id}: Load from program reads the code back`, [...back].sort((a, b) => a[0] - b[0]), [...want].sort((a, b) => a[0] - b[0]));
+  }
+  same('Leap-C: the code is the manual\'s memcpy through a pointer, plot and draw',
+    [out.c.udgText.split('\n').slice(0, 2), out.c.drawText.split('\n').slice(0, 2)],
+    [['// character 144: putchar(144);', 'memcpy((char *)0xF180, "\\x3C\\x42\\xA5\\x81\\xA5\\x99\\x42\\x3C", 8);'], ['plot(10, 30);', 'draw(0, 8, 255, 183);']]);
+  same('Forth: the code is UDG and C! stores, PLOT and LINE',
+    [out.forth.udgText.split('\n').slice(0, 3), out.forth.drawText.split('\n').slice(0, 2)],
+    [['\\ character 144: 144 EMIT', '60 0 UDG C!  66 0 UDG 1 + C!  165 0 UDG 2 + C!  129 0 UDG 3 + C!', '165 0 UDG 4 + C!  153 0 UDG 5 + C!  66 0 UDG 6 + C!  60 0 UDG 7 + C!'],
+      ['10 30 PLOT', '0 8 255 183 LINE']]);
+  {
+    // Leap-C's Load from program also reads the manual's own idiom (example 13: a global char array and memcpy).
+    const c = profileById('c').tools.udg;
+    const manual = 'char face[8] = { 0x3C, 0x42, 0xA5, 0x81, 0xA5, 0x99, 0x42, 0x3C };\nint main(void)\n{\n    cls();\n    memcpy((char *)0xF180, face, 8);\n    putchar(144);\n    return 0;\n}';
+    same('Leap-C: Load from program reads the manual\'s example 13', [...c.read(manual, 0xF180, 168).values()], [0x3C, 0x42, 0xA5, 0x81, 0xA5, 0x99, 0x42, 0x3C]);
+    same('Leap-C: Load from program ignores comments and other addresses',
+      [...c.read('// memcpy((char *)0xF180, "\\x01", 1);\nmemcpy((char *)0xF188, "\\x07\\xFF", 2);\nmemcpy((char *)0xE000, "\\x09", 1);', 0xF180, 168)], [[8, 7], [9, 255]]);
+    const f = profileById('forth').tools.udg;
+    same('Forth: Load from program ignores comments and strings, and takes slot and row',
+      [...f.read('\\ 5 0 UDG C!\n( 6 0 UDG C! ) 7 1 UDG 3 + C! ." 9 0 UDG C!"\n255 20 UDG 7 + C!', 0xF180, 168)], [[11, 7], [167, 255]]);
+  }
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');

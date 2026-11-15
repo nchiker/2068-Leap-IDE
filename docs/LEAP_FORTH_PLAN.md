@@ -15,7 +15,7 @@ describes v2.0 where it names versions and addresses.) Earlier status, updated
 2026-11-01. **F0, F1, F2, F3, F4, F5, F6 and F8 are done** (F0
 to F2 `b9526ce`, Send, Ctrl+Enter, after it; F3 `a3869d4`; Import session
 `89a6d48`, the last part of F1; F5 `6103f66`; F4 `054198d`; F8 `f7a5d1d`; F6
-`50fb417`). Open: F7 and the optional watches of F1 (and the optional LIB
+`50fb417`). F7 (tools) is done. Open: the optional watches of F1 (and the optional LIB
 tape). Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Forth project has answered the IDE's questions
@@ -544,7 +544,9 @@ The plan as first written:
   them, so each test means the same. `\ keys:`, `\ break:` and `\ draws`
   lines are directives the IDE can ignore or implement.
 
-### F7 — Tools (optional)
+### F7 — Tools
+
+**Done** (branch `ide-tools-c-forth`; CLAUDE.md Phase 7, `docs/LEAP_FORTH_REFERENCE.md` "Tools (F7)"). Built as `src/lang/forth/tool-code.js` behind the profile's `tools {udg, draw}`: `byte n UDG [row +] C!` stores (`C!` checked in the manual: `( c addr -- )`, `UDG` leaves the slot's address) and `x y PLOT` / `x0 y0 x1 y1 LINE` (y from the top; `LINE` is exactly Bresenham in v2.0.1, tested). No `CIRCLE` is generated (the Draw tab has no circle tool). Run echoes each line over a picture drawn at top level, so the Draw tab's hint says to put the lines in a word and run it after `CLS`.
 
 - **Draw tab:** generate Forth: `x y PLOT`, `x1 y1 x2 y2 LINE`,
   `xc yc r CIRCLE`; y from the top, 0-191; x 0-255. Every point can be
@@ -739,7 +741,7 @@ project's "as built"); the build is hosted in the Forth repository as
 
 ## Still open
 
-For the IDE: F7 (tools, optional), the optional watches of F1 and the optional
+For the IDE: the optional watches of F1 and the optional
 LIB tape; the Forth cartridge has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and
 real hardware not tried). Nothing is open with the Forth project (the `2 STICK` note was answered by
 the v2.0.1 release, 2026-11-02; see the status at the top): all seven questions are answered

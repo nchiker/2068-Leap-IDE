@@ -79,7 +79,7 @@ to pick it up.
 
 
 All phases are done, and the IDE runs three languages: Leap V2 BASIC (Leap
-2.1.1-emu.1; 2.1.0-emu.1 and 2.0.2-emu.1 stay in the ROM table), Leap-Forth
+2.1.2-emu.1; 2.1.1-emu.1, 2.1.0-emu.1 and 2.0.2-emu.1 stay in the ROM table), Leap-Forth
 (2068-Forth v2.0.1; v2.0 stays) and Leap-C (1.2.0, with its own cartridge
 build; 1.0.0 and beta.2 stay), chosen in the toolbar's language selector.
 Nothing is on hold.
@@ -88,7 +88,7 @@ is implemented.
 
 | Done | |
 |---|---|
-| Phase 1 | Runs programs: RAM injection into the real Leap 2.1.1-emu.1 ROMs in TSRun (2.1.0 and 2.0.2 still known) |
+| Phase 1 | Runs programs: RAM injection into the real Leap 2.1.2-emu.1 ROMs in TSRun (2.1.1, 2.1.0 and 2.0.2 still known) |
 | Phase 2 | CodeMirror 6 editor, Leap syntax, autocomplete, hover help, auto-caps |
 | Phase 3 | Debugger: breakpoints, Step/Pause, variables, call stack, registers, memory |
 | Phase 4 | PC keyboard mapping (`"` is `"`), keys reach the TS2068 only while a program runs |
@@ -177,12 +177,11 @@ the plan).
 (`f7a5d1d`), and Leap-C C1 to C3 (`d0e437b`), the move to 1.0.0 (`ac0d00f`; the
 TSRun submodule was then at `9f9bbc5`; now `c52f272`, see the 2026-11-02 row), C5 (`94700cf`), C6 (`4f30b82`), C7
 (`1050d7b`), C4 (`0b419d3`) and C9 (`4798b64`) are done; see CLAUDE.md
-"Leap-Forth", "Leap-C" and "Debugger". F6 (`50fb417`) is done too, so Forth lacks only the optional F7 tools, the
-optional LIB tape and the optional watches. Nothing is open with the Leap-C
-project (all notes answered, see Traps), and Leap-C lacks only optional things: locals in the debugger,
+"Leap-Forth", "Leap-C" and "Debugger". F6 (`50fb417`) is done too, so Forth lacks only the optional LIB tape and the optional watches. Nothing is open with the Leap-C
+project (all notes answered, see Traps), and Leap-C lacks only optional things (its debugger shows locals since 2026-11-15):
 driving the tape example in the tests (the key-reading ones are driven since
-`5cfffb8`), running the C examples from cartridges against the manual, and the
-C8 tools. Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build
+`5cfffb8`), running the C examples from cartridges against the manual (the C8 and F7
+tools, the UDG and Draw tabs for Leap-C and Forth, are done; CLAUDE.md Phase 7). Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build
 (released 2026-11-02 UTC, tag `v1.1.0`, commit `f8db836`; the Leap-C project's
 description is `docs/requests/LEAP_C_CARTRIDGE.md`, read only: other people's
 file); the 1.0.0 ROM entry used 1.1.0's cartridge because the ROMs are
@@ -222,7 +221,7 @@ file list, the emulator's `cartridgeOnly` / `runCartridge` change and the asset-
 
 ## Owner decisions (keep them)
 
-- Leap is V2 (2.1.1-emu.1 now; 2.1.0-emu.1 and 2.0.2-emu.1 are still in the ROM table). V1 is irrelevant.
+- Leap is V2 (2.1.2-emu.1 now; 2.1.1-emu.1, 2.1.0-emu.1 and 2.0.2-emu.1 are still in the ROM table). V1 is irrelevant.
 - **Typing never reaches Leap's own ROM editor.** All editing is in CodeMirror;
   keys go to the TS2068 only while an injected program runs (`INPUT`, `INKEY$`).
 - Keys are mapped as a PC keyboard is labelled, not as the TS2068 keyboard is.
@@ -280,10 +279,10 @@ this machine has Node 24.
   differ from the releases (e.g. `V2_SAVE`). `~/2068-Leap` is the owner's working
   clone (its branch and local edits change), so build a release in a separate
   detached worktree, not by checking out the tag in place:
-  `git -C ~/2068-Leap worktree add --detach <dir> v2.1.1-emu.1`, then
+  `git -C ~/2068-Leap worktree add --detach <dir> v2.1.2-emu.1`, then
   `make build` in `<dir>` (`tools/leap-rom-entry.py` takes that directory and
-  the version). The 2.1.0-emu.1 and 2.1.1-emu.1 builds were byte-identical to
-  the release zips; the 2.1.1 release bundle has no `.sym` files, which is why
+  the version). The 2.1.0-emu.1, 2.1.1-emu.1 and 2.1.2-emu.1 builds were
+  byte-identical to the release zips; the 2.1.1 release bundle has no `.sym` files, which is why
   its entry came from a build. Remove the worktree afterwards.
 - **VM dispatch changed in 2.1.** Handlers end with `jp (iy)` to `VM_RUN.next`
   (the opcode fetch); only taken jumps, calls and waits pass `VM_RUN.loop`, now
@@ -298,7 +297,7 @@ this machine has Node 24.
   built with) differs, and export refuses when `romIdentity(loaded ROMs)` is not
   `cartIdentity(cartridge HOME)`. A release without a `cartridgeDir` entry
   gives "There is no cartridge build for Leap <version>" (2.0.2 has none).
-  Identities: 2.1.0-emu.1 `$E0A5`, 2.1.1-emu.1 `$4E00` (the IDE's
+  Identities: 2.1.0-emu.1 `$E0A5`, 2.1.1-emu.1 `$4E00`, 2.1.2-emu.1 `$04B2` (the IDE's
   `romIdentity` = `cartIdentity`, checked). The Leap project's answer file
   (`docs/requests/LEAP_V2_ANSWERS.md`) quotes "identity CRC $2A70 (was
   $0AEF)": that is a different CRC of theirs, not the IDE's cartridge identity;
@@ -409,9 +408,12 @@ this machine has Node 24.
 - **Forth's `FRAMES` is `$80F4`, 33012 decimal; Leap's is `$8175`, 33141.**
   The speed test reads them (`FRAMES` in Forth, `PEEK` of 33141 in BASIC,
   `frames()` in Leap-C). Do not mix the two addresses up; each is the ROM
-  table's counter of that ROM. Leap's did not move in 2.1.1 (per the release
-  notes; the BASIC program's own printed figure was not read again on 2.1.1).
-  A new release may move them.
+  table's counter of that ROM. Leap's did not move in 2.1.1 or 2.1.2 (the
+  counter counts at `$8175` in both, checked by the speed test). Leap-C's
+  `FRAMES` is `$5C75` in 1.2.0 (`leapc_home.sym`; `FRAMES` in
+  `tests/rom-checks.mjs` section 10 has it). A new release may move them. The
+  figures each program prints, 2026-11-15: BASIC 675 frames (Leap 2.1.1 and
+  2.1.2), Leap-C 423 (1.2.0), Forth 522 (2.0.1); see CLAUDE.md "Speed test".
 - **`STICK` (historical, fixed 2026-11-02).** In Forth 2.0 `STICK_READ` read
   AY port A without making it an input and the mixer was left with port A an
   output, so TSRun returned the output latch (`2 STICK .` gave 1, the manual 0;
@@ -483,7 +485,7 @@ this machine has Node 24.
 |---|---|---|
 | This IDE | `~/Projects/Leap-IDE`, `nchiker/2068-Leap-IDE` | local branch `master` tracks `origin/main` |
 | TSRun fork | submodule `tsrun/`, `nchiker/TSRun` | pinned at `9893b46` (Leap V2 2.1.2-emu.1 ROMs, 2026-11-06; before that `c52f272`, the 2.1.1 ROMs; pushed 2026-11-02, on top of `34b0794`, the Leap-C 1.2.0 ROMs, and `02e5325`, the Forth v2.0.1 ROMs, both pushed by the ROM projects; below them `9f9bbc5`, Leap-C 1.0.0, `11731e1`, the Forth v2.0 ROMs, and `016787f`, the 2.1.0-emu.1 Leap ROMs, on top of sound worklet fix `f65de5a` + tape fix `4db1f1e`) |
-| Leap | `~/2068-Leap`, `nchiker/2068-Leap` | release tag `v2.1.1-emu.1` (merge commit `4891681`, 2026-11-02; earlier `v2.1.0-emu.1`, commit `c005159`); the clone may be on any branch, possibly with local edits: build releases in a worktree |
-| Cartridge build | `cartridge-build/` in this repo | Source of `cartridge/<version>/`: `leap.patch` (two commits) on the `v2.1.1-emu.1` tag, applied by `setup.sh` into `leap/` (ignored). Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs`. `~/Projects/Leap-Cartridge` was the original working copy |
+| Leap | `~/2068-Leap`, `nchiker/2068-Leap` | release tag `v2.1.2-emu.1` (commit `1a4a861`, published 2026-11-06; earlier `v2.1.1-emu.1`, merge commit `4891681`, 2026-11-02, and `v2.1.0-emu.1`, commit `c005159`); the clone may be on any branch, possibly with local edits: build releases in a worktree |
+| Cartridge build | `cartridge-build/` in this repo | Source of `cartridge/<version>/`: `leap.patch` (two commits) on the `v2.1.2-emu.1` tag, applied by `setup.sh` into `leap/` (ignored). Status: `Docs/CARTRIDGE_STATUS.md`; CLI: `tools/leap2cart.mjs`. `~/Projects/Leap-Cartridge` was the original working copy |
 | 2068-Forth | `~/2068-forth`, `nchiker/2068-Leap-Forth` | release `v2.0.1` (merge `0dabe74`, 2026-11-02; the `STICK` fix); word data and examples generated from it; ROM entry built from the unpacked release zip; earlier `v2.0` (commit `50170f2`) stays in the table |
 | 2068-Leap-C | `~/2068-Leap-C`, `nchiker/2068-Leap-C` | release `v1.2.0` (commit `e5cc932`, 2026-11-02): the current entry, from the release's emulator pack with `cartridge/c/1.2.0/`; keyword, error and example data from the tag, `libs/c/1.2.0/`. Earlier `v1.0.0` (commit `83e6e21`, 2026-11-01; `libs/c/1.0.0/`) and beta.2 entries kept. Release `v1.1.0` (commit `f8db836`, 2026-11-02 UTC) added the runtime cartridge (`leapc-1.1.0-cartridge.zip`, `make cart`); its ROMs are byte-identical to 1.0.0's, so the IDE kept the 1.0.0 entry and took the cartridge files into `cartridge/c/1.1.0/` (`docs/requests/LEAP_C_CARTRIDGE.md` is the Leap-C project's description) |
