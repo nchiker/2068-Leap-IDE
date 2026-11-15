@@ -84,6 +84,8 @@ corner: walk up to it), open it, and take the **treasure** (the goblet) in the v
   the title text a line a tick.
 * **Sound**: eight effects (`shot thud kill pick door hurt win lose`); the border flashes white on a shot, red when hurt.
 * **Inputs** read `STICK(1)` and `KEYDOWN` together, as the other examples do.
+* **One black** (Studio completion K4): every black-paper area is BRIGHT 0 (TSRun draws BRIGHT 1 on black paper as dark grey, Fuse and ZEsarUX as black): the tiles of `vl_tiles`, the text of the HUD and the title, and the 3D view's default `BRIGHT 0`. The bright inks became their plain versions. In `vl_tiles` every tile but the blank one is marked `fg` (sprites never pass over it: the panel is outside the 3D window and the title's sprites walk the blank corridor), so the asset check finds one background attribute under the sprites (E5).
+* **Timers** (G3): the play scene's countdowns are `TIMER inv, cool, bt, mt` (immunity 12 ticks, 6 ticks between shots, the border flash, the bottom message 45 ticks), and the demo's length is `TIMER left`; the runtime counts them down before `FRAME`. `bt` and `mt` end with an action, done in `EFFECTS` when they read 1 (the last tick they are on). The play is tick for tick the old one's (checked against the old game on both recorded runs).
 
 ## Measured numbers (TSRun, real v4 runtime build, real frame interrupt, no memory contention)
 

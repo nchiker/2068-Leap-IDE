@@ -74,7 +74,7 @@ REM ---- game-level state: what the scenes share, and what a game keeps from one
 REM st: 1 playing, 2 treasure found, 3 dead (0 before the first game).   hud: bit 0 health bar, 1 health number, 2 score, 3 gems, 4 key, 5 print the message (left half), 7 (right half), 6 clear it.
 REM fc counts every tick since the start, whatever the scene (the sparkle, the wraiths' floating and which half of them is looked at all go by it); k3 counts 0 1 2 0 1 2.
 DIM st, tt, fc, k3, js, lf, rg, fw, bk, fire, pfire, best
-DIM px, py, pa, hp, score, keys, gems, kills, inv, cool, bt, msg, mt, hud
+DIM px, py, pa, hp, score, keys, gems, kills, msg, hud
 DIM ka, kv, tv
 DIM exs(4) = 1920, 7040, 4224, 6528, 6528
 DIM eys(4) = 640, 1920, 2176, 4992, 7808
@@ -104,7 +104,7 @@ ENDP
 REM The text of the panel, a piece at a time (stages 0 to 7; the demo puts one up a tick, the game's INIT all of those it keeps): two strips of the panel cleared for the messages, the
 REM name, the tagline and the prompt (the demo only), the keys, and the labels of the HUD.
 PROC TSTAGE(s):
-  INK 7 : PAPER 0 : BRIGHT 1
+  INK 7 : PAPER 0 : BRIGHT 0
   SELECT CASE s
     CASE 0
       FILLC 0, 20, 32, 1 = 32
@@ -131,7 +131,7 @@ REM One change a tick (a printed number is 1,000 to 2,500 T and the cells it dir
 PROC HUDTICK():
   LOCAL done
   IF hud <> 0 THEN
-    INK 6 : PAPER 0 : BRIGHT 1
+    INK 6 : PAPER 0 : BRIGHT 0
     done = 0
     IF BAND(hud, 32) <> 0 THEN
       CALL MSGPRINT(0)
@@ -255,7 +255,7 @@ SCENE title NOVIEW
   ENDP
 
   PROC TITLETEXT(s):
-    PAPER 0 : BRIGHT 1
+    PAPER 0 : BRIGHT 0
     SELECT CASE s
       CASE 0
         INK 5 : PRINT AT 8, 1; "FIND THE KEY. OPEN THE VAULT.";
@@ -291,16 +291,18 @@ ENDSCENE
 
 REM ---------------------------------------------------------------------------------------------------------------- the demo (the 3D view back on)
 REM The picture turns slowly on the spot in the colonnade, where a wraith sleeps among the pillars (what the title used to be).  The text goes up a piece a tick (DTI counts the stages).
+REM LEFT is a TIMER: the demo lasts DEMOLEN ticks and ends when it has run out.
 REM WORLD level puts the floor plan back, so that a demo after a game does not show the door open.
 SCENE demo
-  DIM tm, dti
+  DIM dti
+  TIMER left
 
   PROC INIT():
     BORDER 0
     WORLD level
-    tm = 0 : dti = 0
+    left = DEMOLEN : dti = 0
     pfire = fire
-    hp = 100 : score = 0 : keys = 0 : gems = 0 : msg = 0 : mt = 0 : hud = 31
+    hp = 100 : score = 0 : keys = 0 : gems = 0 : msg = 0 : hud = 31
     px = TVX : py = TVY : pa = 0
     SHOW wr(2) AT exs(2), eys(2) FRAME 0
   ENDP
@@ -309,7 +311,6 @@ SCENE demo
     LOCAL go
     CALL READIN()
     CALL COUNT()
-    tm = tm + 1
     pa = BAND(pa + 2, 255)
     VIEW px, py, pa
     IF BAND(fc, 3) = 0 THEN SHOW wr(2) AT exs(2), eys(2) FRAME BAND(SHR(fc, 2), 1) ENDIF
@@ -322,13 +323,16 @@ SCENE demo
     go = fire AND (NOT pfire)
     pfire = fire
     IF go THEN ENTER play ENDIF
-    IF tm >= DEMOLEN THEN ENTER title ENDIF
+    IF left = 0 THEN ENTER title ENDIF
   ENDP
 ENDSCENE
 
 REM ---------------------------------------------------------------------------------------------------------------- play
 SCENE play
   DIM ei
+  REM The play's countdowns are TIMERs (the runtime counts them down to 0 once a tick before FRAME; a scene's timers start at 0 on every entry): INV the immunity after a touch (12 ticks), COOL
+  REM the ticks between two shots (6), BT how long the border keeps a flash colour (1 or 3) and MT how long a bottom message stays (45).  A timer set to n reads n - 1 in the next tick and 0 n ticks later.
+  TIMER inv, cool, bt, mt
 
   REM A new game: the floor plan is loaded again (every wall and the door as drawn), the pose, health, score and every thing in the maze go back to the start, the HUD is up before the
   REM first tick (the reset of ENTER cleared the screen and loaded the panel; the stages are the demo's, less the tagline and the prompt, and the tagline's row is blank) and the view shows the start at once.
@@ -337,8 +341,8 @@ SCENE play
     NOMUSIC
     WORLD level
     BORDER 0
-    st = 1 : tt = 0 : bt = 0
-    hp = 100 : score = 0 : keys = 0 : gems = 0 : kills = 0 : inv = 0 : cool = 0 : msg = 0 : mt = 0
+    st = 1 : tt = 0
+    hp = 100 : score = 0 : keys = 0 : gems = 0 : kills = 0 : msg = 0
     hud = 31
     pa = SPA
     CALL RESETWORLD()
@@ -668,19 +672,12 @@ SCENE play
     ENDIF
   ENDP
 
-  REM ---------------------------------------------------------------------------------------------------------------- timers, gems that sparkle
+  REM ---------------------------------------------------------------------------------------------------------------- the end of the timers, gems that sparkle
   PROC EFFECTS():
     LOCAL k
-    IF inv > 0 THEN inv = inv - 1 ENDIF
-    IF cool > 0 THEN cool = cool - 1 ENDIF
-    IF bt > 0 THEN
-      bt = bt - 1
-      IF bt = 0 THEN BORDER 0 ENDIF
-    ENDIF
-    IF mt > 0 THEN
-      mt = mt - 1
-      IF mt = 0 THEN hud = BOR(BAND(hud, BNOT(160)), 64) ENDIF
-    ENDIF
+    REM the two timers that end with an action: 1 is the last tick they are on (the runtime has already counted them down this tick)
+    IF bt = 1 THEN BORDER 0 ENDIF
+    IF mt = 1 THEN hud = BOR(BAND(hud, BNOT(160)), 64) ENDIF
     REM one gem (or the treasure) a tick takes its sparkle frame
     k = BAND(fc, 7)
     IF k < NGM THEN
@@ -721,7 +718,7 @@ SCENE play
     CALL HUDTICK()
     VIEW px, py, pa
     IF hud = 0 THEN
-      INK 7 : PAPER 0 : BRIGHT 1
+      INK 7 : PAPER 0 : BRIGHT 0
       SELECT CASE ei
         CASE 0
           FILLC 0, 20, 32, 1 = 32

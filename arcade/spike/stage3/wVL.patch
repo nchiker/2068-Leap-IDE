@@ -1,0 +1,3226 @@
+diff --git a/arcade/examples/vaults.arc b/arcade/examples/vaults.arc
+index bff45c7..9f3ac4f 100644
+--- a/arcade/examples/vaults.arc
++++ b/arcade/examples/vaults.arc
+@@ -74,7 +74,7 @@ REM ---- game-level state: what the scenes share, and what a game keeps from one
+ REM st: 1 playing, 2 treasure found, 3 dead (0 before the first game).   hud: bit 0 health bar, 1 health number, 2 score, 3 gems, 4 key, 5 print the message (left half), 7 (right half), 6 clear it.
+ REM fc counts every tick since the start, whatever the scene (the sparkle, the wraiths' floating and which half of them is looked at all go by it); k3 counts 0 1 2 0 1 2.
+ DIM st, tt, fc, k3, js, lf, rg, fw, bk, fire, pfire, best
+-DIM px, py, pa, hp, score, keys, gems, kills, inv, cool, bt, msg, mt, hud
++DIM px, py, pa, hp, score, keys, gems, kills, msg, hud
+ DIM ka, kv, tv
+ DIM exs(4) = 1920, 7040, 4224, 6528, 6528
+ DIM eys(4) = 640, 1920, 2176, 4992, 7808
+@@ -104,7 +104,7 @@ ENDP
+ REM The text of the panel, a piece at a time (stages 0 to 7; the demo puts one up a tick, the game's INIT all of those it keeps): two strips of the panel cleared for the messages, the
+ REM name, the tagline and the prompt (the demo only), the keys, and the labels of the HUD.
+ PROC TSTAGE(s):
+-  INK 7 : PAPER 0 : BRIGHT 1
++  INK 7 : PAPER 0 : BRIGHT 0
+   SELECT CASE s
+     CASE 0
+       FILLC 0, 20, 32, 1 = 32
+@@ -131,7 +131,7 @@ REM One change a tick (a printed number is 1,000 to 2,500 T and the cells it dir
+ PROC HUDTICK():
+   LOCAL done
+   IF hud <> 0 THEN
+-    INK 6 : PAPER 0 : BRIGHT 1
++    INK 6 : PAPER 0 : BRIGHT 0
+     done = 0
+     IF BAND(hud, 32) <> 0 THEN
+       CALL MSGPRINT(0)
+@@ -255,7 +255,7 @@ SCENE title NOVIEW
+   ENDP
+ 
+   PROC TITLETEXT(s):
+-    PAPER 0 : BRIGHT 1
++    PAPER 0 : BRIGHT 0
+     SELECT CASE s
+       CASE 0
+         INK 5 : PRINT AT 8, 1; "FIND THE KEY. OPEN THE VAULT.";
+@@ -291,16 +291,18 @@ ENDSCENE
+ 
+ REM ---------------------------------------------------------------------------------------------------------------- the demo (the 3D view back on)
+ REM The picture turns slowly on the spot in the colonnade, where a wraith sleeps among the pillars (what the title used to be).  The text goes up a piece a tick (DTI counts the stages).
++REM LEFT is a TIMER: the demo lasts DEMOLEN ticks and ends when it has run out.
+ REM WORLD level puts the floor plan back, so that a demo after a game does not show the door open.
+ SCENE demo
+-  DIM tm, dti
++  DIM dti
++  TIMER left
+ 
+   PROC INIT():
+     BORDER 0
+     WORLD level
+-    tm = 0 : dti = 0
++    left = DEMOLEN : dti = 0
+     pfire = fire
+-    hp = 100 : score = 0 : keys = 0 : gems = 0 : msg = 0 : mt = 0 : hud = 31
++    hp = 100 : score = 0 : keys = 0 : gems = 0 : msg = 0 : hud = 31
+     px = TVX : py = TVY : pa = 0
+     SHOW wr(2) AT exs(2), eys(2) FRAME 0
+   ENDP
+@@ -309,7 +311,6 @@ SCENE demo
+     LOCAL go
+     CALL READIN()
+     CALL COUNT()
+-    tm = tm + 1
+     pa = BAND(pa + 2, 255)
+     VIEW px, py, pa
+     IF BAND(fc, 3) = 0 THEN SHOW wr(2) AT exs(2), eys(2) FRAME BAND(SHR(fc, 2), 1) ENDIF
+@@ -322,13 +323,16 @@ SCENE demo
+     go = fire AND (NOT pfire)
+     pfire = fire
+     IF go THEN ENTER play ENDIF
+-    IF tm >= DEMOLEN THEN ENTER title ENDIF
++    IF left = 0 THEN ENTER title ENDIF
+   ENDP
+ ENDSCENE
+ 
+ REM ---------------------------------------------------------------------------------------------------------------- play
+ SCENE play
+   DIM ei
++  REM The play's countdowns are TIMERs (the runtime counts them down to 0 once a tick before FRAME; a scene's timers start at 0 on every entry): INV the immunity after a touch (12 ticks), COOL
++  REM the ticks between two shots (6), BT how long the border keeps a flash colour (1 or 3) and MT how long a bottom message stays (45).  A timer set to n reads n - 1 in the next tick and 0 n ticks later.
++  TIMER inv, cool, bt, mt
+ 
+   REM A new game: the floor plan is loaded again (every wall and the door as drawn), the pose, health, score and every thing in the maze go back to the start, the HUD is up before the
+   REM first tick (the reset of ENTER cleared the screen and loaded the panel; the stages are the demo's, less the tagline and the prompt, and the tagline's row is blank) and the view shows the start at once.
+@@ -337,8 +341,8 @@ SCENE play
+     NOMUSIC
+     WORLD level
+     BORDER 0
+-    st = 1 : tt = 0 : bt = 0
+-    hp = 100 : score = 0 : keys = 0 : gems = 0 : kills = 0 : inv = 0 : cool = 0 : msg = 0 : mt = 0
++    st = 1 : tt = 0
++    hp = 100 : score = 0 : keys = 0 : gems = 0 : kills = 0 : msg = 0
+     hud = 31
+     pa = SPA
+     CALL RESETWORLD()
+@@ -668,19 +672,12 @@ SCENE play
+     ENDIF
+   ENDP
+ 
+-  REM ---------------------------------------------------------------------------------------------------------------- timers, gems that sparkle
++  REM ---------------------------------------------------------------------------------------------------------------- the end of the timers, gems that sparkle
+   PROC EFFECTS():
+     LOCAL k
+-    IF inv > 0 THEN inv = inv - 1 ENDIF
+-    IF cool > 0 THEN cool = cool - 1 ENDIF
+-    IF bt > 0 THEN
+-      bt = bt - 1
+-      IF bt = 0 THEN BORDER 0 ENDIF
+-    ENDIF
+-    IF mt > 0 THEN
+-      mt = mt - 1
+-      IF mt = 0 THEN hud = BOR(BAND(hud, BNOT(160)), 64) ENDIF
+-    ENDIF
++    REM the two timers that end with an action: 1 is the last tick they are on (the runtime has already counted them down this tick)
++    IF bt = 1 THEN BORDER 0 ENDIF
++    IF mt = 1 THEN hud = BOR(BAND(hud, BNOT(160)), 64) ENDIF
+     REM one gem (or the treasure) a tick takes its sparkle frame
+     k = BAND(fc, 7)
+     IF k < NGM THEN
+@@ -721,7 +718,7 @@ SCENE play
+     CALL HUDTICK()
+     VIEW px, py, pa
+     IF hud = 0 THEN
+-      INK 7 : PAPER 0 : BRIGHT 1
++      INK 7 : PAPER 0 : BRIGHT 0
+       SELECT CASE ei
+         CASE 0
+           FILLC 0, 20, 32, 1 = 32
+diff --git a/arcade/examples/vaults.assets.gen.mjs b/arcade/examples/vaults.assets.gen.mjs
+index 77c846c..826d383 100644
+--- a/arcade/examples/vaults.assets.gen.mjs
++++ b/arcade/examples/vaults.assets.gen.mjs
+@@ -119,29 +119,29 @@ const GOBLET_TILES = {
+   tr: GOB_ROWS.slice(0, 8).map((r) => r.slice(8)), bl: GOB_ROWS.slice(8).map((r) => r.slice(0, 8)), br: GOB_ROWS.slice(8).map((r) => r.slice(8)),
+ };
+ export const TILES = [
+-  /*  0 blank black */ tile(BLANK, 7, 0, 1),
+-  /*  1 panel: a sparse dark-blue dot pattern, the stone of the walls around the window */ tile(['........', '..#.....', '........', '......#.', '........', '.#......', '........', '....#...'], 1, 0, 1),
+-  /*  2 bezel: brass bricks round the window (BRIGHT 1 like every black-paper tile: bright black and plain black differ on some displays) */ tile(['########', '#.......', '#.......', '########', '...#....', '...#....', '########', '.......#'], 6, 0, 1),
+-  /*  3 bar, full */ tile(['........', '########', '########', '########', '########', '########', '########', '........'], 2, 0, 1),
+-  /*  4 bar, half */ tile(['........', '####....', '####....', '####....', '####....', '####....', '####....', '........'], 2, 0, 1),
+-  /*  5 bar, empty: a dark outline */ tile(['........', '########', '#......#', '#......#', '#......#', '#......#', '########', '........'], 1, 0, 1),
+-  /*  6 key icon */ tile(['..####..', '.#....#.', '.#....#.', '..####..', '...##...', '...###..', '...##...', '...###..'], 6, 0, 1),
+-  /*  7 key slot, empty */ tile(['........', '........', '........', '..#..#..', '........', '........', '..#..#..', '........'], 1, 0, 1),
+-  /*  8 gem icon */ tile(['........', '..####..', '.######.', '########', '.######.', '..####..', '...##...', '........'], 5, 0, 1),
+-  /*  9 gem slot, empty */ tile(['........', '........', '........', '...##...', '........', '........', '........', '........'], 1, 0, 1),
++  /*  0 blank black */ tile(BLANK, 7, 0, 0),
++  /*  1 panel: a sparse dark-blue dot pattern, the stone of the walls around the window */ tile(['........', '..#.....', '........', '......#.', '........', '.#......', '........', '....#...'], 1, 0, 0),
++  /*  2 bezel: brass bricks round the window (BRIGHT 0 like every black-paper tile: bright black and plain black differ on some displays) */ tile(['########', '#.......', '#.......', '########', '...#....', '...#....', '########', '.......#'], 6, 0, 0),
++  /*  3 bar, full */ tile(['........', '########', '########', '########', '########', '########', '########', '........'], 2, 0, 0),
++  /*  4 bar, half */ tile(['........', '####....', '####....', '####....', '####....', '####....', '####....', '........'], 2, 0, 0),
++  /*  5 bar, empty: a dark outline */ tile(['........', '########', '#......#', '#......#', '#......#', '#......#', '########', '........'], 1, 0, 0),
++  /*  6 key icon */ tile(['..####..', '.#....#.', '.#....#.', '..####..', '...##...', '...###..', '...##...', '...###..'], 6, 0, 0),
++  /*  7 key slot, empty */ tile(['........', '........', '........', '..#..#..', '........', '........', '..#..#..', '........'], 1, 0, 0),
++  /*  8 gem icon */ tile(['........', '..####..', '.######.', '########', '.######.', '..####..', '...##...', '........'], 5, 0, 0),
++  /*  9 gem slot, empty */ tile(['........', '........', '........', '...##...', '........', '........', '........', '........'], 1, 0, 0),
+   /* 10..17 the aiming marks */
+-  /* 10 */ tile(WEDGE.downL, 7, 0, 1), /* 11 */ tile(WEDGE.downR, 7, 0, 1),
+-  /* 12 */ tile(WEDGE.upL, 7, 0, 1), /* 13 */ tile(WEDGE.upR, 7, 0, 1),
+-  /* 14 */ tile(WEDGE.rightT, 7, 0, 1), /* 15 */ tile(WEDGE.rightB, 7, 0, 1),
+-  /* 16 */ tile(WEDGE.leftT, 7, 0, 1), /* 17 */ tile(WEDGE.leftB, 7, 0, 1),
++  /* 10 */ tile(WEDGE.downL, 7, 0, 0), /* 11 */ tile(WEDGE.downR, 7, 0, 0),
++  /* 12 */ tile(WEDGE.upL, 7, 0, 0), /* 13 */ tile(WEDGE.upR, 7, 0, 0),
++  /* 14 */ tile(WEDGE.rightT, 7, 0, 0), /* 15 */ tile(WEDGE.rightB, 7, 0, 0),
++  /* 16 */ tile(WEDGE.leftT, 7, 0, 0), /* 17 */ tile(WEDGE.leftB, 7, 0, 0),
+   // 18..: the title screen (the SCENE title NOVIEW picture): the maze's four wall textures as tiles, the glinting gem and the goblet (the treasure's art, in cells)
+-  /* 18 brick: the letters of the title (the room walls of the maze) */ tile(BRICK, 5, 0, 1),
+-  /* 19 stone: the outer ring (grey stone: a checker) */ tile(STONE, 5, 0, 1),
+-  /* 20 lining: the vault's scanlines */ tile(LINING, 5, 0, 1),
+-  /* 21 the locked door: vertical bars, in brass */ tile(DOOR_BARS, 6, 0, 1),
+-  /* 22 gem with a glint (the sparkle: tile 8 and this one swap) */ tile(GEM_GLINT, 7, 0, 1),
++  /* 18 brick: the letters of the title (the room walls of the maze) */ tile(BRICK, 5, 0, 0),
++  /* 19 stone: the outer ring (grey stone: a checker) */ tile(STONE, 5, 0, 0),
++  /* 20 lining: the vault's scanlines */ tile(LINING, 5, 0, 0),
++  /* 21 the locked door: vertical bars, in brass */ tile(DOOR_BARS, 6, 0, 0),
++  /* 22 gem with a glint (the sparkle: tile 8 and this one swap) */ tile(GEM_GLINT, 7, 0, 0),
+   /* 23 goblet, top left, plain / 24 with a glint / 25 top right / 26 bottom left / 27 bottom right */
+-  tile(GOBLET_TILES.tl0, 6, 0, 1), tile(GOBLET_TILES.tl1, 6, 0, 1), tile(GOBLET_TILES.tr, 6, 0, 1), tile(GOBLET_TILES.bl, 6, 0, 1), tile(GOBLET_TILES.br, 6, 0, 1),
++  tile(GOBLET_TILES.tl0, 6, 0, 0), tile(GOBLET_TILES.tl1, 6, 0, 0), tile(GOBLET_TILES.tr, 6, 0, 0), tile(GOBLET_TILES.bl, 6, 0, 0), tile(GOBLET_TILES.br, 6, 0, 0),
+ ];
+ export const T = {
+   BLANK: 0, PANEL: 1, BEZEL: 2, BAR_FULL: 3, BAR_HALF: 4, BAR_EMPTY: 5, KEY: 6, KEY_SLOT: 7, GEM: 8, GEM_SLOT: 9,
+@@ -195,7 +195,7 @@ function sprite(frames, extra = {}) {
+   const hex = (bin) => parseInt(bin, 2).toString(16).toUpperCase().padStart(w / 4, '0');
+   for (const f of frames) { if (f.length !== h) throw new Error('frame heights differ'); for (const r of f) if (r.length !== w) throw new Error(`sprite row "${r}" is ${r.length} wide, not ${w}`); }
+   // ray mode ignores the hot box and the phases; they are kept at the asset format's defaults
+-  return { w, h, hot: [0, 0, w, h], phases: 1, ...extra, frames: frames.map((f) => ({ rows: f.map((r) => ({ bits: hex([...r].map((c) => (c === '#' ? '1' : '0')).join('')), mask: hex(maskOfRow(r)), ink: 7, paper: 0, bright: 1 })) })) };
++  return { w, h, hot: [0, 0, w, h], phases: 1, ...extra, frames: frames.map((f) => ({ rows: f.map((r) => ({ bits: hex([...r].map((c) => (c === '#' ? '1' : '0')).join('')), mask: hex(maskOfRow(r)), ink: 7, paper: 0, bright: 0 })) })) };
+ }
+ /** a full row from its left half (the right half is the mirror image) */
+ const sym = (half) => half + [...half].reverse().join('');
+@@ -271,7 +271,9 @@ export function buildAssets() {
+       'vl_key': sprite(KEY),
+       'vl_treasure': sprite(TREASURE),
+     },
+-    tilesets: { 'vl_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
++    // every tile but the blank one is marked fg (sprites never pass over it): the HUD panel is outside the 3D view, and on the title the sprites walk only the blank corridor
++    // (rows 14..18 of blank cells, tile 0), so the background-attribute check sees one colour attribute under them
++    tilesets: { 'vl_tiles': { tiles: TILES.map((t, i) => ({ rows: t.rows, flags: t.flags, ...(i > 0 ? { fg: true } : {}) })) } },
+     sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['vl_' + k, v])),
+     maps: { 'vl_maze': { w: MAP_W, h: MAP_H, cells: CELLS }, 'vl_panel': buildPanel(), 'vl_title': buildTitle() },
+     music: Object.fromEntries(Object.entries(music).map(([k, v]) => ['vl_' + k, v])),
+diff --git a/arcade/examples/vaults.assets.json b/arcade/examples/vaults.assets.json
+index 556a99a..ee51b7c 100644
+--- a/arcade/examples/vaults.assets.json
++++ b/arcade/examples/vaults.assets.json
+@@ -18,112 +18,112 @@
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     }
+@@ -147,112 +147,112 @@
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "399C",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "799E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E7E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "DE7B",
+        "mask": "DE7B",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "8E71",
+        "mask": "8E71",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0C30",
+        "mask": "0C30",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     },
+@@ -263,112 +263,112 @@
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "399C",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "799E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E7E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FFFF",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "BC3D",
+        "mask": "BC3D",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "381C",
+        "mask": "381C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "300C",
+        "mask": "300C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     },
+@@ -379,112 +379,112 @@
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "02A0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1550",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "2AA8",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1114",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "288A",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5554",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "2A2A",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5554",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AAAA",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5555",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AAAA",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5555",
+        "mask": "FFFF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "8A2A",
+        "mask": "DE7B",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0451",
+        "mask": "8E71",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0820",
+        "mask": "0C30",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     },
+@@ -495,112 +495,112 @@
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "2004",
+        "mask": "2004",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0840",
+        "mask": "0840",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0040",
+        "mask": "0040",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "4104",
+        "mask": "4104",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0240",
+        "mask": "0240",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0820",
+        "mask": "0820",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0002",
+        "mask": "0002",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "4800",
+        "mask": "4800",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0040",
+        "mask": "0040",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1004",
+        "mask": "1004",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0410",
+        "mask": "0410",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     }
+@@ -624,56 +624,56 @@
+        "mask": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "6F",
+        "mask": "7F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "mask": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "mask": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     },
+@@ -684,56 +684,56 @@
+        "mask": "02",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3A",
+        "mask": "3A",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "6F",
+        "mask": "7F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "mask": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "mask": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     }
+@@ -757,56 +757,56 @@
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "mask": "18",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5A",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "mask": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "mask": "3C",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     }
+@@ -830,56 +830,56 @@
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "48",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "48",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "78",
+        "mask": "78",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "30",
+        "mask": "30",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "36",
+        "mask": "36",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "36",
+        "mask": "36",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "30",
+        "mask": "30",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     }
+@@ -903,112 +903,112 @@
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5FFC",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5FFA",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "601E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     },
+@@ -1019,112 +1019,112 @@
+        "mask": "0400",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0E00",
+        "mask": "0E00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5FFE",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5FFC",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5FFA",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "601E",
+        "mask": "7FFE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0FF0",
+        "mask": "0FF0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03C0",
+        "mask": "03C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07E0",
+        "mask": "07E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1FF8",
+        "mask": "1FF8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3FFC",
+        "mask": "3FFC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0000",
+        "mask": "0000",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ]
+     }
+@@ -1140,49 +1140,49 @@
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+      "flags": 0
+@@ -1193,52 +1193,53 @@
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "20",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "02",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "40",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "08",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1246,52 +1247,53 @@
+        "bits": "FF",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "80",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "10",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "01",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1299,52 +1301,53 @@
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1352,52 +1355,53 @@
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 2,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1405,52 +1409,53 @@
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "81",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1458,52 +1463,53 @@
+        "bits": "3C",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "42",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "42",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1C",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1C",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1511,52 +1517,53 @@
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "24",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "24",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1564,52 +1571,53 @@
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3C",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1617,52 +1625,53 @@
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 1,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1670,52 +1679,53 @@
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1723,52 +1733,53 @@
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1776,52 +1787,53 @@
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1829,52 +1841,53 @@
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1882,52 +1895,53 @@
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1935,52 +1949,53 @@
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F8",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "E0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "80",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -1988,52 +2003,53 @@
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2041,52 +2057,53 @@
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0F",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "01",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2094,52 +2111,53 @@
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "88",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "88",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "88",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "22",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "22",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "22",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2147,52 +2165,53 @@
+        "bits": "AA",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "AA",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "55",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2200,52 +2219,53 @@
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 5,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2253,52 +2273,53 @@
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "CC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2306,52 +2327,53 @@
+        "bits": "18",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "99",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FF",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7E",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "99",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "18",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 7,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2359,52 +2381,53 @@
+        "bits": "00",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "60",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2412,52 +2435,53 @@
+        "bits": "04",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "0E",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "7F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "5F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "60",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2465,52 +2489,53 @@
+        "bits": "00",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FE",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FA",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1E",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2518,52 +2543,53 @@
+        "bits": "0F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "03",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "07",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "1F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "3F",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     },
+     {
+      "rows": [
+@@ -2571,52 +2597,53 @@
+        "bits": "F0",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "C0",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "E0",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "F8",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "FC",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       },
+       {
+        "bits": "00",
+        "ink": 6,
+        "paper": 0,
+-       "bright": 1
++       "bright": 0
+       }
+      ],
+-     "flags": 0
++     "flags": 0,
++     "fg": true
+     }
+    ]
+   }
+diff --git a/arcade/examples/vaults.md b/arcade/examples/vaults.md
+index 7dc6beb..68deac5 100644
+--- a/arcade/examples/vaults.md
++++ b/arcade/examples/vaults.md
+@@ -84,6 +84,8 @@ corner: walk up to it), open it, and take the **treasure** (the goblet) in the v
+   the title text a line a tick.
+ * **Sound**: eight effects (`shot thud kill pick door hurt win lose`); the border flashes white on a shot, red when hurt.
+ * **Inputs** read `STICK(1)` and `KEYDOWN` together, as the other examples do.
++* **One black** (Studio completion K4): every black-paper area is BRIGHT 0 (TSRun draws BRIGHT 1 on black paper as dark grey, Fuse and ZEsarUX as black): the tiles of `vl_tiles`, the text of the HUD and the title, and the 3D view's default `BRIGHT 0`. The bright inks became their plain versions. In `vl_tiles` every tile but the blank one is marked `fg` (sprites never pass over it: the panel is outside the 3D window and the title's sprites walk the blank corridor), so the asset check finds one background attribute under the sprites (E5).
++* **Timers** (G3): the play scene's countdowns are `TIMER inv, cool, bt, mt` (immunity 12 ticks, 6 ticks between shots, the border flash, the bottom message 45 ticks), and the demo's length is `TIMER left`; the runtime counts them down before `FRAME`. `bt` and `mt` end with an action, done in `EFFECTS` when they read 1 (the last tick they are on). The play is tick for tick the old one's (checked against the old game on both recorded runs).
+ 
+ ## Measured numbers (TSRun, real v4 runtime build, real frame interrupt, no memory contention)
+ 
+diff --git a/tests/arcade-m8-vaults.mjs b/tests/arcade-m8-vaults.mjs
+index 01dd455..673abd8 100644
+--- a/tests/arcade-m8-vaults.mjs
++++ b/tests/arcade-m8-vaults.mjs
+@@ -26,13 +26,14 @@ import { readFileSync, existsSync } from 'node:fs';
+ import { join, dirname, resolve } from 'node:path';
+ import { fileURLToPath, pathToFileURL } from 'node:url';
+ import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
++import { checkAssets } from '../src/lang/arcade/arcade-assetcheck.js';
++import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
+ import { diffV4, rng } from './arcade-m8-common.mjs';
+ import { compileOnMock, runOnMock, interpretVaults, traceDigest, VAULTS_SRC, VAULTS_ASSETS } from './arcade-m8-vaults-harness.mjs';
+ import { stripMusic, createSoundRecorder, soundOf, clockOf, compareSound, soundCoverage } from './arcade-m15-common.mjs';
+ import { WIN_RUNS, WIN_SIGHT, LOSE_RUNS } from './arcade-m8-vaults-script.mjs';
+ import { CELLS, THINGS, DOOR, MAP_W, MAP_H, GEM_CELLS, GOBLET_CELL, T as TILE, buildAssets, buildTitle } from '../arcade/examples/vaults.assets.gen.mjs';
+ 
+-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+ 
+ const HERE = dirname(fileURLToPath(import.meta.url));
+ const ROOT = join(HERE, '..');
+@@ -138,9 +139,11 @@ function reach(grid, from) {
+     title.cells[GOBLET_CELL[1] * 32 + GOBLET_CELL[0]] === TILE.GOB_TL && title.cells[(GOBLET_CELL[1] + 1) * 32 + GOBLET_CELL[0] + 1] === TILE.GOB_BR &&
+     GEM_CELLS.length === 6 && GEM_CELLS.every(([x, y]) => title.cells[y * 32 + x] === TILE.GEM) &&
+     [13, 14, 15, 16, 17, 18].every((y) => title.cells[y * 32 + 30] === TILE.DOOR && title.cells[y * 32 + 31] === TILE.DOOR));
+-  check_('the title tiles are the game\'s own wall textures: brick, stone, lining and the door bars, the glinting gem and the goblet halves are defined, all black paper BRIGHT 1 like every tile of the set (no BRIGHT mix)',
+-    [TILE.BRICK, TILE.STONE, TILE.LINING, TILE.DOOR, TILE.GLINT, TILE.GOB_TL, TILE.GOB_TL_GLINT, TILE.GOB_TR, TILE.GOB_BL, TILE.GOB_BR].every((i) => tiles[i] && tiles[i].rows.every((r) => r.paper === 0 && r.bright === 1)) &&
++  check_('the title tiles are the game\'s own wall textures: brick, stone, lining and the door bars, the glinting gem and the goblet halves are defined, all black paper BRIGHT 0 like every tile of the set (no BRIGHT mix; K4)',
++    [TILE.BRICK, TILE.STONE, TILE.LINING, TILE.DOOR, TILE.GLINT, TILE.GOB_TL, TILE.GOB_TL_GLINT, TILE.GOB_TR, TILE.GOB_BL, TILE.GOB_BR].every((i) => tiles[i] && tiles[i].rows.every((r) => r.paper === 0 && r.bright === 0)) &&
+     tiles[TILE.GEM] !== undefined && tiles.length === 28);
++  { const f = checkAssets({ assets: A }, scanRoles(SRC));
++    check_('the asset check (checkAssets) finds nothing in the game\'s assets: no BRIGHT 1 on black paper (K4), no mix of plain and BRIGHT black, no background-attribute mix in the HUD panel or the title (E5: every tile but the blank one is marked fg, sprites never pass over it)', f.length === 0, f.map((x) => x.id).join(', ')); }
+   check_('the wraith asset has 4 phases (the title\'s drift is in 2-pixel steps; ray mode ignores phases); every other sprite stays at 1 (aligned to bytes in the title)', S['vl_wraith'].phases === 4 && Object.entries(S).every(([k, v]) => k === 'vl_wraith' || v.phases === 1));
+   check_('the eight SFX are declared and have records (shot thud kill pick door hurt win lose)', Object.keys(A.sfx).length === 8 && Object.values(A.sfx).every((s) => s.ticks.length >= 5));
+   // messages: the message line is rewritten by a print with no clear, so every message is exactly as wide as the line it uses (30 characters at column 1)
+@@ -154,13 +157,13 @@ function reach(grid, from) {
+ console.log('\n2. The compiler');
+ const res = compileOnMock();
+ {
+-  check_('vaults.arc compiles with no errors and no warnings (batch 3 mock runtime, v4)', res.errors.length === 0 && res.warnings.filter(notTwoBlacks).length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
++  check_('vaults.arc compiles with no errors and no warnings (batch 3 mock runtime, v4)', res.errors.length === 0 && res.warnings.length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
+   if (res.errors.length) { console.log(`\nFAIL: arcade-m8-vaults (${passed} checks passed, ${failed + 1} failed)`); process.exit(1); }
+   const u = res.usage;
+   info(`link report: code ${u.code} B (strings ${u.data.strings}, tileset ${u.data.tileset}, sfx ${u.data.sfx}, HUD map ${u.data.map}), sprite frames ${u.frames} B, view: map source ${u.view.mapSource} B (1,024 expanded) + descriptor ${u.view.descriptor} B => ${u.total} of 16384 B game area (${u.free} spare); variables ${u.gameVars.used} of ${u.gameVars.available} B`);
+   // the song (slice M5) takes bytes: the 2 KB of room is asked of the game as it was before songs (its text without MUSIC / NOMUSIC / PLAY <song>); the shipped game, song included, must keep 1 KB
+   const noSong = compileOnMock(stripMusic(VAULTS_SRC));
+-  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.filter(notTwoBlacks).length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
++  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
+   check_(`the shipped image, with the song (${u.data.music} bytes of song data), fits the 16 KB game area with room to spare (at least 1 KB), and nothing needs banking`, u.free >= 1024 && u.banked.used === 0, `${u.free} bytes free of ${u.total + u.free}; mapped ${u.mapped.used} of ${u.mapped.available}, banked ${u.banked.used}`);
+   check_('16 sprite instances (the most there are), 6 assets of 8; the view is COLW 4; the header carries DIV_EXT | DIV_VIEW and the frame divisor 4 (15 a second)', u.codegen.instances === 16 && res.usage.view.colw === 4 && (res.memory[0x8004] & 0xC0) === 0xC0 && (res.memory[0x8004] & 0x3F) === 4);
+   check_('three scenes: title (NOVIEW, the first, so the game starts in it), demo and play; the driver is built and the scene plan says so', u.codegen.scenes === 3 && u.codegen.driver === true && res.scenes.map((x) => x.name).join() === 'title,demo,play' && res.scenes[0].mode === 'noview' && !res.scenes[1].mode && !res.scenes[2].mode);
+@@ -173,7 +176,7 @@ const res = compileOnMock();
+   if (existsSync(rtJson)) {
+     const rt = JSON.parse(readFileSync(rtJson, 'utf8')), img = new Uint8Array(readFileSync(join(dirname(rtJson), rt.image ?? 'runtime.bin')));
+     const real = compile(SRC, { runtime: rt, image: img, assets: A });
+-    check_('it compiles against arcade/build/v4 (the real runtime build) with no errors and no warnings', real.errors.length === 0 && real.warnings.filter(notTwoBlacks).length === 0, errText(real) + ' ' + real.warnings.map((w) => w.message).join(' | '));
++    check_('it compiles against arcade/build/v4 (the real runtime build) with no errors and no warnings', real.errors.length === 0 && real.warnings.length === 0, errText(real) + ' ' + real.warnings.map((w) => w.message).join(' | '));
+     if (real.errors.length === 0) info(`on the real runtime: code ${real.usage.code} B, ${real.usage.free} B free`);
+   } else skip_('it compiles against arcade/build/v4', 'arcade/build/v4/runtime.json does not exist (node arcade/tools/build-runtime-v4.mjs)');
+ }
+@@ -239,8 +242,8 @@ const wa = expandRuns(WIN_RUNS), la = expandRuns(LOSE_RUNS);
+   const alt = interpretVaults(420, () => 0).ticks;
+   const want = (t) => (t < 135 ? SCENE.title : t < 270 ? SCENE.demo : t < 405 ? SCENE.title : SCENE.demo);
+   check_('with no input the title and the demo alternate every 135 ticks (9 seconds): title for ticks 1..134, demo 135..269, title 270..404, demo from 405 (the record of the ENTER tick is the target\'s)', alt.every((r, i) => r.scene === want(i + 1)));
+-  check_('the title shows the whole cell screen (show "screen": no 3D view) and the demo shows the view (show "view"); the scene\'s own timer starts at 0 in the tick of the switch (TITLE.TM, DEMO.TM)', alt.every((r, i) => r.show === (want(i + 1) === SCENE.title ? 'screen' : 'view')) &&
+-    alt[134].vars['DEMO.TM'] === 0 && alt[269].vars['TITLE.TM'] === 0 && alt[100].vars['TITLE.TM'] === 101 && alt[200].vars['DEMO.TM'] === 66 && alt[404].vars['DEMO.TM'] === 0);
++  check_('the title shows the whole cell screen (show "screen": no 3D view) and the demo shows the view (show "view"); the scene\'s own counter starts in the tick of the switch (TITLE.TM counts up from 0; DEMO.LEFT is a TIMER set to DEMOLEN = 135 that counts down)', alt.every((r, i) => r.show === (want(i + 1) === SCENE.title ? 'screen' : 'view')) &&
++    alt[134].vars['DEMO.LEFT'] === 135 && alt[269].vars['TITLE.TM'] === 0 && alt[100].vars['TITLE.TM'] === 101 && alt[200].vars['DEMO.LEFT'] === 69 && alt[404].vars['DEMO.LEFT'] === 135);
+   check_('the game-level variables run through the scenes: FC counts every tick since the start (the title, the demo and the game share it: FC = tick), best is 0 and the game state ST stays 0 until a game is started', alt.every((r, i) => r.vars.FC === i + 1 && r.vars.BEST === 0 && r.vars.ST === 0));
+   // the title's picture and animation, from independent formulas
+   const tri = (x) => Math.abs(x - 4);
+@@ -292,7 +295,9 @@ const wa = expandRuns(WIN_RUNS), la = expandRuns(LOSE_RUNS);
+   // THE PLAY DID NOT CHANGE: digests of the state of every tick of the two recorded runs from the first tick of play on (variables, arrays, shown sprites, walls, pose, border, cell and attribute
+   // maps, text attribute, sound), recorded from vaults.arc as ONE scene (the title a state of it) at 3a22ea1 with the runs of that time (the same walk: its idle ticks after the fire are gone, so the
+   // fire is at tick 17 and the first tick of play is 18 as it was). The recording is also a record of the maze's behaviour: wraith AI, pickups, shots, the HUD one change a tick.
+-  const WIN_DIGEST = '6b263f2f93ed608475e885207b0da256de1269d4026dc5219aff0695524d3912', LOSE_DIGEST = '08a33125e07419e5a121634c81a97bd7899947e07c363a9dfaa1c471e030cc26';
++  // RE-RECORDED in stage 3 (K4, G3), after a tick-by-tick comparison of the old and the new game over both runs (every variable, array, sprite, wall, the border, the cells, the pose and the sound
++  // identical; the attribute maps and the text attribute equal but for the BRIGHT bit on black paper; INV / COOL / BT / MT, now TIMERs, read one more than the old counters at the end of a tick while playing).
++  const WIN_DIGEST = '6ead9b4a155b831cd754c1387ce4d53048bab17f1deea732eb96e7327533d0da', LOSE_DIGEST = '09aac00e0693a1f0517656be6a0a754411f4563212aabf829d63e7d5c7a8a332';
+   // (the digest includes the sound record, which a game with songs models differently: it is taken of the game's text without its songs, as the old game was; the play is the same word for word)
+   const winNS = interpretVaults(WIN_N, winStick, { billboard: winBillboard, src: stripMusic(VAULTS_SRC) }), loseNS = interpretVaults(LOSE_N, loseStick, { src: stripMusic(VAULTS_SRC) });
+   check_(`the play is tick for tick the one-scene game's: the WIN run's state of ticks ${PLAY0}..${WIN_N} (${WIN_N - PLAY0 + 1} ticks) of the game without its songs has the digest recorded from the old game`, traceDigest(winNS.ticks, PLAY0, WIN_N) === WIN_DIGEST);
