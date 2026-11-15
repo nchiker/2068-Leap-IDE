@@ -100,9 +100,9 @@ if (res.errors.length) { console.log('\nFAIL: arcade-orbit (the game does not co
 // ── 2. title -> play ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 console.log('\n2. Title -> play');
 {
-  const held = [...Array(10).fill(FIRE), ...Array(6).fill(0), FIRE, FIRE];        // fire is down from the very start: nothing happens until it has been released and pressed again
+  const held = [...Array(10).fill(FIRE), ...Array(6).fill(0), FIRE, FIRE];        // fire is down from the very start: KEYPRESS counts a key already held at boot as a press in tick 1 (docs/ARCADE_LANGUAGE_BATCH5.md item 6), so the game starts at once (stage 3 G1: before, the title waited for a release)
   const h = run(held);
-  check_('fire held from the start does not start the game (the title waits for it to be released)', h.ticks.slice(0, 16).every((r) => r.scene === SCENE.title) && h.ticks[16].scene === SCENE.play, `scenes ${h.ticks.map((r) => r.scene).join('')}`);
+  check_('fire held from the start counts as a press in tick 1 and starts the game (KEYPRESS); a fire held through a scene change does not (section 5)', h.ticks.every((r) => r.scene === SCENE.play), `scenes ${h.ticks.map((r) => r.scene).join('')}`);
   const r = run(START, 40);
   const ts = r.ticks;
   check_('the title (scene 0) for 19 ticks; fire in tick 20 enters play (its INIT runs in that tick)', ts.slice(0, 19).every((q) => q.scene === SCENE.title) && ts[19].scene === SCENE.play && V(ts[19], 'FUEL') === 900 && V(ts[19], 'SHD') === 3);
@@ -219,7 +219,7 @@ function plan(rec, prev) {
     if (rs === 0) models.push({ model: 'rock', pose });
     else if (rs <= 12) models.push({ model: 'shards', pose: { ...pose, scale: rs <= 4 ? 1 : rs <= 8 ? 2 : 4 } });
   }
-  return { eye, models, laser: v('CD') === 6 || (!!prev && prev.scene === SCENE.play && V(prev, 'LZ') > 0) };
+  return { eye, models, laser: v('CD') > 3 };       // the beams show while the cooldown timer CD is above 3 (6, 5, 4: three ticks; the variable LZ is gone)
 }
 
 // ── 3. the bot ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

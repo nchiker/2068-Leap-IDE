@@ -8,7 +8,7 @@
 //   1. the title (a NOVIEW scene, no 3D area; the song) for 19 ticks, FIRE in tick 20 enters the play scene (the 3D area comes on in that tick, play's INIT puts the HUD up)
 //   2. a flight: the pilot steers for the gate (O / P turns, Q faster in ticks 4-7, A slower later), aims at a rock that is in front of it and holds FIRE while it is in the laser's cone (rocks blown
 //      up: debris counting 1..29, the shards model at SCALE 1 / 2 / 4, the beams of the laser), passes gates while it can
-//   3. then it steers into the rocks until the shields are gone (the game over by shields: scene 2, the cell screen with the score), waits for ow > 20, FIRE (back to the title), a pause, FIRE again
+//   3. then it steers into the rocks until the shields are gone (the game over by shields: scene 2, the cell screen with the score), waits for the timer ow to reach 0 (21 ticks), FIRE (back to the title), a pause, FIRE again
 //      (a second game: play's INIT again with the best score kept) and flies on a little
 // What the closed loop chose is also the "recorded inputs" of the check: the interpreter-level bot of tests/arcade-orbit.mjs (a pilot that passes 40 gates in 3,000 ticks) is far longer than three emulators can
 // replay in a minute, and it does not end in a game over; this pilot is its smaller sibling with the same reads (the eye, the gate, the rocks) and the same moves (turn, speed, fire).
@@ -115,7 +115,7 @@ try {
         if (overAt < 0) overAt = t;
         overTicks++;
         const ow = rd(mt.vars['OVER.OW']);
-        sv = ow > 20 && overTicks > 20 ? U.FIRE : 0;                                    // ow > 20 and fire released first
+        sv = ow === 0 && overTicks > 20 ? U.FIRE : 0;                                 // the TIMER ow (21 at the start of the scene) is 0 and fire is pressed afresh (KEYPRESS)
         stage = 'over';
         if (sv) { stage = 'title2'; }
       } else if (sc === 0 && stage === 'over') { sv = 0; }

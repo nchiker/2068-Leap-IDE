@@ -22,9 +22,10 @@ writeFileSync(join(ARCADE, 'build/orbit.dck'), res.dck);
 mkdirSync(join(ARCADE, 'build/xemu/orbit'), { recursive: true });
 // the play scene's variables are PLAY.X (three scenes); the xemu scripts read them as X
 const plain = (o) => Object.fromEntries(Object.entries(o ?? {}).map(([k, v]) => [k.replace(/^PLAY\./, ''), v]));
-// the driver's hidden slot that holds the current scene's index (0 title, 1 play, 2 over): the frame entry is `LD (spslot),SP` (ED 73 lo hi) then `LD A,(sceneslot)` (3A lo hi)
-const fe = 9 + 16384 + (res.map.entries.frame - 0x8000), d = res.dck;
-if (!(d[fe] === 0xED && d[fe + 1] === 0x73 && d[fe + 4] === 0x3A)) throw new Error('the frame entry is not LD (nn),SP / LD A,(nn): the scene slot cannot be found');
-const sceneAddr = d[fe + 5] | (d[fe + 6] << 8);
+// the driver's hidden slot that holds the current scene's index (0 title, 1 play, 2 over): the compiler names it scene.cur (the frame entry is no longer `LD (spslot),SP` then `LD A,(sceneslot)`:
+// Orbit Gates uses TIMER / KEYPRESS / JOYPRESS, so the tick prologue sits between them)
+const slot = res.map.slots?.find((s) => s.name === 'scene.cur');
+if (!slot) throw new Error('no scene.cur slot in the compiled game');
+const sceneAddr = slot.addr;
 writeFileSync(join(ARCADE, 'build/xemu/orbit/meta.json'), JSON.stringify({ sceneAddr, vars: plain(res.map.vars), arrays: plain(res.map.arrays), frame: res.map.entries.frame, init: res.map.entries.init, gameBytes: res.usage.total, shipped: res.shipped }, null, 1));
 console.log(`orbit.dck: ${res.dck.length} bytes (chunks ${res.shipped?.join(' ')}), game ${res.usage.total} bytes, frame entry $${res.map.entries.frame.toString(16)}, scene slot $${sceneAddr.toString(16)}`);

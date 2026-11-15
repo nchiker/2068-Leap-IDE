@@ -58,7 +58,9 @@ SCENE title
 ENDSCENE
 
 SCENE play
-  DIM px, py, lives, js, inv, cool, spl, spt, alive, wt, hs, hl, hw
+  DIM px, py, lives, js, spl, alive, wt, hs, hl, hw
+  REM the invulnerability after a hit, the fire cooldown and the spawn delay count down by themselves (TIMER, docs/ARCADE_LANGUAGE_BATCH5.md)
+  TIMER inv, cool, spt
   DIM lf, rg, up, dn, fire, vs, fr, sp0, ssp, sw, fb, ax, ay, i, j, k, m, c, q, f, g, x, y, ee, o, u
   REM bullets 0..1, enemies 0..2 (0..1 scouts, 2 the heavy; two of them at a time at most), the enemy shot 0 (the arrays have a slot 1 too: a DIM has at least 2 elements), explosions 0..1
   DIM bx(1), by(1), bon(1)
@@ -133,15 +135,10 @@ SCENE play
     IF px > 240 THEN px = 240 ENDIF
     IF py < 96 THEN py = 96 ENDIF
     IF py > 168 THEN py = 168 ENDIF
-    IF cool > 0 THEN cool = cool - 1 ENDIF
     IF fire AND cool = 0 THEN CALL FIREBULLET() ENDIF
-    IF inv > 0 THEN
-      inv = inv - 1
-      IF inv MOD 4 < 2 THEN
-        SHOW ship AT px, py
-      ELSE
-        HIDE ship
-      ENDIF
+    REM while inv counts down the ship blinks (hidden in the 2nd half of every 4 ticks); at 0 it is shown
+    IF inv MOD 4 > 1 THEN
+      HIDE ship
     ELSE
       SHOW ship AT px, py
     ENDIF
@@ -375,8 +372,7 @@ SCENE play
 
   PROC SPAWNER():
     IF spl > 0 THEN
-      spt = spt - 1
-      IF spt <= 0 AND alive < 2 THEN CALL SPAWN() ENDIF
+      IF spt = 0 AND alive < 2 THEN CALL SPAWN() ENDIF
     ELSE
       IF alive = 0 THEN
         wt = wt + 1
@@ -387,23 +383,21 @@ SCENE play
 ENDSCENE
 
 SCENE over
-  DIM ow, rel, fire
+  TIMER ow
   PROC INIT():
     BORDER 0
     NOMUSIC
     PLAY over
     INK 6 : PAPER 0 : BRIGHT 0
-    PRINT AT 0, 0; "SCORE "; score; "  ";
-    PRINT AT 0, 24; "WAVE "; wv; " ";
+    PRINT AT 0, 0; "SCORE "; score USING "#####";
+    PRINT AT 0, 24; "WAVE "; wv USING "###";
+    ow = 21
     LOADMAP gameover AT 7, 14
     LOADMAP press AT 7, 18
   ENDP
 
-  REM Fire restarts once it has been released and pressed again (it is usually still down when the scene starts).
+  REM Fire restarts once it has been pressed afresh (KEYPRESS / JOYPRESS are true only in the tick the key went down; a fire still held from the game does not count) and the wait of 21 ticks is over.
   PROC FRAME():
-    ow = ow + 1
-    fire = KEYDOWN(" ") OR BIT(STICK(1), 4)
-    IF fire = 0 THEN rel = 1 ENDIF
-    IF fire AND rel AND ow > 20 THEN ENTER play ENDIF
+    IF ow = 0 AND (KEYPRESS(" ") OR BIT(JOYPRESS(1), 4)) THEN ENTER play ENDIF
   ENDP
 ENDSCENE

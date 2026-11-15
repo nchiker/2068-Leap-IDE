@@ -28,7 +28,7 @@ REM The game's score, the gates passed, the best score and why the flight ended 
 DIM score, gates, best, why
 
 SCENE title NOVIEW
-  DIM fire, rel, tw
+  TIMER bl
 
   PROC INIT():
     PLAY theme
@@ -55,23 +55,24 @@ SCENE title NOVIEW
     TILE 2, 16 = 1 : TILE 29, 17 = 2 : TILE 9, 22 = 1 : TILE 22, 23 = 2 : TILE 1, 7 = 1 : TILE 30, 9 = 1
   ENDP
 
-  REM Fire starts the game once it has been released and pressed again (it is still down when the game over sends us here).
+  REM Fire starts the game once it is pressed afresh (KEYPRESS / JOYPRESS: true in the tick the key went down; a fire still held from the game over does not count).
+  REM The timer bl runs 20 to 1 and starts again: PRESS FIRE shows while it is above 8 (12 ticks on, 8 off).
   PROC FRAME():
-    tw = tw + 1
-    fire = KEYDOWN(" ") OR BIT(STICK(1), 4)
-    IF fire = 0 THEN rel = 1 ENDIF
-    IF tw MOD 20 < 12 THEN
+    IF bl = 0 THEN bl = 20 ENDIF
+    IF bl > 8 THEN
       INK 6 : PRINT AT 13, 10; "PRESS  FIRE";
     ELSE
       INK 0 : PRINT AT 13, 10; "           ";
     ENDIF
-    IF fire AND rel THEN ENTER play ENDIF
+    IF KEYPRESS(" ") OR BIT(JOYPRESS(1), 4) THEN ENTER play ENDIF
   ENDP
 ENDSCENE
 
 SCENE play
-  DIM px, pz, ea, spd, fuel, shd, tt, inv, fl, hud, cd, lz, sb, pm, sp, ec, es, gcs, gsn, ncs, nsn
+  DIM px, pz, ea, spd, fuel, shd, tt, hud, pm, sp, ec, es, gcs, gsn, ncs, nsn
   DIM gx, gz, gch, nx, nz, nch, pal
+  REM the hit protection, the flash of a hit, the laser cooldown and the quiet after a loud sound count down by themselves (TIMER, docs/ARCADE_LANGUAGE_BATCH5.md)
+  TIMER inv, fl, cd, sb
   DIM js, lf, rg, up, dn, fire, dx, dz, along, side, fw, wob, w, ox, oz, i, f, sd, ux, uz, bi, bd, ar, sdv, lv
   DIM rx(1), rz(1), ry(1), rdx(1), rdz(1), rw(1), rp(1), rt(1), rs(1)
 
@@ -80,7 +81,7 @@ SCENE play
     BORDER 0
     PAPER 0 : INK 6 : BRIGHT 0 : CLS
     score = 0 : gates = 0 : why = 0
-    px = 0 : pz = 0 : ea = 0 : spd = 24 : fuel = 900 : shd = 3 : inv = 0 : fl = 0 : cd = 0 : lz = 0 : sb = 0
+    px = 0 : pz = 0 : ea = 0 : spd = 24 : fuel = 900 : shd = 3
     ec = COSA(0) : es = SINA(0)
     pm = 220 : sp = 1500
     gx = 0 : gz = 1500 : gch = 0 : gcs = ec : gsn = es
@@ -169,8 +170,6 @@ SCENE play
     px = px + FXMUL(spd, es)
     pz = pz + FXMUL(spd, ec)
     fuel = fuel - 1
-    IF inv > 0 THEN inv = inv - 1 ENDIF
-    IF sb > 0 THEN sb = sb - 1 ENDIF
     IF BAND(tt, 7) = 0 THEN hud = BOR(hud, 4) ENDIF
   ENDP
 
@@ -245,7 +244,7 @@ SCENE play
         rw(i) = BAND(rw(i) + 3 + i * 2, 255)
         rp(i) = BAND(rp(i) + 5, 255)
         IF inv = 0 AND ABS(px - rx(i)) < 100 AND ABS(pz - rz(i)) < 100 THEN
-          shd = shd - 1 : inv = 20 : fl = 7 : hud = BOR(hud, 2)
+          shd = shd - 1 : inv = 20 : fl = 6 : hud = BOR(hud, 2)
           PLAY crash : CALL LOUD()
           CALL RESPAWN(i)
         ENDIF
@@ -258,12 +257,11 @@ SCENE play
     NEXT i
   ENDP
 
-  REM The laser: fire (cooldown 6 ticks) shows two beams for 3 ticks and hits the nearest rock that is in front of the eye, 250 to 2500 units along the view, within 70 + along / 16 units of
+  REM The laser: fire (cooldown 6 ticks: the timer cd; the two beams show while cd is above 3, that is for 3 ticks) hits the nearest rock that is in front of the eye, 250 to 2500 units along the view, within 70 + along / 16 units of
   REM the view direction (in the eye's own axes: along = forward, sdv = sideways).
   PROC SHOOT():
-    IF cd > 0 THEN cd = cd - 1 ENDIF
     IF fire AND cd = 0 THEN
-      cd = 6 : lz = 3
+      cd = 6
       IF sb = 0 THEN PLAY zap ENDIF
       bi = -1 : bd = 2501
       FOR i = 0 TO 1
@@ -287,10 +285,7 @@ SCENE play
 
   REM The flash of a hit: a 16 x 16 sprite in the middle of the play area for 6 ticks (it is drawn over the lines).
   PROC HITFX():
-    IF fl > 0 THEN
-      fl = fl - 1
-      IF fl = 0 THEN HIDE burst ELSE SHOW burst AT 120, 88 ENDIF
-    ENDIF
+    IF fl > 0 THEN SHOW burst AT 120, 88 ELSE HIDE burst ENDIF
   ENDP
 
   REM hud: the groups that need printing: bit 0 (value 1) score and gates (row 0), value 16 level and gate width (row 1), 2 shields, 4 fuel, 8 speed (rows 22 and 23).  One group a tick, the first that is set in that
@@ -359,9 +354,8 @@ SCENE play
         ENDIF
       ENDIF
     NEXT i
-    IF lz > 0 THEN
+    IF cd > 3 THEN
       LINE 0, 175 TO 128, 96 : LINE 255, 175 TO 128, 96
-      lz = lz - 1
     ENDIF
     LINE 118, 96 TO 124, 96 : LINE 132, 96 TO 138, 96 : LINE 128, 86 TO 128, 92 : LINE 128, 100 TO 128, 106
     LINE 0, 96 TO 9, 96 : LINE 246, 96 TO 255, 96
@@ -374,9 +368,10 @@ SCENE play
 ENDSCENE
 
 SCENE over NOVIEW
-  DIM ow, rel, fire
+  TIMER ow
 
   PROC INIT():
+    ow = 21
     NOMUSIC
     BORDER 0
     IF score > best THEN best = score ENDIF
@@ -390,11 +385,8 @@ SCENE over NOVIEW
     INK 4 : PRINT AT 19, 4; "PRESS FIRE FOR THE TITLE";
   ENDP
 
-  REM Fire goes on once it has been released and pressed again (it is usually still down when the scene starts).
+  REM Fire goes on once it is pressed afresh (a fire still held from the flight does not count) and the wait of 21 ticks is over.
   PROC FRAME():
-    ow = ow + 1
-    fire = KEYDOWN(" ") OR BIT(STICK(1), 4)
-    IF fire = 0 THEN rel = 1 ENDIF
-    IF fire AND rel AND ow > 20 THEN ENTER title ENDIF
+    IF ow = 0 AND (KEYPRESS(" ") OR BIT(JOYPRESS(1), 4)) THEN ENTER title ENDIF
   ENDP
 ENDSCENE
