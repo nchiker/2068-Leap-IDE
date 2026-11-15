@@ -29,6 +29,7 @@ import { EXAMPLES } from './examples.js';
 import { SPIN_DEMO } from '../spin-demo.js';
 import { tapeToText } from '../../files.js';
 import { LEAP_V2_SYMBOLS } from '../keytables.js';
+import { basicUdgTool, basicDrawTool } from './tool-code.js';
 
 // ── Language limits (manual, Appendix D) ──────────────────────────
 const MAX_LINE_CHARS = 127;   // characters in a program line; the ROM editor refuses more
@@ -324,7 +325,7 @@ export const basicProfile = {
   help,
   examples: [...EXAMPLES, SPIN_DEMO.basic],   // + the speed test shared by the three languages
   /** Right-panel tools that generate this language's code (src/tools/udg.js, draw.js). */
-  tools: { udg: true, draw: true },
+  tools: { udg: basicUdgTool, draw: basicDrawTool },
   /** ⬇ TAP and ⬇ DCK / ▶ Test DCK apply (attach() has exportTape / buildCartridge). */
   hasTape: true,
   hasCartridge: true,

@@ -13,7 +13,8 @@
   them), the checker's error codes
   and lines, packages, the debugger's line table / breakpoints / variables /
   call stack, TAP export byte-identical to Leap's `SAVE`, the UDG and Draw
-  helpers, every Examples-menu program (section 3b: each finishes with no
+  helpers (BASIC's; section 11 runs the UDG and Draw code of all three
+  languages on their ROMs and compares the table and the bitmap), every Examples-menu program (section 3b: each finishes with no
   error; `guess` stops at its `INPUT`), share links (round trip with the name,
   shorter than the program, a fragment without a program ignored, a damaged
   link refused), and (section 7, "Cartridge") the

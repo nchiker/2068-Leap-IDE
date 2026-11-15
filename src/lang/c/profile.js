@@ -36,6 +36,7 @@ import { romIdentity, programImage, buildCartridge as packCartridge, isLeapcCart
 import { blankOut } from './leapc-scan.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
 import { tapeToText } from '../../files.js';
+import { leapcUdgTool, leapcDrawTool } from './tool-code.js';
 
 /** Leap-C's tape format word (LEAPC_TAPE_VERSION), in the header's autostart field. */
 const LEAPC_TAPE_WORD = 0x8C00;
@@ -246,7 +247,8 @@ export const leapcProfile = {
   symbolsEmpty: 'No functions, globals, macros or types yet.',
   help,
   examples: [...LEAPC_EXAMPLES, SPIN_DEMO.c],   // + the speed test shared by the three languages
-  tools: { udg: false, draw: false },
+  /** Right-panel tools that generate this language's code (src/tools/udg.js, draw.js). */
+  tools: { udg: leapcUdgTool, draw: leapcDrawTool },
   /** ⬇ TAP: the program as Leap-C's SAVE writes it (V2's two blocks, format word $8C00). */
   hasTape: true,
   /** ⬇ DCK / ▶ Test DCK: the compiled program on Leap-C's cartridge build (src/lang/c/cartridge.js). */

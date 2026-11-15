@@ -2,16 +2,19 @@
  * src/tools/draw.js — the Draw tab: a graphics scratchpad for PLOT / LINE paths.
  *
  * Click in the 256x192 area (the TS2068 screen, y counted from the TOP as
- * Leap's PLOT / LINE do) to build paths. A one-point path is a PLOT; every
- * further point adds a LINE from the previous one. The statements are shown
- * live and can be inserted into the program or copied.
+ * Leap's PLOT / LINE do) to build paths. A one-point path is a plot; every
+ * further point adds a line from the previous one. The code is shown live and
+ * can be inserted into the program or copied. It is written by the active
+ * profile's `tools.draw` (src/lang/<id>/tool-code.js: `generate(paths)` and
+ * the `hint` text; Leap V2 BASIC, Leap-C and Leap-Forth each have theirs);
+ * this file knows no language.
  *
  * The area can be zoomed (1×, 2×, 3×) with its own − / + buttons; the IDE
  * decides how much fits (ide.js, "Draw zoom") and calls setSize(). The ink is
  * always 256x192 and scaled up pixelated; the overlay (markers, rubber band,
  * the pixel under the pointer) is drawn at device resolution so it stays crisp.
  *
- * Pure helpers (bresenham, pathsToCode) are exported for testing; nothing
+ * Pure helpers (bresenham) are exported for testing; nothing
  * touches the DOM until createDrawTool() is called.
  */
 
@@ -37,23 +40,6 @@ export function* bresenham(x0, y0, x1, y1) {
     if (e2 >= dy) { err += dy; x0 += sx; }
     if (e2 <= dx) { err += dx; y0 += sy; }
   }
-}
-
-/** Leap statements for a list of paths (each a list of [x, y]), one per line. */
-export function pathsToCode(paths) {
-  const lines = [];
-  for (const path of paths) {
-    if (path.length === 0) continue;
-    if (path.length === 1) {
-      lines.push(`PLOT ${path[0][0]}, ${path[0][1]}`);
-      continue;
-    }
-    for (let i = 1; i < path.length; i++) {
-      const [x0, y0] = path[i - 1], [x1, y1] = path[i];
-      lines.push(`LINE ${x0}, ${y0} TO ${x1}, ${y1}`);
-    }
-  }
-  return lines.join('\n');
 }
 
 function el(tag, cls, text) {
@@ -97,11 +83,13 @@ function savePaths(paths) {
 
 /**
  * @param {HTMLElement} container
- * @param {{insertCode: (text: string) => void, onZoom: (delta: number) => void}} opts
+ * @param {{insertCode: (text: string) => void, onZoom: (delta: number) => void,
+ *   getCodegen: () => ({generate: (paths: number[][][]) => string, hint: string}|null)}} opts
+ *   getCodegen is the active profile's tools.draw; refresh() re-reads it after a language switch.
  *   onZoom(+1 / -1) asks the IDE for a larger / smaller area; it answers with setSize().
- * @returns {{setSize: (cssW: number, cssH: number, k: number, zoom: number, canGrow: boolean) => void}}
+ * @returns {{setSize: (cssW: number, cssH: number, k: number, zoom: number, canGrow: boolean) => void, refresh: () => void}}
  */
-export function createDrawTool(container, { insertCode, onZoom }) {
+export function createDrawTool(container, { insertCode, onZoom, getCodegen }) {
   let paths = loadPaths();
   let k = 1;               // overlay device pixels per screen pixel
   let open = false;        // is the last path still being extended?
@@ -109,9 +97,9 @@ export function createDrawTool(container, { insertCode, onZoom }) {
   let shiftHeld = false;
 
   // ── DOM ─────────────────────────────────────────────────────
-  const note = el('p', 'tool-note',
-    'Click to add points (one point = PLOT, more = LINE). Shift snaps to horizontal / vertical. ' +
-    'Right-click or End path finishes a path. y counts from the top.');
+  const note = el('p', 'tool-note');
+  /** The active language's code for the paths ('' while it has none). */
+  const generate = () => getCodegen()?.generate(paths) ?? '';
 
   // Ink canvas below, overlay (markers, rubber band) above; the overlay takes the input.
   const stage = el('div', 'draw-stage');
@@ -137,7 +125,7 @@ export function createDrawTool(container, { insertCode, onZoom }) {
   const endBtn = button('End path', endPath);
   const clearBtn = button('Clear', clear);
   const insertBtn = button('Insert into program', () => {
-    const text = pathsToCode(paths);
+    const text = generate();
     if (text) insertCode(text);
   });
   const copyBtn = button('Copy', copy);
@@ -194,7 +182,7 @@ export function createDrawTool(container, { insertCode, onZoom }) {
   }
 
   function copy() {
-    const text = pathsToCode(paths);
+    const text = generate();
     if (!text) return;
     try {
       navigator.clipboard.writeText(text).then(() => {
@@ -206,7 +194,8 @@ export function createDrawTool(container, { insertCode, onZoom }) {
 
   function changed() {
     savePaths(paths);
-    const text = pathsToCode(paths);
+    note.textContent = getCodegen()?.hint ?? '';
+    const text = generate();
     code.textContent = text;
     const empty = paths.length === 0;
     undoBtn.disabled = empty;
@@ -339,5 +328,5 @@ export function createDrawTool(container, { insertCode, onZoom }) {
   }
 
   changed();
-  return { setSize };
+  return { setSize, refresh: changed };
 }

@@ -177,12 +177,11 @@ the plan).
 (`f7a5d1d`), and Leap-C C1 to C3 (`d0e437b`), the move to 1.0.0 (`ac0d00f`; the
 TSRun submodule was then at `9f9bbc5`; now `c52f272`, see the 2026-11-02 row), C5 (`94700cf`), C6 (`4f30b82`), C7
 (`1050d7b`), C4 (`0b419d3`) and C9 (`4798b64`) are done; see CLAUDE.md
-"Leap-Forth", "Leap-C" and "Debugger". F6 (`50fb417`) is done too, so Forth lacks only the optional F7 tools, the
-optional LIB tape and the optional watches. Nothing is open with the Leap-C
+"Leap-Forth", "Leap-C" and "Debugger". F6 (`50fb417`) is done too, so Forth lacks only the optional LIB tape and the optional watches. Nothing is open with the Leap-C
 project (all notes answered, see Traps), and Leap-C lacks only optional things: locals in the debugger,
 driving the tape example in the tests (the key-reading ones are driven since
-`5cfffb8`), running the C examples from cartridges against the manual, and the
-C8 tools. Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build
+`5cfffb8`), running the C examples from cartridges against the manual (the C8 and F7
+tools, the UDG and Draw tabs for Leap-C and Forth, are done; CLAUDE.md Phase 7). Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build
 (released 2026-11-02 UTC, tag `v1.1.0`, commit `f8db836`; the Leap-C project's
 description is `docs/requests/LEAP_C_CARTRIDGE.md`, read only: other people's
 file); the 1.0.0 ROM entry used 1.1.0's cartridge because the ROMs are
