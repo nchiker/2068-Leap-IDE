@@ -179,3 +179,82 @@ All of them update at about 10 Hz (5 to 7 frames a tick, the compose cost above)
 Files: `fine.asm` (cartridge), `scene.mjs` (scene, script, data images), `fine-model.mjs` (reference), `fine-check.mjs` (checker), `lib.mjs`
 (build / boot harness; reuses `../xip/mkdck.mjs`), `run-fine.mjs`, `bench.mjs`, `xemu.mjs`, `zesarux.py`, `fuse.sh`, `fuse-flicker.mjs`.
 `build/` is generated (git-ignored).
+
+## Cross-emulator check of the fine games (2026-11-15)
+
+Contract sections 7 and 9: "the sample games' pictures on TSRun, ZEsarUX and Fuse after scripted ticks (as Orbit Gates)". The games: **Starfall**
+(`arcade/examples/shooter.arc`) and **Lumen** (`arcade/examples/lumen.arc`), runtime v2 (`arcade/build/v2` = `arcade/dist/v2`), every scene fine colour (SCLD mode 2:
+`$FF` = 2, bitmap `$4000`, colour plane `$6000`). The scripts are `arcade/tools/xemu/fine-*` (one set for both games; the argument is `shooter` or `lumen`; the old
+`shooter-*` / `orbit-*` scripts sample the two-buffer display files and cannot read mode 2). Nothing ran on real hardware.
+
+**Sampling point:** the runtime's `FINE_FRAME` (the fine tick has just published the previous tick's list, so the screen is a complete fine picture; `V_TICKS` = ticks completed;
+the game's `FRAME` call that follows reads input index `V_TICKS`). The same instruction on TSRun and ZEsarUX, so the pictures are compared at equal ticks, not at equal times.
+The 12,288 bytes compared per tick are the bitmap and the colour plane (6,144 groups of 8 x 1: bitmap byte + colour byte), plus, at the sampled ticks, RT_SEED, GAME_VARS,
+SPR_TAB, CELL_TILE and CELL_ATTR (5,506 bytes). Fuse gives frames, not memory: its movie frames (one 320 x 240 PPM per refresh; a `.scr` would hold only 6,912 bytes, not
+mode 2's colour plane) are turned into 256 x 192 palette indices (Fuse draws BRIGHT black as black: index 8 is read as 0) and matched to TSRun's tick pictures.
+
+**Scenarios** (`arcade/tools/xemu/<game>-fine-scenario.json`, made by `fine-scenario-make.mjs`: a pilot works the run out closed loop on TSRun reading the game's variables; every
+emulator then plays the same input list open loop): *Starfall* 347 ticks: title (10 ticks) -> FIRE -> play (the ship steers under the nearest enemy and holds fire: bullets,
+a kill, explosions, up to 6 live objects at once; moves up and down; then it flies into the enemies, all three lives lost) -> GAME OVER (25 ticks) -> FIRE -> a second game (40 ticks); 40 sampled
+ticks. *Lumen* 687 ticks: title -> FIRE -> play (breadth-first search of the maze to the nearest orb or prism around the shades, 74 orbs, a prism eaten, a hunt of the pale shades,
+all 4 shades out at once, 5 moving sprites; from play tick 260 it walks into the shades: three lives lost) -> GAME OVER -> FIRE -> a second game (40 ticks); 57 sampled ticks.
+Keys: the scenario's stick values are played as the keys Q A O P SPACE (TSRun's key matrix, ZEsarUX `send-keys-event`), on TSRun also as joystick 1; for Fuse (no key per tick in
+a headless run) `fine-patch.mjs` makes a test copy of the cartridge whose `RT_KEYDOWN` reads a per-tick table (3 bytes patched, the table and a 81-byte stub in the free tail of the game area:
+`arcade/build/<game>-script.dck`; the original cartridge is unchanged).
+
+### Commands (from the repository root; about 2 minutes for a game plus the Fuse run)
+
+    node arcade/tools/xemu/fine-build.mjs shooter            # compile (the assets file's "scenes" key goes to the compiler, as arcadec does); build/xemu/shooter-fine/meta.json
+    node arcade/tools/xemu/fine-scenario-make.mjs shooter    # -> arcade/tools/xemu/shooter-fine-scenario.json (written next to the scripts)
+    node arcade/tools/xemu/fine-patch.mjs shooter            # -> arcade/build/shooter-script.dck
+    for m in keys script joystick; do node arcade/tools/xemu/fine-tsrun.mjs shooter --mode $m; done          # TSRun: 1 to 2 s each
+    python3 arcade/tools/xemu/fine-zesarux.py shooter --mode keys; python3 arcade/tools/xemu/fine-zesarux.py shooter --mode script   # ZEsarUX: about 30 s each (--port N to run several at once)
+    sh arcade/tools/xemu/fine-fuse.sh shooter                # Fuse, real time: 34 s (lumen 56 s), 600 to 750 MB of PPM frames in arcade/build/xemu/fuse-<game>-fine (a new directory every time)
+    node arcade/tools/xemu/fine-compare.mjs shooter          # the comparison below (exit 0 = nothing differs); fine-shown.mjs shooter lists TSRun's own beam frames for the wipes
+    # the same with lumen
+
+### Figures
+
+| | Starfall | Lumen |
+|---|---|---|
+| ticks run (sampled for state) | 347 (40) | 687 (57) |
+| **TSRun vs ZEsarUX**, real keys: ticks compared / groups differing / state bytes differing at the sampled ticks | 347 / 0 of 2,131,968 / 0 of 220,240 | 687 / 0 of 4,220,928 / 0 of 313,842 |
+| **TSRun vs ZEsarUX**, script-driven cartridge | 347 / 0 / 0 | 687 / 0 / 0 |
+| TSRun keys vs script cartridge vs joystick 1 (the patched cartridge and STICK(1) give the same run) | identical (JS, the stick value STICK(1) returns, is the one state variable that differs with joystick input; left out) | identical (same) |
+| ZEsarUX keys vs script cartridge | identical | identical |
+| game variables, scene, `$FF` mode, keys read, border variable at every tick (TSRun vs ZEsarUX) | all same | all same |
+| **Fuse**: movie frames / frames showing a TSRun tick's picture exactly (palette indices) | 2,704 / 1,100 | 3,364 / 2,084 |
+| tick pictures appearing in Fuse, in order | 347 of 347 | 687 of 687 |
+| Fuse frames inside the span that match no tick | 14 (10 + 4: two scene switches), all "torn" | 50 (17 + 16 + 17: three scene switches), all "torn" |
+| TSRun beam, same run (`fine-shown.mjs`) | 14 (10 + 4), 13 torn + 1 with 1 group matching neither (probably a split write) | 47 (16 + 15 + 16), all torn |
+| Fuse refreshes per tick (first frame of a picture to the next's) | 3 (268 of 270; one 2, one 29) | 3 (466 of 468; two 1) |
+
+**Result: nothing differs in the 256 x 192 picture.** For both games every tick's picture (bitmap and colour plane, 12,288 bytes) and every sampled state is byte-identical on
+TSRun and ZEsarUX; Fuse shows every one of the TSRun tick pictures, in order, with every pixel the same colour index (0 of 49,152 pixels off in every matched frame).
+
+What the numbers do not say is "identical in time":
+* **Scene switches take a different number of refreshes** (V_FRAMES between two ticks at the sampling point: 3 for a normal tick; a switch tick 26 to 27 refreshes on TSRun and
+  23 to 24 on ZEsarUX for Starfall, 28 / 31 and 24 / 27 for Lumen: ZEsarUX's timing is the 48K-like one of `ARCADE_HARDWARE_NOTES.md`). The game state does not depend on it
+  (the sampling is at equal ticks and the game counts ticks, not refreshes).
+* **The wipe at a scene switch** (the Fuse frames that match no tick): `ENTER` redraws the whole screen in the one switch tick; the list cannot hold it, so the publish presumably writes the
+  rest straight, top to bottom, over 10 to 17 refreshes (the list-overflow path of `NOTES-FINE.md`). Every group of such a frame equals the picture before or the picture after
+  (no group is anything else, no plain frame, no wrong colour), on Fuse (14 and 50 frames) and on TSRun's beam (14 and 47 frames; Fuse shows about one frame more per wipe). The contract's 4.3 says a switch shows the old picture, plain colour or the new picture; this
+  is a third thing, a top-to-bottom wipe from the old to the new, for 0.17 s (Starfall's title to play) to 0.28 s (Lumen). Same on both emulators, so not an emulator difference; whether it matters is the owner's call.
+* **The border** is outside the compared picture: during the first frames of a scene switch (and the boot) the border is colour 1 (the runtime's `BORDER_COLOUR`, blue) on
+  TSRun (`m.border` = 1); Fuse's PPM shows it as red (192, 0, 0). 23 frames of the span per game. The game's own border variable is 0 at every tick and every other frame
+  has a black border on Fuse. Not investigated further (it is the colour of Fuse's border for that port value, or fmfconv's border palette).
+* ZEsarUX and Fuse were not used for the flicker measure (TSRun's beam did that; the 0 torn / 0 broken figures of F2 stand); the wipe above is the one non-clean kind of frame
+  Fuse shows, and TSRun's beam shows the same.
+
+Not checked: real hardware; ZEsarUX frame by frame (its memory at the sampling point, not its screen: the screen of ZEsarUX and Fuse for mode 2 was checked above, "the picture
+after 100 updates"); Fuse's state (frames only); a joystick on ZEsarUX / Fuse (ZEsarUX reads AY R14 as 0).
+
+### Playing the games in Fuse by eye
+
+    node arcade/tools/arcadec.mjs arcade/examples/shooter.arc --assets arcade/examples/shooter.assets.json --runtime v2     # -> arcade/build/shooter.dck (Starfall)
+    node arcade/tools/arcadec.mjs arcade/examples/lumen.arc   --assets arcade/examples/lumen.assets.json   --runtime v2     # -> arcade/build/lumen.dck (Lumen)
+    fuse --machine ts2068 --rom-ts2068-0 tsrun/roms/ts2068-0.rom --rom-ts2068-1 tsrun/roms/ts2068-1.rom --no-confirm-actions arcade/build/shooter.dck
+    fuse --machine ts2068 --rom-ts2068-0 tsrun/roms/ts2068-0.rom --rom-ts2068-1 tsrun/roms/ts2068-1.rom --no-confirm-actions arcade/build/lumen.dck
+
+Keys: Q up, A down, O left, P right, SPACE fire (starts the game and restarts it after GAME OVER).
+ZEsarUX (from its folder): `cd ~/Applications/ZEsarUX-13.0 && ./zesarux --machine TS2068 --romfile ts2068.rom <absolute path>/lumen.dck`.
