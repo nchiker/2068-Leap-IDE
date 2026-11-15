@@ -16,7 +16,7 @@ below describes 1.0.0 / 1.1.0 where it names versions.) Earlier status, updated
 2026-11-01. **C1 to C7 and C9 are done** (C1 to C3 `d0e437b`, on
 `v1.0.0-beta.2`; the move to 1.0.0 `ac0d00f`; C5 `94700cf`; C6 `4f30b82`; C7
 `1050d7b`, with the programs that read keys driven in the tests by `5cfffb8`;
-C4 `0b419d3`; C9 `4798b64`); only C8 (optional) is open. Prerequisite (done, `3ed5d3b`):
+C4 `0b419d3`; C9 `4798b64`); C8 (the UDG and Draw tools) is done too. Prerequisite (done, `3ed5d3b`):
 stage 0 of [`MULTI_LANGUAGE_PLAN.md`](MULTI_LANGUAGE_PLAN.md) (the language
 profile). The Leap-C project has answered the IDE's questions
 ([`requests/LEAP_C_ANSWERS.md`](requests/LEAP_C_ANSWERS.md)).
@@ -444,7 +444,9 @@ got the same port in 2.1.1-emu.1, which brought the whole BASIC run from 2081 to
   `// expect: exit N` / `// screen:` lines run through the IDE's run path in
   Node, compared with the expectation (the V2 equivalent ran 695 programs).
 
-### C8 — Tools (optional)
+### C8 — Tools
+
+**Done** (branch `ide-tools-c-forth`; CLAUDE.md Phase 7, `docs/LEAP_C_REFERENCE.md` "Tools (C8)"). Built as `src/lang/c/tool-code.js` behind the profile's `tools {udg, draw}`; `src/tools/udg.js` and `draw.js` no longer know a language. Differences from the plan below: the UDG tab inserts `memcpy((char *)0xF180, "\x3C…", 8);` (a string literal of `\xhh` escapes) instead of the example's global array, because a tool that inserts at the cursor is inside a function; "Load from program" reads both that form and the manual's example 13. `draw` is exactly Bresenham in Leap-C 1.2.0 (tested).
 
 - **Draw tab:** generate `plot(x, y)` and `draw(x0, y0, x1, y1)`; y from the
   top, x 0-255, y 0-191, as in BASIC; `draw` clips off-screen coordinates to
@@ -627,7 +629,7 @@ Leap-C 1.0.0 is out and adopted, its `.sym` files (with `STMT_DO.cond` and
 `SH_WAIT_KEY.key_ret`) are in the emulator pack, and 1.1.0's cartridge is
 adopted (C9).
 
-For the IDE, all optional: C8 (the UDG and Draw tools); locals in the
+For the IDE, all optional: locals in the
 debugger; driving the key-reading and tape examples in the tests; running the
 C examples from cartridges against the manual's results (as V2's 695-program
 comparison); and trying the cartridge on real hardware.

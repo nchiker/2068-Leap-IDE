@@ -111,8 +111,8 @@ Leap-IDE/
 │   │       └── examples.js      ← GENERATED Examples menu (15 manual programs + Blackjack + Shooting Gallery; `keys` as `[line, text]`); never hand-edit
 │   └── tools/        ← Right-panel tools (Phase 7, done)
 │       ├── symbols.js ← Symbols tab: the profile's symbol groups; click jumps to the line
-│       ├── udg.js     ← UDG tab: draw the 21 user-defined characters, insert / load POKEs (BASIC)
-│       └── draw.js    ← Draw tab: graphics scratchpad generating PLOT / LINE (BASIC)
+│       ├── udg.js     ← UDG tab: draw the 21 user-defined characters, insert / load the active language's code (no language knowledge)
+│       └── draw.js    ← Draw tab: graphics scratchpad generating the active language's plot / line code (no language knowledge)
 ├── cartridge-build/  ← Source of the cartridge images: leap.patch + setup.sh, CLI tools, tests, status (see its README)
 ├── cartridge/
 │   ├── 2.1.0-emu.1/  ← Leap 2.1.0-emu.1's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README (identity $E0A5)
@@ -257,7 +257,8 @@ rest of this file describes BASIC's profile unless it says otherwise.
   for a ROM entry without the C4 fields.
 - `symbolGroups(text)` and `symbolsEmpty` (Symbols tab), `help` (the Help
   overlay's entries, groups, manual link, shortcuts and tips), `examples`,
-  `tools {udg, draw}` (which code generators apply), `waitingText`,
+  `tools {udg, draw}` (the UDG and Draw tabs' half of the language: an object
+  of code generators, or null to hide the tab; see Phase 7), `waitingText`,
   `readyText` (the status when the ROM has booted; default `Ready`),
   `hasTape` / `hasCartridge` / `hasSession`, `tapeToText(bytes)` /
   `ownsTape(bytes)` and `ownsCartridge(dck)` (true for a cartridge image of
@@ -266,10 +267,12 @@ rest of this file describes BASIC's profile unless it says otherwise.
   `help` may also carry `link(name, entry)` (the entry's manual URL),
   `forms(name, entry)` (the lines under its name) and `kindText(entry)`.
   Buttons and tabs a language lacks are hidden (`hidden`, with
-  `.btn[hidden]` and the like in `ide.css`): UDG and Draw for Forth and
-  Leap-C (both have a tape: ⬇ TAP; Forth has ⬇ DCK and ▶ Test DCK since F8,
-  Leap-C since C9); Import (`#btn-import-session`, in the
-  emulator panel header) shows only for a profile with `hasSession` (Forth).
+  `.btn[hidden]` and the like in `ide.css`): the UDG and Draw tabs show for
+  a profile whose `tools.udg` / `tools.draw` is set (all three languages since
+  C8 and F7; Leap Arcade's profile has neither); ⬇ TAP for `hasTape` (all
+  three; Forth has ⬇ DCK and ▶ Test DCK since F8, Leap-C since C9); Import
+  (`#btn-import-session`, in the emulator panel header) shows only for a
+  profile with `hasSession` (Forth).
 - `attach({rom, romImages, fetchAsset})`: **the per-ROM half**, bound once the
   ROM pair is loaded. For BASIC it builds the checker machine, fetches the
   package images and returns `lint(text)`, `startRun(text)` (the `job`, the
@@ -377,11 +380,11 @@ one line each in `src/lang/profiles.js` and `src/lang/editors.js`, its ROM
 entries and generated data under it, and tests (`tests/rom-checks.mjs`
 sections 8 and 9 are the models).
 
-### Leap-Forth (`src/lang/forth/`, stages F0 to F6 and F8, plus Import session)
+### Leap-Forth (`src/lang/forth/`, stages F0 to F8, plus Import session)
 
 **Details: [`docs/LEAP_FORTH_REFERENCE.md`](docs/LEAP_FORTH_REFERENCE.md).** Leap-Forth (2068-Forth v2.0.1) profile: console-first model, Send, Run line by line, editor, static check, Import session, tape, debugger, cartridge, manual examples, and how to add a release.
 
-### Leap-C (`src/lang/c/`, stages C1 to C7 and C9)
+### Leap-C (`src/lang/c/`, stages C1 to C9)
 
 **Details: [`docs/LEAP_C_REFERENCE.md`](docs/LEAP_C_REFERENCE.md).** Leap-C v1.2.0 profile: shell Run path, checker, editor, tape, libraries, Examples, debugger, cartridge (C9), ROM entry, and how to add a release.
 
@@ -1136,6 +1139,39 @@ the cursor's line, selects them, scrolls to them and is one undo step. The tab
 code is in the "Right-panel tabs" section of `ide.js`; the UDG tool is created
 in `bootEmulator` because it needs the ROM entry and the machine.
 
+**The tools know no language (C8 and F7, 2026-11).** UDG and Draw are shown for
+Basic, Leap-C and Forth. `src/tools/udg.js` and `draw.js` take the active
+profile's `tools.udg` / `tools.draw` (`getCodegen: () => profile.tools.udg`),
+which come from `src/lang/<id>/tool-code.js` (pure; Node can import them):
+`udg {show(code), hint, insert / insertAll / load {label, title, none},
+generate(bytes, slots, table, codeBase) -> text, read(text, table, size) ->
+Map(offset -> byte)}` and `draw {hint, generate(paths) -> text}`. `showLanguageTools`
+in `ide.js` calls `refresh()` on both tools after a language switch (button
+texts, note, code view, the ROM's table address). The designs and paths are
+shared between the languages (`leap-ide.udg`, `leap-ide.draw`). What each
+language writes (checked by `tests/rom-checks.mjs` section 11 on the real
+ROMs: the UDG table bytes, the printed characters, and the bitmap equal to the
+Bresenham preview, with each line inside `lineLimit` and clean in the
+language's checker):
+
+| | UDG (one character, slot 0) | Draw (a point; a segment) |
+|---|---|---|
+| BASIC | `REM character 144: PRINT CHR$(144)` and two lines of four `POKE 61824, 60 : …` | `PLOT x, y` / `LINE x0, y0 TO x1, y1` |
+| Leap-C | `// character 144: putchar(144);` and `memcpy((char *)0xF180, "\x3C\x42…", 8);` | `plot(x, y);` / `draw(x0, y0, x1, y1);` |
+| Forth | `\ character 144: 144 EMIT` and two lines of four stores `60 0 UDG C!  66 0 UDG 1 + C! …` | `x y PLOT` / `x0 y0 x1 y1 LINE` |
+
+Leap-C has no `POKE`; the manual's idiom (Part 7, example 13) is `memcpy` of a
+global `char face[8]` to `(char *)0xF180`, and a tool that inserts at the
+cursor (inside a function) cannot add a global, so it gives `memcpy` the eight
+bytes as a `\xhh` string literal (a 0 byte, a quote and a backslash are all
+fine). Its Load from program reads that form and the manual's own (a global
+`char` array with an initialiser list, then `memcpy`); comments and other
+addresses are ignored. Forth's Load from program reads `byte n UDG [r +] C!`
+with comments and strings ignored. Forth echoes every line it is sent onto the
+screen, over a picture drawn by top-level lines, so the Draw tab's hint says to
+put the lines in a word (`: PIC … ;`) and run it after `CLS`; the UDG lines are
+unaffected. All three ROMs have the same 21 characters at `$F180`.
+
 - **Symbols** (`src/tools/symbols.js`): procedures `name(param)`, `DEF FN`s,
   labels `name:` and variables (each with the line it is first set), grouped
   with counts and sorted by line, with a filter box. Clicking a name moves the
@@ -1155,8 +1191,8 @@ in `bootEmulator` because it needs the ROM entry and the machine.
   to draw (the first cell decides set or clear), Clear, Invert, flip left-right
   and up-down, shift in four directions; 21 thumbnails; the title shows
   `CHR$(n)`, the address and the 8 byte values. Designs persist in
-  `localStorage` (`leap-ide.udg`). Exports `createUdgTool`, `udgPokes`,
-  `pokesInSource`.
+  `localStorage` (`leap-ide.udg`). Exports `createUdgTool`; BASIC's `udgPokes`
+  and `pokesInSource` are in `src/lang/basic/tool-code.js`.
 - **Draw** (`src/tools/draw.js`), the graphics scratchpad: a 256x192 canvas that
   is the TS2068 screen (y from the top, 1 CSS pixel per pixel). Clicks add
   points to a path; a one-point path is `PLOT x, y`, each further point a
@@ -1172,7 +1208,8 @@ in `bootEmulator` because it needs the ROM entry and the machine.
   editor would get less than 360 px (+ is then disabled, saying why). The
   choice is remembered (`leap-ide.drawZoom`, default 2×); layout is
   `applyDrawZoom` in `ide.js` ("Draw zoom"), and `createDrawTool` returns
-  `{setSize}`. Exports `createDrawTool`, `bresenham`, `pathsToCode`.
+  `{setSize, refresh}`. Exports `createDrawTool` and `bresenham`; BASIC's
+  `pathsToCode` is in `src/lang/basic/tool-code.js`.
 
 Verified in headless Chromium: the tabs and the symbol table contents, and the
 rendering of the UDG and Draw tabs; the tools' code insertion and runs were
@@ -1264,15 +1301,15 @@ v2.0.1 release, Leap V2 by 2.1.1 and `docs/requests/LEAP_V2_ANSWERS.md`).
 All of it is pushed (TSRun `c52f272` first). Remaining (details in
 `docs/LEAP_FORTH_PLAN.md` and `docs/LEAP_C_PLAN.md`), all optional:
 
-- **Forth:** F7 (UDG and Draw tools) is optional; the optional LIB tape and
-  watches; the `2 STICK` difference is fixed in v2.0.1 (the release answers
+- **Forth:** the optional LIB tape and
+  watches (F7, the UDG and Draw tools, is done); the `2 STICK` difference is fixed in v2.0.1 (the release answers
   `docs/requests/LEAP_FORTH_STICK.md`; no answer file); the
   Forth cartridge has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and real
   hardware not tried).
 - **Leap-C:** driving the tape example
   (`a-score-on-tape`) in the tests; running the C examples
   from cartridges against the manual's results (as V2's 695-program
-  comparison); C8 tools (UDG and Draw). The Leap-C cartridge has run on
+  comparison) (C8, the UDG and Draw tools, is done). The Leap-C cartridge has run on
   TSRun's stock TS2068 only (Fuse / ZEsarUX with it were the Leap-C project's
   own; real hardware not tried).
 

@@ -84,7 +84,7 @@ This table is the state before commit `3ed5d3b`; the paths are the old ones.
 | `src/leap-debug.js`, `src/debugger.js` | V2 VM line table, variables, call stack; the panel's Variables / Call stack sections. |
 | `src/pc-keyboard.js` | V2's SYMBOL SHIFT table. Leap-C and Forth changed it (they type `[ ] { } \| ~ ^ \`). |
 | `src/help.js` | Reads `leap-keywords.js`, V2 groups and the V2 manual link. |
-| `src/tools/udg.js`, `draw.js` | Generate BASIC (`POKE`, `PLOT`, `LINE`). |
+| `src/tools/udg.js`, `draw.js` | Generated BASIC (`POKE`, `PLOT`, `LINE`); since C8 / F7 they know no language and take the profile's `tools {udg, draw}` (`src/lang/<id>/tool-code.js`). |
 | `src/files.js` | `tapeToText` accepts only V2 tapes (`$81xx`). |
 
 ## Stage 0: what was built (done 2026-11-01, commit `3ed5d3b`)
