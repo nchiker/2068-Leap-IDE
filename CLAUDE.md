@@ -1248,7 +1248,7 @@ All of it is pushed (TSRun `c52f272` first). Remaining (details in
   `docs/requests/LEAP_FORTH_STICK.md`; no answer file); the
   Forth cartridge has run on TSRun's stock TS2068 only (ZEsarUX / Fuse and real
   hardware not tried).
-- **Leap-C:** locals in the debugger; driving the tape example
+- **Leap-C:** driving the tape example
   (`a-score-on-tape`) in the tests; running the C examples
   from cartridges against the manual's results (as V2's 695-program
   comparison); C8 tools (UDG and Draw). The Leap-C cartridge has run on

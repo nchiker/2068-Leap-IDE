@@ -31,7 +31,7 @@ import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { scanC, librariesUsed } from './leapc-scan.js';
 import { LEAPC_EXAMPLES } from './examples.js';
 import { SPIN_DEMO } from '../spin-demo.js';
-import { createLineTable, readGlobals, readCallStack } from './leapc-debug.js';
+import { createLineTable, readVariables, readCallStack } from './leapc-debug.js';
 import { romIdentity, programImage, buildCartridge as packCartridge, isLeapcCartridge } from './cartridge.js';
 import { blankOut } from './leapc-scan.js';
 import { buildTAP, checkTapeName } from '../basic/export.js';
@@ -171,9 +171,9 @@ function createDebugAdapter(rom) {
       return pc && l > 0 ? l - 1 : -1;
     },
     halt: () => false,                 // Stop while paused: BREAK, as when running
-    variables: m => readGlobals(m, t),
+    variables: m => readVariables(m, t),
     callStack: (m, toEditorLine) => readCallStack(m, t, toEditorLine),
-    labels: { variables: 'Globals', step: 'statement' },
+    labels: { variables: rom.scopeClose ? 'Variables' : 'Globals', step: 'statement' },
   };
 }
 

@@ -272,7 +272,9 @@ record winning at one address). **Deviations and details:**
   (every `RT_ERROR` sets it) and the line table ("Runtime error 6 on line 5");
   without a line table it is the function's definition line as before ("in the
   function on line N").
-- **Not done:** locals (the second version below), step over / out.
+- **Not done:** step over / out. Locals (the second version below) were done
+  on 2026-11-15 as planned, plus block-scope statics and the split at region
+  jumps (`docs/DEBUGGER.md`).
 - Also fixed in this commit, for all languages: a breakpoint toggle never
   removed the breakpoint (`src/editor.js`).
 - Tests: `tests/rom-checks.mjs` section 9 (stops with the globals and the call

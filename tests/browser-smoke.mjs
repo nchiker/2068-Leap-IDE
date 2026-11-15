@@ -483,7 +483,7 @@ try {
   await evaluate("document.getElementById('btn-stop').click()");
   const cStop = await waitFor("/Stopped|error|Finished/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 10000);
   check('Leap-C: Stop ends a program waiting in getkey()', /^Stopped \(BREAK\)/.test(cStop ?? ''), String(cStop));
-  // C4: a breakpoint in a function pauses there, with the globals and the call stack.
+  // C4: a breakpoint in a function pauses there, with its locals (the parameter), the globals and the call stack.
   await evaluate(`(leapEditor.setSource(${JSON.stringify(['int total;', 'int sq(int n)', '{', '    return n * n;', '}', 'int main(void)', '{', '    total = sq(3) + sq(4);', '    return total;', '}'].join('\n'))}, {fresh: true}), leapEditor.toggleBreakpoint(4))`);
   await evaluate("document.getElementById('btn-run').click()");
   const cPaused = await waitFor("/^Paused at line/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 15000);
@@ -492,8 +492,8 @@ try {
   await evaluate("document.getElementById('btn-pause').click()");
   const cDone = await waitFor("/^Finished|error/.test(document.getElementById('status-text').textContent) && document.getElementById('status-text').textContent", 15000);
   const cDoneWhy = await status();
-  check('Leap-C: a breakpoint in a function pauses with the globals and call stack; toggling it clears it; Continue finishes with the exit status',
-    cPaused === 'Paused at line 4' && cPanel === 'Globals | total int 0 | sq() line 4 < main() line 8' && cDone === 'Finished: exit 25' && bpOff === '[[4],[]]', `${cPaused} | ${cPanel} | ${cDone} | ${cDoneWhy} | ${bpOff}`);
+  check('Leap-C: a breakpoint in a function pauses with its locals, the globals and the call stack; toggling it clears it; Continue finishes with the exit status',
+    cPaused === 'Paused at line 4' && cPanel === 'Variables | Locals of sq() n int (param) 3 Globals total int 0 | sq() line 4 < main() line 8' && cDone === 'Finished: exit 25' && bpOff === '[[4],[]]', `${cPaused} | ${cPanel} | ${cDone} | ${cDoneWhy} | ${bpOff}`);
   // C9: ▶ Test DCK runs the compiled program from Leap-C's cartridge on the stock ROMs; Stop goes back.
   await evaluate(`(leapEditor.setSource(${JSON.stringify(['int main(void)', '{', '    cls();', '    draw(16, 60, 239, 150);', '    return 7;', '}'].join('\n'))}, {fresh: true}), document.getElementById('btn-dck-test').click())`);
   const cCart = await waitFor(`leapIDE.emulator.cartridge && ((leapIDE.emulator.machine.bus.read(0x4000 | (60 & 0xC0) << 5 | (60 & 7) << 8 | (60 & 0x38) << 2 | (16 >> 3)) >> (7 - (16 & 7))) & 1) === 1 && document.getElementById('emu-rom').textContent`, 20000);

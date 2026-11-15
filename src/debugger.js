@@ -349,8 +349,13 @@ function renderVariables(vars) {
     tbody.innerHTML = '<tr><td colspan="3" class="no-data">No variables</td></tr>';
     return;
   }
-  tbody.innerHTML = vars.map(v =>
-    `<tr><td>${esc(v.name)}</td><td>${esc(v.type)}</td><td class="var-val">${esc(v.value)}</td></tr>`).join('');
+  // A row may carry a group (Leap-C: "Locals of f()", "Globals"): a heading row where it changes.
+  let group;
+  tbody.innerHTML = vars.map(v => {
+    const head = v.group && v.group !== group ? `<tr class="var-group"><td colspan="3">${esc(v.group)}</td></tr>` : '';
+    group = v.group;
+    return `${head}<tr><td>${esc(v.name)}</td><td>${esc(v.type)}</td><td class="var-val">${esc(v.value)}</td></tr>`;
+  }).join('');
 }
 
 function renderBreakpoints(lines, onClick) {

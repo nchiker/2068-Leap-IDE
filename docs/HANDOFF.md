@@ -179,7 +179,7 @@ TSRun submodule was then at `9f9bbc5`; now `c52f272`, see the 2026-11-02 row), C
 (`1050d7b`), C4 (`0b419d3`) and C9 (`4798b64`) are done; see CLAUDE.md
 "Leap-Forth", "Leap-C" and "Debugger". F6 (`50fb417`) is done too, so Forth lacks only the optional F7 tools, the
 optional LIB tape and the optional watches. Nothing is open with the Leap-C
-project (all notes answered, see Traps), and Leap-C lacks only optional things: locals in the debugger,
+project (all notes answered, see Traps), and Leap-C lacks only optional things (its debugger shows locals since 2026-11-15):
 driving the tape example in the tests (the key-reading ones are driven since
 `5cfffb8`), running the C examples from cartridges against the manual, and the
 C8 tools. Its cartridge (C9) is built on Leap-C 1.1.0's cartridge build

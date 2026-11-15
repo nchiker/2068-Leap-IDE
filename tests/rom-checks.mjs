@@ -984,7 +984,9 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     const r = debugRun(prog, [3], s => { seen.push([s.line0 + 1, s.vars.map(v => `${v.name} ${v.type} ${v.value}`).join(), s.stack.map(f => `${f.label}@${f.line}`).join(' < ')]); return 'continue'; });
     same('C4: a breakpoint in a function stops at each call, with the globals and the call stack',
       [r.stops, seen, cl.describeResult(P.driver.result(m, crom), r.start.editorLine, null, r.start.job).text],
-      [3, [[4, 'total int 0', 'sq()@4 < main()@10'], [4, 'total int 1', 'sq()@4 < main()@10'], [4, 'total int 5', 'sq()@4 < main()@10']], fin(14)]);
+      crom.scopeClose
+        ? [3, [[4, 'n int (param) 1,total int 0', 'sq()@4 < main()@10'], [4, 'n int (param) 2,total int 1', 'sq()@4 < main()@10'], [4, 'n int (param) 3,total int 5', 'sq()@4 < main()@10']], fin(14)]
+        : [3, [[4, 'total int 0', 'sq()@4 < main()@10'], [4, 'total int 1', 'sq()@4 < main()@10'], [4, 'total int 5', 'sq()@4 < main()@10']], fin(14)]);
     const steps = [];
     debugRun(prog, [8], s => { steps.push(s.line0 + 1); return steps.length < 8 ? 'step' : 'quit'; });
     {
@@ -1002,6 +1004,33 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
     debugRun(g, [10], s => { gv.push(...s.vars.map(v => `${v.name}: ${v.type} = ${v.value.replace(/\$[0-9A-F]{4}/, '$addr')}`)); return 'continue'; });
     same('C4: globals of each type with their values', gv,
       ['name: char[8] = "LEAP"', 'half: float = 0.5', 'big: unsigned = 50000', 'arr: int[3] = {7, -8, 9}', 'p: struct (4 bytes) = at $addr', 'ptr: int * = $addr']);
+    if (crom.scopeClose) {
+      // Locals: parameters (a word, a float, a char), autos, a block-scope static, a char array,
+      // an inner block that shadows x; the innermost block around the PC decides what is shown.
+      const lp = ['int f(int a, float b, char c)', '{', '    int x = a + 1;', '    static int s = 7;', '    char buf[4];', '    buf[0] = c; buf[1] = 0;', '    {',
+        '        int x = 99;', '        int y = 5;', '        s = s + x + y;', '    }', '    return x + s;', '}', 'int main(void)', '{', '    int r;',
+        '    r = f(3, 2.5, \'Z\');', '    return r;', '}'].join('\n');
+      const lv = [];
+      const lr = debugRun(lp, [9, 11, 17], s => { lv.push([s.line0 + 1, s.vars.map(v => `${v.group}|${v.name}: ${v.type} = ${v.value}`)]); return 'continue'; });
+      const L = 'Locals of f()|', G = [];
+      same('C4: locals of each kind, the innermost block deciding (parameters, autos, static, shadowing)',
+        [lv, cl.describeResult(P.driver.result(m, crom), lr.start.editorLine, null, lr.start.job).text],
+        [[[10, [L + 'a: int (param) = 3', L + 'b: float (param) = 2.5', L + "c: char (param) = 90 'Z'", L + 's: static int = 7', L + 'buf: char[4] = "Z"',
+          L + 'x: int = 99', L + 'y: int = 5', ...G]],
+        [12, [L + 'a: int (param) = 3', L + 'b: float (param) = 2.5', L + "c: char (param) = 90 'Z'", L + 'x: int = 4', L + 's: static int = 111', L + 'buf: char[4] = "Z"', ...G]],
+        [18, ['Locals of main()|r: int = 115']]], fin(115)]);
+    }
+    if (crom.scopeClose) {
+      // A function whose code runs past its region ($C000-$DFFF) into the next: its block's range is split at
+      // CG_UNIT's jump, and a statement after the jump still has the locals (640 x 16 bytes of code).
+      const big = ['int f(int k)', '{', '    int x = 1;', ...Array.from({ length: 80 }, () => '    ' + 'x = x + 7; '.repeat(8).trimEnd()), '    return x + k;', '}',
+        'int main(void)', '{', '    return f(2) - 4000;', '}'].join('\n');
+      const bv = [];
+      const br = debugRun(big, [83], s => { bv.push([s.line0 + 1, s.vars.map(v => `${v.name}=${v.value}`).join(), s.stack.map(f => f.label).join(' < ')]); return 'continue'; });
+      same('C4: locals after the code moves on to the next region',
+        [bv, cl.describeResult(P.driver.result(m, crom), br.start.editorLine, null, br.start.job).text, A.breakPositions(m, 83).map(a => a >= 0xE000)],
+        [[[84, 'k=2,x=4481', 'f() < main()']], fin(483), [true]]);
+    }
     const deep = 'int main(void)\n{\n    float f = 1.0;\n    float z = 0.0;\n    f = f / z;\n    return 0;\n}';
     const dr = debugRun(deep, [], () => 'continue');
     same('C4: a run-time error names its statement\'s line (RT_ERRPC in the line table)',

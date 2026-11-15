@@ -251,9 +251,13 @@ Plan: [`docs/LEAP_C_PLAN.md`](docs/LEAP_C_PLAN.md).
     (`EXIT 12`, a circle drawn); also the identity `$E90E`, the DCK layout, a
     compile error refused with its line and `outp(244, …)` asking first. The
     browser test runs ▶ Test DCK and Stop. Not tried: real hardware.
-- **Not yet.** Locals in the debugger (a second version: `IX` + the symbol's
-  value for `SF_AUTO` entries, with each block's code range from
-  `SCOPE_OPEN` / `SCOPE_CLOSE`); driving the tape example (`a-score-on-tape`)
+- **Locals in the debugger** (2026-11-15): parameters, autos and block-scope
+  statics of the current function, from each block's `SYM_LOC` chain at
+  `SCOPE_CLOSE` and its code range (`SCOPE_OPEN` .. `SCOPE_CLOSE`, split at
+  region jumps); see `docs/DEBUGGER.md`. Checked in `tests/rom-checks.mjs`
+  section 9 (each kind, shadowing, a function whose code crosses into the next
+  region) and the browser test.
+- **Not yet.** Driving the tape example (`a-score-on-tape`)
   in the tests; running the C examples from cartridges against the manual (as
   V2's 695-program comparison); C8 (UDG and Draw tools) is optional and not
   started.

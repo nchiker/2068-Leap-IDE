@@ -596,6 +596,7 @@ html, body {
   border-radius: 3px;
 }
 .var-tbl td.var-val { word-break: break-all; }
+.var-tbl tr.var-group td { color: var(--fg-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; background: var(--bg-hover); }
 .csframe, .bpitem { cursor: pointer; }
 
 /* Display zoom (− 2× +) */
