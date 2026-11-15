@@ -51,6 +51,8 @@ const REAL = { 2: loadRt(2), 3: loadRt(3), 4: loadRt(4) };
 if (!REAL[2] || !REAL[3] || !REAL[4]) { console.log('SKIP: arcade/build/v2, v3 and v4 (runtime.json) are needed (node arcade/tools/build-runtime-v2.mjs ...)'); process.exit(0); }
 const FINEMODE = 0x3300;                                   // a fake address (beyond RT_END of every build): the generator only needs the symbol to exist
 const FAKE2 = { ...REAL[2], rt: { ...REAL[2].rt, symbols: { ...REAL[2].rt.symbols, RT_FINEMODE: FINEMODE } } };
+// a v2 runtime WITHOUT RT_FINEMODE (as before fine.asm): the tree's build with the symbol taken out
+const NOFINE2 = (() => { const { RT_FINEMODE: _drop, ...symbols } = REAL[2].rt.symbols; return { ...REAL[2], rt: { ...REAL[2].rt, symbols } }; })();
 const withWire = (R) => (R.rt.symbols.RT_WIREMODE !== undefined ? R : { ...R, rt: { ...R.rt, symbols: { ...R.rt.symbols, RT_WIREMODE: 0x3B00 }, constants: { ...R.rt.constants, DIV_WIRE: R.rt.constants.DIV_WIRE ?? 0x40 } } });
 const build = (src, R = FAKE2, assets = FA, scenes, extra = {}) => compile(src, { runtime: R.rt, image: R.image, assets, ...(scenes ? { scenes } : {}), ...extra });
 const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
@@ -107,7 +109,10 @@ console.log('1. arcadec: the scenes setting');
     check_('--scenes <file> alone does the same (and the bytes equal the assets-file version)', viaFile.status === 0 && same(viaFile.dck, fine.dck), viaFile.out);
     check_('--scenes wins over the assets file: fine in the assets file, buffers in --scenes = the plain build', win.status === 0 && same(win.dck, plain.dck), win.out);
     check_('... and the other way: buffers in the assets file, fine in --scenes = the fine build', win2.status === 0 && same(win2.dck, fine.dck), win2.out);
-    const real = spawnSync(process.execPath, [join(ROOT, 'arcade/tools/arcadec.mjs'), src, '--assets', aFine, '--runtime', 'v2', '-o', join(tmp, 'real.dck')], { encoding: 'utf8' });
+    const noDir = join(tmp, 'rt-nofine'); mkdirSync(noDir);
+    writeFileSync(join(noDir, 'runtime.json'), JSON.stringify(NOFINE2.rt));
+    copyFileSync(join(REAL[2].dir, REAL[2].rt.image ?? 'runtime.bin'), join(noDir, REAL[2].rt.image ?? 'runtime.bin'));
+    const real = spawnSync(process.execPath, [join(ROOT, 'arcade/tools/arcadec.mjs'), src, '--assets', aFine, '--runtime', noDir, '-o', join(tmp, 'real.dck')], { encoding: 'utf8' });
     check_('on a runtime without RT_FINEMODE the build fails with the scene error (exit 1, no cartridge)', real.status === 1 && /g\.arc:6:7: error: scene 'a': fine colour needs RT_FINEMODE, which this runtime does not provide \(rebuild the v2 runtime\)/.test(real.stdout) && !existsSync(join(tmp, 'real.dck')), real.stdout);
     const help = spawnSync(process.execPath, [join(ROOT, 'arcade/tools/arcadec.mjs'), '-h'], { encoding: 'utf8' });
     check_('the usage text names --scenes and the "scenes" key', help.status === 2 && /--scenes <scenes\.json>/.test(help.stderr) && /top-level "scenes" key of the assets file/.test(help.stderr), help.stderr);
@@ -173,11 +178,11 @@ console.log('\n3. compile(): fine colour needs v2 and no WIRE3D');
   const noRt = compile(TWO, { assets: FA, scenes: FINE('a') });
   check_('with no runtime at all the error is the missing runtime, not a fine error; out.scenes still says fine', noRt.errors.length === 1 && /^no runtime image/.test(noRt.errors[0].message) && noRt.scenes[0].built === 'fine', errText(noRt));
   // the runtime without the routine
-  const nr = build(TWO, REAL[2], FA, FINE('a'));
+  const nr = build(TWO, NOFINE2, FA, FINE('a'));
   eq('a runtime without RT_FINEMODE: the exact error on the scene line', nr.errors.map((e) => [e.line, e.col, e.message]), [[lineOf(TWO, 'SCENE a'), colOf(TWO, 'a\n  PROC'), "scene 'a': fine colour needs RT_FINEMODE, which this runtime does not provide (rebuild the v2 runtime)"]]);
-  const nr2 = build(TWO, REAL[2], FA, FINE('a', 'b'));
+  const nr2 = build(TWO, NOFINE2, FA, FINE('a', 'b'));
   eq('... one for each fine scene', nr2.errors.map((e) => e.message.slice(0, 9) + e.line).join(), `scene 'a'${lineOf(TWO, 'SCENE a')},scene 'b'${lineOf(TWO, 'SCENE b')}`);
-  check_('a runtime without RT_FINEMODE but no fine scene: builds as ever', build(TWO, REAL[2], FA).errors.length === 0 && build(TWO, REAL[2], FA, { a: { display: 'buffers' } }).errors.length === 0);
+  check_('a runtime without RT_FINEMODE but no fine scene: builds as ever', build(TWO, NOFINE2, FA).errors.length === 0 && build(TWO, NOFINE2, FA, { a: { display: 'buffers' } }).errors.length === 0);
   // bad authoring is only an error in a fine game
   const badTile = { ...FA, tilesets: { ts: { tiles: [{ rows: tile(1, 1).rows.map((r, k) => (k === 3 ? { ...r, ink: 9 } : r)) }, tile(2, 3)] } } };
   const badSp = { ...FA, sprites: { ...FA.sprites, sp: { w: 8, h: 4, rows: [2, 3, 12, 5].map((ink) => ({ bits: 'FF', mask: 'FF', ink })) } } };

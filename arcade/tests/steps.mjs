@@ -119,6 +119,8 @@ export const SUITES = [
   'arcade/tests/m15-runtime-music.mjs',
   'arcade/tests/m17-runtime-wire.mjs',
   'arcade/tests/m17-runtime-tick.mjs',
+  'arcade/tests/m19-runtime-fine.mjs',
+  'arcade/tests/m19-runtime-perf.mjs',
 ];
 
 /**
@@ -144,6 +146,7 @@ export const MUTATION_SUITES = [
   { file: 'arcade/tests/m14-mutations.mjs', shards: 12, runtimes: ['v3', 'v4'], tests: ['arcade/tests/m14-runtime-mode.mjs', 'tests/arcade-m14-differential.mjs', 'arcade/tests/m7-runtime-regs.mjs', 'tests/arcade-m13-differential.mjs', 'arcade/tests/m11-runtime-bank.mjs'] },
   { file: 'arcade/tests/m15-mutations.mjs', shards: 15, runtimes: ['v2'], tests: ['arcade/tests/m15-runtime-music.mjs', 'arcade/tests/m10-runtime-sound.mjs'] },
   { file: 'arcade/tests/m17-mutations.mjs', shards: 33, runtimes: ['v2'], tests: ['arcade/tests/m17-runtime-wire.mjs', 'arcade/tests/m17-runtime-tick.mjs'] },
+  { file: 'arcade/tests/m19-mutations.mjs', shards: 12, runtimes: ['v2'], tests: ['arcade/tests/m19-runtime-fine.mjs'] },
   { file: 'arcade/tests/m15c-mutations.mjs', shards: 2, src: ['src/lang/arcade/'], tests: ['tests/arcade-m15-compiler.mjs', 'tests/arcade-m15-differential.mjs', 'tests/arcade-m10-compiler.mjs'] },
   { file: 'arcade/tests/m16c-mutations.mjs', shards: 8, src: ['src/lang/arcade/'], tests: ['tests/arcade-emitter-opt.mjs', 'tests/arcade-codegen-exhaustive.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m5.mjs'] },
   { file: 'arcade/tests/m18c-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-k-warnings.mjs', 'tests/arcade-assetcheck.mjs'] },
