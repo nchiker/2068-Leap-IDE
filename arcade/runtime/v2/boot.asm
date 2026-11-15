@@ -12,6 +12,19 @@ M_HDR_S:
     DB $BC                      ; chunk-spec byte (low-active): DOCK chunks 0,1,6 at hand-off
 M_HDR_E:
 
+; MASK_TAB (skip.asm's sk_dirty and wiretick.asm's wire_dirty_rect index it with an 8-bit add, up to 96 bytes on): in the 51 free bytes between
+; the header and the ISR at $0038, where it needs no alignment padding.
+; MASK_TAB[(columns - 1) * 8 + (cx0 AND 7)] = ((1 << columns) - 1) << (cx0 AND 7), 16 bit.
+M_MASK_S:
+MASK_TAB:
+    DUP 3, n
+    DUP 8, k
+    DW ((1<<(n+1))-1)<<k
+    EDUP
+    EDUP
+M_MASK_E:
+    ASSERT (MASK_TAB&$FF)+96 <= 256 && M_MASK_E <= $0038
+
     ORG $0066                   ; NMI vector: nothing raises it on a stock TS2068; return harmlessly
 M_NMI_S:
 NMI:
@@ -19,7 +32,161 @@ NMI:
 M_NMI_E:
     INCLUDE "wiremode.asm"      ; $0068: RT_WIREMODE, wire_boot (wireframe, slice W2: the free bytes before the cold start)
 
+; ---------------------------------------------------------------------------------------------------------------
+; Pages $01 and $02: BIT_TAB, the sprite blitters' unrolled blocks (sprite.asm's group loops call them), and the cold start in two parts.
+; Blit.  A sprite copy ("phase") is a table of rows of (mask, image) byte pairs, one pair per screen byte the sprite touches: WB = 1, 2 or 3
+; bytes (assets.asm).  For each pair  screen = (screen AND mask) OR image.  Three blocks, one per WB, each an UNROLLED block of 8 rows that ends
+; in RET: a group of k rows (k = 1..8) is run by entering the block (8 - k) rows from its start (run1 / run2 / run3: the entry comes from a
+; table, the jump is PUSH + RET so that HL, DE stay free).  Each block lies inside one page together with its entry table (the entries are
+; the low bytes of the entry points; run sets B to the page once for the table and the jump).  The page constraints are asserted; this
+; place is fixed ($0100 + ...), so nothing that moves elsewhere can break them.
+; ---------------------------------------------------------------------------------------------------------------
     ORG RT_ENTRY
+M_BLKA_S:
+BIT_TAB:                        ; page aligned (mark_dirty and walk_sent index it through L): $0100 is a page start, so it costs no padding here
+    DB $01, $02, $04, $08, $10, $20, $40, $80
+
+    MACRO BYTE_OP
+        ld a,(de)
+        and (hl)                ; keep the background where the mask is 1
+        inc hl
+        or (hl)                 ; add the sprite's ink
+        inc hl
+        ld (de),a
+    ENDM
+    MACRO ROW3
+        BYTE_OP
+        inc e
+        BYTE_OP
+        inc e
+        BYTE_OP
+        dec e
+        dec e
+        inc d                   ; one pixel row down (inside the cell; the group loop handles the cell boundary)
+    ENDM
+    MACRO ROW2
+        BYTE_OP
+        inc e
+        BYTE_OP
+        dec e
+        inc d
+    ENDM
+    MACRO ROW1
+        BYTE_OP
+        inc d
+    ENDM
+ROW3_LEN        EQU 23          ; bytes of code of a row (asserted below)
+ROW2_LEN        EQU 15
+ROW1_LEN        EQU 7
+
+
+    ; ENTRY_TAB blk, len: the entry for k rows (k = 1..8) at index k - 1: the low byte of blk + (8 - k) * len
+    MACRO ENTRY_TAB blk, len
+        DUP 8, kk
+        DB (blk+(7-kk)*len)&$FF
+        EDUP
+    ENDM
+    ; RUN_ROWS ent, blk: A = k (1..8) -> run k rows of that block from the current DE / HL; its RET returns to the caller.  Clobbers AF, BC.
+    MACRO RUN_ROWS ent, blk
+        add a,(ent-1)&$FF
+        ld c,a
+        ld b,blk>>8
+        ld a,(bc)               ; the entry's low byte (the table is in the block's page)
+        ld c,a
+        push bc
+        ret
+    ENDM
+
+BLK3:
+    DUP 8
+    ROW3
+    EDUP
+    ret
+BLK3_END:
+ENT3:
+    ENTRY_TAB BLK3, ROW3_LEN
+run3:
+    RUN_ROWS ENT3, BLK3
+M_BLKA_E:
+    ASSERT BLK3_END-BLK3 == 8*ROW3_LEN+1
+    ASSERT (BLK3>>8) == ((BLK3_END-1)>>8) && (ENT3>>8) == (BLK3>>8) && ((ENT3+7)>>8) == (BLK3>>8)
+
+; Small routines and tables of other modules that need no particular address, placed in the rest of page $01 (as v3 has them after its header).
+; All four are reached by absolute CALL / data access; nothing falls into them.
+; RT_BORDER (tileops.asm's API): A = colour (AND 7).  Writes the ULA port with the beeper and MIC bits 0 and keeps the colour in V_BORDER.  Clobbers AF.
+M_GAPA_S:
+RT_BORDER:
+    and 7
+    ld (V_BORDER),a
+    out (PORT_ULA),a
+    ret
+; KEY_ROWSEL (RT_KEYDOWN): the half-row selects, in page 0 so that RT_KEYDOWN adds the row to the low byte.
+KEY_ROWSEL:
+    DB $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+    ASSERT (KEY_ROWSEL&$FF)+7 < 256
+; walk_sent (tileops.asm walk_setup): A = cells (1..8) -> A = 1 << (cells - 1) (BIT_TAB is page aligned).  Clobbers HL.
+walk_sent:
+    dec a
+    ld l,a
+    ld h,BIT_TAB>>8
+    ld a,(hl)
+    ret
+; delta_axis (tileops.asm RT_COPY): HL = destination - source position (from SBC), C = limit -> carry clear: A = the difference as a signed byte,
+; |difference| < limit; carry set: the rectangles cannot overlap on this axis.  Clobbers AF.
+delta_axis:
+    ld a,h
+    or a
+    jr z,.pos
+    inc a
+    jr nz,.big                  ; below -256
+    ld a,l
+    add a,c                     ; carry when difference >= -limit; zero then when it is exactly -limit
+    jr nc,.big
+    jr z,.big
+    ld a,l
+    or a
+    ret
+.pos:
+    ld a,l
+    cp c
+    jr nc,.big
+    or a
+    ret
+.big:
+    scf
+    ret
+M_GAPA_E:
+    ASSERT M_GAPA_E <= $0200
+
+    ORG $0200
+M_BLKB_S:
+BLK2:
+    DUP 8
+    ROW2
+    EDUP
+    ret
+BLK2_END:
+BLK1:
+    DUP 8
+    ROW1
+    EDUP
+    ret
+BLK1_END:
+ENT2:
+    ENTRY_TAB BLK2, ROW2_LEN
+ENT1:
+    ENTRY_TAB BLK1, ROW1_LEN
+run2:
+    RUN_ROWS ENT2, BLK2
+run1:
+    RUN_ROWS ENT1, BLK1
+M_BLKB_E:
+    ASSERT BLK2_END-BLK2 == 8*ROW2_LEN+1 && BLK1_END-BLK1 == 8*ROW1_LEN+1
+    ASSERT (BLK2>>8) == ((BLK1_END-1)>>8) && (ENT2>>8) == (BLK2>>8) && ((ENT1+7)>>8) == (BLK2>>8) && BLK1>>8 == BLK2>>8
+
+; ---------------------------------------------------------------------------------------------------------------
+; The cold start (the header's ENTRY).
+; ---------------------------------------------------------------------------------------------------------------
 M_BOOT_S:
 ENTRY:
     ; ---- record the hand-off state first (HANDOFF_DIAG: 7 bytes at HO_BASE, kept so the test can check the map) ----
@@ -55,11 +222,8 @@ ENTRY:
 
     ; ---- zero the runtime variables and the compiled code's variable area: $E000-$EFFF (stale RAM would
     ; otherwise feed the ISR: see E4's $A5 trap; and compiled variables start at 0) ----
-    ld hl,VARS
-    ld de,VARS+1
-    ld bc,VARS_CLEAR_LEN-1
-    ld (hl),0
-    ldir
+    ld hl,FILL_EARLY
+    call fill_tab               ; the variables to 0, and the keyboard state: nothing scanned yet = every key up ($FF), which must follow the clear
     ld a,BORDER_COLOUR
     ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour written above
     ld hl,CANARY_VALUE
@@ -85,11 +249,6 @@ ENTRY:
     ld (hl),255
     add hl,de
     djnz .sk
-    ld hl,V_KEYS                ; keyboard: nothing scanned yet = every key up
-    ld de,V_KEYS+1
-    ld bc,7
-    ld (hl),$FF
-    ldir
 
     ; ---- video: both display files (all cells blank), the cell map, glyphs, tiles, row table, pre-shifted sprite tables ----
     call video_init
@@ -109,15 +268,19 @@ ENTRY:
     ld hl,RT_SEED_INIT
     ld (RT_SEED),hl
 
-    ; ---- ISR variables LAST: the ISR reads the shadow and the request byte, so they are set right before EI ----
-    xor a
-    ld (V_SYNC),a               ; SYNC_BUSY: no frame ready, no flip requested
-    ld (V_SHADOW_FF),a          ; matches what is in the port ($FF = 0): file 1 shown
-    ld hl,0
-    ld (V_FRAMES),hl
+    ; ---- ISR variables LAST: the ISR reads the shadow and the request byte, so they are set right before EI.  V_SYNC = SYNC_BUSY (no frame ready, no
+    ; flip requested), V_SHADOW_FF = 0 (matches the port: file 1 shown) and V_FRAMES = 0 are already so: the clear above set them and nothing
+    ; has touched them since (interrupts are off) ----
     ld a,F4_PLAY
     ld (V_SHADOW_F4),a          ; matches the port: do not read $F4 back, it is not reliable on hardware
     ei                          ; the ISR can fire from the next instruction
     jp MAIN                     ; the frame loop (main.asm)
+FILL_EARLY:
+    DW VARS, VARS_CLEAR_LEN-1
+    DB 0
+    DW V_KEYS, 7
+    DB $FF
+    DW 0
+    ASSERT V_KEYS >= VARS && V_KEYS+8 <= VARS+VARS_CLEAR_LEN && SYNC_BUSY == 0
 M_BOOT_E:
-    ASSERT M_BOOT_E <= RT_VIDEO
+    ASSERT (BIT_TAB&$FF) == 0

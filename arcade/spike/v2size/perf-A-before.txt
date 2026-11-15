@@ -1,0 +1,106 @@
+== m4
+M4a runtime performance (T-states; a refresh is 58688 T)
+
+Sizes: runtime 15378 of 16384 bytes in DOCK chunks 0-1 (font 768);  placeholder game 17 bytes
+
+Per visible sprite (T-states, averages over positions that vary every tick; erase_all and draw_all divided by the number of sprites):
+  asset                      erase   draw   (aligned x and y: erase / draw)
+  16x16, 8 phases            2096   3339   (1196 / 2574)
+  16x16, 2 phases            1868   3049   (1196 / 2574)
+  8x8, 8 phases              1091   1772   (536 / 1317)
+
+Worst-case tick: 16 visible 16x16 sprites, all moving every tick, over a screen full of text (ISR excluded; 3 refreshes = 176064 T):
+  8 phases: tick work avg 103710, max 105930 T (1.80 refreshes);  erase_all 33487, redraw_dirty 1339, draw_all 53199 T
+  4 phases: tick work avg 100687, max 102392 T (1.74 refreshes);  erase_all 32145, redraw_dirty 1339, draw_all 51496 T
+  PASS  the worst-case tick (16 sprites, 8 phases) fits in 3 refreshes (176k T) with room for the game  (max 105930 T)
+  PASS  ...and at 4 phases  (max 102392 T)
+  PASS  a 16x16 sprite at 8 phases costs under 6,000 T to erase and draw together  (5436 T)
+
+PASS: M4a runtime perf (3 checks passed, 0 failed)
+== m5
+M5 runtime performance: T-states of the tile operations
+
+  routine / case                                                      cells        T   T/cell   refreshes
+  FILL 32x24, every cell changed                                       768    80200    104.4     1.37  768 dirty
+  FILL 32x24, nothing changed                                          768    71848     93.6     1.22  0 dirty
+  FILL 8x8 at (8,8), byte aligned, changed                              64     9846    153.8     0.17  
+  FILL 10x10 at (3,5), unaligned, changed                              100    22154    221.5     0.38  
+  FILL 1x1, changed                                                      1     1850   1850.0     0.03  
+  FILL 32x1 (one row), changed                                          32     4115    128.6     0.07  
+  FILLC 32x24, every cell changed                                      768    77868    101.4     1.33  
+  COPY 32x23 down by one row, random content (changed)                 736    98161    133.4     1.67  630 dirty
+  COPY 32x23 up by one row, identical content (nothing changes)        736    90749    123.3     1.55  0 dirty
+  COPY 31x24 right by one cell (same rows: through the row buffer), changed   744   144450    194.2     2.46  609 dirty
+  COPY 8x8 to a distant place (no overlap), changed                     64    21121    330.0     0.36  
+  COPY 1x1                                                               1     2652   2652.0     0.05  
+  LOADMAP 32x24 into a blank screen (every cell changed)               768   147908    192.6     2.52  768 dirty
+  LOADMAP 32x24 again (nothing changes)                                768   139556    181.7     2.38  0 dirty
+  LOADMAPAT (10, 5): the map cut to 22x19                              418    91861    219.8     1.57  
+  768 x RT_TILE, every cell changed (calls only)                       768   308736    402.0     5.26  
+  768 x RT_TILE, nothing changed (calls only)                          768   179712    234.0     3.06  
+
+  fixed cost (a call that does nothing, w = 0): 207 T
+  a compiled loop of RT_TILE (changed) costs about 402 T/cell for the calls alone plus ~100-250 T of loop and argument code per cell
+
+  per cell, nothing to mark (= the cost beyond the dirty marking): FILL 93.6, COPY 123.3, LOADMAP 181.7 T
+  per cell, every cell changed (marking included): FILL 104.4, COPY 133.4, LOADMAP 192.6 T;  768 RT_TILE: 402.0 T per cell (changed), 234.0 (unchanged), calls only
+  PASS  FILL of the whole screen (all changed) costs under half of 768 RT_TILE calls (calls only, no loop)  (80200 T vs 308736 T)
+  PASS  COPY of 32 x 23 cells costs under half of 736 RT_TILE calls; LOADMAP of 32 x 24 under 0.6 of 768  (98161 T, 147908 T)
+  PASS  FILL of the whole screen takes under 1.5 refreshes (88,000 T); COPY under 2; LOADMAP under 3
+  PASS  FILL: under 100 T per cell beyond the dirty marking on whole bytes (the contract's target)  (93.6 T)
+  PASS  an unchanged FILL / COPY / LOADMAP marks nothing dirty and is cheaper than the changed one
+  PASS  the fixed cost of a call is small: a degenerate FILL under 300 T, a 1 x 1 FILL under 2,000 T, a 1 x 1 COPY under 3,000 T  (207, 1850, 2652 T)
+
+PASS: M5 runtime performance (6 checks passed, 0 failed)
+== m6
+Runtime v3 part 1 performance (T-states; a refresh is 58688 T)
+
+Size: runtime 15602 of 16,384 bytes in DOCK chunks 0-1 (v2: 9,337)
+
+Per visible sprite (averages over positions that change every tick; erase_all and draw_all divided by the number of sprites):
+  asset                                erase   draw   (aligned x and y: erase / draw)          v2
+  16x16, 8 phases                      1981   3465   (1103 / 2793)                      2,096 / 3,339 (1,196 / 2,574)
+  16x16, 2 phases                      1761   3244   (1103 / 2793)                      1,868 / 3,049 (1,196 / 2,574)
+  8x8, 8 phases                        1019   1935   (489 / 1357)                      1,091 / 1,772 (536 / 1,317)
+  16x24, 4 phases, unaligned           2854   4730   (1513 / 3746)                      
+  16x16, 4 phases, unaligned           2041   3536   (1103 / 2793)                      
+  24x16, 4 phases, unaligned           2734   4412   (1508 / 4300)                      
+  32x32, 4 phases, unaligned           5416   9226   (3683 / 11231)                      
+  32x48, 2 phases, unaligned           7522  13300   (5379 / 16425)                      
+  8x8, 1 phase                          700   1504   (489 / 1357)                      
+  PASS  a 16 x 24 sprite, 4 phases, unaligned, drawn: <= 5,200 T (contract section 2)  (4730 T)
+  PASS  a 16 x 16 sprite at 8 phases: draw within +5 % of v2's 3,339 T, erase within +5 % of v2's 2,096 T  (3465 / 1981 T)
+
+A frame change of a cached frame costs nothing extra (every frame in its slot): 16x24, 4 phases, 4 frames, a new frame every tick:
+  erase 2854  draw 4730  (misses: 0)
+  PASS  frames changing every tick, all in slots: no miss, the draw costs what a still frame costs (within 1 %)  (4730 vs 4730)
+
+Worst-case tick: 16 visible 16x16 sprites, all moving every tick, never aligned, over a screen full of text (ISR excluded; 3 refreshes = 176064 T):
+  8 phases: tick work avg 106568, max 108863 T (1.85 refreshes); erase_all 31300, redraw_dirty 1339, draw_all 55154 T   (v2: 105,903)
+  4 phases: tick work avg 104094, max 105927 T (1.80 refreshes); erase_all 30065, redraw_dirty 1339, draw_all 53914 T   (v2: 102,365)
+  PASS  the worst-case tick (16 sprites, 8 phases) within +5 % of v2 (105,903 T) and inside 3 refreshes with room for the game  (max 108863 T)
+
+build_frame: the pre-shifted copies of one frame (what a cache miss costs, plus fc_miss's victim search):
+  8x8, 8 phases        14239 T  (7 copies of 8 rows: 1780 T a row; 0.24 refreshes)
+  16x16, 4 phases      21501 T  (3 copies of 16 rows: 1344 T a row; 0.37 refreshes)
+  16x16, 8 phases      34813 T  (7 copies of 16 rows: 2176 T a row; 0.59 refreshes)
+  16x24, 4 phases      32077 T  (3 copies of 24 rows: 1337 T a row; 0.55 refreshes)
+  24x16, 4 phases      25483 T  (3 copies of 16 rows: 1593 T a row; 0.43 refreshes)
+  32x32, 4 phases      59467 T  (3 copies of 32 rows: 1858 T a row; 1.01 refreshes)
+  32x48, 2 phases      52155 T  (1 copies of 48 rows: 1087 T a row; 0.89 refreshes)
+  PASS  build_frame of a 16 x 24, 4-phase frame (a miss of the reference player) costs under 0.6 refreshes  (32077 T)
+  fc_miss of a 16x24, 4-phase frame (7 instances scanned, 2 frames): 33526 T in all = build_frame + 1449 T
+  PASS  fc_miss returns the victim's slot (frame 0: no visible instance shows it) and keeps IX, IY and the alternates  (HL $C558 (slot $C558))
+
+RT_SHOW / RT_SHOWF (CALL and RET included):
+  RT_SHOW change 592, unchanged 518, clamped both ways 569, index >= ninst 28;  RT_SHOWF change 580, unchanged 480;  RT_HIDE 72;  RT_HIT (one hidden) 206
+  PASS  RT_SHOW / RT_SHOWF cost under 600 T
+
+The reference art set (contract section 1) in non-window mode: player 16x24 (16 frames), 3 walkers, 3 flyers, a shot, 4 coins, all moving / animating, over text:
+  tick work avg 75076, max 104327 T (1.78 refreshes); 9 frames built (player frames beyond its slots)
+  PASS  the reference set's worst tick fits in 3 refreshes with room for the game (< 0.8 x 176,064 T)  (104327 T)
+
+Boot with the v2 worst case (8 assets of 16 x 16 at 8 phases: 56 copies built): 19 frames from the entry to the first refresh
+  PASS  boot within 20 frames of the entry (v2: 14; v3 builds its copies with build_frame)  (19)
+
+PASS: runtime v3 part 1 perf (9 checks passed, 0 failed)

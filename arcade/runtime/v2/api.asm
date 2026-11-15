@@ -47,8 +47,7 @@ RT_SHOW:
     cp c
     ret z                       ; visible at this position already: nothing changes, so nothing has to be redrawn
 .write:
-    ld l,d
-    ld h,SPR_TAB>>8
+    ld l,d                      ; (H is still SPR_TAB >> 8)
     ld (hl),1                   ; visible
     inc l
     inc l                       ; (the second byte is the instance's asset: set at boot, never changed)
@@ -143,11 +142,7 @@ RT_DIV:
     ld a,h
     xor d                       ; bit 7 = sign of the quotient
     push af
-    bit 7,h
-    call nz,neg_hl
-    bit 7,d
-    call nz,neg_de
-    call udiv16                 ; HL = quotient
+    call udiv_abs               ; HL = quotient
     pop af
     ret p
     jr neg_hl
@@ -159,11 +154,7 @@ RT_MOD:
     ld a,h
     or a                        ; S = sign of the dividend
     push af
-    bit 7,h
-    call nz,neg_hl
-    bit 7,d
-    call nz,neg_de
-    call udiv16
+    call udiv_abs
     ex de,hl                    ; HL = remainder
     pop af
     ret p
@@ -190,6 +181,14 @@ neg_de:                         ; DE = -DE.  Clobbers AF.
 rt_zero:
     ld hl,0
     ret
+
+; udiv_abs: HL, DE signed (DE <> 0) -> udiv16 of |HL| and |DE| (RT_DIV, RT_MOD; falls into udiv16).
+udiv_abs:
+    bit 7,h
+    call nz,neg_hl
+    bit 7,d
+    call nz,neg_de
+    ; (falls into udiv16)
 
 ; udiv16: HL = dividend (0..$8000), DE = divisor (1..$8000) -> HL = quotient, DE = remainder.  Clobbers AF, BC.
 ; Restoring division with the dividend and the quotient sharing A:C: each pass shifts the top dividend bit into the
@@ -302,3 +301,4 @@ RT_STICK:
     ei
     ret
 M_API_E:
+    ASSERT (SPR_TAB&$FF)+SPR_ENT*MAX_SPRITES <= 256      ; RT_SHOW, RT_HIDE and hit_box (text.asm) index SPR_TAB with an 8-bit add

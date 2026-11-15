@@ -12,113 +12,8 @@
     ; (no ORG: follows assets.asm)
 M_SPRITE_S:
 
-    MACRO BYTE_OP
-        ld a,(de)
-        and (hl)                ; keep the background where the mask is 1
-        inc hl
-        or (hl)                 ; add the sprite's ink
-        inc hl
-        ld (de),a
-    ENDM
-    MACRO ROW3
-        BYTE_OP
-        inc e
-        BYTE_OP
-        inc e
-        BYTE_OP
-        dec e
-        dec e
-        inc d                   ; one pixel row down (inside the cell; the group loop handles the cell boundary)
-    ENDM
-    MACRO ROW2
-        BYTE_OP
-        inc e
-        BYTE_OP
-        dec e
-        inc d
-    ENDM
-    MACRO ROW1
-        BYTE_OP
-        inc d
-    ENDM
-ROW3_LEN        EQU 23          ; bytes of code of a row (asserted below)
-ROW2_LEN        EQU 15
-ROW1_LEN        EQU 7
-
-    ALIGN 256
-BLK3:
-    DUP 8
-    ROW3
-    EDUP
-    ret
-BLK3_END:
-    ASSERT BLK3_END-BLK3 == 8*ROW3_LEN+1
-    ALIGN 256
-BLK2:
-    DUP 8
-    ROW2
-    EDUP
-    ret
-BLK2_END:
-    ASSERT BLK2_END-BLK2 == 8*ROW2_LEN+1
-    ALIGN 256
-BLK1:
-    DUP 8
-    ROW1
-    EDUP
-    ret
-BLK1_END:
-    ASSERT BLK1_END-BLK1 == 8*ROW1_LEN+1
-
-    ALIGN 256
-ENT_TAB:                        ; entry offsets into the blocks: ENT1[k], ENT2[k], ENT3[k] for k = 0..8 rows
-ENT1:
-    DB 0
-    DUP 8, k
-    DB (7-k)*ROW1_LEN
-    EDUP
-    DS 7, 0
-ENT2:
-    DB 0
-    DUP 8, k
-    DB (7-k)*ROW2_LEN
-    EDUP
-    DS 7, 0
-ENT3:
-    DB 0
-    DUP 8, k
-    DB (7-k)*ROW3_LEN
-    EDUP
-    DS 7, 0
-
-; run1 / run2 / run3: A = k (1..8) -> run k rows of that blitter starting at the current DE / HL.  Returns to the caller.
-run1:
-    add a,ENT1&$FF
-    ld c,a
-    ld b,ENT_TAB>>8
-    ld a,(bc)
-    ld c,a
-    ld b,BLK1>>8
-    push bc
-    ret
-run2:
-    add a,ENT2&$FF
-    ld c,a
-    ld b,ENT_TAB>>8
-    ld a,(bc)
-    ld c,a
-    ld b,BLK2>>8
-    push bc
-    ret
-run3:
-    add a,ENT3&$FF
-    ld c,a
-    ld b,ENT_TAB>>8
-    ld a,(bc)
-    ld c,a
-    ld b,BLK3>>8
-    push bc
-    ret
+; The unrolled blocks BLK1 / BLK2 / BLK3, their entry tables and run1 / run2 / run3 are in boot.asm, in pages $01 and $02 (each block and its
+; table inside one page: the entry tables hold the low bytes, run sets the page; the fixed addresses there cost no alignment padding).
 
 ; BLITTER name, run, blk: the group loop.  The sprite's rows are split at the cell boundaries of the screen: the first group has the rows from y to
 ; the end of its cell (k1 = 8 - (y AND 7)), the next one 8, the last the rest (a group never has more than 8 rows, a sprite has at most 16).
@@ -183,15 +78,6 @@ erase_cells:
     and $1F
     ld c,a                      ; C = height
     ld a,d
-    and 7
-    add a,c
-    dec a
-    rrca
-    rrca
-    rrca
-    and 3
-    ld c,a                      ; C = cell rows - 1  (0..2)
-    ld a,d
     rrca
     rrca
     rrca
@@ -199,6 +85,11 @@ erase_cells:
     add a,CELL_TILE>>8
     ld h,a
     ld l,e                      ; HL = the first cell's CELL_TILE address
+    ld a,d
+    and 7
+    add a,c
+    dec a
+    ld c,a                      ; C = (y AND 7) + height - 1: the last row's offset from the first cell's row 0
     ld a,d
     and $F8
     ld d,a                      ; DE = bitmap address of row 0 of the first cell
@@ -209,82 +100,76 @@ erase_cells:
     and 3
     ld b,a                      ; B = n_cols (1..3)
     ld a,c
-    or a
+    rrca
+    rrca
+    rrca
+    and 3                       ; cell rows - 1 (0..2)
     jr z,.rows1
     dec a
-    jr z,.rows2
-    ld a,b                      ; 3 cell rows
-    cp 2
-    jp c,erase_r3c1
-    jp z,erase_r3c2
-    jp erase_r3c3
-.rows2:
-    ld a,b
-    cp 2
-    jp c,erase_r2c1
+    jr nz,.rows3
+    dec b                       ; 2 cell rows
+    jp z,erase_r2c1
+    dec b
     jp z,erase_r2c2
     jp erase_r2c3
 .rows1:
-    ld a,b
-    cp 2
-    jp c,erase_r1c1
+    dec b
+    jp z,erase_r1c1
+    dec b
     jp z,erase_r1c2
     jp erase_r1c3
+.rows3:
+    dec b
+    jp z,erase_r3c1
+    dec b
+    jp z,erase_r3c2
+    ; (3 rows of 3 cells: falls into erase_r3c3, the first variant below)
 
-    MACRO ERASE_CELL_BODY
+    ; ERASE_CELL_BODY dir: one cell's 8 pixel rows from the glyph table: dir 0 runs rows 0..7 (INC B, INC D), dir 1 rows 7..0 (DEC B, DEC D).
+    ; Cells alternate, so D is already on the next cell's first row when a cell ends (no "back to row 0" fix-up between cells).
+    MACRO ERASE_CELL_BODY dir
         ld c,(hl)               ; the cell value
+        IF (dir) == 0
         ld b,GLYPH_TAB>>8
+        ELSE
+        ld b,(GLYPH_TAB>>8)+7
+        ENDIF
+        DUP 7
         ld a,(bc)
         ld (de),a
+        IF (dir) == 0
         inc b
         inc d
+        ELSE
+        dec b
+        dec d
+        ENDIF
+        EDUP
         ld a,(bc)
         ld (de),a
-        inc b
-        inc d
-        ld a,(bc)
-        ld (de),a
-        inc b
-        inc d
-        ld a,(bc)
-        ld (de),a
-        inc b
-        inc d
-        ld a,(bc)
-        ld (de),a
-        inc b
-        inc d
-        ld a,(bc)
-        ld (de),a
-        inc b
-        inc d
-        ld a,(bc)
-        ld (de),a
-        inc b
-        inc d
-        ld a,(bc)
-        ld (de),a
-        ld a,d
-        sub 7
-        ld d,a                  ; back to row 0 of the cell
     ENDM
-    MACRO ERASE_CELL
-        ERASE_CELL_BODY
+    MACRO ERASE_CELL dir
+        ERASE_CELL_BODY dir
         inc l                   ; the next cell: map byte and bitmap byte are one on (E = L)
         inc e
     ENDM
-
-; ERASE_VARIANT rows, cols: HL = CELL_TILE address of the first cell, DE = the bitmap address of its row 0 (D includes the file: $40 + hoff + 8 * the
-; third), E = L.  After a cell row the cell pointer moves on by 32 (a carry from L is the next page of the map and
-; the next 8 on D); a row of cells never crosses a page of the map, so L is only advanced past the last cell by that 32.
-    MACRO ERASE_VARIANT name, rows, cols
-name:
-        DUP rows, rr
-        DUP cols-1
-        ERASE_CELL
+; ERASE_ROW cols: HL = CELL_TILE address of the first cell, DE = the bitmap address of its row 0 (D includes the file: $40 + hoff + 8 * the
+; third), E = L.  Cell j runs downwards when j is even and upwards when odd, so a row of an odd number of cells ends with D on pixel row 7, and
+; HL on its last cell (the 32 added by the step below cannot then wrap L before its carry is seen).
+    MACRO ERASE_ROW cols
+        DUP cols-1, jj
+        ERASE_CELL jj&1
         EDUP
-        ERASE_CELL_BODY         ; (the last cell of a row leaves HL on it: the 32 added below cannot then wrap L before its carry is seen)
-        IF rr < rows-1
+        ERASE_CELL_BODY (cols-1)&1
+    ENDM
+; ERASE_STEP cols: D back to pixel row 0 after a row of an odd number of cells; then the cell pointer moves on by 32 (a carry from L is the
+; next page of the map and the next 8 on D); a row of cells never crosses a page of the map.
+    MACRO ERASE_STEP cols
+        IF (cols)&1
+        ld a,d
+        sub 7
+        ld d,a
+        ENDIF
         ld a,l
         add a,33-cols
         ld l,a
@@ -295,19 +180,24 @@ name:
         add a,8
         ld d,a
 2:
-        ENDIF
-        EDUP
+    ENDM
+; ERASE_NEST r3, r2, r1, cols: the 3-, 2- and 1-row variants of one width share their code: the 3-row one is a row and a step, then falls into
+; the 2-row one, which is a row and a step, then falls into the 1-row one (a row and RET); the instructions executed are those of separate
+; variants.  DE is left anywhere (the callers do not use it).
+    MACRO ERASE_NEST r3, r2, r1, cols
+r3:
+        ERASE_ROW cols
+        ERASE_STEP cols
+r2:
+        ERASE_ROW cols
+        ERASE_STEP cols
+r1:
+        ERASE_ROW cols
         ret
     ENDM
-    ERASE_VARIANT erase_r1c1, 1, 1
-    ERASE_VARIANT erase_r1c2, 1, 2
-    ERASE_VARIANT erase_r1c3, 1, 3
-    ERASE_VARIANT erase_r2c1, 2, 1
-    ERASE_VARIANT erase_r2c2, 2, 2
-    ERASE_VARIANT erase_r2c3, 2, 3
-    ERASE_VARIANT erase_r3c1, 3, 1
-    ERASE_VARIANT erase_r3c2, 3, 2
-    ERASE_VARIANT erase_r3c3, 3, 3
+    ERASE_NEST erase_r3c3, erase_r2c3, erase_r1c3, 3  ; first: erase_cells falls into erase_r3c3
+    ERASE_NEST erase_r3c1, erase_r2c1, erase_r1c1, 1
+    ERASE_NEST erase_r3c2, erase_r2c2, erase_r1c2, 2
     ASSERT (AST&$FF)+AST_HOT+7*AST_LEN < 256    ; hit_box and draw_all index an asset record with an 8-bit add
     ASSERT (PHASE_PTR&$FF)+127 < 256
 M_SPRITE_E:

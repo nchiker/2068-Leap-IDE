@@ -1,0 +1,28 @@
+measured starfall (16 s)
+measured blockfall (33 s)
+
+compiler: working tree; whole-tick T-states, interrupt included; budget = refreshes * 58688
+  run                 ticks  median    95th               worst    mean  PROC FRAME mean                      over
+  starfall / script    1338  51,656  97,925  825,230 (tick 864)  56,031                -  6: 41,42,864,865,980,981
+  blockfall / script   3593  10,942  42,255  90,189 (tick 1959)  16,447                -                         0
+
+comparison: before = arcade/spike/v2size/cg-before.json (compiler: working tree), after = working tree
+
+  run                                 measure   before    after         difference        bound
+  starfall / script                    median   52,423   51,656               -767         <= 0
+                                         95th   99,189   97,925             -1,264      <= +440
+                                        worst  832,950  825,230             -7,720      <= +440
+                                         mean   56,775   56,031               -744             
+                            ticks over budget        6        6                  0  no new ones
+                            ticks that differ                         1338 of 1338             
+                      largest per-tick change                    -7,720 (tick 864)             
+  blockfall / script                   median   11,026   10,942                -84         <= 0
+                                         95th   42,445   42,255               -190      <= +293
+                                        worst   90,273   90,189                -84      <= +293
+                                         mean   16,545   16,447                -97             
+                            ticks over budget        0        0                  0  no new ones
+                            ticks that differ                         3593 of 3593             
+                      largest per-tick change                     -702 (tick 1302)             
+
+PASS: arcade-codegen-perf (2 runs compared, 0 breaches)
+(49 s)

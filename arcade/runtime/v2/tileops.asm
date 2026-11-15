@@ -14,17 +14,17 @@
 M_TILEOPS_S:
 
 ; scratch of the tile operations (TO_VARS = $FACC.., layout.inc)
-TO_V            EQU TO_VARS+0   ; byte: the cell byte RT_FILL writes
-TO_A            EQU TO_VARS+1   ; byte: the attribute it writes
-TO_GS           EQU TO_VARS+2   ; byte: sentinel of the current group (1 << (cells - 1))
-TO_GT           EQU TO_VARS+3   ; byte: right shifts that align the group's mask (8 - first bit - cells)
+TO_A            EQU TO_VARS+0   ; byte: the attribute RT_FILL writes
+TO_V            EQU TO_VARS+1   ; byte: the cell byte it writes (TO_V follows TO_A: LD DE,(TO_A) = D the cell byte, E the attribute)
+TO_GT           EQU TO_VARS+2   ; byte: right shifts that align the group's mask (8 - first bit - cells)
+TO_GS           EQU TO_VARS+3   ; byte: sentinel of the current group (1 << (cells - 1)); TO_GS follows TO_GT: LD (TO_GT),BC stores C = shift, B = sentinel
 TO_M1           EQU TO_VARS+4   ; byte: mask of the cell-byte pass
 TO_REM          EQU TO_VARS+5   ; byte: cells of the row not yet done
 TO_DP           EQU TO_VARS+6   ; byte: index (0..95) of the dirty byte of the current group
 TO_X0           EQU TO_VARS+7   ; byte: first (destination) column
-TO_Y0           EQU TO_VARS+8   ; byte: current (destination) row (FILL, LOADMAP)
-TO_NX           EQU TO_VARS+9   ; byte: cells per row
-TO_NY           EQU TO_VARS+10  ; byte: rows left
+TO_Y0           EQU TO_VARS+8   ; byte: current (destination) row (FILL, LOADMAP); TO_Y0 follows TO_X0 (LD BC,(TO_X0) = row, column) and precedes TO_NY
+TO_NY           EQU TO_VARS+9   ; byte: rows left
+TO_NX           EQU TO_VARS+10  ; byte: cells per row
 TO_SX0          EQU TO_VARS+11  ; byte: COPY source column
 TO_SYC          EQU TO_VARS+12  ; byte: COPY current source row
 TO_RSTEP        EQU TO_VARS+13  ; byte: COPY row step ($01 or $FF)
@@ -47,15 +47,9 @@ TO_F            EQU TO_VARS+37  ; byte: whole bytes (8 cells) per row
 TO_TN           EQU TO_VARS+38  ; byte: cells in the tail group (0 = none)
 TO_TSC          EQU TO_VARS+39  ; word: the tail group's sentinel << 8 | shift
     ASSERT TO_TSC+2 <= T3+T3_LEN
+    ASSERT TO_V == TO_A+1 && TO_GS == TO_GT+1 && TO_Y0 == TO_X0+1 && TO_NY == TO_Y0+1 && TO_SYC == TO_SX0+1 && TO_RSTEP == TO_SYC+1 && TO_DYS == TO_DXS+1   ; word loads / stores and INC HL steps below
 
-; ---------------------------------------------------------------------------------------------------------------
-; RT_BORDER: A = colour (AND 7).  Writes the ULA port with the beeper and MIC bits 0 and keeps the colour in V_BORDER.  Clobbers AF.
-; ---------------------------------------------------------------------------------------------------------------
-RT_BORDER:
-    and 7
-    ld (V_BORDER),a
-    out (PORT_ULA),a
-    ret
+; (RT_BORDER is in boot.asm, in the gap after the header.)
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; RT_RANDOMISE: HL = seed -> RT_SEED.  HL = 0 takes the frame counter instead (one instruction reads it, the interrupt cannot split it), and a
@@ -133,25 +127,6 @@ clip_axis:
     ret
 
 ; ---------------------------------------------------------------------------------------------------------------
-; mask_done: A = the group's mask as the sentinel loop leaves it (right-justified: the first cell at bit 8 - cells), flags from the OR that made it.
-; Returns A = the mask aligned to the cells' columns (shifted right by TO_GT).  Clobbers BC.
-; ---------------------------------------------------------------------------------------------------------------
-mask_done:
-    ret z
-    ld c,a
-    ld a,(TO_GT)
-    or a
-    ld a,c
-    ret z
-    ld a,(TO_GT)
-    ld b,a
-    ld a,c
-.sh:
-    srl a
-    djnz .sh
-    ret
-
-; ---------------------------------------------------------------------------------------------------------------
 ; The group functions.  In: HL = destination cell pointer of the first cell (CELL_TILE page, so INC L walks the cells of a row), B = sentinel
 ; (1 << (cells - 1)), C = t (the alignment shift of mask_done), DE = source cell pointer (COPY, LOADMAP).  Out: A = the dirty mask of the group
 ; (bit k = the cell in column 8 m + k changed; 0 = nothing changed), HL / DE = the pointers after the group.  Everything else is clobbered.
@@ -159,13 +134,9 @@ mask_done:
 ; sentinel (set when the mask was cleared, so the last cell shifts it out) ends the loop through the carry: 49..60 T per cell and plane.
 ; ---------------------------------------------------------------------------------------------------------------
 g_fill:
-    ld a,c
-    ld (TO_GT),a
-    ld a,b
-    ld (TO_GS),a
+    ld (TO_GT),bc               ; TO_GT = C, TO_GS = B
     ld c,b                      ; C = the mask register, holding only the sentinel
-    ld a,(TO_V)
-    ld d,a
+    ld de,(TO_A)                ; D = the cell byte, E = the attribute
     push hl
 .p1:
     ld a,(hl)
@@ -182,29 +153,20 @@ g_fill:
     inc h
     inc h
     inc h                       ; CELL_ATTR
-    ld a,(TO_A)
-    ld d,a
     ld a,(TO_GS)
     ld c,a
 .p2:
     ld a,(hl)
-    xor d
-    ld (hl),d
+    xor e
+    ld (hl),e
     inc l
     add a,255
     rr c
     jr nc,.p2
-    ld a,(TO_M1)
-    or c
-    call mask_done
-    ld hl,(TO_P)
-    ret
+    jp mask_done
 
 g_copy:                         ; source cell pointer DE, source attribute pointer DE + TO_SOFF
-    ld a,c
-    ld (TO_GT),a
-    ld a,b
-    ld (TO_GS),a
+    ld (TO_GT),bc               ; TO_GT = C, TO_GS = B
     ld c,b
     push hl
     push de
@@ -244,18 +206,11 @@ g_copy:                         ; source cell pointer DE, source attribute point
     add a,255
     rr c
     jr nc,.p2
-    ld a,(TO_M1)
-    or c
-    call mask_done
-    ld hl,(TO_P)
     ld de,(TO_S)
-    ret
+    jp mask_done
 
 g_load:                         ; source cell bytes at DE (anywhere: INC DE), attributes from TILE_ATTR (tile cells) or BG_ATTR (font cells)
-    ld a,c
-    ld (TO_GT),a
-    ld a,b
-    ld (TO_GS),a
+    ld (TO_GT),bc               ; TO_GT = C, TO_GS = B
     ld c,b
     push hl
 .p1:
@@ -278,14 +233,12 @@ g_load:                         ; source cell bytes at DE (anywhere: INC DE), at
     ld d,TILE_ATTR>>8
 .p2:
     ld a,(hl)
-    bit 7,a
-    jr z,.font
-    and $7F
     ld e,a
+    add a,a                     ; carry = bit 7: a game tile
+    ld a,BG_ATTR                ; (LD keeps the carry)
+    jr nc,.have
+    res 7,e
     ld a,(de)                   ; TILE_ATTR[tile]
-    jr .have
-.font:
-    ld a,BG_ATTR
 .have:
     ld e,a                      ; E = the new attribute
     inc h
@@ -300,11 +253,41 @@ g_load:                         ; source cell bytes at DE (anywhere: INC DE), at
     add a,255
     rr c
     jr nc,.p2
+    ld de,(TO_S)
+    ; (falls into mask_done)
+
+; mask_done: the end of every group function.  C = the attribute pass's mask register, TO_M1 = the cell pass's: their OR as the sentinel loop
+; leaves it (right-justified: the first cell at bit 8 - cells), aligned to the cells' columns (shifted right by TO_GT), is the group's dirty mask:
+; it is ORed into the dirty byte HL' of both files and HL' steps to the next byte (WALK_ROW's pointer); HL = TO_P.  DE as the caller set it.
+; Clobbers AF, BC, C'.
+mask_done:
     ld a,(TO_M1)
     or c
-    call mask_done
+    jr z,.out                   ; nothing changed
+    ld c,a
+    ld a,(TO_GT)
+    ld b,a
+    or a
+    ld a,c
+    jr z,.out                   ; no shift
+.sh:
+    srl a
+    djnz .sh
+.out:
+    exx                         ; A = the mask: mark the group's changed cells
+    or a
+    jr z,.z
+    ld c,a
+    or (hl)
+    ld (hl),a
+    inc h                       ; DIRTY1
+    ld a,c
+    or (hl)
+    ld (hl),a
+    dec h
+.z: inc l
+    exx
     ld hl,(TO_P)
-    ld de,(TO_S)
     ret
 
 ; ---------------------------------------------------------------------------------------------------------------
@@ -347,13 +330,12 @@ g_load:                         ; source cell bytes at DE (anywhere: INC DE), at
     ENDM
     MACRO SLOT_LATTR k, mreg    ; HL -> a cell byte in the (new) cell plane; D = TILE_ATTR page: the attribute of that cell, compared with CELL_ATTR (+$300)
         ld a,(hl)
-        bit 7,a
-        jr z,1F
-        and $7F
         ld e,a
+        add a,a                 ; carry = bit 7: a game tile
+        ld a,BG_ATTR            ; (LD keeps the carry)
+        jr nc,2F
+        res 7,e
         ld a,(de)
-        jr 2F
-1:      ld a,BG_ATTR
 2:      ld e,a
         inc h
         inc h
@@ -379,11 +361,15 @@ g_load:                         ; source cell bytes at DE (anywhere: INC DE), at
     ENDM
 
 ; ---------------------------------------------------------------------------------------------------------------
-; walk_setup (once per operation): B = cells per row (>= 1), C = column of the first cell.  Cuts every row of the operation the same way and stores the
+; walk_setup (once per operation): TO_NX = cells per row (>= 1), TO_X0 = column of the first cell (it loads them into B and C).  Cuts every row of the operation the same way and stores the
 ; plan: a head group up to the next multiple of 8 (TO_HN cells, 0 = none; TO_HSC = sentinel << 8 | shift for the group function), F whole bytes (TO_F)
 ; and a tail (TO_TN cells, TO_TSC).  Clobbers AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------------------------------------------
 walk_setup:
+    ld a,(TO_NX)
+    ld b,a
+    ld a,(TO_X0)
+    ld c,a
     xor a
     ld (TO_HN),a
     ld a,c
@@ -398,7 +384,7 @@ walk_setup:
     jr c,.short
     ld a,e                      ; the row reaches the boundary: the head is E cells, no shift
     ld (TO_HN),a
-    call .sent
+    call walk_sent
     ld h,a
     ld l,0
     ld (TO_HSC),hl
@@ -409,7 +395,7 @@ walk_setup:
 .short:                         ; the row ends inside this byte: the head is the whole row, shifted by E - B
     ld a,b
     ld (TO_HN),a
-    call .sent
+    call walk_sent
     ld h,a
     ld a,e
     sub b
@@ -428,65 +414,63 @@ walk_setup:
     ld (TO_TN),a
     ret z
     ld d,a
-    call .sent
+    call walk_sent
     ld h,a
     ld a,8
     sub d
     ld l,a                      ; shift = 8 - tail cells
     ld (TO_TSC),hl
     ret
-.sent:                          ; A = cells (1..8) -> A = 1 << (cells - 1) (BIT_TAB is page aligned).  Clobbers HL.
-    dec a
-    ld l,a
-    ld h,BIT_TAB>>8
-    ld a,(hl)
-    ret
+; (walk_sent, A = cells (1..8) -> A = 1 << (cells - 1), is in boot.asm, in the gap after the header.)
 
-; MARK: after a group function: A = its mask -> OR it into the dirty byte HL' of both files and step HL' to the next byte.  Clobbers C'.
-    MACRO MARK
-        exx
-        or a
-        jr z,1F
-        ld c,a
-        or (hl)
-        ld (hl),a
-        inc h                   ; DIRTY1
-        ld a,c
-        or (hl)
-        ld (hl),a
-        dec h
-1:      inc l
-        exx
-    ENDM
+; (The marking of a group, its mask ORed into the dirty byte HL' of both files and HL' stepped on, is the end of mask_done: every group function
+; call is followed by it.)
 
 ; ---------------------------------------------------------------------------------------------------------------
-; WALK_ROW: in HL = destination cell pointer of the row's first cell, DE = source pointer (the plan of walk_setup).  Runs the head group, the whole
+; row_at: B = row, C = column -> HL = the cell's CELL_TILE address and HL' = its byte of DIRTY0 (cell index >> 3): what WALK_ROW starts from.
+; Clobbers AF, BC.  (rowcol_idx's instructions inline, then the pointers.)
+row_at:
+    ld a,b
+    rrca
+    rrca
+    rrca
+    ld b,a
+    and $E0
+    or c
+    ld c,a                      ; C = the low byte of row * 32 + column
+    ld a,b
+    and $1F                     ; A = its high byte
+    add a,CELL_TILE>>8
+    ld h,a
+    ld l,c                      ; HL = the cell
+    ld a,l
+    rrca
+    rrca
+    rrca
+    and $1F
+    ld b,a                      ; L >> 3
+    ld a,h
+    sub CELL_TILE>>8
+    rrca
+    rrca
+    rrca                        ; (H - $CE) << 5
+    or b
+    exx
+    ld l,a
+    ld h,DIRTY0>>8              ; HL' = the dirty byte of the first cell (cell index >> 3)
+    exx
+    ret
+
+; WALK_ROW: in HL = destination cell pointer of the row's first cell, HL' = its dirty byte (row_at), DE = source pointer (the plan of walk_setup).  Runs the head group, the whole
 ; bytes (kind-specific unrolled loop) and the tail group, ORing each group's mask into DIRTY0 and DIRTY1.  The dirty byte pointer lives in HL' and the
 ; count of whole bytes in B' (the alternate set: SAVE_ALT).  kind: 0 FILL, 1 COPY, 2 LOADMAP.  Clobbers everything.
 ; ---------------------------------------------------------------------------------------------------------------
     MACRO WALK_ROW group, kind
-        ld a,l
-        rrca
-        rrca
-        rrca
-        and $1F
-        ld b,a                  ; L >> 3
-        ld a,h
-        sub CELL_TILE>>8
-        rrca
-        rrca
-        rrca                    ; (H - $CE) << 5
-        or b
-        exx
-        ld l,a
-        ld h,DIRTY0>>8          ; HL' = the dirty byte of the first cell (cell index >> 3)
-        exx
         ld a,(TO_HN)
         or a
         jr z,.nh
         ld bc,(TO_HSC)
-        call group
-        MARK
+        call group              ; (it marks the group's cells dirty: mask_done)
 .nh:    ld a,(TO_F)
         or a
         jp z,.nf
@@ -494,10 +478,7 @@ walk_setup:
         ld b,a                  ; B' = whole bytes left
         exx
         IF kind == 0
-        ld a,(TO_V)
-        ld d,a
-        ld a,(TO_A)
-        ld e,a
+        ld de,(TO_A)            ; D = the cell byte, E = the attribute
         ENDIF
 .fl:
         ld bc,0                 ; C = the mask of the cell bytes, B = the mask of the attributes
@@ -566,8 +547,7 @@ walk_setup:
         or a
         jr z,.wend
         ld bc,(TO_TSC)
-        call group
-        MARK
+        call group              ; (it marks the group's cells dirty: mask_done)
 .wend:
     ENDM
 
@@ -626,29 +606,16 @@ fill_go:
     ld (TO_Y0),a
     ld a,b
     ld (TO_NY),a
-    ld a,(TO_NX)
-    ld b,a
-    ld a,(TO_X0)
-    ld c,a
     call walk_setup
     SAVE_ALT
 .row:
-    ld a,(TO_Y0)
-    ld b,a
-    ld a,(TO_X0)
-    ld c,a
-    call rowcol_idx             ; BC = cell index of the row's first cell
-    ld a,b
-    add a,CELL_TILE>>8
-    ld h,a
-    ld l,c
+    ld bc,(TO_X0)               ; B = TO_Y0, C = TO_X0
+    call row_at                 ; HL = the row's first cell, HL' = its dirty byte
     WALK_ROW g_fill, 0
-    ld a,(TO_Y0)
-    inc a
-    ld (TO_Y0),a
-    ld a,(TO_NY)
-    dec a
-    ld (TO_NY),a
+    ld hl,TO_Y0
+    inc (hl)
+    inc hl                      ; TO_NY
+    dec (hl)
     jp nz,.row
     LOAD_ALT
     ret
@@ -659,29 +626,7 @@ fill_go:
 ; adjust_axis: E = first index of the clipped source range, B = its count, D = difference (signed byte), C = limit -> A = first index, B = count of the
 ; part whose destination (index + difference) is also inside [0, limit); carry set = none.  Clobbers AF, DE.
 ; ---------------------------------------------------------------------------------------------------------------
-delta_axis:
-    ld a,h
-    or a
-    jr z,.pos
-    inc a
-    jr nz,.big                  ; below -256
-    ld a,l
-    add a,c                     ; carry when difference >= -limit; zero then when it is exactly -limit
-    jr nc,.big
-    jr z,.big
-    ld a,l
-    or a
-    ret
-.pos:
-    ld a,l
-    cp c
-    jr nc,.big
-    or a
-    ret
-.big:
-    scf
-    ret
-
+; (delta_axis is in boot.asm, in the gap after the header.)
 adjust_axis:
     bit 7,d
     jr nz,.neg
@@ -774,10 +719,10 @@ RT_COPY:
     ld (TO_SYC),a               ; first source row
     ld a,b
     ld (TO_NY),a
-    ld a,(TO_DXS)
-    ld b,a
-    ld a,(TO_DYS)
-    or b
+    ld hl,TO_DXS
+    ld a,(hl)
+    inc hl                      ; TO_DYS
+    or (hl)
     ret z                       ; copy onto itself
     ld hl,$0300
     ld (TO_SOFF),hl
@@ -805,17 +750,10 @@ RT_COPY:
     ld hl,TO_BUFA-TO_BUFT
     ld (TO_SOFF),hl
 .go:
-    ld a,(TO_NX)
-    ld b,a
-    ld a,(TO_X0)
-    ld c,a
     call walk_setup
     SAVE_ALT
 .row:
-    ld a,(TO_SYC)
-    ld b,a
-    ld a,(TO_SX0)
-    ld c,a
+    ld bc,(TO_SX0)              ; B = TO_SYC (the next byte), C = TO_SX0
     call rowcol_idx
     ld a,b
     add a,CELL_TILE>>8
@@ -830,14 +768,13 @@ RT_COPY:
     ld b,0
     ld de,TO_BUFT
     push hl
+    push bc
     ldir
+    pop bc
     pop hl
     inc h
     inc h
     inc h
-    ld a,(TO_NX)
-    ld c,a
-    ld b,0
     ld de,TO_BUFA
     ldir
     ld de,TO_BUFT
@@ -849,20 +786,15 @@ RT_COPY:
     ld b,a                      ; destination row
     ld a,(TO_X0)
     ld c,a
-    call rowcol_idx
-    ld a,b
-    add a,CELL_TILE>>8
-    ld h,a
-    ld l,c
+    call row_at
     WALK_ROW g_copy, 1
-    ld a,(TO_RSTEP)
-    ld b,a
-    ld a,(TO_SYC)
-    add a,b
-    ld (TO_SYC),a
-    ld a,(TO_NY)
-    dec a
-    ld (TO_NY),a
+    ld hl,TO_RSTEP
+    ld a,(hl)
+    dec hl                      ; TO_SYC
+    add a,(hl)
+    ld (hl),a
+    ld hl,TO_NY
+    dec (hl)
     jp nz,.row
     LOAD_ALT
     ret
@@ -980,22 +912,11 @@ loadmap_core:
     ld de,(TO_MP)
     add hl,de
     ld (TO_SROW),hl
-    ld a,(TO_NX)
-    ld b,a
-    ld a,(TO_X0)
-    ld c,a
     call walk_setup
     SAVE_ALT
 .row:
-    ld a,(TO_Y0)
-    ld b,a
-    ld a,(TO_X0)
-    ld c,a
-    call rowcol_idx
-    ld a,b
-    add a,CELL_TILE>>8
-    ld h,a
-    ld l,c
+    ld bc,(TO_X0)               ; B = TO_Y0, C = TO_X0
+    call row_at
     ld de,(TO_SROW)
     WALK_ROW g_load, 2
     ld hl,(TO_SROW)
@@ -1004,12 +925,10 @@ loadmap_core:
     ld d,0
     add hl,de
     ld (TO_SROW),hl
-    ld a,(TO_Y0)
-    inc a
-    ld (TO_Y0),a
-    ld a,(TO_NY)
-    dec a
-    ld (TO_NY),a
+    ld hl,TO_Y0
+    inc (hl)
+    inc hl                      ; TO_NY
+    dec (hl)
     jp nz,.row
     LOAD_ALT
     ret

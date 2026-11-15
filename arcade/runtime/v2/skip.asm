@@ -99,20 +99,14 @@ skip_analysis:
     ld a,(SK_I)
     call sk_recptr
     call sk_recrect
-    ld a,b
-    ld (SK_T+0),a               ; old cx0
-    ld a,d
-    ld (SK_T+1),a               ; old cy0
-    jr .oldok
+    jr .old
 .noold:
     ld a,(SK_I)                 ; no old record: the old box is the new one
     call sk_entptr
     call sk_entcell
-    ld a,b
-    ld (SK_T+0),a
-    ld a,d
-    ld (SK_T+1),a
-.oldok:
+.old:
+    ld c,d
+    ld (SK_T),bc                ; SK_T+0 = old cy0, SK_T+1 = old cx0
     ld a,(SK_I)
     call sk_entptr
     ld a,(hl)
@@ -121,12 +115,10 @@ skip_analysis:
     call sk_entcell             ; B = cx0 (new), D = cy0 (new)
     jr .join
 .nonew:
-    ld a,(SK_T+0)
-    ld b,a
-    ld a,(SK_T+1)
-    ld d,a
+    ld bc,(SK_T)
+    ld d,c                      ; B = old cx0, D = old cy0
 .join:                          ; box = [min(cx0), max(cx0) + 2] x [min(cy0), max(cy0) + 2]
-    ld a,(SK_T+0)
+    ld a,(SK_T+1)               ; old cx0
     cp b
     jr c,.c0lo
     add a,2                     ; old >= new: cx0 = new (B), cx1 = old + 2
@@ -138,7 +130,7 @@ skip_analysis:
     inc c
     ld b,a
 .c0done:
-    ld a,(SK_T+1)
+    ld a,(SK_T+0)               ; old cy0
     cp d
     jr c,.r0lo
     add a,2
@@ -335,7 +327,7 @@ sk_recrect:
     and 3                       ; n_cols
     add a,b
     dec a
-    ld (SK_T+6),a               ; cx1
+    ld h,a                      ; H = cx1 (the record is read: HL is free)
     ld a,e
     and $1F
     ld e,a                      ; E = height
@@ -366,8 +358,7 @@ sk_recrect:
     ld d,a                      ; D = cy0
     add a,e
     ld e,a                      ; E = cy1
-    ld a,(SK_T+6)
-    ld c,a                      ; C = cx1
+    ld c,h                      ; C = cx1
     ret
 
 ; sk_dirty: A = instance (a candidate: its exact rectangle is in SK_RECT) -> carry set when a cell of it is dirty for the hidden file.
@@ -445,13 +436,5 @@ sk_dirty:
     scf
     ret
 
-; MASK_TAB[(columns - 1) * 8 + (cx0 AND 7)] = ((1 << columns) - 1) << (cx0 AND 7), 16 bit.  (Page aligned: L is the index.)
-    ALIGN 64
-MASK_TAB:
-    DUP 3, n
-    DUP 8, k
-    DW ((1<<(n+1))-1)<<k
-    EDUP
-    EDUP
-    ASSERT (MASK_TAB&$FF)+96 <= 256     ; sk_dirty and wire_dirty_rect (wiretick.asm) index it with an 8-bit add
+; (MASK_TAB, the 48-byte table of column masks, is in boot.asm after the header: no alignment padding there.)
 M_SKIP_E:

@@ -91,9 +91,7 @@ mark_dirty:
     ld (hl),a
     ret
 
-    ALIGN 256
-BIT_TAB:                        ; page aligned (mark_dirty indexes it through L)
-    DB $01, $02, $04, $08, $10, $20, $40, $80
+; (BIT_TAB, the 8-byte bit table, is at $0100 in boot.asm: page aligned for mark_dirty, without the padding ALIGN 256 left here)
 
 ; ---------------------------------------------------------------------------------------------------------------
 ; Text.  State: V_TEXT_ATTR (the attribute of the next character), V_CUR_ROW 0..23, V_CUR_COL 0..31 (always in range: the
@@ -320,9 +318,8 @@ RT_TILEAT:
     ld h,a
     ld l,c
     ld a,(hl)
-    bit 7,a
-    jr z,.none
-    and $7F
+    sub $80                     ; a font cell (below 128): no tile; else A = the tile
+    jr c,.none
     ld l,a
     ld h,0
     ret
@@ -383,23 +380,22 @@ hit_box:
     add a,a
     add a,c
     add a,a
-    ld e,a
-    ld d,0
-    ld hl,SPR_TAB
-    add hl,de
+    add a,SPR_TAB&$FF
+    ld l,a
+    ld h,SPR_TAB>>8             ; (SPR_TAB..+95 lies inside one page: asserted in api.asm)
     ld a,(hl)
     or a
     ret z                       ; hidden (OR cleared the carry)
-    inc hl
+    inc l
     ld a,(hl)                   ; the instance's asset
-    inc hl
+    inc l
     ld e,(hl)
-    inc hl
+    inc l
     ld d,(hl)
-    inc hl
+    inc l
     ld (V_HITX),de              ; x
     ld e,(hl)
-    inc hl
+    inc l
     ld d,(hl)
     ld (V_HITY),de              ; y
     add a,a
@@ -444,8 +440,7 @@ box_axis:
     ld e,a
     jr nc,.lo
     inc d
-.lo:
-    ld a,e
+.lo:                            ; (A = E on both paths)
     ld (bc),a
     inc bc
     ld a,d
@@ -456,8 +451,7 @@ box_axis:
     ld e,a
     jr nc,.hi
     inc d
-.hi:
-    ld a,e
+.hi:                            ; (A = E on both paths)
     ld (bc),a
     inc bc
     ld a,d

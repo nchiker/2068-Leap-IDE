@@ -53,10 +53,14 @@ function makeGame(nticks, seed, { div = 1, ninst = 6 } = {}) {
   for (let f = 0; f < 400 && rd16(m, S.HO_MARK) !== 0x5AA5; f++) M.runFrame(m);
   let started = false, injections = 0, noReturn = 0, inModule = 0;
   const violations = [], pcs = new Set(), routines = new Set(), perPc = new Map();
-  const names = ['RT_FILL', 'RT_FILLC', 'RT_COPY', 'RT_LOADMAP', 'RT_LOADMAPAT', 'RT_LOADMAPPTR', 'RT_BORDER', 'RT_RANDOMISE', 'walk_setup', 'clip_axis', 'g_fill', 'g_copy', 'g_load', 'mask_done'];
+  const names = ['RT_FILL', 'RT_FILLC', 'RT_COPY', 'RT_LOADMAP', 'RT_LOADMAPAT', 'RT_LOADMAPPTR', 'RT_BORDER', 'RT_RANDOMISE', 'walk_setup', 'clip_axis', 'g_fill', 'g_copy', 'g_load', 'mask_done',
+    'walk_sent', 'delta_axis', 'KEY_ROWSEL'].filter((n) => S[n] !== undefined);
   const bounds = names.map((n) => [n, S[n]]).sort((a, b) => a[1] - b[1]);
   const where = (pc) => { let nm = null; for (const [n, a] of bounds) if (a <= pc) nm = n; return nm; };
   const T0 = S.M_TILEOPS_S, T1 = S.M_TILEOPS_E;
+  // RT_BORDER, walk_sent and delta_axis live in the gap after the header (boot.asm, M_GAPA) since the size pass: they count as the module
+  const G0 = S.M_GAPA_S ?? 0, G1 = S.M_GAPA_E ?? 0;
+  const inMod = (pc) => (pc >= T0 && pc < T1) || (pc >= G0 && pc < G1);
   function injectAndCheck(pc0) {
     const cpu = m.cpu, t0 = m.tstates;
     const before = snap(cpu), varsBefore = Array.from(m.ram.slice(S.VARS, S.VARS + 0x100)), ffBefore = m.portFF;
@@ -86,14 +90,14 @@ function makeGame(nticks, seed, { div = 1, ninst = 6 } = {}) {
       if (cpu.pc === S.MAIN) started = true;
       if (started && cpu.iff1 && !cpu.halted && !cpu.eiDelay) {
         const pc = cpu.pc;
-        if (pc >= T0 && pc < T1) { const n = (perPc.get(pc) ?? 0) + 1; perPc.set(pc, n); routines.add(where(pc)); if (n <= 10 || n % 25 === 0) { inModule++; injectAndCheck(pc); } }
+        if (inMod(pc)) { const n = (perPc.get(pc) ?? 0) + 1; perPc.set(pc, n); routines.add(where(pc)); if (n <= 10 || n % 25 === 0) { inModule++; injectAndCheck(pc); } }
         else if (next() < 1 / 60) injectAndCheck(pc);
       }
       Z.runZ80(cpu, m.bus, 1, m);
     }
     M.runFrame(m);
   }
-  const modulePcs = [...pcs].filter((p) => p >= T0 && p < T1).length;
+  const modulePcs = [...pcs].filter((p) => inMod(p)).length;
   console.log('Interrupt injected at every instruction boundary executed inside tileops.asm (420 frames: every operation, an effect playing, 6 moving instances; each address up to 10 times and then every 25th time)');
   check('interrupts were injected in every routine of the module (FILL, FILLC, COPY, LOADMAP, LOADMAPAT, BORDER, RANDOMISE, walk_setup, clip_axis, g_fill, g_copy, g_load, mask_done)',
     ['RT_FILL', 'RT_FILLC', 'RT_COPY', 'RT_LOADMAP', 'RT_LOADMAPAT', 'RT_BORDER', 'RT_RANDOMISE', 'walk_setup', 'clip_axis', 'g_fill', 'g_copy', 'g_load', 'mask_done'].every((n) => routines.has(n)) && inModule > 8000,

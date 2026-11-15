@@ -45,44 +45,24 @@ M_WIRE_S:
 .n:
     ENDM
 
-    MACRO WROWDN                ; HL one pixel row down (ZX layout); A destroyed
-    inc h
+    MACRO WROWDN                ; HL one pixel row down (ZX layout); A, F destroyed.  The character-row step is out of line (w_rowdn_c):
+    inc h                       ; CALL Z not taken is 2 T faster than an inline JR NZ taken, the step 18 T slower (1 row in 8)
     ld a,h
     and 7
-    jr nz,.ok
-    ld a,l
-    add a,32
-    ld l,a
-    jr c,.ok
-    ld a,h
-    sub 8
-    ld h,a
-.ok:
+    call z,w_rowdn_c
     ENDM
 
     MACRO WROWUP
     ld a,h
     dec h
     and 7
-    jr nz,.ok
-    ld a,l
-    sub 32
-    ld l,a
-    jr c,.ok
-    ld a,h
-    add a,8
-    ld h,a
-.ok:
+    call z,w_rowup_c
     ENDM
 
-    MACRO WSLT                  ; CY = (HL < DE) signed; HL, A destroyed
-    or a
+    MACRO WSLTJ cc, lbl         ; jump to lbl on cc of the sign of HL - DE (M: HL < DE, P: HL >= DE, signed); HL destroyed.  The clip only
+    or a                        ; compares values within -16384..16384 with each other or with -255..255: HL - DE never overflows 16 bits
     sbc hl,de
-    ld a,h
-    jp po,.nv
-    xor $80
-.nv:
-    rla
+    jp cc,lbl
     ENDM
 
     MACRO WTERM                 ; DE += C * B (quarter squares, |B| + |C| <= 128); H = W_QSL page on entry and exit
@@ -321,10 +301,6 @@ w_project_full:
     ld (W_PCY),hl
     WROW 2
     call w_proj_point
-    ld bc,3
-    add ix,bc
-    ld hl,W_PIDX
-    inc (hl)
     pop af
     dec a
     jp nz,.p
@@ -332,7 +308,8 @@ w_project_full:
 
 ; w_proj_point: HL = Zc, W_PCX = Xc, W_PCY = Yc -> record W_PIDX: sx = 128 + q(Xc), sy = c - q(Yc) (P2), the flag (outcode / near /
 ; too far).  Zc = mz 2^e with mz = 128..255 is found by shifting right (Zc < 1024) or left (normalising HL), R = RCPT[mz].  The sign of
-; each coordinate is kept in C and folded into sx / sy (no negation of q).  Clobbers AF, BC, DE, HL (not IX, IY).
+; each coordinate is kept in C and folded into sx / sy (no negation of q).  Then W_PIDX + 1 and IX + 3 (the next point).  Clobbers AF, BC, DE,
+; HL (not IY).
 w_proj_point:
     ld a,h
     or a
@@ -461,9 +438,12 @@ w_proj_point:
     or b
 .flag:
     ld hl,W_PIDX
-    ld l,(hl)
-    ld h,W_FLG>>8
-    ld (hl),a
+    ld e,(hl)
+    inc (hl)                    ; the next record
+    ld d,W_FLG>>8
+    ld (de),a
+    ld de,3
+    add ix,de                   ; the next point
     ret
 
 ; w_qmul: HL = v (signed, |v| <= 32,767) -> C = H (the sign), HL = q = (|v| R) >> (8 + e) (P2; e, R at W_PE, W_PR); CY when q <= W_QMAX,
@@ -608,7 +588,12 @@ w_draw_line:
     ret c
     jp w_draw_state
 
-; w_line_setup: CY = 1: nothing visible.  CY = 0: W_ST* describe the visible part.  (The spike's slow path: 16-bit, exact.)
+; w_line_setup: CY = 1: nothing visible.  CY = 0: W_ST* describe the visible part.  (The spike's slow path: 16-bit, exact.)  The ends are
+; reordered in place: W_U0, W_V0, W_U1, W_V1 (= W_LX0, W_LY0, W_LX1, W_LY1) become u0, v0, u1, v1, u the major coordinate, u1 >= u0.
+W_U0    EQU W_LX0
+W_V0    EQU W_LY0
+W_U1    EQU W_LX1
+W_V1    EQU W_LY1
 w_line_setup:
     ld hl,(W_LX1)
     ld de,(W_LX0)
@@ -617,7 +602,7 @@ w_line_setup:
     ld a,h
     ld (W_SSX),a
     call w_abs_hl
-    ld (W_SADX),hl
+    ld (W_STDU),hl              ; |dx| (du of an x-major line)
     ld hl,(W_LY1)
     ld de,(W_LY0)
     or a
@@ -625,9 +610,9 @@ w_line_setup:
     ld a,h
     ld (W_SSY),a
     call w_abs_hl
-    ld (W_SADY),hl
+    ld (W_STDV),hl              ; |dy|
     ex de,hl
-    ld hl,(W_SADX)
+    ld hl,(W_STDU)
     or a
     sbc hl,de
     jr c,.ymaj
@@ -635,53 +620,45 @@ w_line_setup:
     ld (W_SYMAJ),a
     ld a,(W_SSX)
     rla
-    jr c,.xsw
-    ld hl,(W_LX0)
-    ld (W_SU0),hl
+    jr nc,.xb                   ; dx >= 0: (u, v) = (x, y) as they are
+    ld hl,(W_LX0)               ; dx < 0: the ends exchanged
+    ld de,(W_LX1)
+    ld (W_LX0),de
+    ld (W_LX1),hl
     ld hl,(W_LY0)
-    ld (W_SV0),hl
-    ld hl,(W_LX1)
-    ld (W_SU1),hl
-    ld hl,(W_LY1)
-    ld (W_SV1),hl
-    jr .xb
-.xsw:
-    ld hl,(W_LX1)
-    ld (W_SU0),hl
-    ld hl,(W_LY1)
-    ld (W_SV0),hl
-    ld hl,(W_LX0)
-    ld (W_SU1),hl
-    ld hl,(W_LY0)
-    ld (W_SV1),hl
+    ld de,(W_LY1)
+    ld (W_LY0),de
+    ld (W_LY1),hl
 .xb:
     ld hl,(W_CXMIN)
     ld de,(W_CYMIN)
     jr .bounds
-.ymaj:
+.ymaj:                          ; (u, v) = (y, x): du = |dy|, dv = |dx|
+    add hl,de                   ; |dx|
+    ld (W_STDV),hl
+    ld (W_STDU),de
     ld a,1
     ld (W_SYMAJ),a
     ld a,(W_SSY)
     rla
+    ld hl,(W_LX0)
     jr c,.ysw
-    ld hl,(W_LY0)
-    ld (W_SU0),hl
-    ld hl,(W_LX0)
-    ld (W_SV0),hl
-    ld hl,(W_LY1)
-    ld (W_SU1),hl
+    ld de,(W_LY0)               ; dy >= 0: x and y exchanged in each end
+    ld (W_LX0),de
+    ld (W_LY0),hl
     ld hl,(W_LX1)
-    ld (W_SV1),hl
+    ld de,(W_LY1)
+    ld (W_LX1),de
+    ld (W_LY1),hl
     jr .yb
-.ysw:
-    ld hl,(W_LY1)
-    ld (W_SU0),hl
-    ld hl,(W_LX1)
-    ld (W_SV0),hl
+.ysw:                           ; dy < 0: u0 = y1, v0 = x1, u1 = y0, v1 = x0
+    ld de,(W_LY1)
+    ld (W_LX0),de
+    ld (W_LY1),hl
     ld hl,(W_LY0)
-    ld (W_SU1),hl
-    ld hl,(W_LX0)
-    ld (W_SV1),hl
+    ld de,(W_LX1)
+    ld (W_LY0),de
+    ld (W_LX1),hl
 .yb:
     ld hl,(W_CYMIN)
     ld de,(W_CXMIN)
@@ -698,18 +675,17 @@ w_line_setup:
 ; minor decreasing? mirror v
     xor a
     ld (W_SNEG),a
-    ld hl,(W_SV1)
-    ld de,(W_SV0)
-    WSLT
-    jr nc,.nomir
+    ld hl,(W_V1)
+    ld de,(W_V0)
+    WSLTJ p,.nomir
     ld a,1
     ld (W_SNEG),a
-    ld hl,(W_SV0)
+    ld hl,(W_V0)
     call neg_hl
-    ld (W_SV0),hl
-    ld hl,(W_SV1)
+    ld (W_V0),hl
+    ld hl,(W_V1)
     call neg_hl
-    ld (W_SV1),hl
+    ld (W_V1),hl
     ld hl,(W_SVMAX)
     call neg_hl
     ex de,hl
@@ -718,66 +694,38 @@ w_line_setup:
     ld (W_SVMAX),hl
     ld (W_SVMIN),de
 .nomir:
-; DU, DV
-    ld hl,(W_SU1)
-    ld de,(W_SU0)
-    or a
-    sbc hl,de
-    ld (W_STDU),hl
-    ld hl,(W_SV1)
-    ld de,(W_SV0)
-    or a
-    sbc hl,de
-    ld (W_STDV),hl
-; trivial rejects
-    ld hl,(W_SU1)
+; trivial rejects (du = u1 - u0 and dv = |v1 - v0| = v1 - v0 after the mirror are W_STDU, W_STDV already)
+    ld hl,(W_U1)
     ld de,(W_SUMIN)
-    WSLT
-    jp c,w_ls_rej
+    WSLTJ m,w_ls_rej
     ld hl,(W_SUMAX)
-    ld de,(W_SU0)
-    WSLT
-    jp c,w_ls_rej
-    ld hl,(W_SV1)
+    ld de,(W_U0)
+    WSLTJ m,w_ls_rej
+    ld hl,(W_V1)
     ld de,(W_SVMIN)
-    WSLT
-    jp c,w_ls_rej
+    WSLTJ m,w_ls_rej
     ld hl,(W_SVMAX)
-    ld de,(W_SV0)
-    WSLT
-    jp c,w_ls_rej
+    ld de,(W_V0)
+    WSLTJ m,w_ls_rej
 ; KLO
-    ld hl,0
-    ld (W_SKLO),hl
-    ld hl,(W_SU0)
-    ld de,(W_SUMIN)
-    WSLT
-    jr nc,.k1
     ld hl,(W_SUMIN)
-    ld de,(W_SU0)
+    ld de,(W_U0)
     or a
-    sbc hl,de
+    sbc hl,de                   ; umin - u0
+    jp p,.k0                    ; u0 <= umin: klo = umin - u0
+    ld hl,0                     ; u0 > umin: 0
+.k0:
     ld (W_SKLO),hl
-.k1:
-    ld hl,(W_SV0)
+    ld hl,(W_V0)
     ld de,(W_SVMIN)
-    WSLT
-    jr nc,.k2
+    WSLTJ p,.k2
     ld hl,(W_SVMIN)             ; t = vmin - v0 (>= 1)
-    ld de,(W_SV0)
+    ld de,(W_V0)
     or a
     sbc hl,de
     add hl,hl
     dec hl                      ; 2t - 1
-    ld b,h
-    ld c,l
-    ld de,(W_STDU)
-    call w_mul16                ; DEHL = du * (2t - 1)
-    ex de,hl                    ; HL:DE
-    ld bc,(W_STDV)
-    sla c
-    rl b                        ; 2 dv
-    call w_div32                ; DE = q, HL = r
+    call w_kq                   ; DE = q, HL = r of du (2t - 1) / (2 dv)
     ld a,h
     or l
     jr z,.k1e
@@ -790,37 +738,29 @@ w_line_setup:
     ld (W_SKLO),de
 .k2:
 ; KHI
+    ld hl,(W_SUMAX)
+    ld de,(W_U0)
+    or a
+    sbc hl,de                   ; umax - u0 (>= 0: the trivial rejects)
+    ex de,hl
     ld hl,(W_STDU)
-    ld (W_SKHI),hl
-    ld hl,(W_SUMAX)
-    ld de,(W_SU1)
-    WSLT
-    jr nc,.k3
-    ld hl,(W_SUMAX)
-    ld de,(W_SU0)
     or a
     sbc hl,de
-    ld (W_SKHI),hl
+    add hl,de                   ; du; CY: du < umax - u0 (u1 < umax)
+    jr c,.k3
+    ex de,hl                    ; u1 >= umax: khi = umax - u0
 .k3:
+    ld (W_SKHI),hl
     ld hl,(W_SVMAX)
-    ld de,(W_SV1)
-    WSLT
-    jr nc,.k4
+    ld de,(W_V1)
+    WSLTJ p,.k4
     ld hl,(W_SVMAX)             ; w = vmax - v0 (>= 0)
-    ld de,(W_SV0)
+    ld de,(W_V0)
     or a
     sbc hl,de
     add hl,hl
     inc hl                      ; 2w + 1
-    ld b,h
-    ld c,l
-    ld de,(W_STDU)
-    call w_mul16
-    ex de,hl
-    ld bc,(W_STDV)
-    sla c
-    rl b
-    call w_div32
+    call w_kq                   ; du (2w + 1) / (2 dv)
     ld a,h
     or l
     jr nz,.k3e                  ; ceil(x) - 1 = q when r != 0, q - 1 when r == 0
@@ -860,18 +800,15 @@ w_line_setup:
     jr nc,.d1
     inc de
 .d1:
-    ex de,hl
-    sla c
-    rl b                        ; 2 du
-    call w_div32
+    call w_dvx                  ; / (2 du)
     ld (W_SM),de
     ld (W_STACC),hl
 .start:
-    ld hl,(W_SU0)
+    ld hl,(W_U0)
     ld de,(W_SKLO)
     add hl,de
     ld b,l                      ; u (on screen, 0..255)
-    ld hl,(W_SV0)
+    ld hl,(W_V0)
     ld de,(W_SM)
     add hl,de
     ld a,(W_SNEG)
@@ -889,117 +826,14 @@ w_line_setup:
     ld (W_STOCT),a
     rra
     jr c,.sy
-    ld a,b
-    ld (W_STX),a
-    ld a,c
-    ld (W_STY),a
-    or a
-    ret
+    ld a,b                      ; x-major: x = u, y = v
+    ld b,c
+    ld c,a
 .sy:
-    ld a,b
-    ld (W_STY),a
-    ld a,c
-    ld (W_STX),a
+    ld (W_STX),bc               ; C -> W_STX, B -> W_STY
     or a
     ret
-w_ls_rej:
-    scf
-    ret
-
-w_abs_hl:
-    bit 7,h
-    ret z
-    jp neg_hl
-
-; DEHL = DE * BC (unsigned)
-w_mul16:
-    ld hl,0
-    ld a,16
-.l: add hl,hl
-    rl e
-    rl d
-    jr nc,.s
-    add hl,bc
-    jr nc,.s
-    inc de
-.s: dec a
-    jr nz,.l
-    ret
-
-; (HL:DE) / BC -> DE = quotient, HL = remainder.  Needs HL < BC (the quotient fits 16 bits).
-w_div32:
-    ld a,16
-.l: sla e
-    rl d
-    adc hl,hl
-    jr c,.sub
-    sbc hl,bc
-    jr nc,.set
-    add hl,bc
-    dec a
-    jr nz,.l
-    ret
-.sub:
-    or a
-    sbc hl,bc
-.set:
-    inc e
-    dec a
-    jr nz,.l
-    ret
-
-; HL = address of (W_STX, W_STY) in the file W_HIDHI; A = x & 7
-w_st_addr:
-    ld a,(W_STY)
-    ld c,a
-    and 7
-    ld h,a
-    ld a,c
-    rra
-    rra
-    rra
-    and $18
-    or h
-    ld h,a
-    ld a,(W_HIDHI)
-    or h
-    ld h,a
-    ld a,c
-    rla
-    rla
-    and $E0
-    ld l,a
-    ld a,(W_STX)
-    ld c,a
-    rra
-    rra
-    rra
-    and $1F
-    or l
-    ld l,a
-    ld a,c
-    and 7
-    ret
-
-; set up the 16-bit error in the alternate set: HL' = acc - 2du, DE' = 2dv, BC' = -2du
-w_set16:
-    exx
-    ld hl,(W_STDU)
-    add hl,hl
-    ex de,hl
-    ld hl,0
-    or a
-    sbc hl,de
-    ld b,h
-    ld c,l                      ; BC' = -2du
-    ld hl,(W_STACC)
-    add hl,bc                   ; acc - 2du
-    ld de,(W_STDV)
-    ex de,hl
-    add hl,hl
-    ex de,hl                    ; DE' = 2dv
-    exx
-    ret
+; (w_ls_rej, the clip's "nothing visible" exit, is in wiremode.asm's gap before the cold start)
 
 ; Octant loops. Main set: HL = address, C = mask, B = count; 8-bit error: D = err, E = dv, IXL = -du; 16-bit: HL', DE', BC'
     MACRO WERRSTEP bits, lbl
@@ -1177,32 +1011,29 @@ w_draw_fast:
     ld a,c
     cp b                        ; CY: x decreases
     ex af,af'
-    ld a,l
-    ld l,h
-    ld h,a
-    push hl
-    pop ix                      ; IXH = du, IXL = dv
+    ld c,h                      ; C = dv (x1 is not needed any more)
+    ld d,l                      ; D = du (nor y1)
     ld h,W_MASKT>>8
     ld a,b
     and 7
     or W_MASKT&255
     ld l,a
-    ld c,(hl)
+    ld a,(hl)
+    ld ixh,a                    ; the mask, kept while WADDR_BE takes HL
     WADDR_BE
-    ld a,ixh
-    inc a
-    ld b,a
-    ld a,ixl
+    ld b,d
+    inc b                       ; B = du + 1
+    ld a,c
     or a
+    ld c,ixh                    ; C = the mask
     jp z,w_vline
-    ld e,a
-    ld a,ixh
+    ld e,a                      ; E = dv
+    ld a,d
     neg
-    ld ixl,a
-    ld a,ixh
-    srl a
-    add a,ixl
-    ld d,a
+    ld ixl,a                    ; IXL = -du (WERRFIX)
+    srl d
+    add a,d
+    ld d,a                      ; D = err = (du >> 1) - du
     ex af,af'
     jp c,w_ly_l8
     jp w_ly_r8
@@ -1217,49 +1048,43 @@ w_df_x:                         ; du = H, dv = L
     ld a,d
     ld d,e
     ld e,a
-.x1:
+.x1:                            ; B = x0 <= x1, E = y0, D = y1
+    ld a,b
+    ld (W_STX),a                ; (w_hline's x0)
+    ld c,h                      ; C = du (x1 is not needed any more)
+    ld a,l
+    or a
+    jr z,.h                     ; dv = 0: the byte fill
     ld a,d
     cp e                        ; CY: y decreases
-    ex af,af'
-    push hl
-    pop ix                      ; IXH = du, IXL = dv
+    ld d,l                      ; D = dv (nor y1)
+    sbc a,a
+    and W_ACCTAB_U-W_ACCTAB_D
+    ld h,a                      ; 0 down, 16 up
     ld a,b
-    ld (W_STX),a
     and 7
-    ld c,a
-    WADDR_BE
-    ld a,ixh
-    inc a
-    ld b,a
-    ld a,ixl
-    or a
-    jp z,w_hline
-; C = x & 7, B = count, HL = byte, IXH = du, IXL = dv: enter the unrolled loop at the first pixel's bit
-    ld a,c
     add a,a
-    ld e,a
-    ex af,af'
-    ld a,W_ACCTAB_D&255
-    jr nc,.g
-    ld a,W_ACCTAB_U&255
-.g: add a,e
-    push hl
+    add a,h
+    add a,W_ACCTAB_D&255
     ld l,a
     ld h,W_ACCTAB_D>>8
-    ld e,(hl)
+    ld a,(hl)
     inc l
-    ld d,(hl)
-    pop hl
-    push de                     ; entry of the first pixel's bit
-    ld a,ixl
-    ld e,a                      ; dv
-    ld a,ixh
+    ld h,(hl)
+    ld l,a
+.e: push hl                     ; the RET below enters the unrolled loop at the first pixel's bit (or w_hline)
+    WADDR_BE
+    ld b,c
+    inc b                       ; B = du + 1
+    ld e,d                      ; E = dv
+    ld a,c
     neg
-    ld d,a                      ; -du
-    ld a,ixh
-    srl a
-    add a,d                     ; err = (du >> 1) - du
+    ld d,a                      ; D = -du
+    srl c
+    add a,c                     ; A = err = (du >> 1) - du
     ret
+.h: ld hl,w_hline
+    jr .e
 
 ; horizontal and vertical lines (dv = 0). HL = first byte, C = mask, B = count
 w_hvline:
@@ -1273,33 +1098,27 @@ w_hline:
     add a,b
     dec a
     ld d,a                      ; x1 = x0 + n - 1
-    and 7
     push hl
-    ld hl,W_RMASK
-    add a,l
+    ld h,W_RMASK>>8             ; (W_LMASK and W_RMASK share a page)
+    and 7
+    add a,W_RMASK&255
     ld l,a
     ld c,(hl)                   ; right mask
     ld a,e
     and 7
-    ld hl,W_LMASK
-    add a,l
+    add a,W_LMASK&255
     ld l,a
-    ld a,(hl)                   ; left mask
+    ld b,(hl)                   ; left mask
     pop hl
-    ld b,a
-    ld a,d
-    rra
-    rra
-    rra
-    and $1F
-    ld d,a
     ld a,e
+    and $F8
+    ld e,a
+    ld a,d
+    sub e
     rra
     rra
     rra
-    and $1F
-    neg
-    add a,d                     ; full bytes + 1
+    and $1F                     ; full bytes + 1 = (x1 >> 3) - (x0 >> 3) = (x1 - (x0 AND $F8)) >> 3
     jr nz,.multi
     ld a,b
     and c
@@ -1347,24 +1166,20 @@ w_accline:
     ld a,e
     ld e,c                      ; E = dv, A = err
     ex af,af'
+    ld a,(W_STOCT)
+    and 2                       ; 2: up
+    rlca
+    rlca
+    rlca                        ; 16: the up table
+    ld c,a
     ld a,(W_STX)
     and 7
     add a,a
-    ld ixl,a
-    ld a,(W_STOCT)
-    and 2
-    jr nz,.up
-    ld a,ixl
+    add a,c
+    add a,W_ACCTAB_D&255
     push hl
-    ld hl,W_ACCTAB_D
-    jr .go
-.up:
-    ld a,ixl
-    push hl
-    ld hl,W_ACCTAB_U
-.go:
-    add a,l
     ld l,a
+    ld h,W_ACCTAB_D>>8
     ld a,(hl)
     inc l
     ld h,(hl)
@@ -1535,9 +1350,8 @@ w_pushes_end:
     jp (iy)
 w_r_clear_end:
     ENDM
-W_R_CLEAR_LEN   EQU 258
 
-    MACRO W_R_TRIG              ; RT_COSA / RT_SINA / RT_FXMUL (v4's raybb.asm, the same register contract) and QTAB
+    MACRO W_R_TRIG              ; RT_COSA / RT_SINA / RT_FXMUL (v4's raybb.asm, the same register contract)
 ; RT_COSA / RT_SINA: HL = angle (taken AND $FF) -> HL = (C[a] + 8) >> 4 (arithmetic): -256..256.  Clobbers AF, B, DE.
 RT_SINA:
     ld a,l
@@ -1546,19 +1360,12 @@ RT_SINA:
 RT_COSA:
     ld a,l
 w_cosa:
-    call w_cos_q
-    ld de,8
-    add hl,de
-    sra h
-    rr l
-    sra h
-    rr l
-    sra h
-    rr l
-    sra h
-    rr l
-    ret
-; w_cos_q: A = angle -> HL = C[a] (4.12) from W_QTAB: a > 128 is 256 - a; a <= 64: Q[64 - a]; else -Q[a - 64].  Clobbers AF, B, DE.
+    call w_cos_q                ; HL = 4 C + 128
+    ld de,-96
+    add hl,de                   ; 4 (C + 8)
+    jp w_shk0                   ; >> 6 (arithmetic)
+; w_cos_q: A = angle -> HL = 4 C[a] + 128 (C in 4.12) from W_QTAB: a > 128 is 256 - a; a <= 64: Q[64 - a]; else -Q[a - 64] (256 - the
+; entry).  Clobbers AF, B, DE.
 w_cos_q:
     cp 129
     jr c,.cf
@@ -1573,15 +1380,16 @@ w_cos_q:
 .cn:
     sub 64
     call .cq
-    jp neg_hl
+    call neg_hl
+    inc h                       ; 256 - (4 Q + 128) = 4 (-Q) + 128
+    ret
 .cq:
     add a,a
+    add a,W_QTAB&255
     ld l,a
-    ld h,0
-    ld de,W_QTAB
-    add hl,de
+    ld h,W_QTAB>>8
     ld a,(hl)
-    inc hl
+    inc l
     ld h,(hl)
     ld l,a
     ret
@@ -1624,15 +1432,8 @@ RT_FXMUL:
     ld l,h                      ; bits 8..23
     ld h,e
     ret
-W_QTAB:                         ; Q[k] = round(4096 sin(k pi / 128)), k = 0..64 (v4's QTAB)
-    DW 0, 101, 201, 301, 401, 501, 601, 700, 799, 897, 995, 1092, 1189, 1285, 1380, 1474
-    DW 1567, 1660, 1751, 1842, 1931, 2019, 2106, 2191, 2276, 2359, 2440, 2520, 2598, 2675, 2751, 2824
-    DW 2896, 2967, 3035, 3102, 3166, 3229, 3290, 3349, 3406, 3461, 3513, 3564, 3612, 3659, 3703, 3745
-    DW 3784, 3822, 3857, 3889, 3920, 3948, 3973, 3996, 4017, 4036, 4052, 4065, 4076, 4085, 4091, 4095
-    DW 4096
 w_r_trig_end:
     ENDM
-W_R_TRIG_LEN    EQU 249
 
     MACRO W_R_EYE               ; RT_EYE, wire_eye0, wire_setup
 ; RT_EYE: RA_W0..RA_W3 = x, y, z, heading -> the eye
@@ -1689,19 +1490,16 @@ wire_eye0:
 ; wire_setup: B = r0, C = r1 (character rows), A = attribute
 wire_setup:
     ld (W_ATTR),a
-    ld a,b
-    ld (W_CLR0),a
-    add a,a
-    add a,a
-    add a,a
-    ld (W_CYMIN),a
-    ld a,c
-    ld (W_CLR1),a
-    add a,a
-    add a,a
-    add a,a
+    ld l,b
+    ld h,c
+    ld (W_CLR0),hl              ; the clear's rows r0, r1
+    add hl,hl
+    add hl,hl
+    add hl,hl                   ; 8 r0, 8 r1 (r1 <= 23: no carry between the bytes)
+    ld a,h
     add a,7
-    ld (W_CYMAX),a
+    ld h,a
+    ld (W_CYMIN),hl             ; ymin = 8 r0, ymax = 8 r1 + 7
     ld a,b
     add a,c
     inc a
@@ -1714,12 +1512,34 @@ wire_setup:
     ld (W_CXMIN),hl             ; xmin 0, xmax 255
     xor a
     ld (W_RC+1),a               ; the rounding constant's high byte (RT_DRAWMODEL sets the low byte)
-    ld a,1
+    inc a
     ld (W_ON),a
-    jr wire_eye0
+; RCPT[m] = floor(32767 / m), m = 128..255, by steps: q = RCPT[m], r = 32767 - q m (C, DE); for m + 1: r -= q, and while r < 0: q - 1,
+; r + (m + 1).  About 9,000 T.
+    ld hl,W_RCPT+128
+    ld c,255                    ; 32767 = 255 * 128 + 127
+    ld de,127
+.rc:
+    ld (hl),c
+    inc l
+    jr z,wire_eye0              ; past m = 255
+    ld a,e
+    sub c
+    ld e,a
+    jr nc,.rw
+    dec d
+.rw:
+    bit 7,d
+    jr z,.rc                    ; r >= 0: q stays
+    dec c
+    ld a,e
+    add a,l
+    ld e,a
+    jr nc,.rw
+    inc d
+    jr .rw
 w_r_eye_end:
     ENDM
-W_R_EYE_LEN     EQU 142
 
     MACRO W_R_LINE
 ; RT_LINE: RA_W0..RA_W3 = x0, y0, x1, y1.
@@ -1783,7 +1603,6 @@ RT_LINE:
 
 w_r_line_end:
     ENDM
-W_R_LINE_LEN    EQU 99
 
     MACRO W_R_SMUL
 ; w_smul: HL = d (signed, |d| <= 32,767), C = |m| low byte, B = bit 8 of |m| (0 / 1), A = $80 when m < 0 else 0 (|m| <= 511)
@@ -1826,54 +1645,46 @@ w_smul:
 
 w_r_smul_end:
     ENDM
-W_R_SMUL_LEN    EQU 127
 
     MACRO W_R_MATRIX
 ; w_matrix: W_YAW (y'), W_PITCH (p) -> W_MAT rows (contract 2.3):
 ;   [cy, r(sy sp), r(sy cp)], [0, cp, -sp], [-sy, r(cy sp), r(cy cp)]     r(a b) = (a b + 32) >> 6
+W_TRIG  EQU W_VARS+28            ; 5 bytes of matrix scratch: cp, sy, sp, cy, cp (each pair of w_mulr's factors is one word); layout.inc's
+                                ; W_SU0..W_SU1, free since the clip orders the ends in place
 w_matrix:
     ld a,(W_YAW)
     call w_sin8
-    ld (W_SY),a
+    ld (W_TRIG+1),a             ; sy
     neg
     ld (W_MAT+10),a             ; m20 = -sy
     ld a,(W_YAW)
     add a,64
     call w_sin8
     ld (W_MAT+0),a              ; m00 = cy
+    ld (W_TRIG+3),a
     ld a,(W_PITCH)
     call w_sin8
-    ld (W_SP),a
+    ld (W_TRIG+2),a             ; sp
     neg
     ld (W_MAT+7),a              ; m12 = -sp
     ld a,(W_PITCH)
     add a,64
     call w_sin8
     ld (W_MAT+6),a              ; m11 = cp
+    ld (W_TRIG),a
+    ld (W_TRIG+4),a
     xor a
     ld (W_MAT+5),a              ; m10 = 0
-    ld a,(W_SY)
-    ld c,a
-    ld a,(W_SP)
-    ld b,a
+    ld bc,(W_TRIG+1)
     call w_mulr
     ld (W_MAT+1),a              ; m01 = r(sy sp)
-    ld a,(W_SY)
-    ld c,a
-    ld a,(W_MAT+6)
-    ld b,a
+    ld bc,(W_TRIG)
     call w_mulr
     ld (W_MAT+2),a              ; m02 = r(sy cp)
-    ld a,(W_MAT+0)
-    ld c,a
-    ld a,(W_SP)
-    ld b,a
+    ld bc,(W_TRIG+2)
     call w_mulr
     ld (W_MAT+11),a             ; m21 = r(cy sp)
-    ld a,(W_MAT+0)
-    ld c,a
-    ld a,(W_MAT+6)
-    ld b,a
+    ld bc,(W_TRIG+3)
     call w_mulr
     ld (W_MAT+12),a             ; m22 = r(cy cp)
     ret
@@ -1886,7 +1697,7 @@ w_mulr:                         ; A = (C B + 32) >> 6.  Clobbers DE, HL.
     add hl,hl                   ; (p + 32) << 2, |p| <= 4096: no overflow
     ld a,h
     ret
-; w_sin8: A = angle -> A = SIN8[angle] = round(64 sin(2 pi a / 256)) from the quarter table.  Clobbers C, HL.
+; w_sin8: A = angle -> A = SIN8[angle] = round(64 sin(2 pi a / 256)) from W_QTAB (the entries' high bytes).  Clobbers C, HL.
 w_sin8:
     ld c,a
     and $7F
@@ -1895,9 +1706,10 @@ w_sin8:
     sub 128
     neg                         ; 128 - k
 .q:
-    add a,W_SIN8Q&255
+    add a,a
+    add a,(W_QTAB+1)&255        ; the high byte of 4 Q[k] + 128
     ld l,a
-    ld h,W_SIN8Q>>8
+    ld h,W_QTAB>>8
     ld a,(hl)
     bit 7,c
     ret z
@@ -1906,7 +1718,6 @@ w_sin8:
 
 w_r_matrix_end:
     ENDM
-W_R_MATRIX_LEN  EQU 166
 
     MACRO W_R_YAW
 ; w_project_yaw: W_NPTS points at W_PSRC -> records W_PIDX.. (pitch 0: rows X and Z have m1 = 0, Yc = Ty + y 2^k)
@@ -1935,17 +1746,12 @@ w_project_yaw:
     ld (W_PCY),hl
     WROW2 0, W_MAT+10, 2, W_MAT+12, W_TZ
     call w_proj_point
-    ld bc,3
-    add ix,bc
-    ld hl,W_PIDX
-    inc (hl)
     pop af
     dec a
     jp nz,.p
     jp w_draw_edges
 w_r_yaw_end:
     ENDM
-W_R_YAW_LEN     EQU 192
 
     MACRO W_R_SHK
 ; w_shk0..3: HL = sum + (32 >> k) (signed, |sum| <= 12,288) -> HL = floor((sum 2^k + 32) / 64) = floor(HL / 2^(6 - k)): k = 0, 1 by left
@@ -1976,11 +1782,8 @@ w_shk1:
     ld l,h
     ld h,a
     ret
-W_SHKTAB:
-    DW w_shk0, w_shk1, w_shk2, w_shk3
 w_r_shk_end:
     ENDM
-W_R_SHK_LEN     EQU 32
 
     MACRO W_R_SHK23
 w_shk2:
@@ -1996,7 +1799,28 @@ w_shk3:
     ret
 w_r_shk23_end:
     ENDM
-W_R_SHK23_LEN   EQU 17
+
+    MACRO W_R_ROWC              ; the character-row steps of WROWDN / WROWUP (H's pixel-line bits wrapped)
+w_rowdn_c:                      ; L += 32; a carry is the next third (H is right), else H -= 8 (INC H carried into the third bits).  A destroyed.
+    ld a,l
+    add a,32
+    ld l,a
+    ret c
+    ld a,h
+    sub 8
+    ld h,a
+    ret
+w_rowup_c:                      ; L -= 32; a borrow is the previous third (H is right), else H += 8.  A destroyed.
+    ld a,l
+    sub 32
+    ld l,a
+    ret c
+    ld a,h
+    add a,8
+    ld h,a
+    ret
+w_r_rowc_end:
+    ENDM
 
     MACRO W_R_CLRL
 ; w_clr_lines: HL = a span on pixel line 0 of a third, D = its length / 4 (n * 8), A = 0 -> the span on all 8 pixel lines set to A with
@@ -2023,97 +1847,233 @@ w_clr_lines:
     ret
 w_r_clrl_end:
     ENDM
-W_R_CLRL_LEN    EQU 20
 
-; place what fits in the gap before the next page boundary (largest first), the rest after the tables
+    MACRO W_R_MATH              ; w_abs_hl, w_mul16, w_div32 (the clip's arithmetic)
+w_abs_hl:
+    bit 7,h
+    ret z
+    jp neg_hl
+
+; DEHL = DE * BC (unsigned)
+w_mul16:
+    ld hl,0
+    ld a,16
+.ml: add hl,hl
+    rl e
+    rl d
+    jr nc,.ms
+    add hl,bc
+    jr nc,.ms
+    inc de
+.ms: dec a
+    jr nz,.ml
+    ret
+
+; w_kq: HL = n -> DE = quotient, HL = remainder of du n / (2 dv) (W_STDU, W_STDV).  w_dvx: DEHL / (2 BC).  Both fall into w_div32.
+w_kq:
+    ld b,h
+    ld c,l
+    ld de,(W_STDU)
+    call w_mul16                ; DEHL = du n
+    ld bc,(W_STDV)
+w_dvx:
+    ex de,hl                    ; HL:DE
+    sla c
+    rl b
+; (HL:DE) / BC -> DE = quotient, HL = remainder.  Needs HL < BC (the quotient fits 16 bits).
+w_div32:
+    ld a,16
+.dl: sla e
+    rl d
+    adc hl,hl
+    jr c,.dsub
+    sbc hl,bc
+    jr nc,.dset
+    add hl,bc
+    dec a
+    jr nz,.dl
+    ret
+.dsub:
+    or a
+    sbc hl,bc
+.dset:
+    inc e
+    dec a
+    jr nz,.dl
+    ret
+w_r_math_end:
+    ENDM
+
+    MACRO W_R_STADDR
+; HL = address of (W_STX, W_STY) in the file W_HIDHI; A = x & 7
+w_st_addr:
+    ld a,(W_STY)
+    ld c,a
+    and 7
+    ld h,a
+    ld a,c
+    rra
+    rra
+    rra
+    and $18
+    or h
+    ld h,a
+    ld a,(W_HIDHI)
+    or h
+    ld h,a
+    ld a,c
+    rla
+    rla
+    and $E0
+    ld l,a
+    ld a,(W_STX)
+    ld c,a
+    rra
+    rra
+    rra
+    and $1F
+    or l
+    ld l,a
+    ld a,c
+    and 7
+    ret
+w_r_staddr_end:
+    ENDM
+
+    MACRO W_R_SET16
+; set up the 16-bit error in the alternate set: HL' = acc - 2du, DE' = 2dv, BC' = -2du
+w_set16:
+    exx
+    ld hl,(W_STDU)
+    add hl,hl
+    ex de,hl
+    ld hl,0
+    or a
+    sbc hl,de
+    ld b,h
+    ld c,l                      ; BC' = -2du
+    ld hl,(W_STACC)
+    add hl,bc                   ; acc - 2du
+    ld de,(W_STDV)
+    ex de,hl
+    add hl,hl
+    ex de,hl                    ; DE' = 2dv
+    exx
+    ret
+w_r_set16_end:
+    ENDM
+
+; =====================================================================================================================
+; Placement.  The routines above are relocatable (no page constraint, none falls into another).  The ones that fit go into the gap
+; before the next page boundary (the page-aligned tables start there), the rest after the tables, so the alignment wastes almost
+; nothing wherever wire.asm starts.  The lengths are measured (EQUs of the routines' own labels: the assembler knows them from pass 2
+; on).  Choice: every subset of the large pieces (2^6), each completed greedily with the small ones in order; the fullest wins.
+; =====================================================================================================================
+W_L_CLEAR   EQU w_r_clear_end - wire_clear      ; 258: never fits a gap
+W_L_TRIG    EQU w_r_trig_end - RT_SINA
+W_L_EYE     EQU w_r_eye_end - RT_EYE
+W_L_LINE    EQU w_r_line_end - RT_LINE
+W_L_SMUL    EQU w_r_smul_end - w_smul
+W_L_MATRIX  EQU w_r_matrix_end - w_matrix
+W_L_YAW     EQU w_r_yaw_end - w_project_yaw
+W_L_SHK     EQU w_r_shk_end - w_jpiy
+W_L_SHK23   EQU w_r_shk23_end - w_shk2
+W_L_CLRL    EQU w_r_clrl_end - w_clr_lines
+W_L_ROWC    EQU w_r_rowc_end - w_rowdn_c
+W_L_MATH    EQU w_r_math_end - w_abs_hl
+W_L_STADDR  EQU w_r_staddr_end - w_st_addr
+W_L_SET16   EQU w_r_set16_end - w_set16
 W_GAP0  = (256 - ($ & $FF)) & $FF
-W_GAP   = W_GAP0
-W_PUT_CLEAR = 0
-W_PUT_TRIG = 0
-W_PUT_MATRIX = 0
-W_PUT_YAW = 0
-W_PUT_EYE = 0
-W_PUT_SMUL = 0
-W_PUT_LINE = 0
-W_PUT_SHK = 0
-W_PUT_SHK23 = 0
-W_PUT_CLRL = 0
-    IF W_R_CLEAR_LEN <= W_GAP
-W_PUT_CLEAR = 1
-W_GAP   = W_GAP - W_R_CLEAR_LEN
+WP_BEST  = -1
+WP_PICK  = 0
+WP_M    = 0
+    DUP 64
+WP_S    = (WP_M & 1) * W_L_TRIG + ((WP_M >> 1) & 1) * W_L_YAW + ((WP_M >> 2) & 1) * W_L_EYE + ((WP_M >> 3) & 1) * W_L_MATRIX + ((WP_M >> 4) & 1) * W_L_SMUL + ((WP_M >> 5) & 1) * W_L_LINE
+    IF WP_S <= W_GAP0
+WP_R    = W_GAP0 - WP_S
+WP_SM   = 0
+    IF W_L_MATH <= WP_R
+WP_R    = WP_R - W_L_MATH
+WP_SM   = WP_SM | $40
     ENDIF
-    IF W_R_TRIG_LEN <= W_GAP
-W_PUT_TRIG = 1
-W_GAP   = W_GAP - W_R_TRIG_LEN
+    IF W_L_SHK <= WP_R
+WP_R    = WP_R - W_L_SHK
+WP_SM   = WP_SM | $80
     ENDIF
-    IF W_R_MATRIX_LEN <= W_GAP
-W_PUT_MATRIX = 1
-W_GAP   = W_GAP - W_R_MATRIX_LEN
+    IF W_L_STADDR <= WP_R
+WP_R    = WP_R - W_L_STADDR
+WP_SM   = WP_SM | $100
     ENDIF
-    IF W_R_YAW_LEN <= W_GAP
-W_PUT_YAW = 1
-W_GAP   = W_GAP - W_R_YAW_LEN
+    IF W_L_SET16 <= WP_R
+WP_R    = WP_R - W_L_SET16
+WP_SM   = WP_SM | $200
     ENDIF
-    IF W_R_EYE_LEN <= W_GAP
-W_PUT_EYE = 1
-W_GAP   = W_GAP - W_R_EYE_LEN
+    IF W_L_ROWC <= WP_R
+WP_R    = WP_R - W_L_ROWC
+WP_SM   = WP_SM | $400
     ENDIF
-    IF W_R_SMUL_LEN <= W_GAP
-W_PUT_SMUL = 1
-W_GAP   = W_GAP - W_R_SMUL_LEN
+    IF W_L_CLRL <= WP_R
+WP_R    = WP_R - W_L_CLRL
+WP_SM   = WP_SM | $800
     ENDIF
-    IF W_R_LINE_LEN <= W_GAP
-W_PUT_LINE = 1
-W_GAP   = W_GAP - W_R_LINE_LEN
+    IF W_L_SHK23 <= WP_R
+WP_R    = WP_R - W_L_SHK23
+WP_SM   = WP_SM | $1000
     ENDIF
-    IF W_R_SHK_LEN <= W_GAP
-W_PUT_SHK = 1
-W_GAP   = W_GAP - W_R_SHK_LEN
+    IF W_GAP0 - WP_R > WP_BEST
+WP_BEST  = W_GAP0 - WP_R
+WP_PICK  = WP_M | WP_SM
     ENDIF
-    IF W_R_SHK23_LEN <= W_GAP
-W_PUT_SHK23 = 1
-W_GAP   = W_GAP - W_R_SHK23_LEN
     ENDIF
-    IF W_R_CLRL_LEN <= W_GAP
-W_PUT_CLRL = 1
-W_GAP   = W_GAP - W_R_CLRL_LEN
-    ENDIF
-    IF W_PUT_CLEAR
-    W_R_CLEAR
-    ENDIF
-    IF W_PUT_TRIG
+WP_M    = WP_M + 1
+    EDUP
+w_place_start:
+    IF WP_PICK & 1
     W_R_TRIG
     ENDIF
-    IF W_PUT_MATRIX
-    W_R_MATRIX
-    ENDIF
-    IF W_PUT_YAW
+    IF WP_PICK & 2
     W_R_YAW
     ENDIF
-    IF W_PUT_EYE
+    IF WP_PICK & 4
     W_R_EYE
     ENDIF
-    IF W_PUT_SMUL
+    IF WP_PICK & 8
+    W_R_MATRIX
+    ENDIF
+    IF WP_PICK & $10
     W_R_SMUL
     ENDIF
-    IF W_PUT_LINE
+    IF WP_PICK & $20
     W_R_LINE
     ENDIF
-    IF W_PUT_SHK
+    IF WP_PICK & $40
+    W_R_MATH
+    ENDIF
+    IF WP_PICK & $80
     W_R_SHK
     ENDIF
-    IF W_PUT_SHK23
-    W_R_SHK23
+    IF WP_PICK & $100
+    W_R_STADDR
     ENDIF
-    IF W_PUT_CLRL
+    IF WP_PICK & $200
+    W_R_SET16
+    ENDIF
+    IF WP_PICK & $400
+    W_R_ROWC
+    ENDIF
+    IF WP_PICK & $800
     W_R_CLRL
     ENDIF
+    IF WP_PICK & $1000
+    W_R_SHK23
+    ENDIF
+w_pad_start:
     ALIGN 256
 w_pad_end:
 
 ; =====================================================================================================================
-; Page-aligned tables (constant): QSL, QSH (quarter squares), then one page: the line masks, the unrolled loops' entries, the
-; quarter sine table (lower half) and RCPT (upper half: indexed by mz = 128..255)
+; Page-aligned tables (constant): QSL, QSH (quarter squares), then the line masks, the unrolled loops' entries and the quarter sine
+; table (each within a page: asserted).  RCPT is in RAM (wire_setup builds it).
 ; =====================================================================================================================
 W_QSL:                          ; floor(n n / 4), n = -128..127 by the byte n: low bytes
 W_DI = 0
@@ -2133,64 +2093,64 @@ W_ACCTAB_D: DW w_xu_d_7, w_xu_d_6, w_xu_d_5, w_xu_d_4, w_xu_d_3, w_xu_d_2, w_xu_
 W_ACCTAB_U: DW w_xu_u_7, w_xu_u_6, w_xu_u_5, w_xu_u_4, w_xu_u_3, w_xu_u_2, w_xu_u_1, w_xu_u_0
 W_LMASK:    DB $FF, $7F, $3F, $1F, $0F, $07, $03, $01
 W_RMASK:    DB $80, $C0, $E0, $F0, $F8, $FC, $FE, $FF
-W_SIN8Q:                        ; round(64 sin(2 pi k / 256)), k = 0..64
-    DB 0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 16, 17, 19, 20, 22, 23
-    DB 24, 26, 27, 29, 30, 32, 33, 34, 36, 37, 38, 39, 41, 42, 43, 44
-    DB 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 56, 57, 58, 59
-    DB 59, 60, 60, 61, 61, 62, 62, 62, 63, 63, 63, 64, 64, 64, 64, 64
-    DB 64
+    MACRO WQ16 q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15
+    DW 4*q0+128, 4*q1+128, 4*q2+128, 4*q3+128, 4*q4+128, 4*q5+128, 4*q6+128, 4*q7+128
+    DW 4*q8+128, 4*q9+128, 4*q10+128, 4*q11+128, 4*q12+128, 4*q13+128, 4*q14+128, 4*q15+128
+    ENDM
+W_QTAB:                         ; 4 Q[k] + 128, Q[k] = round(4096 sin(k pi / 128)), k = 0..64 (v4's QTAB): RT_COSA's (C + 8) >> 4 is
+                                ; (entry - 96) >> 6; SIN8[k] = round(64 sin(2 pi k / 256)) = (Q[k] + 32) >> 6 is the entry's high byte
+    WQ16 0, 101, 201, 301, 401, 501, 601, 700, 799, 897, 995, 1092, 1189, 1285, 1380, 1474
+    WQ16 1567, 1660, 1751, 1842, 1931, 2019, 2106, 2191, 2276, 2359, 2440, 2520, 2598, 2675, 2751, 2824
+    WQ16 2896, 2967, 3035, 3102, 3166, 3229, 3290, 3349, 3406, 3461, 3513, 3564, 3612, 3659, 3703, 3745
+    WQ16 3784, 3822, 3857, 3889, 3920, 3948, 3973, 3996, 4017, 4036, 4052, 4065, 4076, 4085, 4091, 4095
+    DW 4*4096+128
 W_SMALL_END:
-    ASSERT W_SMALL_END <= W_QSH+256+$80
-    DS W_QSH+256+$80-$, 0
-W_RCPT_LO:
-W_DI = 128
-    DUP 128
-    DB 32767 / W_DI
-W_DI = W_DI + 1
-    EDUP
-W_RCPT  EQU W_RCPT_LO-128       ; RCPT[mz] at W_RCPT + mz, mz = 128..255
-    ASSERT (W_QSL & $FF) == 0 && (W_RCPT_LO & $FF) == $80 && (W_MASKT & 7) == 0
-    ASSERT (W_SIN8Q >> 8) == ((W_SIN8Q + 64) >> 8) && (W_ACCTAB_D >> 8) == ((W_ACCTAB_U + 15) >> 8)
+W_RCPT  EQU W_SXL               ; RCPT[mz] = floor(32767 / mz) at W_RCPT + mz, mz = 128..255: built in RAM by wire_setup, in the upper half of
+                                ; the records' sx-low page (records use offsets 0..W_MAXPTS - 1 only)
+    ASSERT W_STY == W_STX+1 && W_CLR1 == W_CLR0+1 && W_CYMAX == W_CYMIN+1 && W_ACCTAB_U == W_ACCTAB_D+16
+    ASSERT (W_QSL & $FF) == 0 && (W_MASKT & 7) == 0 && (W_RCPT & $FF) == 0 && W_MAXPTS <= 128
+    ASSERT (W_QTAB >> 8) == ((W_QTAB + 129) >> 8) && (W_ACCTAB_D >> 8) == ((W_ACCTAB_U + 15) >> 8)
     ASSERT (W_LMASK >> 8) == ((W_RMASK + 7) >> 8)
 
-    IFN W_PUT_CLEAR
     W_R_CLEAR
-    ENDIF
-    IFN W_PUT_TRIG
+    IFN WP_PICK & 1
     W_R_TRIG
     ENDIF
-    IFN W_PUT_MATRIX
-    W_R_MATRIX
-    ENDIF
-    IFN W_PUT_YAW
+    IFN WP_PICK & 2
     W_R_YAW
     ENDIF
-    IFN W_PUT_EYE
+    IFN WP_PICK & 4
     W_R_EYE
     ENDIF
-    IFN W_PUT_SMUL
+    IFN WP_PICK & 8
+    W_R_MATRIX
+    ENDIF
+    IFN WP_PICK & $10
     W_R_SMUL
     ENDIF
-    IFN W_PUT_LINE
+    IFN WP_PICK & $20
     W_R_LINE
     ENDIF
-    IFN W_PUT_SHK
+    IFN WP_PICK & $40
+    W_R_MATH
+    ENDIF
+    IFN WP_PICK & $80
     W_R_SHK
     ENDIF
-    IFN W_PUT_SHK23
-    W_R_SHK23
+    IFN WP_PICK & $100
+    W_R_STADDR
     ENDIF
-    IFN W_PUT_CLRL
+    IFN WP_PICK & $200
+    W_R_SET16
+    ENDIF
+    IFN WP_PICK & $400
+    W_R_ROWC
+    ENDIF
+    IFN WP_PICK & $800
     W_R_CLRL
     ENDIF
-    ASSERT w_r_clear_end - wire_clear == W_R_CLEAR_LEN
-    ASSERT w_r_trig_end - RT_SINA == W_R_TRIG_LEN
-    ASSERT w_r_eye_end - RT_EYE == W_R_EYE_LEN
-    ASSERT w_r_line_end - RT_LINE == W_R_LINE_LEN
-    ASSERT w_r_smul_end - w_smul == W_R_SMUL_LEN
-    ASSERT w_r_matrix_end - w_matrix == W_R_MATRIX_LEN
-    ASSERT w_r_yaw_end - w_project_yaw == W_R_YAW_LEN
-    ASSERT w_r_shk_end - w_jpiy == W_R_SHK_LEN
-    ASSERT w_r_shk23_end - w_shk2 == W_R_SHK23_LEN
-    ASSERT w_r_clrl_end - w_clr_lines == W_R_CLRL_LEN
+    IFN WP_PICK & $1000
+    W_R_SHK23
+    ENDIF
+    ASSERT WP_BEST == w_pad_start - w_place_start
 M_WIRE_E:

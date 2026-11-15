@@ -164,21 +164,16 @@ draw_all:
     ld a,(V_ANYSKIP)
     or a
     jr z,.draw
-    ld a,(V_RBASE)              ; a marked instance: clear the mark, draw nothing
+    ld a,(V_RBASE)              ; a marked instance: clear the mark, draw nothing (DE = its record; HL stays on the entry)
     add a,b
-    ld l,a
-    ld h,SPR_DRAWN>>8
-    bit 7,(hl)
-    jr z,.draw0
-    res 7,(hl)
+    ld e,a
+    ld d,SPR_DRAWN>>8
+    ld a,(de)
+    add a,a                     ; carry = the mark (bit 7)
+    jr nc,.draw
+    srl a                       ; the flag without the mark
+    ld (de),a
     jp .next
-.draw0:
-    ld a,b                      ; (HL = the entry again)
-    srl a
-    add a,b
-    add a,SPR_TAB&$FF
-    ld l,a
-    ld h,SPR_TAB>>8
 .draw:
     inc hl
     ld e,(hl)                   ; E = asset

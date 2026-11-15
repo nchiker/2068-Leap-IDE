@@ -1,0 +1,71 @@
+== after (worker B, worktree wB) ==
+-- m17-runtime-wire --
+--- 4e. LINE: exactly one coordinate beyond -16384..16383; horizontal / vertical lines take the byte-fill / column loops ---
+  PASS  LINE with exactly one of its four coordinates beyond -16384..16383 draws nothing, as the reference (72 lines: each coordinate x 6 values x 3 lines)  (0 mismatches)
+      draw_fast 40 px horizontal: max 690 T; vertical: max 2,832 T; RT_LINE clipped horizontal (256 px): max 5,938 T; clipped vertical (160 px): max 15,156 T
+  PASS  a horizontal 40 px line uses the byte-fill form: draw_fast <= 1,000 T (the sloped loop takes about 1,400)  (690)
+  PASS  a vertical 40 px line uses the column loop: draw_fast <= 3,150 T (the sloped loop is about 25 % slower)  (2,832)
+  PASS  a clipped horizontal line (256 px) takes the byte-fill form: RT_LINE <= 9,000 T  (5,938)
+  PASS  a clipped vertical line (160 px) takes the column loop: RT_LINE <= 17,500 T  (15,156)
+
+--- 5. interrupts on, the real handler ---
+  PASS  60 scenes with interrupts on (517 interrupts taken, 517 through SND_TICK): the handler leaves every register as it was (AF BC DE HL, IX, IY, the alternates, SP)
+  PASS    ... and the pictures (both files, attributes) equal the runs with interrupts off
+  PASS    ... no interrupt accepted while wire_clear has them off (72 refused)
+  PASS  wire_clear of the largest area (rows 0..23) keeps interrupts off at most 37,000 T  (36107 T)
+
+--- 6. kernel figures (exact T-states on TSRun, no contention) ---
+  PASS  the timed lines equal the reference
+  40 px line, T by angle:            0°     15°     30°     45°     60°     75°     90°
+    w_draw_fast                    672   2,470   3,247   4,159   4,527   4,010   2,821
+    RT_LINE (inside)               970   2,768   3,545   4,457   4,825   4,308   3,119
+  12-point ship, yaw + pitch, P2 (32 poses): matrix + projection mean 39,388, max 40,445; lines (18 edges) mean 22,801; whole DRAWMODEL mean 64,669
+  per-DRAWMODEL overhead (entry, arguments, eye transform, setup; everything before the matrix): mean 2,480, max 2,482
+  per-DRAWMODEL overhead at headings 0, 13, 64, 100, 181, 250: 2,482, 2,616, 2,499, 2,601, 2,690, 2,659
+  per-DRAWMODEL overhead, 300 random eyes / positions / scales (objects in range): mean 2,627, max 2,845
+  wire_clear rows 2..21 (20 rows): 30,544 T (24 rows: 36,176)
+
+  contract section 6 targets:
+  PASS    draw_fast 40 px 45° <= 4,460 T  (4,159)
+  PASS    one 12-point ship, yaw + pitch, P2: matrix + projection <= 50,000 T  (max 40,445)
+  PASS    the PUSH clear of 20 rows <= 31,000 T  (30,544)
+  PASS    per-DRAWMODEL overhead <= 3,000 T  (max 2,845)
+  PASS    LINE 40 px inside <= 4,000 T, as the mean of 0..90° (3,427)  (per angle 970 / 2,768 / 3,545 / 4,457 / 4,825 / 4,308 / 3,119)
+  NOTE: LINE is above 4,000 T at 45°, 60°, 75° (4,457, 4,825, 4,308): draw_fast alone takes 4,159, 4,527, 4,010 there (the spike's 45° figure is 4,245); RT_LINE adds 298 T.
+
+mismatches in all: 0
+
+PASS: m17 runtime wireframe (W1) (103 checks passed, 0 failed)
+-- m17-runtime-tick (figures) --
+17:      (1.9 s; clear start after the interrupt: max 1,625 T; interrupts off 30,475 T max)
+22:  PASS    ... the clear starts within 1,625 T of the interrupt (contract: about 100 T after the handler) and its interrupts-off span (max 36,107 T <= 37,000) ends 37,791 T after it (< 58,688)
+28:--- 3b. scenario D: no sprite instance (NINST = 0), rows 2..21; scenarios E, F: rows 5..8 (4 rows) and 20..23 ---
+29:  PASS  scenario D: no instance: 300 refreshes (101 ticks on, 20 off) equal the expectation (wire_unchanged and wire_erase with NINST = 0)
+33:--- 4. games without the play area: $F4E0-$FA7F untouched, V_WIRE 0, RT_WIREMODE a no-op, the cost at WORK_START ---
+34:  PASS  DIV_EXT only (18-byte header): 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+36:  PASS  DIV_EXT | DIV_WIRE, r1 = 24: 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+37:  PASS  DIV_EXT | DIV_WIRE, 3 rows (r1 = r0 + 2): 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+38:  PASS  DIV_EXT | DIV_WIRE, r1 < r0 (10, 5): 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+39:  PASS  DIV_EXT | DIV_WIRE, r1 < r0 by one (10, 9): 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+40:  PASS  DIV_EXT | DIV_WIRE, r0 = r1 = 0: 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+41:  PASS  DIV_EXT | DIV_WIRE, r1 = 255: 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+42:  PASS  DIV_EXT | DIV_WIRE, a null descriptor: 300 refreshes, $F4E0-$FA7F (poisoned at the entry) untouched, V_WIRE 0 at every tick, pictures = the cell map and sprites  (0 bytes changed; )
+43:  PASS  the cost of the tick for a game without the play area: WORK_START -> frame_entry takes 129..129 T (102 before W2): +27 T <= 40
+46:  PASS  RT_WIREMODE 0 (on -> off): 3,723 T; writes V_WIRE = 2, W_ON = 0 and the play rows' dirty bytes (all $FF) of both maps, nothing else; IX, IY, alternates kept  (162 bytes)
+47:  PASS  RT_WIREMODE 0 when off: 66 T, nothing written (the play rows' dirty bytes, set to 0 first, stay 0)
+48:  PASS  RT_WIREMODE 7 (off -> on): 102,156 T; writes V_WIRE = 3, W_ON = 1, the attribute $45 into rows 2..21 of both attribute files and 0 into the play rows (pixel rows 16..175) of the hidden file's bitmap ($4000), nothing else (the file on screen untouched); registers kept  (6379 bytes)
+50:  PASS  RT_WIREMODE 1 when on: 61 T, nothing written (the play rows' attributes, set to $3A, and the hidden bitmap's, set to $77, first: they stay)
+51:      rows 0..23: off 4,395 T, on 122,124 T
+52:  PASS  a game without the play area: RT_WIREMODE 0 / 1 / $FF write nothing (33 / 33 / 33 T)
+63:figures (TSRun, exact T-states, no contention):
+64:  added to the tick of a game without the play area: 27 T (one test at WORK_START)
+65:  the clear's start after the interrupt (scenario B, rows 0..23, busy effect): max 1,625 T; interrupts off max 36,107 T, ending 37,791 T after the interrupt
+66:  RT_WIREMODE rows 2..21: on 102,156 T, off 3,723 T; rows 0..23: on 122,124 T, off 4,395 T
+-- arcade-orbit section 11 --
+108:  INFO  play ticks: 4585 (the bot run 2980); cost median 193617 T, 95th percentile 260023 T, 99th 284942 T, worst 334812 T (5.70 refreshes); budget 5 refreshes = 293440 T; 22 over (0.48 %), 99.52 % within
+109:  INFO  ticks by number of models drawn (play): 0: 284 ticks, median 67820, worst 113210; 1: 280 ticks, median 89409, worst 135396; 2: 950 ticks, median 145761, worst 193468; 3: 1379 ticks, median 193402, worst 281982; 4: 1692 ticks, median 234149, worst 334812
+110:  INFO  ticks over the budget: bot 21 (324992 T, 4 models, gate 1476 away); bot 63 (295676 T, 4 models, gate 1388 away); bot 177 (302420 T, 4 models, gate 1539 away); bot 298 (334812 T, 4 models, gate 1591 away); bot 423 (298733 T, 4 models, gate 1655 away); bot 956 (295229 T, 4 models, gate 422 away); bot 957 (299767 T, 4 models, gate 383 away); bot 1211 (303882 T, 4 models, gate 2009 away); bot 1416 (301383 T, 4 models, gate 2064 away); bot 1520 (307022 T, 4 models, gate 2065 away); bot 2306 (294133 T, 4 models, gate 2064 away); bot 2411 (295689 T, 4 models, gate 2077 away); bot 2516 (317861 T, 4 models, gate 2077 away); bot 2932 (305181 T, 4 models, gate 2065 away); bot 2985 (299419 T, 4 models, gate 2070 away); cycle 21 (324992 T, 4 models, gate 1476 away); cycle 1106 (320978 T, 4 models, gate 1476 away); hit 21 (324992 T, 4 models, gate 1476 away); hit 146 (310728 T, 4 models, gate 1538 away); lose 21 (324992 T, 4 models, gate 1476 away); lose 146 (310728 T, 4 models, gate 1538 away); shoot 21 (324992 T, 4 models, gate 1476 away)
+111:  INFO  other ticks (scene changes, title, over, the first two): boot 10 ticks, median 360095 worst 360095; title 103 ticks, median 8337 worst 361713; play-first-change 6 ticks, median 788045 worst 788045; over-change 2 ticks, median 1169116 worst 1169116; over 55 ticks, median 2991 worst 351071; title-change 2 ticks, median 1018277 worst 1018277
+113:  PASS  >= 99 % of the ordinary play ticks fit the budget of FRAMERATE 12 (5 refreshes = 293440 T): 99.52 % (22 of 4585 over; median 193617, 95th 260023, 99th 284942, worst 334812 T)
+115:  PASS  the costs were measured over 4585 ordinary play ticks (>= 1,000) and no tick took 12 refreshes or more (worst 334812 T = 5.70 refreshes): the loop never hangs and the interrupts stay on
+116:  INFO  the 178 other ticks: 24 over the budget: bot 1 boot 360095 T; bot 2 boot 359787 T; bot 20 play-first-change 788045 T; cycle 1 boot 360095 T; cycle 2 boot 359787 T; cycle 20 play-first-change 788045 T; cycle 1068 over-change 1026833 T; cycle 1069 over 351071 T; cycle 1099 title-change 1018277 T; cycle 1100 title 361684 T; cycle 1105 play-first-change 786390 T; hit 1 boot 360095 T
