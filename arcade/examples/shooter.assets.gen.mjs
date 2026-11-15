@@ -7,15 +7,17 @@
 // Format: docs/ARCADE_ASSETS.md (rows with bits / mask in hex, MSB = leftmost pixel; mask 1 = the sprite covers the background;
 // `hot` = the collision box [x, y, w, h]; `phases` = pre-shifted horizontal positions (8, 4, 2 or 1), see
 // docs/ARCADE_RUNTIME_API_V2.md). Each row also says ink / paper / bright as the Studio would author it.
-// Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md; the top-level "scenes" key below makes the play scene 8 x 1 colour): a sprite's colour
-// there is the INK of each of its pixel rows (the paper and BRIGHT under it are the background's), so every sprite is shaded per row
-// (SHIP_INK ... SHOT_INK), and a tile has eight row attributes, so the sky has stars of several inks, a dithered nebula and a planet's
-// horizon, and the explosions are hot at the core.  Everything is black paper, BRIGHT 0 (TSRun shows BRIGHT black grey).  The title and
-// the game over scenes stay two-buffer: they show each tile's row 0 attribute.
+// Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md; the top-level "scenes" key below makes every scene 8 x 1 colour): a sprite's colour there
+// is the INK of each of its pixel rows (the paper and BRIGHT under it are the background's), so every sprite is shaded per row (SHIP_INK ...
+// SHOT_INK), and a tile has eight row attributes.  The sky is painted as a picture (fineart.mjs): a planet lit from the upper left, shaded
+// black -> blue -> red -> magenta (neighbours in brightness) in solid bands joined by checkerboard seams, a dithered rim on its night side,
+// sparse stars; the explosions are hot at the core; the title and game over show a rainbow logo and graded text (maps loaded over the sky).
+// Black paper is always BRIGHT 0 (TSRun shows BRIGHT black grey).  Owner approved the look from stills, 2026-11-15.
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pattern, song, describe } from './songs.mjs';
+import { picture, dither, set, text, tiler } from './fineart.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const mirror = (half) => half + [...half].reverse().join('');
@@ -62,43 +64,59 @@ function sprite(rows, { hot, phases, inks, paper = 0, bright = 0 }) {
 // a tile: eight row attributes (docs/ARCADE_ASSETS.md: bits, ink, paper, bright per row); `inks` / `papers` are one number or one value a row
 const per = (v, k) => (Array.isArray(v) ? v[k] : v);
 const tileRows = (bytes, inks, paper = 0) => ({ rows: bytes.map((b, k) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink: per(inks, k), paper: per(paper, k), bright: 0 })), flags: 0 });
-// a sky tile (one the map uses): its row 0 is ink 7 on paper 0 (BRIGHT 0) whatever the other rows are, because the title and the game over scenes are two-buffer and show a tile by its row 0 attribute,
-// and the asset check (background-attr-mix) wants one background attribute for the cell map; the art of a sky tile therefore keeps its row 0 empty
-const sky = (bytes, inks, paper = 0) => { if (bytes[0] !== 0) throw new Error('a sky tile has an empty row 0'); return tileRows(bytes, Array.from({ length: 8 }, (_, k) => (k === 0 ? 7 : per(inks, k))), Array.from({ length: 8 }, (_, k) => (k === 0 ? 0 : per(paper, k)))); };
 const quad = (rows16, qx, qy) => rows16.slice(qy * 8, qy * 8 + 8).map((r) => parseInt([...r.slice(qx * 8, qx * 8 + 8)].map((c) => (c === '#' ? '1' : '0')).join(''), 2));
+// 0 .. 3: the empty sky and three stars (a single dim pixel, a dim cyan one, a cross with a white core); the code knows 4 .. 15 as the explosion
 const tiles = [
-  sky([0, 0, 0, 0, 0, 0, 0, 0], 7),                               // 0 empty sky
-  sky([0, 0, 0, 0, 0, 0x04, 0, 0], 1),                            // 1 dim blue star (a single pixel)
-  sky([0, 0, 0x20, 0, 0, 0, 0, 0], 5),                            // 2 dim cyan star
-  sky([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], [7, 5, 7, 5, 7, 7, 7, 7]),   // 3 bright star: a cross, white core and cyan arms
+  tileRows([0, 0, 0, 0, 0, 0, 0, 0], 7),
+  tileRows([0, 0, 0, 0, 0, 0x04, 0, 0], 1),
+  tileRows([0, 0, 0x20, 0, 0, 0, 0, 0], 5),
+  tileRows([0, 0x10, 0x38, 0x10, 0, 0, 0, 0], [7, 5, 7, 5, 7, 7, 7, 7]),
 ];
 // 4 .. 15: the explosion, 3 frames of 2 x 2 tiles; each pixel row has its own ink, hot (white) at the core and cooling outwards
 const expInk = (f, r) => { const d = Math.abs(r - 7.5); return f === 0 ? (d <= 2 ? 7 : 6) : f === 1 ? (d <= 2 ? 7 : d <= 4 ? 6 : d <= 6 ? 2 : 3) : (d <= 3 ? 6 : d <= 5 ? 2 : 3); };
 EXPLOSION.forEach((f, k) => { for (const [qx, qy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) tiles.push(tileRows(quad(f, qx, qy), Array.from({ length: 8 }, (_, r) => expInk(k, qy * 8 + r)))); });
-tiles.push(sky([0, 0, 0, 0x08, 0, 0, 0, 0], 6));                // 16 dim yellow star
-tiles.push(sky([0, 0, 0, 0, 0, 0, 0x40, 0], 3));               // 17 dim magenta star
-// 18 .. 29: the nebula, a dither of 3 densities in 4 colourings (blue, blue to magenta, magenta, magenta to blue: a gradient down the band)
-const NEB_DENSITY = [[0, 0, 0x44, 0, 0, 0, 0x11, 0], [0, 0x44, 0, 0x11, 0, 0x44, 0, 0x11], [0, 0x88, 0x22, 0x88, 0x22, 0x88, 0x22, 0x88]];
-const NEB_INKS = [Array(8).fill(1), [1, 1, 1, 1, 3, 3, 3, 3], Array(8).fill(3), [3, 3, 3, 3, 1, 1, 1, 1]];
-for (const inks of NEB_INKS) for (const d of NEB_DENSITY) tiles.push(sky(d, inks));
-// 30, 31: the horizon of a planet along the two lowest cell rows: the PAPER climbs from black through blue and magenta to red, line by line
-tiles.push(sky([0, 0, 0, 0, 0, 0, 0, 0], 7, [0, 0, 0, 0, 0, 1, 1, 1]));
-tiles.push(sky([0, 0, 0, 0, 0, 0, 0, 0], 7, [0, 1, 1, 3, 3, 3, 2, 2]));
-const T_STARS = [1, 2, 3, 16, 17], T_NEB0 = 18, T_HOR = 30;
 
-// the sky: row 0 is the HUD; a few stars (a fixed pseudo-random sequence, so the file is the same every time), the nebula in cell rows 5 .. 13, the horizon in 22, 23
+// ── the pictures (fineart.mjs: painted per pixel, shaded along ramps of colours that are neighbours in brightness, then cut into 8 x 8 tiles
+//    with eight row colours each; the tiler shares equal tiles between the maps)
+const T_STARS = [1, 2, 3];
 let seed = 7;
 const rnd = () => { seed = (seed * 25173 + 13849) & 0xFFFF; return seed / 65536; };
-const NEB_ZONE = (r) => (r <= 6 ? 0 : r === 7 ? 1 : r <= 10 ? 2 : r === 11 ? 3 : 0);
-const cells = [];
-for (let r = 0; r < 24; r++) for (let c = 0; c < 32; c++) {
-  const v = rnd(), w = rnd(), n = rnd();
-  let t = 0;
-  if (r === 22 || r === 23) t = T_HOR + (r - 22);
-  else if (r >= 5 && r <= 13 && n < 0.8 * (1 - Math.abs(r - 9) / 5)) t = T_NEB0 + 3 * NEB_ZONE(r) + (w < 0.45 ? 0 : w < 0.85 ? 1 : 2);
-  else if (r > 0) t = v < 0.025 ? 3 : v < 0.07 ? 1 : v < 0.12 ? 2 : v < 0.15 ? 16 : v < 0.18 ? 17 : 0;
-  cells.push(t);
+// the planet: a sphere lit from the upper left (behind it, so the lit side is a broad crescent), shaded black -> blue -> red -> magenta in crisp
+// bands joined by a checkerboard seam; its night side keeps a thin blue rim (the atmosphere lit from behind), so the whole disc reads
+const PLANET = { cx: 204, cy: 58, R: 36, ramp: [0, 1, 2, 3], light: [-0.85, -0.35, 0.35] };
+function paintPlanet(pic) {
+  const { cx, cy, R, ramp, light } = PLANET, L = Math.hypot(...light), [lx, ly, lz] = light.map((v) => v / L), top = ramp.length - 1;
+  for (let y = 8; y < 192; y++) for (let x = 0; x < 256; x++) {
+    const nx = (x + 0.5 - cx) / R, ny = (y + 0.5 - cy) / R, q = 1 - nx * nx - ny * ny;
+    if (q < 0) continue;
+    const d = Math.max(0, nx * lx + ny * ly + Math.sqrt(q) * lz);
+    let lv = d * top;
+    if (q < 0.09 && lv < 0.5) lv = 0.5;                        // the rim: a blue seam around the night side
+    set(pic, x, y, dither(x, y, Math.min(top, lv), ramp));
+  }
 }
+const inPlanet = (r, c) => Math.hypot(8 * c + 4 - PLANET.cx, 8 * r + 4 - PLANET.cy) < PLANET.R + 8;
+// the sky: row 0 is the HUD; a few stars (a fixed pseudo-random sequence, so the file is the same every time) where the planet is not, then the planet
+const skyPic = picture();
+paintPlanet(skyPic);
+const starAt = [];
+for (let r = 1; r < 24; r++) for (let c = 0; c < 32; c++) { const v = rnd(); starAt.push(inPlanet(r, c) ? 0 : v < 0.02 ? 3 : v < 0.06 ? 1 : v < 0.09 ? 2 : 0); }
+const tiler_ = tiler(tiles);
+const skyCells = [...new Array(32).fill(0), ...tiler_.add(skyPic, 1, 0, 23, 32)].map((t, i) => (i >= 32 && t === 0 ? starAt[i - 32] : t));
+
+// the title and the game over: STARFALL and GAME OVER in the font at twice its size (bold), every pixel row its own colour (white at the top, down through the brightnesses),
+// and "PRESS FIRE TO PLAY" one size, graded yellow -> red row by row: maps loaded over the sky (LOADMAP ... AT), placed clear of the planet.
+const RAINBOW = [7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 3, 3, 1, 1];        // a pixel row of the big letters -> its ink
+const GRADE = [6, 6, 6, 6, 2, 2, 2, 2];                                  // a pixel row of graded text -> its ink (the font's rows 1..6 hold the strokes)
+function textMap(str, colourOf, { scale = 1, shadow = null, bold = false } = {}) {
+  const pic = picture(), w = str.length * scale, h = scale;
+  text(pic, str, 0, 8, colourOf, { scale, shadow, bold });
+  return { w, h, cells: tiler_.add(pic, 1, 0, h, w) };
+}
+const logo = textMap('STARFALL', (py) => RAINBOW[py], { scale: 2, bold: true });
+const press = textMap('PRESS FIRE TO PLAY', (py) => GRADE[py]);
+const gameOver = textMap('GAME OVER', (py) => RAINBOW[py], { scale: 2, bold: true });
+if (tiler_.count > 128) throw new Error(`${tiler_.count} tiles: at most 128`);
 
 const ticks = (n, f) => Array.from({ length: n }, (_, k) => f(k));
 const sfx = {
@@ -143,7 +161,7 @@ const HEAVY_INK = [7, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 6, 6, 6, 6, 6];
 const BULLET_INK = [7, 7, 6, 6, 6, 2, 2, 2];
 const SHOT_INK = [6, 6, 2, 2, 2, 2, 3, 3];
 const assets = {
-  scenes: { play: { display: 'fine' } },          // the play scene is 8 x 1 colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 1); the title and over scenes are two-buffer
+  scenes: { title: { display: 'fine' }, play: { display: 'fine' }, over: { display: 'fine' } },   // every scene is 8 x 1 colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 1)
   sprites: {
     ship: sprite(SHIP, { hot: [3, 3, 10, 11], phases: 8, inks: SHIP_INK }),
     bullet: sprite(BULLET, { hot: [2, 0, 4, 8], phases: 4, inks: BULLET_INK }),
@@ -151,10 +169,14 @@ const assets = {
     heavy: sprite(HEAVY, { hot: [1, 0, 14, 14], phases: 8, inks: HEAVY_INK }),
     shot: sprite(SHOT, { hot: [2, 2, 4, 4], phases: 4, inks: SHOT_INK }),
   },
-  tilesets: { gfx: { tiles } },
+  tilesets: { gfx: { tiles: tiler_.tiles } },
   sfx,
-  maps: { sky: { w: 32, h: 24, cells } },
+  maps: {
+    sky: { w: 32, h: 24, cells: skyCells },
+    logo: { w: logo.w, h: logo.h, cells: logo.cells }, press: { w: press.w, h: press.h, cells: press.cells },
+    gameover: { w: gameOver.w, h: gameOver.h, cells: gameOver.cells },
+  },
   music,
 };
-writeFileSync(join(HERE, 'shooter.assets.json'), JSON.stringify(assets, null, 1) + '\n');
-console.log(`shooter.assets.json: ${Object.keys(assets.sprites).length} sprites, ${tiles.length} tiles, ${Object.keys(sfx).length} sound effects, a 32 x 24 sky; ${Object.entries(music).map(([k, v]) => describe(k, v)).join('; ')}`);
+writeFileSync(process.env.OUT ?? join(HERE, 'shooter.assets.json'), JSON.stringify(assets, null, 1) + '\n');
+console.log(`shooter.assets.json: ${Object.keys(assets.sprites).length} sprites, ${tiler_.count} tiles, ${Object.keys(sfx).length} sound effects, ${Object.keys(assets.maps).length} maps; ${Object.entries(music).map(([k, v]) => describe(k, v)).join('; ')}`);

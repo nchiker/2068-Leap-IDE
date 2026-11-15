@@ -44,7 +44,7 @@ console.log('1. The build');
 let res;
 try { res = compileReal(SRC, ASSETS); } catch (e) { check_('shooter.arc compiles for the real v2 runtime', false, e.message); process.exit(1); }
 const plan = Object.fromEntries(res.scenes.map((s) => [s.name, s.built]));
-check_('the assets file makes the play scene fine and the title and over scenes two-buffer', plan.play === 'fine' && plan.title === 'buffers' && plan.over === 'buffers', JSON.stringify(plan));
+check_('the assets file makes every scene fine (title, play, game over)', plan.play === 'fine' && plan.title === 'fine' && plan.over === 'fine', JSON.stringify(plan));
 const phases = Object.values(ASSETS.sprites).reduce((n, a) => n + a.phases, 0);
 const NAMES = Object.keys(ASSETS.sprites);
 check_('no warnings; 7 instances of 5 assets with 32 phases in all (the fine cap)', res.warnings.length === 0 && res.usage.codegen.instances === 7 && res.usage.codegen.sprites === 5 && phases === 32, `${res.warnings.map((w) => w.message).join(' | ')} ${res.usage.codegen.instances} instances, ${phases} phases, ${res.usage.total} bytes, ${res.usage.free} free`);
@@ -151,7 +151,7 @@ const want = interpFor(SRC, ASSETS, r1.got, { scenes: ASSETS.scenes })(TICKS, { 
 const dState = diffRecords(r1.got.ticks, want, { skip: ['sound'] });
 check_(`${TICKS} ticks: variables, arrays, cells, attributes, cursor, text attribute and border equal the interpreter's on every tick`, dState === null, dState ?? '');
 const fineTicks = want.ticks.filter((q) => q.fine).length;
-check_(`the interpreter's run has ${fineTicks} fine play ticks (title and over are not fine)`, want.fine && want.fine.scenes.join() === 'false,true,false' && fineTicks > (QUICK ? 300 : 600), want.fine ? want.fine.scenes.join() : 'no fine result');
+check_(`the interpreter's run has ${fineTicks} fine ticks (every scene is fine)`, want.fine && want.fine.scenes.join() === 'true,true,true' && fineTicks > (QUICK ? 300 : 600), want.fine ? want.fine.scenes.join() : 'no fine result');
 // the pictures: the screen after the publish of tick n + 1 is the fine picture of the state tick n left (the interpreter's record n - 1)
 let picBad = 0, picOk = 0, picFirstBad = null;
 for (const rec of r1.recs) {

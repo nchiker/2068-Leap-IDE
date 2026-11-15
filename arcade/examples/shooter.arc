@@ -7,9 +7,10 @@ REM   Three scenes (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md): title -> 
 REM   (the over scene shows them); everything of the game itself lives in the play scene, whose variables ENTER zeroes at every start.  ENTER puts the screen
 REM   (the sky, from the first MAP), the sprites and the sound back to the start state, so no scene cleans up after the one before.
 REM   The version with one scene and a state variable is kept as arcade/tests/fixtures/shooter-v1.arc.
-REM   FINE COLOUR (docs/ARCADE_FINE_COLOUR_CONTRACT.md): the play scene is an 8 x 1 colour scene (shooter.assets.json says so: "scenes": {"play": {"display": "fine"}}):
-REM   every pixel row of every sprite and every tile has its own colour, so the ship, the enemies and the shots are shaded row by row over a sky with a nebula and
-REM   a planet's horizon, all on black paper with BRIGHT 0.  The screen is then updated in the one picture the viewer sees (about 25,000 T for each moving 16 x 16
+REM   FINE COLOUR (docs/ARCADE_FINE_COLOUR_CONTRACT.md): every scene is an 8 x 1 colour scene (shooter.assets.json says so: "scenes": {"title": {"display": "fine"}, ...}):
+REM   every pixel row of every sprite and every tile has its own colour, so the ship, the enemies and the shots are shaded row by row over a starfield with a planet
+REM   lit from the upper left (shaded black, blue, red, magenta in bands joined by checkerboard seams), and the title and the game over have a rainbow logo and graded
+REM   text (maps of tiles loaded over the sky: LOADMAP logo AT ...).  Black paper is always BRIGHT 0.  The screen is then updated in the one picture the viewer sees (about 25,000 T for each moving 16 x 16
 REM   sprite, 12,500 T for an 8 x 8 one), so a 20 Hz tick holds only a few sprites at once: the ship, 2 bullets, 2 enemies at a time (2 scouts and a heavy to pick from) and 1 enemy shot.
 REM   A game with a fine scene has at most 32 sprite phases in all (ship 8, bullet 4, scout 8, heavy 8, shot 4 = 32).  The bullets are fast (16 pixels a tick)
 REM   so two of them keep a steady fire; the waves make up for the three enemy slots by speed, shots, the heavies' dives and the number of enemies a wave.
@@ -25,6 +26,9 @@ SPRITE heavy(1) = "heavy"
 SPRITE shot(1) = "shot"
 TILESET gfx = "gfx"
 MAP sky = "sky"
+MAP logo = "logo"
+MAP press = "press"
+MAP gameover = "gameover"
 SFX pew = "pew"
 SFX boom = "boom"
 SFX hurt = "hurt"
@@ -38,12 +42,14 @@ DIM score, wv
 
 SCENE title
   PROC INIT():
+    BORDER 0
     PLAY fanfare
-    INK 6 : PAPER 0 : BRIGHT 0
-    PRINT AT 8, 12; "STARFALL";
-    INK 5 : PRINT AT 11, 7; "PRESS FIRE TO PLAY";
-    INK 4 : PRINT AT 15, 4; "Q A O P MOVE   SPACE FIRE";
-    INK 4 : PRINT AT 17, 10; "OR JOYSTICK 1";
+    REM the logo (each pixel row its own colour) and the graded line are maps of tiles; the keys are plain text
+    LOADMAP logo AT 2, 5
+    LOADMAP press AT 7, 14
+    INK 5 : PAPER 0 : BRIGHT 0
+    PRINT AT 18, 4; "Q A O P MOVE   SPACE FIRE";
+    PRINT AT 20, 10; "OR JOYSTICK 1";
   ENDP
 
   PROC FRAME():
@@ -59,7 +65,7 @@ SCENE play
   DIM ex(2), ey(2), et(2), ep(2), es(2), ed(2), eh(2)
   DIM sx(1), sy(1), sdx(1), son(1)
   DIM xc(1), yc(1), ef(1)
-  REM the 4 map tiles under each explosion, put back when it is over (the sky, the nebula, the horizon)
+  REM the 4 map tiles under each explosion, put back when it is over (the sky, the stars, the planet)
   DIM st(7)
   REM the zigzag pattern's sideways offsets
   DIM wob(15)
@@ -68,6 +74,7 @@ SCENE play
   DEF FN touch(n) = HIT(ship, scout(n)) OR HIT(ship, heavy(n - 2))
 
   PROC INIT():
+    BORDER 0
     wob(0) = 0 : wob(1) = 6 : wob(2) = 11 : wob(3) = 14 : wob(4) = 16 : wob(5) = 14 : wob(6) = 11 : wob(7) = 6
     wob(8) = 0 : wob(9) = -6 : wob(10) = -11 : wob(11) = -14 : wob(12) = -16 : wob(13) = -14 : wob(14) = -11 : wob(15) = -6
     CALL NEWGAME()
@@ -382,13 +389,14 @@ ENDSCENE
 SCENE over
   DIM ow, rel, fire
   PROC INIT():
+    BORDER 0
     NOMUSIC
     PLAY over
     INK 6 : PAPER 0 : BRIGHT 0
     PRINT AT 0, 0; "SCORE "; score; "  ";
     PRINT AT 0, 24; "WAVE "; wv; " ";
-    INK 2 : PRINT AT 10, 11; "GAME OVER";
-    INK 6 : PRINT AT 12, 7; "PRESS FIRE TO PLAY";
+    LOADMAP gameover AT 7, 14
+    LOADMAP press AT 7, 18
   ENDP
 
   REM Fire restarts once it has been released and pressed again (it is usually still down when the scene starts).

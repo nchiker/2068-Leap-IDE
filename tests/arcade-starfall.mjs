@@ -15,7 +15,7 @@
 //   3  the sound at SONG LEVEL, every sample: V_SFX_ACTIVE (all bits) = the interpreter's ay.flags, AY_SHADOW R0..R10 = ay.regs, the chip's R0..R10 = AY_SHADOW (the level of
 //      tests/arcade-m15-differential.mjs); every RT_PLAY / RT_SILENCE / RT_MUSIC / RT_NOMUSIC call is timed by the frame counter (clock.play / music / sample) and the comparison stops at the first call a
 //      frame interrupt cut.  The counts (samples, with a song, with a channel-C effect over a song) must be above 0
-//   4  the tick rate on the real runtime: >= 95 % of the play ticks (a fine scene: the tick's own cost is measured by tests/arcade-starfall-fine.mjs) finish within the 3 refreshes of FRAMERATE 20; the title and over ticks (two-buffer) fit their budget
+//   4  the tick rate on the real runtime: >= 95 % of the play ticks (every scene is fine colour: the tick's own cost is measured by tests/arcade-starfall-fine.mjs) start 3 refreshes apart (FRAMERATE 20); the title and over ticks too, apart from the scene switches
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -75,21 +75,28 @@ console.log('\n3. The sound at song level');
 
 console.log('\n4. The tick rate on the real runtime');
 {
-  // the play scene is fine colour: its tick is publish + PROC FRAME + compose, and the runtime starts the next one at its period (3 refreshes at FRAMERATE 20), so a tick that runs over starts the next one late.
-  // (the tick's own cost and the beam: tests/arcade-starfall-fine.mjs; a tick's end is not seen by the flip request here, so got.costs holds the two-buffer ticks of the title and the game over only)
-  const gaps = [];
-  for (let i = 1; i < fineStarts.length; i++) gaps.push(fineStarts[i] - fineStarts[i - 1]);
-  const pg = gaps.filter((g, i) => i >= 3 && g >= 3 && g <= 12);          // (a scene switch is 14 refreshes: not a play tick)
-  const at20 = pg.filter((g) => g === 3).length;
+  // every scene is fine colour: a tick is publish + PROC FRAME + compose, and the runtime starts the next one at its period (3 refreshes at FRAMERATE 20), so a tick that runs over starts the next one late.
+  // (the tick's own cost and the beam: tests/arcade-starfall-fine.mjs.)  Every tick passes the fine work entry, so fineStarts[off + k] is the start of the interpreter's tick k; the gap before tick k
+  // belongs to its scene, and the three ticks after a scene switch are left out (ENTER redraws the whole screen: the sky, the logo, the text; the publish of
+  // that picture starts the third tick of the new scene late, 12 refreshes after the one before).
+  const off = fineStarts.length - want.ticks.length;
+  check_(`every tick starts at the fine work entry (${fineStarts.length} starts for ${want.ticks.length} ticks)`, off >= 0 && off <= 2, `offset ${off}`);
+  const gapsIn = (name) => {
+    const out = [];
+    for (let k = 3; k < want.ticks.length && off + k < fineStarts.length; k++) {
+      if (sc[k] !== idx(name) || sc[k - 1] !== sc[k] || sc[k - 2] !== sc[k] || sc[k - 3] !== sc[k]) continue;
+      out.push(fineStarts[off + k] - fineStarts[off + k - 1]);
+    }
+    return out;
+  };
+  const pg = gapsIn('play'), at20 = pg.filter((g) => g === 3).length;
   info(`${fineStarts.length} fine ticks started; ${pg.length} play gaps: ${at20} of 3 refreshes (20 Hz), ${pg.length - at20} longer (${[...new Set(pg.filter((g) => g > 3))].join(', ') || 'none'})`);
   check_(`>= 95 % of the play ticks start 3 refreshes after the one before (FRAMERATE 20 held): ${(100 * at20 / pg.length).toFixed(1)} % of ${pg.length}`, pg.length > (QUICK ? 300 : 600) && at20 >= 0.95 * pg.length);
   check_('no play tick starts more than one refresh late', pg.every((g) => g <= 4), `longest ${Math.max(...pg)}`);
-  // the two-buffer ticks (title, game over; got.costs holds one cost for each of them and for the ticks that flip): every one fits the budget except the ticks of a scene switch (a switch into or out of fine colour takes 14 refreshes, a
-  // scene change redraws the map into both display files: the same two ticks as in every scene change)
-  const twoBuf = got.costs.slice(2), changes = sc.filter((x, i) => i > 0 && x !== sc[i - 1]).length;
-  const over = twoBuf.filter((c) => c > 3 * 58688);
-  info(`two-buffer ticks (title and game over, measured by their flip): ${twoBuf.length}; ${over.length} over the budget of 3 refreshes (${over.join(', ') || 'none'}); ${changes} scene changes`);
-  check_(`the two-buffer ticks of the title and the game over fit their budget of 3 refreshes (176,064 T) except those of the ${changes} scene switches (at most 2 each)`, over.length <= 2 * changes && twoBuf.filter((c) => c <= 3 * 58688).length > (QUICK ? 200 : 500), over.join(', '));
+  // the title and the game over (fine, no sprites; the HUD text is printed once): every tick keeps 20 Hz apart from the switches
+  const tg = [...gapsIn('title'), ...gapsIn('over')];
+  info(`title and game over: ${tg.length} gaps, ${tg.filter((g) => g > 3).length} longer than 3 refreshes (${[...new Set(tg.filter((g) => g > 3))].join(', ') || 'none'}); scene switches: ${sc.filter((x, i) => i > 0 && x !== sc[i - 1]).length}`);
+  check_('the title and game over ticks keep 3 refreshes (FRAMERATE 20) apart from the ticks of a scene switch', tg.length > (QUICK ? 20 : 100) && tg.every((g) => g === 3), `longest ${Math.max(...tg)}`);
 }
 
 console.log(`\n${failed ? 'FAIL' : 'PASS'}: arcade-starfall (${passed} checks passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ''})`);
