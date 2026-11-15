@@ -1162,10 +1162,14 @@ function showExamples(open) {
   if (open) examplesMenu.querySelector('button')?.focus();
 }
 
+/** Fetch options for the files publish-runtime.mjs rewrites (the example index and games, the runtime builds): the browser asks the server
+ * whether its copy is current (a 304 costs little), so an update is never hidden by a cached copy (python3 -m http.server lets browsers guess). */
+const FRESH = { cache: 'no-cache' };
+
 async function loadExampleIndex() {
   if (exampleIndex) return exampleIndex;
   try {
-    const resp = await fetch('arcade/dist/examples/index.json');
+    const resp = await fetch('arcade/dist/examples/index.json', FRESH);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     exampleIndex = await resp.json();
   } catch (e) {
@@ -1187,7 +1191,7 @@ async function loadExampleIndex() {
 async function openExample(ex) {
   if (!confirmDiscard()) return;
   try {
-    const resp = await fetch(`arcade/dist/examples/${ex.file}`);
+    const resp = await fetch(`arcade/dist/examples/${ex.file}`, FRESH);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const r = P.parseProject(await resp.text());
     if (!r.ok) throw new Error(r.errors[0]);
@@ -1207,12 +1211,12 @@ function exampleEffects() {
   effectsCache ??= (async () => {
     const out = [];
     try {
-      const resp = await fetch('arcade/dist/examples/index.json');
+      const resp = await fetch('arcade/dist/examples/index.json', FRESH);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const index = await resp.json();
       const games = await Promise.all(index.map(async (ex) => {
         try {
-          const r = await fetch(`arcade/dist/examples/${ex.file}`);
+          const r = await fetch(`arcade/dist/examples/${ex.file}`, FRESH);
           if (!r.ok) return null;
           const parsed = P.parseProject(await r.text());
           return parsed.ok ? { ex, project: parsed.project } : null;
@@ -1425,7 +1429,7 @@ new MutationObserver(labelSymbolRows).observe($('tool-symbols'), { childList: tr
 
 // ── Boot ─────────────────────────────────────────────────────────
 async function fetchAsset(path) {
-  const resp = await fetch(path);
+  const resp = await fetch(path, FRESH);
   if (!resp.ok) throw new Error(`Could not load ${path} (HTTP ${resp.status})`);
   return new Uint8Array(await resp.arrayBuffer());
 }
