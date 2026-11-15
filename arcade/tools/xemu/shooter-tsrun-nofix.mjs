@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // shooter-tsrun-nofix.mjs -- run an Arcade v2 cartridge (shooter.dck) on TSRun's stock TS2068 (tsrun/roms, no input) and record, at
+// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 // every refresh, what the cross-emulator check needs.  Adapted from breakout-tsrun.mjs; symbols from arcade/build/v2/runtime.json.
 //   node arcade/tools/xemu/shooter-tsrun-nofix.mjs [cart.dck] [--out arcade/build/xemu/nofix/shooter/tsrun] [--ticks 200] [--refreshes 4000] [--run-id A]
 // Definitions (the same as breakout-tsrun.mjs): displayed tick = V_TICKS when V_SYNC < 2, else V_TICKS - 1.

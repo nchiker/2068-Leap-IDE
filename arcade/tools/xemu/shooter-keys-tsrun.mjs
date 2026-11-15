@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // shooter-keys-tsrun.mjs -- keyboard test of shooter.dck (Starfall, runtime v2) on TSRun only.  The host keys go through TSRun's own keyboard translation
+// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 // (tsrun/keyboard.js handleKeyDown / handleKeyUp, as tests/m4-runtime-api.mjs does), which sets m.keyMatrix.  Updated after language batch 4: the game starts on the TITLE scene,
 // which waits for fire, so the script starts with SPACE; the play scene follows.  Order of the commands: see the header of shooter-tsrun.mjs (build first: shooter-build.mjs).
 //   node arcade/tools/xemu/shooter-keys-tsrun.mjs [cart.dck] [--out arcade/build/xemu/shooter]

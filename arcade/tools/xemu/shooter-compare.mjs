@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 "use strict";
 // shooter-compare.mjs -- compare the Starfall cartridge (arcade/examples/shooter.arc, runtime v2: title, play and GAME OVER scenes) on TSRun, ZEsarUX and Fuse at equal game ticks.
+// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 // Rewritten after language batch 4 on the model of runner-compare.mjs (the old version sent no input, so only the title was ever compared).
 //   node arcade/tools/xemu/shooter-compare.mjs [--dir arcade/build/xemu] [--fuse DIR] [--ascii] [--verbose]
 // Order of the commands (details in each script's header; the full list is in the header of shooter-tsrun.mjs):
-//   node arcade/tools/xemu/shooter-scenario-make.mjs                    -> shooter-scenario.json (the title for 10 ticks, fire, play, GAME OVER, fire again: 513 ticks)
+//   node arcade/tools/xemu/shooter-scenario-make.mjs                    -> shooter-scenario.json (the title for 10 ticks, fire, play, GAME OVER, fire again: 687 ticks)
 //   node arcade/tools/xemu/shooter-build.mjs                            -> arcade/build/shooter.dck, arcade/build/xemu/shooter/meta.json
 //   node arcade/tools/xemu/shooter-patch.mjs                            -> arcade/build/shooter-script.dck (keyboard reads from a per-tick table)
 //   node arcade/tools/xemu/shooter-tsrun.mjs [--mode keys|joystick|script]  -> <dir>/shooter/shooter-tsrun[-joystick|-script]-*     (run all three)

@@ -126,11 +126,18 @@ function compareRuns(A, B, label, { keys = true, ignore = [] } = {}) {
   return { n, ticks: la.size, md5: bad.md5.length, groups, ticksDiffer, first };
 }
 
+// The state bytes that legitimately differ between a keys run and a joystick run, and ONLY for that comparison (arcade/spike/fine/RESULTS.md, the line "TSRun keys vs script cartridge vs
+// joystick 1": "JS, the stick value STICK(1) returns, is the one state variable that differs with joystick input; left out"): the game variable JS holds STICK(1)'s value (0 when keys are
+// pressed instead), and, since language batch 5 (Starfall's title / over scenes read KEYPRESS(" ") OR JOYPRESS(1)), the compiler's hidden edge slots press.key32.* (SPACE: down in a keys
+// run only) and press.joy1.* (joystick 1: down in a joystick run only), each a `before` and an `edge` word.  They are named by address (meta.json: `vars.JS`, `press`, written by
+// fine-build.mjs); every other state byte and every picture is still compared.
+const JOY_ONLY = [...(meta.vars.JS != null ? [[meta.vars.JS, 2, 'the game variable JS (the joystick value STICK(1) returned; 0 when keys are pressed instead)']] : []),
+  ...Object.entries(meta.press ?? {}).map(([name, addr]) => [addr, 2, `the hidden slot ${name} (KEYPRESS / JOYPRESS edge state: SPACE in a keys run, joystick 1 in a joystick run)`])];
 const R = {};
 R.zk = compareRuns(`${g}-tsrun`, `${g}-zesarux`, 'TSRun vs ZEsarUX, real keys (TSRun keyMatrix, ZEsarUX send-keys-event)');
 R.zs = compareRuns(`${g}-tsrun-script`, `${g}-zesarux-script`, 'TSRun vs ZEsarUX, script-driven keyboard reads');
 R.ts = compareRuns(`${g}-tsrun`, `${g}-tsrun-script`, 'TSRun: real keys vs script-driven (validates the patched test cartridge)');
-R.tj = compareRuns(`${g}-tsrun`, `${g}-tsrun-joystick`, 'TSRun: keys vs joystick 1 (STICK(1) reads the recorded stick bits; no key is pressed)', { keys: false, ignore: [[meta.vars.JS, 2, 'the game variable JS (the joystick value STICK(1) returned; 0 when keys are pressed instead)']] });
+R.tj = compareRuns(`${g}-tsrun`, `${g}-tsrun-joystick`, 'TSRun: keys vs joystick 1 (STICK(1) reads the recorded stick bits; no key is pressed)', { keys: false, ignore: JOY_ONLY });
 R.zz = compareRuns(`${g}-zesarux`, `${g}-zesarux-script`, 'ZEsarUX: real keys vs script-driven');
 
 // the sampling-phase artefact: V_FRAMES (the refresh counter) at the same tick

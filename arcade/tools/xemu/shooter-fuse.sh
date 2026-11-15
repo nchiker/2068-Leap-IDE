@@ -1,9 +1,10 @@
 #!/bin/sh
 # shooter-fuse.sh -- run the SCRIPT-DRIVEN Starfall cartridge (arcade/build/shooter-script.dck, made by shooter-patch.mjs: the keyboard reads come from a per-tick table,
+# NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 # because a headless Fuse cannot be fed keys per tick: the title, fire, the play scene, GAME OVER, fire again) in Fuse 1.9.1 with no window and no sound, record a movie and
 # convert it to one .scr per refresh (6912 bytes, the displayed screen).  Adapted from runner-fuse.sh.  Order of the commands: see the header of shooter-tsrun.mjs.
 #   sh arcade/tools/xemu/shooter-fuse.sh [CART.dck] [OUTDIR] [SECONDS]
-# Defaults: arcade/build/shooter-script.dck, arcade/build/xemu/fuse-shooter-script, 60 seconds (the scenario's 513 ticks are about 1,700 refreshes of TSRun, 3 a tick plus the
+# Defaults: arcade/build/shooter-script.dck, arcade/build/xemu/fuse-shooter-script, 60 seconds (the scenario's 687 ticks are about 2,100 refreshes of TSRun, 3 a tick plus the
 # boot; the movie runs at 50 or 60 frames a second and the picture stays on after the last tick; Fuse's refresh rate is its own, so shooter-compare.mjs matches the frames to
 # the ticks by screen, not by time).  OUTDIR must be new: an earlier movie is not overwritten.
 set -e

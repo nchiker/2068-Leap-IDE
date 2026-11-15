@@ -1,14 +1,14 @@
 #!/bin/sh
-# breakout-fuse.sh -- run breakout.dck (no input) in Fuse 1.9.1 with no window and no sound, record a movie and convert it
+# breakout-fuse.sh -- run the SCRIPT cartridge (arcade/build/breakout-script.dck, made by breakout-patch.mjs: SPACE is read as down at V_TICKS 2..4, the fire that leaves the title; a headless Fuse cannot be fed keys) in Fuse 1.9.1 with no window and no sound, record a movie and convert it
 # to one .scr per refresh (6912 bytes each, the displayed screen).  Adapted from fuse-movie.sh.
 #   sh arcade/tools/xemu/breakout-fuse.sh [CART.dck] [OUTDIR] [SECONDS]
-# Defaults: arcade/build/breakout.dck, arcade/build/xemu/fuse-breakout, 15 seconds (about 750 refreshes; tick 60 is at
+# Defaults: arcade/build/breakout-script.dck, arcade/build/xemu/fuse-breakout, 15 seconds (about 750 refreshes; tick 60 is at
 # about refresh 240 after the entry, which is refresh ~104).  Compare with breakout-compare.mjs.  OUTDIR is emptied of an earlier movie, so give a new one
 # to keep the old.  The cartridge is the runtime v2 build (arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json
 # --runtime v2); order of the commands: see the header of breakout-tsrun.mjs.
 set -e
 here=$(cd "$(dirname "$0")/../../.." && pwd)
-cart=${1:-$here/arcade/build/breakout.dck}; out=${2:-$here/arcade/build/xemu/fuse-breakout}; secs=${3:-15}
+cart=${1:-$here/arcade/build/breakout-script.dck}; out=${2:-$here/arcade/build/xemu/fuse-breakout}; secs=${3:-15}
 mkdir -p "$out"
 rm -f "$out"/frame-*.scr "$out/movie.fmf"
 env -u DISPLAY -u WAYLAND_DISPLAY SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \

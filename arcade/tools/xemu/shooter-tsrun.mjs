@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // shooter-tsrun.mjs -- run the Starfall cartridge (arcade/examples/shooter.arc, runtime v2, arcade/build/shooter.dck) on TSRun's stock TS2068 and sample it at the end of every tick.
+// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 // Rewritten after language batch 4 (the game starts on a TITLE scene that waits for fire, then the PLAY scene; GAME OVER is a third scene) on the model of runner-tsrun.mjs:
 // same sampling point (the runtime's WORK_END, V_TICKS just incremented, the hidden display file V_HIDDEN holds the tick's finished picture; found by running each frame one
 // instruction at a time; ZEsarUX breaks at the same address).
@@ -8,7 +9,7 @@
 // 4 left, 8 right, 16 fire).  Index t of the expanded list is the input the FRAME call made when V_TICKS = t reads (call t+1); it is applied at the WORK_END where V_TICKS becomes t
 // (before the first tick: at the start).
 // Order of the commands (details in each script's header):
-//   node arcade/tools/xemu/shooter-scenario-make.mjs                   -> shooter-scenario.json (the title, fire, play, GAME OVER, fire again: 666 ticks)
+//   node arcade/tools/xemu/shooter-scenario-make.mjs                   -> shooter-scenario.json (the title, fire, play, GAME OVER, fire again: 687 ticks)
 //   node arcade/tools/xemu/shooter-build.mjs                           -> arcade/build/shooter.dck + arcade/build/xemu/shooter/meta.json   (needs arcade/build/v2: node arcade/tools/build-runtime-v2.mjs)
 //   node arcade/tools/xemu/shooter-patch.mjs                           -> arcade/build/shooter-script.dck (keyboard reads from a per-tick table)
 //   node arcade/tools/xemu/shooter-tsrun.mjs [--mode keys|joystick|script]  -> <out>/shooter-tsrun[-joystick|-script]-*

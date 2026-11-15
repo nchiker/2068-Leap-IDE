@@ -168,6 +168,9 @@ const aySeq = (lines, ticksCol, sfxCol, first) => {
     const key = ay.join(' ');
     if (!out.length || out.at(-1).key !== key) out.push({ ticks, sfx: Number(p[sfxCol]), key });
   }
+  // The title's song starts in the cartridge's entry frame.  TSRun samples that frame after it has run (the chip still silent, all 0: its first state), ZEsarUX at the first
+  // frame interrupt after the entry (the song already started): the leading all-zero state is a sampling artefact of the entry frame, so it is left out of both sequences.
+  if (out.length > 1 && out[0].key === '00 00 00 00 00 00 00 00 00 00 00') out.shift();
   return out;
 };
 const tsAy = aySeq(logAll, 1, 6, 8);
@@ -175,7 +178,7 @@ const zeLines = readFileSync(join(dir, 'breakout-zesarux-log.txt'), 'utf8').trim
 const zeAy = aySeq(zeLines, 1, 4, 5);
 const eq = tsAy.length === zeAy.length && tsAy.every((x, i) => x.key === zeAy[i].key);
 console.log(`\n== AY registers (ticks 0..300): TSRun ${tsAy.length} distinct states, ZEsarUX ${zeAy.length}; ${eq ? 'the same states in the same order (R0..R10)' : 'DIFFER'}`);
-const starts = (a) => a.map((x, i) => (i > 0 && x.sfx !== 0 && a[i - 1].sfx === 0 ? x.ticks : null)).filter((t) => t !== null);
+const starts = (a) => a.map((x, i) => (i > 0 && (x.sfx & 1) && !(a[i - 1].sfx & 1) ? x.ticks : null)).filter((t) => t !== null);
 console.log(`sound effects start at ticks: TSRun ${starts(tsAy).join(' ')}; ZEsarUX ${starts(zeAy).join(' ')}`);
 
 // verdict: the ZEsarUX screens equal TSRun's, every TSRun tick 1..60 is in the Fuse movie, Fuse's ticks are in order with none skipped, and the AY states agree

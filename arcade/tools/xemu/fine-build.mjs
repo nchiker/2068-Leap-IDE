@@ -3,7 +3,7 @@
 // fine-build.mjs -- compile a fine-colour sample game against runtime v2 (arcade/build/v2, which must be arcade/dist/v2) exactly as arcadec does (the assets file's "scenes" key is passed
 // to the compiler) and write
 //   arcade/build/<game>.dck                       the cartridge (byte-identical to `node arcade/tools/arcadec.mjs arcade/examples/<game>.arc --assets arcade/examples/<game>.assets.json --runtime v2`)
-//   arcade/build/xemu/<game>-fine/meta.json       the game variables' addresses (a scene's variable SCENE.NAME is also given as plain NAME when the name is unique), the arrays, the
+//   arcade/build/xemu/<game>-fine/meta.json       the game variables' addresses (and `press`: the hidden KEYPRESS / JOYPRESS slots, press.key32.before ..., read by fine-compare.mjs) (a scene's variable SCENE.NAME is also given as plain NAME when the name is unique), the arrays, the
 //                                                 scene slot (the driver's hidden slot of the current scene's index, read from the frame entry), the entries, the size of the game
 //   node arcade/tools/xemu/fine-build.mjs shooter|lumen
 // The whole cross-emulator flow for a game G (shooter = Starfall, lumen = Lumen) is, from the repository root (details in each script's header; the figures are in
@@ -39,5 +39,5 @@ const unique = (o) => {
   for (const [k, v] of Object.entries(o ?? {})) { const p = k.replace(/^[A-Z0-9]+\./, ''); if (p !== k && !(p in (o ?? {}))) out[p] = v; }
   return out;
 };
-writeFileSync(join(dir, 'meta.json'), JSON.stringify({ game: GAMES[g].name, sceneAddr: slot?.addr ?? null, vars: unique(res.map.vars), arrays: unique(res.map.arrays), frame: res.map.entries.frame, init: res.map.entries.init, gameBytes: res.usage.total, shipped: res.shipped, scenes: assets.scenes }, null, 1));
+writeFileSync(join(dir, 'meta.json'), JSON.stringify({ game: GAMES[g].name, sceneAddr: slot?.addr ?? null, press: Object.fromEntries((res.map.slots ?? []).filter((x) => x.name.startsWith('press.')).map((x) => [x.name, x.addr])), vars: unique(res.map.vars), arrays: unique(res.map.arrays), frame: res.map.entries.frame, init: res.map.entries.init, gameBytes: res.usage.total, shipped: res.shipped, scenes: assets.scenes }, null, 1));
 console.log(`${g}.dck (${GAMES[g].name}): ${res.dck.length} bytes (chunks ${res.shipped?.join(' ')}), game ${res.usage.total} bytes (ends $${(0x8000 + res.usage.total).toString(16)}), scene slot ${slot ? '$' + slot.addr.toString(16) : 'NOT FOUND'}, frame entry $${res.map.entries.frame.toString(16)}`);

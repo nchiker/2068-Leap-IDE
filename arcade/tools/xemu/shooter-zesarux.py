@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the Starfall cartridge (arcade/examples/shooter.arc, runtime v2, arcade/build/shooter.dck) in ZEsarUX 13.0 (headless, stock TS2068 ROM) and sample it at the end of every tick.
+NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 Rewritten after language batch 4 (title scene, play scene, GAME OVER scene) on the model of runner-zesarux.py: the same sampling point as shooter-tsrun.mjs, a breakpoint at
 WORK_END (main.asm: the tick's work is done and V_TICKS was incremented), where the game state is "at V_TICKS = N" and the hidden display file (V_HIDDEN) holds the finished picture.
 
