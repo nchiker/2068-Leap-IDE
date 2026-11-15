@@ -240,4 +240,10 @@ recorded runs unchanged (hash baselines; Starfall's are re-recorded in F5 becaus
 8. (Owner-decided after F1, section 3a: method BD, the 32-phase cap, Starfall at 20 Hz with fewer sprites.)
 6. **The flicker targets** of section 3 (broken 0 except split writes, torn reported), measured on TSRun's beam, which is the only beam-accurate
    emulator we have; ZEsarUX's 48K timing and Fuse are checked by eye.
-7. **The showcase game is "Prism Catch"** (section 10.2), a catcher rather than another shooter, because colour is its rule.
+9. **Split writes during a scene switch are allowed above section 3's 1-in-1,000** (found by `tests/arcade-m19-differential.mjs`, 2026-11-15): a
+   switch publishes the whole screen (longer than a frame), so the beam catches a group between its bitmap and its colour write in 3 to 7 frames
+   per 1,000 of the frames around a switch (one group, one frame, always a mix of the old and the new picture). The suite asserts that no group is
+   anything but a picture around the switch, black or such a split write, at most 2 split groups a frame and at most 2 % of the switch frames;
+   the play-time target of section 3 is unchanged (the games measure 0).
+7. ~~The showcase game is "Prism Catch"~~ (section 10.2): built, played by the owner and dropped (2026-11-15: the art read as random colours); the
+   showcase is now **LUMEN**, a maze chase (the owner chose the genre), `arcade/examples/lumen.*`.
