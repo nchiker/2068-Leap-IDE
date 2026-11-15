@@ -5,6 +5,7 @@
 //
 // Sections
 //   1  creation and the stored form (hex, colours in all 8 rows)
+//   (4c: per-row colours, the fine-colour tiles of Starfall and Lumen; 4d: the tile editor's row colour operations)
 //   2  round trip over every tile set of the example assets; unknown keys; reading odd stored forms
 //   3  pixels: set / get, fill, line, clear, invert, flips, rotate, shift (hand-computed)
 //   4  colours, flags, fg, attribute byte, tile pixels, blank / black helpers, summary
@@ -80,15 +81,15 @@ const EXAMPLES = readdirSync(join(ROOT, 'arcade/examples')).filter((f) => f.ends
 const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFileSync(join(ROOT, `arcade/examples/${id}.assets.json`), 'utf8'))]));
 {
   let sets = 0, tiles = 0, deep = true, text = true, attrs = true, bytes = true;
-  const withRows = [];      // the sets whose tiles have a colour of their own in each pixel row (Starfall's fine-colour sky: the editor reduces them to row 0, a tile with rows that differ is listed by rowsDiffer)
+  const withRows = [];      // the sets whose tiles have a colour of their own in each pixel row (the fine-colour games Starfall and Lumen): they must round-trip too, row colours and all
+  let rowTiles = 0;
   for (const [id, a] of Object.entries(exAssets)) for (const [name, ts] of Object.entries(a.tilesets ?? {})) {
     sets++; tiles += ts.tiles.length;
     const m = T.fromAsset(ts), back = T.toAsset(m);
     if (T.rowsDiffer(ts).length) withRows.push(`${id}/${name}`);
-    else {
-      if (!same(back, ts)) deep = false;
-      if (JSON.stringify(back, null, 1) !== JSON.stringify(ts, null, 1)) text = false;
-    }
+    rowTiles += m.tiles.filter((t) => T.hasRowColours(t)).length;
+    if (!same(back, ts)) deep = false;
+    if (JSON.stringify(back, null, 1) !== JSON.stringify(ts, null, 1)) text = false;
     const conv = convertTileset(ts);
     m.tiles.forEach((t, i) => {
       if (T.attrByte(t) !== conv.bytes[i * 9 + 8]) attrs = false;
@@ -97,7 +98,7 @@ const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFil
     });
   }
   ok(`toAsset(fromAsset(x)) deep-equals x for all ${sets} tile sets (${tiles} tiles) of the ${EXAMPLES.length} example assets files`, deep && sets === 8, `${sets} sets`);
-  ok('... except the tile sets whose tiles have their own colours in each pixel row: the fine-colour games Lumen and Starfall (the editor reduces such a tile to row 0 and lists it)', JSON.stringify(withRows) === '["lumen/gfx","shooter/gfx"]', JSON.stringify(withRows));
+  ok('... including the tile sets whose tiles have their own colours in each pixel row (the fine-colour games Lumen and Starfall: no row colour is dropped; rowsDiffer lists them)', JSON.stringify(withRows) === '["lumen/gfx","shooter/gfx"]' && rowTiles > 100, `${JSON.stringify(withRows)}, ${rowTiles} tiles with row colours`);
   ok('... and serialises to the same JSON text (key order kept)', text);
   ok('attrByte and flags equal the compiler\'s (convertTileset) for every tile; bits equal its bitmap bytes', attrs && bytes);
   ok('an assets file without tile sets (bounce) has nothing to round-trip', !exAssets.bounce.tilesets);
@@ -129,11 +130,12 @@ const exAssets = Object.fromEntries(EXAMPLES.map((id) => [id, JSON.parse(readFil
   const r = (b) => stored(new Array(8).fill(b));
   ok('bits may be one hex digit ("F" = 15), lower case, or a number', (() => { const m = T.fromAsset({ tiles: [{ rows: [{ bits: 'F' }, { bits: 'f0' }, { bits: 255 }, { bits: '0' }, { bits: 'aB' }, { bits: 1 }, { bits: ' 3C ' }, { bits: '00' }] }] }); return hex(m.tiles[0].bits) === '0F F0 FF 00 AB 01 3C 00'; })());
   ok('missing ink / paper / bright take the compiler\'s defaults 0, 7, 0; bright may be true / false', (() => { const m = T.fromAsset({ tiles: [{ rows: new Array(8).fill({ bits: '00' }) }] }); const n = T.fromAsset({ tiles: [{ rows: new Array(8).fill({ bits: '00', bright: true }) }] }); return m.tiles[0].ink === 0 && m.tiles[0].paper === 7 && m.tiles[0].bright === 0 && n.tiles[0].bright === 1; })());
-  ok('rows with other colours than row 0 are reduced to row 0 (the compiler ignores them), rowsDiffer lists the tile', (() => {
+  ok('rows with other colours than row 0 are kept (rowColours; ink / paper / bright stay row 0\'s, as the compiler reads them), rowsDiffer lists the tile', (() => {
     const a = { tiles: [stored(new Array(8).fill('00'), 1, 2, 0), stored(new Array(8).fill('00'), 1, 2, 0)] };
     a.tiles[1].rows[3].ink = 6; a.tiles[1].rows[7].bright = 1;
-    const m = T.fromAsset(a);
-    return same(T.rowsDiffer(a), [1]) && T.toAsset(m).tiles[1].rows.every((x) => x.ink === 1 && x.bright === 0) && T.attrByte(m.tiles[1]) === convertTileset(a).bytes[9 + 8];
+    const m = T.fromAsset(a), t = m.tiles[1];
+    return same(T.rowsDiffer(a), [1]) && !m.tiles[0].rowColours && T.hasRowColours(t) && t.rowColours.length === 8 && t.rowColours[3].ink === 6 && t.rowColours[7].bright === 1 && t.ink === 1 && t.bright === 0 && same(T.toAsset(m), a) &&
+      T.attrByte(t) === convertTileset(a).bytes[9 + 8] && same(T.rowAttrs(t), [...convertTileset(a).rowAttrs.slice(8, 16)]);
   })());
   const bad = (what, a, re) => ok(`fromAsset refuses ${what}`, re.test(thrown(() => T.fromAsset(a)) ?? ''), thrown(() => T.fromAsset(a)));
   bad('a non-object', null, /not an object/);
@@ -278,26 +280,126 @@ console.log('\n4b. The editor\'s tile picture is what a fine scene draws (arcade
     const conv = convertTileset(ts), model = T.fromAsset(ts), differ = new Set(T.rowsDiffer(ts));
     model.tiles.forEach((tile, i) => {
       const want = sceneKeys(conv, i);
-      if (differ.has(i)) {         // the editor reduces the tile to row 0; the scene draws each row as authored: its eight attributes are what convertTileset carries
+      if (differ.has(i)) {         // the scene draws each row as authored: its eight attributes are what convertTileset carries, and what the model keeps
         rowsKept++;
-        const px = T.tilePixels(tile);
-        const authoredOk = ts.tiles[i].rows.every((r, y) => conv.rowAttrs[8 * i + y] === (((+(r.bright ?? 0)) << 6) | ((r.paper ?? 7) << 3) | (r.ink ?? 0)));
-        if (!authoredOk || px.length !== 64) rowsBad++;
-        return;
+        const authoredOk = ts.tiles[i].rows.every((r, y) => conv.rowAttrs[8 * i + y] === (((+(r.bright ?? 0)) << 6) | ((r.paper ?? 7) << 3) | (r.ink ?? 0))) && same(T.rowAttrs(tile), [...conv.rowAttrs.slice(8 * i, 8 * i + 8)]);
+        // tilePixels without `fine` is row 0's colours throughout (what every other scene draws); with it each row's own
+        const plainPx = T.tilePixels(tile), r0 = T.tilePixels({ ...tile, rowColours: undefined });
+        if (!authoredOk || !same([...plainPx], [...r0])) rowsBad++;
       }
       n++;
-      if (!same([...T.tilePixels(tile)], [...want])) { bad++; first ||= `${id}/${name}#${i}`; }
+      if (!same([...T.tilePixels(tile, { fine: true })], [...want])) { bad++; first ||= `${id}/${name}#${i}`; }
     });
   }
-  ok('tilePixels equals the pixels finePicture draws for every tile of the example sets whose rows share one colour (the tile\'s 8 rows)', n > 20 && bad === 0, `${bad} of ${n} differ ${first}`);
-  ok('a tile whose rows differ: the fine scene\'s colours are the authored row attributes (the editor shows row 0 and notes it)', rowsBad === 0, `${rowsKept} tiles, ${rowsBad} differ`);
+  ok('tilePixels(tile, {fine: true}) equals the pixels finePicture draws for EVERY tile of the example sets, Starfall\'s and Lumen\'s row-coloured ones included', n > 200 && bad === 0, `${bad} of ${n} differ ${first}`);
+  ok('a tile whose rows differ: rowAttrs are the authored row attributes (what convertTileset carries), and tilePixels without `fine` is row 0\'s colours throughout', rowsKept > 100 && rowsBad === 0, `${rowsKept} tiles, ${rowsBad} differ`);
   // hand case: eight rows, eight colours
   const rainbow = { tiles: [{ rows: Array.from({ length: 8 }, (_, k) => ({ bits: k & 1 ? 'AA' : '55', ink: k, paper: 7 - k, bright: k & 1 })) }] };
   const conv = convertTileset(rainbow), keys = sceneKeys(conv, 0);
   ok('hand case: eight rows in eight colours: pixel (x, y) is row y\'s ink or paper with its own brightness, as authored', keys.every((k, i) => {
     const y = i >> 3, x = i & 7, set = ((y & 1 ? 0xAA : 0x55) >> (7 - x)) & 1;
     return k === S.colourKey(set ? y : 7 - y, y & 1);
-  }));
+  }) && same([...T.tilePixels(T.fromAsset(rainbow).tiles[0], { fine: true })], [...keys]));
+}
+
+console.log('\n4c. Per-row colours (fine-colour tiles, 8 x 1 colour)');
+{
+  const rowsOf = (t) => T.rowColoursOf(t).map((c) => `${c.ink}${c.paper}${c.bright}`).join(' ');
+  const t = T.newTile({ ink: 1, paper: 2, bright: 0 });
+  ok('a one-colour tile: rowColoursOf repeats its colours, hasRowColours is false, rowAttrs is 8 equal bytes', rowsOf(t) === '120 120 120 120 120 120 120 120' && !T.hasRowColours(t) && same(T.rowAttrs(t), new Array(8).fill(17)) && t.rowColours === undefined);
+  ok('setColours without rows is the whole tile, as before (and returns true)', T.setColours(t, { ink: 4 }) && rowsOf(t) === '420 420 420 420 420 420 420 420');
+  ok('setColours with rows changes only those rows; the tile keeps rowColours; ink / paper / bright stay row 0\'s', (() => {
+    const u = T.cloneTile(t);
+    return T.setColours(u, { ink: 6, bright: 1 }, [2, 5]) && rowsOf(u) === '420 420 621 420 420 621 420 420' && T.hasRowColours(u) && u.ink === 4 && u.paper === 2 && u.bright === 0 && same(T.rowAttrs(u), [20, 20, 86, 20, 20, 86, 20, 20]);
+  })());
+  ok('changing row 0 moves the tile\'s own colours with it; a duplicate row in the list changes once', (() => {
+    const u = T.cloneTile(t);
+    return T.setColours(u, { paper: 5 }, [0, 3, 3]) && rowsOf(u) === '450 420 420 450 420 420 420 420' && u.paper === 5 && u.ink === 4 && T.attrByte(u) === 44;
+  })());
+  ok('rows that end up alike fold back to the one-colour form (no rowColours)', (() => {
+    const u = T.cloneTile(t); T.setColours(u, { ink: 6 }, [3]); const had = !!u.rowColours; T.setColours(u, { ink: 4 }, [3]);
+    return had && u.rowColours === undefined && !T.hasRowColours(u) && rowsOf(u) === '420 420 420 420 420 420 420 420';
+  })());
+  ok('setColours on the whole tile makes a row-coloured tile one-colour (the colours given; the others of row 0)', (() => {
+    const u = T.cloneTile(t); T.setColours(u, { ink: 6 }, [3, 4]); T.setColours(u, { paper: 7 });
+    return u.rowColours === undefined && rowsOf(u) === '470 470 470 470 470 470 470 470';
+  })());
+  ok('setColours refuses a bad value or a bad row list and changes nothing', (() => {
+    const u = T.cloneTile(t); T.setColours(u, { ink: 6 }, [1]); const before = JSON.stringify(u);
+    return !T.setColours(u, { ink: 8 }, [2]) && !T.setColours(u, { bright: 2 }, [2]) && !T.setColours(u, { ink: 1 }, [8]) && !T.setColours(u, { ink: 1 }, [-1]) && !T.setColours(u, { ink: 1 }, [1.5]) && !T.setColours(u, { ink: 1 }, []) && !T.setColours(u, { ink: 1 }, 'x') && !T.setColours(u, { ink: 9 }) && JSON.stringify(u) === before;
+  })());
+  ok('unifyRows gives every row the colours of row `from` (default 0) and drops rowColours', (() => {
+    const u = T.cloneTile(t); T.setColours(u, { ink: 6, paper: 1 }, [3]); T.setColours(u, { ink: 2 }, [0]);
+    const a = T.cloneTile(u), b = T.cloneTile(u);
+    return T.unifyRows(a) && rowsOf(a) === '220 220 220 220 220 220 220 220' && a.rowColours === undefined && T.unifyRows(b, 3) && rowsOf(b) === '610 610 610 610 610 610 610 610' && b.ink === 6 && b.paper === 1 && !T.unifyRows(b, 8) && !T.unifyRows(b, -1);
+  })());
+  ok('rowColoursOf is a copy (changing it changes nothing); cloneTile keeps rowColours independent', (() => {
+    const u = T.cloneTile(t); T.setColours(u, { ink: 6 }, [1]);
+    T.rowColoursOf(u)[1].ink = 0; const c = T.cloneTile(u); c.rowColours[1].ink = 3;
+    return u.rowColours[1].ink === 6 && c.rowColours[1].ink === 3;
+  })());
+  ok('toAsset / fromAsset keep per-row colours through edits, in rows and in the same JSON text', (() => {
+    const u = T.cloneTile(t); T.setColours(u, { ink: 6, bright: 1 }, [2]); T.setColours(u, { paper: 0 }, [7]);
+    const a = T.toAsset({ tiles: [u], tilesKey: 'tiles' }), m = T.fromAsset(a);
+    return a.tiles[0].rows[2].ink === 6 && a.tiles[0].rows[2].bright === 1 && a.tiles[0].rows[7].paper === 0 && a.tiles[0].rows[0].paper === 2 && same(m.tiles[0].rowColours, u.rowColours) && JSON.stringify(T.toAsset(m)) === JSON.stringify(a) && T.validateAsset(a) === null;
+  })());
+  ok('flipV mirrors the row colours with the pixels; flipH, invert, clear, rotate and shift leave them where they are', (() => {
+    const u = art(DIAG, { ink: 1, paper: 2, bright: 0 }); T.setColours(u, { ink: 6 }, [0]); T.setColours(u, { ink: 5, bright: 1 }, [7]);
+    const before = rowsOf(u), v = T.cloneTile(u);
+    T.flipV(v);
+    const w = T.cloneTile(u); T.flipH(w); T.invertTile(w); T.rotate90(w); T.shift(w, 1, 1); T.clearTile(w);
+    return before === '620 120 120 120 120 120 120 521' && rowsOf(v) === '521 120 120 120 120 120 120 620' && v.ink === 5 && v.bright === 1 && T.attrByte(v) === 85 && rowsOf(w) === before && hex(v.bits) === '01 02 04 08 10 20 40 80';
+  })());
+  ok('flipV twice is the identity for a row-coloured tile; flipV of a one-colour tile does not create rowColours', (() => {
+    const u = art(DIAG, { ink: 1 }); T.setColours(u, { ink: 6 }, [0]); const o = JSON.stringify(u);
+    T.flipV(u); T.flipV(u);
+    const w = art(DIAG, { ink: 1 }); T.flipV(w);
+    return JSON.stringify(u) === o && w.rowColours === undefined;
+  })());
+  ok('duplicateTile and pasteTile carry the row colours; addTile `like` copies them to the blank tile (a sky gradient stays a gradient), a plain one stays plain', (() => {
+    const s = T.newTileset(); T.setColours(s.tiles[0], { paper: 6 }, [4]);
+    const i = T.addTile(s, { like: 0 }), j = T.duplicateTile(s, 0), k = T.addTile(s);
+    const s2 = T.newTileset(); T.pasteTile(s2, 0, s.tiles[0]);
+    return T.tileIsBlank(s.tiles[i]) && same(s.tiles[i].rowColours, s.tiles[0].rowColours) && s.tiles[i].rowColours !== s.tiles[0].rowColours && same(s.tiles[j], s.tiles[0]) && s.tiles[k].rowColours === undefined && same(s2.tiles[0].rowColours, s.tiles[0].rowColours) && T.validateTileset(s) === null;
+  })());
+  ok('tileUsesBlack looks at every pixel row (paper 0 in row 5 with a clear bit; ink 0 in row 6 with a set bit)', (() => {
+    const a = T.newTile({ ink: 7, paper: 6 }); T.setColours(a, { paper: 0 }, [5]);
+    const b = T.newTile({ ink: 7, paper: 6 }); T.setColours(b, { ink: 0 }, [6]); const bb = T.cloneTile(b); T.setPixel(bb, 2, 6, 1);
+    const c = T.newTile({ ink: 7, paper: 6 }); T.setColours(c, { paper: 0 }, [5]); c.bits[5] = 255;
+    return T.tileUsesBlack(a) && !T.tileUsesBlack(b) && T.tileUsesBlack(bb) && !T.tileUsesBlack(c);
+  })());
+  ok('tileSummary says a tile has 8 x 1 colour; a one-colour tile does not say so', /8 x 1 colour/.test(T.tileSummary((() => { const u = T.newTile(); T.setColours(u, { ink: 2 }, [3]); return u; })(), 0).text) && !/8 x 1/.test(T.tileSummary(T.newTile(), 0).text));
+  ok('tilePixels({fine: true}) colours each row with its own ink / paper / BRIGHT; without it row 0\'s throughout', (() => {
+    const u = T.newTile({ ink: 1, paper: 2 }); u.bits[3] = 0x80; T.setColours(u, { ink: 4, paper: 5, bright: 1 }, [3]);
+    const f = T.tilePixels(u, { fine: true }), p = T.tilePixels(u);
+    return f[3 * 8] === S.colourKey(4, 1) && f[3 * 8 + 1] === S.colourKey(5, 1) && f[2 * 8] === S.colourKey(2, 0) && p[3 * 8] === S.colourKey(1, 0) && p[3 * 8 + 1] === S.colourKey(2, 0);
+  })());
+  ok('validateTileset: rowColours needs 8 valid rows, and rowColours[0] equal to the tile\'s own colours; a plain tile needs none', (() => {
+    const mk = () => { const u = T.newTile({ ink: 1, paper: 2 }); T.setColours(u, { ink: 4 }, [3]); return { tiles: [u], tilesKey: 'tiles' }; };
+    const bad = (f) => { const x = mk(); f(x.tiles[0]); return T.validateTileset(x); };
+    return T.validateTileset(mk()) === null && /rowColours/.test(bad((u) => { u.rowColours.pop(); })) && /rowColours/.test(bad((u) => { u.rowColours[2].ink = 8; })) && /rowColours/.test(bad((u) => { u.rowColours[2].bright = 2; })) && /rowColours/.test(bad((u) => { u.rowColours = 'x'; })) && /rowColours\[0\]/.test(bad((u) => { u.rowColours[0].ink = 5; }));
+  })());
+  ok('fromAsset refuses a row colour out of range (any row), validateAsset says which row', /row 4 ink/.test(T.validateAsset({ tiles: [{ rows: Array.from({ length: 8 }, (_, y) => ({ bits: '00', ink: y === 4 ? 9 : 0, paper: 7, bright: 0 })) }] }) ?? '') && /row 6 paper/.test(thrown(() => T.fromAsset({ tiles: [{ rows: Array.from({ length: 8 }, (_, y) => ({ bits: '00', ink: 0, paper: y === 6 ? 'x' : 7, bright: 0 })) }] })) ?? ''));
+  ok('projectHasFine: some scene with display fine (any case, spaces) is enough; junk is not', T.projectHasFine({ scenes: { a: { display: 'auto' }, b: { display: ' FINE ' } } }) && !T.projectHasFine({ scenes: { a: { display: 'buffers' } } }) && !T.projectHasFine({ scenes: {} }) && !T.projectHasFine({}) && !T.projectHasFine(null) && !T.projectHasFine({ scenes: { a: { display: true } } }) && !T.projectHasFine({ scenes: { a: null } }));
+  ok('fuzz: random row-colour edits keep the invariants (rowColours[0] equals the tile\'s colours; never all rows alike; the result validates and round-trips)', (() => {
+    const r = rng(4242); const N = QUICK ? 300 : 1500;
+    const t0 = art(DIAG, { ink: 1, paper: 2 });
+    for (let i = 0; i < N; i++) {
+      const u = T.cloneTile(t0);
+      for (let k = 0; k < 6; k++) {
+        const patch = { [['ink', 'paper', 'bright'][Math.floor(r() * 3)]]: 0 };
+        const key = Object.keys(patch)[0]; patch[key] = key === 'bright' ? Math.floor(r() * 2) : Math.floor(r() * 8);
+        const rows = r() < 0.2 ? undefined : Array.from({ length: 1 + Math.floor(r() * 3) }, () => Math.floor(r() * 8));
+        const op = r();
+        if (op < 0.7) T.setColours(u, patch, rows); else if (op < 0.85) T.flipV(u); else T.unifyRows(u, Math.floor(r() * 8));
+        const rc = u.rowColours;
+        if (rc && (rc.length !== 8 || rc[0].ink !== u.ink || rc[0].paper !== u.paper || rc[0].bright !== u.bright || rc.every((c) => c.ink === rc[0].ink && c.paper === rc[0].paper && c.bright === rc[0].bright))) return false;
+      }
+      const m = { tiles: [u], tilesKey: 'tiles' };
+      if (T.validateTileset(m) !== null || !same(T.fromAsset(T.toAsset(m)), m)) return false;
+    }
+    return true;
+  })());
 }
 
 console.log('\n5. Set operations');
@@ -524,7 +626,7 @@ console.log('\nC. The real compiler: byte-identical cartridges from assets writt
       set.tiles[5].rows.forEach((r, y) => { if (y) { r.ink = (r.ink + y) % 8; r.paper = (r.paper + 3) % 8; r.bright ^= 1; } });
       set.tiles[6].rows.forEach((r) => { r.bits = r.bits.toLowerCase(); });
       const a = build('platformer', odd), b = build('platformer', rewrite(odd)), c = build('platformer', exAssets.platformer);
-      ok('platformer with rows 1..7 of a tile in other colours (ignored by the compiler) and lower-case hex: the model reduces them and the DCK is unchanged', !a.errors.length && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0 && Buffer.compare(Buffer.from(a.dck), Buffer.from(c.dck)) === 0 && T.rowsDiffer(set).includes(5));
+      ok('platformer with rows 1..7 of a tile in other colours (ignored by the compiler) and lower-case hex: the model keeps the row colours, and the DCK is unchanged', !a.errors.length && Buffer.compare(Buffer.from(a.dck), Buffer.from(b.dck)) === 0 && Buffer.compare(Buffer.from(a.dck), Buffer.from(c.dck)) === 0 && T.rowsDiffer(set).includes(5) && same(rewrite(odd).tilesets.pf_tiles.tiles[5].rows.map((r) => [r.ink, r.paper, r.bright]), set.tiles[5].rows.map((r) => [r.ink, r.paper, r.bright])));
     }
     // and an edit through the model does change the cartridge (so the comparison above can fail)
     {

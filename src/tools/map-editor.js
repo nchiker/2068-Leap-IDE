@@ -382,13 +382,15 @@ export function createMapEditor(container, host) {
     const asset = map ? M.toAsset(map) : null;
     try { tsName = role === 'floorplan' ? null : effectiveTileset(H.project(), asset, roles); } catch { tsName = null; }
     const tsAsset = tsName ? H.get('tilesets', tsName) : null;
-    const key = tsName + '|' + JSON.stringify(tsAsset);
+    let fine = false;                               // a fine-colour game shows its tiles row by row (8 x 1 colour), as the scene draws them
+    try { fine = T.projectHasFine(H.project()); } catch { fine = false; }
+    const key = tsName + '|' + fine + '|' + JSON.stringify(tsAsset);
     if (key !== tsKey) {
       tsKey = key;
       tiles = null; tileCanvases = [];
       if (tsAsset) {
         try { tiles = T.fromAsset(tsAsset); } catch (e) { say(`Cannot read the tile set "${tsName}": ${e.message}`, 'err'); }
-        if (tiles) tileCanvases = tiles.tiles.map(makeTileCanvas);
+        if (tiles) tileCanvases = tiles.tiles.map((t) => makeTileCanvas(t, fine));
       }
     }
     // keep the selected paint value valid for the role
@@ -399,10 +401,10 @@ export function createMapEditor(container, host) {
       else if (tile >= n) tile = n > 1 ? Math.min(1, n - 1) : 0;
     }
   }
-  function makeTileCanvas(t) {
+  function makeTileCanvas(t, fine = false) {
     const c = document.createElement('canvas');
     c.width = 8; c.height = 8;
-    const ctx = c.getContext('2d'), img = ctx.createImageData(8, 8), px = T.tilePixels(t);
+    const ctx = c.getContext('2d'), img = ctx.createImageData(8, 8), px = T.tilePixels(t, { fine });
     for (let i = 0; i < 64; i++) { const rgb = T.keyRGB(px[i], pal); img.data.set([rgb[0], rgb[1], rgb[2], 255], i * 4); }
     ctx.putImageData(img, 0, 0);
     return c;

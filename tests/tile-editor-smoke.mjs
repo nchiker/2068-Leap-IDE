@@ -288,11 +288,58 @@ try {
   const odd = await evaluate("(() => { const a = t.host.getAsset('tilesets', 'pf_tiles'); a.tiles[3].rows[4].ink = 1; a.tiles[3].rows[5].paper = 0; return a; })()");
   await evaluate(`t.externalSet('tilesets', 'pf_tiles', ${JSON.stringify(odd)})`);
   const note = await evaluate("document.querySelector('[data-role=rows-note]')?.textContent ?? ''");
-  check('a stored tile whose rows differ in colour gets a note saying the rows will be unified', /Tile 3\b/.test(note) && /unify/.test(note), note);
+  check('a stored tile whose rows differ in colour gets a note saying the editor keeps them (8 x 1 colour)', /Tile 3\b/.test(note) && /keeps them/.test(note) && /8 x 1 colour/.test(note), note);
+  const o3 = (await asset()).tiles[3].rows.map((r) => [r.ink, r.paper, r.bright].join());
+  check('the tile model keeps the row colours of tile 3 (rows 4 and 5 differ from row 0), and the editor starts in the 8 x 1 view with "Whole tile" chosen',
+    JSON.stringify((await state()).differing) === '[3]' && new Set(o3).size === 3 && (await state()).fineView === true && await evaluate("document.querySelector('[data-role=fine-view]').checked && document.querySelector('[data-role=row-whole]').classList.contains('on')"), o3.join(' | '));
   await selectTile(3);
+  n0 = await setsCount();
   await clickCell(0, 7);
   a = await asset();
-  check('the first edit unifies the rows of the tile (all rows carry row 0\'s colours) and the note goes away', a.tiles[3].rows.every((r) => r.ink === a.tiles[3].rows[0].ink && r.paper === a.tiles[3].rows[0].paper) && !(await evaluate("!!document.querySelector('[data-role=rows-note]')")));
+  check('the first pixel edit keeps every row\'s colours (nothing is unified) and the note stays', JSON.stringify(a.tiles[3].rows.map((r) => [r.ink, r.paper, r.bright].join())) === JSON.stringify(o3) && !!(await evaluate("!!document.querySelector('[data-role=rows-note]')")) && (await setsCount()) === n0 + 1 && await allValid());
+  await clickCell(0, 7);                                           // toggle the pixel back: one more setAsset
+  check('... and clicking the pixel again gives back the stored tile exactly', JSON.stringify((await asset()).tiles[3]) === JSON.stringify(odd.tiles[3]));
+  // the row selector: colours apply to the chosen rows only
+  await click('[data-role=row-btn][data-row="4"]');
+  check('choosing pixel row 4 shows it as chosen, the swatches show its colours, and "Whole tile" is off',
+    JSON.stringify((await state()).rowSel) === '[4]' && await evaluate("!document.querySelector('[data-role=row-whole]').classList.contains('on') && document.querySelector('[data-role=row-btn][data-row=\"4\"]').classList.contains('on') && document.querySelector('[data-role=ink-sw].sel').dataset.colour === '" + o3[4].split(',')[0] + "'"));
+  n0 = await setsCount();
+  await click('[data-role=paper-sw][data-colour="3"]');
+  a = await asset();
+  const r3 = a.tiles[3].rows.map((r) => [r.ink, r.paper, r.bright].join());
+  check('a paper swatch with row 4 chosen changes row 4 only (one setAsset); every other row keeps its colours', r3[4] === [o3[4].split(',')[0], 3, o3[4].split(',')[2]].join() && r3.every((c, y) => y === 4 || c === o3[y]) && (await setsCount()) === n0 + 1 && await allValid(), r3.join(' | '));
+  await click('[data-role=row-btn][data-row="6"]');
+  check('a second row joins the choice (rows 4, 6)', JSON.stringify((await state()).rowSel) === '[4,6]');
+  await click('[data-role=ink-sw][data-colour="3"]');
+  await click('[data-role=bright]');                                // the checkbox shows row 4's BRIGHT; one click flips it for both chosen rows
+  a = await asset();
+  const flipped = 1 - Number(o3[4].split(',')[2]);
+  check('ink and BRIGHT apply to both chosen rows (4 and 6); rows 0..3, 5 and 7 are untouched', a.tiles[3].rows.every((r, y) => (y === 4 || y === 6) ? r.ink === 3 && r.bright === flipped : [r.ink, r.paper, r.bright].join() === o3[y]) && a.tiles[3].rows[4].paper === 3, JSON.stringify(a.tiles[3].rows.map((r) => [r.ink, r.paper, r.bright])));
+  check('the grid and the thumbnail draw every row in its own colours (the 8 x 1 view): pixel by pixel against the model',
+    await evaluate(`(() => { const st = t.editor.getState(), tile = st.set.tiles[3], z = st.zoom, g = document.querySelector('[data-role=grid]').getContext('2d'), keys = t.T.tilePixels(tile, { fine: true });
+      const th = document.querySelector('[data-role=strip] [data-tile="3"] canvas').getContext('2d');
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const want = t.T.keyRGB(keys[y * 8 + x], t.T.PALETTE);
+        const d = g.getImageData(x * z + 3, y * z + 3, 1, 1).data, e = th.getImageData(x * 4 + 1, y * 4 + 1, 1, 1).data;
+        if (d[0] !== want[0] || d[1] !== want[1] || d[2] !== want[2] || e[0] !== want[0] || e[1] !== want[1] || e[2] !== want[2]) return false; }
+      return true; })()`));
+  await click('[data-role=fine-view]');
+  check('"8 x 1 colour view" off shows the tile in row 0\'s colours (what other scenes draw), still without changing the asset',
+    await evaluate(`(() => { const st = t.editor.getState(), tile = st.set.tiles[3], z = st.zoom, g = document.querySelector('[data-role=grid]').getContext('2d'), keys = t.T.tilePixels(tile);
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const want = t.T.keyRGB(keys[y * 8 + x], t.T.PALETTE), d = g.getImageData(x * z + 3, y * z + 3, 1, 1).data; if (d[0] !== want[0] || d[1] !== want[1] || d[2] !== want[2]) return false; }
+      return st.fineView === false; })()`) && (await asset()).tiles[3].rows[4].ink === 3);
+  await click('[data-role=fine-view]');
+  check('... and on again', (await state()).fineView === true);
+  await click('[data-role=row-whole]');
+  check('"Whole tile" clears the row choice', (await state()).rowSel.length === 0);
+  n0 = await setsCount();
+  await click('[data-role=rows-unify]');
+  a = await asset();
+  check('"Rows → one colour" gives every row the colours of row 0 (the compiler reads row 0): one setAsset, the note goes away', a.tiles[3].rows.every((r) => [r.ink, r.paper, r.bright].join() === o3[0]) && (await setsCount()) === n0 + 1 && !(await evaluate("!!document.querySelector('[data-role=rows-note]')")));
+  await key('z', { ctrl: true });
+  check('undo brings the rows\' own colours back', (await asset()).tiles[3].rows[4].ink === 3 && (await state()).differing.includes(3));
+  await click('[data-role=ink-sw][data-colour="2"]');
+  a = await asset();
+  check('with "Whole tile" chosen an ink swatch sets all 8 rows (the tile becomes one-colour; paper and BRIGHT are row 0\'s)', a.tiles[3].rows.every((r) => r.ink === 2 && r.paper === Number(o3[0].split(',')[1]) && r.bright === Number(o3[0].split(',')[2])) && (await state()).differing.length === 0);
   await evaluate("(t.editor.refresh(), true)");
 
   // ── the two warnings, appearing and disappearing ──
@@ -452,6 +499,37 @@ try {
   check('T3: the default editor (host without flagNames) keeps solid / hazard / pickup and numbers 3..7',
     await evaluate("JSON.stringify([...document.querySelectorAll('.tiled:not(#m2 .tiled) [data-role=flag-name]')].map((e) => e.textContent)) === JSON.stringify(['solid', 'hazard', 'pickup', '3', '4', '5', '6', '7']) && !document.querySelector('.tiled:not(#m2 .tiled) [data-role=flag-rename]')"));
   await evaluate("(t2.editor.destroy(), document.getElementById('m2').remove(), true)");
+
+  // ── fine-colour tile sets: Starfall's and Lumen's open and save without losing a row colour ──
+  for (const [ex, want] of [['shooter', { tiles: 116, set: 'gfx' }], ['lumen', { tiles: 78, set: 'gfx' }]]) {
+    await evaluate('(window.testReady = false, true)');                 // (the old page must not answer for the new one)
+    await send('Page.navigate', { url: base + `tests/tile-editor-test.html?project=${ex}` });
+    await waitFor('window.testReady === true', 60000);
+    const orig = await evaluate(`fetch('../arcade/examples/${ex}.assets.json').then((r) => r.json()).then((j) => j.tilesets.${want.set})`);
+    const st = await state();
+    check(`${ex}: the fine-colour tile set ${want.set} opens (${want.tiles} tiles), in the 8 x 1 view, with a note naming the tiles with row colours`, st.name === want.set && st.set.tiles.length === want.tiles && st.fineView === true && st.differing.length > 50 && /8 x 1 colour/.test(await evaluate("document.querySelector('[data-role=rows-note]')?.textContent ?? ''")), JSON.stringify({ n: st.set?.tiles.length, d: st.differing.length }));
+    check(`${ex}: the editing form writes back exactly the stored tile set (getState().asset deep-equals the example's JSON, same text)`, JSON.stringify(st.asset) === JSON.stringify(orig));
+    check(`${ex}: every tile of the strip is drawn row by row as the model says (thumbnail pixels = tilePixels fine, all tiles)`,
+      await evaluate(`(() => { const st = t.editor.getState(); for (let i = 0; i < st.set.tiles.length; i++) { const keys = t.T.tilePixels(st.set.tiles[i], { fine: true }), c = document.querySelector('[data-role=strip] [data-tile="' + i + '"] canvas').getContext('2d');
+        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x += 3) { const w = t.T.keyRGB(keys[y * 8 + x], t.T.PALETTE), d = c.getImageData(x * 4 + 1, y * 4 + 1, 1, 1).data; if (d[0] !== w[0] || d[1] !== w[1] || d[2] !== w[2]) return false; } }
+        return true; })()`));
+    check(`${ex}: the asset check says nothing about the tile set (every scene is fine: no background-attr-mix, no black warnings), so the editor shows no warning`, (await hostWarnIds()).length === 0 && (await warnIds()).length === 0, JSON.stringify(await hostWarnIds()));
+    await selectTile(12);
+    const n1 = await setsCount();
+    await clickCell(3, 4);
+    let b = await asset(want.set);
+    const changed = b.tiles.map((t2, i) => (JSON.stringify(t2) === JSON.stringify(orig.tiles[i]) ? -1 : i)).filter((i) => i >= 0);
+    check(`${ex}: one pixel edit on tile 12 writes the set once; only tile 12 differs, and only in the bits of row 4: all 8 rows keep their colours`,
+      (await setsCount()) === n1 + 1 && JSON.stringify(changed) === '[12]' && b.tiles[12].rows.every((r, y) => r.ink === orig.tiles[12].rows[y].ink && r.paper === orig.tiles[12].rows[y].paper && r.bright === orig.tiles[12].rows[y].bright && (y === 4 || r.bits === orig.tiles[12].rows[y].bits)) && b.tiles[12].rows[4].bits !== orig.tiles[12].rows[4].bits && await allValid(), JSON.stringify(changed));
+    await clickCell(3, 4);                                         // toggle it back
+    b = await asset(want.set);
+    check(`${ex}: and toggled back the saved set equals the stored one again (JSON text identical)`, JSON.stringify(b) === JSON.stringify(orig));
+    await click('[data-role=row-btn][data-row="2"]');
+    await click('[data-role=paper-sw][data-colour="1"]');
+    b = await asset(want.set);
+    check(`${ex}: colouring row 2 of tile 12 changes row 2 only, in the saved asset`, b.tiles[12].rows.every((r, y) => JSON.stringify(r) === JSON.stringify(y === 2 ? { ...orig.tiles[12].rows[y], paper: 1 } : orig.tiles[12].rows[y])) && JSON.stringify(b.tiles.filter((_, i) => i !== 12)) === JSON.stringify(orig.tiles.filter((_, i) => i !== 12)));
+    await shot(`06-fine-${ex}`);
+  }
 
   // ── a host without roles / assetWarnings / usedBy: those features are off, the editor still works ──
   await send('Page.navigate', { url: base + 'tests/tile-editor-test.html?bare=1' });

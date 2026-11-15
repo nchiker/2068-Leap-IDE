@@ -524,7 +524,7 @@ try {
     check('clicking an asset warning selects that asset', !!sel);
   }
   const hostApi = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s3'); return { roles: !!h.roles(), w: Array.isArray(h.assetWarnings()), by: h.usedBy('tilesets', 'gfx').assets.join(), sfx: h.soundCount() }; })()`);
-  check('host: roles(), assetWarnings(), usedBy() and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
+  check('host: roles(), assetWarnings(), usedBy() (Starfall: its four maps) and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'gameover,logo,press,sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
 
   // ── Music M4: songs in the project panel and the sound editor (docs/ARCADE_MUSIC_CONTRACT.md section 7) ──
   await evaluate("(window.prompt = () => 'theme', document.querySelector('[data-new-asset=music]').click(), true)");

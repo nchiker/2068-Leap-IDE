@@ -5,7 +5,9 @@
  *   checkAssets(project, roles) -> [{id, severity, kind, asset, message, compilerAlso, ...details}]   never throws
  *   tileAttr(tile)              -> attribute byte (bright << 6 | paper << 3 | ink) from row 0, as the compiler takes it; null when malformed
  *   isForeground(tile)          -> sprites never pass over it: solid (flags bit 0) or `fg: true`
- *   tileUsesBlack(tile)         -> paper 0 with a clear bit, or ink 0 with a set bit
+ *   tileUsesBlack(tile, perRow) -> paper 0 with a clear bit, or ink 0 with a set bit (row 0's attribute; `perRow`: each pixel row's, for a fine scene)
+ *   tileRowAttrs(tile)          -> the 8 row attribute bytes (what a fine scene draws); null when a row is malformed
+ *   fineScenes(project, roles)  -> {any, all}: which of the program's scenes are set to fine colour in project.scenes
  *   effectiveTileset(project, map, roles) -> tile set NAME the map is drawn with, or null
  *   mapRole(name, roles)        -> 'world' | 'floorplan' | 'cell'   (name = a map ASSET name)
  *   readCells(map)              -> {w, h, cells, problem}   cells: tile number, -1 blank, NaN malformed; null cells when unreadable
@@ -54,14 +56,26 @@ function small(v, lo, hi, dflt) {
   return Number.isInteger(v) && v >= lo && v <= hi ? v : null;
 }
 
-/** The attribute byte of a tile as the compiler takes it (row 0: ink 0, paper 7, bright 0 by default), or null when row 0 is unusable. */
-export function tileAttr(tile) {
-  const row0 = isObj(tile) && Array.isArray(tile.rows) ? tile.rows[0] : null;
+/** The attribute byte of one stored row (ink 0, paper 7, bright 0 by default), or null when the row is unusable. */
+function rowAttrOf(row0) {
   if (!isObj(row0)) return null;
   const ink = small(row0.ink, 0, 7, 0), paper = small(row0.paper, 0, 7, 7);
   const bright = small(row0.bright === true ? 1 : row0.bright === false ? 0 : row0.bright, 0, 1, 0);
   if (ink === null || paper === null || bright === null) return null;
   return (bright << 6) | (paper << 3) | ink;
+}
+
+/** The attribute byte of a tile as the compiler takes it (row 0: ink 0, paper 7, bright 0 by default), or null when row 0 is unusable. */
+export function tileAttr(tile) {
+  return rowAttrOf(isObj(tile) && Array.isArray(tile.rows) ? tile.rows[0] : null);
+}
+
+/** The attribute bytes of the 8 pixel rows of a tile (what a fine scene draws), or null when a row is unusable. */
+export function tileRowAttrs(tile) {
+  const rows = isObj(tile) && Array.isArray(tile.rows) ? tile.rows : null;
+  if (!rows || rows.length !== 8) return null;
+  const out = rows.map(rowAttrOf);
+  return out.some((a) => a === null) ? null : out;
 }
 
 /** The 8 bitmap bytes of a tile (number 0..255 or one or two hex digits per row), or null. */
@@ -84,23 +98,56 @@ export function isForeground(tile) {
   return tile.fg === true || (Number.isInteger(tile.flags) && (tile.flags & 1) === 1);
 }
 
-/** Does the tile draw with black: paper 0 and a clear bit, or ink 0 and a set bit (the attribute is row 0's, as in the compiler)? */
-export function tileUsesBlack(tile) {
-  const attr = tileAttr(tile), bits = tileBits(tile);
-  if (attr === null || bits === null) return false;
-  const ink = attr & 7, paper = (attr >> 3) & 7;
-  return (paper === 0 && bits.some((b) => b !== 0xFF)) || (ink === 0 && bits.some((b) => b !== 0));
+/**
+ * Does the tile draw with black: paper 0 and a clear bit, or ink 0 and a set bit? The attribute is row 0's, as in the compiler; with `perRow` (a fine
+ * scene, 8 x 1 colour: contract 2.4) every pixel row is looked at with its own attribute.
+ */
+export function tileUsesBlack(tile, perRow = false) {
+  return blackBrights(tile, perRow).length > 0;
 }
 
-/** K3: paper 0 with BRIGHT 1 (the attribute is row 0's) and at least one clear bit, so the black paper shows. */
-function tilePaperBrightBlack(tile) {
-  const attr = tileAttr(tile), bits = tileBits(tile);
-  if (attr === null || bits === null) return false;
-  return ((attr >> 3) & 7) === 0 && ((attr >> 6) & 1) === 1 && bits.some((b) => b !== 0xFF);
+/** The BRIGHT values (0 and / or 1) with which the tile shows black: per row (`perRow`) or by row 0's attribute, in ascending order. */
+function blackBrights(tile, perRow) {
+  const bits = tileBits(tile), attrs = perRow ? tileRowAttrs(tile) : (tileAttr(tile) === null ? null : new Array(8).fill(tileAttr(tile)));
+  if (attrs === null || bits === null) return [];
+  const found = new Set();
+  bits.forEach((b, y) => {
+    const a = attrs[y];
+    if ((((a >> 3) & 7) === 0 && b !== 0xFF) || ((a & 7) === 0 && b !== 0)) found.add((a >> 6) & 1);
+  });
+  return [...found].sort();
 }
 
-const brightOf = (tile) => (tileAttr(tile) >> 6) & 1;
+/** K3: paper 0 with BRIGHT 1 (the attribute is row 0's; with `perRow`, any pixel row's) and at least one clear bit in such a row, so the black paper shows. */
+function tilePaperBrightBlack(tile, perRow = false) {
+  const bits = tileBits(tile), attrs = perRow ? tileRowAttrs(tile) : (tileAttr(tile) === null ? null : new Array(8).fill(tileAttr(tile)));
+  if (attrs === null || bits === null) return false;
+  return bits.some((b, y) => ((attrs[y] >> 3) & 7) === 0 && ((attrs[y] >> 6) & 1) === 1 && b !== 0xFF);
+}
+
 const attrText = (a) => `ink ${a & 7}, paper ${(a >> 3) & 7}, BRIGHT ${(a >> 6) & 1}`;
+
+// ── fine-colour scenes ───────────────────────────────────────────────────────────────────────────────────────────
+
+/** Is the scene `name` set to fine colour in `project.scenes` (the Studio's display select; the exact name first, then ignoring case; the value in any case)? */
+function sceneIsFine(scenes, name) {
+  if (!isObj(scenes)) return false;
+  const key = findKey(scenes, name);
+  const d = key === null ? undefined : scenes[key]?.display;
+  return typeof d === 'string' && d.trim().toLowerCase() === 'fine';
+}
+
+/**
+ * Which scenes of the project are fine colour (8 x 1 colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md): {any, all}. The scenes are the SCENE names of the
+ * program (`roles.scenes`, scanRoles); without them (roles null, or roles from before `scenes`) the scenes the project names. A program with no SCENE
+ * has no scene to set, so nothing is fine there (the compiler builds fine colour per scene only). `all` needs at least one scene.
+ */
+export function fineScenes(project, roles) {
+  const scenes = isObj(project) ? project.scenes : null;
+  const names = isObj(roles) && Array.isArray(roles.scenes) ? roles.scenes.filter((n) => typeof n === 'string') : isObj(scenes) ? Object.keys(scenes) : [];
+  const fine = names.filter((n) => sceneIsFine(scenes, n));
+  return { any: fine.length > 0, all: names.length > 0 && fine.length === names.length };
+}
 
 // ── roles and tile sets ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -175,7 +222,9 @@ function checkTileset(name, asset, roles, project, out) {
   }
   // black-bright-mix
   const dark = { 0: [], 1: [] };
-  tiles.forEach((t, i) => { if (tileUsesBlack(t)) dark[brightOf(t)].push(i); });
+  // a fine scene draws every pixel row in its own colours (contract 2.4), so a tile of a project with one is read row by row (a tile can then be in both lists)
+  const perRow = fineScenes(project, roles).any;
+  tiles.forEach((t, i) => { for (const b of blackBrights(t, perRow)) dark[b].push(i); });
   let viewNote = null;
   const view = isObj(roles) ? roles.view : null;
   if (isObj(view) && roles.tileset && findKey(tabs, roles.tileset) === name && (view.ceil === 0 || view.floor === 0) && (view.bright === 0 || view.bright === 1)) {
@@ -189,7 +238,7 @@ function checkTileset(name, asset, roles, project, out) {
     };
     out.push({
       id: 'black-bright-mix', severity: 'warning', kind: 'tilesets', asset: name, view: viewNote !== null,
-      bright0: dark[0].filter((x) => x !== 'view'), bright1: dark[1].filter((x) => x !== 'view'), tiles: [...dark[0], ...dark[1]].filter((x) => x !== 'view'),
+      bright0: dark[0].filter((x) => x !== 'view'), bright1: dark[1].filter((x) => x !== 'view'), tiles: [...new Set([...dark[0], ...dark[1]])].filter((x) => x !== 'view'),
       message: `tile set "${name}" mixes plain black and BRIGHT black. Black with BRIGHT 0: ${names(dark[0])}. Black with BRIGHT 1: ${names(dark[1])}${viewNote ? ` (counting ${viewNote})` : ''}. ` +
         'TSRun draws BRIGHT black as dark grey and plain black as black (Fuse and ZEsarUX draw both as black), so a screen that mixes them looks patchy in the Studio.',
       compilerAlso: false,
@@ -198,7 +247,7 @@ function checkTileset(name, asset, roles, project, out) {
   // bright-black-paper (K3): paper 0 with BRIGHT 1 and a clear bit (the paper shows). Independent of black-bright-mix: a set that mixes the two blacks and also has such tiles reports both
   // (the mix says the screen looks patchy, this one names the tiles to change and the fix; both name tiles, so the tile editor marks the union).
   const brightPaper = [];
-  tiles.forEach((t, i) => { if (tilePaperBrightBlack(t)) brightPaper.push(i); });
+  tiles.forEach((t, i) => { if (tilePaperBrightBlack(t, perRow)) brightPaper.push(i); });
   if (brightPaper.length) {
     out.push({
       id: 'bright-black-paper', severity: 'warning', kind: 'tilesets', asset: name, tiles: brightPaper,
@@ -278,7 +327,9 @@ function checkMap(name, asset, role, roles, project, out) {
     mk('map-undefined-tile', 'error', `map "${name}" uses tile${tiles.length > 1 ? 's' : ''} ${list(tiles)}, which the tile set "${tsName}" does not define (it has ${count} tiles; ${undef.length} cell${undef.length > 1 ? 's' : ''})`, { cells: undef, tiles }, declared);
   }
 
-  // background-attr-mix
+  // background-attr-mix: a sprite takes the colour of the cell under it. Not in a fine scene (a sprite carries its own ink there, contract section 2), so a project
+  // whose every scene is fine has none; a mixed project keeps the warning (its plain scenes still change a sprite's colour)
+  if (fineScenes(project, roles).all) return;
   const used = new Map();                 // tile -> cells
   cells.forEach((v, i) => {
     const t = v === BLANK ? (role === 'world' ? 0 : null) : v;

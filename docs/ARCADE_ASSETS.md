@@ -36,7 +36,7 @@ The Studio's editors enforce the two-colours-per-row rule while drawing and prev
 ## Tilesets and maps
 * Tileset: up to **128** tiles of 8x8 (a scrolling world uses 0..31), each `{ "rows": [ 8 row objects as sprites ], "flags": 0, "fg": false }`;
   `flags` bit 0 = solid, 1 = hazard, 2 = pickup, 3-7 game-defined (read with `TILEFLAGS(t)`). The compiler takes a tile's attribute from
-  **row 0 only**; the tile editor writes the same ink / paper / bright into all 8 rows. **`fg`** (authoring only, the compiler ignores it,
+  **row 0 only** (a fine scene, 8 x 1 colour, draws each row in its own colours; the tile editor keeps them, and writes the same ink / paper / bright into all 8 rows of a tile that has no row colours of its own). **`fg`** (authoring only, the compiler ignores it,
   S2): "sprites never pass over this tile"; it and the solid flag exempt a tile from the `background-attr-mix` check.
 * Map: `{ "w": 64, "h": 24, "tileset": "bricks", "cells": "<w*h bytes, hex or run-length>" }`; one layer in v0. `cells` is an array or a hex
   string (2 digits per cell); blank is 255 (also -1 / null on read). `tileset` is authoring only (the compiler uses the program's `TILESET`);
