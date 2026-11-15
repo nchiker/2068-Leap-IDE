@@ -2199,7 +2199,8 @@
        "bright": 1
       }
      ],
-     "flags": 2
+     "flags": 2,
+     "fg": true
     },
     {
      "rows": [
@@ -2252,7 +2253,8 @@
        "bright": 1
       }
      ],
-     "flags": 4
+     "flags": 4,
+     "fg": true
     },
     {
      "rows": [
@@ -2305,7 +2307,8 @@
        "bright": 1
       }
      ],
-     "flags": 16
+     "flags": 16,
+     "fg": true
     },
     {
      "rows": [
@@ -2358,7 +2361,8 @@
        "bright": 1
       }
      ],
-     "flags": 16
+     "flags": 16,
+     "fg": true
     },
     {
      "rows": [
@@ -2464,7 +2468,8 @@
        "bright": 0
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
@@ -2517,7 +2522,8 @@
        "bright": 0
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
@@ -2570,7 +2576,8 @@
        "bright": 0
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
@@ -2623,55 +2630,56 @@
        "bright": 0
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       },
       {
        "bits": "00",
-       "ink": 7,
+       "ink": 0,
        "paper": 5,
        "bright": 1
       }
@@ -2729,7 +2737,8 @@
        "bright": 1
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
@@ -2782,7 +2791,8 @@
        "bright": 1
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
@@ -2835,7 +2845,8 @@
        "bright": 1
       }
      ],
-     "flags": 0
+     "flags": 0,
+     "fg": true
     },
     {
      "rows": [
@@ -2888,7 +2899,8 @@
        "bright": 1
       }
      ],
-     "flags": 4
+     "flags": 4,
+     "fg": true
     },
     {
      "rows": [
@@ -2941,7 +2953,8 @@
        "bright": 1
       }
      ],
-     "flags": 4
+     "flags": 4,
+     "fg": true
     }
    ]
   }
