@@ -11,7 +11,7 @@
 | 3     | Debugger panel (registers, step, breakpoints)       | `src/debugger.js`, `src/lang/basic/leap-debug.js` | **Done**, verified |
 | 4     | Keyboard translation + `INPUT` mode                 | `src/pc-keyboard.js`    | **Done**, verified |
 | 5     | Error checking by the ROM's compiler, wired to the CM6 linter | `src/lang/basic/leap-check.js`, `src/lang/basic/leap-errors.js` (generated), `ide.js`, `src/editor.js` | **Done**, verified |
-| 6     | Tape + DCK export                                   | `src/lang/basic/export.js`, `src/lang/basic/cartridge.js`, `cartridge/2.1.1-emu.1/`, `src/lang/basic/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages, cartridge test on the stock ROMs) |
+| 6     | Tape + DCK export                                   | `src/lang/basic/export.js`, `src/lang/basic/cartridge.js`, `cartridge/2.1.2-emu.1/`, `src/lang/basic/leap-check.js` (`compile`), `ide.js` | **Done**, verified (TAP, DCK with packages, cartridge test on the stock ROMs) |
 | 7     | UDG editor, symbol table, graphics scratchpad       | `src/tools/symbols.js`, `udg.js`, `draw.js`, `src/editor.js` (`insertLines`), `ide.js` | **Done** |
 | 8     | Polish: themes, help overlay, keyboard cheat-sheet  | `ide.html`, `ide.css`, `ide.js`, `src/help.js` | **Done** (themes: light / dark / system) |
 | —     | Files (auto-save, New/Open/Save) and Packages (`LOAD "NAME" EXT` on Run) | `src/files.js`, `ide.js`, `src/emulator.js`, `src/lang/basic/leap-check.js`, `packages/` | **Done**, verified |

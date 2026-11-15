@@ -5,7 +5,7 @@
 ## Debugger (Phase 3 — done, `src/lang/basic/leap-debug.js` + `src/debugger.js`)
 
 Verified in headless Chromium and Node against the real 2.0.2 ROM; all Node
-checks also pass on 2.1.0-emu.1 and 2.1.1-emu.1 (after the dispatch change
+checks also pass on 2.1.0-emu.1, 2.1.1-emu.1 and 2.1.2-emu.1 (after the dispatch change
 below). The program
 is bytecode run by a VM, so everything is read from the ROM's own state, not
 from Z80 `CALL`/`RET`.

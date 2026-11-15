@@ -432,7 +432,7 @@ list, which is untouched): 1644 frames in TSRun against Forth's 522 and
 BASIC's 1901 (Forth 2.0, Leap-C 1.0.0, Leap 2.1.0). Leap-C was the slower of
 the compiled two because its `draw()` was slow (864 lines of 90 pixels took 2005
 frames, 422 for Forth's `LINE`); the arithmetic is fast. Answered by 1.2.0
-(`draw()` about 4 times faster; not measured in TSRun yet); Leap V2's `LINE`
+(`draw()` about 4 times faster; measured 2026-11-15 in TSRun: the program prints 423 frames, 3.9 times fewer than 1644, and the whole run takes 471); Leap V2's `LINE`
 got the same port in 2.1.1-emu.1, which brought the whole BASIC run from 2081 to
 850 frames. The picture is identical in all three languages
 (`tests/rom-checks.mjs` section 10).

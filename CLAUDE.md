@@ -36,15 +36,19 @@ from `file://`). Plain HTML + JS + the TSRun emulator.
 - **Debugger panel** — Z80 registers, Leap variables, breakpoints, call stack.
   It shares the right panel with the Symbols, UDG and Draw tabs (Phase 7).
 
-Leap is **V2**; the current release is **2.1.1-emu.1** (tag `v2.1.1-emu.1`,
-merge commit `4891681` of nchiker/2068-Leap, published 2026-11-02). It fixes
-`STICK`, `LINE` (4-5 times faster, same pixels), the colour rows of mode 1 and
-the p / q / g glyphs. With 2.1.0 a mode 1 program showed wrong colours in the
-IDE (the colour bytes were written at `$6000 + y*32 + col` instead of the
-bitmap address + `$2000`; nchiker/2068-Leap#5); with 2.1.1 they are right. The
-ROM table also still knows 2.1.0-emu.1 (tag `v2.1.0-emu.1`, commit `c005159`,
-published 2026-10-28) and 2.0.2-emu.1, which are useful with
-`LEAP_ROMS=<dir>`. V1 is archived and irrelevant. ROM addresses change between releases; everything else
+Leap is **V2**; the current release is **2.1.2-emu.1** (tag `v2.1.2-emu.1`,
+commit `1a4a861` of nchiker/2068-Leap, published 2026-11-06). It replaces an
+Array Store entry without needing double room, adds `SAVE ... ALL` (two
+blocks) and `SAVE` / `LOAD ... CODE`, interlocks `MODE 1` with the arrays, and
+moves the overflow array segment to `$5B00`-`$77FF` (7424 bytes, `FREE(1)`).
+2.1.1-emu.1 (tag `v2.1.1-emu.1`, merge commit `4891681`, published
+2026-11-02) fixed `STICK`, `LINE` (4-5 times faster, same pixels), the colour
+rows of mode 1 and the p / q / g glyphs. With 2.1.0 a mode 1 program showed
+wrong colours in the IDE (the colour bytes were written at `$6000 + y*32 + col`
+instead of the bitmap address + `$2000`; nchiker/2068-Leap#5); with 2.1.1 and
+2.1.2 they are right. The ROM table also still knows 2.1.1-emu.1, 2.1.0-emu.1
+(tag `v2.1.0-emu.1`, commit `c005159`, published 2026-10-28) and 2.0.2-emu.1,
+which are useful with `LEAP_ROMS=<dir>`. V1 is archived and irrelevant. ROM addresses change between releases; everything else
 in the IDE should stay the same (see "Adding a Leap ROM release").
 
 ---
@@ -112,15 +116,17 @@ Leap-IDE/
 ├── cartridge-build/  ← Source of the cartridge images: leap.patch + setup.sh, CLI tools, tests, status (see its README)
 ├── cartridge/
 │   ├── 2.1.0-emu.1/  ← Leap 2.1.0-emu.1's cartridge build: leap_v2_cart_home.bin (16 KB), leap_v2_cart_exrom.bin (8 KB), README (identity $E0A5)
-│   ├── 2.1.1-emu.1/  ← The current Leap cartridge build, same files (identity $4E00)
+│   ├── 2.1.1-emu.1/  ← Leap 2.1.1-emu.1's cartridge build, same files (identity $4E00)
+│   ├── 2.1.2-emu.1/  ← The current Leap cartridge build, same files (identity $04B2)
 │   ├── forth/2.0/    ← 2068-Forth v2.0's cartridge build: forth_cart.dck (Forth with no program, the release's, unchanged; identity $FDBE), README
 │   ├── forth/2.0.1/  ← v2.0.1's: forth_cart.dck (the release's, SHA-256 1f673221…; identity $F001), README
 │   ├── c/1.2.0/      ← Leap-C 1.2.0's cartridge build, the current one: leapc_cart_home.bin (505d0f79…), leapc_exrom.bin (the release EXROM), cartridge.json (release 1.2.0, identity F6E9), README
 │   └── c/1.1.0/      ← Leap-C 1.1.0's cartridge build (serves the 1.0.0 ROM entry): leapc_cart_home.bin (16 KB), leapc_exrom.bin (8 KB, the release EXROM), cartridge.json (the identity it accepts, E90E), README
 ├── packages/
-│   ├── 2.0.2-emu.1/  ← Package images of that release (<name>.bin; same six as 2.1.1-emu.1)
+│   ├── 2.0.2-emu.1/  ← Package images of that release (<name>.bin; same six as 2.1.2-emu.1)
 │   ├── 2.1.0-emu.1/  ← Package images of that release (the same six)
-│   └── 2.1.1-emu.1/  ← The current release's package images: cbeep graphics mode printer shapes sprite (<name>.bin; byte-identical to 2.1.0's)
+│   ├── 2.1.1-emu.1/  ← Package images of that release (the same six; byte-identical to 2.1.0's)
+│   └── 2.1.2-emu.1/  ← The current release's package images: cbeep graphics mode printer shapes sprite (<name>.bin; byte-identical to 2.1.1's)
 ├── libs/
 │   └── c/            ← Leap-C library images, one directory per release (1.0.0, 1.2.0): <name>.bin (shapes.bin, the data block of the release's libs/shapes.tap; the same bytes in both) and README
 ├── tools/
@@ -149,12 +155,13 @@ Leap-IDE/
 ```
 
 **ROMs are not in this repo.** They load from `tsrun/roms/leap-0.rom` (16K
-HOME) and `tsrun/roms/leap-1.rom` (8K EXROM). These are the 2.1.1-emu.1 release
-images (SHA-256 `c79ce1cf…` and `ba7f0869…` respectively; the pair's key in
-`src/lang/basic/leap-roms.js` is `57153400…`). The release bundle has no `.sym`
-files, so the ROM entry was made from a `make build` of the tag in a temporary
-detached worktree (since removed), which is byte-identical to the release zip's
-ROMs. The 2.1.0-emu.1 pair (`8c3d6c81…`, `e46e2065…`; key `5a42872e…`) and the
+HOME) and `tsrun/roms/leap-1.rom` (8K EXROM). These are the 2.1.2-emu.1 release
+images (SHA-256 `5d2aa71d…` and `c52f9669…` respectively; the pair's key in
+`src/lang/basic/leap-roms.js` is `295dfe26…`). The ROM entry was made from a
+`make build` of the tag in a temporary detached worktree (since removed), which
+is byte-identical to the release zip's ROMs. The 2.1.1-emu.1 pair (`c79ce1cf…`,
+`ba7f0869…`; key `57153400…`; its release bundle had no `.sym` files), the
+2.1.0-emu.1 pair (`8c3d6c81…`, `e46e2065…`; key `5a42872e…`) and the
 2.0.2-emu.1 pair (`1fe5798f…`, `e6b507a4…`) are also in the table.
 
 **TSRun** is the fork https://github.com/nchiker/TSRun (upstream
@@ -348,13 +355,19 @@ was slow: 864 lines of 90 pixels took 2005 frames in Leap-C 1.0.0 against 422
 for Forth's `LINE` (its arithmetic is fast). That was told to the Leap-C project
 (`docs/requests/LEAP_C_DRAW_SPEED.md`) and answered with 1.2.0 (the display code
 of Forth 2.0 ported: `draw()` about 4 times faster, see "Leap-C"); Leap V2's
-`LINE` got the same port in 2.1.1. Measured later over the whole run, from
-injection to its end (`VERBOSE=1 node tests/rom-checks.mjs` prints "(basic: N
-frames from the start of the run to its end)"): BASIC 2081 frames on 2.1.0 and
-850 on 2.1.1 (about 2.4 times faster); Forth 656, the same on 2.0 and 2.0.1. The
-BASIC program's own printed figure (1901 on 2.1.0) was not read again on 2.1.1,
-and Leap-C's speed was not measured on 1.2.0 (the test has no `FRAMES` address
-for it; its manual claims `draw()` about 4 times faster). `tests/rom-checks.mjs` section 10 runs
+`LINE` got the same port in 2.1.1. Measured on 2026-11-15 on the current ROMs
+(TSRun at `6ccf56e`; Leap 2.1.2-emu.1, Forth 2.0.1, Leap-C 1.2.0), the figure
+each program prints, read off the bitmap: BASIC 675 frames, Leap-C 423, Forth
+522; Leap 2.1.1-emu.1 printed the same 675. Against the first figures that is
+Leap BASIC 2.8 times faster (1901 on 2.1.0), Leap-C 3.9 times (1644 on 1.0.0;
+its manual says about 4) and Forth unchanged: Leap-C is now the fastest of the
+three, Leap BASIC the slowest. The whole run, from injection to its end
+(`VERBOSE=1 node tests/rom-checks.mjs` prints "(basic: N frames from the start
+of the run to its end)" for each of the three): BASIC 2081 frames on 2.1.0 and
+850 on 2.1.1 and 2.1.2 (about 2.4 times faster); Leap-C 471 on 1.2.0; Forth 656,
+the same on 2.0 and 2.0.1. Leap-C's counter, `FRAMES`, is `$5C75` in 1.2.0
+(`leapc_home.sym`; the cell its `frames()` reads), and the test's table has it.
+`tests/rom-checks.mjs` section 10 runs
 the three through their profiles' Run path and checks that each ends with no
 error, that the counter each reads counts, and that the bitmap (rows 8 to 183)
 and the attributes are identical across the three.
@@ -459,20 +472,25 @@ about 8.9 KB.
 
 ---
 
-## Memory Map — Critical Addresses (2.0.2-emu.1, 2.1.0-emu.1 and 2.1.1-emu.1)
+## Memory Map — Critical Addresses (2.1.2-emu.1; 2.0.2, 2.1.0 and 2.1.1 differ only in the overflow segment)
 
-The data layout below is the same in all three releases (checked in 2.1 and
-again in 2.1.1: the main pool, `V2_SOURCE_END`, the VM and compiler tables, the
+The data layout below is the same in 2.0.2-emu.1, 2.1.0-emu.1 and 2.1.1-emu.1
+except the overflow segment (2 KB at `$E000`-`$E7FF` in those three; in 2.1.2 it
+is `$5B00`-`$77FF`, 7424 bytes, and `$E000`-`$E7FF` is reserved and idle: manual
+Appendix E at `v2.1.1-emu.1` and `v2.1.2-emu.1`). Checked in 2.1,
+2.1.1 and 2.1.2 (the main pool, `V2_SOURCE_END`, the VM and compiler tables, the
 UDG table, the package window and `SYM_COUNTS` did not move). Routine addresses
 did move (for example `V2_COMPILE_STORED` is `$D54F` in 2.0.2 and `$D45A` in
 2.1, `IO_READ_KEY.wait_hit` is `$0443` in 2.1; 2.1.1 moved them again, so its
 entry was generated, not copied; `V2_SAVE` `$D702` and `STORAGE_SEND_BLOCK`
-`$C3F1` did not change from 2.1.0, and Leap's `FRAMES` stayed at `$8175`); the per-release values live in `src/lang/basic/leap-roms.js`. Full table: manual
+`$C3F1` did not change from 2.1.0, and Leap's `FRAMES` stayed at `$8175`; 2.1.2 moved
+them again, `V2_SAVE` `$D715`, `STORAGE_SEND_BLOCK` `$C3DA`, `FRAMES` still counts at `$8175`); the per-release values live in `src/lang/basic/leap-roms.js`. Full table: manual
 Appendix E.
 
 | Range / symbol            | Address            | Notes |
 |---------------------------|--------------------|-------|
-| Free for user machine code | `$5B00`–`$5FFF`, `$7800`–`$7FFF` | Not used by V2 |
+| Overflow segment (array segment 2) | `$5B00`–`$77FF` | 2.1.2: the Array Store and arrays that did not fit in the main pool (`FREE(1)`); `MODE 1` also uses `$6000`–`$77FF` |
+| Free for user machine code | `$7800`–`$7FFF` | Not used by V2 (2.0.2 to 2.1.1: also `$5B00`–`$5FFF`) |
 | Leap system variables     | `$8000`–`$8259`    | Do not touch |
 | `PROG_END` sysvar         | `$8002`            | Byte after the end of the stored program. **Not** `$5C53` — that is Sinclair's |
 | `PROG_AREA_START`         | `$825A`            | Start of the main pool |
@@ -480,7 +498,7 @@ Appendix E.
 | Compiled bytecode         | `$A655`–`$B5FF`    | 4011 bytes, rebuilt on every run |
 | Fixed tables / compiler workspace | `$B600`–`$BFFF` | Includes `RT_SYMTAB_PTR` (`$B80D`), `VM_ERROR_CODE`, `COMPILE_ERROR_CODE` |
 | RAM under EXROM           | `$C000`–`$DFFF`    | Hidden while a program runs |
-| Overflow segment          | `$E000`–`$E7FF`    | Arrays that did not fit, Array Store |
+| Overflow segment (2.0.2 to 2.1.1) | `$E000`–`$E7FF` | Arrays that did not fit, Array Store; in 2.1.2 this range is reserved and idle |
 | UDG table                 | `$F180`–`$F227`    | 21 chars, codes 144–164, 8 bytes each (**not** `$FF58`) |
 | Package window            | `$F400`–`$F7FF`    | Loaded package lives here |
 | Machine stack             | grows down from `$FF00` | |
@@ -592,8 +610,8 @@ stop, `INPUT` stop, re-run while busy.
 1. Build the release tag in a separate detached worktree, not in the working
    clone (`~/2068-Leap` may have local edits on another branch):
    `git -C ~/2068-Leap worktree add --detach <dir> <tag>`, then `make build`
-   in `<dir>`. Compare the ROMs with the release zip's. (2.1.1-emu.1 was done
-   this way, since its release bundle has no `.sym` files; remove the worktree
+   in `<dir>`. Compare the ROMs with the release zip's. (2.1.1-emu.1 and 2.1.2-emu.1
+   were done this way; 2.1.1's release bundle had no `.sym` files); remove the worktree
    afterwards: `git -C ~/2068-Leap worktree remove <dir>`.)
 2. `tools/leap-rom-entry.py <checkout> <version>` prints a `KNOWN_ROMS` entry
    (the script also checks that the key-wait spin loop still has the expected
@@ -735,13 +753,15 @@ the Phase 5 diagnostics; `@codemirror/search` is the find / replace panel.
 tools/gen-leap-keywords.py <2068-Leap checkout> <git ref> > src/lang/basic/leap-keywords.js
 ```
 
-It reads `docs/manual/03_keywords.md` at that ref (currently `v2.1.1-emu.1`) and
+It reads `docs/manual/03_keywords.md` at that ref (currently `v2.1.2-emu.1`) and
 emits `LEAP_KEYWORD_ENTRIES`: 100 entries, each `{kind, package, syntax, forms[],
 desc, example}`. `kind` is function / statement / operator / command / part of;
 `package` is `null` or the package name; `desc` is the first paragraph (at most
 420 characters); `example` is the first basic example (at most 6 lines). The
 100 entries are unchanged in content between 2.0.2 and 2.1, and between 2.1.0
-and 2.1.1 only `STICK`'s entry changed. For the next release, rerun it at its
+and 2.1.1 only `STICK`'s entry changed; 2.1.2 changed `FREE`, `LOAD`, `SAVE`,
+`VERIFY`, `MODE`, `POKE` and `USR` (the `CODE` forms, the overflow segment, the
+examples' addresses). For the next release, rerun it at its
 tag.
 
 ### Language mode and editor (Phase 2 — done)
@@ -956,11 +976,12 @@ not in the ROM: on a TS2068 a program loads a package with `LOAD "NAME" EXT`
 first. The IDE does that for the user, so such programs compile and run.
 
 - **Images.** The release's six package images are in
-  `packages/2.1.1-emu.1/<name>.bin` (`cbeep graphics mode printer shapes sprite`),
+  `packages/2.1.2-emu.1/<name>.bin` (`cbeep graphics mode printer shapes sprite`),
   copied unchanged from the release zip and checked against its `SHA256SUMS`.
-  The six are byte-identical to 2.1.0's and 2.0.2's (`packages/2.1.0-emu.1/`,
-  `packages/2.0.2-emu.1/`, checked with `cmp`; the release notes say the shipped
-  packages are unchanged, and the package ABI 2.1 is unchanged in 2.1.1).
+  The six are byte-identical to 2.1.1's, 2.1.0's and 2.0.2's
+  (`packages/2.1.1-emu.1/`, `packages/2.1.0-emu.1/`, `packages/2.0.2-emu.1/`,
+  checked with `cmp` / `sha256sum`; the release notes say the shipped packages
+  are unchanged, and the package ABI 2.1 is unchanged in 2.1.1).
   `attach()` (`src/lang/basic/profile.js`) fetches them once per language / ROM
   load, from the ROM entry's `packageDir`.
 - **Which package.** `packagesUsed(text)` (`src/lang/basic/leap-words.js`; with
@@ -1073,8 +1094,8 @@ from Appendix B of the manual. It exports `LEAP_COMPILE_ERRORS` and
 `LEAP_RUNTIME_ERRORS`, each code -> `{message, cause}`; codes such as
 "13, 14, 15" and "12 to 14" are expanded, and a code listed more than once
 keeps the first message and joins the causes. Never edit it by hand; rerun it
-for the next release (last run at `v2.1.1-emu.1`, where only the header changed; `LEAP_MANUAL_REF` in
-`src/lang/basic/leap-keywords.js` follows, so Help links go to the 2.1.1 manual). `describeError`
+for the next release (last run at `v2.1.2-emu.1`, where the header and the cause of error 64 changed; `LEAP_MANUAL_REF` in
+`src/lang/basic/leap-keywords.js` follows, so Help links go to the 2.1.2 manual). `describeError`
 (`src/lang/basic/profile.js`) turns an entry into
 "SYNTAX ERROR 3: an expression could not start where it did (…)". The 2.1 manual
 writes run-time messages as `RUNTIME ERROR n`; `describeError` drops a trailing
@@ -1259,12 +1280,13 @@ Phases 1 to 5, 7 and 8 work, Phase 6's tape export (Leap's
 own `LOAD` reads the IDE's `.tap`) and DCK export (a cartridge that runs on a
 stock TS2068, approved by the owner on 2026-10-28) are done and verified, and
 saving/opening programs, packages and the Help overlay are done. The Leap
-2.1.1-emu.1 ROM entry is done (ROM table, generated keyword and error data,
-packages, cartridge images, tests; the 2.1.0-emu.1 and 2.0.2-emu.1 entries stay). Nothing is on hold. Ideas, none started:
+2.1.2-emu.1 ROM entry is done (ROM table, generated keyword and error data,
+packages, cartridge images, tests; the 2.1.1-emu.1, 2.1.0-emu.1 and 2.0.2-emu.1 entries stay). Nothing is on hold. Ideas, none started:
 
 1. **Test the DCK on real hardware.** It has run on TSRun, ZEsarUX 13.0 and
    Fuse 1.9.1 with the stock ROM (same screens), not on a real TS2068.
 2. **Cartridge builds for future Leap releases** (see "Adding a Leap ROM
    release", step 5).
-3. **Measure the speed test again:** Leap-C 1.2.0 in TSRun, and the BASIC
-   program's own printed figure on 2.1.1 (not read yet; see "Speed test").
+3. **Measure the speed test again** when a ROM changes (done 2026-11-15 for
+   Leap 2.1.2, Forth 2.0.1 and Leap-C 1.2.0: 675, 522 and 423 frames; see "Speed
+   test"). The figures are emulator-only (TSRun), not real hardware.

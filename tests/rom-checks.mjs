@@ -1235,7 +1235,7 @@ console.log('\nLeap-C (src/lang/c/profile.js)');
 console.log('\nSpeed test in three languages (src/lang/spin-demo.js)');
 {
   const { SPIN_DEMO } = await import(join(ROOT, 'src/lang/spin-demo.js'));
-  const FRAMES = { basic: 0x8175, forth: 0x80F4 };          // FRAMES in Leap 2.x's and Forth 2.0's .sym
+  const FRAMES = { basic: 0x8175, forth: 0x80F4, c: 0x5C75 }; // FRAMES in Leap 2.x's, Forth 2.0's and Leap-C 1.2.0's .sym (leapc_home.sym: FRAMES = $5C75)
   const shots = {}, notes = [];
   for (const id of ['basic', 'c', 'forth']) {
     const P = profileById(id);
@@ -1265,7 +1265,8 @@ console.log('\nSpeed test in three languages (src/lang/spin-demo.js)');
     const status = ended ? L.describeResult(P.driver.result(m, r, start.job), start.editorLine, null, start.job).text : 'did not end';
     if (lint.length || !/^(Finished|OK)/.test(status)) notes.push(`${id}: ${lint.length ? lint[0].message : status}`);
     if (counter && process.env.VERBOSE) console.log(`      (${id}: ${counter() - c0} frames from the start of the run to its end)`);
-    if (counter && !(counter() - c0 > 100 && ex.text.includes(String(FRAMES[id])))) notes.push(`${id}: the frame counter it reads (${FRAMES[id]}) did not count, or the program does not read it`);
+    // BASIC and Forth read the counter by address, so their text must contain it; Leap-C calls frames(), which reads the same cell
+    if (counter && !(counter() - c0 > 100 && (id === 'c' || ex.text.includes(String(FRAMES[id]))))) notes.push(`${id}: the frame counter it reads (${FRAMES[id]}) did not count, or the program does not read it`);
     shots[id] = [...Array.from({ length: (184 - 8) * 32 }, (_, i) => { const y = 8 + (i >> 5); return m.bus.read(0x4000 | ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | (i & 31)); }),
       ...Array.from({ length: 22 * 32 }, (_, i) => m.bus.read(0x5820 + i))].join();
   }
