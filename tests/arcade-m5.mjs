@@ -1013,15 +1013,14 @@ console.log('\n8. Old programs compile to identical bytes (SHA-256 of the game a
   let same = 0, bad = '';
   // Stage 3 (G4) gave arcade/examples/breakout.arc and bounce.arc a title scene and a song, which this stand-in runtime (no RT_MUSIC) cannot build, and their old bytes are gone with
   // the old sources (the fixtures keep the batch-1 hash only). They are skipped here; the shipped examples are compiled and run against the interpreter on the real runtime in arcade-m4 section 9.
-  const REWRITTEN = new Set(['arcade/examples/breakout.arc', 'arcade/examples/bounce.arc']);
-  const pinned = baseline.programs.filter((p) => !REWRITTEN.has(p.src));
+  const pinned = baseline.programs;      // arcade/examples/breakout.arc and bounce.arc left the batch-1 baseline in stage 3 (a title scene and a song: MUSIC, which the stand-in cannot build)
   for (const p of pinned) {
     const r = compile(readFileSync(join(ROOT, p.src), 'utf8'), { runtime: fakeRuntime(p.runtime), image: new Uint8Array(65536), assets: JSON.parse(readFileSync(join(ROOT, p.assets), 'utf8')) });
     const sha = r.memory ? createHash('sha256').update(r.memory.slice(0x8000, 0xC000)).digest('hex') : '';
     if (r.errors.length || sha !== p.sha256 || r.gen.code.length !== p.bytes) bad += `${p.src} (runtime v${p.runtime}): ${r.errors[0]?.message ?? `${r.gen.code.length} bytes, hash differs`}; `;
     else same++;
   }
-  check_(`${pinned.length} programs (shooter-v1, blockfall-v0, breakout-v1 on v1 and v2 runtimes, bounce-static on v0; breakout and bounce, rewritten in stage 3, are not pinned) compile to the same bytes as before`, bad === '' && same === pinned.length && pinned.length === baseline.programs.length - REWRITTEN.size, bad);
+  check_(`${pinned.length} programs (shooter-v1, blockfall-v0, breakout-v1 on v1 and v2 runtimes, bounce-static on v0; breakout and bounce, rewritten in stage 3, are not pinned) compile to the same bytes as before`, bad === '' && same === pinned.length && pinned.length === 5, bad);
   // and the real runtime, with a hash made now of the same programs compiled twice (the compiler is deterministic)
   if (R.ok) {
     const sha = (src, assets) => createHash('sha256').update(compile(src, { runtime: R.rt, image: R.img, assets }).memory.slice(0x8000, 0xC000)).digest('hex');

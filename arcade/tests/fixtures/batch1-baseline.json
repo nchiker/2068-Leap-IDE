@@ -1,26 +1,6 @@
 {
- "about": "SHA-256 of the game area ($8000-$BFFF) that the compiler BEFORE language batch 1 (git 335a383) produced for these programs against a stand-in runtime (runtime.version as given, every symbol at 0xC000 + FNV-1a(name) % 0x2000, see tests/arcade-m5.mjs fakeRuntime); tests/arcade-m5.mjs checks that the compiler still produces the same bytes: a program that uses none of the new words compiles to identical code.",
+ "about": "SHA-256 of the game area ($8000-$BFFF) that the compiler BEFORE language batch 1 (git 335a383) produced for these programs against a stand-in runtime (runtime.version as given, every symbol at 0xC000 + FNV-1a(name) % 0x2000, see tests/arcade-m5.mjs fakeRuntime); tests/arcade-m5.mjs checks that the compiler still produces the same bytes: a program that uses none of the new words compiles to identical code. Stage 3 (2026-11-15) removed arcade/examples/breakout.arc and bounce.arc: they gained a title scene and a song (MUSIC), which the batch-1 stand-in runtime cannot build; their batch-1 forms stay pinned through the fixtures.",
  "programs": [
-  {
-   "src": "arcade/examples/breakout.arc",
-   "assets": "arcade/examples/breakout.assets.json",
-   "runtime": 2,
-   "bytes": 1338,
-   "sha256": "1ad5841268ae8945888d99b9c84ff98d3b1165d6a319f7e83fe2705f514ff171",
-   "prevSha256": "01c92f85ae997cbe5ab289de7e17de5769c303942c081772fc44b5027445320a",
-   "prevBytes": 1505,
-   "acceptedFrom": "9b7969c"
-  },
-  {
-   "src": "arcade/examples/bounce.arc",
-   "assets": "arcade/examples/bounce.assets.json",
-   "runtime": 2,
-   "bytes": 414,
-   "sha256": "87f576ea599f7c3aace153ef0487614192e171be4ccf35d6626d189826f0e9fd",
-   "prevSha256": "f044d34d7423747b353e98c70511a501c9567175a63620e7e20d946f135e451f",
-   "prevBytes": 465,
-   "acceptedFrom": "9b7969c"
-  },
   {
    "src": "arcade/tests/fixtures/shooter-v1.arc",
    "assets": "arcade/tests/fixtures/shooter-v1.assets.json",
