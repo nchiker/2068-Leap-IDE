@@ -7,8 +7,8 @@ REM   play   (window)    the game.  Space or fire in the title or the demo start
 REM The reset of every ENTER loads the game's first screen MAP, the title picture, into the cells; the scenes with the window clear it (CLS) at once: the window is not drawn from the cells, the rows around it are the HUD's.
 REM The game is larger than the 16 KB of the game area: the three worlds are MAPs that a WORLD statement loads, so the linker puts them in the cartridge's banked part
 REM (docs/ARCADE_BANKING_CONTRACT.md).  Assets are in runner.assets.json, laid out by runner.assets.gen.mjs (level 1 is the platformer's world);
-REM the level data below (TABLE lv1 .. lv4: CXS/CYS, SX/SY, WLO/WHI, CKX/CKY, CIX, RCF/RNX and the counts CE / SE, each list indexed from 0 within its level) is
-REM printed by  node arcade/examples/runner.assets.gen.mjs --data  and checked against the maps by tests/arcade-runner.mjs; LOADDATA does LOADTABLE lv.
+REM the level data (the coins, enemies and checkpoints of each world) are the objects of its map in runner.assets.json, which the compiler turns into the tables LOADDATA loads (see "the level data" below);
+REM runner.assets.gen.mjs lays them out and tests/arcade-runner.mjs checks them against the maps.
 REM   Keyboard: O left, P right, Q or SPACE jump (hold for a higher jump), A drop through a plank, H pause (and H again to go on).   Joystick 1: the stick and fire.
 REM   128 x 16 cell worlds, three bands (2 / 3 / 11 rows at 1/4, 1/2, 1/1).  Stomp the walkers and bats by jumping on them (HIT while
 REM   falling), touch them from the side and you lose a life (brief invulnerability); spikes and the pit send you to the last checkpoint.
@@ -69,74 +69,15 @@ REM starts (0 at power-on).  FC is the tick counter and CAM the camera the coin 
   REM the bats' vertical path: a sine, +-12 pixels in 16 steps
   DIM sn(15) = 0, 5, 9, 11, 12, 11, 9, 5, 0, -5, -9, -11, -12, -11, -9, -5
 
-  REM ---- the level data of the four levels, one after the other (printed by runner.assets.gen.mjs --data; do not edit)
-  REM the coin list and the enemy list of each level are sorted by x; the checkpoints are 3 a level, CIX has 9 and RCF / RNX 4 (the start and the 3 checkpoints) a level;
-  REM the arrays are sized to the largest level (50 coins, 11 enemies), CE / SE are the counts, and a table zeroes what its level does not list
-  REM @@DATA-BEGIN@@
-  DIM cxs(49), cys(49), sx(10), sy(10), wlo(10), whi(10), ckx(2), cky(2), cix(8), rcf(3), rnx(3), ce, se
+  REM ---- the level data: the coins, enemies and checkpoints of each world are OBJECTS placed on its map (the Studio's map editor; runner.assets.gen.mjs writes them into runner.assets.json), and the compiler turns
+  REM them into one table a world, in front of this file (the Studio shows it as the read-only file objects.arc): the tables pfworldobjects, rnworld2objects, rnworld3objects and rnworld4objects, in the order of the map
+  REM names, so LOADTABLE lv loads level lv's (rn_title has no objects).  Each kind makes arrays indexed from 0 within its level, sorted by x, and a count:
+  REM   coin        coinx, coiny (a coin's cell, pixels), ncoin;  coinix(b) = the first coin with x >= 128 b (the bucket index: PICKUP starts its search there)
+  REM   enemy       enemyx, enemyy (where it appears), enemylo, enemyhi (a walker's two turning points, pixels; a BAT has enemyhi = 0), nenemy
+  REM   checkpoint  checkpointx, checkpointy (3 a level, rising in x), ncheckpoint
+  REM The arrays are sized to the largest level (50 coins, 11 enemies) and a table zeroes what its level does not list.  RCF / RNX, the first coin and enemy to show again after a respawn, are found by RESPAWN.
+  REM CC marks the coins a level's hero has taken, SD the enemies he has stomped (sized to the arrays above: coins 50, enemies 11).
   DIM cc(49), sd(10)
-  TABLE lv1
-    cxs = 64, 72, 80, 96, 104, 112, 120, 192, 200, 304, 312, 320, 328, 352, 360, 368, 376, 424, 432, 440, 464, 496, 504, 512, 520, 528, 536, 568, 576, 616, 624, 640, 648, 696, 704, 720, 728, 752, 760, 800, 808, 832, 840, 848, 888, 896, 912, 920, 944, 952
-    cys = 104, 104, 104, 88, 80, 80, 88, 104, 104, 80, 80, 80, 80, 80, 80, 80, 80, 96, 88, 96, 96, 80, 80, 64, 64, 64, 64, 96, 96, 80, 80, 96, 96, 88, 88, 72, 72, 88, 88, 96, 96, 104, 104, 96, 96, 96, 80, 80, 104, 104
-    sx = 160, 288, 368, 464, 528, 584, 704, 728, 864, 880, 944
-    sy = 96, 96, 56, 88, 80, 56, 80, 64, 56, 96, 96
-    wlo = 0, 272, 0, 448, 480, 0, 688, 0, 0, 816, 928
-    whi = 224, 432, 0, 464, 544, 0, 704, 0, 0, 896, 1008
-    ckx = 416, 592, 832
-    cky = 88, 88, 88
-    cix = 0, 7, 9, 17, 23, 31, 39, 45, 50
-    rcf = 0, 13, 24, 38
-    rnx = 0, 2, 4, 7
-    ce = 50
-    se = 11
-  ENDTABLE
-  TABLE lv2
-    cxs = 64, 72, 80, 120, 128, 240, 248, 256, 280, 288, 312, 320, 328, 336, 376, 384, 424, 432, 464, 496, 504, 536, 544, 552, 560, 600, 608, 616, 624, 640, 648, 696, 704, 744, 752, 776, 784, 792, 824, 832, 904, 912, 920, 928, 944, 952
-    cys = 104, 104, 104, 88, 88, 96, 88, 96, 96, 96, 96, 88, 88, 96, 64, 64, 64, 64, 88, 88, 88, 96, 88, 88, 96, 88, 80, 80, 88, 96, 96, 88, 88, 80, 80, 88, 80, 88, 80, 80, 88, 80, 80, 88, 104, 104
-    sx = 144, 224, 288, 360, 400, 520, 592, 632, 800, 864
-    sy = 96, 64, 96, 56, 80, 96, 64, 96, 56, 96
-    wlo = 0, 0, 264, 0, 384, 480, 0, 624, 0, 800
-    whi = 224, 0, 336, 0, 432, 520, 0, 664, 0, 896
-    ckx = 304, 584, 824
-    cky = 88, 88, 88
-    cix = 0, 4, 7, 15, 21, 29, 35, 40, 46
-    rcf = 0, 5, 21, 34
-    rnx = 0, 1, 5, 8
-    ce = 46
-    se = 10
-  ENDTABLE
-  TABLE lv3
-    cxs = 48, 56, 64, 80, 88, 104, 112, 192, 200, 216, 224, 232, 248, 256, 272, 280, 288, 304, 312, 408, 416, 424, 432, 520, 528, 560, 640, 648, 664, 672, 680, 712, 720, 728, 744, 752, 840, 848, 864, 872, 920, 928, 944, 952
-    cys = 104, 104, 104, 88, 88, 88, 88, 96, 96, 88, 80, 88, 88, 88, 80, 80, 80, 88, 88, 96, 88, 88, 96, 96, 96, 88, 88, 88, 88, 80, 80, 80, 80, 88, 88, 88, 104, 104, 88, 88, 80, 80, 104, 104
-    sx = 64, 224, 392, 480, 552, 640, 672, 832, 880, 952
-    sy = 96, 56, 96, 56, 80, 80, 64, 96, 64, 96
-    wlo = 0, 0, 368, 0, 544, 632, 0, 816, 0, 936
-    whi = 144, 0, 496, 0, 560, 648, 0, 904, 0, 1008
-    ckx = 384, 528, 832
-    cky = 88, 80, 88
-    cix = 0, 7, 13, 19, 23, 26, 36, 40, 44
-    rcf = 0, 18, 23, 36
-    rnx = 0, 2, 3, 7
-    ce = 44
-    se = 10
-  ENDTABLE
-  TABLE lv4
-    cxs = 48, 56, 64, 88, 96, 104, 112, 144, 152, 160, 184, 192, 216, 256, 264, 296, 304, 312, 344, 352, 368, 392, 400, 464, 472, 512, 520, 568, 576, 624, 632, 648, 656, 664, 680, 688, 712, 720, 736, 744, 776, 784, 848, 856, 880, 888, 944, 952, 960, 968
-    cys = 104, 104, 104, 96, 88, 88, 96, 96, 88, 96, 104, 104, 88, 80, 80, 96, 88, 96, 88, 88, 96, 88, 88, 80, 80, 96, 96, 88, 88, 96, 96, 88, 80, 88, 88, 88, 80, 88, 88, 88, 104, 104, 88, 88, 80, 80, 80, 80, 104, 104
-    sx = 120, 224, 328, 376, 392, 528, 544, 680, 784, 832, 904
-    sy = 96, 64, 96, 64, 80, 72, 80, 56, 96, 72, 96
-    wlo = 0, 0, 320, 0, 384, 0, 528, 0, 776, 0, 896
-    whi = 128, 0, 328, 0, 400, 0, 544, 0, 864, 0, 928
-    ckx = 328, 512, 832
-    cky = 88, 80, 88
-    cix = 0, 7, 13, 21, 25, 31, 40, 46, 50
-    rcf = 0, 13, 23, 40
-    rnx = 0, 1, 4, 8
-    ce = 50
-    se = 11
-  ENDTABLE
-  REM coins per level 50 46 44 50; enemies per level 11 10 10 11
-  REM @@DATA-END@@
 
   REM A black row of the screen's cell map under the text (PAPER 0, bright white): the rows the HUD and the title text go on.
   PROC BAR(r):
@@ -149,15 +90,15 @@ REM starts (0 at power-on).  FC is the tick counter and CAM the camera the coin 
     WORLD lv OF level, level2, level3, level4
   ENDP
 
-  REM Level lv's data (LOADTABLE lv: the coin, enemy, checkpoint and respawn lists and the counts CE / SE), nothing taken or killed.
+  REM Level lv's data (LOADTABLE lv: the coin, enemy and checkpoint lists and their counts), nothing taken or killed.
   PROC LOADDATA():
     LOCAL i
     LOADTABLE lv
     cf = 0
-    FOR i = 0 TO ce - 1
+    FOR i = 0 TO ncoin - 1
       cc(i) = 0
     NEXT i
-    FOR i = 0 TO se - 1
+    FOR i = 0 TO nenemy - 1
       sd(i) = 0
     NEXT i
   ENDP
@@ -169,7 +110,7 @@ REM starts (0 at power-on).  FC is the tick counter and CAM the camera the coin 
   REM sorted by x: CF is the first coin not left of the camera.  A taken coin (cc) is left alone.
   PROC SPINCOINS():
     LOCAL k
-    WHILE cf < ce AND cxs(cf) + 8 <= cam
+    WHILE cf < ncoin AND coinx(cf) + 8 <= cam
       cf = cf + 1
     WEND
     k = cf + BAND(fc, 7)
@@ -180,9 +121,9 @@ REM starts (0 at power-on).  FC is the tick counter and CAM the camera the coin 
   REM Coin k, when the list has it, it is not taken and it is in view, gets the spin frame of this tick.
   PROC SPIN(k):
     LOCAL x
-    IF k < ce THEN
-      x = cxs(k)
-      IF cc(k) = 0 AND x < cam + 192 THEN SETWORLD x, cys(k) = ct(BAND(SHR(fc, 3), 3)) ENDIF
+    IF k < ncoin THEN
+      x = coinx(k)
+      IF cc(k) = 0 AND x < cam + 192 THEN SETWORLD x, coiny(k) = ct(BAND(SHR(fc, 3), 3)) ENDIF
     ENDIF
   ENDP
 
@@ -438,18 +379,18 @@ SCENE play
     CALL LEVELDATA()
   ENDP
 
-  REM The level's data (LOADDATA: the coin, enemy, checkpoint and respawn lists and the counts CE / SE, nothing taken or killed), the player's start and the first checkpoint to pass.
+  REM The level's data (LOADDATA: the coin, enemy and checkpoint lists and their counts, nothing taken or killed), the player's start and the first checkpoint to pass.
   PROC LEVELDATA():
     HIDE hero
     CALL LOADDATA()
-    ck = 0 : rx = 24 : ry = 88 : cnx = ckx(0)
+    ck = 0 : rx = 24 : ry = 88 : cnx = checkpointx(0)
     coins = 0 : inv = 0 : dropt = 0 : pj = 1 : pk = 0
   ENDP
 
   REM The HUD of the level just loaded (its coin total and number are printed here, the other labels once per game), and the player starts.
   PROC BEGINLEVEL():
     INK 7 : PAPER 0 : BRIGHT 0
-    PRINT AT 2, 10; "/"; ce;
+    PRINT AT 2, 10; "/"; ncoin;
     PRINT AT 2, 16; "LEVEL "; lv + 1;
     hud = 7
     CALL FLUSHHUD()
@@ -464,7 +405,11 @@ SCENE play
     CAMERA cam
     cam = CAMX()
     CALL CLEARENEMIES()
-    nx = rnx(ck) : cf = rcf(ck)
+    REM the first enemy not left of the camera - 48 (the SPAWNER would skip the passed ones one a tick, and the ones in view would come late); CF is 0: SPINCOINS finds the first coin not left of the camera
+    nx = 0 : cf = 0
+    WHILE nx < nenemy AND enemyx(nx) < cam - 48
+      nx = nx + 1
+    WEND
   ENDP
 
   PROC PLAYTICK():
@@ -622,24 +567,24 @@ SCENE play
     IF st = 1 AND py > DEADY THEN CALL HURT(1) ENDIF
     IF st = 1 THEN
       IF px >= cnx THEN
-        REM (CNX is ckx(ck) here)
-        rx = cnx : ry = cky(ck) : ck = ck + 1
+        REM (CNX is checkpointx(ck) here)
+        rx = cnx : ry = checkpointy(ck) : ck = ck + 1
         cnx = 32000
-        IF ck < 3 THEN cnx = ckx(ck) ENDIF
+        IF ck < 3 THEN cnx = checkpointx(ck) ENDIF
       ENDIF
     ENDIF
   ENDP
 
-  REM Take the coins the box overlaps (the coins list is sorted by x; CIX(b) is the first coin not left of x = 128 b, so the search starts near the player; the pickup tile goes with SETWORLD).
+  REM Take the coins the box overlaps (the coins list is sorted by x; COINIX(b) is the first coin not left of x = 128 b, so the search starts near the player; the pickup tile goes with SETWORLD).
   PROC PICKUP():
     LOCAL k, x, y, lx, rx, ty, bt
     lx = px + BX : rx = lx + BW : ty = py + BY : bt = ty + BH
-    k = cix(SHR(px, 7))
-    WHILE k < ce
-      x = cxs(k)
+    k = coinix(SHR(px, 7))
+    WHILE k < ncoin
+      x = coinx(k)
       IF x >= rx THEN EXIT WHILE ENDIF
       IF x + 8 > lx THEN
-        y = cys(k)
+        y = coiny(k)
         IF y < bt AND y + 8 > ty AND cc(k) = 0 THEN
           cc(k) = 1
           SETWORLD x, y = 0
@@ -785,16 +730,16 @@ SCENE play
   REM (a walker needs a free walker slot, a bat a free bat slot; killed or passed entries are skipped).
   PROC SPAWNER():
     LOCAL k, lo, hb, d, x
-    IF nx < se THEN
-      x = sx(nx)
+    IF nx < nenemy THEN
+      x = enemyx(nx)
       IF x < cam + 216 THEN
         IF sd(nx) = 0 AND x > cam - 48 THEN
-          REM a walker takes one of the slots 0..3 (LO is 0: a LOCAL starts at 0) and sets off to the left; a bat is an entry with no turning points (WHI = 0): slots 4..5, to the right
+          REM a walker takes one of the slots 0..3 (LO is 0: a LOCAL starts at 0) and sets off to the left; a bat is an entry with no turning points (ENEMYHI = 0): slots 4..5, to the right
           hb = 3 : d = -1
-          IF whi(nx) = 0 THEN lo = 4 : hb = 5 : d = 1 ENDIF
+          IF enemyhi(nx) = 0 THEN lo = 4 : hb = 5 : d = 1 ENDIF
           FOR k = lo TO hb
             IF en(k) = 0 THEN
-              en(k) = 1 : ex(k) = x : ey(k) = sy(nx) : ek(k) = nx : e0(k) = x : ed(k) = d
+              en(k) = 1 : ex(k) = x : ey(k) = enemyy(nx) : ek(k) = nx : e0(k) = x : ed(k) = d
               nx = nx + 1
               EXIT FOR
             ENDIF
@@ -806,7 +751,7 @@ SCENE play
     ENDIF
   ENDP
 
-  REM A walker patrols its ground 4 pixels every other tick (walkers on the even ticks, bats on the odd ones, which halves their cost per tick) between the two turning points of its spawn entry (WLO / WHI: where a wall or the edge of its
+  REM A walker patrols its ground 4 pixels every other tick (walkers on the even ticks, bats on the odd ones, which halves their cost per tick) between the two turning points of its spawn entry (ENEMYLO / ENEMYHI: where a wall or the edge of its
   REM ground is, worked out from the map by the generator and checked by the tests; no run-time query).
   PROC WALKER(i):
     LOCAL f, x, y, d, k, t
@@ -815,11 +760,11 @@ SCENE play
     IF x < cam - 48 THEN
       CALL KILL(i)
     ELSE
-      t = wlo(k)
+      t = enemylo(k)
       IF x <= t THEN
         x = t : d = 1
       ELSE
-        t = whi(k)
+        t = enemyhi(k)
         IF x >= t THEN x = t : d = -1 ENDIF
       ENDIF
       ed(i) = d : ex(i) = x
@@ -849,7 +794,7 @@ SCENE play
       IF ABS(x - e0(i)) > 56 THEN ed(i) = 0 - d ENDIF
       ex(i) = x
       f = SHR(fc, 1)
-      y = sy(ek(i)) + sn(BAND(f + i * 5, 15))
+      y = enemyy(ek(i)) + sn(BAND(f + i * 5, 15))
       ey(i) = y
       f = BAND(f, 1)
       SHOW fl(i - 4) AT x, y FRAME f

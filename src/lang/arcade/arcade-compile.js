@@ -34,6 +34,7 @@ import { generate } from './arcade-codegen.js';
 import { link } from './arcade-link.js';
 import { assetTables, lookupAsset } from './arcade-assets.js';
 import { sceneDisplayPlan } from './arcade-display.js';
+import { completeSource, shiftDiagnostic } from '../../arcade-objects.js';
 
 const V3_WORDS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);
 const V4_WORDS = new Set(['WALL', 'SEEN', 'DEPTH']);        // language batch 3 (the raycaster runtime); COSA SINA FXMUL moved out: the v2 runtime has them too (wireframe 3D)
@@ -119,7 +120,26 @@ export const CODEGEN_OFF = Object.freeze({
   cg: Object.freeze({ cmpc: false, sel: false, for: false, at: false, band: false, arr: false }),
 });
 
-export function compile(text, { runtime, image, assets, scenes, bankAll = false, emit, cg } = {}) {
+/**
+ * Compile a program text with its assets. The one front door: every path that compiles (the Studio, arcadec, the tests, publish-runtime) comes here.
+ * The assets may carry an object layer (`maps.<name>.objects` and `objectKinds`, src/arcade-objects.js): the generated tables of objects are then put in
+ * front of the text, unless it begins with them already (the Studio's buildSource puts them there, as the file objects.arc), so a game's `.arc` and its
+ * assets json compile to the same program as the Studio's project. A caller that gives the plain text gets its diagnostics' lines back in its own text
+ * (`out.lineOffset` = the lines put in front; a line inside them reads "objects.arc line N: ..." at line 1). Without objects nothing happens at all.
+ */
+export function compile(text, opts = {}) {
+  const full = completeSource(text, opts.assets);
+  if (!full.offset) return compileText(text, opts);
+  const out = compileText(full.text, opts);
+  out.errors = out.errors.map((d) => shiftDiagnostic(d, full.offset));
+  out.warnings = out.warnings.map((d) => shiftDiagnostic(d, full.offset));
+  if (out.scenes) for (const sc of out.scenes) if (Number.isInteger(sc.line)) sc.line = Math.max(1, sc.line - full.offset);
+  out.lineOffset = full.offset;
+  out.objects = full.generated;
+  return out;
+}
+
+function compileText(text, { runtime, image, assets, scenes, bankAll = false, emit, cg } = {}) {
   const out = { dck: null, memory: null, map: null, errors: [], warnings: [], usage: null };
   const sort = (l) => l.sort((a, b) => a.line - b.line || a.col - b.col);
   const take = (list) => { for (const d of list) (d.severity === 'warning' ? out.warnings : out.errors).push(d); };

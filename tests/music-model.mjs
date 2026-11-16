@@ -13,6 +13,9 @@
 //   7  size and length against convertMusic / convertPattern (random songs)
 //   8  the preview: songTimeline sections and padding, the loop played once, renderSong against renderSfx, the cut
 //   9  undo / redo of song edits through createHistory
+//   10 review fixes: octave 0, the size-bounded history, one copy of the limits
+//   11 A1, the note view: notesOfTrack is the inverse of noteRecords (every instrument, pitch, length, peak), never claims a note the records do not reproduce, the example
+//      songs re-entered note by note convert to identical bytes, placeNote / replaceNote / removeNote, the lane's geometry helpers
 import * as MM from '../src/tools/music-model.js';
 import * as S from '../src/tools/sound-model.js';
 import { convertMusic, convertPattern } from '../src/lang/arcade/arcade-assets.js';
@@ -394,6 +397,226 @@ section('10  review fixes: octave 0, the size-bounded history, one copy of the l
   const fs = await import('node:fs');
   const src = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   ok('no second copy: arcade-project.js and arcade-assetcheck.js hold no 32 / 64 / 1800 literals for the song limits', !/patterns: 32|MUSIC_MAX_PATTERNS = 32|MUSIC_MAX_ORDER = 64|MUSIC_MAX_TICKS = 1800/.test(src('src/arcade-project.js') + src('src/lang/arcade/arcade-assetcheck.js')));
+}
+
+// ═══ 11 ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+section('11  A1, the note view: notesOfTrack, the inverse of noteRecords');
+{
+  const fs = await import('node:fs');
+  const recsSame = (a, b) => a.length === b.length && a.every((r, k) => r.tone === b[k].tone && r.vol === b[k].vol && r.noise === b[k].noise && r.mix === b[k].mix);
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  /** What the cartridge holds of a song: the loop, the order and every pattern's stream, byte for byte (convertMusic's `bytes` alone is only the size). */
+  const image = (asset) => { const c = convertMusic(asset); return JSON.stringify({ loop: c.loop, order: c.order, size: c.bytes, patterns: c.patterns.map((q) => Array.from(q.bytes)) }); };
+  /** Every claim of a notesOfTrack result is true: the note's records are exactly noteRecords of it; ordered, disjoint; notes + raw + silent-record ticks cover every tick once. */
+  function verified(ticks, r) {
+    let prevEnd = 0;
+    const owner = new Array(ticks.length).fill(null);
+    for (const n of r.notes) {
+      if (n.at < prevEnd || n.length < 1 || n.at + n.length > ticks.length) return `note at ${n.at} (${n.length}) overlaps or runs off the track`;
+      prevEnd = n.at + n.length;
+      let want;
+      try { want = MM.noteRecords(n.midi, n.length, n.instrument, { peak: n.peak }); } catch (e) { return `noteRecords refuses the claimed note at ${n.at}: ${e.message}`; }
+      if (!recsSame(want, ticks.slice(n.at, n.at + n.length))) return `the note at ${n.at} (${n.note} ${n.instrument} ${n.length} peak ${n.peak}) is not what the records say`;
+      if (n.note !== S.noteNameOfMidi(n.midi) || n.silent !== (n.peak === 0)) return `the note at ${n.at} is described wrongly`;
+      for (let k = n.at; k < n.at + n.length; k++) owner[k] = 'n';
+    }
+    for (const q of r.raw) for (let k = q.from; k <= q.to; k++) { if (owner[k]) return `raw tick ${k} is also in a note`; owner[k] = 'r'; }
+    for (let k = 0; k < ticks.length; k++) if (!owner[k] && !recsSame([ticks[k]], [S.PAD_TICK])) return `tick ${k} is neither a note, raw nor a rest`;
+    for (let k = 1; k < r.raw.length; k++) if (r.raw[k].from <= r.raw[k - 1].to + 1) return 'raw ranges touch or overlap (they should be maximal)';
+    return null;
+  }
+
+  // 1. the inverse, for every instrument, every pitch the lane offers, lengths and peaks
+  const lengths = [1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 33, 64, 200, 1800];
+  let combos = 0, found = 0, exact = 0, exactCases = 0, why = '';
+  for (const inst of MM.INSTRUMENTS) {
+    for (let midi = inst.id === 'drum' ? MM.NOTE_MIN : 21; midi <= MM.NOTE_MAX; midi++) {
+      for (const n of lengths) {
+        if (n > 200 && midi % 7) continue;                                   // the longest only on some pitches (they cost the most)
+        for (const peak of [inst.peak, 0, 1, 2, 3, 5, 8, 11, 14, 15]) {
+          combos++;
+          const recs = MM.noteRecords(midi, n, inst.id, { peak });
+          const pad = [{ ...S.PAD_TICK }, ...recs, { ...S.PAD_TICK }];       // a rest on each side: the note is found in the middle
+          const r = MM.notesOfTrack(pad);
+          const f = r.notes[0];
+          const one = r.notes.length === 1 && r.raw.length === 0 && f.at === 1 && f.length === n && recsSame(MM.noteRecords(f.midi, f.length, f.instrument, { peak: f.peak }), recs);
+          if (one) found++; else if (why.length < 300) why += ` ${inst.id}/${midi}/${n}/${peak}`;
+          // a note whose records no other instrument / pitch / peak writes comes back as itself: from 8 ticks, a real peak, and not the 14 / 15 pair above tone 3840
+          if (n >= 8 && peak >= 3 && (inst.id !== 'drum' || midi >= 21) && !(peak >= 14 && S.toneOfNote(midi) >= S.UNSTORABLE_TONE_FROM)) { exactCases++; if (one && f.instrument === inst.id && f.midi === midi && f.peak === peak) exact++; else if (why.length < 300) why += ` [${inst.id}/${midi}/${n}/${peak} -> ${f?.instrument}/${f?.midi}/${f?.peak}]`; }
+        }
+      }
+    }
+  }
+  ok(`notesOfTrack(noteRecords(...)) gives back one note covering exactly those records: ${combos} cases (every instrument, pitch C0..B8 / A0..B8, lengths 1..1800, peaks 0..15)`, found === combos, `${found}/${combos}${why}`);
+  ok(`and when no other reading writes the same records (8+ ticks, peak 3+, a drum from A0 up: below it every drum note is one record) it is the very note entered: instrument, pitch, length and peak (${exactCases} cases)`, exact === exactCases, `${exact}/${exactCases}${why}`);
+  ok('a short note several instruments write alike (1 tick of pluck, organ or bass) is read as the one whose own peak it is, then in INSTRUMENTS order',
+    MM.notesOfTrack(MM.noteRecords('C4', 1, 'organ'))?.notes[0].instrument === 'organ' && MM.notesOfTrack(MM.noteRecords('C4', 1, 'pluck')).notes[0].instrument === 'pluck' && MM.notesOfTrack(MM.noteRecords('C4', 1, 'bass')).notes[0].instrument === 'bass'
+    && MM.notesOfTrack(MM.noteRecords('C4', 1, 'organ', { peak: 3 })).notes[0].instrument === 'pluck');
+  ok('the note carries what re-entering needs: {at, length, midi, note (sharps name), instrument, peak, silent}', same(MM.notesOfTrack([...MM.noteRecords('C#5', 8, 'organ')]).notes, [{ at: 0, length: 8, midi: 73, note: 'C#5', instrument: 'organ', peak: 11, silent: false }]));
+  ok('a silent note (peak 0: how the example songs write a rest, the last pitch at volume 0) is a note with silent: true', (() => { const r = MM.notesOfTrack(MM.noteRecords('E3', 12, 'organ', { peak: 0 })).notes[0]; return r.silent && r.peak === 0 && r.midi === 52 && r.length === 12; })());
+  ok('the drum below A0 (one record whatever the note) is read as the lowest note of the lane, C0', (() => { const r = MM.notesOfTrack(MM.noteRecords('G#0', 6, 'drum')).notes[0]; return r.instrument === 'drum' && r.midi === MM.NOTE_MIN && recsSame(MM.noteRecords(r.midi, 6, 'drum'), MM.noteRecords('G#0', 6, 'drum')); })());
+  ok('a tick record is never read as two notes\' worth: a note and the next of the same pitch stay two (organ 8 + organ 8: the half-volume last tick ends the first)', (() => { const a = [...MM.noteRecords('A3', 8, 'organ'), ...MM.noteRecords('A3', 8, 'organ')]; const r = MM.notesOfTrack(a); return r.notes.length === 2 && r.notes[0].length === 8 && r.notes[1].at === 8 && r.raw.length === 0; })());
+
+  // 2. exact means exact: one field off and it is not that note
+  const base = MM.noteRecords('G4', 8, 'organ');
+  const off = (k, f, d) => base.map((r, i) => (i === k ? { ...r, [f]: r[f] + d } : { ...r }));
+  const claims = (ticks) => MM.notesOfTrack(ticks).notes.map((n) => `${n.at}:${n.length}`).join(' ');
+  ok('one record of an organ note changed (tone, volume, noise or mix): the note is no longer shown as 8 ticks, and what is shown is still exactly noteRecords',
+    [off(3, 'tone', 1), off(2, 'vol', 1), off(5, 'noise', 1), off(0, 'mix', 1), off(7, 'vol', 1)].every((t) => !MM.notesOfTrack(t).notes.some((n) => n.at === 0 && n.length === 8) && verified(t, MM.notesOfTrack(t)) === null));
+  ok('the changed tick itself is raw', MM.notesOfTrack(off(3, 'tone', 1)).raw.some((q) => q.from <= 3 && q.to >= 3) && MM.notesOfTrack(off(2, 'noise', 3)).raw.some((q) => q.from <= 2 && q.to >= 2));
+  ok('silence made by enterRest (the pad record) is neither a note nor raw', same(MM.notesOfTrack(Array.from({ length: 20 }, () => ({ ...S.PAD_TICK }))), { notes: [], raw: [] }));
+  ok('a track, or a view, with nothing in it gives nothing; a trackView works as the ticks do', same(MM.notesOfTrack([]), { notes: [], raw: [] }) && same(MM.notesOfTrack({ ticks: base }), MM.notesOfTrack(base)) && same(MM.notesOfTrack(null), { notes: [], raw: [] }));
+  const frozen = JSON.stringify(base);
+  MM.notesOfTrack(base);
+  ok('notesOfTrack never changes the ticks it reads', JSON.stringify(base) === frozen);
+
+  // 3. what is written by note entry and rests reads back whole: random tracks, rebuilt tick for tick
+  seed = 1101;
+  let comps = 0, compOk = 0, compWhy = '';
+  for (let c = 0; c < 400; c++) {
+    const view = { ticks: [] };
+    let at = 0;
+    const steps = int(1, 14);
+    for (let k = 0; k < steps; k++) {
+      const inst = pick(MM.INSTRUMENTS), len = pick([1, 2, 3, 4, 6, 8, 8, 12, 16, 24, 32, int(1, 40)]);
+      const midi = inst.id === 'drum' ? int(12, 100) : int(21, 100);
+      const peak = pick([null, null, inst.peak, 0, int(1, 15)]);
+      if (rnd() < 0.2) { MM.enterRest(view, at, len); at += len; } else { MM.enterNote(view, at, midi, len, inst.id, peak === null ? {} : { peak }); at += len; }
+      if (rnd() < 0.1) at += int(1, 5);                                      // a gap: padded with the pad record
+    }
+    comps++;
+    const r = MM.notesOfTrack(view.ticks);
+    const rebuilt = { ticks: [] };
+    for (const n of r.notes) MM.enterNote(rebuilt, n.at, n.midi, n.length, n.instrument, { peak: n.peak });
+    while (rebuilt.ticks.length < view.ticks.length) rebuilt.ticks.push({ ...S.PAD_TICK });
+    const v = verified(view.ticks, r);
+    if (v === null && r.raw.length === 0 && same(rebuilt.ticks, view.ticks)) compOk++; else if (compWhy.length < 200) compWhy += ` #${c}: ${v ?? (r.raw.length ? 'raw ' + JSON.stringify(r.raw) : 'rebuild differs')}`;
+  }
+  ok(`${comps} random tracks written with enterNote and enterRest (all four instruments, peaks 0..15, gaps): no raw ticks, and the notes re-entered with enterNote give the same ticks, record for record`, compOk === comps, `${compOk}/${comps}${compWhy}`);
+
+  // 4. ticks written by something else never come out as a wrong note
+  seed = 4242;
+  let foreign = 0, foreignOk = 0, claimed = 0, foreignWhy = '';
+  const noteTones = [S.toneOfNote('C4'), S.toneOfNote('E4'), S.toneOfNote('G4'), S.toneOfNote('A2'), 300, 200, 4095, 1];
+  for (let c = 0; c < 1500; c++) {
+    const n = int(1, 60);
+    const ticks = Array.from({ length: n }, () => {
+      const kind = int(0, 5);
+      if (kind === 0) return { ...S.PAD_TICK };
+      if (kind <= 3) { const t = pick(noteTones); return { tone: t, vol: pick([0, 14, 11, 13, int(0, 15)]), noise: pick([0, 0, 0, int(0, 31)]), mix: pick([6, 6, 5, 4, int(0, 7)]) }; }
+      return { tone: int(0, 4095), vol: int(0, 15), noise: int(0, 31), mix: int(0, 7) };
+    });
+    // sometimes splice a real note in, so a note with foreign ticks around it and inside it is tried
+    if (rnd() < 0.5) { const inst = pick(MM.INSTRUMENTS); const at = int(0, n - 1); const view = { ticks: ticks.slice() }; try { MM.enterNote(view, at, inst.id === 'drum' ? int(12, 100) : int(21, 100), int(1, 20), inst.id); } catch { /* none */ } ticks.splice(0, ticks.length, ...view.ticks); if (rnd() < 0.5 && ticks.length > 2) ticks[int(0, ticks.length - 1)].vol = int(0, 15); }
+    foreign++;
+    const before = JSON.stringify(ticks);
+    const r = MM.notesOfTrack(ticks);
+    claimed += r.notes.length;
+    const v = verified(ticks, r);
+    if (v === null && JSON.stringify(ticks) === before) foreignOk++; else if (foreignWhy.length < 300) foreignWhy += ` #${c}: ${v ?? 'the input changed'}`;
+  }
+  ok(`${foreign} tracks of random and half-note ticks (${claimed} notes claimed): every claimed note is exactly noteRecords of it, notes / raw / rests cover each tick once, the input is untouched`, foreignOk === foreign, `${foreignOk}/${foreign}${foreignWhy}`);
+
+  // 5. the example games: their sound effects (not notes) and their songs
+  const exDir = new URL('../arcade/examples/', import.meta.url);
+  const files = fs.readdirSync(exDir).filter((f) => f.endsWith('.assets.json')).sort();
+  let sfxTracks = 0, sfxNotes = 0, sfxBad = '';
+  let songs = 0, songTracks = 0, songNotes = 0, songRaw = 0, songTicks = 0, songBad = '', songBytes = 0;
+  const first = { name: null };
+  for (const f of files) {
+    const a = JSON.parse(fs.readFileSync(new URL(f, exDir), 'utf8'));
+    for (const [name, e] of Object.entries(a.sfx ?? {})) {
+      for (const key of ['ticks', 'ticksB', 'ticksC']) {
+        const ticks = e[key] ?? [];
+        if (!ticks.length) continue;
+        sfxTracks++;
+        const r = MM.notesOfTrack(ticks);
+        sfxNotes += r.notes.length;
+        const v = verified(ticks, r);
+        if (v !== null && sfxBad.length < 300) sfxBad += ` ${f}/${name}/${key}: ${v}`;
+      }
+    }
+    for (const [name, m] of Object.entries(a.music ?? {})) {
+      songs++;
+      const sg = MM.fromSong(m), out = MM.cloneSong(sg);
+      sg.patterns.forEach((p, pi) => {
+        for (const key of ['ticks', 'ticksB', 'ticksC']) {
+          const ticks = p[key];
+          if (!ticks.length) continue;
+          songTracks++; songTicks += ticks.length;
+          const r = MM.notesOfTrack(ticks);
+          songNotes += r.notes.length; songRaw += r.raw.reduce((n, q) => n + q.to - q.from + 1, 0);
+          const v = verified(ticks, r);
+          if (v !== null && songBad.length < 300) songBad += ` ${f}/${name}/${pi}/${key}: ${v}`;
+          const view = { ticks: [] };
+          for (const n of r.notes) MM.enterNote(view, n.at, n.midi, n.length, n.instrument, { peak: n.peak });
+          while (view.ticks.length < ticks.length) view.ticks.push({ ...S.PAD_TICK });
+          out.patterns[pi][key] = view.ticks;
+        }
+        for (const key of ['ticksB', 'ticksC']) if (!p[key].length) out.patterns[pi][key] = [];
+      });
+      const want = image(MM.toSong(sg)), got = image(MM.toSong(out));
+      if (want === got) songBytes++; else songBad += ` ${f}/${name}: converted bytes differ`;
+    }
+  }
+  ok(`sound effects of the example games are not notes: ${sfxTracks} tracks, ${sfxNotes} short runs happen to be exact notes; nothing claimed is wrong, everything else stays raw`, sfxTracks > 20 && sfxBad === '', sfxBad);
+  ok(`every example song (${songs} songs, ${songTracks} tracks, ${songTicks} ticks) is shown whole: ${songNotes} notes, ${songRaw} raw ticks`, songs >= 12 && songRaw === 0 && songBad === '', songBad);
+  ok(`each of them re-entered note by note (enterNote from what the note view shows) converts to IDENTICAL bytes (convertMusic: the loop, the order and every pattern's stream, byte for byte), ${songBytes}/${songs}`, songBytes === songs && songs >= 12);
+
+  // 6. the lane's edits: placeNote, replaceNote, removeNote are enterNote / enterRest and nothing else
+  const fresh = (n = 32) => ({ ticks: Array.from({ length: n }, () => ({ ...S.PAD_TICK })) });
+  {
+    const v = fresh(), w = fresh();
+    const r = MM.placeNote(v, 4, 60, 8, 'organ');
+    const e = MM.enterNote(w, 4, 60, 8, 'organ');
+    ok('placeNote is enterNote (same ticks, same result: range, next)', same(v, w) && same(r, e) && r.range[0] === 4 && r.next === 12);
+    const x = fresh(); x.ticks[10] = { tone: 1234, vol: 9, noise: 3, mix: 5 };
+    const o = MM.placeNote(x, 6, 67, 8, 'pluck', 7);
+    const n = MM.notesOfTrack(x);
+    ok('a note placed over foreign ticks replaces them (as enterNote does) and is shown as that note with that peak', n.notes.length === 1 && n.notes[0].at === 6 && n.notes[0].length === 8 && n.notes[0].peak === 7 && n.raw.length === 0 && o.range[0] === 6);
+    ok('placed past the end of the track, it extends the track (padded with the rest record)', (() => { const t = fresh(4); MM.placeNote(t, 10, 60, 3, 'organ'); return t.ticks.length === 13 && same(t.ticks[5], S.PAD_TICK) && MM.notesOfTrack(t).notes[0].at === 10; })());
+    const before = JSON.stringify(v);
+    const refused = [MM.placeNote(v, 0, 20, 4, 'organ'), MM.placeNote(v, 0, 11, 4, 'drum'), MM.placeNote(v, 0, 120, 4, 'drum'), MM.placeNote(v, -1, 60, 4, 'organ'), MM.placeNote(v, 0, 60.5, 4, 'organ')];
+    ok('refusals say why and change nothing (below the AY\'s lowest note, outside C0..B8, before tick 0)', JSON.stringify(v) === before && refused.every((q) => typeof q.message === 'string' && !q.range) && /lowest note, A0/.test(refused[0].message) && /between C0 and B8/.test(refused[1].message), JSON.stringify(refused.map((q) => q.message)));
+  }
+  {
+    // replaceNote: move, lengthen, shorten, change the pitch; equal to enterRest then enterNote
+    const mk = () => { const v = fresh(40); MM.placeNote(v, 8, 64, 8, 'organ'); MM.placeNote(v, 20, 71, 6, 'pluck', 9); return v; };
+    const v = mk(), note = MM.notesOfTrack(v).notes[0];
+    const m = MM.replaceNote(v, note, { at: 12, midi: 66 });
+    const w = mk(); MM.enterRest(w, 8, 8); MM.enterNote(w, 12, 66, 8, 'organ', { peak: 11 });
+    ok('replaceNote (move in time and pitch) = enterRest over the old ticks, then enterNote: the same ticks', same(v, w) && same(m.range, [12, 19]));
+    const n2 = MM.notesOfTrack(v);
+    ok('and the lane then shows the note there, same instrument and peak, the other note untouched', n2.notes.length === 2 && n2.notes[0].at === 12 && n2.notes[0].midi === 66 && n2.notes[0].instrument === 'organ' && n2.notes[0].peak === 11 && n2.notes[1].at === 20 && n2.notes[1].midi === 71);
+    const l = mk(); MM.replaceNote(l, MM.notesOfTrack(l).notes[0], { length: 16 });
+    ok('lengthening overwrites what is under the new end (the other note\'s first 4 ticks: it is no longer that 6-tick note), and what is shown is still exact', (() => { const r = MM.notesOfTrack(l); return r.notes[0].at === 8 && r.notes[0].length === 16 && !r.notes.some((q) => q.at === 20) && l.ticks.length === 40 && verified(l.ticks, r) === null; })());
+    const sh = mk(); MM.replaceNote(sh, MM.notesOfTrack(sh).notes[0], { length: 3 });
+    ok('shortening frees the old ticks (rest records), the note is now 3 ticks', (() => { const r = MM.notesOfTrack(sh); return r.notes[0].length === 3 && same(sh.ticks[11], S.PAD_TICK) && same(sh.ticks[15], S.PAD_TICK); })());
+    const bad = mk(), bj = JSON.stringify(bad), nb = MM.notesOfTrack(bad).notes[0];
+    const rr = [MM.replaceNote(bad, nb, { midi: 20 }), MM.replaceNote(bad, nb, { at: -1 }), MM.replaceNote(bad, nb, { length: 0 }), MM.replaceNote(bad, nb, { midi: 200 })];
+    ok('a refused replace leaves the track as it was (no half-done rest)', JSON.stringify(bad) === bj && rr.every((q) => typeof q.message === 'string' && !q.range));
+    const rm = mk(); const nr = MM.removeNote(rm, MM.notesOfTrack(rm).notes[0]);
+    const rw = mk(); MM.enterRest(rw, 8, 8);
+    ok('removeNote is enterRest over the note\'s ticks (the note is gone, the other stays, the track keeps its length)', same(rm, rw) && MM.notesOfTrack(rm).notes.length === 1 && rm.ticks.length === 40 && same(nr.range, [8, 15]));
+    const sil = fresh(); MM.placeNote(sil, 2, 60, 4, 'drum', 0); const sn = MM.notesOfTrack(sil).notes[0];
+    ok('a silent note moves as a silent note (peak 0 is kept)', (() => { MM.replaceNote(sil, sn, { at: 10 }); const r = MM.notesOfTrack(sil).notes; return r.length === 1 && r[0].at === 10 && r[0].silent && r[0].instrument === 'drum'; })());
+  }
+  // 7. the geometry helpers
+  {
+    const W = MM.pitchWindow([], null, { channel: 1 });
+    ok('an empty lane starts on its channel\'s default window (A C4..B5, B C3..B4, C C2..B3)', same(MM.pitchWindow([], null, { channel: 0 }), { lo: 60, hi: 83 }) && same(W, { lo: 48, hi: 71 }) && same(MM.pitchWindow([], null, { channel: 2 }), { lo: 36, hi: 59 }));
+    const fit = MM.pitchWindow([{ midi: 62 }, { midi: 71 }]);
+    ok('a lane with notes fits them with 2 rows to spare and at least 14 rows', fit.lo <= 60 && fit.hi >= 73 && fit.hi - fit.lo + 1 >= 14 && MM.pitchWindow([{ midi: 70 }]).hi - MM.pitchWindow([{ midi: 70 }]).lo + 1 === 14);
+    const grown = MM.pitchWindow([{ midi: 62 }, { midi: 90 }], fit);
+    ok('it grows to hold a new note and never shrinks (a lower note later keeps the old top)', grown.hi >= 92 && grown.lo === fit.lo && MM.pitchWindow([{ midi: 62 }], grown).hi === grown.hi);
+    const huge = MM.pitchWindow([{ midi: 12 }, { midi: 119 }]);
+    ok('notes more than 48 semitones apart: a window of 48 rows inside C0..B8 (scrollWindow reaches the rest); a grown window stays put instead of passing 48', huge.hi - huge.lo + 1 === 48 && huge.lo >= 12 && huge.hi <= 119 && same(MM.pitchWindow([{ midi: 119 }], { lo: 12, hi: 59 }), { lo: 12, hi: 59 }));
+    ok('opts.show moves the window to a midi number outside it', (() => { const w = MM.pitchWindow([], { lo: 60, hi: 83 }, { show: [100] }); const x = MM.pitchWindow([], { lo: 60, hi: 83 }, { show: [40] }); return w.hi === 100 && w.hi - w.lo === 23 && x.lo === 40 && x.hi - x.lo === 23; })());
+    ok('scrollWindow keeps the height and stays inside C0..B8', same(MM.scrollWindow({ lo: 60, hi: 83 }, 12), { lo: 72, hi: 95 }) && same(MM.scrollWindow({ lo: 12, hi: 35 }, -50), { lo: 12, hi: 35 }) && same(MM.scrollWindow({ lo: 100, hi: 119 }, 50), { lo: 100, hi: 119 }));
+    ok('tick <-> x are inverse at the tick lanes\' scale (colW pixels a tick), clamped; row <-> pitch likewise inside a window', [3, 8, 24].every((c) => [0, 1, 17, 63].every((t) => MM.tickOfX(MM.xOfTick(t, c) + c - 1, c) === t && MM.tickOfX(MM.xOfTick(t, c), c) === t)) && MM.tickOfX(-5, 8, 9) === 0 && MM.tickOfX(999, 8, 9) === 9
+      && [60, 70, 83].every((m) => MM.midiOfRow(MM.rowOfMidi(m, { lo: 60, hi: 83 }), { lo: 60, hi: 83 }) === m) && MM.midiOfRow(-4, { lo: 60, hi: 83 }) === 83 && MM.midiOfRow(99, { lo: 60, hi: 83 }) === 60);
+    ok('noteAtTick finds the note covering a tick', (() => { const r = MM.notesOfTrack([...MM.noteRecords('C4', 4, 'organ'), ...MM.noteRecords('D4', 4, 'organ')]); return MM.noteAtTick(r, 3).at === 0 && MM.noteAtTick(r, 4).at === 4 && MM.noteAtTick(r, 8) === null; })());
+  }
 }
 
 console.log(`\nAll checks done: ${passed} passed, ${failed} failed`);

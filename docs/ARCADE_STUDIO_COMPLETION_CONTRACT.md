@@ -321,12 +321,67 @@ before game over) and is fixed.
   else as raw ticks, still editable in the lanes). Click places a note of the current instrument and length; drag moves or lengthens; Delete
   removes; all through `enterNote` / `enterRest`, so the stored song format does not change.
 
+#### As built (stage 4, 2026-11-16, branch `studio-stage4`)
+Six Sonnet agents in disposable worktrees (N1 in two halves, W1, A1, M2 in two halves: M2a the source / project / Leap Runner side, M2b the map editor),
+briefs kept in `arcade/spike/stage4/briefs/`; Claude reviewed every diff, re-ran every suite in the main tree, wired the Studio and wrote the Studio-level
+checks (`tests/studio-smoke.mjs`: the starters dialog, the Models tab, the object layer on Leap Runner).
+
+* **N1. Starters** (`src/arcade-starters.js` composes `src/starters/starters-a.js` and `starters-b.js`; the dialog is `#new-dialog` in `studio.html`,
+  opened by New; stills `arcade/dist/starters/<id>.png`, README there). Seven, each a game with a point, under 150 lines of commented source, no warning,
+  no asset finding, BRIGHT 0: **Star Dash** (blank, v2: steer a ball to a star against a clock), **Gem Mine** (sprites-tiles, v2: 12 gems, TILEAT walls, pooled
+  bats, four sound effects), **Arrow Rush** (scenes-music, v2: title / play / over, a title song, a session best), **Coin Hop** (platformer, v3: WINDOW,
+  80 x 16 world, NOWINDOW title, a stompable walker), **Gem Maze** (raycaster, v4: 16 x 16 plan, three gem billboards and a ghost), **Ring Run** (wireframe, v2:
+  WIRE3D, two models of 12 edges or fewer so they open in the model editor), **Rainbow Gold** (fine colour, v2: both scenes `fine`, 58 of 128 tiles, 5 of 32
+  phases, 99.7 % of play ticks at 20 Hz). Tests: `tests/arcade-starters-a.mjs` (46 checks) and `-b.mjs` (68): a bot plays each on the interpreter, the real
+  runtime replays it, every tick equal; Rainbow Gold's real screen equals `finePicture` on every compared tick. FRAMERATE 12 for the two 3D starters.
+  *Findings that cost time:* `WALL` and `NEXT` are reserved words; names cannot contain an underscore; `CLS` clears to ink 0 so a sprite over cleared cells is
+  black on black (the starters fill the cells with `PAPER 0 : INK 7 : FILLC` instead); `ENTER` neither stops a song (`NOMUSIC` in the scene's INIT) nor reloads a
+  `WINDOW` world (`WORLD level` in INIT). The New dialog falls back to the classic blank project when the starters module cannot load. Existing Studio
+  tests that clicked New now pick the Blank starter (project "Star Dash").
+* **W1. Model editor** (`src/tools/model-model.js` 500 lines pure, `src/tools/model-editor.js`; Models tab; `ASSET_EDITORS.models`). Top, front and side views plus
+  the turning preview; add / move / delete points, join, mirror mode, centre, scale, rotate 90, presets (cube, pyramid, ring of n, dart ship, rock), live
+  limits, undo. Choices: an edit that would leave no point or no edge is refused; scale is refused (not clamped) past 64 or when two points would meet.
+  Orbit Gates' four models round-trip unchanged. 127 model checks (12,000 random edits keep every model valid), 91 editor checks. Selecting a model in the
+  project panel opens the Models tab (it used to say there was no editor). The right panel's tab padding was tightened so seven tab names fit at 1280 px.
+* **M2. Object layer.** *Data:* `assets.maps.<name>.objects = [{kind, x, y, props?}]` in **pixels** (the contract said cells or pixels; the editor snaps to
+  1 / 4 / 8 / 16), `project.objectKinds = {name: {colour 0..15, sprite?, props[]}}` (at most 16 kinds, 8 props, names `[a-z][a-z0-9]{0,11}`),
+  `project.objectBucket` (128 default, 0 = no index). *Source:* `src/arcade-objects.js` generates the DIMs and one TABLE per map with objects. **Deviations
+  from the first design, forced by the language:** table names cannot contain an underscore, so `pf_world` is table `pfworldobjects` (lower case, non-alphanumerics
+  removed, a clash gets a number); the generated text goes **first** in the joined source (a game-level DIM must precede the scene that reads it; a declaration
+  before `GAME` is legal); a kind no map uses is not declared. A game's own source declares none of `<kind>x`, `<kind>y`, `<kind><prop>`, `<kind>ix`,
+  `n<kind>` or the table names. *Compile:* `compile()` is the single front door (`completeSource`), so the Studio, `arcadec`, `publish-runtime` and the test
+  harness give identical cartridge bytes (tested for Leap Runner); a project without objects compiles byte for byte as before (the batch hash baselines did
+  not move; only `m19-nonfine-baseline.json`'s four Runner entries did). *Studio:* `objects.arc` is listed first, marked "generated", with no rename / delete
+  button, read-only in the editor (`leapEditor.setReadOnly`), rewritten on every change, and `objects.arc` is a reserved file name (an older stored file of that
+  name becomes `objects-user.arc` with a warning). *Map editor:* an Objects layer (key O) with a kind palette, a Kinds panel, place / drag / nudge / delete,
+  a property box, the list in table order (`coin #3`), counts, hide / show; resizing a map moves objects that would fall off its edge to the last column /
+  row after asking; the host provides `getObjectKinds`, `setObjectKinds`, `renameObjectKind`. 187 map-model checks, 179 editor checks, 99 `arcade-objects` checks.
+* **M2 sample: Leap Runner's level tables are object layers** on its four worlds (kinds `coin {}`, `enemy {lo, hi}` where `hi = 0` is a bat, `checkpoint {}`);
+  `runner.arc` has no level data; the generator writes the objects into `runner.assets.json`. Columns the old generator computed that an object layer does
+  not express: **`cix`** is now the generated `coinix` (same numbers); **`wlo` / `whi`** (a walker's turning points, found from the map by `turning()`) are the
+  enemy's props; **`rcf` / `rnx`** (first coin / first enemy at each respawn) are no longer stored: `RESPAWN` sets `cf = 0` (SPINCOINS' skip loop finds the
+  coin in the same tick) and runs a short enemy loop for `nx`; the start (24, 88) stays a constant. *Cost:* mapped part 16,323 -> 16,056 of 16,384 bytes
+  (328 spare, was 61), banked 2,636 -> 3,001 (the table record grew 343 -> 365 bytes: `enemyix`, `checkpointix` and `ncheckpoint` are generated for every kind,
+  there is no opt-out), median tick 130,030 -> 130,054 T, level loads +462 T. *Play unchanged:* old and new game equal on the interpreter at every tick of the
+  1,738-tick recorded play-through and on five off-route respawn runs. **Trap:** `ix(b)` ignores object width, so a game with wide objects starts one bucket early.
+* **A1. Note view** (`notesOfTrack` in `music-model.js`, a Notes panel above the tick lanes of the sound editor in song mode). The inverse of `noteRecords`
+  shares its per-record function, so they cannot drift; a note is claimed only where `noteRecords` reproduces the exact records, anything else is a grey
+  raw strip (decision 5). Edits go only through `enterNote` / `enterRest` (`placeNote`, `replaceNote`, `removeNote`), one `setAsset` and one undo step each.
+  Proofs: 61,360 note cases invert exactly; all 13 example songs show whole (1,614 notes, no raw tick) and re-enter note by note to an identical image;
+  in the browser `bounce / theme` is re-entered into a blank pattern by 68 real clicks and its `convertMusic` image is identical to the original's.
+  **Changed behaviour:** the peak box accepts 0..15 (0 is a silent note that keeps its pitch, how the examples write rests; typing 0 used to become 1). Ambiguous
+  readings (1 tick of organ at peak 3 reads as pluck; a drum from C0 to G#0 is one record) re-enter to identical ticks.
+* **Traps:** (1) the New dialog made every Studio test that clicked New need `newBlank()`; (2) Leap Runner's camera check in `studio-smoke` is wall-clock based
+  and failed once under eight parallel jobs; (3) the example named `platformer` is the one-level game, `runner` is the four-level one with the object layers;
+  (4) `git status` in an agent worktree shows `tsrun` as type-changed: it is the symlink.
+
 ### Stage 5
 B3 (the diagnostics compile in a Web Worker; Run and DCK keep the page's compile), R3 (the compiler reports variable addresses; a Variables tab),
 P1 (projects in IndexedDB, the current project still mirrored in `localStorage` for compatibility), P3 (one editor state per file), P4 (with B7),
 P5 (Help examples from `ARCADE_LANGUAGE.md`, per-word anchors, a "How a game is built" page), T2 with M3 (picture import: a shared
 `src/tools/picture-import.js`, error-diffusion as the plan's art pipeline says, two colours per cell), M4 (the floor plan's 3D preview from the
 JS reference of `arcade/tests/m8-common.mjs`, moved into `src/`).
+**S1. Gallery strip** (owner, 2026-11-16: in Starfall's Sprites tab only one sprite is visible; the editor edits one asset at a time and the others are in a drop-down and the project panel): a row of small thumbnails of every asset of the tab's kind (sprites, tile sets, maps, models) at the top of each of those four editors, the edited one highlighted, a click selects it; one pure helper for the thumbnails (`src/tools/asset-thumbs.js`) and a check per tab. Do it first: it is small and makes every game's art visible at a glance.
 
 ## 5. Sample games (owner's rule: every improvement used in the sample games, each new feature shown off)
 

@@ -113,9 +113,11 @@ function syncEditor() {
 
 /** Show a file in the editor (the previous file's text has been kept by syncEditor()). */
 function showFile(name, { line = 0, col = 0 } = {}) {
+  if (P.isGeneratedFile(name) && P.fileText(project, name) === null) name = P.MAIN_FILE;      // objects.arc exists only while a map has objects
   activeFile = name;
   loading = true;
-  window.leapEditor.setSource(project.files[name] ?? '', { fresh: true });
+  window.leapEditor.setSource(P.fileText(project, name) ?? '', { fresh: true });
+  window.leapEditor.setReadOnly(P.isGeneratedFile(name));         // the generated objects.arc cannot be typed in
   loading = false;
   $('editor-title').textContent = name;
   if (line > 0) window.leapEditor.setCursor(line, col);
@@ -179,6 +181,7 @@ function changed(ev) {
   version++;
   statusOverride = null; statusHoldUntil = 0;
   if (booted) syncEditor();              // (the unsaved mark compares the text in the editor)
+  if (booted && P.isGeneratedFile(activeFile)) showFile(activeFile);      // the open objects.arc follows the maps (or goes back to main.arc when the objects are gone)
   renderProject();
   updateDirty();
   scheduleAutosave();
@@ -296,6 +299,20 @@ function makeHost(id) {
       return r;
     },
     exampleEffects: () => exampleEffects(),
+    // Object layer (M2, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md section 4): the project's object kinds, edited by the map editor's Kinds panel
+    getObjectKinds: () => JSON.parse(JSON.stringify(project.objectKinds ?? {})),
+    setObjectKinds(kinds) {
+      const r = P.setObjectKinds(project, kinds);
+      if (!r.ok) return { ok: false, message: r.error };
+      fire({ type: 'project' });
+      return { ok: true };
+    },
+    renameObjectKind(from, to) {
+      const r = P.renameKindIn(project, from, to);
+      if (!r.ok) return { ok: false, message: r.error };
+      fire({ type: 'project' });
+      return { ok: true, changed: r.changed };
+    },
   };
 }
 const studioHost = makeHost('studio');
@@ -306,7 +323,7 @@ const NEW_ASSET = {
   maps: () => ({ w: 32, h: 24, tileset: '', cells: 'FF'.repeat(32 * 24) }),
   sfx: () => ({ ticks: [{ tone: 200, vol: 0, noise: 0, mix: 6 }] }),
   music: () => toSong(newSong()),          // one short pattern, order [0], loop 0 (music-model.js)
-  // a cube (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1; there is no model editor yet: edit the JSON or write models as code)
+  // a cube (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1); the Models tab edits it
   models: () => ({
     points: [[-20, -20, -20], [20, -20, -20], [20, 20, -20], [-20, 20, -20], [-20, -20, 20], [20, -20, 20], [20, 20, 20], [-20, 20, 20]],
     edges: [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]],
@@ -399,6 +416,7 @@ const ASSET_EDITORS = {
   sfx: { tab: 'sfx', module: './src/tools/sound-editor.js', factory: 'createSoundEditor', container: 'tool-sfx', title: 'sound editor' },
   // songs open in the sound editor (docs/ARCADE_MUSIC_CONTRACT.md section 7): the same tab and the same instance, its select(name, 'music') switches mode
   music: { tab: 'sfx', shared: 'sfx' },
+  models: { tab: 'models', module: './src/tools/model-editor.js', factory: 'createModelEditor', container: 'tool-models', title: 'model editor' },
 };
 const editors = {};              // kind -> {api} | {missing: true}
 
@@ -434,9 +452,6 @@ function selectAsset(kind, name) {
   if (def) {
     showTab(def.tab);
     ensureEditor(kind).then((api) => api?.select?.(name, kind));
-  } else {
-    // (only models have no editor yet)
-    say(`Model ${name}: there is no model editor yet; the project file holds its points and edges, and the source uses it by name (MODEL x = "${name}")`, 'idle');
   }
 }
 
@@ -489,11 +504,15 @@ function renderProject() {
   const files = $('file-list');
   const bad = problemFiles();
   files.replaceChildren();
-  for (const name of P.sourceOrder(project)) {
+  for (const { name, generated } of P.fileList(project)) {
     const li = el('li', 'proj-row' + (name === activeFile ? ' active' : '') + (bad.has(name) ? ' has-error' : ''));
     li.dataset.file = name;
     li.append(el('span', 'proj-name', name));
-    if (name !== P.MAIN_FILE) {
+    if (generated) {
+      const lock = el('span', 'proj-meta', 'generated');
+      lock.title = 'Written by the Studio from the maps\' objects; read-only';
+      li.append(lock);
+    } else if (name !== P.MAIN_FILE) {
       const ren = el('button', 'proj-act', '✎'); ren.title = 'Rename';
       const del = el('button', 'proj-act', '✕'); del.title = 'Delete';
       ren.addEventListener('click', (e) => { e.stopPropagation(); renameFileUi(name); });
@@ -1064,9 +1083,37 @@ function openProject(p, { saved = true, message = null, handle = null } = {}) {
   if (message) say(message, 'idle');
 }
 
-function newProjectUi() {
+// New project (N1): a dialog of starters (src/arcade-starters.js, pure; a still of each under arcade/dist/starters/). If the starters
+// cannot be loaded the dialog is skipped and New makes the classic blank project, so New never breaks.
+let startersModule = null;
+async function newProjectUi() {
   if (!confirmDiscard()) return;
-  openProject(P.newProject(), { message: 'New project: press Run (F5)' });
+  if (!startersModule) {
+    try { startersModule = await import('./src/arcade-starters.js'); } catch (e) {
+      console.error('[Studio] the starters could not be loaded', e);
+      openProject(P.newProject(), { message: 'New project: press Run (F5)' });
+      return;
+    }
+  }
+  const dlg = $('new-dialog'), grid = $('new-grid');
+  grid.replaceChildren();
+  for (const s of startersModule.STARTERS) {
+    const card = el('button', 'new-card');
+    card.type = 'button'; card.setAttribute('role', 'listitem'); card.dataset.starter = s.id;
+    const pic = el('img');
+    pic.alt = `${s.title}: a still of the game`; pic.loading = 'lazy'; pic.src = `arcade/dist/starters/${s.id}.png`;
+    pic.addEventListener('error', () => { const ph = el('div', 'new-pic', s.title); pic.replaceWith(ph); });
+    card.append(pic, el('span', 'new-card-title', s.title), el('span', 'new-card-about', s.about), el('span', 'new-card-rt', `runtime ${s.runtime}`));
+    card.addEventListener('click', () => {
+      dlg.close('starter');
+      let p;
+      try { p = s.make(); } catch (e) { say(`The starter could not be made: ${e.message}`, 'error'); return; }
+      openProject(p, { message: `New project from the "${s.title}" starter: press Run (F5)` });
+    });
+    grid.append(card);
+  }
+  dlg.showModal();
+  grid.querySelector('.new-card')?.focus();
 }
 
 // Save in place where the browser has the File System Access API (Chromium): the first Save asks where, later ones write to the same file;

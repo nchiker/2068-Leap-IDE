@@ -4,7 +4,7 @@
  *
  * A map is edited as a plain object ("map"):
  *
- *   { w, h, cells: number[w * h] (row-major), repr: 'array' | 'hex', tileset: string | null, extra: {unknown keys of the asset} }
+ *   { w, h, cells: number[w * h] (row-major), repr: 'array' | 'hex', tileset: string | null, objects?: [...], extra: {unknown keys of the asset} }
  *
  *   cell   a tile index 0..254, or -1 = blank. (The stored forms of blank, 255, -1 and null, all read as -1.)
  *
@@ -17,6 +17,15 @@
  *     (tests/map-model.mjs compiles every example with the original and the round-tripped assets and compares the bytes).
  *
  *   fromAsset(asset) / toAsset(map)       the stored form <-> the editing form
+ *
+ * The object layer (stage 4, M2): `objects` is the asset's `objects: [{kind, x, y, props?}]` kept as it is (the key is absent when the asset has no
+ * `objects` key, so a map without objects reads, writes and compares exactly as before). x and y are whole PIXELS of the map (0..w*8-1, 0..h*8-1); `props` is
+ * {propName: integer}; unknown keys of an object are kept. Operations (all pure, objects are named by their INDEX in `objects`, which is the
+ * insertion order and never changes except by delete): snap, clampToMap, addObject, moveObject, deleteObject, deleteObjects, setObjectProp,
+ * objectsAt, objectCounts, sortedView, objectProblems / validateObjects (against project.objectKinds), objectsOutside, and for kind edits
+ * renameKindIn, dropPropIn, deleteKindIn; kindProblems / validateKinds check a project.objectKinds table. Deleting the last object removes the
+ * `objects` key again. resize() clamps objects into the new box (never drops one): an object beyond the new right / bottom edge
+ * moves to the last cell column / row (x = (w-1)*8, y = (h-1)*8); objectsOutside(m, w, h) says how many that would move, so a caller can ask first.
  *   newMap(w, h, preset), cloneMap        'screen' | 'world' | 'floorplan'
  *   getCell, setCell, pencil, drawLine, rect, floodFill, copyBlock, pasteBlock, resize
  *   cellsUsing, usedTiles, tileCounts
@@ -28,6 +37,7 @@
 "use strict";
 
 import { line, createHistory } from './sprite-model.js';
+import { MAX_KINDS, MAX_PROPS, KIND_NAME_MAX, PROP_MIN, PROP_MAX, kindArrays } from '../arcade-objects.js';
 
 export { line, createHistory };
 
@@ -92,13 +102,15 @@ export function newMap(w, h, preset = 'screen') {
 }
 
 export function cloneMap(m) {
-  return { w: m.w, h: m.h, cells: m.cells.slice(), repr: m.repr, tileset: m.tileset, extra: JSON.parse(JSON.stringify(m.extra ?? {})) };
+  const c = { w: m.w, h: m.h, cells: m.cells.slice(), repr: m.repr, tileset: m.tileset, extra: JSON.parse(JSON.stringify(m.extra ?? {})) };
+  if (Array.isArray(m.objects)) c.objects = JSON.parse(JSON.stringify(m.objects));
+  return c;
 }
 
 /** The stored asset -> the editing form. Throws an Error with a plain message when the asset cannot be read. */
 export function fromAsset(asset) {
   if (!asset || typeof asset !== 'object' || Array.isArray(asset)) throw new Error('the map is not an object');
-  const { w, h, cells: raw, tileset, ...rest } = asset;
+  const { w, h, cells: raw, tileset, objects: rawObjects, ...rest } = asset;
   if (!isDim(w)) throw new Error(`map w must be a whole number 1..${MAX_DIM}, got ${JSON.stringify(w)}`);
   if (!isDim(h)) throw new Error(`map h must be a whole number 1..${MAX_DIM}, got ${JSON.stringify(h)}`);
   let cells, repr;
@@ -120,7 +132,20 @@ export function fromAsset(asset) {
   let ts = null;
   if (typeof tileset === 'string') ts = tileset;
   else if (tileset !== undefined) extra.tileset = JSON.parse(JSON.stringify(tileset));    // not a name: kept, untouched
-  return { w, h, cells, repr, tileset: ts, extra };
+  let objects;
+  if (rawObjects !== undefined) {
+    if (!Array.isArray(rawObjects)) throw new Error('map "objects" must be a list');
+    objects = rawObjects.map((o, i) => {
+      if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error(`map object ${i} is not an object`);
+      if (typeof o.kind !== 'string' || !o.kind) throw new Error(`map object ${i} needs a "kind" (the name of an object kind)`);
+      if (!Number.isInteger(o.x) || !Number.isInteger(o.y)) throw new Error(`map object ${i} (${o.kind}) needs whole-number "x" and "y" (pixels), got ${JSON.stringify(o.x)}, ${JSON.stringify(o.y)}`);
+      if (o.props !== undefined && (!o.props || typeof o.props !== 'object' || Array.isArray(o.props))) throw new Error(`map object ${i} (${o.kind}): "props" must be an object`);
+      return JSON.parse(JSON.stringify(o));
+    });
+  }
+  const out = { w, h, cells, repr, tileset: ts, extra };
+  if (objects !== undefined) out.objects = objects;
+  return out;
 }
 
 /** The editing form -> the stored asset, in the representation read (blank written as 255; hex as compact upper case). */
@@ -135,6 +160,7 @@ export function toAsset(m) {
   } else cells = m.cells.map((v) => (v === BLANK ? STORED_BLANK : v));
   const out = { w: m.w, h: m.h, cells };
   if (typeof m.tileset === 'string') out.tileset = m.tileset;
+  if (Array.isArray(m.objects)) out.objects = JSON.parse(JSON.stringify(m.objects));
   for (const [k, v] of Object.entries(m.extra ?? {})) out[k] = JSON.parse(JSON.stringify(v));
   return out;
 }
@@ -213,13 +239,14 @@ export function pasteBlock(m, block, x, y, { skipBlank = false } = {}) {
   return n;
 }
 
-/** Change the size to w x h (whole numbers 1..256), anchored at the top-left: cells outside the new box are dropped, new ones are blank. Returns the map. */
+/** Change the size to w x h (whole numbers 1..256), anchored at the top-left: cells outside the new box are dropped, new ones are blank; objects are never dropped (one beyond the new edge moves to the last cell column / row). Returns the map. */
 export function resize(m, w, h) {
   if (!isDim(w)) throw new RangeError(`width must be a whole number 1..${MAX_DIM}, got ${JSON.stringify(w)}`);
   if (!isDim(h)) throw new RangeError(`height must be a whole number 1..${MAX_DIM}, got ${JSON.stringify(h)}`);
   const cells = new Array(w * h).fill(BLANK);
   for (let y = 0; y < Math.min(h, m.h); y++) for (let x = 0; x < Math.min(w, m.w); x++) cells[y * w + x] = m.cells[y * m.w + x];
   m.w = w; m.h = h; m.cells = cells;
+  if (Array.isArray(m.objects)) for (const o of m.objects) { if (o.x > w * 8 - 1) o.x = (w - 1) * 8; if (o.y > h * 8 - 1) o.y = (h - 1) * 8; }
   return m;
 }
 
@@ -292,4 +319,217 @@ export function windowFrame(m, camX, { codes = [3] } = {}) {
   const max = Math.max(0, Math.floor((m.w * 8 - WINDOW_PIXELS) / maxRatio));
   const cam = Math.max(0, Math.min(max, Math.trunc(Number.isFinite(camX) ? camX : 0)));
   return { x0: cam >> 3, x1: Math.min(m.w - 1, (cam + WINDOW_PIXELS - 1) >> 3), camX: cam, phase: cam & 7 };
+}
+
+// ── the object layer (stage 4, M2) ────────────────────────────────────────────────────────────────────────────
+export const OBJECT_GRIDS = Object.freeze([1, 4, 8, 16]);   // the snap grids of the editor, in pixels
+export const DEFAULT_OBJECT_GRID = 8;
+// The limits and the generated names are the project's (src/arcade-objects.js, the single source: the editor and the project must never disagree on them).
+export { MAX_KINDS, MAX_PROPS, KIND_NAME_MAX, PROP_MIN, PROP_MAX };
+export const DEFAULT_MARKER = Object.freeze({ w: 8, h: 8 });  // the size of a marker without a sprite
+const NAME_OK = /^[a-z][a-z0-9]*$/;
+
+/** The size of a map in pixels: {w, h} (8 pixels a cell). */
+export const pixelSize = (m) => ({ w: m.w * 8, h: m.h * 8 });
+const whole = (v, what) => { if (!Number.isFinite(v)) throw new RangeError(`${what} must be a number, got ${JSON.stringify(v)}`); return Math.floor(v); };
+const objList = (m) => (Array.isArray(m.objects) ? m.objects : []);
+const objAt = (m, i) => { const o = objList(m)[i]; if (!o) throw new RangeError(`the map has no object ${JSON.stringify(i)}`); return o; };
+const propValue = (v, what) => {
+  if (!Number.isInteger(v) || v < PROP_MIN || v > PROP_MAX) throw new RangeError(`${what} must be a whole number ${PROP_MIN}..${PROP_MAX}, got ${JSON.stringify(v)}`);
+  return v;
+};
+
+/**
+ * Clamp a pixel position into the map: whole numbers 0..w*8-1 and 0..h*8-1. Fractions are cut (floor). `m` is a map, or {w, h} in CELLS.
+ * Returns [x, y].
+ */
+export function clampToMap(m, x, y) {
+  const s = pixelSize(m);
+  return [Math.max(0, Math.min(s.w - 1, whole(x, 'x'))), Math.max(0, Math.min(s.h - 1, whole(y, 'y')))];
+}
+/**
+ * Clamp a pixel position into the map, then snap it to a grid of 1, 4, 8 or 16 pixels (floor: a click inside a cell gives that cell's corner on the
+ * 8 grid) (`mapSize` is a map or {w, h} in cells). Returns [x, y].
+ */
+export function snap(x, y, grid, mapSize) {
+  if (!OBJECT_GRIDS.includes(grid)) throw new RangeError(`the snap grid is ${OBJECT_GRIDS.join(', ')} pixels, got ${JSON.stringify(grid)}`);
+  const [cx, cy] = clampToMap(mapSize, x, y);
+  return [Math.floor(cx / grid) * grid, Math.floor(cy / grid) * grid];
+}
+
+/**
+ * Add an object of `kind` at pixel (x, y) (clamped into the map; NOT snapped: the caller snaps), with `props` ({name: integer}; omitted or empty
+ * writes no "props" key). Returns the new object's index. Unknown kinds are not checked here (objectProblems checks against the kinds).
+ */
+export function addObject(m, kind, x, y, props) {
+  if (typeof kind !== 'string' || !kind) throw new RangeError('an object needs the name of its kind');
+  const [cx, cy] = clampToMap(m, x, y), o = { kind, x: cx, y: cy };
+  if (props !== undefined && props !== null) {
+    if (typeof props !== 'object' || Array.isArray(props)) throw new RangeError('props must be an object {name: whole number}');
+    const names = Object.keys(props);
+    if (names.length) { o.props = {}; for (const k of names) o.props[k] = propValue(props[k], `prop "${k}"`); }
+  }
+  if (!Array.isArray(m.objects)) m.objects = [];
+  m.objects.push(o);
+  return m.objects.length - 1;
+}
+/** Move object `i` to pixel (x, y) (clamped; not snapped). Returns true when it moved. */
+export function moveObject(m, i, x, y) {
+  const o = objAt(m, i), [cx, cy] = clampToMap(m, x, y);
+  if (o.x === cx && o.y === cy) return false;
+  o.x = cx; o.y = cy;
+  return true;
+}
+/** Delete the object with index `i`; returns it. The map keeps no `objects` key once its last object is gone. */
+export function deleteObject(m, i) {
+  const o = objAt(m, i);
+  m.objects.splice(i, 1);
+  if (!m.objects.length) delete m.objects;
+  return o;
+}
+/** Delete several objects (indices, any order, duplicates ignored); returns how many were deleted. */
+export function deleteObjects(m, indices) {
+  const set = new Set(indices);
+  for (const i of set) objAt(m, i);
+  const n = set.size;
+  if (!n) return 0;
+  m.objects = m.objects.filter((_, i) => !set.has(i));
+  if (!m.objects.length) delete m.objects;
+  return n;
+}
+/** Set one property of object `i` (a whole number -32768..32767; the name is a prop of the object's kind: the caller checks that). Returns true when it changed (a missing prop reads as 0, so setting 0 on a missing one changes nothing). */
+export function setObjectProp(m, i, prop, value) {
+  const o = objAt(m, i);
+  if (typeof prop !== 'string' || !prop) throw new RangeError('a property needs a name');
+  propValue(value, `prop "${prop}"`);
+  if ((o.props?.[prop] ?? 0) === value) return false;
+  if (!o.props) o.props = {};
+  o.props[prop] = value;
+  return true;
+}
+
+/**
+ * The indices of the objects whose marker box contains the pixel (x, y), topmost (the latest added) first. A marker is 8 x 8 pixels with its
+ * top-left corner at the object's position, or `sizeOf(kindName)` -> {w, h} (a sprite's size). `kinds`: only these kind names count (an array
+ * or a Set; null = all).
+ */
+export function objectsAt(m, x, y, kinds = null, sizeOf = null) {
+  const only = kinds ? new Set(kinds) : null, out = [];
+  objList(m).forEach((o, i) => {
+    if (only && !only.has(o.kind)) return;
+    const sz = (sizeOf && sizeOf(o.kind)) || DEFAULT_MARKER;
+    if (x >= o.x && x < o.x + sz.w && y >= o.y && y < o.y + sz.h) out.push(i);
+  });
+  return out.reverse();
+}
+/** Kind name -> number of objects (a Map, in order of first appearance). */
+export function objectCounts(m) {
+  const c = new Map();
+  for (const o of objList(m)) c.set(o.kind, (c.get(o.kind) ?? 0) + 1);
+  return c;
+}
+/**
+ * The objects as the generated file orders them: each kind's objects by x, then y, then insertion. [{index, rank, obj}], `rank` the position in
+ * its kind's table (0-based). `kinds` (an array of kind names) fixes the order of the kinds, the rest follow alphabetically; by: 'kind'
+ * (default) groups by kind, 'x' sorts everything by x, y, insertion (rank is still the one within the kind).
+ */
+export function sortedView(m, { kinds = null, by = 'kind' } = {}) {
+  const list = objList(m).map((obj, index) => ({ index, obj, rank: 0 }));
+  const cmp = (a, b) => a.obj.x - b.obj.x || a.obj.y - b.obj.y || a.index - b.index;
+  const order = new Map((kinds ?? []).map((k, i) => [k, i]));
+  const kindOrder = (k) => (order.has(k) ? order.get(k) : 1e6);
+  const byKind = list.slice().sort((a, b) => kindOrder(a.obj.kind) - kindOrder(b.obj.kind) || (a.obj.kind < b.obj.kind ? -1 : a.obj.kind > b.obj.kind ? 1 : 0) || cmp(a, b));
+  const seen = new Map();
+  for (const e of byKind) { e.rank = seen.get(e.obj.kind) ?? 0; seen.set(e.obj.kind, e.rank + 1); }
+  return by === 'x' ? list.slice().sort(cmp) : byKind;
+}
+/** How many objects a resize to w x h would move (see resize). */
+export function objectsOutside(m, w, h) { return objList(m).filter((o) => o.x > w * 8 - 1 || o.y > h * 8 - 1).length; }
+
+/**
+ * The problems of the map's objects against a kinds table (project.objectKinds): [{kind, index, message}], kind one of 'unknown-kind',
+ * 'range', 'prop', 'prop-value'. `kinds` null skips the kind and prop checks.
+ */
+export function objectProblems(m, kinds = null) {
+  const out = [], s = pixelSize(m);
+  objList(m).forEach((o, i) => {
+    const at = `object ${i} (${o.kind}, x ${o.x}, y ${o.y})`;
+    if (!Number.isInteger(o.x) || !Number.isInteger(o.y) || o.x < 0 || o.y < 0 || o.x >= s.w || o.y >= s.h) {
+      out.push({ kind: 'range', index: i, message: `${at} is outside the map: x must be 0..${s.w - 1} and y 0..${s.h - 1} pixels` });
+    }
+    if (!kinds) return;
+    const k = kinds[o.kind];
+    if (!k) { out.push({ kind: 'unknown-kind', index: i, message: `${at} has a kind the project does not define` }); return; }
+    for (const [p, v] of Object.entries(o.props ?? {})) {
+      if (!(k.props ?? []).includes(p)) out.push({ kind: 'prop', index: i, message: `${at} has the property "${p}", which the kind "${o.kind}" does not declare` });
+      else if (!Number.isInteger(v) || v < PROP_MIN || v > PROP_MAX) out.push({ kind: 'prop-value', index: i, message: `${at}: "${p}" must be a whole number ${PROP_MIN}..${PROP_MAX}, got ${JSON.stringify(v)}` });
+    }
+  });
+  return out;
+}
+/** The messages of objectProblems. */
+export function validateObjects(m, kinds = null) { return objectProblems(m, kinds).map((p) => p.message); }
+
+/** The names the generated source declares for a kind and its properties (src/arcade-objects.js): <kind>x, <kind>y, <kind><prop>, n<kind>, <kind>ix. */
+export function kindArrayNames(name, props = []) { const { arrays, count } = kindArrays(name, { props }, true); return [...arrays.slice(0, -1), count, arrays[arrays.length - 1]]; }
+/** The problem with one identifier (a kind or property name), or null: a lower-case letter, then lower-case letters and digits, 1..12 characters. */
+export function nameProblem(name, what = 'name') {
+  if (typeof name !== 'string' || !name) return `a ${what} cannot be empty`;
+  if (name.length > KIND_NAME_MAX) return `a ${what} is at most ${KIND_NAME_MAX} characters, "${name}" has ${name.length}`;
+  if (!NAME_OK.test(name)) return `a ${what} is a lower-case letter followed by lower-case letters or digits, got "${name}"`;
+  return null;
+}
+/**
+ * The problems of a kinds table: [{kind, name?, message}] ('count' | 'name' | 'colour' | 'sprite' | 'props' | 'collision'), empty when fine. It checks
+ * the shape rules and that the generated array names do not collide; reserved words and a project's own names are the compiler's / the host's to
+ * judge. `sprites` (an array of names) turns on the check that a kind's sprite exists.
+ */
+export function kindProblems(kinds, { sprites = null } = {}) {
+  const out = [];
+  if (!kinds || typeof kinds !== 'object' || Array.isArray(kinds)) return [{ kind: 'count', message: 'the object kinds must be an object {name: {colour, sprite?, props}}' }];
+  const names = Object.keys(kinds), owner = new Map();
+  if (names.length > MAX_KINDS) out.push({ kind: 'count', message: `at most ${MAX_KINDS} object kinds, there are ${names.length}` });
+  for (const n of names) {
+    const k = kinds[n], bad = nameProblem(n, 'kind name');
+    if (bad) { out.push({ kind: 'name', name: n, message: bad }); continue; }
+    if (!k || typeof k !== 'object') { out.push({ kind: 'name', name: n, message: `kind "${n}" must be an object {colour, sprite?, props}` }); continue; }
+    if (!Number.isInteger(k.colour) || k.colour < 0 || k.colour > 15) out.push({ kind: 'colour', name: n, message: `the colour of kind "${n}" is a palette index 0..15, got ${JSON.stringify(k.colour)}` });
+    if (k.sprite !== undefined && (typeof k.sprite !== 'string' || (sprites && !sprites.includes(k.sprite)))) out.push({ kind: 'sprite', name: n, message: `the sprite of kind "${n}" is "${k.sprite}", which the project does not have` });
+    const props = Array.isArray(k.props) ? k.props : [];
+    if (k.props !== undefined && !Array.isArray(k.props)) out.push({ kind: 'props', name: n, message: `the properties of kind "${n}" must be a list of names` });
+    if (props.length > MAX_PROPS) out.push({ kind: 'props', name: n, message: `kind "${n}" has ${props.length} properties, at most ${MAX_PROPS}` });
+    const seenProp = new Set();
+    for (const p of props) {
+      const pb = nameProblem(p, 'property name');
+      if (pb) out.push({ kind: 'props', name: n, message: `kind "${n}": ${pb}` });
+      else if (seenProp.has(p)) out.push({ kind: 'props', name: n, message: `kind "${n}" lists the property "${p}" twice` });
+      seenProp.add(p);
+    }
+    for (const a of kindArrayNames(n, props.filter((p) => typeof p === 'string'))) {
+      if (owner.has(a) && owner.get(a) !== n) out.push({ kind: 'collision', name: n, message: `the generated name "${a}" of kind "${n}" is also used by kind "${owner.get(a)}": rename one of them` });
+      else if (owner.has(a)) out.push({ kind: 'collision', name: n, message: `the generated name "${a}" of kind "${n}" is used twice (a property clashes with x, y or another property)` });
+      else owner.set(a, n);
+    }
+  }
+  return out;
+}
+/** The messages of kindProblems. */
+export function validateKinds(kinds, opts) { return kindProblems(kinds, opts).map((p) => p.message); }
+
+/** Rename the kind `from` to `to` on every object of the map; returns how many objects changed. */
+export function renameKindIn(m, from, to) {
+  let n = 0;
+  for (const o of objList(m)) if (o.kind === from) { o.kind = to; n++; }
+  return n;
+}
+/** Remove the property `prop` from every object of kind `kind`; returns how many objects had it. */
+export function dropPropIn(m, kind, prop) {
+  let n = 0;
+  for (const o of objList(m)) if (o.kind === kind && o.props && prop in o.props) { delete o.props[prop]; if (!Object.keys(o.props).length) delete o.props; n++; }
+  return n;
+}
+/** Delete every object of kind `kind`; returns how many. */
+export function deleteKindIn(m, kind) {
+  const idx = objList(m).map((o, i) => (o.kind === kind ? i : -1)).filter((i) => i >= 0);
+  return deleteObjects(m, idx);
 }

@@ -7,7 +7,9 @@
  * validateAsset, whose roles() is scanRoles of the project's source and whose assetWarnings() is checkAssets) and drives it with real
  * mouse and key events over the DevTools protocol: pencil / line / rectangle / fill / eyedropper / erase, block copy and paste, resize and
  * presets, undo / redo, the tile set choice, new / rename / duplicate / delete, an outside change, the world window frame (platformer
- * pf_world), the floor-plan mode (Vaults vl_maze), the background-attr-mix marker, the fallback without roles(), both themes.
+ * pf_world), the floor-plan mode (Vaults vl_maze), the background-attr-mix marker, the fallback without roles(), both themes, and the object
+ * layer (stage 4, M2): kinds (add / edit / rename / delete, with the objects of other maps), placing on the snap grids, drag, nudge, properties,
+ * the list order, delete, undo / redo, resize, hide / show, a map with no objects unchanged, a host without an object layer.
  * Screenshots go to [outdir]. Exits 1 if any check fails.
  * Chrome: $CHROME, else Playwright's headless shell, else google-chrome / chromium. Needs Node 22+ (global WebSocket).
  */
@@ -543,6 +545,344 @@ try {
   check('T3: the default editor (host without flagNames) still uses solid / hazard / pickup',
     await evaluate("(() => { const p = document.querySelector('.mapd:not(#m2 .mapd) .mapd-pi[data-tile=\"1\"]'); return !!p && /solid/.test(p.title); })()"));
   await evaluate("(t2.editor.destroy(), document.getElementById('m2').remove(), true)");
+
+  // ══ the object layer (stage 4, M2) ══
+  {
+  await send('Page.navigate', { url: base + 'tests/map-editor-test.html' });
+  await waitFor('window.testReady === true', 60000);
+  await evaluate("t.load('shooter')");
+  await evaluate("(t.editor.select('sky'), true)");
+  const skyOriginal = JSON.stringify(await asset('sky'));
+  const logoOriginal = JSON.stringify(await asset('logo'));
+  const objs = async (n = 'sky') => (await asset(n)).objects ?? null;
+  const brief = (list) => (list ?? []).map((o) => `${o.kind}@${o.x},${o.y}${o.props ? ':' + Object.entries(o.props).map(([k, v]) => k + '=' + v).join('/') : ''}`);
+  const msgText = () => evaluate("document.querySelector('[data-role=message]').textContent");
+  const kindsNow = () => evaluate('t.host.getObjectKinds()');
+  /** Client position of a map pixel (x, y), for pointer events. */
+  const pxXY = (px, py) => evaluate(`(() => { const g = document.querySelector('[data-role=map-canvas]'); g.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const r = g.getBoundingClientRect(), k = t.editor.getState().cellPx / 8; return { x: r.left + ${px} * k + k / 2, y: r.top + ${py} * k + k / 2 }; })()`);
+  async function clickPx(px, py, { button = 'left', modifiers = 0 } = {}) {
+    const p = await pxXY(px, py), b = button === 'right' ? 2 : 1;
+    await mouse('mouseMoved', p.x, p.y, 'none', 0, modifiers);
+    await mouse('mousePressed', p.x, p.y, button, b, modifiers);
+    await mouse('mouseReleased', p.x, p.y, button, b, modifiers);
+  }
+  async function dragPx(x0, y0, x1, y1) {
+    const a = await pxXY(x0, y0), b = await pxXY(x1, y1);
+    await mouse('mouseMoved', a.x, a.y, 'none', 0);
+    await mouse('mousePressed', a.x, a.y, 'left', 1);
+    for (let i = 1; i <= 4; i++) await mouse('mouseMoved', a.x + (b.x - a.x) * i / 4, a.y + (b.y - a.y) * i / 4, 'left', 1);
+    await mouse('mouseReleased', b.x, b.y, 'left', 1);
+  }
+  const setText = (selector, v) => evaluate(`(() => { const s = document.querySelector(${JSON.stringify(selector)}); s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const pickColour = (c) => click(`[data-role=kind-colour][data-colour="${c}"]`);
+  async function addKind(nm, props, colour, sprite = '') {
+    await click('[data-role=kind-add]');
+    await setText('[data-role=kind-name]', nm);
+    await setText('[data-role=kind-props]', props);
+    if (colour !== undefined) await pickColour(colour);
+    await setSelect('[data-role=kind-sprite]', sprite);
+    await click('[data-role=kind-ok]');
+  }
+  const NAV = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Delete: 46, Escape: 27, Backspace: 8 };
+  const nav = async (k, { shift = false } = {}) => {
+    const modifiers = shift ? SHIFT : 0;
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code: k, modifiers, windowsVirtualKeyCode: NAV[k] });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code: k, modifiers, windowsVirtualKeyCode: NAV[k] });
+  };
+  const rows = () => evaluate("[...document.querySelectorAll('[data-role=object-row]')].map((r) => r.dataset.kind + '#' + r.dataset.rank + ':' + r.dataset.index)");
+
+  // the layer, an empty project
+  check('O1: a host with getObjectKinds shows the Tiles / Objects layer switch; the Objects panel is closed', await evaluate("!document.querySelector('[data-role=layer-row]').hidden && document.querySelector('[data-role=object-panel]').hidden") && (await state()).layer === 'tiles');
+  await click('[data-role=layer-objects]');
+  let st2 = await state();
+  check('O1: the Objects button opens the Objects layer: the tile palette and tools are hidden, Undo / Redo stay, the panel says there are no kinds',
+    st2.layer === 'objects' && await evaluate("document.querySelector('[data-role=palette]').hidden && !document.querySelector('[data-role=object-panel]').hidden && document.querySelector('[data-tool=pencil]').hidden && !document.querySelector('[data-role=undo]').hidden && /No object kinds/.test(document.querySelector('[data-role=kind-palette]').textContent)"));
+  await clickCell(3, 2);
+  check('O1: a click with no kind defined places nothing and says so', (await objs()) === null && /kind first/.test(await msgText()) && (await sets()) === 0);
+  await shot('11-objects-empty');
+
+  // kinds
+  await click('[data-role=kinds-toggle]');
+  check('O2: Kinds… opens the Kinds panel', await evaluate("!document.querySelector('[data-role=kinds-panel]').hidden") && (await state()).kindsOpen);
+  await addKind('coin', 'value', 14);
+  check('O2: Add kind stores {coin: colour 14, props [value]} through the host and shows it in the palette (count 0) and the Kinds list',
+    JSON.stringify(await kindsNow()) === '{"coin":{"colour":14,"props":["value"]}}' && (await evaluate("document.querySelector('[data-role=kind-item][data-kind=coin]').textContent")) === 'coin 0' && (await evaluate("document.querySelectorAll('[data-role=kind-row]').length")) === 1 && (await state()).curKind === 'coin');
+  await addKind('Enemy', '', 10);
+  check('O2: a name that is not lower case is refused in the form with the rule, nothing is stored', /lower-case/.test(await evaluate("document.querySelector('[data-role=kind-message]').textContent")) && Object.keys(await kindsNow()).join() === 'coin' && await evaluate("!document.querySelector('[data-role=kind-form]').hidden"));
+  await setText('[data-role=kind-name]', 'print'); await click('[data-role=kind-ok]');
+  check('O2: the host\'s refusal (a reserved word) is shown in the form and nothing is stored', /reserved/.test(await evaluate("document.querySelector('[data-role=kind-message]').textContent")) && Object.keys(await kindsNow()).join() === 'coin');
+  await setText('[data-role=kind-name]', 'coin'); await click('[data-role=kind-ok]');
+  check('O2: a name that is taken is refused', /already a kind/.test(await evaluate("document.querySelector('[data-role=kind-message]').textContent")));
+  await setText('[data-role=kind-name]', 'c'); await setText('[data-role=kind-props]', 'x'); await click('[data-role=kind-ok]');
+  check('O2: names whose generated arrays would collide are refused (kind c with property x: cx twice)', /twice|clashes|also used/.test(await evaluate("document.querySelector('[data-role=kind-message]').textContent")) && Object.keys(await kindsNow()).join() === 'coin');
+  await setText('[data-role=kind-name]', 'enemy'); await setText('[data-role=kind-props]', 'hp, speed'); await pickColour(10); await setSelect('[data-role=kind-sprite]', 'ship'); await click('[data-role=kind-ok]');
+  let kn = await kindsNow();
+  check('O2: a kind with a sprite and two properties (comma or space separated) is stored; the form closes', JSON.stringify(kn.enemy) === '{"colour":10,"props":["hp","speed"],"sprite":"ship"}' && Object.keys(kn).join() === 'coin,enemy' && await evaluate("document.querySelector('[data-role=kind-form]').hidden"));
+  check('O2: the palette has a swatch for each kind (the sprite kind draws the sprite, not a flat colour), with kind items focusable',
+    await evaluate(`(() => { const items = [...document.querySelectorAll('[data-role=kind-item]')]; const px = (it) => { const d = it.querySelector('canvas').getContext('2d').getImageData(0, 0, 24, 24).data, set = new Set(); for (let i = 0; i < d.length; i += 4) set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); return set.size; };
+      return items.length === 2 && items.every((i) => i.tabIndex === 0) && px(items[0]) === 2 && px(items[1]) > 2; })()`));
+  await shot('12-kinds');
+
+  // placing
+  await click('[data-kind=coin][data-role=kind-item]');
+  const s1 = await sets();
+  await clickCell(3, 2);
+  check('O3: a click places the chosen kind at the snapped pixel (8 px grid: cell 3, 2 = x 24, y 16) with every property 0: one setAsset, the object is selected',
+    JSON.stringify(brief(await objs())) === '["coin@24,16:value=0"]' && (await sets()) === s1 + 1 && (await state()).selObj === 0 && (await evaluate('t.log.bad.length')) === 0);
+  await click('[data-kind=enemy][data-role=kind-item]');
+  await clickCell(10, 5);
+  check('O3: another kind: props hp and speed written as 0', JSON.stringify(brief(await objs())) === '["coin@24,16:value=0","enemy@80,40:hp=0/speed=0"]');
+  await setSelect('[data-role=objects-grid]', 4);
+  await click('[data-kind=coin][data-role=kind-item]');
+  await clickPx(45, 61);
+  await setSelect('[data-role=objects-grid]', 16);
+  await clickPx(100, 100);
+  await setSelect('[data-role=objects-grid]', 1);
+  await clickPx(201, 3);
+  await setSelect('[data-role=objects-grid]', 8);
+  check('O3: the snap grid 4, 16 and 1 px place at 44,60 / 96,96 / 201,3 (floor to the grid)', JSON.stringify(brief(await objs()).slice(2)) === '["coin@44,60:value=0","coin@96,96:value=0","coin@201,3:value=0"]', JSON.stringify(brief(await objs())));
+  await clickCell(3, 2);
+  check('O3: a click on an existing object selects it instead of placing another', (await objs()).length === 5 && (await state()).selObj === 0);
+  check('O3: the list sorts each kind by x as the generated file will: coin #0..#3 by x (24, 44, 96, 201), then enemy',
+    JSON.stringify(await rows()) === '["coin#0:0","coin#1:2","coin#2:3","coin#3:4","enemy#0:1"]', JSON.stringify(await rows()));
+  check('O3: the kind items show the counts (coin 4, enemy 1) and the list header counts 5', JSON.stringify(await evaluate("[...document.querySelectorAll('[data-role=kind-item]')].map((i) => i.textContent)")) === '["coin 4","enemy 1"]' && /5\)/.test(await evaluate("document.querySelector('[data-role=object-panel]').textContent")) && (await evaluate("document.querySelector('[data-role=objects-total]').textContent")) === '5 objects');
+  // pixels: the marker colour on the canvas
+  const mpx = (x, y) => evaluate(`(() => { const c = document.querySelector('[data-role=map-canvas]'), k = t.editor.getState().cellPx / 8; return Array.from(c.getContext('2d').getImageData(${x} * k + 2, ${y} * k + 2, 1, 1).data); })()`);
+  check('O3: the canvas draws a coin marker in its colour (bright yellow) at its place; the sprite kind draws the sprite (not the flat colour)', JSON.stringify(await mpx(24, 16)) === '[255,255,51,255]' && JSON.stringify(await mpx(80, 40)) !== '[51,255,51,255]');
+  await shot('13-objects-placed');
+
+  // selection box and fields
+  await click('[data-role=object-row][data-index="1"]');
+  check('O4: clicking a list row selects that object and the properties box shows x, y, hp and speed', (await state()).selObj === 1 && JSON.stringify(await evaluate("[...document.querySelectorAll('[data-role=object-props] input')].map((i) => i.dataset.field + '=' + i.value)")) === '["x=80","y=40","p:hp=0","p:speed=0"]');
+  const s2 = await sets();
+  await setNum('[data-role=obj-prop][data-prop=hp]', 7);
+  check('O4: editing a property writes it through the host (one setAsset): enemy hp 7', (await objs())[1].props.hp === 7 && (await sets()) === s2 + 1 && /hp=7/.test(await evaluate("document.querySelector('[data-role=object-row][data-index=\"1\"]').textContent")));
+  await setNum('[data-role=obj-prop][data-prop=speed]', -300);
+  check('O4: a negative number is fine', (await objs())[1].props.speed === -300);
+  const s3 = await sets();
+  await setNum('[data-role=obj-prop][data-prop=hp]', 40000);
+  check('O4: a number past 32767 is refused with a message; nothing is stored and the field shows the old value', (await objs())[1].props.hp === 7 && (await sets()) === s3 && /32767/.test(await msgText()) && (await evaluate("document.querySelector('[data-role=obj-prop][data-prop=hp]').value")) === '7');
+  await setNum('[data-role=obj-prop][data-prop=hp]', 1.5);
+  check('O4: a fraction is refused too', (await objs())[1].props.hp === 7 && /whole number/.test(await msgText()));
+  await setNum('[data-role=obj-x]', 120); await setNum('[data-role=obj-y]', 33);
+  check('O4: the x and y fields move the object (whole pixels)', (await objs())[1].x === 120 && (await objs())[1].y === 33);
+  await setNum('[data-role=obj-x]', 999);
+  check('O4: x past the map is clamped to the last pixel (255)', (await objs())[1].x === 255);
+  await setNum('[data-role=obj-x]', 80); await setNum('[data-role=obj-y]', 40);
+
+  // drag
+  await clickCell(3, 2);
+  const s4b = await sets();
+  await dragPx(28, 20, 52, 20);
+  check('O5: dragging an object moves it by the snapped distance (24,16 -> 48,16) and is ONE setAsset', (await objs())[0].x === 48 && (await objs())[0].y === 16 && (await sets()) === s4b + 1, JSON.stringify(brief(await objs())));
+  await dragPx(52, 20, 3, 3);
+  check('O5: dragging past the map edge clamps (to 0..), still one more setAsset', (await objs())[0].x === 0 && (await sets()) === s4b + 2 || (await objs())[0].x <= 4, JSON.stringify(brief(await objs()).slice(0, 1)));
+  await click('[data-role=undo]'); await click('[data-role=undo]');
+  check('O5: Undo (button) steps back over both drags, one at a time: object 0 is at 24,16 again and the host has it', (await objs())[0].x === 24 && (await objs())[0].y === 16);
+  await click('[data-role=redo]');
+  check('O5: Redo re-applies the first drag (48,16)', (await objs())[0].x === 48);
+  await click('[data-role=undo]');
+
+  // keyboard
+  await clickCell(3, 2);
+  await nav('ArrowRight');
+  check('O6: ArrowRight nudges the selected object by 1 pixel (one setAsset)', (await objs())[0].x === 25 && (await objs())[0].y === 16);
+  await nav('ArrowDown');
+  check('O6: ArrowDown by 1 pixel', (await objs())[0].y === 17);
+  await nav('ArrowRight', { shift: true });
+  check('O6: Shift+ArrowRight moves to the next grid line (8 px grid: 25 -> 32)', (await objs())[0].x === 32);
+  await nav('ArrowLeft', { shift: true });
+  check('O6: Shift+ArrowLeft back to the previous grid line (32 -> 24)', (await objs())[0].x === 24);
+  await nav('ArrowUp', { shift: true });
+  check('O6: Shift+ArrowUp (17 -> 16)', (await objs())[0].y === 16);
+  for (let i = 0; i < 3; i++) await nav('ArrowLeft', { shift: true });
+  const s5 = await sets();
+  await nav('ArrowLeft');
+  check('O6: at the left edge a nudge changes nothing (no setAsset) and says so', (await objs())[0].x === 0 && (await sets()) === s5 && /edge/.test(await msgText()));
+  await dragPx(4, 20, 28, 20);                                                 // (keep the object at 24,16 for what follows)
+  await nav('Escape');
+  check('O6: Escape deselects', (await state()).selObj === null);
+  await nav('ArrowRight');
+  check('O6: arrow keys with nothing selected do nothing', (await objs())[0].x === 24);
+
+  // delete
+  await clickCell(10, 5);
+  const before = (await objs()).length;
+  await nav('Delete');
+  check('O7: the Delete key removes the selected object (and clears the selection)', (await objs()).length === before - 1 && !(await objs()).some((o) => o.kind === 'enemy') && (await state()).selObj === null);
+  await clickPx(97, 97, { button: 'right' });
+  check('O7: right-click on an object deletes it', !(await objs()).some((o) => o.x === 96 && o.y === 96) && (await objs()).length === before - 2);
+  await clickCell(20, 10, { button: 'right' });
+  check('O7: right-click on empty space deletes nothing', (await objs()).length === before - 2);
+  await click('[data-role=undo]');
+  check('O7: Undo brings the deleted object back (at its old place in the list)', (await objs()).length === before - 1 && (await objs()).some((o) => o.x === 96));
+  await click('[data-role=undo]');
+  check('O7: and the first deleted one', (await objs()).some((o) => o.kind === 'enemy') && (await objs()).length === before);
+  await click('[data-role=redo]'); await click('[data-role=redo]');
+  check('O7: Redo twice removes them again', (await objs()).length === before - 2);
+  // delete everything: the key goes away
+  for (let i = (await objs()).length; i > 0; i--) { await clickPx((await objs())[0].x + 2, (await objs())[0].y + 2, { button: 'right' }); }
+  check('O7: with the last object gone the asset has no objects key at all (back to the old form)', !('objects' in (await asset('sky'))));
+  for (let i = 0; i < 200 && (await state()).canUndo; i++) await click('[data-role=undo]');
+  check('O7: undoing every edit restores the map byte for byte (the objects too)', JSON.stringify(await asset('sky')) === skyOriginal && (await objs()) === null);
+
+  // visibility
+  await click('[data-kind=coin][data-role=kind-item]');
+  await clickCell(3, 2);
+  check('O8: an object is drawn in its colour', JSON.stringify(await mpx(24, 16)) === '[255,255,51,255]');
+  await evaluate("(document.querySelector('[data-role=objects-show]').click(), true)");
+  check('O8: Show objects off hides the markers (the map shows through)', JSON.stringify(await mpx(24, 16)) !== '[255,255,51,255]' && (await state()).showObjects === false);
+  const s6 = await sets();
+  await clickCell(8, 8);
+  check('O8: while hidden, a click places nothing and says to show them', (await sets()) === s6 && /hidden/.test(await msgText()));
+  await evaluate("(document.querySelector('[data-role=objects-show]').click(), true)");
+  await click('[data-role=layer-tiles]');
+  check('O8: in the Tiles layer the objects stay visible but dimmed (not the full colour)', await evaluate("!document.querySelector('[data-role=palette]').hidden") && (await mpx(24, 16)).join() !== '255,255,51,255' && (await mpx(24, 16))[0] > 60);
+  const s7 = await sets();
+  await click('.mapd-pi[data-tile="3"]');
+  await clickCell(20, 10);
+  const afterPaint = await asset('sky');
+  check('O8: painting a tile in the Tiles layer keeps the objects (one setAsset, objects deep-equal)', (await sets()) === s7 + 1 && JSON.stringify(afterPaint.objects) === '[{"kind":"coin","x":24,"y":16,"props":{"value":0}}]' && cellAt(afterPaint, 20, 10) === 3);
+  await click('[data-role=undo]');
+  await key('o');
+  check('O8: the O key switches to the Objects layer, O again back to Tiles', (await state()).layer === 'objects');
+  await key('o');
+  check('O8: ... and back', (await state()).layer === 'tiles');
+  await key('o'); await key('p');
+  check('O8: a tile tool key (P) in the Objects layer returns to the Tiles layer with that tool', (await state()).layer === 'tiles' && (await state()).tool === 'pencil');
+
+  // a map with no objects: nothing changes by visiting the layer
+  await evaluate("(t.editor.select('logo'), true)");
+  const s8 = await sets();
+  await click('[data-role=layer-objects]');
+  await click('[data-role=layer-tiles]');
+  check('O9: a map with no objects: visiting the Objects layer writes nothing and the stored map is unchanged', (await sets()) === s8 && JSON.stringify(await asset('logo')) === logoOriginal);
+  await click('.mapd-pi[data-tile="5"]');
+  await clickCell(1, 1);
+  check('O9: painting it gives an asset with no objects key (as before)', !('objects' in (await asset('logo'))) && cellAt(await asset('logo'), 1, 1) === 5);
+  await click('[data-role=undo]');
+  check('O9: ... and undo restores the original', JSON.stringify(await asset('logo')) === logoOriginal);
+
+  // resize with objects
+  await evaluate("(t.editor.select('sky'), true)");
+  await click('[data-role=layer-objects]');
+  await clickCell(30, 20);
+  await clickCell(5, 5);
+  const wide = brief(await objs());
+  await evaluate("(window.confirm = () => false, true)");
+  await setNum('[data-role=w-input]', 10);
+  check('O10: a resize that would push objects outside asks first; declined = nothing changes', (await asset('sky')).w === 32 && JSON.stringify(brief(await objs())) === JSON.stringify(wide));
+  await evaluate("(window.confirm = () => true, true)");
+  await setNum('[data-role=w-input]', 10); await setNum('[data-role=h-input]', 10);
+  const shrunk = await asset('sky');
+  check('O10: confirmed: the map shrinks, NO object is lost, the ones outside move to the last column / row (72, 72), the others stay', shrunk.w === 10 && shrunk.h === 10 && shrunk.objects.length === 3 && brief(shrunk.objects).includes('coin@72,72:value=0') && brief(shrunk.objects).includes('coin@40,40:value=0') && (await evaluate('t.log.bad.length')) === 0, JSON.stringify(brief(shrunk.objects)));
+  await click('[data-role=undo]'); await click('[data-role=undo]');
+  check('O10: Undo of the resize restores size and positions', (await asset('sky')).w === 32 && JSON.stringify(brief(await objs())) === JSON.stringify(wide));
+  await setNum('[data-role=w-input]', 32);
+
+  // unknown kind, validation lines
+  const sk = await asset('sky');
+  await evaluate(`t.externalSet('maps', 'sky', ${JSON.stringify({ ...sk, objects: [...sk.objects, { kind: 'ghost', x: 8, y: 8 }, { kind: 'coin', x: 8, y: 16, props: { hp: 1 } }] })})`);
+  check('O11: an object of a kind the project does not define is listed in red and warned about; an undeclared property too',
+    await evaluate("[...document.querySelectorAll('[data-role=object-row].bad')].map((r) => r.dataset.kind).join()") === 'ghost' && JSON.stringify(await warnIds()).includes('object-unknown-kind') && JSON.stringify(await warnIds()).includes('object-prop'), JSON.stringify(await warnIds()));
+  await clickPx(10, 10);
+  check('O11: it can be selected (the box says the kind is not defined) and deleted', /not defined/.test(await evaluate("document.querySelector('[data-role=object-props]').textContent")));
+  await nav('Delete');
+  await evaluate(`t.externalSet('maps', 'sky', ${JSON.stringify(sk)})`);
+  check('O11: an outside change of the map reloads the objects (the list follows)', (await rows()).length === 3);
+
+  // kinds: edit, rename, delete with objects in two maps
+  await evaluate("(t.editor.select('logo'), true)");
+  await click('[data-role=layer-objects]');
+  await click('[data-kind=coin][data-role=kind-item]');
+  await clickCell(2, 1);                                       // (the logo map is 16 x 2 cells)
+  await evaluate("(t.editor.select('sky'), true)");
+  const detail = await evaluate("document.querySelector('[data-role=kind-row][data-kind=coin]').textContent");
+  check('O12: the Kinds list counts the kind here and in all maps (coin: 3 here, 4 in 2 maps)', /3 here, 4 in 2 maps/.test(detail), detail);
+  await click('[data-role=kind-row][data-kind=coin] [data-role=kind-edit]');
+  check('O12: Edit opens the form with the kind\'s values', (await evaluate("document.querySelector('[data-role=kind-name]').value + '|' + document.querySelector('[data-role=kind-props]').value")) === 'coin|value' && await evaluate("document.querySelector('[data-role=kind-colour][data-colour=\"14\"]').classList.contains('sel')"));
+  await pickColour(12);
+  await click('[data-role=kind-ok]');
+  check('O12: changing only the colour stores it and touches no map', (await kindsNow()).coin.colour === 12 && (await evaluate('t.log.kindSets.length')) >= 3);
+  const setsBeforeRename = await sets();
+  await evaluate("(window.confirm = () => false, true)");
+  await click('[data-role=kind-row][data-kind=coin] [data-role=kind-edit]');
+  await setText('[data-role=kind-name]', 'gem'); await click('[data-role=kind-ok]');
+  check('O12: renaming a kind that objects use asks first; declined: nothing is renamed anywhere', (await kindsNow()).gem === undefined && brief(await objs()).every((s) => !s.startsWith('gem')) && (await sets()) === setsBeforeRename);
+  await evaluate("(window.confirm = () => true, true)");
+  const ks0 = await evaluate('t.log.kindSets.length');
+  await click('[data-role=kind-ok]');
+  const skyK = brief(await objs('sky')).map((s) => s.split('@')[0]), logoK = brief(await objs('logo')).map((s) => s.split('@')[0]);
+  check('O12: confirmed: the kind is renamed in the table and in the objects of BOTH maps (no map ever names a missing kind); the table keeps its order',
+    Object.keys(await kindsNow()).join() === 'gem,enemy' && skyK.every((k) => k === 'gem') && logoK.join() === 'gem' && (await state()).curKind === 'gem', JSON.stringify([skyK, logoK, Object.keys(await kindsNow())]));
+  check('O12: without a host rename the editor did it in steps (both names, then only the new one)', (await evaluate('t.log.kindSets.slice(' + ks0 + ')')).join('|') === 'coin,gem,enemy|gem,enemy', JSON.stringify(await evaluate('t.log.kindSets')));
+  check('O12: the objects kept their positions and properties', JSON.stringify(brief(await objs('sky'))) === JSON.stringify(wide.map((s) => s.replace('coin', 'gem'))) && (await evaluate('t.log.bad.length')) === 0);
+  // a host that renames itself
+  await evaluate("(t.host.renameObjectKind = (a, b) => { t.log.hostRename = [a, b]; const k = t.host.getObjectKinds(), out = {}; for (const [n, v] of Object.entries(k)) out[n === a ? b : n] = v; t.project.objectKinds = out; for (const m of Object.values(t.project.assets.maps)) for (const o of m.objects ?? []) if (o.kind === a) o.kind = b; return { ok: true }; }, true)");
+  await click('[data-role=kind-row][data-kind=gem] [data-role=kind-edit]');
+  await setText('[data-role=kind-name]', 'coin2'); await click('[data-role=kind-ok]');
+  check('O12: a host with renameObjectKind is asked to do the rename (once) and the maps follow', JSON.stringify(await evaluate('t.log.hostRename')) === '["gem","coin2"]' && Object.keys(await kindsNow()).join() === 'coin2,enemy' && brief(await objs('sky')).every((s) => s.startsWith('coin2')) && brief(await objs('logo')).every((s) => s.startsWith('coin2')), JSON.stringify(brief(await objs('sky'))));
+  await evaluate("(delete t.host.renameObjectKind, true)");
+  // properties of a kind: remove one that has values
+  await click('[data-kind=enemy][data-role=kind-item]');
+  await clickCell(15, 15);
+  await setNum('[data-role=obj-prop][data-prop=speed]', 5);
+  await evaluate("(window.confirm = () => false, true)");
+  await click('[data-role=kind-row][data-kind=enemy] [data-role=kind-edit]');
+  await setText('[data-role=kind-props]', 'hp'); await click('[data-role=kind-ok]');
+  check('O12: removing a property that objects hold asks (it says how many lose it); declined: kept', JSON.stringify((await kindsNow()).enemy.props) === '["hp","speed"]' && (await objs('sky')).find((o) => o.kind === 'enemy').props.speed === 5);
+  await evaluate("(window.confirm = (q) => { window.lastAsk = q; return true; }, true)");
+  await click('[data-role=kind-ok]');
+  check('O12: confirmed: the property leaves the kind and the objects; the question named the property', JSON.stringify((await kindsNow()).enemy.props) === '["hp"]' && !('speed' in (await objs('sky')).find((o) => o.kind === 'enemy').props) && /speed/.test(await evaluate('window.lastAsk')));
+  await click('[data-role=kind-row][data-kind=enemy] [data-role=kind-edit]');
+  await setText('[data-role=kind-props]', 'hp speed morale'); await click('[data-role=kind-ok]');
+  check('O12: adding properties needs no question; existing objects read the new ones as 0', JSON.stringify((await kindsNow()).enemy.props) === '["hp","speed","morale"]' && JSON.stringify(await evaluate("(() => { const i = [...document.querySelectorAll('[data-role=object-row]')].find((r) => r.dataset.kind === 'enemy'); return i.textContent; })()")).includes('morale=0'));
+  // delete kind
+  await evaluate("(window.confirm = () => false, true)");
+  await click('[data-role=kind-row][data-kind=coin2] [data-role=kind-delete]');
+  check('O12: deleting a kind that objects use asks first; declined: nothing deleted', Object.keys(await kindsNow()).includes('coin2') && (await objs('sky')).length > 0);
+  await evaluate("(window.confirm = (q) => { window.lastAsk = q; return true; }, true)");
+  await click('[data-role=kind-row][data-kind=coin2] [data-role=kind-delete]');
+  check('O12: confirmed: the kind and ITS objects are gone from both maps; other kinds\' objects stay; the question counted the objects',
+    Object.keys(await kindsNow()).join() === 'enemy' && (await objs('sky')).every((o) => o.kind === 'enemy') && (await objs('logo')) === null && /4 objects in 2 maps/.test(await evaluate('window.lastAsk')), JSON.stringify([await objs('sky'), await objs('logo')]));
+  await click('[data-role=kind-row][data-kind=enemy] [data-role=kind-delete]');
+  check('O12: deleting the last kind (its object was the sky one) leaves a project with no kinds and a map with no objects key', Object.keys(await kindsNow()).length === 0 && !('objects' in (await asset('sky'))));
+  await shot('14-kinds-deleted');
+
+  // changes made elsewhere: the Studio's undo of a kind edit, a sprite redrawn
+  await evaluate("(t.editor.select('sky'), true)");
+  await evaluate("t.externalKinds({ star: { colour: 6, props: ['size'] } })");
+  check('O14: kinds changed by somebody else (a project event) refresh the palette and the Kinds list', JSON.stringify(await evaluate("[...document.querySelectorAll('[data-role=kind-item]')].map((i) => i.dataset.kind)")) === '["star"]' && (await state()).curKind === 'star');
+  await clickCell(4, 4);
+  const star = (await objs())[0];
+  await evaluate("t.externalKinds({ star: { colour: 6, props: ['size'], sprite: 'ship' } })");
+  const shipPx = await mpx(star.x, star.y), shipPx2 = await mpx(star.x + 8, star.y + 8);
+  const sh = await evaluate("t.project.assets.sprites.ship");
+  await evaluate(`t.externalSet('sprites', 'ship', ${JSON.stringify({ ...sh, frames: [{ rows: sh.frames[0].rows.map((r) => ({ ...r, bits: '0000', mask: 'FFFF', ink: 2, paper: 2, bright: 0 })) }] })})`);
+  const redone = await mpx(star.x + 8, star.y + 8);
+  check('O14: a marker sprite redrawn in the Sprites tab shows redrawn (the project event of a sprite refreshes the marker)', shipPx.join() !== '255,255,0,255' && JSON.stringify(redone) === '[201,5,0,255]' && JSON.stringify(shipPx2) !== JSON.stringify(redone), JSON.stringify({ shipPx, shipPx2, redone }));
+  await evaluate("t.externalKinds({})");
+  check('O14: with the kinds gone the object stays, drawn red as an unknown kind, and the selected object\'s box says the kind is not defined', await evaluate("document.querySelector('[data-role=object-row]').classList.contains('bad')") && /not defined/.test(await evaluate("document.querySelector('[data-role=object-props]').textContent")));
+
+  // a host without an object layer
+  await send('Page.navigate', { url: base + 'tests/map-editor-test.html?nokinds=1' });
+  await waitFor('window.testReady === true', 60000);
+  await evaluate("t.load('shooter')");
+  await evaluate("(t.editor.select('sky'), true)");
+  const sk2 = await asset('sky');
+  await evaluate(`t.externalSet('maps', 'sky', ${JSON.stringify({ ...sk2, objects: [{ kind: 'coin', x: 8, y: 8, props: { value: 2 } }], note: 'x' })})`);
+  check('O13: a host with no getObjectKinds has no layer switch and no object panel; the map editor is as before', await evaluate("document.querySelector('[data-role=layer-row]').hidden && document.querySelector('[data-role=object-panel]').hidden && !document.querySelector('[data-role=palette]').hidden && !document.querySelector('[data-tool=pencil]').hidden") && (await state()).layer === 'tiles');
+  await click('.mapd-pi[data-tile="3"]');
+  await clickCell(5, 5);
+  const kept = await asset('sky');
+  check('O13: painting there still keeps the stored objects and unknown keys of the map untouched', JSON.stringify(kept.objects) === '[{"kind":"coin","x":8,"y":8,"props":{"value":2}}]' && kept.note === 'x' && cellAt(kept, 5, 5) === 3);
+  await key('o');
+  check('O13: the O key does nothing there', (await state()).layer === 'tiles');
+  check('O13: no page errors on that page', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
+  await send('Page.navigate', { url: base + 'tests/map-editor-test.html' });
+  await waitFor('window.testReady === true', 60000);
+  }
 
   // ── destroy ──
   await evaluate("(t.editor.destroy(), true)");

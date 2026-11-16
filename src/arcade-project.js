@@ -11,6 +11,11 @@
  * (docs/ARCADE_STUDIO.md "Asset editor host interface"), the multi-file source build, and the browser auto-save
  * (storage is injectable, so Node tests can use a stand-in).
  *
+ * OBJECT LAYER (docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md M2; src/arcade-objects.js holds the rules). A map asset may carry `objects: [{kind, x, y, props?}]`
+ * and the document `objectKinds` and `objectBucket` (both optional: a project without objects is stored and compiled exactly as before). The Studio's file
+ * list then has one more file, `objects.arc`: generated from them, read-only, never stored in `files`, and the FIRST file of the compiled program
+ * (buildSource). A user file may not be called objects.arc (setFile, renameFile refuse it; a document that has one gets it renamed, with a warning).
+ *
  * MULTI-FILE SOURCE. The compiler takes one text. buildSource() joins the project's files in a fixed order:
  * `main.arc` first, then the other files in alphabetical order (case-insensitive, then by exact name). Every file
  * ends with a newline before the next begins, and the result's `lineMap[i]` says which file and which line the
@@ -21,6 +26,13 @@
 "use strict";
 
 import { MAX_PATTERNS, MAX_ORDER, MAX_PATTERN_TICKS } from './lang/arcade/arcade-assets.js';
+import { OBJECTS_FILE, generateObjectsSource, validateObjectKinds, objectProblems, validateObjects, bucketOf, MAX_BUCKET, DEFAULT_BUCKET } from './arcade-objects.js';
+
+export {
+  OBJECTS_FILE, generateObjectsSource, completeSource, validateObjectKinds, validateObjects, objectProblems, kindCountsByMap, objectsUsingKind,
+  setObjectKinds, renameKindIn, renameObjectKind, deleteObjectKind, setObjectBucket, bucketOf, kindArrays, isKindName,
+  MAX_KINDS, MAX_PROPS, DEFAULT_BUCKET, MAX_OBJECTS,
+} from './arcade-objects.js';
 
 export const FORMAT = 1;
 export const MAIN_FILE = 'main.arc';
@@ -86,8 +98,10 @@ function validateSfxShape(value, where, maxTicks = 1800) {
  * what it can build. Returns null when the value is fine, else a message.
  * @param {string} kind  one of ASSET_KINDS
  * @param {*} value
+ * @param {{objectKinds?: object}} [ctx]  with `objectKinds` (setAsset passes the project's), a map's objects are checked against the kinds too
+ *   (an object of an unknown kind, a property its kind does not declare are refused); without it only their shape and range are
  */
-export function validateAsset(kind, value) {
+export function validateAsset(kind, value, ctx = {}) {
   if (!ASSET_KINDS.includes(kind)) return `unknown asset kind "${kind}"`;
   if (!isObj(value)) return 'an asset is a JSON object';
   switch (kind) {
@@ -133,6 +147,10 @@ export function validateAsset(kind, value) {
     } else if (Array.isArray(cells)) {
       if (cells.length !== w * h) return `map is ${w} x ${h} = ${w * h} cells but "cells" has ${cells.length}`;
     } else return 'a map needs "cells" (an array, or a hex string)';
+    if (value.objects !== undefined) {
+      const bad = validateObjects(value, ctx?.objectKinds ?? null, { w, h });
+      if (bad) return bad;
+    }
     return null;
   }
   case 'sfx':
@@ -236,8 +254,32 @@ export function validateProject(doc) {
     else if (typeof text !== 'string') errors.push(`file ${fname} is not text`);
     else files[fname] = text.replace(/\r\n?/g, '\n');
   }
+  // objects.arc is the generated objects file (never stored): a user file of that name is kept under another one, so no text is lost
+  if (Object.hasOwn(files, OBJECTS_FILE)) {
+    let to = 'objects-user.arc';
+    for (let i = 2; Object.hasOwn(files, to); i++) to = `objects-user${i}.arc`;
+    warnings.push(`the file ${OBJECTS_FILE} is the Studio's generated objects file; your file of that name was kept as ${to}`);
+    const rebuilt = {};
+    for (const [n, t] of Object.entries(files)) rebuilt[n === OBJECTS_FILE ? to : n] = t;
+    for (const n of Object.keys(files)) delete files[n];
+    Object.assign(files, rebuilt);
+  }
   if (isObj(doc.files) && !(MAIN_FILE in files) && errors.length === 0) errors.push(`the project has no ${MAIN_FILE}`);
 
+  // objectKinds (optional): the kinds of objects maps may carry (src/arcade-objects.js); a bad definition refuses the document, as a bad asset does
+  let objectKinds;
+  if (doc.objectKinds !== undefined) {
+    const bad = validateObjectKinds(doc.objectKinds);
+    if (bad) errors.push(`objectKinds: ${bad}`);
+    else if (Object.keys(doc.objectKinds).length) objectKinds = clone(doc.objectKinds);
+    if (objectKinds) for (const k of Object.values(objectKinds)) if (k.props === undefined) k.props = [];
+  }
+  let objectBucket;
+  if (doc.objectBucket !== undefined) {
+    if (Number.isInteger(doc.objectBucket) && (doc.objectBucket === 0 || (doc.objectBucket >= 8 && doc.objectBucket <= MAX_BUCKET))) {
+      if (doc.objectBucket !== DEFAULT_BUCKET) objectBucket = doc.objectBucket;
+    } else warnings.push(`"objectBucket" must be 0 or a whole number of pixels 8..${MAX_BUCKET}; ${DEFAULT_BUCKET} used`);
+  }
   const assets = {};
   const src = isObj(doc.assets) ? doc.assets : {};
   if (doc.assets !== undefined && !isObj(doc.assets)) errors.push('"assets" must be an object');
@@ -260,6 +302,10 @@ export function validateProject(doc) {
             warnings.push(`assets.maps.${aname}.bank must be "auto", "mapped" or "banked" (got ${JSON.stringify(b)}); ignored, auto used`);
             delete assets[kind][aname].bank;
           }
+        }
+        // maps: objects that name a kind the project does not define, or a property its kind does not have, are kept and reported (the generator leaves them out)
+        if (kind === 'maps' && Array.isArray(value.objects)) {
+          for (const pr of objectProblems(value, objectKinds ?? {})) warnings.push(`assets.maps.${aname}: ${pr.message}`);
         }
       }
     }
@@ -290,8 +336,15 @@ export function validateProject(doc) {
     else flagNames = [...doc.flagNames];
   }
   if (errors.length) return { ok: false, errors };
+  if (objectKinds) {
+    for (const [kname, k] of Object.entries(objectKinds)) {
+      if (k.sprite !== undefined && !Object.hasOwn(assets.sprites, k.sprite)) warnings.push(`objectKinds.${kname}: there is no sprite "${k.sprite}"; the marker colour is used`);
+    }
+  }
   const project = { format: FORMAT, name, framerate, files, assets, scenes };
   if (flagNames) project.flagNames = flagNames;
+  if (objectKinds) project.objectKinds = objectKinds;
+  if (objectBucket !== undefined) project.objectBucket = objectBucket;
   return { ok: true, project, warnings };
 }
 
@@ -382,6 +435,11 @@ export function exampleProject(name, arcText, assets = {}) {
   p.assets = { sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {}, models: {} };
   for (const kind of ASSET_KINDS) if (isObj(assets[kind])) p.assets[kind] = clone(assets[kind]);
   if (isObj(assets.scenes)) p.scenes = clone(assets.scenes);      // the per-scene display setting an assets file may carry (fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md section 1)
+  if (isObj(assets.objectKinds) && Object.keys(assets.objectKinds).length) {                      // the object layer (src/arcade-objects.js): kinds beside the maps that carry the objects
+    p.objectKinds = clone(assets.objectKinds);
+    for (const k of Object.values(p.objectKinds)) if (isObj(k) && k.props === undefined) k.props = [];
+  }
+  if (Number.isInteger(assets.objectBucket) && assets.objectBucket !== DEFAULT_BUCKET) p.objectBucket = assets.objectBucket;
   const framerate = /^\s*FRAMERATE\s+(\d+)/im.exec(arcText);
   if (framerate) p.framerate = Number(framerate[1]);
   return p;
@@ -405,7 +463,7 @@ export function getAsset(project, kind, name) {
 export function setAsset(project, kind, name, value) {
   if (!ASSET_KINDS.includes(kind)) return { ok: false, error: `unknown asset kind "${kind}"` };
   if (!isAssetName(name)) return { ok: false, error: `"${name}" is not a valid asset name (a letter, then letters, digits and _, up to ${MAX_NAME})` };
-  const bad = validateAsset(kind, value);
+  const bad = validateAsset(kind, value, { objectKinds: project.objectKinds ?? {} });
   if (bad) return { ok: false, error: bad };
   project.assets[kind][name] = clone(value);
   return { ok: true };
@@ -524,13 +582,40 @@ export function sourceOrder(project) {
   return (MAIN_FILE in project.files ? [MAIN_FILE] : []).concat(others);
 }
 
+/** Is `name` the generated objects file's name? It is reserved: no user file may have it (and the generated one exists only while a map has objects). */
+export const isGeneratedFile = (name) => name === OBJECTS_FILE;
+
+/** The generated objects file as {name, text, generated: true}, or null when the project has no objects (then there is no such file). Rebuilt on every call. */
+export function generatedFile(project) {
+  const g = generateObjectsSource(project);
+  return g.text ? { name: OBJECTS_FILE, text: g.text, generated: true } : null;
+}
+
+/** The text of a file of the project as the compiler gets it (the generated file's too), or null. */
+export function fileText(project, name) {
+  if (isGeneratedFile(name)) return generatedFile(project)?.text ?? null;
+  return Object.hasOwn(project.files, name) ? project.files[name] : null;
+}
+
+/**
+ * The project's files as the file list shows them, in compile order: the generated `objects.arc` first (when the project has objects), then main.arc,
+ * then the rest A to Z. `generated` files are read-only: the Studio shows them locked and does not offer rename or delete.
+ * @returns {{name: string, generated: boolean}[]}
+ */
+export function fileList(project) {
+  const list = sourceOrder(project).map((name) => ({ name, generated: false }));
+  return generatedFile(project) ? [{ name: OBJECTS_FILE, generated: true }, ...list] : list;
+}
+
 export function setFile(project, name, text) {
+  if (isGeneratedFile(name)) return { ok: false, error: `${OBJECTS_FILE} is generated from the maps' objects and cannot be edited or replaced` };
   if (!isFileName(name)) return { ok: false, error: `"${name}" is not a valid file name (letters, digits, _ - . and the extension .arc)` };
   project.files[name] = String(text).replace(/\r\n?/g, '\n');
   return { ok: true };
 }
 
 export function deleteFile(project, name) {
+  if (isGeneratedFile(name)) return { ok: false, error: `${OBJECTS_FILE} is generated from the maps' objects and cannot be deleted` };
   if (name === MAIN_FILE) return { ok: false, error: `${MAIN_FILE} is the entry file and cannot be deleted` };
   if (!Object.hasOwn(project.files, name)) return { ok: false, error: `no file ${name}` };
   delete project.files[name];
@@ -538,6 +623,8 @@ export function deleteFile(project, name) {
 }
 
 export function renameFile(project, oldName, newName) {
+  if (isGeneratedFile(oldName)) return { ok: false, error: `${OBJECTS_FILE} is generated from the maps' objects and cannot be renamed` };
+  if (isGeneratedFile(newName)) return { ok: false, error: `${OBJECTS_FILE} is the name of the generated objects file` };
   if (oldName === MAIN_FILE) return { ok: false, error: `${MAIN_FILE} is the entry file and cannot be renamed` };
   if (!Object.hasOwn(project.files, oldName)) return { ok: false, error: `no file ${oldName}` };
   if (!isFileName(newName)) return { ok: false, error: `"${newName}" is not a valid file name` };
@@ -552,14 +639,16 @@ export function renameFile(project, oldName, newName) {
 
 /**
  * The text the compiler gets, and the map back. `lineMap[i]` = {file, line} (1-based line in that file) for the
- * i-th (0-based) line of `text`.
+ * i-th (0-based) line of `text`. When the project has objects the generated `objects.arc` comes FIRST (a game-level array must be declared before the
+ * scene that reads it; see src/arcade-objects.js), then main.arc and the rest; `order` lists the files in that order.
  * @returns {{text: string, lineMap: {file: string, line: number}[], order: string[]}}
  */
 export function buildSource(project) {
-  const order = sourceOrder(project);
+  const gen = generatedFile(project);
+  const order = (gen ? [OBJECTS_FILE] : []).concat(sourceOrder(project).filter((f) => !(gen && f === OBJECTS_FILE)));
   const parts = [], lineMap = [];
   for (const file of order) {
-    let t = project.files[file];
+    let t = file === OBJECTS_FILE && gen ? gen.text : project.files[file];
     if (!t.endsWith('\n')) t += '\n';
     const lines = t.split('\n');
     lines.pop();                                    // the empty piece after the final newline

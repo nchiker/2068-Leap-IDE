@@ -171,7 +171,9 @@ export const arcadeProfile = {
       const src = buildSource(p);
       const t0 = performance.now();
       current = pickBuild(builds, requiredRuntime(src.text, p.assets).version);
-      const res = compile(src.text, { runtime: current.runtime, image: current.image, assets: p.assets, scenes: p.scenes });
+      // the object layer: the kinds travel with the assets, as in an assets json (src/arcade-objects.js); buildSource has put objects.arc first already, so compile() adds nothing
+      const assets = p.objectKinds ? { ...p.assets, objectKinds: p.objectKinds, ...(p.objectBucket !== undefined ? { objectBucket: p.objectBucket } : {}) } : p.assets;
+      const res = compile(src.text, { runtime: current.runtime, image: current.image, assets, scenes: p.scenes });
       const ms = performance.now() - t0;
       const at = (d) => locate(src.lineMap, d);
       return {

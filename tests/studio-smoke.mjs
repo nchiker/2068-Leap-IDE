@@ -23,6 +23,12 @@ const b = await startBrowser({ outDir: process.argv[2] });
 const { check, evaluate, waitFor, sleep } = b;
 const status = () => evaluate("document.getElementById('status-text').textContent");
 const compiled = () => waitFor('window.leapStudio?.lastCompile', 20000);
+// New opens the starter dialog (N1): this clicks New and picks the Blank starter (the project "Star Dash")
+async function newBlank() {
+  await evaluate("document.getElementById('btn-new').click()");
+  await waitFor("!!document.querySelector('#new-dialog[open] .new-card[data-starter=blank]')", 15000);
+  await evaluate("document.querySelector('#new-dialog[open] .new-card[data-starter=blank]').click()");
+}
 /** Put a program in the main.arc editor and let the diagnostics compile settle. */
 async function setSource(text) {
   await evaluate(`leapEditor.setSource(${JSON.stringify(text)}, {fresh: true})`);
@@ -118,7 +124,7 @@ async function runControlsBlock() {
   const projName = await evaluate("leapStudio.project.name");
   check('R5: Save screen downloads <project>-screen.png', !!dl && dl.name.endsWith('-screen.png') && dl.name.toLowerCase().startsWith(projName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3)), dl?.name);
   check('R5: it is a PNG of 320 x 240 with more than one colour (border and picture)', !!png && png.magic === '137,80,78,71,13,10,26,10' && png.w === 320 && png.h === 240 && png.colours >= 2, JSON.stringify(png));
-  // E2: no sideways scrollbar on the Display tab, and the six tab names fit, at 1600 and at 1280 px wide
+  // E2: no sideways scrollbar on the Display tab, and the seven tab names fit, at 1600 and at 1280 px wide
   for (const w of [1600, 1280]) {
     await b.send('Emulation.setDeviceMetricsOverride', { width: w, height: 760, deviceScaleFactor: 1, mobile: false });
     await sleep(500);
@@ -127,7 +133,7 @@ async function runControlsBlock() {
       return { panel: p.scrollWidth - p.clientWidth, body: body.scrollWidth - body.clientWidth, ebody: p.querySelector('.emulator-body').scrollWidth - p.querySelector('.emulator-body').clientWidth,
         tabs: tabs.scrollWidth - tabs.clientWidth, hdr: hdr.scrollWidth - hdr.clientWidth, doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         tabsInside: [...tabs.children].every((t) => t.getBoundingClientRect().right <= r.right + 0.5), shown: p.querySelector('.panel-tab.active').dataset.tab }; })()`);
-    check(`E2: at ${w} px wide the Display tab has no sideways scrollbar and the six tab names fit`, ov.shown === 'display' && ov.panel <= 0 && ov.body <= 0 && ov.ebody <= 0 && ov.tabs <= 0 && ov.hdr <= 0 && ov.doc <= 0 && ov.tabsInside, JSON.stringify(ov));
+    check(`E2: at ${w} px wide the Display tab has no sideways scrollbar and the seven tab names fit`, ov.shown === 'display' && ov.panel <= 0 && ov.body <= 0 && ov.ebody <= 0 && ov.tabs <= 0 && ov.hdr <= 0 && ov.doc <= 0 && ov.tabsInside, JSON.stringify(ov));
   }
   await b.shot('studio-1280');
   // E3 (at 1280 x 760): the problems list shows a count, folds and resizes; both are remembered
@@ -395,7 +401,7 @@ try {
   await evaluate("document.getElementById('btn-save').click()");
   const sv = await waitFor('window.smokeDownloads[0]', 5000);
   check('Save writes the override into the .leapgame', !!sv && JSON.parse(sv.text).scenes?.play?.display === 'buffers', sv?.text?.slice(-120));
-  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); document.getElementById('btn-new').click(); return true; })()");
+  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); return true; })()"); await newBlank();
   await sleep(300);
   check('New starts without scenes', (await evaluate('JSON.stringify(leapStudio.project.scenes)')) === '{}' && await evaluate("document.getElementById('scene-section').hidden"));
   await evaluate(`(() => { const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(sv?.text ?? '')}], 'two.leapgame'));
@@ -431,6 +437,64 @@ try {
   await b.shot('studio-platformer');
   await evaluate("document.getElementById('btn-stop').click()");
   await sleep(300);
+  // ── The object layer (M2): Leap Runner's level data are object layers; the Studio lists the generated objects.arc read-only ──
+  {
+    // (the 4-level game, example "runner"; the one-level "platformer" above has no objects)
+    await evaluate("document.getElementById('btn-examples').click()");
+    await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="runner"]\')', 5000);
+    await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="runner"]\').click()');
+    const rn = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && /4 levels/.test(leapStudio.project.name) && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length })", 25000);
+    check('M2: Leap Runner (4 levels) compiles in the Studio with its object layers, no errors and no warnings', !!rn && rn.errors === 0 && rn.warnings === 0, JSON.stringify(rn));
+    const row = await evaluate(`(() => { const r = document.querySelector('#file-list .proj-row[data-file="objects.arc"]'); return r ? { meta: r.querySelector('.proj-meta')?.textContent, buttons: r.querySelectorAll('button').length } : null; })()`);
+    check('M2: Leap Runner lists the generated objects.arc, marked "generated", with no rename or delete button', !!row && row.meta === 'generated' && row.buttons === 0, JSON.stringify(row));
+    await evaluate(`document.querySelector('#file-list .proj-row[data-file="objects.arc"]').click()`);
+    const shown = await waitFor(`leapStudio.activeFile === 'objects.arc' && /^\\s*REM .*generated/i.test(leapEditor.getSource()) && leapEditor.getSource()`, 8000);
+    check('M2: opening objects.arc shows the generated tables (coin, enemy and checkpoint arrays)', !!shown && /pfworldobjects/.test(shown) && /ncoin/.test(shown) && /enemyhi/.test(shown), (shown || '').slice(0, 120));
+    await evaluate("document.querySelector('#editor-mount .cm-content').focus()");
+    await b.send('Input.insertText', { text: 'REM typed' });
+    await sleep(300);
+    check('M2: objects.arc is read-only (typing changes nothing)', !(await evaluate('leapEditor.getSource()')).includes('REM typed'));
+    // the map editor's Objects layer reads the kinds from the host, and an object added through the host shows up in objects.arc
+    const kinds = await evaluate("JSON.stringify(Object.keys(leapStudio.makeHost('smoke-m2').getObjectKinds()))");
+    check('M2: the host gives the project\'s object kinds (coin, enemy, checkpoint)', kinds === JSON.stringify(['coin', 'enemy', 'checkpoint']), kinds);
+    await evaluate("leapStudio.selectAsset('maps', 'pf_world')");
+    const lay = await waitFor("(() => { const b = document.querySelector('#tool-maps [data-role=layer-objects]'); return b && b.offsetParent !== null ? true : null; })()", 10000);
+    check('M2: the map editor shows an Objects layer button for a project with object kinds', !!lay);
+    await evaluate("document.querySelector('#tool-maps [data-role=layer-objects]').click()");
+    const listed = await waitFor(`(() => { const t = document.querySelector('#tool-maps').textContent; const m = /coin\\s*#\\d+/.exec(t); return m ? t.length : null; })()`, 8000);
+    check('M2: in the Objects layer the objects are listed by kind with their table position (coin #n)', !!listed);
+    const add = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-m2'); const a = JSON.parse(JSON.stringify(h.getAsset('maps', 'pf_world')));
+      const n0 = a.objects.filter((o) => o.kind === 'coin').length; a.objects.push({ kind: 'coin', x: 8, y: 8, props: {} });
+      const r = h.setAsset('maps', 'pf_world', a); return { ok: r.ok, n0, err: r.error }; })()`);
+    check('M2: adding an object through the host is accepted', add.ok === true, JSON.stringify(add));
+    await evaluate(`document.querySelector('#file-list .proj-row[data-file="objects.arc"]').click()`);
+    const regen = await waitFor(`(() => { const s = leapEditor.getSource(); const m = /ncoin\\s*=\\s*(\\d+)/.exec(s); return m ? Number(m[1]) : null; })()`, 8000);
+    check('M2: objects.arc follows the map (the coin count rose by one)', regen === add.n0 + 1, `${add.n0} -> ${regen}`);
+    // (Leap Runner reads at most 50 coins a level: the extra coin is a limit finding, so put the project back to what it was)
+    await evaluate(`(() => { const h = leapStudio.makeHost('smoke-m2'); const a = JSON.parse(JSON.stringify(h.getAsset('maps', 'pf_world'))); a.objects.pop(); return h.setAsset('maps', 'pf_world', a).ok; })()`);
+    await evaluate(`document.querySelector('#file-list .proj-row[data-file="main.arc"]').click()`);
+  }
+  // ── New project: the starters dialog (N1) ──
+  {
+    await evaluate("document.getElementById('btn-new').click()");
+    const cards = await waitFor(`(() => { const d = document.getElementById('new-dialog'); const c = [...document.querySelectorAll('#new-grid .new-card')]; return d.open && c.length ? c.map((x) => x.dataset.starter).join() : null; })()`, 15000);
+    check('N1: New opens a dialog with the seven starters', cards === 'blank,sprites-tiles,scenes-music,platformer,raycaster,wireframe,fine-colour', cards);
+    const pics = await waitFor(`(() => { const im = [...document.querySelectorAll('#new-grid .new-card img')]; return im.length === 7 && im.every((i) => i.complete) ? im.filter((i) => i.naturalWidth > 0).length : null; })()`, 15000);
+    check('N1: every starter card shows its still (no missing picture)', pics === 7, String(pics));
+    await evaluate(`document.querySelector('#new-grid .new-card[data-starter="wireframe"]').click()`);
+    const wf = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name === 'Ring Run' && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length, models: Object.keys(leapStudio.project.assets.models).length })", 25000);
+    check('N1: picking Wireframe opens "Ring Run" (two models), compiling with no error and no warning; the dialog closes', !!wf && wf.errors === 0 && wf.warnings === 0 && wf.models === 2 && !(await evaluate("document.getElementById('new-dialog').open")), JSON.stringify(wf));
+    // the Models tab opens it: select a model
+    await evaluate(`leapStudio.selectAsset('models', Object.keys(leapStudio.project.assets.models)[0])`);
+    const mt = await waitFor(`(() => { const b = document.getElementById('tool-models'); return b && !b.hidden && b.querySelector('canvas') ? true : null; })()`, 10000);
+    check('W1: selecting a starter\'s model opens the model editor (a canvas in the Models tab)', !!mt);
+    await evaluate("document.getElementById('btn-new').click()");
+    await waitFor("document.getElementById('new-dialog').open", 8000);
+    await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await b.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(300);
+    check('N1: Escape closes the dialog and keeps the project', !(await evaluate("document.getElementById('new-dialog').open")) && (await evaluate('leapStudio.project.name')) === 'Ring Run');
+  }
   // Vaults needs runtime v4 (the raycaster): chosen by itself, runs, and draws walls into its 16 x 12 cell window
   await evaluate("document.getElementById('btn-examples').click()");
   await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="vaults"]\')', 5000);
@@ -545,7 +609,7 @@ try {
   check('host: songCount() answers (MUSIC lines in the source: the Shooter example declares 2, counted independently in the page too)', songsHost.n === 2 && songsHost.own === 2, JSON.stringify(songsHost));
   await evaluate("(document.querySelector('#tool-sfx [data-role=pat-del]').click(), true)");
 
-  // ── Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 4): a sixth asset kind with a turning wireframe preview, no editor ──
+  // ── Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 4): a sixth asset kind with a turning wireframe preview and, since W1, the model editor in the Models tab ──
   const modelHead = await evaluate(`[...document.querySelectorAll('#asset-groups .asset-group-head')].map((h) => h.textContent.replace(/\\s+/g, ' ').trim())`);
   check('the asset list has a "Models" group after Songs, with a "+" button', modelHead.length === 6 && /^Models\s*\(0\)/.test(modelHead[5]) && /^Songs/.test(modelHead[4]) && await evaluate("!!document.querySelector('[data-new-asset=models]')"), JSON.stringify(modelHead));
   await evaluate("(window.prompt = () => 'cube', document.querySelector('[data-new-asset=models]').click(), true)");
@@ -553,7 +617,8 @@ try {
     return row && c ? { meta: row.querySelector('.proj-meta').textContent, active: row.classList.contains('active'), w: c.width, h: c.height, sel: leapStudio.selected?.kind + '/' + leapStudio.selected?.name } : null; })()`, 8000);
   check('"+" of Models makes a cube (8 pts, 12 edges), lists it with a preview canvas, selects it',
     !!modelNew && modelNew.meta === '8 pts, 12 edges' && modelNew.active && modelNew.w >= 28 && modelNew.sel === 'models/cube', JSON.stringify(modelNew));
-  check('selecting a model says there is no model editor yet (and opens no editor tab)', /no model editor/.test(await status()), await status());
+  const modelTab = await waitFor(`(() => { const b = document.getElementById('tool-models'); return b && !b.hidden && b.children.length > 0 && leapStudio.selected?.kind === 'models' ? { n: b.children.length, active: document.querySelector('#right-panel .panel-tab.active')?.dataset.tab } : null; })()`, 8000);
+  check('selecting a model opens the Models tab with the model editor (W1)', !!modelTab && modelTab.active === 'models', JSON.stringify(modelTab));
   // the preview paints lines and turns: two snapshots of the canvas differ, both have ink
   const snap = () => evaluate(`(() => { const c = document.querySelector('.proj-row[data-asset="models/cube"] canvas.model-preview'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     let n = 0, h = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) { n++; h = (h * 31 + i + d[i]) | 0; } return { n, h }; })()`);
@@ -597,9 +662,9 @@ try {
   check('the saved document keeps the models (cube, tri) with their points and edges', Object.keys(parsed.assets.models ?? {}).join() === 'cube,tri' && parsed.assets.models.cube.points.length === 8 && parsed.assets.models.tri.edges.length === 3, JSON.stringify(Object.keys(parsed.assets.models ?? {})));
   check('after Save the unsaved mark is gone', await evaluate("document.getElementById('dirty-mark').hidden"));
   await evaluate(`leapEditor.setSource('REM changed\\n' + leapEditor.getSource(), {fresh: true})`);
-  await evaluate("document.getElementById('btn-new').click()");
+  await newBlank();
   await sleep(200);
-  check('New makes a fresh project', (await evaluate('leapStudio.project.name')) === 'Untitled' && (await evaluate("Object.keys(leapStudio.project.assets.sprites).join()")) === 'ball');
+  check('New makes a fresh project', (await evaluate('leapStudio.project.name')) === 'Star Dash' && (await evaluate("Object.keys(leapStudio.project.assets.sprites).join()")) === 'ball');
   await evaluate(`(() => { const dt = new DataTransfer();
     dt.items.add(new File([${JSON.stringify(saved.text)}], 'Starfall_fine_colour.leapgame'));
     const input = document.getElementById('file-input'); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
@@ -695,7 +760,7 @@ try {
 
   // ── Tables: a banked table in the size panel (docs/ARCADE_TABLES_CONTRACT.md section 6) ──
   {
-    await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); document.getElementById('btn-new').click(); return true; })()");
+    await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); return true; })()"); await newBlank();
     const vals = (n, k) => Array.from({ length: n }, (_, i) => (i * k) % 200).join(', ');
     // five tables of 3,609 bytes: the mapped 16 KB does not hold them all, so the compiler banks the first (the largest, in source order) by itself
     let big = 'GAME "tables"\nFRAMERATE 30\nDIM a(1000), b(800)\n';
@@ -871,13 +936,13 @@ try {
   await waitFor('window.__saves.length === 2', 5000);
   const s2 = await evaluate(`({ calls: __pickerCalls, has: __written.includes('REM second save') })`);
   check('P2: the second Save writes to the same file without asking again', s2.calls === 1 && s2.has, JSON.stringify(s2));
-  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); document.getElementById('btn-new').click(); return true; })()");
+  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); return true; })()"); await newBlank();
   await evaluate("document.getElementById('btn-save').click()");
   await waitFor('window.__saves.length === 3', 5000);
   check('P2: New forgets the file: the next Save asks again', (await evaluate('__pickerCalls')) === 2);
   // a refused place: cancelled says so and keeps the mark; a failing write falls back to the download
   await evaluate(`(() => { window.showSaveFilePicker = async () => { const e = new Error('cancelled'); e.name = 'AbortError'; throw e; }; return true; })()`);
-  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); document.getElementById('btn-new').click(); return true; })()");
+  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); return true; })()"); await newBlank();
   await evaluate(`leapEditor.setSource('REM unsaved\\n' + leapEditor.getSource())`);
   await evaluate("document.getElementById('btn-save').click()");
   await sleep(400);
@@ -885,12 +950,12 @@ try {
   await evaluate(`(() => { window.showSaveFilePicker = async () => ({ name: 'x', async createWritable() { throw new Error('no permission'); } }); return true; })()`);
   await evaluate("document.getElementById('btn-save').click()");
   await waitFor('window.__downloads.length === 1', 5000);
-  check('P2: a place that cannot be written falls back to the download', (await evaluate('__downloads[0]')) === 'Untitled.leapgame' && /to your downloads/.test(await status()), await status());
+  check('P2: a place that cannot be written falls back to the download', (await evaluate('__downloads[0]')) === 'Star_Dash.leapgame' && /to your downloads/.test(await status()), await status());
   // no API at all: the download (the pre-existing path)
   await evaluate(`(() => { window.showSaveFilePicker = undefined; window.__downloads.length = 0; return true; })()`);
   await evaluate("document.getElementById('btn-save').click()");
   await waitFor('window.__downloads.length === 1', 5000);
-  check('P2: without the File System Access API Save downloads <name>.leapgame', (await evaluate('__downloads[0]')) === 'Untitled.leapgame');
+  check('P2: without the File System Access API Save downloads <name>.leapgame', (await evaluate('__downloads[0]')) === 'Star_Dash.leapgame');
   // Open with a handle keeps it: Save writes back to the opened file
   const shooterText = await evaluate(`fetch('arcade/dist/examples/bounce.leapgame').then((r) => r.text())`);
   await evaluate(`(() => { window.__saves.length = 0; window.__pickerCalls = 0;
@@ -935,7 +1000,7 @@ try {
   check('the choice is kept under leap-ide.theme (shared with the IDE)', stored === tc, stored);
 
   // ── Auto-save across a reload ──
-  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); document.getElementById('btn-new').click(); return true; })()");
+  await evaluate("(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); return true; })()"); await newBlank();
   await setSource('REM survives a reload\nGAME "Reload"\nFRAMERATE 30\nSCENE s\n  PROC INIT():\n  ENDP\n  PROC FRAME():\n  ENDP\nENDSCENE\n');
   await sleep(700);
   await evaluate(`(() => { const h = leapStudio.makeHost('t'); const v = h.getAsset('sprites','ball'); v.w = 8; h.setAsset('sprites', 'extra1', v); return true; })()`);

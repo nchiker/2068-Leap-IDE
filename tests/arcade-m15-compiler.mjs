@@ -28,6 +28,7 @@ import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile, requiredRuntime, usageLines, CODEGEN_OFF } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, ASSET_KINDS, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
+import { completeSource } from '../src/arcade-objects.js';
 import { convertSfx, convertSfxC, convertMusic, sfxRefreshRegisters, assetTables } from '../src/lang/arcade/arcade-assets.js';
 import { createSoundChip, SB_FX, SB_MUS, SB_SYNC } from '../src/lang/arcade/arcade-sound.js';
 import { ASSETS15, T, expectChip, songRow, rng, ROOT, stripMusic, musicWordsIn } from './arcade-m15-common.mjs';
@@ -315,7 +316,7 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
         if (!RT[v]) continue;
         if (/^\s*WIRE3D\b/im.test(text)) continue;      // a wireframe game (docs/ARCADE_WIREFRAME_CONTRACT.md): the previous compiler cannot build it
         if ((v === 2 || v === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(text)) continue;      // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md item 10) changed COSA / SINA / FXMUL on v2 (allowed by the checker) and v3 (new message) on purpose
-        const src = pinOldBright(text), a = oldCompile(src, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(src, { runtime: RT[v].rt, image: RT[v].img, assets, ...CODEGEN_OFF }), d = compile(src, { runtime: RT[v].rt, image: RT[v].img, assets });
+        const src = pinOldBright(text), a = oldCompile(completeSource(src, assets).text, { runtime: RT[v].rt, image: RT[v].img, assets }), b = compile(src, { runtime: RT[v].rt, image: RT[v].img, assets, ...CODEGEN_OFF }), d = compile(src, { runtime: RT[v].rt, image: RT[v].img, assets });
         if (a.errors.length || b.errors.length) { if (a.errors.length !== b.errors.length) bad += `${p.src} v${v}: errors ${a.errors.length} vs ${b.errors.length}; `; continue; }
         nd++;
         // the default build: no errors either, a DCK, and no more code than the old compiler's

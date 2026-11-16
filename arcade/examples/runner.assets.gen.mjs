@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 "use strict";
-// runner.assets.gen.mjs -- the three NEW levels, the title picture (rn_title, the 32 x 24 screen MAP of the game's `title` scene) and the level tables (TABLE lv1 .. lv4) of runner.arc ("Leap Runner", four levels), and runner.assets.json.
+// runner.assets.gen.mjs -- the three NEW levels, the title picture (rn_title, the 32 x 24 screen MAP of the game's `title` scene) and the OBJECT LAYERS of the four worlds (the coins, the enemies and the checkpoints of
+// "Leap Runner", four levels), and runner.assets.json.
 //   node arcade/examples/runner.assets.gen.mjs            writes runner.assets.json next to this file (deterministic)
 //   node arcade/examples/runner.assets.gen.mjs --check            asserts the game's limits (see "the limits of runner.arc"); every other mode refuses to run when one is broken
 //   node arcade/examples/runner.assets.gen.mjs --ascii    prints the title picture, then every level (rows 5..15) with its coins, enemies and checkpoints
-//   node arcade/examples/runner.assets.gen.mjs --data     prints the DIM and TABLE lv1 .. lv4 lines of the level data that runner.arc carries (level-relative lists)
-//   node arcade/examples/runner.assets.gen.mjs --splice   writes those lines into runner.arc between its @@DATA-BEGIN@@ and @@DATA-END@@ markers
+//   node arcade/examples/runner.assets.gen.mjs --data     prints the generated source of the object layers (the text of the Studio's objects.arc, which compile() puts in front of runner.arc), for comparison
+//
+// The level data used to be hand-spliced into runner.arc (TABLE lv1 .. lv4). Now each world's objects are in runner.assets.json (assets.maps.<world>.objects, the kinds in assets.objectKinds, src/arcade-objects.js)
+// and the compiler generates the tables: `LOADTABLE lv` loads the tables pfworldobjects, rnworld2objects, rnworld3objects, rnworld4objects (map names A to Z; rn_title has no objects).  The kinds:
+//   coin        {}               a coin at (x, y), the cell's top left in pixels; sorted by x (then y); coinix(b) = the first coin with x >= 128 b (the generated bucket index; the game's PICKUP starts its search there)
+//   enemy       {lo, hi}         a walker or a bat at (x, y) (its top left, pixels), sorted by x.  A WALKER patrols its ground between the turning points lo and hi: the x (its left edge, 8-pixel steps) at which it turns
+//                                round, found from the map as the first x going left (lo) / right (hi) of its start where the cell in front of it is solid at the body or has no floor under it
+//                                (turning() below, checked against the maps by tests/arcade-runner.mjs).  A BAT has hi = 0 (and lo = 0): the game reads enemyhi = 0 as "a bat" (it flies 56 pixels either side of where it appeared).
+//   checkpoint  {}               the respawn point (x, y) of the hero after he has passed it: three a level, rising in x
+// What the generator used to compute that an object layer does not express, and how the game gets it now: CIX (the bucket index) is generated (coinix); RCF / RNX (the first coin not left of the camera,
+// the first enemy not left of camera - 48, at a respawn at the start and at each checkpoint) are not stored: RESPAWN of runner.arc finds them (cf = 0 and SPINCOINS' own skip loop; a loop over the
+// enemies); the start (24, 88) stays a constant of the game.  levelTables() below still computes all of them, as the model of the limits checks and for the tests.
 //
 // Level 1 is the platformer's own (platformer.assets.gen.mjs, imported, never copied); levels 2 to 4 are laid out here with the same tileset, the same
 // 128 x 16 shape (rows 0-1 mountains, 2-4 clouds, 5-15 the gameplay band: ground in rows 14-15), the same start (x 24, on the ground) and the same
@@ -15,11 +26,12 @@
 // more bats), 4 "Gauntlet" (narrow ground, spike rows, walls, the most enemies).
 // Every level: 3 checkpoints on ground at the height of the start (hero y = 88), the player's start (24, 88), and a coin list, a spawn list (sorted by x)
 // and the walkers' turning points worked out from the map, exactly as platformer.assets.gen.mjs --data does for level 1.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildAssets, LEVEL as LEVEL1, T } from './platformer.assets.gen.mjs';
 import { pattern, song, describe } from './songs.mjs';
+import { generateObjectsSource } from '../../src/arcade-objects.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -327,21 +339,26 @@ export function checkLimits(levels = LEVELS, tables = levelTables()) {
   return { problems, stats };
 }
 
-/** The scene declarations of runner.arc's level data, between its @@DATA-BEGIN@@ and @@DATA-END@@ markers: the DIMs (sized to the largest level) and TABLE lv1 .. lv4. */
-export function dataLines() {
-  const ts = levelTables();
-  const out = [];
-  const big = (k) => Math.max(...ts.map((t) => t[k].length)) - 1;
-  const names = ['cxs', 'cys', 'sx', 'sy', 'wlo', 'whi', 'ckx', 'cky', 'cix', 'rcf', 'rnx'];
-  out.push(`  DIM ${names.map((k) => `${k}(${big(k)})`).join(', ')}, ce, se`);
-  out.push(`  DIM cc(${big('cxs')}), sd(${big('sx')})`);
-  ts.forEach((t, i) => {
-    out.push(`  TABLE lv${i + 1}`);
-    for (const k of names) out.push(`    ${k} = ${t[k].join(', ')}`);
-    out.push(`    ce = ${t.ce}`, `    se = ${t.se}`, '  ENDTABLE');
-  });
-  out.push(`  REM coins per level ${LEVELS.map((L) => L.coins.length).join(' ')}; enemies per level ${LEVELS.map((L) => L.spawns.length).join(' ')}`);
-  return out.join('\n') + '\n';
+/** The object kinds of the game (assets.objectKinds, src/arcade-objects.js): colours are palette indices (ink + 8 * bright) of the sprite editor's palette: bright yellow, bright red, bright cyan. */
+export const OBJECT_KINDS = {
+  coin: { colour: 14, props: [] },
+  enemy: { colour: 10, props: ['lo', 'hi'] },
+  checkpoint: { colour: 13, props: [] },
+};
+
+/** The object layer of level `i`: its coins, enemies (with the walkers' turning points lo / hi, 0 / 0 for a bat) and checkpoints, as assets.maps.<world>.objects. */
+export function levelObjects(i) {
+  const L = LEVELS[i];
+  const objects = [];
+  for (const [c, r] of L.coins) objects.push({ kind: 'coin', x: c * 8, y: r * 8 });
+  for (const s of L.spawns) objects.push({ kind: 'enemy', x: s[0], y: s[1], props: { lo: s[2] === 0 ? turning(L, s, -1) : 0, hi: s[2] === 0 ? turning(L, s, 1) : 0 } });
+  for (const [x, y] of L.checkpoints) objects.push({ kind: 'checkpoint', x, y });
+  return objects;
+}
+
+/** The generated source of the worlds' object layers: what the compiler puts in front of runner.arc (and the Studio shows as objects.arc). */
+export function objectsSource() {
+  return generateObjectsSource(buildRunnerAssets());
 }
 
 // ── the title picture (SCENE title NOWINDOW of runner.arc): a 32 x 24 screen MAP made of the game's own tiles ───────────────────────────────────────────────────
@@ -408,8 +425,9 @@ export function buildRunnerAssets() {
   LEVELS.forEach((L, i) => {
     const cells = [];
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) cells.push(L.g[r][c]);
-    a.maps[i === 0 ? 'pf_world' : `rn_world${i + 1}`] = { w: COLS, h: ROWS, cells };
+    a.maps[i === 0 ? 'pf_world' : `rn_world${i + 1}`] = { w: COLS, h: ROWS, cells, objects: levelObjects(i) };
   });
+  a.objectKinds = JSON.parse(JSON.stringify(OBJECT_KINDS));
   a.music = JSON.parse(JSON.stringify(MUSIC));
   return a;
 }
@@ -444,15 +462,7 @@ if (MAIN) {
     process.exit(0);
   }
   if (process.argv.includes('--data')) {
-    process.stdout.write(dataLines());
-    process.exit(0);
-  }
-  if (process.argv.includes('--splice')) {          // rewrite the data block of runner.arc in place
-    const f = join(HERE, 'runner.arc'), src = readFileSync(f, 'utf8');
-    const a = src.indexOf('  REM @@DATA-BEGIN@@\n') + '  REM @@DATA-BEGIN@@\n'.length, b = src.indexOf('  REM @@DATA-END@@');
-    if (a < 30 || b < a) throw new Error('runner.arc has no @@DATA-BEGIN@@ / @@DATA-END@@ markers');
-    writeFileSync(f, src.slice(0, a) + dataLines() + src.slice(b));
-    console.log('runner.arc: level data rewritten');
+    process.stdout.write(objectsSource().text);
     process.exit(0);
   }
   const assets = buildRunnerAssets();

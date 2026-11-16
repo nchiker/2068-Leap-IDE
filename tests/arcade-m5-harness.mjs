@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
+import { completeSource } from '../src/arcade-objects.js';
 import { compareSound, soundCoverage } from './arcade-m15-common.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -172,7 +173,7 @@ export function interpFor(src, assets, got = null, extra = {}) {
   let xs = new XS(R.rt.constants?.RT_SEED_INIT ?? 0xACE1);
   return (ticks, opts = {}) => {
     xs = new XS(R.rt.constants?.RT_SEED_INIT ?? 0xACE1);
-    return interpret(parse(src).ast, {
+    return interpret(parse(completeSource(src, assets).text).ast, {      // (the object layer's tables, as compile() adds them)
       version: 2, ticks, assets, maxSteps: 400_000_000, rnd: () => xs.next(), reseed: (sd) => { xs = new XS(sd); return () => xs.next(); },
       frames: got ? (t, n) => got.rnd[t]?.[n - 1] ?? 0 : undefined, border0: R.rt.constants?.BORDER_COLOUR ?? 1,
       clock: got ? { play: (t, n) => got.plays[t]?.[n - 1] ?? 0, music: (t, n) => got.musics[t]?.[n - 1] ?? 0, sample: (t) => got.S[t] } : undefined,

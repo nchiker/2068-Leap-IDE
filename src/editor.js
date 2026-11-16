@@ -346,6 +346,7 @@ const leapThemeSpec = {
   '.cm-completionDetail': { color: 'var(--fg-muted)', fontSize: '11px' },
 };
 const themeCompartment = new Compartment();
+const readOnlyCompartment = new Compartment();      // a generated file (the Studio's objects.arc) is shown read-only
 const leapTheme = dark => EditorView.theme(leapThemeSpec, { dark });
 // ide.html's head script has already set data-theme from the saved choice.
 let darkTheme = document.documentElement.dataset.theme !== 'light';
@@ -395,6 +396,7 @@ const extensions = () => [
     historyListener,
     cursorPlugin,
     themeCompartment.of(leapTheme(darkTheme)),
+    readOnlyCompartment.of([]),
 ];
 
 // The program kept in this browser (src/files.js) if there is one.
@@ -525,6 +527,11 @@ window.leapEditor = {
     langId = id;
     lang = ALL_EDITORS[id];
     view.dispatch({ effects: langCompartment.reconfigure(langExtensions(lang)) });
+  },
+
+  /** Show the text read-only (true) or editable (false): the caret, selection and copy still work, typing and paste do not. */
+  setReadOnly(on) {
+    view.dispatch({ effects: readOnlyCompartment.reconfigure(on ? EditorState.readOnly.of(true) : []) });
   },
 
   /** The active language's id and the text of a new program in it. */

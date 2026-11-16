@@ -11,6 +11,7 @@
 //   6  history
 //   7  the ten example assets files: round trip (deep equal) and compiled cartridges byte-identical
 //   8  validateMap against the REAL compiler: tiny programs with a WINDOW, a cell map, a VIEW3D (runtimes of arcade/dist)
+//   9  the object layer (stage 4, M2): round trip, snap / clamp, add / move / delete / props, hit test, sorted view, resize, kind checks
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -347,6 +348,109 @@ console.log('\n8. validateMap agrees with the real compiler');
   }
   ok('every case agrees', skipped === 0 && agree === cases.length, `${agree} of ${cases.length}${skipped ? `, ${skipped} skipped (no runtime)` : ''}`);
 }
+
+// ── 9 ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+console.log('\n9. The object layer');
+{
+  const kinds = { coin: { colour: 14, props: ['value'] }, enemy: { colour: 10, sprite: 'bug', props: ['hp', 'speed'] }, start: { colour: 12, props: [] } };
+  const base = () => M.newMap(32, 24, 'screen');
+  ok('a map without objects has no `objects` key in its editing form and its stored form (exactly as before)', !('objects' in base()) && !('objects' in M.toAsset(base())) && !('objects' in M.cloneMap(base())));
+  const a0 = { w: 2, h: 1, cells: [1, 2], objects: [{ kind: 'coin', x: 3, y: 4, props: { value: 5 }, note: 'keep' }, { kind: 'start', x: 0, y: 0 }], flag: 7 };
+  const m0 = M.fromAsset(a0);
+  ok('fromAsset reads objects and the round trip deep-equals the asset (unknown keys of the map and of an object kept)', deepEq(M.toAsset(m0), a0) && m0.objects.length === 2 && m0.extra.flag === 7);
+  ok('an empty objects list round-trips as an empty list (the key stays)', deepEq(M.toAsset(M.fromAsset({ w: 1, h: 1, cells: [1], objects: [] })), { w: 1, h: 1, cells: [1], objects: [] }));
+  const m0c = M.cloneMap(m0); m0c.objects[0].props.value = 99; m0c.objects.pop();
+  ok('cloneMap copies the objects (editing the copy leaves the original)', m0.objects[0].props.value === 5 && m0.objects.length === 2);
+  ok('fromAsset refuses unreadable objects with a plain message',
+    throws(() => M.fromAsset({ w: 1, h: 1, cells: [0], objects: 3 }), /must be a list/) && throws(() => M.fromAsset({ w: 1, h: 1, cells: [0], objects: [{ kind: 'a', x: 1.5, y: 0 }] }), /whole-number/)
+    && throws(() => M.fromAsset({ w: 1, h: 1, cells: [0], objects: [{ x: 1, y: 0 }] }), /kind/) && throws(() => M.fromAsset({ w: 1, h: 1, cells: [0], objects: [{ kind: 'a', x: 1, y: 0, props: [] }] }), /props/));
+  // every example map: untouched by the object layer
+  const dir = join(ROOT, 'arcade/examples');
+  let maps = 0, equal = 0;
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.assets.json'))) {
+    const j = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    for (const a of Object.values(j.maps ?? {})) { maps++; try { if (deepEq(M.toAsset(M.fromAsset(a)), a) && !('objects' in M.fromAsset(a)) === !('objects' in a)) equal++; } catch { /* counted as unequal */ } }
+  }
+  ok('every example map still round-trips (deep equal) with the object layer in the model', maps > 0 && equal === maps, `${equal} of ${maps}`);
+
+  // snap and clamp
+  const sz = { w: 4, h: 3 };                                       // 32 x 24 pixels
+  ok('snap floors to the grid: 8 gives the cell corner, 4 and 16 and 1 likewise', same([M.snap(13, 21, 8, sz), M.snap(13, 21, 4, sz), M.snap(13, 21, 16, sz), M.snap(13, 21, 1, sz)], [[8, 16], [12, 20], [0, 16], [13, 21]]));
+  ok('snap clamps into the map (0..w*8-1, 0..h*8-1) and cuts fractions', same([M.snap(-5, 99, 8, sz), M.snap(31.9, 23.9, 1, sz), M.snap(100, 100, 16, sz)], [[0, 16], [31, 23], [16, 16]]));
+  ok('snap takes a map as well and refuses a grid that is not 1, 4, 8 or 16 and a non-number', same(M.snap(9, 9, 8, base()), [8, 8]) && throws(() => M.snap(1, 1, 3, sz), /1, 4, 8, 16/) && throws(() => M.snap(NaN, 1, 8, sz)));
+  ok('clampToMap: whole pixels inside the map', same([M.clampToMap(sz, -1, 40), M.clampToMap(sz, 5.7, 5.2), M.clampToMap(sz, 32, 24)], [[0, 23], [5, 5], [31, 23]]));
+  ok('pixelSize is 8 pixels a cell', same(M.pixelSize(sz), { w: 32, h: 24 }));
+
+  // add, move, delete, props
+  const m = M.newMap(4, 3, 'screen');
+  const i0 = M.addObject(m, 'coin', 10, 5, { value: 3 }), i1 = M.addObject(m, 'start', 99, 99), i2 = M.addObject(m, 'coin', 2, 5, { value: 0 });
+  ok('addObject returns the index, clamps into the map, writes props only when given', same([i0, i1, i2], [0, 1, 2]) && same(m.objects[1], { kind: 'start', x: 31, y: 23 }) && same(m.objects[0], { kind: 'coin', x: 10, y: 5, props: { value: 3 } }));
+  ok('addObject refuses a bad kind, a prop that is not a whole number or is out of range', throws(() => M.addObject(m, '', 1, 1)) && throws(() => M.addObject(m, 'coin', 1, 1, { value: 1.5 }), /whole number/) && throws(() => M.addObject(m, 'coin', 1, 1, { value: 40000 }), /-32768\.\.32767/) && m.objects.length === 3);
+  ok('the stored form carries the objects', deepEq(M.toAsset(m).objects, m.objects) && M.toAsset(m).objects !== m.objects);
+  ok('moveObject moves (clamped), returns false when nothing changes, refuses a missing index', M.moveObject(m, 0, 12, 6) && same([m.objects[0].x, m.objects[0].y], [12, 6]) && !M.moveObject(m, 0, 12, 6) && M.moveObject(m, 0, -9, 500) && same([m.objects[0].x, m.objects[0].y], [0, 23]) && throws(() => M.moveObject(m, 7, 0, 0), /no object/));
+  ok('setObjectProp sets, returns false when unchanged (a missing prop reads as 0), refuses a non-integer', M.setObjectProp(m, 0, 'value', 9) && !M.setObjectProp(m, 0, 'value', 9) && m.objects[0].props.value === 9
+    && M.setObjectProp(m, 1, 'value', 4) && same(m.objects[1].props, { value: 4 }) && !M.setObjectProp(m, 1, 'value', 4) && throws(() => M.setObjectProp(m, 0, 'value', 0.5)) && throws(() => M.setObjectProp(m, 0, 'value', 32768)));
+  const x0 = M.addObject(m, 'enemy', 0, 0);
+  ok('setObjectProp of 0 on a missing prop is no change (it reads as 0); a non-zero is written; back to 0 writes the explicit 0', !M.setObjectProp(m, x0, 'hp', 0) && !('props' in m.objects[x0]) && M.setObjectProp(m, x0, 'hp', 2) && M.setObjectProp(m, x0, 'hp', 0) && same(m.objects[x0].props, { hp: 0 }));
+  const gone = M.deleteObject(m, x0);
+  ok('deleteObject returns the object and removes it; later indices shift down', gone.kind === 'enemy' && m.objects.length === 3 && throws(() => M.deleteObject(m, 9)));
+  ok('deleteObjects removes several (any order, duplicates ignored) and returns the count', M.deleteObjects(m, [2, 0, 0]) === 2 && m.objects.length === 1 && m.objects[0].kind === 'start' && M.deleteObjects(m, []) === 0);
+  M.deleteObject(m, 0);
+  ok('deleting the last object removes the `objects` key (the stored form is the old one again)', !('objects' in m) && !('objects' in M.toAsset(m)));
+
+  // hit test
+  const h = M.newMap(8, 4, 'screen');
+  M.addObject(h, 'coin', 8, 8); M.addObject(h, 'enemy', 12, 8); M.addObject(h, 'start', 40, 8);
+  ok('objectsAt: the 8 x 8 box of an object, topmost (latest) first', same(M.objectsAt(h, 8, 8), [0]) && same(M.objectsAt(h, 13, 9), [1, 0]) && same(M.objectsAt(h, 16, 8), [1]) && same(M.objectsAt(h, 20, 8), []) && same(M.objectsAt(h, 7, 8), []));
+  ok('objectsAt: the kinds filter and a size function (a sprite 16 x 16)', same(M.objectsAt(h, 13, 9, ['coin']), [0]) && same(M.objectsAt(h, 13, 9, new Set(['enemy'])), [1]) && same(M.objectsAt(h, 50, 20, null, (k) => (k === 'start' ? { w: 16, h: 16 } : null)), [2]) && same(M.objectsAt(h, 50, 20), []));
+  ok('objectCounts counts per kind', same([...M.objectCounts(h)], [['coin', 1], ['enemy', 1], ['start', 1]]) && M.objectCounts(base()).size === 0);
+
+  // sorted view
+  const sv = M.newMap(16, 4, 'screen');
+  M.addObject(sv, 'coin', 40, 0); M.addObject(sv, 'enemy', 8, 0); M.addObject(sv, 'coin', 8, 16); M.addObject(sv, 'coin', 8, 0); M.addObject(sv, 'coin', 8, 0);
+  const view = M.sortedView(sv, { kinds: ['enemy', 'coin'] });
+  ok('sortedView: kinds in the given order, each kind by x, then y, then insertion; rank is the position in the kind', same(view.map((e) => [e.obj.kind, e.obj.x, e.obj.y, e.index, e.rank]), [['enemy', 8, 0, 1, 0], ['coin', 8, 0, 3, 0], ['coin', 8, 0, 4, 1], ['coin', 8, 16, 2, 2], ['coin', 40, 0, 0, 3]]));
+  ok('sortedView without kinds: alphabetical; by "x" sorts the whole list by x, y; indices point at the real objects',
+    same(M.sortedView(sv).map((e) => e.obj.kind), ['coin', 'coin', 'coin', 'coin', 'enemy']) && same(M.sortedView(sv, { by: 'x' }).map((e) => e.index), [1, 3, 4, 2, 0]) && M.sortedView(sv).every((e) => sv.objects[e.index] === e.obj) && same(M.sortedView(base()), []));
+  const snapBefore = JSON.stringify(sv);
+  M.sortedView(sv);
+  ok('sortedView does not reorder the map\'s own list (insertion order is the identity)', JSON.stringify(sv) === snapBefore);
+
+  // resize
+  const r = M.newMap(8, 4, 'screen');
+  M.addObject(r, 'coin', 60, 30, { value: 1 }); M.addObject(r, 'coin', 10, 10);
+  ok('objectsOutside counts the objects a resize would move', M.objectsOutside(r, 4, 2) === 1 && M.objectsOutside(r, 8, 4) === 0 && M.objectsOutside(r, 7, 4) === 1 && M.objectsOutside(M.newMap(4, 4, 'screen'), 1, 1) === 0);
+  M.resize(r, 4, 2);
+  ok('resize smaller clamps objects into the new box (to the last cell column / row), never drops one, keeps props', r.objects.length === 2 && same([r.objects[0].x, r.objects[0].y], [24, 8]) && r.objects[0].props.value === 1 && same([r.objects[1].x, r.objects[1].y], [10, 10]) && M.objectProblems(r).length === 0);
+  M.resize(r, 16, 8);
+  ok('resize larger leaves the objects where they are', same([r.objects[0].x, r.objects[0].y], [24, 8]) && r.objects.length === 2);
+
+  // checks against the kinds
+  const chk = M.newMap(4, 3, 'screen');
+  chk.objects = [{ kind: 'coin', x: 1, y: 1, props: { value: 2 } }, { kind: 'ghost', x: 2, y: 2 }, { kind: 'coin', x: 99, y: 1 }, { kind: 'coin', x: 1, y: 1, props: { hp: 1 } }, { kind: 'coin', x: 1, y: 1, props: { value: 1.5 } }];
+  const pr = M.objectProblems(chk, kinds);
+  ok('objectProblems: unknown kind, out of the map, undeclared prop, bad prop value (each with the object index); the good object has none',
+    same(pr.map((p) => [p.kind, p.index]), [['unknown-kind', 1], ['range', 2], ['prop', 3], ['prop-value', 4]]) && pr.every((p) => typeof p.message === 'string' && p.message.length > 10));
+  ok('objectProblems without kinds only checks the range; validateObjects gives the messages', same(M.objectProblems(chk).map((p) => p.kind), ['range']) && M.validateObjects(chk, kinds).length === 4 && M.validateObjects(base(), kinds).length === 0);
+
+  // kind tables
+  ok('a good kinds table has no problems (an empty one too)', M.kindProblems(kinds).length === 0 && M.kindProblems({}).length === 0 && M.kindProblems(kinds, { sprites: ['bug'] }).length === 0);
+  const bad = (k, rx, opts) => M.validateKinds(k, opts).some((t) => rx.test(t));
+  ok('kind names: lower case letter then letters / digits, at most 12', bad({ Coin: { colour: 1, props: [] } }, /lower-case/) && bad({ '1a': { colour: 1, props: [] } }, /lower-case/) && bad({ a_b: { colour: 1, props: [] } }, /lower-case/) && bad({ abcdefghijklm: { colour: 1, props: [] } }, /at most 12/) && !bad({ abcdefghijkl: { colour: 1, props: [] } }, /./));
+  ok('colour 0..15, a sprite that exists, at most 8 props, at most 16 kinds', bad({ a: { colour: 16, props: [] } }, /0\.\.15/) && bad({ a: { colour: 1.5, props: [] } }, /0\.\.15/) && bad({ a: { colour: 1, sprite: 'nope', props: [] } }, /does not have/, { sprites: ['bug'] })
+    && bad({ a: { colour: 1, props: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] } }, /at most 8/) && bad(Object.fromEntries(Array.from({ length: 17 }, (_, i) => ['k' + i, { colour: 1, props: [] }])), /at most 16/) && !bad(Object.fromEntries(Array.from({ length: 16 }, (_, i) => ['k' + i, { colour: 1, props: [] }])), /./));
+  ok('property names: same rule, no duplicates', bad({ a: { colour: 1, props: ['Hp'] } }, /property name/) && bad({ a: { colour: 1, props: ['hp', 'hp'] } }, /twice/));
+  ok('generated names must not collide: kind "c" with prop "x" (cx twice); kinds "a" + prop "bx" and "ab" + prop "x" (abx); and no collision for a fine table', bad({ c: { colour: 1, props: ['x'] } }, /twice|clashes/) && bad({ a: { colour: 1, props: ['bx'] }, ab: { colour: 2, props: ['x'] } }, /also used by kind/));
+  ok('kindArrayNames lists the generated arrays of a kind', same(M.kindArrayNames('coin', ['value']), ['coinx', 'coiny', 'coinvalue', 'ncoin', 'coinix']));
+
+  // kind edits on a map
+  const ke = M.newMap(8, 4, 'screen');
+  M.addObject(ke, 'coin', 0, 0, { value: 2 }); M.addObject(ke, 'enemy', 8, 0, { hp: 1, speed: 2 }); M.addObject(ke, 'coin', 16, 0, { value: 3 });
+  ok('renameKindIn renames on every object of the kind and counts them', M.renameKindIn(ke, 'coin', 'gem') === 2 && same(ke.objects.map((o) => o.kind), ['gem', 'enemy', 'gem']) && M.renameKindIn(ke, 'nope', 'x') === 0);
+  ok('dropPropIn removes a property from the kind\'s objects (an emptied props goes too)', M.dropPropIn(ke, 'enemy', 'speed') === 1 && same(ke.objects[1].props, { hp: 1 }) && M.dropPropIn(ke, 'gem', 'value') === 2 && !('props' in ke.objects[0]) && M.dropPropIn(ke, 'gem', 'value') === 0);
+  ok('deleteKindIn deletes the kind\'s objects (the key goes with the last)', M.deleteKindIn(ke, 'gem') === 2 && ke.objects.length === 1 && M.deleteKindIn(ke, 'enemy') === 1 && !('objects' in ke));
+}
+
 
 console.log(`\n${failed === 0 ? 'All' : 'Some'} checks done: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
