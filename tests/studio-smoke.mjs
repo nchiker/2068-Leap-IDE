@@ -545,7 +545,7 @@ try {
   check('host: songCount() answers (MUSIC lines in the source: the Shooter example declares 2, counted independently in the page too)', songsHost.n === 2 && songsHost.own === 2, JSON.stringify(songsHost));
   await evaluate("(document.querySelector('#tool-sfx [data-role=pat-del]').click(), true)");
 
-  // ── Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 4): a sixth asset kind with a turning wireframe preview, no editor ──
+  // ── Models (docs/ARCADE_WIREFRAME_CONTRACT.md section 4): a sixth asset kind with a turning wireframe preview and, since W1, the model editor in the Models tab ──
   const modelHead = await evaluate(`[...document.querySelectorAll('#asset-groups .asset-group-head')].map((h) => h.textContent.replace(/\\s+/g, ' ').trim())`);
   check('the asset list has a "Models" group after Songs, with a "+" button', modelHead.length === 6 && /^Models\s*\(0\)/.test(modelHead[5]) && /^Songs/.test(modelHead[4]) && await evaluate("!!document.querySelector('[data-new-asset=models]')"), JSON.stringify(modelHead));
   await evaluate("(window.prompt = () => 'cube', document.querySelector('[data-new-asset=models]').click(), true)");
@@ -553,7 +553,8 @@ try {
     return row && c ? { meta: row.querySelector('.proj-meta').textContent, active: row.classList.contains('active'), w: c.width, h: c.height, sel: leapStudio.selected?.kind + '/' + leapStudio.selected?.name } : null; })()`, 8000);
   check('"+" of Models makes a cube (8 pts, 12 edges), lists it with a preview canvas, selects it',
     !!modelNew && modelNew.meta === '8 pts, 12 edges' && modelNew.active && modelNew.w >= 28 && modelNew.sel === 'models/cube', JSON.stringify(modelNew));
-  check('selecting a model says there is no model editor yet (and opens no editor tab)', /no model editor/.test(await status()), await status());
+  const modelTab = await waitFor(`(() => { const b = document.getElementById('tool-models'); return b && !b.hidden && b.children.length > 0 && leapStudio.selected?.kind === 'models' ? { n: b.children.length, active: document.querySelector('#right-panel .panel-tab.active')?.dataset.tab } : null; })()`, 8000);
+  check('selecting a model opens the Models tab with the model editor (W1)', !!modelTab && modelTab.active === 'models', JSON.stringify(modelTab));
   // the preview paints lines and turns: two snapshots of the canvas differ, both have ink
   const snap = () => evaluate(`(() => { const c = document.querySelector('.proj-row[data-asset="models/cube"] canvas.model-preview'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     let n = 0, h = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) { n++; h = (h * 31 + i + d[i]) | 0; } return { n, h }; })()`);

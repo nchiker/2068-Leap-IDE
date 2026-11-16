@@ -123,6 +123,7 @@
           <button class="panel-tab" data-tab="tilesets">Tiles</button>
           <button class="panel-tab" data-tab="maps">Maps</button>
           <button class="panel-tab" data-tab="sfx">Sounds</button>
+          <button class="panel-tab" data-tab="models">Models</button>
         </div>
       </div>
 
@@ -182,6 +183,7 @@
       <div class="tab-body tool-body asset-tool" id="tool-tilesets" data-tab="tilesets" hidden></div>
       <div class="tab-body tool-body asset-tool" id="tool-maps" data-tab="maps" hidden></div>
       <div class="tab-body tool-body asset-tool" id="tool-sfx" data-tab="sfx" hidden></div>
+      <div class="tab-body tool-body asset-tool" id="tool-models" data-tab="models" hidden></div>
     </div>
 
   </div><!-- /workspace -->
@@ -216,6 +218,7 @@
     "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
     "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
     "./src/arcade-project.js": "./src/arcade-project.js?v=f15775de0e",
+    "./src/arcade-starters.js": "./src/arcade-starters.js?v=dc777572c2",
     "./src/emulator.js": "./src/emulator.js?v=037ed0520d",
     "./src/files.js": "./src/files.js?v=70f9a1c03a",
     "./src/help.js": "./src/help.js?v=2738bd9e3b",
@@ -298,8 +301,19 @@
   }
 }
 </script>
+
+<dialog id="new-dialog" class="new-dialog" aria-labelledby="new-dialog-title">
+  <form method="dialog" class="new-dialog-form">
+    <div class="new-dialog-head">
+      <h2 id="new-dialog-title">New project</h2>
+      <button class="phbtn" value="cancel" id="new-dialog-close" title="Close (Escape)">Close</button>
+    </div>
+    <p class="new-dialog-note">Pick a starter: each is a small game with a goal, with its own sprites, sounds and comments to change.</p>
+    <div class="new-grid" id="new-grid" role="list"></div>
+  </form>
+</dialog>
 <script type="module" src="src/editor.js?v=d836aeb5be"></script>
-<script type="module" src="studio.js?v=24bf34d10c"></script>
+<script type="module" src="studio.js?v=6c4dd2d9f1"></script>
 
 </body>
 </html>

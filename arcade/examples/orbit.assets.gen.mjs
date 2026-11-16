@@ -7,7 +7,7 @@
 //   models   gate  a flat octagon in the x-y plane: 8 points round(64 cos(k 45 deg)), round(64 sin(k 45 deg)), 0 and the 8 edges round it (drawn with SCALE 4: a radius of 256 world units)
 //            gatefar  the same as a hexagon (6 points, 6 edges): the gate after the current one is drawn with it (it is 1500 or more units away, a few pixels wide: the swap to the octagon when it becomes the current gate is not seen)
 //            rock  an octahedron, points at +-40 on each axis, the 12 edges between points that are not opposite (drawn with SCALE 2)
-//            (a model editor is not in the contract: the models are written as code here, as the songs are, docs/ARCADE_WIREFRAME_CONTRACT.md section 4)
+//            (the models are written as code here, as the songs are; they also open and edit in the Studio's Models tab, W1; docs/ARCADE_WIREFRAME_CONTRACT.md section 4)
 //            shards  the debris of a rock shot by the laser: 3 small separate triangles (9 points, 9 edges) around the origin, drawn with SCALE 1, 2, then 4 so that they spread
 //   sprite   burst  16 x 16, one phase: a starburst, SHOWn over the play area when a rock hits (a sprite is drawn over the lines)
 //   tiles    gfx  0 empty, 1-2 stars, 3..18 the title's ring logo (a 4 x 4 block of tiles: two octagons, one in the other)

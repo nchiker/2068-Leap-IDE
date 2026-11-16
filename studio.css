@@ -145,3 +145,19 @@
 .proj-row.asset-row .proj-acts { display: none; position: absolute; right: 4px; top: 2px; gap: 2px; padding: 0 2px; border-radius: 3px; background: var(--bg-hover); }
 .proj-row.asset-row:hover .proj-acts, .proj-row.asset-row:focus-within .proj-acts { display: flex; }
 .proj-row.asset-row .proj-act { visibility: visible; }
+
+/* New project dialog (N1): a grid of starter cards */
+.new-dialog { max-width: min(860px, 94vw); width: 94vw; padding: 0; border: 1px solid var(--border-hi); border-radius: 8px; background: var(--bg-panel); color: var(--fg); }
+.new-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.new-dialog-form { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; max-height: 88vh; overflow: auto; }
+.new-dialog-head { display: flex; align-items: center; justify-content: space-between; }
+.new-dialog-head h2 { margin: 0; font: 600 15px var(--font-ui); }
+.new-dialog-note { margin: 0; font: 12px var(--font-ui); color: var(--fg-muted); }
+.new-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.new-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; text-align: left; font: 12px var(--font-ui); color: var(--fg); background: var(--bg-surface); border: 1px solid var(--border-hi); border-radius: 6px; cursor: pointer; }
+.new-card:hover, .new-card:focus-visible { background: var(--hover-sel); border-color: var(--amber-fg); outline: none; }
+.new-card img, .new-card .new-pic { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; image-rendering: pixelated; background: #000; border-radius: 3px; }
+.new-card .new-pic { display: flex; align-items: center; justify-content: center; color: var(--fg-muted); font-size: 11px; }
+.new-card-title { font-weight: 600; font-size: 13px; }
+.new-card-about { color: var(--fg-muted); white-space: normal; }
+.new-card-rt { align-self: flex-start; font-size: 10px; padding: 0 6px; border: 1px solid var(--border-hi); border-radius: 8px; color: var(--fg-muted); }

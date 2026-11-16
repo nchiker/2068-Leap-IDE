@@ -27,7 +27,7 @@ Keys: **O** left, **P** right, **Q** faster, **A** slower (speed 8 to 40), **Spa
 * `LINE` draws the laser's beams, the gunsight and the horizon marks. The `burst` sprite (16 x 16, one phase) is `SHOW`n over the lines for 6 ticks after a hit on the ship.
 * The language's later words are used where they replace hand-made code: `KEYPRESS(" ") OR BIT(JOYPRESS(1), 4)` starts a game and leaves the game over (the press edge survives `ENTER`), `PRINT ... USING` writes the HUD numbers, and `TIMER`s count down the hit protection (`inv`), the burst (`fl`), the laser cooldown (`cd`), the quiet after a loud sound (`sb`), the game over's wait (`ow`) and the title's blink (`bl`).
 * The origin is moved (the eye, the gates and the rocks together) when the eye is more than 12000 units out on an axis; a gate more than 9000 units away is given up and the course starts again ahead of the eye.
-* The models are written as code in `orbit.assets.gen.mjs` (no model editor yet), as the songs are.
+* The models are written as code in `orbit.assets.gen.mjs`; they also open and edit in the Studio's Models tab (W1), which writes them back unchanged.
 
 ## Measured (TSRun, the real v2 runtime; `tests/arcade-orbit.mjs`, section 11)
 

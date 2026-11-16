@@ -306,7 +306,7 @@ const NEW_ASSET = {
   maps: () => ({ w: 32, h: 24, tileset: '', cells: 'FF'.repeat(32 * 24) }),
   sfx: () => ({ ticks: [{ tone: 200, vol: 0, noise: 0, mix: 6 }] }),
   music: () => toSong(newSong()),          // one short pattern, order [0], loop 0 (music-model.js)
-  // a cube (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1; there is no model editor yet: edit the JSON or write models as code)
+  // a cube (docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1); the Models tab edits it
   models: () => ({
     points: [[-20, -20, -20], [20, -20, -20], [20, 20, -20], [-20, 20, -20], [-20, -20, 20], [20, -20, 20], [20, 20, 20], [-20, 20, 20]],
     edges: [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]],
@@ -399,6 +399,7 @@ const ASSET_EDITORS = {
   sfx: { tab: 'sfx', module: './src/tools/sound-editor.js', factory: 'createSoundEditor', container: 'tool-sfx', title: 'sound editor' },
   // songs open in the sound editor (docs/ARCADE_MUSIC_CONTRACT.md section 7): the same tab and the same instance, its select(name, 'music') switches mode
   music: { tab: 'sfx', shared: 'sfx' },
+  models: { tab: 'models', module: './src/tools/model-editor.js', factory: 'createModelEditor', container: 'tool-models', title: 'model editor' },
 };
 const editors = {};              // kind -> {api} | {missing: true}
 
@@ -434,9 +435,6 @@ function selectAsset(kind, name) {
   if (def) {
     showTab(def.tab);
     ensureEditor(kind).then((api) => api?.select?.(name, kind));
-  } else {
-    // (only models have no editor yet)
-    say(`Model ${name}: there is no model editor yet; the project file holds its points and edges, and the source uses it by name (MODEL x = "${name}")`, 'idle');
   }
 }
 
@@ -1064,9 +1062,37 @@ function openProject(p, { saved = true, message = null, handle = null } = {}) {
   if (message) say(message, 'idle');
 }
 
-function newProjectUi() {
+// New project (N1): a dialog of starters (src/arcade-starters.js, pure; a still of each under arcade/dist/starters/). If the starters
+// cannot be loaded the dialog is skipped and New makes the classic blank project, so New never breaks.
+let startersModule = null;
+async function newProjectUi() {
   if (!confirmDiscard()) return;
-  openProject(P.newProject(), { message: 'New project: press Run (F5)' });
+  if (!startersModule) {
+    try { startersModule = await import('./src/arcade-starters.js'); } catch (e) {
+      console.error('[Studio] the starters could not be loaded', e);
+      openProject(P.newProject(), { message: 'New project: press Run (F5)' });
+      return;
+    }
+  }
+  const dlg = $('new-dialog'), grid = $('new-grid');
+  grid.replaceChildren();
+  for (const s of startersModule.STARTERS) {
+    const card = el('button', 'new-card');
+    card.type = 'button'; card.setAttribute('role', 'listitem'); card.dataset.starter = s.id;
+    const pic = el('img');
+    pic.alt = `${s.title}: a still of the game`; pic.loading = 'lazy'; pic.src = `arcade/dist/starters/${s.id}.png`;
+    pic.addEventListener('error', () => { const ph = el('div', 'new-pic', s.title); pic.replaceWith(ph); });
+    card.append(pic, el('span', 'new-card-title', s.title), el('span', 'new-card-about', s.about), el('span', 'new-card-rt', `runtime ${s.runtime}`));
+    card.addEventListener('click', () => {
+      dlg.close('starter');
+      let p;
+      try { p = s.make(); } catch (e) { say(`The starter could not be made: ${e.message}`, 'error'); return; }
+      openProject(p, { message: `New project from the "${s.title}" starter: press Run (F5)` });
+    });
+    grid.append(card);
+  }
+  dlg.showModal();
+  grid.querySelector('.new-card')?.focus();
 }
 
 // Save in place where the browser has the File System Access API (Chromium): the first Save asks where, later ones write to the same file;
