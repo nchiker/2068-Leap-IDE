@@ -31,6 +31,13 @@
  * loop once more).  Note entry (both modes) writes a note of an instrument into the selected track at a tick.  One undo history per asset: in song mode
  * it covers the whole song (a pattern edit and an order edit alike), and every edit writes the whole song with one host.setAsset('music', ...).
  * The host's select(name, kind) / onSelectAsset({kind: 'music'}) open a song; select(name) alone keeps the mode.
+ *
+ * Note view (A1, song mode): above the tick lanes a note lane per channel (A, B, C) shows the pattern's notes as bars on a pitch grid, the ticks across at the tick lanes' own
+ * scale.  The notes are DERIVED from the tick records by music-model's notesOfTrack, the inverse of noteRecords: a bar is shown only where the records are exactly what note
+ * entry writes; every other tick stays raw (a grey strip on top of the lane, editable in the tick lanes below, never touched by the note view).  The lane edits only through
+ * placeNote / replaceNote / removeNote, i.e. enterNote and enterRest, so the stored song does not change format: click places a note of the note row's instrument, length and
+ * peak, a drag moves it (pitch and time) or, from its right end, lengthens it, Delete removes it (a rest over its ticks), and the keys of the focused lane do the same
+ * (arrows move, [ and ] change the length, , and . pick the previous / next note).  Every completed edit is one undo step and one host.setAsset().
  */
 
 "use strict";
@@ -64,6 +71,10 @@ const LANE_FIELD = { vol: 'vol', tone: 'tone', noise: 'noise' };
 // The tone lane's log pitch axis runs from tone TONE_TOP (the top, about 6.9 kHz) to 4095 (the bottom, 27 Hz): 8 octaves, 150 px.
 const TONE_TOP = 16;
 const LN_SPAN = Math.log(4095 / TONE_TOP);
+// The note lanes (A1): a strip on top for the raw ticks, then one row of NOTE_ROW_H pixels per semitone of the lane's pitch window.
+const NOTE_ROW_H = 6;
+const NOTE_STRIP_H = 8;
+const NOTE_GAP = 4;                                    // between the lanes (and their label cells)
 
 // ── DOM helpers (no innerHTML anywhere: user data only goes through textContent / value) ─────────────────────────
 function el(tag, cls, text, attrs) {
@@ -151,6 +162,15 @@ const CSS = `
 .sfxed-chip.loop::before { content: '↻ '; color: var(--ok-fg, #8ddb8c); }
 .sfxed-chip.playing { background: var(--bg-active, #2d333b); border-color: var(--ok-fg, #8ddb8c); }
 .sfxed-chip.unused { color: var(--fg-muted, #768390); border-style: dashed; }
+.sfxed-noteview { display: flex; flex-direction: column; gap: 4px; }
+.sfxed-nbox { display: flex; width: fit-content; max-width: 100%; align-items: flex-start; min-width: 0; border: 1px solid var(--border-hi, #444c56); border-radius: 4px; background: var(--bg, #0d1117); }
+.sfxed-nlabels { flex: none; width: ${LABEL_W}px; display: flex; flex-direction: column; gap: 4px; }
+.sfxed-ncell { position: relative; width: ${LABEL_W}px; }
+.sfxed-ncell canvas { position: absolute; left: 0; top: 0; }
+.sfxed-ncell .sfxed-btn { position: absolute; left: 2px; padding: 0 4px; font-size: 9px; line-height: 13px; }
+.sfxed-ncol { display: flex; flex-direction: column; gap: 4px; width: fit-content; }
+.sfxed-nlane { display: block; cursor: crosshair; touch-action: none; outline-offset: -2px; }
+.sfxed-nlane:focus-visible { outline: 2px solid var(--amber-fg, #e3b341); }
 .sfxed-notes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border, #2d333b); border-radius: 6px; background: var(--bg-surface, #1c2128); }
 `;
 function injectStyle() {
@@ -246,6 +266,13 @@ export function createSoundEditor(container, host) {
   let hostMarks = new Set();            // ticks the host's warnings mark
   let hoverTick = -1;
   let prefillKey = '';
+  // the note view (A1)
+  let noteViewOn = prefs.noteView !== false;             // the note lanes are shown in song mode (the toggle's choice is remembered)
+  let nv = null;                                         // [{notes, raw}] of channels A, B, C of the pattern shown (music-model notesOfTrack), derived at every render; null when not shown
+  let nwin = [null, null, null];                         // each lane's pitch window {lo, hi}; kept while the pattern shown stays, so the grid does not jump under a drag
+  let nwinKey = '';
+  let nsel = null;                                       // the selected note: {ch, at} (found again in nv after every edit)
+  let nd = null;                                         // a pointer gesture in a note lane: {ch, mode: 'move' | 'len' | 'place', note, tick0, midi0, dt, dm, length, moved}
   let destroyed = false;
   const cleanups = [];
 
@@ -254,7 +281,7 @@ export function createSoundEditor(container, host) {
   let playWhat = 'effect', playPos = -1;        // what is playing: 'effect' | 'pattern' | 'song'; the order position playing (a song)
 
   let pianoEnter = prefs.pianoEnter === true;    // the keyboard piano also writes the note at the cursor (the note row's "keys enter" box)
-  const keepPrefs = () => savePrefs({ zoom, pianoEnter });
+  const keepPrefs = () => savePrefs({ zoom, pianoEnter, noteView: noteViewOn });
 
   // ── skeleton ──
   const root = el('div', 'sfxed', null, { tabindex: '0' });
@@ -372,6 +399,39 @@ export function createSoundEditor(container, host) {
   const hint = el('div', 'sfxed-hint', '');
   hint.dataset.role = 'hint';
 
+  // the note view (song mode): a note lane per channel above the tick lanes, a label cell (channel letter, pitch scroll buttons, C names) beside each
+  const noteView = el('div', 'sfxed-noteview');
+  noteView.dataset.role = 'note-view';
+  const nvToggle = button('Note view ▾', 'Show or hide the note lanes (the notes of each channel as bars on a pitch grid)', () => { noteViewOn = !noteViewOn; keepPrefs(); renderAll(); }, 'sm', 'noteview-toggle');
+  nvToggle.setAttribute('aria-pressed', String(noteViewOn));
+  const nvInfo = label('', 'The note under the pointer or selected');
+  nvInfo.dataset.role = 'note-info';
+  const nvHead = el('div', 'sfxed-row');
+  nvHead.append(el('b', null, 'Notes'), nvToggle, nvInfo);
+  const nvBox = el('div', 'sfxed-nbox');
+  const nvLabels = el('div', 'sfxed-nlabels');
+  const nvScroll = el('div', 'sfxed-scroll');
+  nvScroll.dataset.role = 'note-scroller';
+  const nvCol = el('div', 'sfxed-ncol');
+  const nlanes = M.TRACKS.map(({ name: tn }, ch) => {
+    const lc = tn.toLowerCase();
+    const cell = el('div', 'sfxed-ncell');
+    const lab = el('canvas');
+    const cv = el('canvas', 'sfxed-nlane', null, { tabindex: '0', role: 'application',
+      'aria-label': `Note lane, channel ${tn}: click places a note, drag moves it, drag its right end lengthens it, Delete removes it, arrow keys move it, [ and ] change its length, comma and full stop pick the previous and next note` });
+    cv.dataset.role = `note-lane-${lc}`;
+    const up = button('▲', `Show higher notes in lane ${tn} (an octave; also Page Up)`, () => scrollLane(ch, 12), 'sm', `note-up-${lc}`);
+    const down = button('▼', `Show lower notes in lane ${tn} (an octave; also Page Down)`, () => scrollLane(ch, -12), 'sm', `note-down-${lc}`);
+    up.style.top = '16px'; down.style.top = '31px';
+    cell.append(lab, up, down);
+    nvLabels.append(cell);
+    nvCol.append(cv);
+    return { ch, cell, lab, cv };
+  });
+  nvScroll.append(nvCol);
+  nvBox.append(nvLabels, nvScroll);
+  noteView.append(nvHead, nvBox);
+
   // the row editor for the tick under the cursor
   const rowEd = el('div', 'sfxed-row');
   rowEd.dataset.role = 'row-editor';
@@ -408,7 +468,7 @@ export function createSoundEditor(container, host) {
   const noteOct = input(4, 'The octave (4 is the middle octave: C4 = middle C, A4 = 440 Hz)', 44, 'note-oct', 'number', { min: '0', max: '8', step: '1' });
   const noteLen = input(8, 'How many refreshes the note lasts (60 a second)', 52, 'note-len', 'number', { min: '1', max: String(MM.MAX_PATTERN_TICKS), step: '1' });
   const noteInst = select(MM.INSTRUMENTS.map((x) => [x.id, x.label]), 'pluck', () => {}, 'The instrument: a volume envelope (the drum plays noise)', 'note-inst');
-  const noteVol = input('', 'The loudest volume 1..15 (empty: the instrument\'s own)', 44, 'note-vol', 'number', { min: '1', max: '15', step: '1' });
+  const noteVol = input('', 'The loudest volume 0..15 (empty: the instrument\'s own; 0 is a silent note that keeps its pitch, how the example songs write a rest)', 44, 'note-vol', 'number', { min: '0', max: '15', step: '1' });
   const noteAtIn = input(0, 'The tick the note starts at', 54, 'note-at', 'number', { min: '0', step: '1' });
   noteAtIn.addEventListener('change', () => { const v = parseNum(noteAtIn.value); if (Number.isFinite(v)) noteAt = clamp(Math.round(v), 0, MM.MAX_PATTERN_TICKS - 1); noteAtIn.value = String(noteAt); });
   /** Tell now (status line) when the note and octave chosen are below the AY's lowest note, instead of when Enter is pressed. */
@@ -471,7 +531,7 @@ export function createSoundEditor(container, host) {
   const infoEl = el('pre', 'sfxed-info');
   infoEl.dataset.role = 'info';
   foot.append(wave, infoEl);
-  body.append(lanesBox, hint, rowEd, notes, ops, foot);
+  body.append(noteView, lanesBox, hint, rowEd, notes, ops, foot);
 
   // ── messages ──
   function say(text, kind = '') {
@@ -549,7 +609,7 @@ export function createSoundEditor(container, host) {
     anchor = clamp(anchor, 0, n - 1);
   }
   const what = () => (kind === 'music' ? 'song' : 'sound effect');
-  function clearAsset() { stopPlay(); name = null; sfx = null; song = null; hist = null; lastStored = ''; }
+  function clearAsset() { stopPlay(); nsel = null; nd = null; name = null; sfx = null; song = null; hist = null; lastStored = ''; }
   /** Load the effect (or song, in song mode) `n`; keepSel keeps the cursor, the range, the track and the pattern (a reload after an outside change). */
   function loadEffect(n, keepSel = false) {
     const asset = H.get(n);
@@ -641,6 +701,11 @@ export function createSoundEditor(container, host) {
     if (v === null || v === undefined) return;
     edit(() => MM.labelPattern(song, pat, v));
   }
+  /** The note row's peak as enterNote's options: {peak: 0..15}, or {} (the instrument's own) when the box is empty. */
+  function peakOpts() {
+    const pk = parseNum(noteVol.value);
+    return Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 0, 15) } : {};
+  }
   /**
    * Note entry: the note (or a rest) of the note row into the selected track from tick noteAt; the next entry goes after it.
    * `forced` (the keyboard piano): a note name such as 'C#5' used instead of the row's note and octave.  -> true when something was written.
@@ -653,8 +718,7 @@ export function createSoundEditor(container, host) {
     if (!rest && !forced && !(Number.isInteger(oct) && oct >= 0 && oct <= 8)) { say('The octave is a whole number 0..8', 'err'); return false; }
     const noteName = forced ?? `${noteSel.value}${oct}`;
     if (!rest) { const low = MM.noteRefusal(noteName, noteInst.value); if (low) { say(low, 'err'); return false; } }
-    const pk = parseNum(noteVol.value);
-    const opts = Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 1, 15) } : {};
+    const opts = peakOpts();
     const at = noteAt;
     return edit(() => {
       const r = rest ? MM.enterRest(V(), at, len) : MM.enterNote(V(), at, noteName, len, noteInst.value, opts);
@@ -682,9 +746,8 @@ export function createSoundEditor(container, host) {
     if (pianoEnter) { if (!noteCmd(false, noteName)) return; }
     if (!audioContext()) return;
     const len = parseNum(noteLen.value);
-    const pk = parseNum(noteVol.value);
     let recs;
-    try { recs = MM.noteRecords(noteName, Number.isFinite(len) && len >= 1 ? Math.min(Math.round(len), 60) : 8, noteInst.value, Number.isFinite(pk) ? { peak: clamp(Math.round(pk), 1, 15) } : {}); } catch (e) { say(e.message, 'err'); return; }
+    try { recs = MM.noteRecords(noteName, Number.isFinite(len) && len >= 1 ? Math.min(Math.round(len), 60) : 8, noteInst.value, peakOpts()); } catch (e) { say(e.message, 'err'); return; }
     stopPlay();
     const rate = actx.sampleRate || 44100;
     playWhat = 'note';
@@ -908,6 +971,253 @@ export function createSoundEditor(container, host) {
   }
   const mixName = (mix) => { const f = M.MIX_FORMS.find((x) => x.tone === M.toneOn(mix) && x.noise === M.noiseOn(mix)); return f ? f.label : '?'; };
 
+  // ── the note view (A1) ──
+  const noteViewShown = () => kind === 'music' && !!sfx && !!song;
+  const selNote = () => (nsel && nv ? nv[nsel.ch].notes.find((n) => n.at === nsel.at) ?? null : null);
+  const noteText = (n) => `${n.note} for ${n.length} tick${n.length === 1 ? '' : 's'}, from tick ${n.at}: ${n.silent ? 'silent (a rest on that pitch)' : `${n.instrument}, peak ${n.peak}`}`;
+  /** Derive the notes of the pattern shown (all three channels) and fit the lanes' pitch windows; the selection follows its note, or goes when the note is gone. */
+  function deriveNotes() {
+    nv = noteViewShown() && noteViewOn ? M.TRACKS.map(({ key }) => MM.notesOfTrack(sfx[key] ?? [])) : null;
+    const key = `${name}:${pat}`;
+    if (key !== nwinKey) { nwinKey = key; nwin = [null, null, null]; nsel = null; }
+    if (!nv) { nsel = null; return; }
+    if (nsel && !selNote()) nsel = null;
+    const sn = selNote();
+    nwin = nwin.map((w, ch) => MM.pitchWindow(nv[ch].notes, w, { channel: ch, show: sn && nsel.ch === ch ? [sn.midi] : [] }));
+  }
+  function scrollLane(ch, rows) {
+    if (!nv || !nwin[ch]) return;
+    nwin[ch] = MM.scrollWindow(nwin[ch], rows);
+    drawNoteLanes();
+  }
+  /** Select a note of lane `ch` (null: none): the channel becomes the one edited, the cursor and the range go to the note's ticks. */
+  function selectNote(ch, note) {
+    if (!note) { nsel = null; renderAll(); return; }
+    nsel = { ch, at: note.at };
+    if (track !== ch) { track = ch; prefillKey = ''; }
+    cur = note.at; rng = [note.at, note.at + note.length - 1]; anchor = note.at;
+    ensureVisible(cur);
+    renderAll();
+  }
+  /**
+   * One edit of a note lane, through music-model's placeNote / replaceNote / removeNote (enterNote and enterRest): `fn(view)` returns their result.  The lane's channel
+   * becomes the edited one; a note entered is selected and the note row's "at tick" goes after it (as after Enter); one history step and one host.setAsset().
+   */
+  function laneEdit(ch, fn, keepSelection = true) {
+    if (!sfx || stroke || kind !== 'music') return false;
+    if (track !== ch) { track = ch; prefillKey = ''; }
+    return edit(() => {
+      const r = fn(V());
+      if (r.range) { nsel = keepSelection ? { ch, at: r.range[0] } : null; noteNext = r.next ?? null; }
+      return r;
+    });
+  }
+  /** The note row's length, instrument and peak for a note the lane places: {len, instrument, peak} or null with the reason in the status line. */
+  function entryParams() {
+    const len = parseNum(noteLen.value);
+    if (!Number.isFinite(len) || len < 1) { say('The length is a number of refreshes, 1 or more', 'err'); return null; }
+    const o = peakOpts();
+    return { len: Math.round(len), instrument: noteInst.value, peak: 'peak' in o ? o.peak : null };
+  }
+  const laneGeom = (ch) => {
+    const w = nwin[ch];
+    const rows = w ? w.hi - w.lo + 1 : 0;
+    return { win: w, rows, h: NOTE_STRIP_H + rows * NOTE_ROW_H, w: Math.max(1, tickCount() * colW) };
+  };
+  const rowY = (ch, midi) => NOTE_STRIP_H + MM.rowOfMidi(midi, nwin[ch]) * NOTE_ROW_H;
+  /** Where a pointer event is in lane ch: the pixel, the tick, the pitch (null in the raw strip) and what is there (a note, or raw ticks). */
+  function laneHit(ch, e) {
+    const r = nlanes[ch].cv.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const tick = MM.tickOfX(x, colW, MM.MAX_PATTERN_TICKS - 1);
+    const strip = y < NOTE_STRIP_H;
+    const midi = strip ? null : MM.midiOfRow(Math.floor((y - NOTE_STRIP_H) / NOTE_ROW_H), nwin[ch]);
+    const note = midi === null ? null : nv[ch].notes.find((n) => n.midi === midi && tick >= n.at && tick < n.at + n.length) ?? null;
+    const rawRun = strip ? nv[ch].raw.find((q) => tick >= q.from && tick <= q.to) ?? null : null;
+    const onEnd = !!note && x >= (note.at + note.length) * colW - Math.min(6, Math.max(2, note.length * colW / 3));
+    return { x, y, tick, midi, note, rawRun, onEnd };
+  }
+  function laneDown(ch, e) {
+    if (!nv || e.button !== 0) return;
+    const cv = nlanes[ch].cv;
+    cv.focus({ preventScroll: true });
+    e.preventDefault();
+    const h = laneHit(ch, e);
+    if (h.midi === null) {                                       // the raw strip: select those ticks (the tick lanes below edit them)
+      if (h.rawRun) {
+        if (track !== ch) { track = ch; prefillKey = ''; }
+        nsel = null; cur = h.rawRun.from; anchor = cur; rng = [h.rawRun.from, h.rawRun.to];
+        renderAll();
+        say(`Ticks ${h.rawRun.from}..${h.rawRun.to} of channel ${TRACK_NAMES[ch]} are not a note entry's records: edit them in the tick lanes below`);
+      }
+      return;
+    }
+    if (h.note) {
+      selectNote(ch, h.note);
+      nd = { ch, mode: h.onEnd ? 'len' : 'move', note: h.note, tick0: h.tick, midi0: h.midi, dt: 0, dm: 0, length: h.note.length, moved: false };
+    } else nd = { ch, mode: 'place', tick0: h.tick, midi0: h.midi, dt: 0, dm: 0, moved: false };
+    cv.setPointerCapture?.(e.pointerId);
+    drawNoteLanes();
+  }
+  function laneMove(ch, e) {
+    if (!nv) return;
+    const h = laneHit(ch, e);
+    if (nd && nd.ch === ch) {
+      const n = nd.note;
+      if (nd.mode === 'len') { nd.length = clamp(h.tick - n.at + 1, 1, MM.MAX_PATTERN_TICKS - n.at); nd.moved = nd.length !== n.length; }
+      else {
+        const midi = h.midi ?? nd.midi0 + nd.dm;
+        nd.dt = h.tick - nd.tick0; nd.dm = midi - nd.midi0;
+        if (n) nd.dt = Math.max(nd.dt, -n.at);
+        nd.moved = nd.moved || nd.dt !== 0 || nd.dm !== 0;
+      }
+      drawNoteLanes();
+      return;
+    }
+    const cv = nlanes[ch].cv;
+    cv.style.cursor = h.note ? (h.onEnd ? 'ew-resize' : 'grab') : h.midi === null ? 'default' : 'crosshair';
+    nvInfo.textContent = h.note ? noteText(h.note) : h.rawRun ? `ticks ${h.rawRun.from}..${h.rawRun.to}: not a note entry's records (raw): edit them in the tick lanes below`
+      : h.midi !== null ? `click: a ${noteInst.value} ${S_name(h.midi)}, ${noteLen.value || '?'} ticks, from tick ${h.tick}` : '';
+  }
+  const S_name = (midi) => M.noteNameOfMidi(midi);
+  function laneUp(ch) {
+    const g = nd;
+    if (!g || g.ch !== ch) return;
+    nd = null;
+    if (g.mode === 'place') {
+      if (!g.moved) {
+        const p = entryParams();
+        if (p) { const at = g.tick0, midi = g.midi0; laneEdit(ch, (v) => MM.placeNote(v, at, midi, p.len, p.instrument, p.peak)); }
+        else drawNoteLanes();
+      } else drawNoteLanes();
+      return;
+    }
+    if (!g.moved) { drawNoteLanes(); return; }
+    const n = g.note;
+    if (g.mode === 'len') laneEdit(ch, (v) => MM.replaceNote(v, n, { length: g.length }));
+    else laneEdit(ch, (v) => MM.replaceNote(v, n, { at: n.at + g.dt, midi: n.midi + g.dm }));
+  }
+  /** The keys of a focused note lane: arrows move the selected note (Shift: 8 ticks / an octave), [ and ] change its length, Delete removes it, , and . (Home / End) pick another. */
+  function laneKey(ch, e) {
+    if (!nv || e.ctrlKey || e.metaKey || e.altKey) return;             // Ctrl+Z and friends reach the editor's own handler
+    const k = e.key, big = e.shiftKey;
+    const n = nsel && nsel.ch === ch ? selNote() : null;
+    const handled = () => { e.preventDefault(); e.stopPropagation(); };
+    const pick = (note) => { if (note) selectNote(ch, note); };
+    const list = nv[ch].notes;
+    if (k === 'PageUp' || k === 'PageDown') { handled(); scrollLane(ch, k === 'PageUp' ? 12 : -12); return; }
+    if (k === ',' || k === '.') {
+      if (!list.length) return;
+      handled();
+      const from = n ? n.at : cur;
+      pick(k === '.' ? list.find((q) => q.at > from) ?? list[list.length - 1] ?? null : [...list].reverse().find((q) => q.at < from) ?? list[0]);
+      return;
+    }
+    if (k === 'Home' && list.length) { handled(); pick(list[0]); return; }
+    if (k === 'End' && list.length) { handled(); pick(list[list.length - 1]); return; }
+    if (k === 'Escape' && nsel) { handled(); selectNote(ch, null); return; }
+    if (!n) return;
+    const change = (to) => { handled(); laneEdit(ch, (v) => MM.replaceNote(v, n, to)); };
+    if (k === 'ArrowLeft') change({ at: n.at - (big ? 8 : 1) < 0 ? 0 : n.at - (big ? 8 : 1) });
+    else if (k === 'ArrowRight') change({ at: n.at + (big ? 8 : 1) });
+    else if (k === 'ArrowUp') change({ midi: n.midi + (big ? 12 : 1) });
+    else if (k === 'ArrowDown') change({ midi: n.midi - (big ? 12 : 1) });
+    else if (k === ']' || e.code === 'BracketRight') change({ length: n.length + (big ? 8 : 1) });
+    else if (k === '[' || e.code === 'BracketLeft') { if (n.length > 1) change({ length: Math.max(1, n.length - (big ? 8 : 1)) }); else { handled(); say('A note lasts at least one tick', 'err'); } }
+    else if (k === 'Delete' || k === 'Backspace') { handled(); laneEdit(ch, (v) => MM.removeNote(v, n), false); }
+  }
+  for (const { ch, cv } of nlanes) {
+    cv.addEventListener('contextmenu', (e) => e.preventDefault());
+    cv.addEventListener('pointerdown', (e) => laneDown(ch, e));
+    cv.addEventListener('pointermove', (e) => laneMove(ch, e));
+    cv.addEventListener('pointerup', () => laneUp(ch));
+    cv.addEventListener('pointercancel', () => { nd = null; drawNoteLanes(); });
+    cv.addEventListener('pointerleave', () => { if (!nd) nvInfo.textContent = selNote() ? noteText(selNote()) : ''; });
+    cv.addEventListener('keydown', (e) => laneKey(ch, e));
+    cv.addEventListener('focus', () => { if (nv) drawNoteLanes(); });
+    cv.addEventListener('blur', () => { if (nv) drawNoteLanes(); });
+  }
+  // the note lanes scroll with the tick lanes
+  let syncing = false;
+  const mirrorScroll = (from, to) => from.addEventListener('scroll', () => { if (syncing) return; syncing = true; to.scrollLeft = from.scrollLeft; syncing = false; });
+  mirrorScroll(scroller, nvScroll);
+  mirrorScroll(nvScroll, scroller);
+
+  /** Draw the three note lanes (and their label cells) from `nv`. */
+  function drawNoteLanes() {
+    const show = !!nv && noteViewShown();
+    noteView.hidden = !noteViewShown();
+    nvBox.hidden = !show;
+    nvToggle.setAttribute('aria-pressed', String(noteViewOn));
+    nvToggle.textContent = noteViewOn ? 'Note view ▾' : 'Note view ▸';
+    if (!show) return;
+    const cs = getComputedStyle(root);
+    const col = (v, fb) => cs.getPropertyValue(v).trim() || fb;
+    const C = { bg: col('--bg', '#0d1117'), panel: col('--bg-surface', '#1c2128'), border: col('--border', '#2d333b'), fg: col('--fg', '#cdd9e5'), muted: col('--fg-muted', '#768390'),
+      amber: col('--amber-fg', '#e3b341'), ok: col('--ok-fg', '#8ddb8c'), blue: col('--blue-fg', '#79c0ff'), red: col('--red-fg', '#f78166'), dim: col('--fg-dim', '#3d444c') };
+    const chanCol = [C.ok, C.blue, C.amber];
+    const n = tickCount();
+    const steps = [1, 2, 5, 10, 20, 50, 100, 200];
+    const stepT = steps.find((q) => q * colW >= 30) ?? 200;
+    for (const { ch, cell, lab, cv } of nlanes) {
+      const g = laneGeom(ch);
+      if (cv.width !== g.w || cv.height !== g.h) { cv.width = g.w; cv.height = g.h; }
+      cv.style.width = g.w + 'px'; cv.style.height = g.h + 'px';
+      if (lab.width !== LABEL_W || lab.height !== g.h) { lab.width = LABEL_W; lab.height = g.h; }
+      lab.style.width = LABEL_W + 'px'; lab.style.height = g.h + 'px';
+      cell.style.height = g.h + 'px';
+      const ctx = cv.getContext('2d'), win = g.win;
+      ctx.fillStyle = C.bg; ctx.fillRect(0, 0, g.w, g.h);
+      // the pitch grid: black keys shaded, a line under every C, the chosen channel's lane marked
+      for (let midi = win.hi; midi >= win.lo; midi--) {
+        const y = rowY(ch, midi), pc = midi % 12;
+        if ([1, 3, 6, 8, 10].includes(pc)) { ctx.fillStyle = C.panel; ctx.globalAlpha = .8; ctx.fillRect(0, y, g.w, NOTE_ROW_H); ctx.globalAlpha = 1; }
+        if (pc === 0) { ctx.fillStyle = C.border; ctx.fillRect(0, y + NOTE_ROW_H - 1, g.w, 1); }
+      }
+      ctx.fillStyle = C.border; ctx.globalAlpha = .8;
+      for (let i = 0; i < n; i += stepT) ctx.fillRect(i * colW, NOTE_STRIP_H, 1, g.h - NOTE_STRIP_H);
+      ctx.globalAlpha = 1;
+      if (ch === track) { ctx.fillStyle = C.amber; ctx.globalAlpha = .14; ctx.fillRect(rng[0] * colW, 0, (rng[1] - rng[0] + 1) * colW, g.h); ctx.globalAlpha = 1; ctx.fillStyle = C.fg; ctx.fillRect(cur * colW, NOTE_STRIP_H, 1, g.h - NOTE_STRIP_H); }
+      // raw ticks: a grey strip on top
+      ctx.fillStyle = C.muted;
+      for (const q of nv[ch].raw) { ctx.globalAlpha = .75; ctx.fillRect(q.from * colW, 1, (q.to - q.from + 1) * colW, NOTE_STRIP_H - 3); }
+      ctx.globalAlpha = 1;
+      // the notes: a bar a row high, brighter for a louder peak; a silent note (peak 0) is an outline
+      const drawBar = (note, at, midi, length, style) => {
+        if (midi < win.lo || midi > win.hi) {                            // out of the window: a mark on its edge
+          ctx.fillStyle = chanCol[ch]; const y = midi > win.hi ? NOTE_STRIP_H : g.h - 2;
+          ctx.fillRect(at * colW, y, Math.max(2, length * colW - 1), 2);
+          return;
+        }
+        const x = at * colW, y = rowY(ch, midi), w = Math.max(2, length * colW - 1), h = NOTE_ROW_H - 1;
+        ctx.strokeStyle = ctx.fillStyle = chanCol[ch];
+        if (style === 'ghost') { ctx.globalAlpha = .9; ctx.setLineDash([3, 2]); ctx.strokeStyle = C.fg; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); ctx.setLineDash([]); ctx.globalAlpha = 1; return; }
+        if (note.silent) { ctx.globalAlpha = .9; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1); ctx.globalAlpha = 1; }
+        else { ctx.globalAlpha = .35 + .65 * note.peak / 15; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+        if (style === 'sel') { ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y - 1 + 1, w - 2, h - 2); ctx.lineWidth = 1; ctx.fillStyle = C.fg; ctx.fillRect(x + w - 2, y, 2, h); }
+      };
+      const sn = nsel && nsel.ch === ch ? selNote() : null;
+      for (const note of nv[ch].notes) drawBar(note, note.at, note.midi, note.length, sn && sn.at === note.at ? 'sel' : '');
+      if (nd && nd.ch === ch) {                                          // the gesture's ghost: where the note would go
+        if (nd.mode === 'len') drawBar(nd.note, nd.note.at, nd.note.midi, nd.length, 'ghost');
+        else if (nd.mode === 'move' && nd.moved) drawBar(nd.note, nd.note.at + nd.dt, nd.note.midi + nd.dm, nd.note.length, 'ghost');
+        else if (nd.mode === 'place') drawBar(null, nd.tick0, nd.midi0, Number(noteLen.value) || 8, 'ghost');
+      }
+      if (playX >= 0) { ctx.fillStyle = C.fg; ctx.fillRect(Math.round(playX), 0, 2, g.h); }
+      // the label cell: the channel's letter and the names of the C rows
+      const lx = lab.getContext('2d');
+      lx.clearRect(0, 0, LABEL_W, g.h);
+      lx.font = 'bold 11px sans-serif'; lx.textBaseline = 'top'; lx.fillStyle = chanCol[ch]; lx.fillText(TRACK_NAMES[ch], 5, 1);
+      lx.font = '9px sans-serif'; lx.textBaseline = 'middle'; lx.fillStyle = C.muted; lx.textAlign = 'right';
+      for (let midi = win.hi; midi >= win.lo; midi--) if (midi % 12 === 0) lx.fillText(S_name(midi), LABEL_W - 3, rowY(ch, midi) + NOTE_ROW_H / 2);
+      lx.textAlign = 'left';
+      const isFocus = document.activeElement === cv;
+      cv.setAttribute('aria-description', sn ? noteText(sn) : `${nv[ch].notes.length} notes${nv[ch].raw.length ? `, ${nv[ch].raw.length} raw runs` : ''}`);
+      if (isFocus && sn) nvInfo.textContent = noteText(sn);
+    }
+    if (!nd && !nlanes.some(({ cv }) => cv.matches(':hover'))) nvInfo.textContent = selNote() ? noteText(selNote()) : '';
+  }
+
   // ── drawing ──
   function drawLanes() {
     if (!sfx) return;
@@ -1016,6 +1326,7 @@ export function createSoundEditor(container, host) {
     if (hoverTick >= 0 && hoverTick !== cur) { ctx.strokeStyle = C.muted; ctx.strokeRect(hoverTick * colW + .5, LANES.vol.y - 3.5, Math.max(1, colW - 1), LANES_H - LANES.vol.y + 3); }
     for (const k of LANE_ORDER.slice(1)) { ctx.fillStyle = C.borderHi; ctx.fillRect(0, LANES[k].y - 2, W, 1); }
     if (playX >= 0) { ctx.fillStyle = C.fg; ctx.fillRect(Math.round(playX), 0, 2, LANES_H); }
+    drawNoteLanes();
   }
 
   function drawWave() {
@@ -1236,8 +1547,9 @@ export function createSoundEditor(container, host) {
     if (has) { clampSel(); renderWarnings(); syncRow(); syncRange(); }
     else warnList.replaceChildren();
     syncControls();
+    deriveNotes();
     if (has) { layoutLanes(); drawLanes(); drawWave(); renderInfo(); }
-    else infoEl.textContent = '';
+    else { infoEl.textContent = ''; noteView.hidden = true; }
   }
   function layoutLanes() {
     colW = zoomed();
@@ -1402,6 +1714,10 @@ export function createSoundEditor(container, host) {
       kind, name, track, trackLengths: sfx ? M.trackLengths(sfx) : [0, 0, 0], cur, range: [...rng], zoom: sfx ? colW : 0, colW, playing, playWhat, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
       asset: sfx ? M.toAsset(sfx) : null, lanes: LANES, toneTop: TONE_TOP, labelWidth: LABEL_W, marks: [...hostMarks],
       song: song ? MM.toSong(song) : null, pattern: pat, orderPos: opos, noteAt,
+      noteView: {
+        shown: !!nv, on: noteViewOn, rowH: NOTE_ROW_H, stripH: NOTE_STRIP_H, selected: selNote() ? { ch: nsel.ch, ...selNote() } : null,
+        lanes: nv ? nlanes.map(({ ch }) => ({ ch, win: nwin[ch] ? { ...nwin[ch] } : null, height: laneGeom(ch).h, notes: nv[ch].notes.map((q) => ({ ...q })), raw: nv[ch].raw.map((q) => ({ ...q })) })) : [],
+      },
     }),
   };
 }

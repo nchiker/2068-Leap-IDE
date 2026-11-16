@@ -8,7 +8,8 @@
  * real mouse and key events over the DevTools protocol: painting every lane, range selection, every operation, presets, undo / redo,
  * the numeric row editor and its clamping, Play through an AudioContext stub, the information readouts, the unstorable-tick warning,
  * changes made by somebody else, a host that refuses a write, a host with only the required members, both themes, and every effect of
- * the example projects as data. Screenshots go to [outdir]. Exits 1 if any check fails.
+ * the example projects as data, and the note view of song mode (A1: a note lane per channel; click, drag, keys; raw ticks; an example song re-entered note by
+ * note with identical converted bytes). Screenshots go to [outdir]. Exits 1 if any check fails.
  * Chrome: $CHROME, else Playwright's headless shell, else google-chrome / chromium. Needs Node 22+ (global WebSocket).
  */
 
@@ -21,7 +22,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from '
 import { tmpdir, homedir } from 'node:os';
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { convertSfx } from '../src/lang/arcade/arcade-assets.js';
+import { convertSfx, convertMusic } from '../src/lang/arcade/arcade-assets.js';
+import * as MM from '../src/tools/music-model.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const outDir = process.argv[2] ?? mkdtempSync(join(tmpdir(), 'sound-smoke-'));
@@ -752,6 +754,263 @@ try {
   await click('[data-role=mode-sfx]');
   await evaluate(`(t.editor.select('work'), true)`);
   check('songs: no page errors', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
+  }
+
+  // ── the note view (A1, song mode): a note lane per channel, derived from the records by notesOfTrack, edited only through enterNote / enterRest ──
+  {
+  const LC = ['a', 'b', 'c'];
+  const nvSong = (nm = 'nv') => evaluate(`t.host.getAsset('music', ${JSON.stringify(nm)})`);
+  const sets = () => evaluate('t.log.sets.length');
+  const nvState = async () => (await state()).noteView;
+  const recsOf = (note, len, inst, peak) => MM.noteRecords(note, len, inst, peak === undefined || peak === null ? {} : { peak });
+  const sameRecs = (got, want, at = 0) => want.every((r, k) => got[at + k] && got[at + k].tone === r.tone && got[at + k].vol === r.vol && got[at + k].noise === r.noise && got[at + k].mix === r.mix);
+  const isPad = (r) => r && r.tone === 200 && r.vol === 0 && r.noise === 0 && r.mix === 6;
+  /** What the cartridge holds of a song (convertMusic: loop, order, every pattern's stream byte for byte); `bytes` alone is only the size. */
+  const image = (asset) => { const c = convertMusic(asset); return { loop: c.loop, order: c.order, size: c.bytes, patterns: c.patterns.map((q) => Array.from(q.bytes)) }; };
+  const blankSong = (len = 64) => MM.toSong({ patterns: [MM.newPattern(len)], order: [0], loop: 0 });
+  const openSong = async (nm, asset) => { await evaluate(`(t.externalSetSong(${JSON.stringify(nm)}, ${JSON.stringify(asset)}), t.editor.select(${JSON.stringify(nm)}, 'music'), true)`); };
+  /** Page coordinates of tick `tick` (a fraction `frac` across it) and pitch `midi` in note lane `ch`; scrolls the lane into view first. */
+  async function nlPoint(ch, tick, midi, frac = .5) {
+    return evaluate(`(() => { const c = document.querySelector('[data-role=note-lane-${LC[ch]}]'); c.scrollIntoView({ block: 'nearest' });
+      const st = t.editor.getState(), L = st.noteView.lanes[${ch}], r = c.getBoundingClientRect();
+      return { x: r.left + (${tick} + ${frac}) * st.colW, y: r.top + st.noteView.stripH + (L.win.hi - ${midi} + .5) * st.noteView.rowH, lo: L.win.lo, hi: L.win.hi }; })()`);
+  }
+  /** Scroll lane `ch`'s pitch window with its buttons until it holds `midi`. */
+  async function showPitch(ch, midi) {
+    for (let k = 0; k < 8; k++) {
+      const w = (await nvState()).lanes[ch].win;
+      if (midi > w.hi) await click(`[data-role=note-up-${LC[ch]}]`); else if (midi < w.lo) await click(`[data-role=note-down-${LC[ch]}]`); else return true;
+    }
+    return false;
+  }
+  async function nlClick(ch, tick, midi) { await showPitch(ch, midi); const p = await nlPoint(ch, tick, midi); await mouse('mouseMoved', p.x, p.y, 'none', 0); await mouse('mousePressed', p.x, p.y); await mouse('mouseReleased', p.x, p.y); }
+  async function nlDrag(ch, t0, m0, t1, m1, { frac0 = .5, hold = false } = {}) {
+    await showPitch(ch, m0); await showPitch(ch, m1);
+    const a = await nlPoint(ch, t0, m0, frac0), b = await nlPoint(ch, t1, m1);
+    await mouse('mouseMoved', a.x, a.y, 'none', 0); await mouse('mousePressed', a.x, a.y);
+    for (let k = 1; k <= 4; k++) await mouse('mouseMoved', a.x + (b.x - a.x) * k / 4, a.y + (b.y - a.y) * k / 4, 'left', 1);
+    if (!hold) await mouse('mouseReleased', b.x, b.y);
+    return b;
+  }
+  const rawKey = async (k, code, vk, modifiers = 0) => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, modifiers, windowsVirtualKeyCode: vk, text: k.length === 1 ? k : undefined });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, modifiers, windowsVirtualKeyCode: vk });
+  };
+  const KEYS = { left: ['ArrowLeft', 'ArrowLeft', 37], right: ['ArrowRight', 'ArrowRight', 39], up: ['ArrowUp', 'ArrowUp', 38], down: ['ArrowDown', 'ArrowDown', 40], lt: ['[', 'BracketLeft', 219], rt: [']', 'BracketRight', 221],
+    del: ['Delete', 'Delete', 46], comma: [',', 'Comma', 188], dot: ['.', 'Period', 190], home: ['Home', 'Home', 36], end: ['End', 'End', 35], esc: ['Escape', 'Escape', 27], pgup: ['PageUp', 'PageUp', 33] };
+  const nk = (name, shift = false) => rawKey(...KEYS[name], shift ? SHIFT : 0);
+  const focusLane = (ch) => evaluate(`(document.querySelector('[data-role=note-lane-${LC[ch]}]').focus(), true)`);
+  const setNote = async (inst, len, peak) => { await setField('[data-role=note-inst]', inst); await setField('[data-role=note-len]', len); await setField('[data-role=note-vol]', peak === null ? '' : peak); };
+
+  await click('[data-role=mode-music]');
+  check('the note view is shown in song mode: three lanes (A, B, C), a toggle, focusable lanes with an accessible name',
+    (await nvState()).shown && (await evaluate("LC = ['a', 'b', 'c'].map((l) => document.querySelector('[data-role=note-lane-' + l + ']')), LC.every((c) => c && c.tabIndex === 0 && /^Note lane, channel [ABC]/.test(c.getAttribute('aria-label')))")) && !(await evaluate("document.querySelector('[data-role=note-view]').hidden")));
+  await click('[data-role=mode-sfx]');
+  check('and hidden in effect mode', (await evaluate("document.querySelector('[data-role=note-view]').hidden")) && !(await nvState()).shown);
+  await click('[data-role=mode-music]');
+
+  // a blank song: 64 rest ticks on channel A
+  await openSong('nv', blankSong());
+  let ss = await state();
+  check('a blank pattern: the lanes are empty, on their default windows (A C4..B5, B C3..B4, C C2..B3), no raw ticks', ss.name === 'nv' && (await nvState()).lanes.every((l) => l.notes.length === 0 && l.raw.length === 0)
+    && same((await nvState()).lanes.map((l) => [l.win.lo, l.win.hi]), [[60, 83], [48, 71], [36, 59]]), JSON.stringify((await nvState()).lanes.map((l) => l.win)));
+  await shot('20-note-view-blank');
+
+  // click places a note of the note row's instrument, length and peak
+  await setNote('organ', 8, null);
+  const sets0 = await sets(), a0 = await nvSong();
+  await nlClick(0, 8, 64);
+  let sg = await nvSong(), nv = await nvState(), tk = sg.patterns[0].ticks;
+  check('a click on lane A places an E4 organ note of 8 ticks at the clicked tick: exactly noteRecords, the rest still the rest record', tk.length === 64 && sameRecs(tk, recsOf(64, 8, 'organ'), 8) && tk.filter((r, i) => i < 8 || i >= 16).every(isPad));
+  ss = await state();
+  check('it is one write to the host, shown as that note, selected (cursor on it, its ticks the range, channel A)', (await sets()) === sets0 + 1 && same(nv.lanes[0].notes.map((n) => [n.at, n.length, n.note, n.instrument, n.peak]), [[8, 8, 'E4', 'organ', 11]])
+    && nv.selected?.at === 8 && nv.selected.ch === 0 && ss.cur === 8 && same(ss.range, [8, 15]) && ss.track === 0 && ss.canUndo);
+  check('the "at tick" box moves to the tick after the note (as after Enter), so the note row goes on from there', ss.noteAt === 16);
+  await focusLane(0);
+  await key('z', { ctrl: true });
+  check('Ctrl+Z takes the note back in one step (the blank pattern again)', same(await nvSong(), a0) && !(await state()).canUndo);
+  await key('y', { ctrl: true });
+  check('Ctrl+Y puts it back', sameRecs((await nvSong()).patterns[0].ticks, recsOf(64, 8, 'organ'), 8));
+
+  // drag: moves in pitch and time as one edit, written once on release
+  const setsB = await sets(), aB = await nvSong();
+  await nlDrag(0, 10, 64, 14, 67, { hold: true });
+  check('a drag changes nothing in the project until it is released (a ghost shows where the note would go)', same(await nvSong(), aB) && (await sets()) === setsB);
+  await mouse('mouseReleased', (await nlPoint(0, 14, 67)).x, (await nlPoint(0, 14, 67)).y);
+  sg = await nvSong(); tk = sg.patterns[0].ticks; nv = await nvState();
+  check('released: the note moved 4 ticks later and 3 semitones up (G4 at tick 12), the old ticks are rests, one write', sameRecs(tk, recsOf(67, 8, 'organ'), 12) && tk.slice(0, 12).every(isPad) && tk.slice(20).every(isPad) && (await sets()) === setsB + 1
+    && same(nv.lanes[0].notes.map((n) => [n.at, n.length, n.note]), [[12, 8, 'G4']]) && nv.selected?.at === 12);
+  await key('z', { ctrl: true });
+  check('one Ctrl+Z undoes the whole move', same(await nvSong(), aB));
+  await key('y', { ctrl: true });
+
+  // drag from the right end lengthens
+  const p20 = await nlPoint(0, 19, 67, 0.95);
+  check('the pointer over the right end of a bar becomes a resize cursor', await (async () => { await mouse('mouseMoved', p20.x, p20.y, 'none', 0); return (await evaluate("document.querySelector('[data-role=note-lane-a]').style.cursor")) === 'ew-resize'; })());
+  await nlDrag(0, 19, 67, 23, 67, { frac0: 0.95 });
+  sg = await nvSong(); tk = sg.patterns[0].ticks;
+  check('dragging the right end 4 ticks on lengthens it to 12 ticks (the same note, a longer envelope: noteRecords of 12)', sameRecs(tk, recsOf(67, 12, 'organ'), 12) && (await nvState()).lanes[0].notes[0].length === 12 && tk.length === 64);
+
+  // the keys of the focused lane
+  await focusLane(0);
+  const setsK = await sets();
+  await nk('right');
+  check('Right moves the selected note one tick later', sameRecs((await nvSong()).patterns[0].ticks, recsOf(67, 12, 'organ'), 13) && isPad((await nvSong()).patterns[0].ticks[12]) && (await sets()) === setsK + 1);
+  await nk('up');
+  check('Up raises it a semitone (G#4)', sameRecs((await nvSong()).patterns[0].ticks, recsOf(68, 12, 'organ'), 13) && (await nvState()).lanes[0].notes[0].note === 'G#4');
+  await nk('rt');
+  check('] lengthens it by a tick (13)', (await nvState()).lanes[0].notes[0].length === 13 && sameRecs((await nvSong()).patterns[0].ticks, recsOf(68, 13, 'organ'), 13));
+  await nk('lt'); await nk('lt');
+  check('[ shortens it (twice: 11), the freed ticks are rests', (await nvState()).lanes[0].notes[0].length === 11 && sameRecs((await nvSong()).patterns[0].ticks, recsOf(68, 11, 'organ'), 13) && (await nvSong()).patterns[0].ticks.slice(24).every(isPad));
+  check('five keys, five writes, each one undo step (the history has them: five undos reach the lengthened note)', (await sets()) === setsK + 5);
+  await nk('left', true);
+  check('Shift+Left moves it 8 ticks earlier (to tick 5)', (await nvState()).lanes[0].notes[0].at === 5);
+  await nk('down', true);
+  check('Shift+Down an octave lower (G#3)', (await nvState()).lanes[0].notes[0].note === 'G#3');
+  check('a focused lane shows a visible focus ring', await evaluate(`(() => { const c = document.querySelector('[data-role=note-lane-a]'); const s = getComputedStyle(c); return document.activeElement === c && c.matches(':focus-visible') && s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2; })()`));
+  const before = await nvSong();
+  await nk('del');
+  nv = await nvState();
+  check('Delete removes the note: a rest over its ticks, the track keeps its length, nothing selected', nv.lanes[0].notes.length === 0 && nv.selected === null && (await nvSong()).patterns[0].ticks.length === 64 && (await nvSong()).patterns[0].ticks.every(isPad));
+  await key('z', { ctrl: true });
+  check('Ctrl+Z brings the note back', same(await nvSong(), before) && (await nvState()).lanes[0].notes.length === 1);
+  await nk('esc');
+  check('Escape deselects (the note stays)', (await nvState()).selected === null && (await nvState()).lanes[0].notes.length === 1);
+
+  // several notes: , and . pick the previous / next; Home / End the first / last
+  await setNote('pluck', 4, null);
+  await nlClick(0, 30, 72); await nlClick(0, 40, 69); await nlClick(0, 50, 76);
+  nv = await nvState();
+  check('three more notes (pluck, 4 ticks, default peak) placed by clicks: four notes, ascending', nv.lanes[0].notes.length === 4 && nv.lanes[0].notes.map((n) => n.at).join() === '5,30,40,50' && nv.lanes[0].notes.slice(1).every((n) => n.instrument === 'pluck' && n.peak === 14 && n.length === 4));
+  await focusLane(0);
+  await nk('home'); check('Home selects the first note', (await nvState()).selected?.at === 5);
+  await nk('dot'); check('. selects the next', (await nvState()).selected?.at === 30);
+  await nk('dot'); await nk('dot'); await nk('dot'); check('. at the last note stays on it', (await nvState()).selected?.at === 50);
+  await nk('comma'); check(', selects the previous', (await nvState()).selected?.at === 40);
+  await nk('end'); check('End selects the last', (await nvState()).selected?.at === 50 && (await state()).cur === 50);
+  // a note placed over others replaces their ticks
+  await setNote('organ', 12, null);
+  const over = await nlPoint(0, 28, 60);
+  await nlClick(0, 28, 60);
+  nv = await nvState(); sg = await nvSong();
+  check('a note placed over a note replaces those ticks (as enterNote does): the pluck at 30 is no longer that note, and the lane shows only exact notes',
+    sameRecs(sg.patterns[0].ticks, recsOf(60, 12, 'organ'), 28) && !nv.lanes[0].notes.some((n) => n.at === 30 && n.length === 4) && nv.lanes[0].notes.some((n) => n.at === 28 && n.length === 12 && n.midi === 60), JSON.stringify(nv.lanes[0].notes.map((n) => [n.at, n.length])));
+  await click('[data-role=undo]');
+
+  // raw ticks: shown as a grey strip, never changed by the note view, still edited in the tick lanes
+  const rawSong = MM.toSong(MM.fromSong(blankSong()));
+  rawSong.patterns[0].ticksB = Array.from({ length: 64 }, () => ({ ...{ tone: 200, vol: 0, noise: 0, mix: 6 } }));
+  recsOf(64, 8, 'pluck').forEach((r, k) => { rawSong.patterns[0].ticksB[4 + k] = r; });
+  [20, 21, 22, 23].forEach((i) => { rawSong.patterns[0].ticksB[i] = { tone: 1234, vol: 5 + (i - 20), noise: 2, mix: 4 }; });
+  await openSong('nv_raw', rawSong);
+  nv = await nvState();
+  check('foreign ticks (not what note entry writes) on channel B: the pluck is a note, ticks 20..23 are raw, nothing else', same(nv.lanes[1].notes.map((n) => [n.at, n.length, n.instrument]), [[4, 8, 'pluck']]) && same(nv.lanes[1].raw, [{ from: 20, to: 23 }]) && nv.lanes[0].notes.length === 0);
+  const px = await evaluate(`(() => { const st = t.editor.getState(), c = document.querySelector('[data-role=note-lane-b]'), g = c.getContext('2d');
+    const at = (tick, y) => Array.from(g.getImageData(Math.round((tick + .5) * st.colW), y, 1, 1).data).join();
+    return { raw: at(21, 3), none: at(40, 3), noteRow: at(21, st.noteView.stripH + 4) }; })()`);
+  check('the raw strip is painted (grey) above exactly those ticks, and not where there is nothing', px.raw !== px.none && px.raw.split(',')[3] !== '0', JSON.stringify(px));
+  const rawBefore = (await nvSong('nv_raw')).patterns[0].ticksB.slice(20, 24);
+  const rp = await nlPoint(1, 21, 60);
+  await showPitch(1, 60);
+  const rp2 = await evaluate(`(() => { const st = t.editor.getState(), r = document.querySelector('[data-role=note-lane-b]').getBoundingClientRect(); return { x: r.left + 21.5 * st.colW, y: r.top + 3 }; })()`);
+  await mouse('mouseMoved', rp2.x, rp2.y, 'none', 0); await mouse('mousePressed', rp2.x, rp2.y); await mouse('mouseReleased', rp2.x, rp2.y);
+  ss = await state();
+  check('clicking the raw strip selects those ticks on channel B (for the tick lanes below) and says where to edit them', ss.track === 1 && same(ss.range, [20, 23]) && /not a note entry's records/.test(await status()), JSON.stringify([ss.track, ss.range]) + await status());
+  const setsR = await sets();
+  await nlClick(0, 30, 70);
+  check('a note placed in lane A leaves channel B alone (every B tick as it was)', same((await nvSong('nv_raw')).patterns[0].ticksB.slice(20, 24), rawBefore) && same((await nvSong('nv_raw')).patterns[0].ticksB.length, 64) && (await state()).track === 0);
+  await nlClick(1, 4, 64);
+  await focusLane(1);
+  await nk('del');
+  sg = await nvSong('nv_raw');
+  check('selecting the pluck in lane B and deleting it rests its ticks (4..11) and leaves the raw ticks exactly as they were', sg.patterns[0].ticksB.slice(4, 12).every(isPad) && same(sg.patterns[0].ticksB.slice(20, 24), rawBefore) && (await nvState()).lanes[1].raw.length === 1);
+  await key('z', { ctrl: true });
+  // the tick lanes still work and the note view follows
+  await click('[data-role=track-b]');
+  await paintClick('vol', 22, 9);
+  nv = await nvState(); sg = await nvSong('nv_raw');
+  check('painting in the tick lanes of channel B still works (tick 22 volume 9), and the note view follows: that tick is still raw', sg.patterns[0].ticksB[22].vol === 9 && nv.lanes[1].raw.some((q) => q.from <= 22 && q.to >= 22));
+  // a note over raw ticks replaces them
+  await setNote('organ', 4, null);
+  await nlClick(1, 20, 64);
+  nv = await nvState();
+  check('a note placed over the raw ticks replaces them (20..23): no raw ticks remain, the note is shown', nv.lanes[1].raw.length === 0 && nv.lanes[1].notes.some((n) => n.at === 20 && n.length === 4));
+
+  // the sample: an example song re-entered note by note in the note view
+  {
+    const fsx = await import('node:fs');
+    const orig = JSON.parse(fsx.readFileSync(new URL('../arcade/examples/bounce.assets.json', import.meta.url), 'utf8')).music.theme;
+    const origSong = MM.fromSong(orig);
+    const parts = [0, 1, 2].map((c) => MM.notesOfTrack(origSong.patterns[0][['ticks', 'ticksB', 'ticksC'][c]]));
+    const total = parts.reduce((n, r) => n + r.notes.length, 0);
+    await openSong('bounce_re', blankSong(origSong.patterns[0].ticks.length));
+    const t0 = Date.now();
+    for (let ch = 0; ch < 3; ch++) {
+      for (const n of parts[ch].notes) {
+        await setNote(n.instrument, n.length, n.peak);
+        await nlClick(ch, n.at, n.midi);
+      }
+    }
+    const re = await nvSong('bounce_re'), reSong = MM.fromSong(re);
+    const want = image(orig), got = image(re);
+    check(`the example song "bounce / theme" (${total} notes on three channels, ${origSong.patterns[0].ticks.length} ticks), re-entered by clicking each note into a blank pattern in the note view (${((Date.now() - t0) / 1000).toFixed(1)} s)`,
+      total > 50 && reSong.patterns.length === 1, `${total} notes`);
+    check('its converted bytes (convertMusic) are IDENTICAL to the original\'s: the loop, the order and every pattern stream, byte for byte', same(want, got) && want.patterns[0].length > 100, `${got.size} vs ${want.size} bytes (${got.patterns[0].length} in the stream)`);
+    check('and so are all three channels, record for record', ['ticks', 'ticksB', 'ticksC'].every((k) => same(reSong.patterns[0][k], origSong.patterns[0][k])));
+    check('the lanes show the same notes as the original\'s (instrument, pitch, length, peak)', same((await nvState()).lanes.map((l) => l.notes.map((n) => [n.at, n.length, n.midi, n.instrument, n.peak])), parts.map((r) => r.notes.map((n) => [n.at, n.length, n.midi, n.instrument, n.peak]))));
+    await shot('21-note-view-bounce');
+    // each placement was one undo step: undoing the last one takes just that note away
+    const lastNote = parts[2].notes.at(-1);
+    await focusLane(2);
+    await key('z', { ctrl: true });
+    const undone = await nvSong('bounce_re');
+    check('each click was one history step: one Ctrl+Z removes exactly the last note entered', same((await nvState()).lanes[2].notes.length, parts[2].notes.length - 1) && undone.patterns[0].ticksC.slice(lastNote.at, lastNote.at + lastNote.length).every((r, k) => k === 0 ? true : true) && !same(undone, re));
+    await key('y', { ctrl: true });
+    check('Ctrl+Y puts it back, bytes identical again', same(image(await nvSong('bounce_re')), want));
+  }
+
+  // play cursor
+  await focusLane(0);
+  await click('[data-role=play]');
+  await sleep(250);
+  const cursor = await evaluate(`(() => { const c = document.querySelector('[data-role=note-lane-a]'), g = c.getContext('2d'); const f = document.createElement('canvas').getContext('2d');
+    f.fillStyle = getComputedStyle(document.querySelector('.sfxed')).getPropertyValue('--fg').trim() || '#cdd9e5'; f.fillRect(0, 0, 1, 1); const want = Array.from(f.getImageData(0, 0, 1, 1).data).join();
+    const row = g.getImageData(0, 0, c.width, 1).data; let n = 0; for (let i = 0; i < c.width; i++) if (Array.from(row.slice(i * 4, i * 4 + 4)).join() === want) n++; return n; })()`);
+  check('while a pattern plays, the note lanes carry the playing cursor (a 2 px line in the foreground colour)', cursor >= 2, String(cursor));
+  await click('[data-role=stop]');
+
+  // the toggle, the pitch buttons and the theme
+  await click('[data-role=noteview-toggle]');
+  check('the toggle hides the lanes (and the choice is remembered in the preferences)', (await evaluate("document.querySelector('[data-role=note-lane-a]').offsetParent === null")) && !(await nvState()).shown && (await evaluate("JSON.parse(localStorage.getItem('leap-studio.sfxed')).noteView === false")));
+  await click('[data-role=noteview-toggle]');
+  check('and shows them again', (await nvState()).shown && (await evaluate("document.querySelector('[data-role=note-lane-a]').offsetParent !== null")) && (await evaluate("JSON.parse(localStorage.getItem('leap-studio.sfxed')).noteView === true")));
+  const w0 = (await nvState()).lanes[0].win;
+  await click('[data-role=note-up-a]');
+  const w1 = (await nvState()).lanes[0].win;
+  await focusLane(0);
+  await nk('pgup');
+  const w2 = (await nvState()).lanes[0].win;
+  check('the ▲ button (and Page Up) show higher notes, an octave at a time, the window keeps its height', w1.hi === w0.hi + 12 && w1.hi - w1.lo === w0.hi - w0.lo && w2.hi === w1.hi + 12);
+  await evaluate("(document.documentElement.dataset.theme = 'light', true)");
+  await sleep(150);
+  const lightPix = await evaluate("Array.from(document.querySelector('[data-role=note-lane-b]').getContext('2d').getImageData(1, 40, 1, 1).data).join()");
+  await shot('22-note-view-light');
+  await evaluate("(document.documentElement.dataset.theme = 'dark', true)");
+  await sleep(150);
+  const darkPix = await evaluate("Array.from(document.querySelector('[data-role=note-lane-b]').getContext('2d').getImageData(1, 40, 1, 1).data).join()");
+  check('the note lanes follow the theme variables (they redraw when the theme switches)', lightPix !== darkPix, `${lightPix} / ${darkPix}`);
+  // another pattern: the lanes follow the pattern shown
+  await evaluate("(t.editor.select('tune', 'music'), true)");
+  {
+    const tune = await nvSong('tune'), lanes = (await nvState()).lanes;
+    const shown = (await state()).pattern;
+    const want = ['ticks', 'ticksB', 'ticksC'].map((k) => MM.notesOfTrack(tune.patterns[shown][k] ?? []));
+    check('another song opens with its own notes in the lanes: the same as notesOfTrack of its pattern shown, channel by channel (and the windows start afresh)', (await state()).name === 'tune' && lanes.every((l, c) => same(l.notes, want[c].notes) && same(l.raw, want[c].raw)) && lanes.some((l) => l.notes.length > 0));
+  }
+  await setField('[data-role=note-vol]', '');                        // the note row as the other checks expect it (the instrument's own peak)
+  check('note view: every write was accepted by validateAsset, none unstorable, no page errors', (await evaluate('t.log.refused.length')) === 0 && (await evaluate('t.log.unstorable')) === 0 && pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
+  await click('[data-role=mode-sfx]');
+  await evaluate(`(t.editor.select('work'), true)`);
   }
 
   // ── a host with only the required members ──
