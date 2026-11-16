@@ -381,6 +381,7 @@ P1 (projects in IndexedDB, the current project still mirrored in `localStorage` 
 P5 (Help examples from `ARCADE_LANGUAGE.md`, per-word anchors, a "How a game is built" page), T2 with M3 (picture import: a shared
 `src/tools/picture-import.js`, error-diffusion as the plan's art pipeline says, two colours per cell), M4 (the floor plan's 3D preview from the
 JS reference of `arcade/tests/m8-common.mjs`, moved into `src/`).
+**S1. Gallery strip** (owner, 2026-11-16: in Starfall's Sprites tab only one sprite is visible; the editor edits one asset at a time and the others are in a drop-down and the project panel): a row of small thumbnails of every asset of the tab's kind (sprites, tile sets, maps, models) at the top of each of those four editors, the edited one highlighted, a click selects it; one pure helper for the thumbnails (`src/tools/asset-thumbs.js`) and a check per tab. Do it first: it is small and makes every game's art visible at a glance.
 
 ## 5. Sample games (owner's rule: every improvement used in the sample games, each new feature shown off)
 
