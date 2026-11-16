@@ -1,0 +1,744 @@
+{"verdict":"allow","rev":16,"data":{"rev":16,"xml":"Leap Arcade Studio review (item 5)
+ · 
+The Studio works end to end (all 8 examples compile and run, no page errors), but its three graphic editors draw no colours at all: a one-line bug since the first slice. Below are 45 findings in 10 areas, each with a suggested fix and a size. Pick with the Pick column; I write the contract for what you choose.
+How this was done
+I drove the Studio in headless Chrome (muted) at 1600 x 950 and 1280 x 760: New project and Run, every tab, every example opened and run for 5 s, new assets of each kind, rename and delete of a used asset, a second source file, Help, the dark theme, and typing in the larger games with the profiler on. Then I read studio.js, src/arcade-project.js and the editors where something looked wrong. All findings are on branch arcade-studio-review (no code changed yet).
+Sizes (agent work, verified by me): S under half a day, M about a day, L several days, XL a runtime change in Z80.
+Pick in each table: Do now, Later or No. Ids (B1, K2, ...) are what the contract will refer to.
+Bugs
+B1 is the "no colours" you saw: the Studio hands the editors colours as text ("#cc0000") while they expect three numbers, so every swatch, tile, map cell and sprite pixel is drawn blank or black. It has been so since the first Studio slice; the editors' own tests use a fake host with the right palette, so no test saw it.
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+B1
+
+Sprite, tile and map editors show no colours: swatches empty, every tile and map cell black, sprite grid grey (studio.js palette is hex text, the editors want [r, g, b]).
+
+Pass the editors' own palette (sprite-model.js PALETTE), make the editors accept either form, and add a Studio test that reads canvas pixels in each editor.
+
+S
+
+
+
+
+B2
+
+Typing lags in big games: 50-80 ms per key in Vaults and Leap Runner. The fold gutter re-scans the whole file for every visible line (arcade/editor.js foldService, blockLines).
+
+Compute the block structure once per document version and reuse it.
+
+S
+
+
+
+
+B3
+
+Compiling for the error marks runs on the page's main thread: the page freezes 85-240 ms each time you stop typing in the large games.
+
+Run the diagnostics compile in a Web Worker (Run and DCK may stay on the page).
+
+M
+
+
+
+
+B4
+
+Renaming an asset breaks the game at once ("sprite asset "ball" is not in the project"); the hint about lines to edit is replaced by that error before you can read it.
+
+Ask "Also change the N lines that name it?" and rewrite them as one undo step.
+
+S
+
+
+
+
+B5
+
+Deleting an asset the source uses only asks "Delete?"; the game then fails to compile.
+
+Name the lines that use it in the question.
+
+S
+
+
+
+
+B6
+
+If the browser refuses the auto-save (storage full or blocked), nothing is said: work can be lost silently.
+
+Show a status-bar warning and keep the unsaved mark.
+
+S
+
+
+
+
+B7
+
+The Symbols tab lists only the open file, and clicking a name jumps within the open file, in a project of several files.
+
+Scan all files (the compiler's joined source and its line map) and open the right file.
+
+S
+
+
+
+
+Two blacks
+It is not only Starfall: five of the eight examples put BRIGHT 1 on black paper. TSRun (and so the Studio) shows that paper as dark grey next to a black border; Fuse and ZEsarUX show black. Your rule (TSRun stays, games use BRIGHT 0 on black paper) means a check plus fixes to these games.
+Game
+
+PAPER 0 + BRIGHT 1 in code
+
+Tiles with bright-black paper
+
+
+Starfall (shooter)
+
+3 places (title, play, over)
+
+all 16
+
+
+Vaults
+
+4 places, plus the VIEW3D default (CEIL 0, BRIGHT 1)
+
+all 28
+
+
+Blockfall
+
+5 places
+
+3 of 12
+
+
+Leap Runner (platformer)
+
+4 places
+
+none
+
+
+Leap Runner (4 levels)
+
+4 places
+
+none
+
+
+Bounce, Breakout, Orbit Gates
+
+none
+
+none
+
+
+The existing check (black-bright-mix) only fires when one tile set mixes the two blacks, so a set that is bright black throughout, like Starfall's and Vaults', passes it. Also, both 3D words default to bright black: WIRE3D to INK 7 PAPER 0 BRIGHT 1, VIEW3D to CEIL 0 ... BRIGHT 1.
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+K1
+
+Code that sets PAPER 0 and BRIGHT 1 is not flagged.
+
+A compiler warning (so the Studio, its problems list and arcadec all show it): within each procedure, in text order, warn at the statement that makes paper 0 and bright 1 hold together (constant values only; each scene starts at PAPER 7 BRIGHT 0).
+
+S
+
+
+
+
+K2
+
+WIRE3D and VIEW3D give bright black by default and are not checked.
+
+Warn when the clause or its default gives black paper (or a black ceiling or floor) with BRIGHT 1. Decision for you: also change both defaults to BRIGHT 0 (no example relies on the WIRE3D default; Vaults relies on the VIEW3D one and gets fixed in K4 anyway).
+
+S
+
+
+
+
+K3
+
+Tiles that are bright black throughout pass the tile check.
+
+New tile warning bright-black-paper (a tile whose paper shows and is 0 with BRIGHT 1), marked on the tile in the tile editor, replacing the narrower mix rule.
+
+S
+
+
+
+
+K4
+
+Five example games have the problem (table above).
+
+Fix them: BRIGHT 0 on every black-paper area, keeping the look as close as possible (bright text becomes the plain colour, as in Orbit Gates). Re-run their tests and the cross-emulator checks; I launch each in Fuse for you to look at.
+
+M
+
+
+
+
+K5
+
+Question: black INK on a bright paper (Leap Runner's black outlines on bright cyan sky) is also grey in TSRun.
+
+I recommend not flagging it: there is no fix that keeps the bright paper, and black-on-bright text is normal.
+
+none
+
+
+
+
+New project: a starter per game type
+New gives one starter today: a ball moved by the joystick on a white screen. The proposal is a New dialog that offers six starters, each a small, playable, commented game with its own assets (made by code, as the examples' assets are), checked by a test that compiles it and runs it on the right runtime.
+Starter
+
+Runtime
+
+What it shows
+
+
+Blank
+
+v2
+
+GAME, one SCENE with INIT and FRAME, one sprite (today's ball)
+
+
+Sprites and tiles
+
+v2
+
+a sprite pool over a tile screen, TILEAT collision, text, a sound effect, a score
+
+
+Scenes and music
+
+v2
+
+title, play and game-over scenes with ENTER, a title song (MUSIC), a session high score
+
+
+Platformer
+
+v3
+
+WINDOW, a short scrolling world, SOLID tiles, jump and gravity, the camera, a NOWINDOW title
+
+
+Raycaster
+
+v4
+
+VIEW3D on a 16 x 16 floor plan, walking and turning, one billboard sprite, a NOVIEW title
+
+
+Wireframe
+
+v2
+
+WIRE3D, a model, EYE, DRAWMODEL turning, steering
+
+
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+N1
+
+New offers one game type.
+
+The six starters above and a New dialog (title, one line, runtime, a small screenshot); each starter's test compiles it, runs it on TSRun and checks it reaches its play scene.
+
+L
+
+
+
+
+N2
+
+A new asset made with + is not declared in the source, so it does nothing until you type SPRITE x = "x" yourself.
+
+Offer to add the declaration line to main.arc (one undo step).
+
+S
+
+
+
+
+N3
+
+Before the first Run the display shows the stock ROM's copyright screen with no hint.
+
+A "Press Run (F5)" line under the display until the first Run.
+
+S
+
+
+
+
+Sprite and tile editors
+With B1 fixed, both editors are fairly complete: the sprite editor has frames, mask, onion skin, image import and an animation preview; the tile editor has flags, the "sprites never pass over" mark and per-tile usage counts. What is missing:
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+S1
+
+A sprite has no colour of its own in the game: the runtime colours it from the screen cell under it, so the editor's ink and paper are for the Studio only (its banner says so). You may have meant this by "no colours".
+
+Colour per sprite in the game needs the runtime to write and restore the attributes under each sprite in both display buffers: a runtime item of its own, not this Studio pass. I recommend No for now.
+
+XL
+
+
+
+
+T1
+
+The tile set's warnings swamp the tile editor: in Leap Runner five long "5 different colour attributes" paragraphs, each with up to 14 tile buttons, push the tiles below the fold.
+
+One short line per warning, with the detail on a click. The same in the map editor.
+
+S
+
+
+
+
+T2
+
+No picture import for tiles (the sprite editor has one), and no PNG export of a set.
+
+Import a picture into tiles (two colours per 8 x 8 cell enforced, duplicates merged); export the set as PNG. Shares its code with M3.
+
+M
+
+
+
+
+T3
+
+No Duplicate for a tile set; flags 3 to 7 have no names.
+
+Duplicate set; flag names per project (shown in the map editor's Flags view too).
+
+S
+
+
+
+
+T4
+
+No animated tiles: games swap tiles in code (Leap Runner's spinning coins).
+
+Belongs with the planned animated-tiles item (a runtime change); listed so it is not forgotten.
+
+XL
+
+
+
+
+Map editor
+You are right that it is not complete. Painting tiles works (pencil, line, rectangles, fill, select / copy / paste, zoom, the window frame and camera for worlds, wall codes for floor plans, the bank select), but a level is more than its tiles, and today everything else is typed as numbers in the source: Leap Runner's coins, enemies and start points are TABLE rows (46 to 50 coins a level), Vaults' key, door and wraith posts are CONSTs printed by a generator script.
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+M1
+
+Every tile draws black (B1).
+
+Fixed by B1.
+
+(B1)
+
+
+
+
+M2
+
+No object layer: positions of coins, enemies, the start, keys and doors cannot be placed on the map.
+
+An object layer per map: object kinds defined per project (name, marker colour, optional sprite), placed by click, dragged, listed; the Studio writes them into a generated source file (objects.arc: one TABLE per map, columns x, y, kind) that the game reads with LOADTABLE, the way Leap Runner already does by hand. Leap Runner's levels move to it as the sample.
+
+L
+
+
+
+
+M3
+
+No picture import: a title screen has to be drawn tile by tile.
+
+Import a 256 x 192 picture into a tile set plus a 32 x 24 map (duplicate cells merged, two colours a cell, the 128-tile limit reported). Shares its code with T2.
+
+M
+
+
+
+
+M4
+
+A VIEW3D floor plan is edited as coloured codes with no way to see it in 3D.
+
+A small 3D preview beside the plan: click a cell and a direction to see the view from there (drawn in JavaScript from the model the v4 runtime tests already use, no emulator needed).
+
+M
+
+
+
+
+Sound editor
+Effects are well served (three channels, painted volume / tone / noise lanes, range operations, presets, preview). Songs are where it falls short: the lanes show raw per-refresh values, not notes, so a melody can only be entered through the Note form one note at a time (note, octave, length, instrument, Enter) and cannot be seen as notes afterwards. Your earlier decision was songs in the sound editor, no separate tracker; the fixes below keep to that.
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+A1
+
+No note view for songs: a pattern cannot be read or edited as notes.
+
+A note lane (piano roll) in song mode, per channel: notes as bars on a pitch grid, click to place one of the current instrument and length, drag to move or lengthen, Delete to remove; written through the existing note-entry code, so the stored song format does not change.
+
+L
+
+
+
+
+A2
+
+No playing notes from the PC keyboard.
+
+The Z to M and Q to U rows as a piano (two octaves), to audition and to enter notes at the cursor.
+
+S
+
+
+
+
+A3
+
+Six effect presets only (beep, laser, blip, explosion, powerup, hurt).
+
+More presets (coin, jump, step, door, shield, gate chime...) and "copy from an example game" for the 41 effects the examples already have.
+
+S
+
+
+
+
+A4
+
+No way to hear an effect or song on the emulated TS2068 itself (the preview is the editor's own AY renderer).
+
+A "Play on TS2068" button that runs a tiny generated cartridge playing it. Low value: the renderer already uses TSRun's AY clock. I recommend No.
+
+M
+
+
+
+
+Model editor
+There is none: + under Models makes a cube, and the only way to change a model is to edit the .leapgame file or generate it by script (as Orbit Gates does). The project panel shows a small turning preview, so the drawing code exists.
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+W1
+
+No editor for assets.models (points and edges).
+
+A Models tab: three flat views (top, front, side) and the turning 3D preview; click in a view to add a point (the third coordinate from the selected point), drag to move, click two points to join them with an edge, Delete to remove; mirror mode (left and right halves kept equal), centre, scale, rotate by 90 degrees; presets (cube, pyramid, ring of n, dart ship, rock); the limits shown live (128 points, 255 edges, coordinates -64..64) and the existing model checks; undo. A pure model module plus the editor, each with tests, as the other editors. Orbit Gates' models open in it as the sample.
+
+L
+
+
+
+
+Running and debugging a game
+Run, Stop and Reset are all there is. The plan promised a live frame budget ("71 % of 3 refreshes", overruns flagged) and a debugger with a source map; neither was built, and Help says Pause and Step are "not available yet".
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+R1
+
+No frame budget while the game runs: you cannot see that Vaults misses its 15 fps on some ticks.
+
+A meter under the display: the game's real rate against its FRAMERATE, the share of the budget used, the worst tick and how many ticks ran over, from the runtime's tick counter.
+
+S
+
+
+
+
+R2
+
+No Pause, single-tick step or speed control.
+
+Pause / Step one tick / Continue (F8, F10, as in the IDE) and half or double speed.
+
+S
+
+
+
+
+R3
+
+No view of the game's variables while it runs.
+
+A Variables tab: every DIM'd variable and array with its live value, refreshed while running and exact when paused. Needs the compiler to report the addresses the linker gives them.
+
+M
+
+
+
+
+R4
+
+No breakpoints or line stepping in the source.
+
+A full debugger (breakpoint gutter, stop at a line, the current line marked) on the compiler's line map. I recommend R1 to R3 first and this as its own item.
+
+L
+
+
+
+
+R5
+
+No screenshot of the display.
+
+A button that saves the screen as a PNG (also gives the New dialog its starter pictures).
+
+S
+
+
+
+
+Project, files and the code editor
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+P1
+
+The browser keeps one project. Opening an example or New replaces it (you are asked only if it changed since you last saved it), so trying an example loses your place.
+
+A Projects list kept in the browser (IndexedDB): several projects, the last one reopened, examples open as copies.
+
+M
+
+
+
+
+P2
+
+Save always downloads a new file (Shooter.leapgame, then Shooter (1).leapgame...).
+
+In Chrome, save in place to the file you opened or first saved (File System Access), with the download as the fallback.
+
+S
+
+
+
+
+P3
+
+Switching source files throws away that file's undo history.
+
+Keep one editor state per file, so undo survives a switch.
+
+M
+
+
+
+
+P4
+
+Rename (F2) and Go to definition (F12) work only inside the open file.
+
+Make both project-wide, through the joined source and its line map (with B7).
+
+M
+
+
+
+
+P5
+
+Help has no example in any entry, its manual link goes to the top of the language document rather than the word, and there is no page on how a game is put together (GAME, scenes, INIT / FRAME, assets by name).
+
+Examples from the language reference per word, a link to the word's section, and a short "How a game is built" page in Help.
+
+M
+
+
+
+
+Rough edges
+Id
+
+Finding
+
+Suggested fix
+
+Size
+
+Pick
+
+
+E1
+
+Song and model names are cut to two or three letters in the project panel (rn_…, g…): the details beside them take the room.
+
+Let the name take the room and move the details to a tooltip or a second line.
+
+S
+
+
+
+
+E2
+
+The right panel shows a sideways scrollbar on the Display tab at 1600 px wide; at 1280 px the tab names run into the edge.
+
+Fit the display panel to its width; shorter tab labels or a scrolling tab strip.
+
+S
+
+
+
+
+E3
+
+At 1280 x 760 the problems list takes half the editor (Vaults' two long warnings) and cannot be folded or resized.
+
+A fold button with a count, and a drag handle.
+
+S
+
+
+
+
+E4
+
+The Scenes panel uses jargon ("512 × 192 hi-res would give 64 columns") and every scene's select offers two choices that are not built.
+
+Plain wording, and hide the choices that do not exist yet.
+
+S
+
+
+
+
+E5
+
+Two examples open with warnings: Leap Runner (5 maps with 5 background colour attributes) and Vaults (2), art decisions you left open in slice S2.
+
+Unify those tiles' colours or mark them "sprites never pass over", so every example opens clean (with K4 for Vaults).
+
+S
+
+
+
+
+E6
+
+Small things: the unsaved mark shows on a brand-new first visit; the status bar prints bytes without thousands separators; only the Symbols tab is remembered across a reload; a leftover "comes with a later Studio slice" message in the code.
+
+Fix each.
+
+S
+
+
+
+
+Recommended pick and order
+My recommendation: everything except S1, T4, A4, R4 and K5, in four stages, each its own pull request with its own tests. Every stage has a sample game, per your rule.
+Fixes first (all small): B1, B2, B4 to B7, K1 to K3, N2, N3, T1, T3, A2, A3, R1, R2, R5, P2, E1 to E6. Sample: the editors open on the example games in colour; R1's meter shown on Vaults.
+
+Two blacks in the games: K4 and E5. Sample: Starfall, Vaults, Blockfall and both Leap Runners with one black, launched in Fuse for you to look at.
+
+The big four: N1 (starters), W1 (model editor), M2 (object layer), A1 (note view). Samples: the six starters are each a small game; Orbit Gates' models open in W1; Leap Runner's coins and enemies move into M2's object layer; one of the example songs is re-entered in A1's note view and must play the same bytes.
+
+Medium items: B3 (compile in a worker), R3 (variables), P1 (projects list), P3 and P4 (per-file undo, project-wide rename), P5 (Help), T2 with M3 (picture import), M4 (3D preview of a floor plan). Sample: a title screen made by picture import in one of the starters.
+
+Left out: S1 and T4 are runtime work (sprite colour, animated tiles) that belong with a future runtime item; R4 (a full source debugger) is its own item after R1 to R3; A4 adds little; K5 I recommend not flagging.
+Next step: tick the Pick column (or tell me "as recommended"), and I write the contract for your choice, with its Sample game section, before any code.
+","complete":true},"frame":{"slug":"deb9ec33-c43b-47bd-b8b7-d7386dadbdc8","url":"https://claude.ai/artifact/UWBj3tv5v7PPd1bTAjn6Ky","artifactUrl":"https://claude.ai/artifact/UWBj3tv5v7PPd1bTAjn6Ky"}}
+
+This doc takes suggestions. Rewording what is already here ("tighten", "improve", "review", "clean up", "this is clunky") → lay the changes in the doc as suggestions: guide( items = ["topic.index", "topic.suggestions"] ) first. Small fixes met on the way (a typo) go in as suggestions with them. The same when asked to suggest, propose or mark up, when the person wants to look before it goes in, and for a question that invites changes ("Any suggestions?", "What would you change?"): suggestions in the doc on this reply, not a list in chat and not comments. An ask for only an exact fix (a typo, a stated fact), new content, a delete or a move → save the edit as usual; the same in a doc you made in this chat, for a rewrite of the whole doc, when told to edit directly, and on an unattended run. While the person is in Suggesting mode, lay it as a suggestion. The person tells you in chat to go ahead with suggestions you laid on an earlier reply ("go ahead", "do the second one") → accept the ones they mean, one call each (topic.suggestions), rather than write the change again. Any other question about the doc → answer in chat.

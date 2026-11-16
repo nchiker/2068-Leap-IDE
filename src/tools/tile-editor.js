@@ -11,6 +11,10 @@
  * The data model and every operation on it are in tile-model.js. This file is the UI: a tile strip (indices never move), an 8x8 pixel
  * grid, ink / paper / BRIGHT (for the whole tile or for chosen pixel rows: a fine-colour game's tile has colours of its own in each of its 8 rows), flags and the fg mark, previews, the set's warnings, tools, tile add / duplicate / delete-last, and the
  * tile set picker (New / Rename / Delete). One completed edit (a click, a whole drag, a button) is one host.setAsset call.
+ *
+ * Picture import (T2): "Import picture…" converts a picture to tiles (two colours per 8 x 8 cell, or per 8 x 1 row in a fine-colour project; duplicates merged;
+ * the 128-tile limit reported) and replaces or appends to the set in ONE edit (one host.setAsset, one undo step); "Export PNG" downloads the set as a contact
+ * sheet (<set>.png). The engine is picture-import.js, the panel picture-import-ui.js (shared with the map editor).
  */
 
 "use strict";
@@ -19,6 +23,10 @@ import * as T from './tile-model.js';
 import * as M from './map-model.js';
 import { colourKey } from './sprite-model.js';
 import { createWarningList, warningListCss } from './warning-list.js';
+import { thumbTileset } from './asset-thumbs.js';
+import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
+import * as PI from './picture-import.js';
+import { createImportDialog, readPictureFile, pngBlob, downloadBlob, defaultCells } from './picture-import-ui.js';
 
 const PREF_KEY = 'leap-studio.tiled';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -102,6 +110,7 @@ ${warningListCss('warnl', '.tiled-warn', { fg: '--td-fg', muted: '--td-muted', b
 .tiled-empty { color: var(--td-muted); padding: 24px 8px; }
 .tiled-h { color: var(--td-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .tiled-fg-note { color: var(--td-muted); font-size: 10px; max-width: 240px; line-height: 1.35; }
+${galleryCss('.tiled', { bg: '--td-bg', border: '--td-border', borderHi: '--td-border-hi', hover: '--td-hover', active: '--td-active', amber: '--td-amber', muted: '--td-muted', fg: '--td-fg' })}
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -209,7 +218,18 @@ export function createTileEditor(container, host) {
   btnNew.dataset.role = 'set-new'; btnRen.dataset.role = 'set-rename'; btnDel.dataset.role = 'set-delete';
   const countLabel = el('span', 'tiled-label', '');
   countLabel.dataset.role = 'tile-count';
-  bar.append(nameSel, btnNew, btnRen, btnDel, el('span', 'tiled-sep'), countLabel);
+  // picture import and PNG export (T2)
+  const fileIn = el('input', null, null, { type: 'file', accept: 'image/*' });
+  fileIn.style.display = 'none';
+  fileIn.dataset.role = 'import-file';
+  fileIn.addEventListener('change', () => { const f = fileIn.files?.[0]; fileIn.value = ''; if (f) startImport(f); });
+  const btnImport = button('Import picture…', 'Convert a picture (PNG, GIF, JPEG…) into tiles: two colours per 8 × 8 cell, repeated cells merged', () => fileIn.click());
+  const btnPng = button('Export PNG', 'Download this tile set as a picture (a contact sheet, 16 tiles a row, in the tiles\' own colours)', () => exportPng());
+  const pngScale = el('select', 'tiled-select', null, { 'aria-label': 'PNG scale', title: 'Size of the PNG: 1 = one pixel per tile pixel (what Import reads back exactly)' });
+  for (const v of [1, 2, 4, 8]) { const o = el('option', null, `${v}×`); o.value = String(v); pngScale.append(o); }
+  btnImport.dataset.role = 'import-picture'; btnPng.dataset.role = 'export-png'; pngScale.dataset.role = 'png-scale';
+  bar.append(nameSel, btnNew, btnRen, btnDel, el('span', 'tiled-sep'), btnImport, fileIn, btnPng, pngScale, el('span', 'tiled-sep'), countLabel);
+  const importDlg = createImportDialog({ palette: pal });
 
   const warnList = el('ul', 'tiled-warn');
   warnList.dataset.role = 'warnings';
@@ -218,7 +238,12 @@ export function createTileEditor(container, host) {
   const msg = el('div', 'tiled-msg');
   msg.dataset.role = 'message';
   const body = el('div', 'tiled-body');
-  root.append(bar, warnList, emptyNote, body, msg);
+  // the gallery strip: every tile set of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
+  const gallery = createGallery({
+    label: 'Tile sets', get: (n) => H.get(n), onSelect: (n) => loadSet(n),
+    thumb: (n, asset, ctx) => thumbTileset(asset, { box: GALLERY_BOX, palette: pal, fine: !!ctx?.fine }),
+  });
+  root.append(gallery.el, bar, importDlg.el, warnList, emptyNote, body, msg);
 
   // left: tile strip
   const stripCol = el('div', 'tiled-col tiled-strip-col');
@@ -547,6 +572,63 @@ export function createTileEditor(container, host) {
   }
   function setZoom(v) { zoom = Math.max(16, Math.min(32, v)); keepPrefs(); layoutGrid(); drawGrid(); syncControls(); }
 
+
+  // ── picture import and PNG export (T2) ──
+  async function startImport(file) {
+    let img;
+    try { img = await readPictureFile(file); } catch (e) { say(`Could not read the picture: ${e.message}`, 'err'); return; }
+    const used = name ? H.usedBy(name) : null, maps = used ? used.assets : [];
+    let fine = false;
+    try { fine = T.projectHasFine(host.getProject?.()); } catch { fine = false; }
+    const room = set ? PI.roomIn(set) : T.MAX_TILES;
+    const untouched = !!set && set.tiles.length === 1 && T.tileIsBlank(set.tiles[0]);        // a set just made with New: its blank tile is not worth keeping
+    const targets = set ? [{ value: 'append', label: `append to "${name}" (room for ${room} more)` }, { value: 'replace', label: `replace the tiles of "${name}"` }, { value: 'new', label: 'a new tile set' }]
+      : [{ value: 'new', label: 'a new tile set' }];
+    const size = defaultCells(img.width, img.height);
+    importDlg.open({
+      img, fileName: file.name, mode: 'tiles', fine, existing: set, targets, target: !set ? 'new' : (untouched ? 'replace' : 'append'), sizeEditable: true,
+      cols: size.cols, rows: size.rows, foreground: false,
+      notes: {
+        always: 'Each 8 × 8 cell of the result becomes a tile; cells that look alike share one. Tile 0 is the first cell.',
+        replace: maps.length ? `Replacing changes what the tile numbers mean in ${maps.length === 1 ? 'the map' : 'the maps'} ${maps.join(', ')}.` : '',
+      },
+      onApply: applyImport,
+    });
+    say(`Import ${file.name}: choose the options, then press Import`);
+  }
+  function applyImport({ result, target }) {
+    if (!result.tiles.length) { say('Nothing to add: every cell is a tile the set already has', 'err'); return false; }
+    const what = PI.describeImport(result);
+    if (target === 'new' || !set) {
+      const n = askName('Name of the new tile set', uniqueName('picture'));
+      if (!n) return false;
+      const fresh = { tiles: result.tiles.map(T.cloneTile), tilesKey: 'tiles' };
+      const bad = T.validateTileset(fresh);
+      if (bad) { say(bad, 'err'); return false; }
+      const r = H.set(n, T.toAsset(fresh));
+      if (r.ok === false) { say(r.error ?? 'The Studio did not accept the tile set', 'err'); return false; }
+      loadSet(n);
+      say(`Imported into the new tile set "${n}": ${what}`);
+      return true;
+    }
+    const first = target === 'append' ? set.tiles.length : 0;
+    const next = target === 'append' ? [...set.tiles, ...result.tiles.map(T.cloneTile)] : result.tiles.map(T.cloneTile);
+    const bad = T.validateTileset({ ...set, tiles: next });
+    if (bad) { say(bad, 'err'); return false; }
+    edit(() => { set.tiles = next; sel = first; });                       // (sel moves inside the edit: a smaller set must not be drawn with the old selection)
+    say(`${target === 'append' ? `Appended as tiles ${first}..${set.tiles.length - 1}` : 'Replaced the tiles'}: ${what}`);
+    return true;
+  }
+  async function exportPng() {
+    if (!set) return;
+    try {
+      const sheet = PI.tilesetToRGBA(set, { cols: 16, scale: +pngScale.value || 1, palette: pal });
+      const blob = await pngBlob(sheet);
+      downloadBlob(blob, `${name}.png`);
+      say(`Exported ${name}.png: ${set.tiles.length} tile${set.tiles.length === 1 ? '' : 's'}, ${sheet.width} × ${sheet.height} pixels (16 a row; Import picture… reads it back)`);
+    } catch (e) { say(`Could not make the PNG: ${e.message}`, 'err'); }
+  }
+
   // ── pointer drawing ──
   const cellOf = (e, clamp) => {
     const r = grid.getBoundingClientRect();
@@ -723,7 +805,7 @@ export function createTileEditor(container, host) {
   function syncControls() {
     for (const [k, b] of Object.entries(toolBtns)) b.classList.toggle('on', k === tool);
     wrapChk.checked = wrapShift;
-    btnRen.disabled = btnDel.disabled = !set;
+    btnRen.disabled = btnDel.disabled = btnPng.disabled = !set;
     if (!set) { syncUndo(); return; }
     const t = tile();
     const shown = T.rowColoursOf(t)[rowSel.size ? Math.min(...rowSel) : 0];          // the colours the swatches show: the first chosen row's, else row 0's
@@ -762,8 +844,14 @@ export function createTileEditor(container, host) {
     const a = document.activeElement;
     if (hadFocus && (!a || a === document.body || a.disabled || !root.contains(a))) root.focus({ preventScroll: true });
   }
+  function renderGallery() {
+    let fine = false;                                    // a fine-colour game's tiles are drawn row by row, as the scene draws them
+    try { fine = T.projectHasFine(host.getProject?.()); } catch { fine = false; }
+    gallery.render({ names: H.list(), current: name, describe: () => ({ key: String(fine), ctx: { fine } }) });
+  }
   function renderAll_() {
     fillNameList();
+    renderGallery();
     const show = !!set;
     body.hidden = !show; emptyNote.hidden = show;
     emptyNote.textContent = name && !show ? `The tile set "${name}" cannot be edited (see the message below).` : 'No tile sets in this project yet. Press New to create one.';

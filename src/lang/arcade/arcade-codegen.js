@@ -1232,6 +1232,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       c.slots.set(up(q.name), a);
     }
     c.paramSlot = c.paramSlots.length ? c.paramSlots[0] : null;
+    c.paramNames = plist.map((q) => q.name);        // (the source spellings, for the variable report `locals`)
     c.clearAddrs = [];
     if (c.kind === 'P') {
       const { clear, free } = analyzeLocals(c);
@@ -2951,6 +2952,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     ...(wire ? { wire: { r0: wire.r0, r1: wire.r1, attr: wire.attr, ink: wire.ink, paper: wire.paper, bright: wire.bright, descAt: e.addressOf('wire$desc'), models: modelList.map((m, i) => ({ name: m.name, at: e.addressOf(`model$${i}`), points: m.points.length, edges: m.edges.length, bytes: m.bytes.length })) } } : {}),
     sprites,
     symbols,
+    // the storage of every generated PROC / DEF FN (a callable nothing reaches has none): its parameters and locals, for the Studio's variable view (compile().variables); report only, the code does not read it
+    locals: reach.map((c) => ({
+      kind: c.kind, name: c.node.name, scene: c.scene, line: c.node.line ?? 1, col: c.node.col ?? 0,
+      slots: [...c.slots].map(([key, addr]) => { const pi = c.paramSlots.indexOf(addr); return { key, addr, param: pi >= 0, name: pi >= 0 ? c.paramNames[pi] : key, cleared: c.clearAddrs.includes(addr) }; }),
+    })),
     srcMap,
     headerLen: HEADER_BYTES,
     descLen: DESC_LEN,

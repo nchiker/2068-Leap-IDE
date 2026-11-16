@@ -655,6 +655,8 @@ html, body {
   border-bottom-width: 2px; border-radius: 4px; background: var(--bg-surface); white-space: nowrap;
 }
 .help-tips { margin: 0; padding-left: 18px; }
+.help-page p { margin: 0 0 10px; max-width: 70ch; }
+.help-page .help-example { overflow-x: auto; max-width: 100%; }
 .help-tips li { margin-bottom: 6px; }
 
 /* ── Right-panel tabs: Debugger | Symbols | UDG | Draw (Phase 7) ─ */

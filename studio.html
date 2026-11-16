@@ -34,6 +34,7 @@
     <div class="toolbar-file">
       <span id="project-name" title="Click to rename the project">Untitled</span><span id="dirty-mark" title="Not saved to a file" hidden> •</span>
       <button class="phbtn" id="btn-new"  title="New project">New</button>
+      <button class="phbtn" id="btn-projects" title="The projects kept in this browser" hidden>Projects</button>
       <button class="phbtn" id="btn-open" title="Open a .leapgame project (or add a .arc source file) (Ctrl+O)">Open</button>
       <span class="menu-anchor">
         <button class="phbtn" id="btn-examples" title="Open an example game" aria-haspopup="menu" aria-expanded="false">Examples ▾</button>
@@ -124,6 +125,7 @@
           <button class="panel-tab" data-tab="maps">Maps</button>
           <button class="panel-tab" data-tab="sfx">Sounds</button>
           <button class="panel-tab" data-tab="models">Models</button>
+          <button class="panel-tab" data-tab="variables" title="The game's variables, live while it runs">Vars</button>
         </div>
       </div>
 
@@ -184,6 +186,7 @@
       <div class="tab-body tool-body asset-tool" id="tool-maps" data-tab="maps" hidden></div>
       <div class="tab-body tool-body asset-tool" id="tool-sfx" data-tab="sfx" hidden></div>
       <div class="tab-body tool-body asset-tool" id="tool-models" data-tab="models" hidden></div>
+      <div class="tab-body tool-body" id="tool-variables" data-tab="variables" hidden></div>
     </div>
 
   </div><!-- /workspace -->
@@ -217,19 +220,24 @@
     "style-mod": "https://cdn.jsdelivr.net/npm/style-mod@4.1.2/src/style-mod.js",
     "w3c-keyname": "https://cdn.jsdelivr.net/npm/w3c-keyname@2.2.8/index.js",
     "crelt": "https://cdn.jsdelivr.net/npm/crelt@1.0.6/index.js",
+    "./src/arcade-check-client.js": "./src/arcade-check-client.js?v=763f9f05d3",
     "./src/arcade-objects.js": "./src/arcade-objects.js?v=a968ad470b",
     "./src/arcade-project.js": "./src/arcade-project.js?v=baf7644cd2",
+    "./src/arcade-projects-session.js": "./src/arcade-projects-session.js?v=6e784a6234",
     "./src/arcade-starters.js": "./src/arcade-starters.js?v=07812518b8",
+    "./src/arcade-store.js": "./src/arcade-store.js?v=04d5363046",
     "./src/emulator.js": "./src/emulator.js?v=037ed0520d",
     "./src/files.js": "./src/files.js?v=70f9a1c03a",
-    "./src/help.js": "./src/help.js?v=2738bd9e3b",
+    "./src/help.js": "./src/help.js?v=abf92fedef",
     "./src/lang/arcade/arcade-assetcheck.js": "./src/lang/arcade/arcade-assetcheck.js?v=710dcc499f",
     "./src/lang/arcade/arcade-assets.js": "./src/lang/arcade/arcade-assets.js?v=69fa5dcc4e",
     "./src/lang/arcade/arcade-bank.js": "./src/lang/arcade/arcade-bank.js?v=15fa367494",
     "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=f54d13cddc",
-    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=7b099b7f4a",
-    "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=c26ad0067b",
+    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=9e3e6c27f4",
+    "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=27aa702e62",
     "./src/lang/arcade/arcade-display.js": "./src/lang/arcade/arcade-display.js?v=919a13e096",
+    "./src/lang/arcade/arcade-help-data.js": "./src/lang/arcade/arcade-help-data.js?v=916b918e27",
+    "./src/lang/arcade/arcade-help-examples.js": "./src/lang/arcade/arcade-help-examples.js?v=2d1804316d",
     "./src/lang/arcade/arcade-link.js": "./src/lang/arcade/arcade-link.js?v=0d9f84e86c",
     "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=35f3630d13",
     "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=f648dca2f9",
@@ -237,8 +245,8 @@
     "./src/lang/arcade/arcade-window.js": "./src/lang/arcade/arcade-window.js?v=9c0f8f6e11",
     "./src/lang/arcade/arcade-wire.js": "./src/lang/arcade/arcade-wire.js?v=294f92d580",
     "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=c0e83e7fa0",
-    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=fc2d17e338",
-    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=7812cb5453",
+    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=2aa3efad28",
+    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=463c77d22d",
     "./src/lang/arcade/z80-emit.js": "./src/lang/arcade/z80-emit.js?v=695f9865be",
     "./src/lang/basic/cartridge.js": "./src/lang/basic/cartridge.js?v=cb99a1e28a",
     "./src/lang/basic/editor.js": "./src/lang/basic/editor.js?v=cf1227edb8",
@@ -282,19 +290,29 @@
     "./src/pc-keyboard.js": "./src/pc-keyboard.js?v=6b1aaae1ac",
     "./src/starters/starter-a-art.js": "./src/starters/starter-a-art.js?v=c8b02ae04b",
     "./src/starters/starter-a-songs.js": "./src/starters/starter-a-songs.js?v=4730ee180c",
-    "./src/starters/starters-a.js": "./src/starters/starters-a.js?v=5ccb3aec3d",
+    "./src/starters/starters-a.js": "./src/starters/starters-a.js?v=97e08b3df9",
     "./src/starters/starters-b.js": "./src/starters/starters-b.js?v=05405cfb33",
-    "./src/tools/map-editor.js": "./src/tools/map-editor.js?v=ab156759fc",
+    "./src/tools/asset-gallery.js": "./src/tools/asset-gallery.js?v=4dd110ffb2",
+    "./src/tools/asset-thumbs.js": "./src/tools/asset-thumbs.js?v=0ce6919ddc",
+    "./src/tools/floorplan-preview.js": "./src/tools/floorplan-preview.js?v=875148f40b",
+    "./src/tools/floorplan-view.js": "./src/tools/floorplan-view.js?v=7c49601592",
+    "./src/tools/map-editor.js": "./src/tools/map-editor.js?v=3fb4831026",
     "./src/tools/map-model.js": "./src/tools/map-model.js?v=eed4a48f2a",
     "./src/tools/model-preview.js": "./src/tools/model-preview.js?v=d1611c7399",
     "./src/tools/music-model.js": "./src/tools/music-model.js?v=bcdbfd9d6d",
+    "./src/tools/picture-import-ui.js": "./src/tools/picture-import-ui.js?v=c9878ec91a",
+    "./src/tools/picture-import.js": "./src/tools/picture-import.js?v=29938815f8",
+    "./src/tools/projects-dialog.js": "./src/tools/projects-dialog.js?v=7eca1fac25",
+    "./src/tools/raycast-ref.js": "./src/tools/raycast-ref.js?v=045a407224",
     "./src/tools/sound-editor.js": "./src/tools/sound-editor.js?v=84c1f92464",
     "./src/tools/sound-model.js": "./src/tools/sound-model.js?v=957d817742",
-    "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=ea3ffd0e1d",
+    "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=75ce75e97c",
     "./src/tools/sprite-model.js": "./src/tools/sprite-model.js?v=2274dcbed1",
     "./src/tools/symbols.js": "./src/tools/symbols.js?v=16320c0533",
-    "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=2776f54702",
+    "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=55fc132e3b",
     "./src/tools/tile-model.js": "./src/tools/tile-model.js?v=2adbd7aef1",
+    "./src/tools/variables-model.js": "./src/tools/variables-model.js?v=85b25547bc",
+    "./src/tools/variables-panel.js": "./src/tools/variables-panel.js?v=7f18e85a6b",
     "./src/tools/warning-list.js": "./src/tools/warning-list.js?v=40203e81f0",
     "./tsrun/ay.js": "./tsrun/ay.js?v=2c2092395e",
     "./tsrun/dock.js": "./tsrun/dock.js?v=316db509d1",
@@ -307,6 +325,7 @@
 }
 </script>
 
+<dialog id="projects-dialog" class="new-dialog" aria-label="Projects kept in this browser"></dialog>
 <dialog id="new-dialog" class="new-dialog" aria-labelledby="new-dialog-title">
   <form method="dialog" class="new-dialog-form">
     <div class="new-dialog-head">
@@ -317,8 +336,8 @@
     <div class="new-grid" id="new-grid" role="list"></div>
   </form>
 </dialog>
-<script type="module" src="src/editor.js?v=b989e57ddc"></script>
-<script type="module" src="studio.js?v=52ceb525a9"></script>
+<script type="module" src="src/editor.js?v=4146e4b200"></script>
+<script type="module" src="studio.js?v=546f55128c"></script>
 
 </body>
 </html>

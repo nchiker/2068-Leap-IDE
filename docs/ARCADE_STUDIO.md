@@ -287,3 +287,13 @@ The Studio gained, all as asset-editor plug-ins or host members (details and num
   generated text itself (`src/arcade-objects.js` `completeSource`).
 * **Note view** in the sound editor's song mode (no host change).
 
+## As built: stage 5 (2026-11-16)
+Details and numbers: `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` "As built (stage 5)". What changes for a reader of this document:
+* **Gallery strip** at the top of the Sprites, Tiles, Maps and Models editors (`asset-gallery.js`, `asset-thumbs.js`); a click does what the editor's drop-down does.
+* **Diagnostics run in a Web Worker** (`src/arcade-check-*.js`); `analyze()` is the debounced path through the worker, `analyze({full: true})` is the page's own compile that Run and DCK use (only it has the cartridge).
+  `lang.compileProject` and the worker share `compileWithBuilds` (`src/lang/arcade/profile.js`). `leapEditor.relint()` asks the linter to run again.
+* **Vars tab** (`variables-panel.js`): the host gives `getVariables()` (the running cartridge's `variables`, else the last good build's), `readByte(addr)` and `isRunning()`.
+* **Projects** button and dialog (`projects-dialog.js`, IndexedDB through `arcade-store.js`, the current project in `arcade-projects-session.js`); `?nolist=1` turns the list off.
+* **Editor states per file** (`saveState` / `restoreState`), **project-wide go to definition, hover and rename** (`setProjectContext`, host-side `source / activeFile / files / openFile / setFileText`).
+* **Help**: examples per word, section links, the page "How a game is built" (`help.pages`).
+* **Picture import** in the tile editor (Import picture, Export PNG) and the map editor (a cell map: Import picture); **3D preview** under a floor plan (`floorplan-preview.js`; host members `getMap`, optional `getColw`, `getAttrs`, `getPatterns`, `getStartPose`, `onPoseChange`).

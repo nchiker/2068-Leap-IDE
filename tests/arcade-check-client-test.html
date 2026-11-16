@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- tests/arcade-check-client-test.html: a blank page that imports the diagnostics client (src/arcade-check-client.js) and the page's own compile (profile.attach),
+     for tests/arcade-check-client-smoke.mjs. window.t = {createCheckClient, P, page, project(id)}; project(id) loads a published example project. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Check client test page</title></head>
+<body>
+<script type="module">
+import { createCheckClient } from '../src/arcade-check-client.js';
+import { arcadeProfile } from '../src/lang/arcade/profile.js';
+import * as P from '../src/arcade-project.js';
+
+const fetchAsset = async (path) => new Uint8Array(await (await fetch('../' + path)).arrayBuffer());
+const page = await arcadeProfile.attach({ fetchAsset });
+async function project(id) {
+  const doc = P.parseProject(await (await fetch(`../arcade/dist/examples/${id}.leapgame`)).text());
+  if (!doc.ok) throw new Error(doc.errors.join('; '));
+  return doc.project;
+}
+window.t = { createCheckClient, P, page, project };
+</script>
+</body>
+</html>

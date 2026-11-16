@@ -15,6 +15,7 @@
 "use strict";
 
 import { spawn, execSync } from 'node:child_process';
+import { guardChrome } from './chrome-guard.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
@@ -57,6 +58,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 const port = 9300 + Math.floor(Math.random() * 500);
 const chrome = spawn(findChrome(), [`--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'tile-prof-'))}`,
   '--headless', '--mute-audio', '--no-sandbox', '--window-size=1400,1100', 'about:blank'], { stdio: 'ignore' });
+guardChrome(chrome, { label: 'tile-editor-smoke.mjs' });      // (the browser never outlives the test)
 let targets;
 for (let i = 0; i < 100 && !targets; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); } catch { await sleep(100); } }
 const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
@@ -413,6 +415,59 @@ try {
   await click('[data-role=set-delete]');
   check('Delete removes the set after the confirmation and selects another', (await evaluate("!t.host.listAssets('tilesets').includes('renamed')")) && (await state()).name === 'pf_tiles');
 
+  // ── gallery strip (stage 5, S1): a picture of every tile set, the edited one highlighted, a click selects ──
+  {
+    const J = JSON.stringify;
+    const gal = () => evaluate(`(() => { const st = document.querySelector('[data-role=gallery-strip]'); if (!st) return null;
+      const items = [...st.querySelectorAll('[data-role=gallery-item]')];
+      return { names: items.map((i) => i.dataset.asset), current: items.filter((i) => i.classList.contains('current')).map((i) => i.dataset.asset), draws: Object.fromEntries(items.map((i) => [i.dataset.asset, +i.dataset.draws])),
+        captions: items.map((i) => i.textContent), titles: items.map((i) => i.title), h: st.getBoundingClientRect().height, sw: st.scrollWidth, cw: st.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
+    const pic = (n) => evaluate(`document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas').toDataURL()`);
+    const ink = (n) => evaluate(`(() => { const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const set = new Set(); let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { n++; set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, colours: set.size, w: c.width, h: c.height }; })()`);
+    const list0 = await evaluate("t.host.listAssets('tilesets')");
+    const g0 = await gal();
+    check('S1: the strip lists every tile set of the project (pf_tiles), with its name as caption and tooltip, and it is the highlighted one', !!g0 && J(g0.names) === J(list0) && J(g0.captions) === J(list0) && J(g0.titles) === J(list0) && J(g0.current) === J([(await state()).name]), J(g0?.names));
+    const ik = await ink('pf_tiles');
+    check('S1: the picture of a tile set is not blank (a grid of 20 tiles with several colours)', ik.n > 100 && ik.colours >= 3, J(ik));
+    check('S1: the strip is at most 72 px high and the page does not scroll sideways', g0.h <= 72 && g0.page <= 0, `h ${g0.h}, page overflow ${g0.page}`);
+    await evaluate("(window.__names = ['galx'], window.prompt = (q, d) => window.__names.shift() ?? d, window.confirm = () => true, true)");
+    await click('[data-role=set-new]');
+    await waitFor("t.editor.getState().name === 'galx'");
+    let g1 = await gal();
+    check('S1: New adds a picture and highlights it', J(g1.names) === J(await evaluate("t.host.listAssets('tilesets')")) && g1.names.includes('galx') && J(g1.current) === J(['galx']), J(g1.names));
+    await click('[data-role=gallery-item][data-asset="pf_tiles"]');
+    g1 = await gal();
+    check('S1: a click on another picture selects that tile set (the editor shows it, the drop-down follows)', (await state()).name === 'pf_tiles' && J(g1.current) === J(['pf_tiles']) && (await evaluate("document.querySelector('[data-role=set-picker]').value")) === 'pf_tiles' && (await state()).set.tiles.length === 20);
+    // an edit redraws the edited set's picture only
+    const d0 = (await gal()).draws, p0 = await pic('pf_tiles');
+    await clickCell(1, 1);
+    await waitFor("t.log.sets.length > 0");
+    const d1 = (await gal()).draws, changed = Object.keys(d1).filter((n) => d1[n] !== d0[n]);
+    check('S1: an edit redraws the edited set\'s picture only, and the picture shows it', J(changed) === J(['pf_tiles']) && (await pic('pf_tiles')) !== p0, J(changed));
+    await key('z', { ctrl: true });
+    await click('[data-role=gallery-item][data-asset="galx"]');
+    await evaluate("(window.__names = ['galy'], true)");
+    await click('[data-role=set-rename]');
+    g1 = await gal();
+    check('S1: Rename replaces the picture\'s name and keeps the highlight', !g1.names.includes('galx') && g1.names.includes('galy') && J(g1.current) === J(['galy']) && g1.captions.includes('galy'), J(g1.names));
+    await click('[data-role=set-delete]');
+    g1 = await gal();
+    check('S1: Delete removes the picture; another tile set is highlighted', !g1.names.includes('galy') && J(g1.names) === J(await evaluate("t.host.listAssets('tilesets')")) && J(g1.current) === J([(await state()).name]), J(g1.names));
+    // another editor changes a tile set that is not being edited
+    await evaluate(`(() => { t.externalSet('tilesets', 'other1', t.T.toAsset(t.T.newTileset())); return true; })()`);
+    const g2 = await gal(), o0 = g2.draws.other1;
+    await evaluate(`(() => { const s = t.T.newTileset(); t.T.setPixel(s.tiles[0], 0, 0, 1); t.externalSet('tilesets', 'other1', t.T.toAsset(s)); return true; })()`);
+    const g3 = await gal();
+    check('S1: a new tile set made elsewhere appears, and a change to it redraws its picture only', g2.names.includes('other1') && g3.draws.other1 === o0 + 1 && g3.current.length === 1 && g3.current[0] === (await state()).name, `${o0} -> ${g3.draws.other1}`);
+    await evaluate(`(() => { for (let i = 0; i < 40; i++) t.project.assets.tilesets['many' + String(i).padStart(2, '0')] = t.T.toAsset(t.T.newTileset()); t.editor.refresh(); return true; })()`);
+    const g4 = await gal();
+    check('S1: 40 more tile sets: the strip scrolls sideways inside itself and stays at most 72 px high', g4.names.length >= 40 && g4.sw > g4.cw + 100 && g4.h <= 72 && g4.page <= 0, `scrollWidth ${g4.sw} clientWidth ${g4.cw} h ${g4.h} page ${g4.page}`);
+    await shot('05a-gallery-long');
+    await evaluate(`(() => { for (const n of Object.keys(t.project.assets.tilesets)) if (/^many|^other/.test(n)) delete t.project.assets.tilesets[n]; t.editor.refresh(); return true; })()`);
+    check('S1: back to the original list', J((await gal()).names) === J(await evaluate("t.host.listAssets('tilesets')")) && (await gal()).names.length === list0.length);
+  }
+
   // ── the shooter (a cell map, no WINDOW) and the project replaced ──
   await evaluate("(t.openExample('shooter'), true)");
   await waitFor("t.editor.getState().name === 'gfx'");
@@ -537,6 +592,159 @@ try {
     b = await asset(want.set);
     check(`${ex}: colouring row 2 of tile 12 changes row 2 only, in the saved asset`, b.tiles[12].rows.every((r, y) => JSON.stringify(r) === JSON.stringify(y === 2 ? { ...orig.tiles[12].rows[y], paper: 1 } : orig.tiles[12].rows[y])) && JSON.stringify(b.tiles.filter((_, i) => i !== 12)) === JSON.stringify(orig.tiles.filter((_, i) => i !== 12)));
     await shot(`06-fine-${ex}`);
+  }
+
+  // ── picture import and PNG export (stage 5, T2) ──
+  {
+    await send('Page.navigate', { url: base + 'tests/tile-editor-test.html' });
+    await waitFor('window.testReady === true', 60000);
+    const J = JSON.stringify;
+    /** Hand a generated picture (drawn on a canvas by `draw(ctx, w, h)`) to the import file input, as a chosen file. */
+    const feedPicture = (w, h, draw, fileName = 'pic.png') => evaluate(`(async () => {
+      const c = document.createElement('canvas'); c.width = ${w}; c.height = ${h};
+      const x = c.getContext('2d'); (${draw})(x, ${w}, ${h});
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      const dt = new DataTransfer(); dt.items.add(new File([blob], ${J(fileName)}, { type: 'image/png' }));
+      const input = document.querySelector('[data-role=import-file]'); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true; })()`);
+    const dlgOpen = () => waitFor("(() => { const b = document.querySelector('[data-role=pic-import]'); return !!b && !b.hidden && b.querySelector('canvas').width > 0 && /tile/.test(document.querySelector('[data-role=pic-info]').textContent); })()");
+    const info = () => evaluate("document.querySelector('[data-role=pic-info]').textContent");
+    const pset = (role, v) => evaluate(`(() => { const s = document.querySelector('[data-role=${role}]'); s.value = ${J(String(v))}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    const pcheck = (role, on) => evaluate(`(() => { const s = document.querySelector('[data-role=${role}]'); if (s.checked !== ${on}) s.click(); return true; })()`);
+    const hexColours = '{ red: "#c90500", blue: "#0000cc", green: "#00cc08", yellow: "#cccc00", white: "#cccccc" }';
+    void hexColours;
+
+    check('T2: the toolbar has Import picture… and Export PNG, and a hidden file input', await evaluate("!!document.querySelector('[data-role=import-picture]') && !!document.querySelector('[data-role=export-png]') && document.querySelector('[data-role=import-file]').type === 'file' && document.querySelector('[data-role=pic-import]').hidden"));
+    const before = await asset('pf_tiles');
+    const n0 = await setsCount();
+    // a 32 x 16 picture = 4 x 2 cells: cell A (red | blue halves) twice, yellow flat, green over black; the second row is flat white all through
+    await feedPicture(32, 16, `(x, w, h) => {
+      x.fillStyle = '#ffffff'; x.fillRect(0, 0, w, h);
+      for (const cx of [0, 16]) { x.fillStyle = '#c90500'; x.fillRect(cx, 0, 4, 8); x.fillStyle = '#0000cc'; x.fillRect(cx + 4, 0, 4, 8); }
+      x.fillStyle = '#cccc00'; x.fillRect(8, 0, 8, 8);
+      x.fillStyle = '#00cc08'; x.fillRect(24, 0, 8, 4); x.fillStyle = '#000000'; x.fillRect(24, 4, 8, 4);
+      x.fillStyle = '#cccccc'; x.fillRect(0, 8, 32, 8);
+    }`);
+    check('T2: choosing a picture opens the import panel with a preview and a plain report', !!(await dlgOpen()), await info());
+    await shot('07-import-panel');
+    check('T2: the panel says how many tiles the picture makes (red|blue, yellow, green/black, white = 4 new tiles; the repeated cell and the white row merged)', /8 cells became 4 new tiles/.test(await info()) && /4 repeated cells merged/.test(await info()), await info());
+    check('T2: the panel offers append (the default for a set with tiles), replace and a new set; the size is editable and 4 × 2', await evaluate("(() => { const t = document.querySelector('[data-role=pic-target]'); return t.value === 'append' && [...t.options].map((o) => o.value).join() === 'append,replace,new' && document.querySelector('[data-role=pic-cols]').value === '4' && document.querySelector('[data-role=pic-rows]').value === '2' && !document.querySelector('[data-role=pic-cols]').disabled; })()"));
+    check('T2: nothing was written while the panel is open (no host call, the set is as it was)', (await setsCount()) === n0 && J(await asset('pf_tiles')) === J(before));
+    await click('[data-role=pic-ok]');
+    let a = await asset('pf_tiles');
+    check('T2: Import appends 4 tiles to the 20 as ONE host.setAsset', a.tiles.length === 24 && (await setsCount()) === n0 + 1 && J(a.tiles.slice(0, 20)) === J(before.tiles) && await allValid(), `${a.tiles.length} tiles, ${(await setsCount()) - n0} writes`);
+    const bitsOfTile = (i) => a.tiles[i].rows.map((r) => r.bits).join('');
+    const cl = (i) => a.tiles[i].rows[0];
+    check('T2: the new tiles are the picture: tile 20 red|blue (two colours, bits F0 or 0F), tile 21 flat yellow, tile 22 green / black, tile 23 flat white (paper white, bits clear)',
+      /^(F0|0F)+$/.test(bitsOfTile(20)) && new Set([cl(20).ink, cl(20).paper]).size === 2 && [cl(20).ink, cl(20).paper].sort().join() === '1,2' && cl(21).paper === 6 && /^0+$/.test(bitsOfTile(21)) && [cl(22).ink, cl(22).paper].sort().join() === '0,4' && cl(23).paper === 7 && /^0+$/.test(bitsOfTile(23)), J(a.tiles.slice(20).map((t) => t.rows[0])));
+    check('T2: BRIGHT 0 on the black one (the two-blacks rule), flags 0, no fg mark by default', a.tiles.slice(20).every((t) => t.rows.every((r) => r.bright === 0) && t.flags === 0 && t.fg === undefined));
+    const st1 = await state();
+    check('T2: the editor selects the first new tile and closes the panel; the strip shows 24 tiles', st1.sel === 20 && st1.set.tiles.length === 24 && await evaluate("document.querySelector('[data-role=pic-import]').hidden && document.querySelectorAll('[data-role=strip] [data-tile]').length === 24"));
+    await key('z', { ctrl: true });
+    check('T2: ONE Undo takes all 4 tiles away again (back to the original 20)', J(await asset('pf_tiles')) === J(before) && (await state()).set.tiles.length === 20);
+    await key('y', { ctrl: true });
+    check('T2: Redo brings them back', (await asset('pf_tiles')).tiles.length === 24);
+    await key('z', { ctrl: true });
+
+    // options: dither, 8 x 1 colour, a grey picture
+    const greyPic = `(x, w, h) => { for (let i = 0; i < 8; i++) { const v = i * 36; x.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')'; x.fillRect(i * (w / 8), 0, w / 8, h); } }`;
+    await feedPicture(64, 16, greyPic, 'grey.png');
+    await dlgOpen();
+    const infoDiff = await info();
+    await pset('pic-dither', 'none');
+    const infoNone = await info();
+    check('T2: changing the dither redoes the preview (a grey ramp: error diffusion makes more different cells than none)', infoDiff !== infoNone && /became (\d+) new tile/.test(infoNone) && +/became (\d+) new tile/.exec(infoDiff)[1] >= +/became (\d+) new tile/.exec(infoNone)[1], `${infoDiff} | ${infoNone}`);
+    await pset('pic-dither', 'ordered');
+    check('T2: ordered dither works too', /new tile/.test(await info()));
+    await pcheck('pic-fine', true);
+    check('T2: 8 x 1 colour can be switched on in the panel', await evaluate("document.querySelector('[data-role=pic-fine]').checked") && /new tile/.test(await info()));
+    await pcheck('pic-foreground', true);
+    await pset('pic-target', 'replace');
+    check('T2: choosing replace shows a note that maps are changed (pf_tiles is drawn by maps)', /Replacing changes what the tile numbers mean/.test(await evaluate("document.querySelector('[data-role=pic-note]').textContent")), await evaluate("document.querySelector('[data-role=pic-note]').textContent"));
+    const nPre = await setsCount();
+    await click('[data-role=pic-ok]');
+    a = await asset('pf_tiles');
+    check('T2: replace swaps the whole set for the picture\'s tiles (one write), marked fg when asked', (await setsCount()) === nPre + 1 && a.tiles.length > 0 && a.tiles.length <= 16 && a.tiles.every((t) => t.fg === true) && (await state()).sel === 0, `${a.tiles.length} tiles, writes ${(await setsCount()) - nPre}, fg ${J(a.tiles.map((t) => t.fg))}, sel ${(await state()).sel}`);
+    await key('z', { ctrl: true });
+    check('T2: and one Undo brings the old set back', J(await asset('pf_tiles')) === J(before));
+
+    // the limit: a picture of 32 x 24 distinct cells appended to the 20: the panel reports it, the result is exactly 128 tiles
+    const noise = `(x, w, h) => { let s = 12345; const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s >>> 24; };
+      for (let cy = 0; cy < h / 8; cy++) for (let cx = 0; cx < w / 8; cx++) for (let py = 0; py < 8; py++) for (let px = 0; px < 8; px++) { x.fillStyle = r() & 1 ? '#c90500' : '#0000cc'; x.fillRect(cx * 8 + px, cy * 8 + py, 1, 1); } }`;
+    await feedPicture(256, 192, noise, 'noise.png');
+    await dlgOpen();
+    check('T2: a picture that needs more than the limit says so: "needs N tiles but the limit is 128" and how many cells use the nearest tile', /needs \d+ tiles but the limit is 128: \d+ cells/.test(await info()) && await evaluate("document.querySelector('[data-role=pic-info]').classList.contains('warn')"), await info());
+    check('T2: the preview canvas shows the whole picture (256 x 192 pixels of cells, scaled)', await evaluate("(() => { const c = document.querySelector('[data-role=pic-preview]'); return c.width % 256 === 0 && c.height === c.width * 192 / 256; })()"));
+    await shot('08-import-overflow');
+    await click('[data-role=pic-ok]');
+    a = await asset('pf_tiles');
+    check('T2: appended: the set is exactly 128 tiles, valid, the first 20 unchanged', a.tiles.length === 128 && J(a.tiles.slice(0, 20)) === J(before.tiles) && await allValid());
+    check('T2: the strip shows 128 tiles and the editor warns that the set is full', await evaluate("document.querySelectorAll('[data-role=strip] [data-tile]').length === 128") && /most tiles a map cell can hold/.test(await evaluate("document.querySelector('[data-role=warnings]').textContent")));
+    // a full set cannot be appended to
+    await feedPicture(32, 16, greyPic, 'grey2.png');
+    await dlgOpen();
+    check('T2: with a full set the panel says nothing can be appended and Import is off', /already has 128 tiles/.test(await info()) && await evaluate("document.querySelector('[data-role=pic-ok]').disabled"));
+    await click('[data-role=pic-cancel]');
+    check('T2: Cancel closes the panel and writes nothing', await evaluate("document.querySelector('[data-role=pic-import]').hidden") && (await asset('pf_tiles')).tiles.length === 128);
+    await key('z', { ctrl: true });
+    check('T2: undo of the 128-tile import: back to 20', (await asset('pf_tiles')).tiles.length === 20);
+
+    // a new tile set from a picture
+    await evaluate("(window.__names = ['fromPic'], window.prompt = (q, d) => window.__names.shift() ?? d, window.confirm = () => true, true)");
+    await feedPicture(32, 16, `(x, w, h) => { x.fillStyle = '#c90500'; x.fillRect(0, 0, w, h); x.fillStyle = '#00cc08'; x.fillRect(8, 0, 8, 4); x.fillStyle = '#000000'; x.fillRect(8, 4, 8, 4); }`, 'two.png');
+    await dlgOpen();
+    await pset('pic-target', 'new');
+    await click('[data-role=pic-ok]');
+    await waitFor("t.editor.getState().name === 'fromPic'");
+    const np = await asset('fromPic');
+    check('T2: "a new tile set" asks for a name and creates it with the picture\'s tiles (flat red, green over black)', !!np && np.tiles.length === 2 && np.tiles[0].rows[0].paper === 2 && [np.tiles[1].rows[0].ink, np.tiles[1].rows[0].paper].sort().join() === '0,4' && (await state()).name === 'fromPic', J(np?.tiles));
+    check('T2: that set, with black in it, raises no black warning (black is BRIGHT 0) and no other', (await evaluate("t.host.assetWarnings('tilesets', 'fromPic').map((w) => w.id)")).length === 0 && np.tiles.every((t2) => t2.rows.every((r) => r.bright === 0)), J(await evaluate("t.host.assetWarnings('tilesets', 'fromPic').map((w) => w.id)")));
+    check('T2: a bad picture file is refused with a plain message', await (async () => {
+      await evaluate(`(async () => { const dt = new DataTransfer(); dt.items.add(new File(['not a picture'], 'bad.png', { type: 'image/png' })); const i = document.querySelector('[data-role=import-file]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      return !!(await waitFor("/Could not read the picture/.test(document.querySelector('[data-role=message]').textContent)")) && await evaluate("document.querySelector('[data-role=pic-import]').hidden");
+    })());
+
+    // PNG export: a blob of the expected size, named after the set, the tile pixels in it
+    await evaluate(`(() => { window.__png = null; const make = URL.createObjectURL.bind(URL); URL.createObjectURL = (b) => { window.__png = { blob: b, type: b.type, size: b.size }; return make(b); };
+      window.__dl = null; HTMLAnchorElement.prototype.click = function () { window.__dl = this.download; }; return true; })()`);
+    await evaluate("t.editor.select('pf_tiles')");
+    await click('[data-role=export-png]');
+    await waitFor('!!window.__png');
+    const exp = await evaluate(`(async () => { const bmp = await createImageBitmap(window.__png.blob); const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height; const x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
+      const set = t.editor.getState().set, out = { w: bmp.width, h: bmp.height, type: window.__png.type, size: window.__png.size, name: window.__dl, n: set.tiles.length, bad: 0, magic: null };
+      const head = new Uint8Array(await window.__png.blob.slice(0, 8).arrayBuffer()); out.magic = [...head].join();
+      for (let i = 0; i < set.tiles.length; i++) { const keys = t.T.tilePixels(set.tiles[i], { fine: true }); for (let y = 0; y < 8; y++) for (let xx = 0; xx < 8; xx++) {
+        const w = t.T.keyRGB(keys[y * 8 + xx], t.T.PALETTE), d = x.getImageData((i % 16) * 8 + xx, ((i / 16) | 0) * 8 + y, 1, 1).data; if (d[0] !== w[0] || d[1] !== w[1] || d[2] !== w[2]) out.bad++; } }
+      return out; })()`);
+    check('T2: Export PNG downloads "pf_tiles.png": a real PNG (signature 137 80 78 71 …), 128 x 16 pixels for 20 tiles', exp.name === 'pf_tiles.png' && exp.type === 'image/png' && exp.magic === '137,80,78,71,13,10,26,10' && exp.w === 128 && exp.h === 16 && exp.size > 100, J(exp));
+    check('T2: every pixel of the PNG is the tile\'s colour (all 20 tiles, 1280 pixels)', exp.bad === 0, `${exp.bad} wrong`);
+    await evaluate("(window.__png = null, true)");
+    await pset('png-scale', 4);
+    await click('[data-role=export-png]');
+    await waitFor('!!window.__png');
+    const exp4 = await evaluate("(async () => { const b = await createImageBitmap(window.__png.blob); return { w: b.width, h: b.height }; })()");
+    check('T2: at 4× the PNG is 512 x 64', exp4.w === 512 && exp4.h === 64, J(exp4));
+    await pset('png-scale', 1);
+    // the round trip: export a set, import the PNG into a new set: the same pictures
+    await evaluate("(window.__png = null, true)");
+    await click('[data-role=export-png]');
+    await waitFor('!!window.__png');
+    await evaluate(`(async () => { const dt = new DataTransfer(); dt.items.add(new File([window.__png.blob], 'back.png', { type: 'image/png' })); const i = document.querySelector('[data-role=import-file]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await dlgOpen();
+    await pset('pic-dither', 'none');
+    await pcheck('pic-brightblack', true);
+    await pset('pic-target', 'new');
+    await evaluate("(window.__names = ['roundtrip'], true)");
+    check('T2: the exported PNG read back (no dither) says 128 x 16 pixels, 16 × 2 tiles', await evaluate("document.querySelector('[data-role=pic-cols]').value === '16' && document.querySelector('[data-role=pic-rows]').value === '2' && /128 × 16/.test(document.querySelector('[data-role=pic-title]').textContent)"));
+    await click('[data-role=pic-ok]');
+    await waitFor("t.editor.getState().name === 'roundtrip'");
+    const rt = await asset('roundtrip'), orig = await asset('pf_tiles');
+    const seenPics = await evaluate(`(() => { const pic = (a) => a.tiles.map((tl) => t.T.tilePixels(t.T.fromAsset({ tiles: [tl] }).tiles[0], { fine: true }).join(','));
+      const o = pic(t.project.assets.tilesets.pf_tiles), r = pic(t.project.assets.tilesets.roundtrip); const uo = new Set(o), ur = new Set(r);
+      return { origDistinct: uo.size, backTiles: r.length, allBack: [...ur].every((p) => uo.has(p)), allOrigBack: [...uo].every((p) => ur.has(p)) }; })()`);
+    check('T2: the round trip gives every distinct picture of the original back (and nothing else)', seenPics.allBack && seenPics.allOrigBack, J(seenPics));
+    check('T2: no page errors during picture import and export', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
+    void orig;
   }
 
   // ── a host without roles / assetWarnings / usedBy: those features are off, the editor still works ──

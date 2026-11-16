@@ -79,8 +79,8 @@ function build(id) {
     res.warnings.map((w) => `${w.line}:${w.col} ${w.message}`).concat(findings.map((f) => `${f.id}: ${f.message}`)).join(' | ') || `${res.usage.total} bytes, ${res.usage.free} free, ${res.usage.code} bytes of code, ${res.usage.codegen.instances} sprite instances`);
   // the runtime the Studio would pick is the one the starter says (v2), and the two blacks rule holds: no BRIGHT 1 in the source, and no row of any sprite or tile with BRIGHT 1
   const rows = [...Object.values(project.assets.sprites).flatMap((a) => a.frames.flatMap((f) => f.rows)), ...Object.values(project.assets.tilesets).flatMap((a) => a.tiles.flatMap((t) => t.rows))];
-  check_(`${id}: the runtime is ${st.runtime} (requiredRuntime agrees), and every colour is BRIGHT 0: no "BRIGHT 1" in the source, no sprite or tile row with BRIGHT 1 (black paper is BRIGHT 0)`,
-    st.runtime === 'v2' && requiredRuntime(src, project.assets).version === 2 && !/BRIGHT\s+1/i.test(src) && rows.length > 0 && rows.every((r) => !r.bright), `${rows.length} art rows`);
+  check_(`${id}: the runtime is ${st.runtime} (requiredRuntime agrees), and the two blacks rule holds: no "BRIGHT 1" in the source, no sprite or tile row with BRIGHT 1 on black paper (black paper is BRIGHT 0; Arrow Rush's picture tiles are BRIGHT 1 on coloured paper)`,
+    st.runtime === 'v2' && requiredRuntime(src, project.assets).version === 2 && !/BRIGHT\s+1/i.test(src) && rows.length > 0 && rows.every((r) => !(r.bright && r.paper === 0)), `${rows.length} art rows`);
   info(`${id}: "${project.name}" ${lines} lines of source, ${res.usage.total} bytes of game (${res.usage.code} of code, ${res.usage.free} free), ${res.usage.codegen.instances} sprite instances`);
   return { st, project, src, assets, res, lines };
 }

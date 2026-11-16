@@ -21,6 +21,8 @@
 import * as M from './model-model.js';
 import { drawModelPreview } from './model-preview.js';
 import { createWarningList, warningListCss } from './warning-list.js';
+import { thumbModel } from './asset-thumbs.js';
+import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
 
 const PREF_KEY = 'leap-studio.modeled';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -92,6 +94,7 @@ ${warningListCss('warnl', '.modeled-warn', { fg: '--md-fg', muted: '--md-muted',
 .modeled-h { color: var(--md-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .modeled-coords { display: flex; align-items: center; gap: 4px; }
 .modeled-coords label { display: flex; align-items: center; gap: 3px; color: var(--md-muted); }
+${galleryCss('.modeled', { bg: '--md-bg', border: '--md-border', borderHi: '--md-border-hi', hover: '--md-hover', active: '--md-active', amber: '--md-amber', muted: '--md-muted', fg: '--md-fg' })}
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -200,7 +203,12 @@ export function createModelEditor(container, host) {
   msg.setAttribute('aria-live', 'polite');
   const body = el('div', 'modeled-body');
   body.style.cssText = 'display:flex;flex-direction:column;gap:8px';
-  root.append(bar, warnList, emptyNote, body, msg);
+  // the gallery strip: every model of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
+  const gallery = createGallery({
+    label: 'Models', get: (n) => H.get(n), onSelect: (n) => loadModel(n),
+    thumb: (n, asset) => thumbModel(asset, { box: GALLERY_BOX }),
+  });
+  root.append(gallery.el, bar, warnList, emptyNote, body, msg);
 
   // the three views and the preview
   const views = el('div', 'modeled-views');
@@ -741,8 +749,10 @@ export function createModelEditor(container, host) {
     const a = document.activeElement;
     if (hadFocus && (!a || a === document.body || a.disabled || !root.contains(a))) (was && root.contains(was) && !was.disabled ? was : canvases[activeView]).focus({ preventScroll: true });
   }
+  function renderGallery() { gallery.render({ names: H.list(), current: name }); }
   function renderAll_() {
     fillNameList();
+    renderGallery();
     const show = !!model;
     body.hidden = !show; emptyNote.hidden = show;
     emptyNote.textContent = name && !show ? `The model "${name}" cannot be edited (see the message below).` : 'No models in this project yet. Press New to create one.';

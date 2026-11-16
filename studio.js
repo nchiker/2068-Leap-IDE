@@ -18,7 +18,7 @@
 import { createEmulator } from './src/emulator.js';
 import { cpuHz, tStatesPerFrame } from './tsrun/machine.js';
 import { STUDIO_PROFILES } from './src/lang/profiles.js';
-import { setAssetSource } from './src/lang/arcade/editor.js';
+import { setAssetSource, setProjectContext } from './src/lang/arcade/editor.js';
 import { inputHints, scanArcade, scanRoles } from './src/lang/arcade/arcade-scan.js';
 import { parse as parseArcade } from './src/lang/arcade/arcade-parse.js';
 import { checkAssets } from './src/lang/arcade/arcade-assetcheck.js';
@@ -28,6 +28,11 @@ import * as P from './src/arcade-project.js';
 import { drawModelPreview } from './src/tools/model-preview.js';
 import { newSong, toSong, fromSong, songInfo } from './src/tools/music-model.js';
 import { PALETTE } from './src/tools/sprite-model.js';
+import { createCheckClient } from './src/arcade-check-client.js';
+import { createVariablesPanel } from './src/tools/variables-panel.js';
+import { openStore } from './src/arcade-store.js';
+import { createSession } from './src/arcade-projects-session.js';
+import { createProjectsDialog } from './src/tools/projects-dialog.js';
 
 const profile = STUDIO_PROFILES[0];
 
@@ -36,6 +41,7 @@ const restored = P.loadProject();
 let project = restored ?? P.newProject();
 let activeFile = P.MAIN_FILE;
 let emulator = null;
+let checker = null;              // the diagnostics worker's client (B3); null or unavailable: the page compiles for the marks itself
 let lang = null;                 // profile.attach(): {compileProject, runtime, ...}
 let lastCompile = null;          // the latest compileProject() result
 let lastGood = null;             // the latest one that compiled (the size panel shows it)
@@ -111,12 +117,21 @@ function syncEditor() {
   if (Object.hasOwn(project.files, activeFile)) project.files[activeFile] = window.leapEditor.getSource();
 }
 
-/** Show a file in the editor (the previous file's text has been kept by syncEditor()). */
-function showFile(name, { line = 0, col = 0 } = {}) {
+// P3: one editor state (text, undo history, cursor, folds) per source file, so undo survives a switch. A state is only shown again when its
+// text is still the file's text (a rename of an asset can rewrite a file that is not open: then the file starts fresh).
+const fileStates = new Map();
+
+/** Show a file in the editor (the previous file's text has been kept by syncEditor()). `forget`: a different project, the old states are dropped. */
+function showFile(name, { line = 0, col = 0, forget = false } = {}) {
+  if (forget) fileStates.clear();
+  else if (booted && Object.hasOwn(project.files, activeFile)) fileStates.set(activeFile, window.leapEditor.saveState());
   if (P.isGeneratedFile(name) && P.fileText(project, name) === null) name = P.MAIN_FILE;      // objects.arc exists only while a map has objects
   activeFile = name;
   loading = true;
-  window.leapEditor.setSource(P.fileText(project, name) ?? '', { fresh: true });
+  const text = P.fileText(project, name) ?? '';
+  const saved = fileStates.get(name);
+  if (saved && saved.doc.toString() === text) window.leapEditor.restoreState(saved);
+  else window.leapEditor.setSource(text, { fresh: true });
   window.leapEditor.setReadOnly(P.isGeneratedFile(name));         // the generated objects.arc cannot be typed in
   loading = false;
   $('editor-title').textContent = name;
@@ -153,6 +168,7 @@ function renameFileUi(name) {
   const r = P.renameFile(project, name, to);
   if (!r.ok) { say(r.error, 'error'); return; }
   if (activeFile === name) activeFile = to;
+  if (fileStates.has(name)) { fileStates.set(to, fileStates.get(name)); fileStates.delete(name); }
   $('editor-title').textContent = activeFile;
   changed({ type: 'source', source: 'studio' });
 }
@@ -162,6 +178,7 @@ function deleteFileUi(name) {
   syncEditor();
   const r = P.deleteFile(project, name);
   if (!r.ok) { say(r.error, 'error'); return; }
+  fileStates.delete(name);
   changed({ type: 'source', source: 'studio' });
   if (activeFile === name) showFile(P.MAIN_FILE);
 }
@@ -640,14 +657,37 @@ function renderScenes() {
 let analyzeTimer = null;
 function scheduleAnalyze() {
   clearTimeout(analyzeTimer);
-  analyzeTimer = setTimeout(() => { analyze(); window.leapEditor.relint(); refreshSymbols(); }, ANALYZE_MS);
+  analyzeTimer = setTimeout(analyzeInWorker, ANALYZE_MS);
+}
+
+/**
+ * The debounced compile for the error marks (B3): the diagnostics worker (src/arcade-check-client.js) compiles the project off the page's thread.
+ * Its result has no cartridge (`viaWorker`); Run and the DCK export ask analyze({full: true}) for the page's own compile. Without a Worker (or after
+ * it failed) the page compiles as it always did.
+ */
+async function analyzeInWorker() {
+  if (!lang) return;
+  const done = () => { window.leapEditor.relint(); refreshSymbols(); };
+  syncEditor();
+  if (compiledVersion === version && lastCompile) { done(); return; }
+  if (!checker?.available) { analyze(); done(); return; }
+  const mine = version;
+  let res;
+  try { res = await checker.check({ project }); } catch (e) { console.warn('[Studio] the diagnostics worker failed:', e.message); analyze(); done(); return; }
+  if (res.superseded || mine !== version) return;            // a newer edit is already waiting for its own answer
+  res.viaWorker = true;
+  lastCompile = res;
+  compiledVersion = mine;
+  if (res.ok) lastGood = res;
+  renderResult();
+  done();
 }
 
 /** Compile the project as it is now (cached until something changes). Null until the compiler is loaded. */
-function analyze() {
+function analyze({ full = false } = {}) {
   if (!lang) return null;
   syncEditor();
-  if (compiledVersion === version && lastCompile) return lastCompile;
+  if (compiledVersion === version && lastCompile && !(full && lastCompile.viaWorker)) return lastCompile;      // (a worker's result has no cartridge: Run and DCK ask for `full`)
   lastCompile = lang.compileProject(project);
   compiledVersion = version;
   if (lastCompile.ok) lastGood = lastCompile;
@@ -658,10 +698,13 @@ function analyze() {
 function allProblems() {
   return [...(lastCompile?.errors ?? []), ...(lastCompile?.warnings ?? [])];
 }
+/** The runtime a result was built for: a worker's result names it, the page's own compile leaves it to lang.runtimeLabel(). */
+const runtimeLabelOf = (res) => res?.runtimeLabel ?? (lang ? lang.runtimeLabel() : 'runtime —');
 const firstProblem = () => lastCompile?.errors?.[0] ?? null;
 
 function renderResult() {
   const res = lastCompile;
+  variablesTool?.render();                 // (the Variables tab lists the build that just finished)
   const box = $('problems'), rows = $('problems-list');
   rows.replaceChildren();
   const list = allProblems();
@@ -768,7 +811,7 @@ function renderSizes() {
     ['Header and tables', (u.header ?? 0) + (u.descriptors ?? 0)],
     ['Variables (RAM)', u.varBytes],
     ['Sprites', cg.sprites !== undefined ? `${plural(cg.sprites, 'asset')}, ${cg.instances} on screen` : undefined],
-    ['Runtime', lang ? lang.runtimeLabel() : '—'],
+    ['Runtime', runtimeLabelOf(lastCompile)],
     ['Compile time', `${Math.max(1, Math.round(good.ms))} ms`],
     ['Cartridge file', `${fmt(u.dckBytes ?? 0)} bytes`],
   ];
@@ -778,7 +821,7 @@ function renderSizes() {
     tr.append(el('td', null, k), el('td', null, typeof v === 'number' ? fmt(v) : v));
     table.append(tr);
   }
-  $('sb-runtime').textContent = lang ? lang.runtimeLabel() : 'runtime —';
+  $('sb-runtime').textContent = lang ? runtimeLabelOf(lastCompile) : 'runtime —';
 }
 
 /** The bank window's bar and its list of banked assets (hidden for an old result without `usage.banked`, or a game with no maps). */
@@ -806,7 +849,7 @@ function renderBank(good, u, stale) {
 
 /** The editor's linter source (src/editor.js): this file's problems as CodeMirror diagnostics. */
 function lintSource(text) {
-  const res = analyze();
+  const res = checker?.available ? lastCompile : analyze();      // (with the worker the marks follow its answer; its relint() refreshes them)
   if (!res) return [];
   const lines = text.split('\n');
   const starts = [];
@@ -835,7 +878,7 @@ function jumpTo(d) {
 async function runProject() {
   if (!lang || !emulator) { say('The compiler or the TS2068 is not ready yet', 'error'); return; }
   statusOverride = null;
-  const res = analyze();
+  const res = analyze({ full: true });
   window.leapEditor.relint();
   if (!res.ok) {
     refreshStatus();
@@ -851,7 +894,9 @@ async function runProject() {
     return;
   }
   hasRun = true;
+  runBuild = res;                    // R3: the addresses of the cartridge that runs now
   meter.reset();
+  variablesTool?.render();
   updateRunUi();
   refreshStatus();
   $('ts-bezel').focus();
@@ -872,7 +917,7 @@ function download(blob, name) {
 }
 
 function downloadDck() {
-  const res = analyze();
+  const res = analyze({ full: true });
   if (!res || !res.ok) { say('Fix the errors first: a game with errors has no cartridge', 'error'); return; }
   const base = P.projectFileName(project).replace(/\.leapgame$/, '');
   download(new Blob([res.dck], { type: 'application/octet-stream' }), base + '.dck');
@@ -964,6 +1009,7 @@ function ticksNow() { return readWord('V_TICKS'); }
 function setPaused(on) {
   if (!emulator || on === emulator.held) return;
   emulator.holdFrames(on);
+  variablesTool?.setPaused(on); variablesTool?.refresh();      // (paused: the values are exact, one refresh)
   if (!on) { joyHeld.clear(); syncJoystick(); }     // a key held across the hold must not come back
   updateRunUi();
   refreshStatus();
@@ -1048,7 +1094,8 @@ let autosaveRefused = false;     // the browser refused the last auto-save (stor
 function autosaveNow() {
   clearTimeout(autosaveTimer);
   syncEditor();
-  const ok = P.storeProject(project);
+  const ok = P.storeProject(project);        // (the localStorage mirror, written at once: older pages and the page-unload path read it)
+  session?.save(project, { runtime: lang?.runtime?.version }).then((r) => { if (r?.warning) say(r.warning, 'error', 12000); }, () => {});      // P1: the list in IndexedDB
   if (!ok && !autosaveRefused) say('The browser would not keep a copy of this project (its storage is full or blocked): use Save to keep your work in a file', 'error', 12000);
   autosaveRefused = !ok;
   updateDirty();
@@ -1063,18 +1110,89 @@ function confirmDiscard() {
   return !isDirty() || window.confirm('This project has changes that were not saved to a file. Discard them?');
 }
 
+// ── P1: the Projects list (IndexedDB, src/arcade-store.js) ───────
+// The open project is always saved to the list before another replaces it, so New, an example or an opened file never loses your place; without
+// IndexedDB (a private window, blocked storage) the Studio keeps its single project and the old "discard changes?" question.
+const PROJECT_ID_KEY = 'leap-studio.project-id';
+let store = null;
+let session = null;
+let projectsDialog = null;
+async function initProjects() {
+  try { if (/[?&]nolist\b/.test(location.search)) throw new Error('switched off by ?nolist'); store = await openStore({ indexedDB: window.indexedDB }); } catch (e) { console.info('[Studio] no project list:', e.message); store = null; }
+  const mirrorId = (() => { try { return localStorage.getItem(PROJECT_ID_KEY); } catch { return null; } })();
+  session = createSession(store, {
+    mirror: (doc, id) => { const ok = P.storeProject(doc); try { if (id) localStorage.setItem(PROJECT_ID_KEY, id); } catch { /* storage blocked */ } return ok; },
+  });
+  let start = null;
+  try { start = await session.init({ mirrorDoc: restored ?? null, mirrorId }); } catch (e) { console.warn('[Studio] the project list could not be read:', e.message); }
+  if (start?.warning) say(start.warning, 'error', 12000);
+  if (session.available && !start?.doc) { try { await session.adopt(project); } catch (e) { console.warn('[Studio] the project could not be listed:', e.message); } }
+  if (start?.doc && hashOf(start.doc) !== hashOf(project)) openProject(start.doc, { saved: false, message: `Reopened "${start.doc.name}"` });
+  $('btn-projects').hidden = !session.available;
+  if (!session.available) return;
+  projectsDialog = createProjectsDialog($('projects-dialog'), {
+    store,
+    currentId: () => session.currentId(),
+    status: say,
+    async openProject(id) {
+      syncEditor();
+      const r = await session.switchTo(id, { current: project });
+      if (!r.ok) { say(r.warning ?? 'The project could not be opened', 'error'); return false; }
+      openProject(r.doc, { message: `Opened "${r.doc.name}"` });
+      return true;
+    },
+    newProject: () => { projectsDialog.close(); newProjectUi(); },
+    openExampleDialog: () => { projectsDialog.close(); showExamples(true); },
+    async rename(id, name) {
+      const r = await session.rename(id, name);
+      if (r.ok && r.wasCurrent) { project.name = r.name; changed({ type: 'project', source: 'studio' }); autosaveNow(); }
+      return r;
+    },
+    async remove(id) {
+      const r = await session.remove(id);
+      if (r.ok && r.wasCurrent && r.doc) openProject(r.doc, { message: `Opened "${r.doc.name}"` });
+      return r;
+    },
+  });
+}
+$('btn-projects').addEventListener('click', () => projectsDialog?.open());
+
+/**
+ * Put a new, example or opened project in place of the open one. With the list nothing is lost (the open project is saved to the list first; if that
+ * fails the user is asked); without it the old question about unsaved changes stands. `how`: 'newProject' or 'openExample' (a COPY, uniquely named).
+ */
+async function replaceProject(how, doc, openOpts) {
+  if (!session?.available) {
+    if (!confirmDiscard()) return false;
+    openProject(doc, openOpts);
+    return true;
+  }
+  syncEditor();
+  let r = await session[how](doc, { current: project });
+  if (!r.ok && r.unsaved) {
+    if (!window.confirm(`${r.warning ?? 'The open project could not be saved to the list.'} Open the other project anyway? The open one would be lost.`)) return false;
+    r = await session[how](doc, { current: project, force: true });
+  }
+  if (!r.ok) { say(r.warning ?? 'The project could not be opened', 'error'); return false; }
+  openProject(r.doc ?? doc, openOpts);
+  return true;
+}
+
 /** Make `p` the project: new editor text, fresh lists, a compile. */
+let openCount = 0;                // how many times a project was put in place (tests wait for it: New and Open are asynchronous since P1)
 function openProject(p, { saved = true, message = null, handle = null } = {}) {
+  openCount++;
   project = p;
   fileHandle = handle;                           // Save writes back to the file the project was opened from (File System Access API), else asks
   autosaveRefused = false;
   version++;
   selected = null;
+  checker?.cancel();
   lastCompile = null; lastGood = null; compiledVersion = -1;
   savedHash = saved ? hashOf(project) : null;
   if (saved) writeSaved(savedHash);
   P.storeProject(project);
-  showFile(P.MAIN_FILE);
+  showFile(P.MAIN_FILE, { forget: true });
   statusOverride = message ? { text: message, mode: 'idle' } : null;
   emit({ type: 'project', source: 'studio' });
   updateDirty();
@@ -1087,11 +1205,11 @@ function openProject(p, { saved = true, message = null, handle = null } = {}) {
 // cannot be loaded the dialog is skipped and New makes the classic blank project, so New never breaks.
 let startersModule = null;
 async function newProjectUi() {
-  if (!confirmDiscard()) return;
+  if (!session?.available && !confirmDiscard()) return;
   if (!startersModule) {
     try { startersModule = await import('./src/arcade-starters.js'); } catch (e) {
       console.error('[Studio] the starters could not be loaded', e);
-      openProject(P.newProject(), { message: 'New project: press Run (F5)' });
+      replaceProject('newProject', P.newProject(), { message: 'New project: press Run (F5)' });
       return;
     }
   }
@@ -1108,7 +1226,7 @@ async function newProjectUi() {
       dlg.close('starter');
       let p;
       try { p = s.make(); } catch (e) { say(`The starter could not be made: ${e.message}`, 'error'); return; }
-      openProject(p, { message: `New project from the "${s.title}" starter: press Run (F5)` });
+      replaceProject('newProject', p, { message: `New project from the "${s.title}" starter: press Run (F5)` });
     });
     grid.append(card);
   }
@@ -1195,8 +1313,7 @@ async function openFileObject(file, handle) {
   }
   const r = P.parseProject(text);
   if (!r.ok) { say(`${file.name} is not a usable project: ${r.errors[0]}`, 'error'); return; }
-  if (!confirmDiscard()) { say('Kept your project; the file was not opened', 'idle'); return; }
-  openProject(r.project, { message: `Opened ${file.name}${r.warnings.length ? ` (${r.warnings[0]})` : ''}: press Run (F5)`, handle });
+  await replaceProject('openExample', r.project, { message: `Opened ${file.name}${r.warnings.length ? ` (${r.warnings[0]})` : ''}: press Run (F5)`, handle });
 }
 
 const examplesBtn = $('btn-examples');
@@ -1236,14 +1353,12 @@ async function loadExampleIndex() {
 }
 
 async function openExample(ex) {
-  if (!confirmDiscard()) return;
   try {
     const resp = await fetch(`arcade/dist/examples/${ex.file}`, FRESH);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const r = P.parseProject(await resp.text());
     if (!r.ok) throw new Error(r.errors[0]);
-    openProject(r.project, { message: `Example "${ex.title}": press Run (F5)` });
-    window.leapEditor.focus();
+    if (await replaceProject('openExample', r.project, { message: `Example "${ex.title}": press Run (F5)` })) window.leapEditor.focus();
   } catch (e) {
     say(`Could not open the example: ${e.message}`, 'error');
   }
@@ -1299,6 +1414,15 @@ examplesMenu.addEventListener('keydown', (e) => {
 
 // ── Right-hand tabs ──────────────────────────────────────────────
 let symbolsTool = null;
+// R3: the Variables tab. The list is the running cartridge's own (runBuild: the compile Run used), else the latest good build's; values are read from the
+// machine's memory, about five times a second while the tab is open and a game runs, and once at each pause.
+let runBuild = null;
+const variablesTool = createVariablesPanel($('tool-variables'), {
+  getVariables: () => ((emuState === 'cartridge' || emuState === 'paused') ? runBuild : null)?.variables ?? lastGood?.variables ?? null,
+  readByte: (a) => (emulator?.machine ? emulator.machine.bus.read(a) : null),
+  isRunning: () => emuState === 'cartridge' || emuState === 'paused',
+});
+setInterval(() => { if (!$('tool-variables').hidden && emuState === 'cartridge' && !emulator?.held) variablesTool.refresh(); }, 200);
 const TAB_KEY = 'leap-studio.tab';
 function showTab(name) {
   for (const t of document.querySelectorAll('#right-panel .panel-tab')) t.classList.toggle('active', t.dataset.tab === name);
@@ -1306,6 +1430,7 @@ function showTab(name) {
   $('display-btns').hidden = name !== 'display';
   try { localStorage.setItem(TAB_KEY, name); } catch { /* storage blocked */ }
   if (name === 'symbols') refreshSymbols();
+  if (name === 'variables') { variablesTool.render(); variablesTool.refresh(); }
   const kind = Object.keys(ASSET_EDITORS).find((k) => ASSET_EDITORS[k].tab === name);
   if (kind) ensureEditor(kind).then((api) => api?.refresh?.());
   applyZoom();
@@ -1462,6 +1587,14 @@ symbolsTool = createSymbolsTool($('tool-symbols'), {
   },
   getProfile: () => profile,
 });
+// P4: go to definition, hover and rename see the whole project (the joined source and its line map), not only the open file
+setProjectContext({
+  source: () => { syncEditor(); return P.buildSource(project); },
+  activeFile: () => activeFile,
+  files: () => Object.fromEntries(Object.entries(project.files).filter(([name]) => !P.isGeneratedFile(name))),
+  openFile: (name, line, col) => switchFile(name, { line, col }),
+  setFileText: (name, text) => { P.setFile(project, name, text); changed({ type: 'source', source: 'studio' }); },
+});
 /** In a project of several files a row says which file its line is in ("extra.arc line 3"), not the joined text's line. */
 function labelSymbolRows() {
   if (Object.keys(project.files).length < 2) return;
@@ -1488,6 +1621,7 @@ async function boot() {
   showFile(P.MAIN_FILE);
   booted = true;
   updateDirty();
+  await initProjects();
   setStatus('Starting…', 'idle');
   try {
     emulator = await createEmulator({
@@ -1505,6 +1639,7 @@ async function boot() {
   updateRunUi();
   try {
     lang = await profile.attach({ fetchAsset });
+    try { checker = createCheckClient(); } catch (e) { console.warn('[Studio] no diagnostics worker:', e.message); }
   } catch (err) {
     console.error('[Studio] the compiler could not be loaded', err);
     setStatus(`The Arcade runtime is not available (${err.message}). Build it: node arcade/tools/build-runtime-v2.mjs and build-runtime-v3.mjs, then node arcade/tools/publish-runtime.mjs`, 'error');
@@ -1513,7 +1648,7 @@ async function boot() {
   $('btn-run').disabled = !emulator;
   analyze();
   window.leapEditor.relint();
-  $('sb-runtime').textContent = lang.runtimeLabel();
+  $('sb-runtime').textContent = runtimeLabelOf(lastCompile);
   refreshStatus();
   // the right-hand tab open when the page was left (any of them)
   let tab = null;
@@ -1536,6 +1671,9 @@ window.leapStudio = {
   get lang() { return lang; },
   get lastCompile() { return lastCompile; },
   get lastGood() { return lastGood; },
+  get projects() { return { store, session }; },
+  get opens() { return openCount; },
+  get compileSettled() { return !!lang && compiledVersion === version && !!lastCompile; },      // (the diagnostics for the current text have arrived: tests wait for it)
   /** The frame budget meter's numbers {framerate, div, fps, used, worst, over, total}, or null before the first counted tick. */
   meterStats: () => meter.stats(),
   screenPng,

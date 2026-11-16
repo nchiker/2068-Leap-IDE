@@ -13,6 +13,7 @@
 "use strict";
 
 import { spawn, execSync } from 'node:child_process';
+import { guardChrome } from './chrome-guard.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
@@ -55,6 +56,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 const port = 9300 + Math.floor(Math.random() * 500);
 const chrome = spawn(findChrome(), [`--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'sprite-prof-'))}`,
   '--headless', '--mute-audio', '--no-sandbox', '--window-size=1400,1100', 'about:blank'], { stdio: 'ignore' });
+guardChrome(chrome, { label: 'sprite-editor-smoke.mjs' });      // (the browser never outlives the test)
 let targets;
 for (let i = 0; i < 100 && !targets; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); } catch { await sleep(100); } }
 const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
@@ -318,6 +320,77 @@ try {
   await evaluate("(window.confirm = () => true, true)");
   await click('.sprited-bar button:nth-of-type(4)');
   check('Delete removes it (after the confirmation) and selects another sprite', (await evaluate("!t.host.listAssets('sprites').includes('knight')")) && (await state()).name !== 'knight' && (await state()).name !== null);
+
+  // ── gallery strip (stage 5, S1): a picture of every sprite, the edited one highlighted, a click selects ──
+  const J = JSON.stringify;
+  const gal = () => evaluate(`(() => { const st = document.querySelector('[data-role=gallery-strip]'); if (!st) return null;
+    const items = [...st.querySelectorAll('[data-role=gallery-item]')];
+    return { names: items.map((i) => i.dataset.asset), current: items.filter((i) => i.classList.contains('current')).map((i) => i.dataset.asset), draws: Object.fromEntries(items.map((i) => [i.dataset.asset, +i.dataset.draws])),
+      captions: items.map((i) => i.textContent), titles: items.map((i) => i.title), h: st.getBoundingClientRect().height, sw: st.scrollWidth, cw: st.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
+  /** How many pixels of an item's canvas are not fully transparent, and how many distinct colours they have. */
+  const galInk = (n) => evaluate(`(() => { const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${JSON.stringify(JSON.stringify(n))} + '] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const set = new Set(); let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { n++; set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, colours: set.size, w: c.width, h: c.height }; })()`);
+  {
+    const list = await evaluate("t.host.listAssets('sprites')");
+    const g0 = await gal();
+    check('S1: the strip lists every sprite of the project, in the drop-down\'s order, each with its name as caption and tooltip', !!g0 && J(g0.names) === J(list) && J(g0.captions) === J(list) && J(g0.titles) === J(list), J(g0?.names));
+    check('S1: exactly the edited sprite is highlighted', J(g0.current) === J([(await state()).name]));
+    const ink = await galInk('ball');
+    check('S1: the picture of a drawn sprite is not blank, and keeps its colours', ink.n > 20 && ink.colours >= 2 && ink.w > 0, J(ink));
+    check('S1: the strip is at most 72 px high and the page does not scroll sideways', g0.h <= 72 && g0.page <= 0, `h ${g0.h}, page overflow ${g0.page}`);
+    const other = list.find((n) => n !== g0.current[0]);
+    const before = await state();
+    await click(`[data-role=gallery-item][data-asset=${J(other)}]`);
+    const after = await state(), g1 = await gal();
+    check('S1: a click on another picture selects that sprite (the editor shows it) and moves the highlight', after.name === other && J(g1.current) === J([other]) && (await evaluate("document.querySelector('.sprited-select').value")) === other, `${before.name} -> ${after.name}`);
+    await click(`[data-role=gallery-item][data-asset=${J(before.name)}]`);
+    check('S1: a click on the highlighted-sprite\'s picture again changes nothing, and the drop-down still works', (await state()).name === before.name && (await setSelect('.sprited-select', other)) && (await state()).name === other && J((await gal()).current) === J([other]));
+    await evaluate(`(t.editor.select(${J(before.name)}), true)`);
+    // an edit redraws only the edited sprite's picture
+    const d0 = (await gal()).draws;
+    const picOf = (n) => evaluate(`document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas').toDataURL()`);
+    const pic0 = await picOf(before.name);
+    const ccount = await evaluate("t.host.listAssets('sprites').length");
+    const sets0 = await evaluate('t.log.sets.length');
+    for (const [x, y, btn] of [[7, 7, 'right'], [8, 8, 'right'], [1, 1, 'left']]) { await clickCell(x, y, btn); if ((await evaluate('t.log.sets.length')) > sets0) break; }
+    await waitFor(`t.log.sets.length > ${sets0}`);
+    const d1 = (await gal()).draws, changed = Object.keys(d1).filter((n) => d1[n] !== d0[n]);
+    check('S1: an edit redraws the edited sprite\'s picture only', ccount > 1 && J(changed) === J([before.name]), J(changed));
+    check('S1: and the picture shows the edit', (await picOf(before.name)) !== pic0);
+    // New, Rename, Delete update the strip
+    await evaluate("(window.__names = ['gal1'], true)");
+    await click('.sprited-bar button:nth-of-type(1)');
+    await waitFor("t.editor.getState().name === 'gal1'");
+    let g2 = await gal();
+    check('S1: New adds a picture and highlights it', g2.names.includes('gal1') && J(g2.current) === J(['gal1']) && J(g2.names) === J(await evaluate("t.host.listAssets('sprites')")), J(g2.names));
+    await evaluate("(window.__names = ['gal2'], true)");
+    await click('.sprited-bar button:nth-of-type(3)');
+    await waitFor("t.editor.getState().name === 'gal2'");
+    g2 = await gal();
+    check('S1: Rename replaces the picture\'s name (caption, tooltip, data-asset) and keeps the highlight', !g2.names.includes('gal1') && g2.names.includes('gal2') && J(g2.current) === J(['gal2']) && g2.captions.includes('gal2'), J(g2.names));
+    await evaluate("(window.confirm = () => true, true)");
+    await click('.sprited-bar button:nth-of-type(4)');
+    g2 = await gal();
+    check('S1: Delete removes the picture; another sprite is highlighted', !g2.names.includes('gal2') && g2.current.length === 1 && g2.current[0] === (await state()).name && J(g2.names) === J(await evaluate("t.host.listAssets('sprites')")), J(g2.names));
+    // somebody else changes a sprite that is not being edited: its picture is redrawn
+    const keep = await evaluate("JSON.parse(JSON.stringify(t.project.assets.sprites))");
+    const cur = (await state()).name, oth = Object.keys(keep).find((n) => n !== cur);
+    const dd0 = (await gal()).draws[oth];
+    await evaluate(`(() => { const s = t.S.newSprite(8, 8); t.S.paintRole(s, 0, 2, 2, 'ink'); t.externalSet(${J(oth)}, t.S.toAsset(s)); return true; })()`);
+    const dd1 = (await gal()).draws[oth];
+    check('S1: a change made by another editor to a sprite that is not shown redraws that picture only', dd1 === dd0 + 1 && (await state()).name === cur, `${dd0} -> ${dd1}`);
+    // a long strip scrolls sideways inside itself
+    await evaluate(`(() => { for (let i = 0; i < 40; i++) t.project.assets.sprites['many' + String(i).padStart(2, '0')] = t.S.toAsset(t.S.newSprite(16, 16)); t.host.setAsset('sprites', 'many00', t.project.assets.sprites.many00); return true; })()`);
+    await evaluate("(t.editor.refresh(), true)");
+    const g3 = await gal();
+    check('S1: 40 more sprites: the strip scrolls sideways (no page scroll) and stays at most 72 px high', g3.names.length >= 40 && g3.sw > g3.cw + 100 && g3.h <= 72 && g3.page <= 0, `scrollWidth ${g3.sw} clientWidth ${g3.cw} h ${g3.h} page ${g3.page}`);
+    await shot('06a-gallery-long');
+    await evaluate("(t.editor.select('many39'), true)");
+    check('S1: the highlighted picture is scrolled into sight', await evaluate("(() => { const st = document.querySelector('[data-role=gallery-strip]'), it = st.querySelector('.current'); return it.offsetLeft >= st.scrollLeft - 1 && it.offsetLeft + it.offsetWidth <= st.scrollLeft + st.clientWidth + 1 && st.scrollLeft > 0; })()"));
+    await evaluate(`(() => { t.replaceProject({ assets: { sprites: ${J(keep)} } }); return true; })()`);
+    await evaluate(`(t.editor.select(${J(cur)}), true)`);
+    check('S1: back to the original list', J((await gal()).names) === J(Object.keys(keep).sort()));
+  }
 
   // ── somebody else changes the project ──
   await evaluate("(t.editor.select('ball'), true)");

@@ -1,0 +1,108 @@
+<!doctype html>
+<!-- tests/projects-dialog-test.html: a blank page that runs the Studio's project list (src/arcade-store.js on the REAL browser IndexedDB, src/arcade-projects-session.js,
+     src/tools/projects-dialog.js) the way studio.js will wire it: the working project in memory, the localStorage mirror 'leap-studio.project' (+ its id),
+     a "Projects" button. Driven by tests/projects-dialog-smoke.mjs, which loads it twice to see that the list survives a reload.
+     ?noidb=1 hands the store no IndexedDB (the single-project fallback). ?theme=light picks the light palette. window.t exposes everything and a log of the host's calls. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Projects dialog test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; padding: 12px; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } </style>
+</head>
+<body>
+<button class="phbtn" id="btn-projects" title="Projects kept in this browser">Projects</button>
+<span id="project-name"></span>
+<dialog id="projects-dialog"></dialog>
+<script type="module">
+import * as P from '../src/arcade-project.js';
+import { openStore } from '../src/arcade-store.js';
+import { createSession } from '../src/arcade-projects-session.js';
+import { createProjectsDialog } from '../src/tools/projects-dialog.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+const ID_KEY = 'leap-studio.project-id';
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+
+const t = { log: { openProject: [], newProject: 0, openExampleDialog: 0, confirms: [], status: [] }, confirmAnswer: true, project: null, store: null, session: null, dialog: null, notice: null };
+window.t = t;
+const showName = () => { document.getElementById('project-name').textContent = t.project.name; };
+
+// the localStorage mirror, as studio.js writes it: the project, and the id of its entry beside it
+const mirror = (doc, id) => {
+  const ok = P.storeProject(doc);
+  try { if (id) localStorage.setItem(ID_KEY, id); } catch { /* storage blocked */ }
+  return ok;
+};
+
+let store = null;
+try { store = await openStore({ indexedDB: q.get('noidb') ? undefined : window.indexedDB }); } catch (e) { t.notice = e.message; }
+t.store = store;
+const session = createSession(store, { mirror });
+t.session = session;
+
+const start = await session.init({ mirrorDoc: P.loadProject(), mirrorId: lsGet(ID_KEY) });
+t.start = { how: start.how, id: start.id, warning: start.warning };
+t.project = start.doc ?? P.newProject('Blank');
+if (!start.doc) await session.adopt(t.project);
+showName();
+
+// what the Studio does on an edit: change the project, then the (debounced) auto-save
+t.edit = async (line) => { t.project.files[P.MAIN_FILE] += `\nREM ${line}\n`; return session.save(t.project); };
+t.openExample = async (name) => {
+  const r = await session.openExample(P.newProject(name), { current: t.project });
+  if (r.ok && r.doc) { t.project = r.doc; showName(); }
+  return r;
+};
+t.mirrorText = () => lsGet('leap-studio.project');
+t.mirrorId = () => lsGet(ID_KEY);
+t.rawPut = (id, doc) => new Promise((resolve, reject) => {          // damage a record behind the store's back (the real IndexedDB, same database)
+  const open = indexedDB.open('leap-studio', 1);
+  open.onsuccess = () => {
+    const tx = open.result.transaction('projects', 'readwrite');
+    const os = tx.objectStore('projects');
+    os.get(id).onsuccess = (e) => { const r = e.target.result; r.doc = doc; os.put(r); };
+    tx.oncomplete = () => { open.result.close(); resolve(true); };
+    tx.onerror = () => reject(tx.error);
+  };
+  open.onerror = () => reject(open.error);
+});
+
+if (store) {
+  const host = {
+    store,
+    currentId: () => session.currentId(),
+    async openProject(id) {
+      t.log.openProject.push(id);
+      const r = await session.switchTo(id, { current: t.project });
+      if (!r.ok) { t.log.status.push([r.warning, 'error']); return false; }
+      t.project = r.doc; showName();
+      return true;
+    },
+    newProject() { t.log.newProject++; },
+    openExampleDialog() { t.log.openExampleDialog++; },
+    status(text, kind) { t.log.status.push([text, kind]); },
+    async rename(id, name) {
+      const r = await session.rename(id, name);
+      if (!r.ok) throw new Error(r.warning);
+      if (r.wasCurrent) { t.project.name = r.name; showName(); await session.save(t.project); }
+    },
+    duplicate: (id) => store.duplicate(id),
+    async remove(id) {
+      const r = await session.remove(id);
+      if (!r.ok) throw new Error(r.warning);
+      if (r.wasCurrent) { t.project = r.doc; showName(); }
+    },
+    confirm(text) { t.log.confirms.push(text); return t.confirmAnswer; },
+  };
+  t.host = host;
+  t.dialog = createProjectsDialog(document.getElementById('projects-dialog'), host);
+  document.getElementById('btn-projects').addEventListener('click', () => t.dialog.open());
+} else {
+  document.getElementById('btn-projects').hidden = true;     // no list: the Studio hides the button and keeps its single project
+}
+window.testReady = true;
+</script>
+</body>
+</html>
