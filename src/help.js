@@ -4,7 +4,10 @@
  * Keywords: the active language's manual entries (the profile's help.entries,
  * generated from its manual), grouped and searchable, with a link to its
  * section of the manual at the matching release tag. Keys & tips: the IDE's
- * shortcuts and habits, with the language's own tips first.
+ * shortcuts and habits, with the language's own tips first. A profile may add
+ * pages of its own (help.pages: [{id, title, blocks: [{type: 'h' | 'p' | 'code',
+ * text}]}], e.g. Leap Arcade's "How a game is built"): one more tab each, after
+ * Keys & tips. Profiles without pages see no change.
  * Everything is built with DOM nodes and textContent.
  */
 
@@ -76,6 +79,19 @@ function showEntry(detail, name) {
   detail.append(link);
 }
 
+/** One extra page of the profile's help.pages: headings, paragraphs and code blocks (textContent only). */
+function pageElement(page) {
+  const panel = el('div', 'help-keys help-page');
+  panel.hidden = true;
+  panel.dataset.page = page.id;
+  for (const b of page.blocks) {
+    if (b.type === 'h') panel.append(el('h3', null, b.text));
+    else if (b.type === 'code') panel.append(el('pre', 'help-example', b.text));
+    else panel.append(el('p', null, b.text));
+  }
+  return panel;
+}
+
 function build() {
   overlay = el('div', 'help-overlay');
   overlay.hidden = true;
@@ -89,7 +105,15 @@ function build() {
   const tabKeys = el('button', 'help-tab', 'Keys & tips');
   const close = el('button', 'help-close', '✕');
   close.title = 'Close (Escape)';
-  head.append(tabKeywords, tabKeys, el('span', 'help-spacer'), close);
+  head.append(tabKeywords, tabKeys);
+  const pageTabs = [];                           // [{id, tab, panel}] for the profile's help.pages
+  for (const page of help.pages ?? []) {
+    const tab = el('button', 'help-tab', page.title);
+    tab.dataset.page = page.id;
+    pageTabs.push({ id: page.id, tab, panel: pageElement(page) });
+    head.append(tab);
+  }
+  head.append(el('span', 'help-spacer'), close);
   box.append(head);
 
   // Keywords tab: search + list | detail
@@ -148,15 +172,21 @@ function build() {
   for (const t of [...help.tips, ...TIPS]) ul.append(el('li', null, t));
   keys.append(ul);
   box.append(keys);
+  for (const p of pageTabs) box.append(p.panel);
 
   const show = which => {
     kw.hidden = which !== 'keywords';
     keys.hidden = which !== 'keys';
     tabKeywords.classList.toggle('active', which === 'keywords');
     tabKeys.classList.toggle('active', which === 'keys');
+    for (const p of pageTabs) {
+      p.panel.hidden = which !== p.id;
+      p.tab.classList.toggle('active', which === p.id);
+    }
   };
   tabKeywords.addEventListener('click', () => { show('keywords'); search.focus(); });
   tabKeys.addEventListener('click', () => show('keys'));
+  for (const p of pageTabs) p.tab.addEventListener('click', () => show(p.id));
   close.addEventListener('click', closeHelp);
   overlay.addEventListener('click', e => { if (e.target === overlay) closeHelp(); });
   // Escape closes the help wherever the focus is (search box, tab, link, page).

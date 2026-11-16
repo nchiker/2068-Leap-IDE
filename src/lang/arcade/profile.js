@@ -19,6 +19,8 @@ import { LEAP_EXTENDED_SYMBOLS } from '../keytables.js';
 import { compile, requiredRuntime } from './arcade-compile.js';
 import { ARCADE_WORDS, VALID_FRAMERATES } from './arcade-words.js';
 import { scanArcade } from './arcade-scan.js';
+import { ARCADE_HELP, DOCS_BASE } from './arcade-help-data.js';
+import { HELP_PAGES } from './arcade-help-examples.js';
 import { buildSource, locate } from '../../arcade-project.js';
 
 /** The published runtime builds the Studio compiles against: v2 for the older games, v3 for programs that need it (frames, big sprites, WINDOW; requiredRuntime()). */
@@ -30,12 +32,14 @@ export const RUNTIME_PATHS = Object.freeze({
 /** The runtime a program needs (2, 3 or 4) -> the build to compile against; a version that could not be loaded falls back to the newest loaded one, so the compiler reports the missing words. */
 export const pickBuild = (builds, version) => builds[version] || builds[Math.max(...Object.keys(builds).map(Number))];
 export const DCK_BYTES_LIMIT = 16384;          // the game's own share of the cartridge (usage.total + usage.free)
-const LANGUAGE_DOC = 'https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_LANGUAGE.md';
+const LANGUAGE_DOC = DOCS_BASE + 'ARCADE_LANGUAGE.md';
 
-/** Word table -> the Help overlay's entries (src/help.js). */
+/** Word table -> the Help overlay's entries (src/help.js); the example and the manual section of each word come from the generated arcade-help-data.js (tools/gen-arcade-help.mjs). */
 const HELP_ENTRIES = Object.fromEntries([...ARCADE_WORDS.values()].map((w) => [w.name, {
-  kind: w.cls, forms: [w.syntax], desc: w.desc, example: null,
+  kind: w.cls, forms: [w.syntax], desc: w.desc, example: ARCADE_HELP[w.name]?.example ?? null,
 }]));
+/** The link of a word's entry: the section of the language document that defines it (a word the data lacks goes to the top of the language document). */
+const helpLink = (name) => { const h = ARCADE_HELP[name]; return h?.anchor ? `${DOCS_BASE}${h.doc}#${h.anchor}` : LANGUAGE_DOC; };
 
 const KIND_TEXT = { game: 'game word', structure: 'structure', statement: 'statement', function: 'function', operator: 'operator' };
 
@@ -43,7 +47,8 @@ const help = {
   entries: HELP_ENTRIES,
   first: 'SHOW',
   manualUrl: LANGUAGE_DOC,
-  link: () => LANGUAGE_DOC,
+  link: helpLink,
+  pages: HELP_PAGES,                  // extra tabs of the Help overlay ("How a game is built")
   kindText: (e) => KIND_TEXT[e.kind] ?? e.kind,
   groups: [
     { title: 'Game words', test: (e) => e.kind === 'game' },
