@@ -13,6 +13,7 @@
 "use strict";
 
 import { spawn, execSync } from 'node:child_process';
+import { guardChrome } from './chrome-guard.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
@@ -61,6 +62,7 @@ export async function startBrowser({ outDir = null, width = 1920, height = 1000 
   const chrome = spawn(findChrome(), [`--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'leap-prof-'))}`,
     '--headless', '--mute-audio', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
     '--autoplay-policy=no-user-gesture-required', `--window-size=${width},${height}`, 'about:blank'], { stdio: 'ignore' });
+  guardChrome(chrome, { label: 'browser-lib.mjs' });      // (the browser never outlives the test)
   let targets;
   for (let i = 0; i < 100 && !targets; i++) {
     try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); } catch { await sleep(100); }
@@ -73,6 +75,10 @@ export async function startBrowser({ outDir = null, width = 1920, height = 1000 
     const msg = JSON.parse(ev.data);
     if (msg.id && waiting.has(msg.id)) { waiting.get(msg.id)(msg); waiting.delete(msg.id); }
     if (msg.method === 'Runtime.exceptionThrown') pageErrors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
+    if (msg.method === 'Page.javascriptDialogOpening') {      // a native alert / confirm / prompt nobody stubbed would hang the test for ever: report it as a page error and dismiss it
+      pageErrors.push(`unexpected native ${msg.params.type} dialog: ${String(msg.params.message).slice(0, 120)}`);
+      ws.send(JSON.stringify({ id: ++msgId, method: 'Page.handleJavaScriptDialog', params: { accept: false } }));
+    }
     if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') pageErrors.push(`${msg.params.entry.text} ${msg.params.entry.url ?? ''}`);
   };
   const send = (method, params = {}) => new Promise((r) => { const i = ++msgId; waiting.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
