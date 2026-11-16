@@ -9,8 +9,8 @@ Ids: B bugs, K two blacks, N new project, S / T sprite and tile editors, M map e
 P project and files, E rough edges (all as in the review doc), plus V (validation speed, stage 0), X (IDE parity), G (games using later words),
 Z (the v2 runtime size pass), defined here.
 
-**Not in this contract** (named backlog items, owner 2026-11-12): S1 sprite colour in the game (runtime), T4 animated tiles (runtime, the planned
-item), R4 the full source debugger (after R1 to R3). Dropped: A4 (Play on TS2068), K5 (black ink on bright paper stays unflagged).
+**Not in this contract** (named backlog items, owner 2026-11-12): T4 animated tiles (runtime, the planned item). (S1 sprite colour, here called SC, and R4 the
+full source debugger entered with stage 6, 2026-11-16.) Dropped: A4 (Play on TS2068), K5 (black ink on bright paper stays unflagged).
 
 ## 1. Stages and order
 
@@ -25,6 +25,8 @@ section 6 and a commit; a stage that changes an example game ends with the game 
 | 3 | the games: K4, E5, G1 to G4 | one pass over the same five games, one re-test, one Fuse look |
 | 4 | the big four: N1, W1, M2, A1 | build on the fixed editors and the updated games |
 | 5 | the medium items: B3, R3, P1, P3, P4, P5, T2 with M3, M4 | |
+| 6A | carry-overs (C1 to C4) and R4, the source debugger: Studio side, no runtime change | cheap to verify (`--all` without `--full`); R4 reads the build the runtime already makes |
+| 6B | SC sprite colour (runtime v2) and the fine-colour platformer (PL) | a runtime change needs `verify --all --full` (84 min): kept in its own PR so 6A is not held up |
 
 ## 2. Stage 0: validation speed (V)
 
@@ -437,6 +439,89 @@ re-ran every suite in the main tree, wired the Studio (`studio.js`, `studio.html
   `confirm` on New when the list is off: stub `window.confirm` or the test hangs with 0 % CPU. (6) Leaked headless Chromes (a crashed browser test never closes its browser) slow every
   timing check: look at `ps` for `chrome-headless-shell` parents older than the run before trusting a wall-clock failure (a load average of 63 made the speed-ratio check fail).
 
+### Stage 6
+Scope decided by the owner on 2026-11-16: R4, SC, the single-screen fine-colour platformer, and ALL the stage 5 carry-overs ("fix all"; he found no issues playing stage 5).
+T4 (animated tiles) stays out. Two branches, two PRs: **6A** (`studio-stage6`: C1 to C4, R4) and **6B** (`studio-stage6b`, from main after 6A merges: SC, PL).
+Everything marked *(decision)* is Claude's default for the owner's review; nothing below is built yet.
+
+**C1. The eleven words the compiler refuses** (END TAB FLASH PLOT POKE OUT LEN PEEK IN USR POINT: in `arcade-words.js` and Help, `notYet()` in the code generator).
+*(decision)* Implement the ones that fit the runtime's model, take the rest out of the word table and Help (the table then says what the compiler does):
+| word | verdict | why |
+|---|---|---|
+| `END` | implement | stop the game: the tick loop halts with the screen kept (a game-over that ends); interpreter parity |
+| `TAB col` after `PRINT` | implement | the text printer already has a column; a few bytes of code per use |
+| `FLASH n` | implement | one attribute bit like BRIGHT; the checker already reads it (`arcade-check.js`); the interpreter has `Unsupported('FLASH')` to replace |
+| `PEEK(addr)`, `POKE addr, v` | implement | plain loads and stores; a warning when the address is runtime-owned RAM (the checker knows the map); not available to v3 / v4 window or view tables |
+| `LEN(s$)` | remove | the language has no strings |
+| `USR`, `OUT`, `IN` | remove | they bypass the runtime's ownership of the ULA, the AY and the stack; the games never need them |
+| `PLOT`, `POINT` | remove | a pixel written to the screen fights the two-buffer erase / redraw model (and fine colour); a sprite or tile does the same job |
+Tests: `arcade-help-data.mjs` (its cue: a word the compiler now accepts needs an example; a removed word leaves the table), interpreter-versus-Z80 parity for the new words
+(`m*` differential style), mutation shard for the new code. Sample: none needed (Help examples).
+
+**C2. Small Studio issues from stage 5.**
+(a) the floor-plan preview reads the `VIEW3D`'s INK from the source; (b) a click in the gallery strip moves the project panel's selection; (c) a cross-file rename is one undo step of the open
+editor (the open file's rewrite goes through the editor as one transaction, the closed files through the project); (d) the diagnostics worker's modules load stamped: first try `tools/stamp-modules.py`
+writing the worker's closure with `?v=` specifiers into a generated copy; *(decision)* if that is not small, the limit stays documented (Run always compiles on the page) and is closed with the owner's say-so.
+Tests: one check each in `tests/studio-smoke.mjs` (and the floor-plan and rename suites).
+
+**C3. Mutation suites for the pure editor-side modules** (`asset-thumbs.js`, `variables-model.js`, `picture-import.js`, `floorplan-view.js`, `raycast-ref.js`'s preview helpers):
+*(decision)* yes, for the four that hold logic; same shard tooling as `m15`. The model modules of earlier stages get theirs in the same pass if their suites already kill > 90 %.
+
+**C4. Real hardware.** Nothing to build: the numbers stay emulator-only (TSRun, ZEsarUX, Fuse), stated in the docs as before.
+
+**R4. Source debugger** (Studio only; no runtime change). Breakpoints on source lines, Step line, Continue, over the build the cartridge is running.
+* **Mechanism.** `gen.srcMap` (`{addr, line, col}`, one entry per generated statement, remapped after the emitter's size pass) is in `map.lines`; `findSource(map, addr)` exists. The emulator
+  already pauses before an instruction (`setWatch(fn)` returns true to pause, `stepInstruction()`, `resume()`), and the Studio already holds at frame boundaries (R2).
+  *(decision)* A breakpoint is a **source line**: it stops before the first instruction of the line's first `srcMap` entry. The watch is a `Set` of those addresses, tested once per instruction
+  (the cost is paid only while a breakpoint exists; the 3D and fine games run slower under single-stepping, said in the panel).
+* **Step line** (F11): single-step until the pc is at a `srcMap` address of a different entry (a call into a game PROC stops inside it; a call into the runtime has no entry and runs through),
+  at most 200,000 instructions, then pause. **Step over** (Shift+F11): at a `CALL`, run to the return address, honouring breakpoints inside. F10 stays "step one tick".
+* **Pause state.** One paused state for the three ways in (F8 hold at a frame boundary, F10 tick step, a breakpoint): the status line names the line (`Paused at line N of game.arc`), the editor
+  marks the line, the Vars tab refreshes (values exact, as at any pause), the debugger buttons enable Step line / Continue. Pausing mid-frame must not change the game: Continue re-enters the frame
+  loop where it stopped (the emulator's `resume()` does), the frame meter drops the partial frame, the joystick and keys are released and the audio is gated as in R2.
+* **Editing.** Breakpoints are CodeMirror gutter markers (the IDE's gutter extension in `src/editor.js`, tracked through edits by CodeMirror's range mapping), kept per file with the editor state of P3, saved with
+  the project. After a compile the set is mapped to addresses of the build; a marker on a line with no code (a comment, a blank line, a declaration) snaps to the next line with code and shows hollow
+  when none follows; a marker added or moved while a game runs applies to the next Run (it shows hollow until the running build contains it). The project line map (P4) turns (file, line) into the joined line.
+* **Not in R4** *(decision)*: conditional breakpoints, watchpoints on variables, stepping backwards, breakpoints inside the runtime's own code (the IDE's Z80 breakpoints do that for BASIC, Forth and C).
+* **Tests.** (1) Node, real runtime on three games (Breakout, Starfall, Leap Runner): a breakpoint on each of 40 lines pauses with `findSource(pc).line` equal to the line (or the snapped line); (2) **the
+  non-perturbation check**: run N ticks with a breakpoint hit and continued 5 times, and N ticks undisturbed: RAM, screen and AY registers equal at the same tick; (3) Step line over a known sequence
+  (the order of statements of one PROC); (4) the gutter, snapping, edit mapping, hollow markers, the paused state and F10 / F11 / F8 in `tests/studio-smoke.mjs`; (5) mutation shard on the new pure module
+  (`src/tools/source-debug.js`: breakpoint set to addresses, snap, step target selection; no DOM).
+* **Sample.** Help gets a page "Debugging a game" (a walk through setting a breakpoint on Starfall's collision line, reading the Vars tab, stepping); no game changes.
+
+**SC. Sprite colour in classic scenes** (runtime v2; v3 and v4 only if v2 turns out cheap and the owner asks).
+Today a sprite never writes attributes: it takes the colour of the cells under it (Starfall's ships are drawn in the sky's ink whatever the art says), and in a fine scene each sprite row
+carries its own ink (`sprite_inks`, `AND $F8 / OR ink`, fine contract section 4). SC lets a **classic** scene do the same at 8 x 8 resolution.
+* **Setting, not a word** *(decision)*: `scenes.<name>.spriteColour = 'ink'` (default `'none'`: every existing game is byte-identical), like `display = 'fine'` was: the source does not change. A fine scene ignores it (it already has per-row ink).
+* **Rule** *(decision)*: a sprite recolours the INK of the 8 x 8 cells it covers where its mask touches (`attr = (attr AND $F8) OR ink`); paper, BRIGHT and FLASH stay the background's.
+  The ink of each cell of a frame is the most used ink of its 8 x 8 block of the authored art (the `flip` family rule of ARCADE_ASSETS.md "Colour model"), so a two-ink ship keeps both inks at cell level.
+  The known price of the real hardware, said in the Studio: pixels of the background inside a recoloured cell take the sprite's ink (attribute clash). The asset check warns when a sprite crosses a cell with
+  background pixels of another ink (`sprite-ink-clash`, a warning, never an error).
+* **Erase.** The cell's attribute is restored with the bitmap by the erase pass (the cell map holds the background attribute). Attributes are written to the hidden buffer with the bitmap and shown with the flip.
+* **Gate (SC0, a spike before any contract commitment).** Measure on v2: T-states per moving 16 x 16 sprite for the extra attribute write and restore, the code bytes (v2 has 3,446 free after RT_END),
+  and the worst-tick effect on Starfall classic, Blockfall and Breakout. Targets *(decision)*: at most +2,500 T per moving 16 x 16 sprite, at most 400 bytes, no game over its tick budget that was not before. The owner sees numbers and a still
+  before SC is built; if a target is missed the owner chooses: go on, cut to a smaller scope (ink per sprite rather than per cell) or stop.
+* **Studio**: the Sprites editor previews the game's rule (the classic preview of a coloured sprite over a background), the display select gains "Sprite colour: off / ink" per scene, the asset check as above.
+* **Tests.** Interpreter parity (the interpreter draws the same attributes); Z80 versus interpreter byte for byte on the screen and the attribute file for 4 games for 300 ticks; m-style runtime-memory (free areas poisoned) and
+  the perf reference; `m19`-style cross-emulator check (TSRun = ZEsarUX byte for byte, Fuse shown); mutation shard for the new runtime and compiler code.
+* **Sample.** Shooter (classic) and Blockfall turn it on (ships and pieces in their own inks); the classic Starfall's sky stays plain so the contrast shows.
+
+**PL. Single-screen fine-colour platformer** (runtime v2: fine colour is v2-only, `WINDOW` and the camera are v3, so no scrolling).
+* **Price first (PL0, before art)**: the sprite phases it needs against the 32-phase cap of a fine scene (hero frames x shifted phases, enemies, a moving platform), the tick cost at 20 Hz
+  (about 7 moving 16 x 16 sprites fit), collision from the tile flags (`TILEFLAGS`, `TILEAT` work on v2), the cartridge room. If it does not fit, say so with numbers and the owner decides (a smaller cast, 12 Hz, or a different genre).
+* **Stills before building** (the owner chooses art: the pipeline of `arcade/examples/fineart.mjs` and the contact-sheet PNG, as for LUMEN). The genre, name and art are the owner's: Claude proposes three
+  one-line pitches with the pricing.
+* The game: a clear goal, live controls and a rising challenge (the owner's rule for samples), a title scene (picture import, M3), a song, a high score, the fine-colour showcase (per-row shaded hero and platforms).
+  Tests as for every example: the hash baselines, the starter-style checks (`arcade-starters-*`), the cross-emulator check, the perf reference, TSRun link for the owner (port 8081).
+  SC is used here only if the owner wants the classic-versus-fine contrast; the game itself is fine.
+
+**Order and milestones.** 6A: C1 (compiler, interpreter, table, Help) -> C2 -> C3 -> R4 (pure module first, then the emulator hook, then the Studio) -> `verify --all` -> PR. 6B: SC0 numbers to the owner -> SC -> PL0 pricing and pitches to the
+owner -> stills -> PL -> `verify --all --full` -> PR. A commit (explicit paths) at each milestone; the resume note at the top of `docs/ARCADE_NEXT_SESSION_PROMPT.md` is updated at each.
+
+**Agents (owner, 2026-11-16: lower-cost agents for routine work and testing).** Sonnet agents for implementation (disjoint files, scratch worktrees as in `arcade/spike/stage5/briefs/`), **Haiku for every
+suite run and check** (they report the output, I read it), no Opus. The SC runtime work is Z80: Sonnet first, with the gate numbers as the acceptance test; Opus (`shrink-z80`) only if Sonnet misses the targets twice and the owner agrees.
+Claude writes the briefs, reviews every diff, re-runs each suite once in the main tree and commits.
+
 ## 5. Sample games (owner's rule: every improvement used in the sample games, each new feature shown off)
 
 | Stage | Sample |
@@ -447,6 +532,8 @@ re-ran every suite in the main tree, wired the Studio (`studio.js`, `studio.html
 | 3 | Starfall, Vaults, Blockfall and both Leap Runners in one black; `KEYPRESS` / `JOYPRESS` / `TIMER` / `USING` in Starfall, Orbit Gates, Blockfall and Vaults; Breakout and Bounce with a title scene and a song. All launched in Fuse for the owner |
 | 4 | the seven starters are small games themselves (one per game type, fine colour included); Orbit Gates' models open and edit in W1; Leap Runner's levels come from M2's object layers; one example song re-entered in A1's note view plays the same bytes |
 | 5 | a starter's title screen made by picture import (M3); Vaults' floor plan shown in M4's preview |
+| 6A | Help page "Debugging a game" (R4 on Starfall's collision line); Help examples for END, TAB, FLASH, PEEK, POKE |
+| 6B | Shooter (classic) and Blockfall in sprite colour (SC); a new single-screen fine-colour platformer (PL), art and genre chosen by the owner |
 
 ## 6. Verification (every stage)
 
