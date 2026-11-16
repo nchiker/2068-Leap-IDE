@@ -14,11 +14,13 @@ cd "$(dirname "$0")/.." || exit 0
 ref="${1:-HEAD}"
 dir=arcade/build; mkdir -p "$dir"
 status="$dir/last-check.txt"; log="$dir/last-check.log"; lock="$dir/check-local.lock"; seen="$dir/last-check.fingerprint"
-if ps -eo args | grep -q "[n]ode tools/verify.mjs"; then exit 0; fi                                  # a verify run (this script's or a hand-started --all) is going: never compete with it
+if ps -eo args | grep -q "^node tools/verify.mjs"; then exit 0; fi                                  # a verify run (this script's or a hand-started --all) is going: never compete with it
 if [ -e "$lock" ] && kill -0 "$(cat "$lock" 2>/dev/null)" 2>/dev/null; then exit 0; fi       # one at a time
 echo $$ > "$lock"; trap 'rm -f "$lock"' EXIT
-fp="$( { git status --porcelain -uall -- . ':!arcade/spike/verify' ; git diff "$ref" -- . ':!arcade/spike/verify' ; } 2>/dev/null | sha256sum | cut -d' ' -f1)"
-if [ -z "$(git status --porcelain -uall -- . ':!arcade/spike/verify' 2>/dev/null)" ]; then
+# the changed files: tracked changes since <ref> plus untracked files, without the untracked verify logs under arcade/spike/verify (they would select every step)
+files="$( { git diff --name-only "$ref" -- . ':!arcade/spike/verify' ; git ls-files -o --exclude-standard -- . ':!arcade/spike/verify' ; } 2>/dev/null | sort -u | paste -sd, - )"
+fp="$( { echo "$ref"; echo "$files"; git diff "$ref" -- . ':!arcade/spike/verify' ; git ls-files -o --exclude-standard -- . ':!arcade/spike/verify' | xargs -r sha256sum ; } 2>/dev/null | sha256sum | cut -d' ' -f1)"
+if [ -z "$files" ]; then
   echo "$(date +%FT%T) PASS nothing changed since $ref" > "$status"; echo "$fp" > "$seen"; exit 0
 fi
 if [ "$(cat "$seen" 2>/dev/null)" = "$fp" ]; then exit 0; fi                                      # the same changes were checked already
@@ -27,7 +29,7 @@ start=$(date +%s)
 {
   echo "== stamp-modules --check"; python3 tools/stamp-modules.py --check
   stamp_rc=$?
-  echo "== verify --changed $ref --quick"; nice -n 10 node tools/verify.mjs --changed "$ref" --quick
+  echo "== verify --changed $ref --files <${files//[^,]/}...> --quick"; nice -n 10 node tools/verify.mjs --changed "$ref" --files "$files" --quick
   verify_rc=$?
   echo "== rc stamp=$stamp_rc verify=$verify_rc"
 } > "$log" 2>&1
