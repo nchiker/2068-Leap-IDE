@@ -36,6 +36,7 @@
 //   - The contract's "bullets 6, enemies 8, shots 4 and the player" are 19 instances, more than the 16 the runtime has: the pool game of
 //     section 5 runs with 19 on a mock whose cap is raised to 24, and with 16 (4 bullets, 8 enemies, 3 shots, 1 ship) on the real runtime.
 import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
+import * as H5 from './arcade-m5-harness.mjs';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -48,7 +49,7 @@ import { interpret, roundX } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { convertSfx, convertTileset, convertMap } from '../src/lang/arcade/arcade-assets.js';
 
-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
+
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -861,11 +862,13 @@ const shooterInput = (t) => {
   }
   return { keys, stick };
 };
+// old fixture (shooter-v1.arc, not ours to change): it still uses BRIGHT 1 on black paper, so that one warning is ignored for the fixture's compile only; the shipped examples give no warning at all
+const fixtureOk = (w) => !/BRIGHT 1 on black paper/.test(w.message);
 const shKeys = (t) => shooterInput(t).keys, shStick = (t) => shooterInput(t).stick;
 const shRnd = (rt) => { let x = rt?.constants?.RT_SEED_INIT ?? 0xACE1; return () => { if (x === 0) x = 1; x = (x ^ (x << 7)) & 0xFFFF; x ^= x >> 9; x = (x ^ (x << 8)) & 0xFFFF; return x & 0x7FFF; }; };
 {
   const r = compileM(SH_SRC, SH_ASSETS);
-  check_('shooter.arc compiles for the v2 runtime with no errors and no warnings', r.errors.length === 0 && r.warnings.filter(notTwoBlacks).length === 0, errText(r) + ' ' + r.warnings.map((w) => w.message).join(' | '));
+  check_('shooter.arc compiles for the v2 runtime with no errors and no warnings', r.errors.length === 0 && r.warnings.filter(fixtureOk).length === 0, errText(r) + ' ' + r.warnings.map((w) => w.message).join(' | '));
   const u = r.usage;
   console.log(`  INFO  size: code ${u.codegen.codeBytes} bytes (incl. ${u.data.strings} strings + hot boxes, ${u.data.tileset} tileset, ${u.data.sfx} sound, ${u.data.map} map), ${u.varBytes} bytes of variables and arrays (${u.codegen.varSlots} slots), ${u.spriteData} bytes of sprite art in ${u.codegen.sprites} assets for ${u.codegen.instances} instances; game total ${u.total} of ${u.total + u.free} bytes`);
   check_('shooter.arc uses all 16 instances of 5 assets (ship, 4 bullets, 4 scouts, 4 heavies, 3 shots)', u.codegen.instances === 16 && u.codegen.sprites === 5, `${u.codegen.instances} / ${u.codegen.sprites}`);
@@ -1115,23 +1118,48 @@ if (existsSync(RT_JSON)) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 9. The playable examples breakout.arc and bounce.arc (v2 runtime, keyboard O / P / space and joystick): compile clean, and 240
-//    ticks of a scripted player on the mock match the interpreter (the paddle moves with the keys and with the stick).
+// 9. The playable examples breakout.arc and bounce.arc (v2 runtime; each has a title scene with a song, then the play scene; keyboard O / P / space and
+//    joystick): compile clean, the title shows and its song plays until fire (SPACE or the joystick button) starts the game, and a scripted player's
+//    240 ticks on the REAL runtime (a stock TS2068 booted from the DCK) match the interpreter (the paddle moves with the keys and with the stick).
+//    (The mock runtime has no scenes, RT_MUSIC or RT_BORDER, so these run on the real one through tests/arcade-m5-harness.mjs.)
 // ---------------------------------------------------------------------------------------------------------------------
-console.log('\n9. Examples breakout.arc and bounce.arc (v2): keyboard and joystick');
-for (const name of ['breakout', 'bounce']) {
-  const src = readFileSync(join(ROOT, `arcade/examples/${name}.arc`), 'utf8');
-  const assets = JSON.parse(readFileSync(join(ROOT, `arcade/examples/${name}.assets.json`), 'utf8'));
-  const r = compileM(src, assets);
-  check_(`${name}.arc compiles for the v2 runtime with no errors and no warnings`, r.errors.length === 0 && r.warnings.filter(notTwoBlacks).length === 0, errText(r) + ' ' + r.warnings.map((w) => w.message).join(' | '));
-  const keys = (t) => (t >= 20 && t < 60 ? [79] : t >= 80 && t < 140 ? [80] : t >= 200 ? [32] : []);   // O, then P, then space
-  const stick = (t) => (t >= 150 && t < 190 ? 4 : 0);                                                      // joystick left
-  const want = interpV2(src, 240, { assets, keys: (t, c) => keys(t).includes(c), stick });
-  const px = (t) => want.ticks[t - 1].vars.PX;
-  check_(`${name}.arc: the paddle moves left with O, right with P and left with the joystick`, px(55) < px(21) && px(135) > px(85) && px(185) < px(152), `${px(21)} ${px(55)} ${px(85)} ${px(135)} ${px(152)} ${px(185)}`);
-  const got = runMock(r, { ticks: 240, stick, keys });
-  const d = diffRun(got, want, ctxFor(src, assets, []));
-  check_(`${name}.arc: 240 ticks on the mock match the interpreter`, d === null, d ?? '');
+console.log('\n9. Examples breakout.arc and bounce.arc (v2): title scene with a song, keyboard and joystick');
+{
+  const R9 = H5.real();
+  if (!R9.ok) note('section 9 needs the real v2 runtime (arcade/build/v2/runtime.json)', false, R9.why);
+  else for (const name of ['breakout', 'bounce']) {
+    const src = readFileSync(join(ROOT, `arcade/examples/${name}.arc`), 'utf8');
+    const assets = JSON.parse(readFileSync(join(ROOT, `arcade/examples/${name}.assets.json`), 'utf8'));
+    const res = H5.compileReal(src, assets);
+    check_(`${name}.arc compiles for the v2 runtime with no errors and no warnings (no "BRIGHT 1 on black paper")`, res.errors.length === 0 && res.warnings.length === 0, res.warnings.map((w) => w.message).join(' | '));
+    check_(`${name}.assets.json has the title song "theme" (made by ${name}.assets.gen.mjs)`, !!assets.music?.theme && JSON.stringify(assets.music.theme.order).length > 0);
+    // the player: SPACE (fire) in ticks 11 and 12 leaves the title; then O (40..79), P (100..159), the joystick left (170..209), SPACE again late (nothing in play)
+    const keys = (t) => (t === 11 || t === 12 || t >= 230 ? [32] : t >= 40 && t < 80 ? [79] : t >= 100 && t < 160 ? [80] : []);
+    const stick = (t) => (t >= 170 && t < 210 ? 4 : 0);                                                      // joystick left
+    const d = H5.differential(src, assets, { ticks: 240, keys, stick, sprites: true });
+    check_(`${name}.arc: 240 ticks on the real runtime match the interpreter (title, fire, play)`, d.ok, d.detail);
+    if (!d.want || !d.got?.ticks) continue;
+    const want = d.want, got = d.got.ticks;
+    const px = (t) => want.ticks[t - 1].vars['PLAY.PX'];
+    check_(`${name}.arc: the paddle moves left with O, right with P and left with the joystick`, px(75) < px(41) && px(155) > px(105) && px(205) < px(172), `${px(41)} ${px(75)} ${px(105)} ${px(155)} ${px(172)} ${px(205)}`);
+    const rows = (rec) => Array.from({ length: 24 }, (_, r) => String.fromCharCode(...Array.from(rec.cells.slice(r * 32, r * 32 + 32)).map((c) => (c >= 32 && c < 128 ? c : 32))).trim());
+    const title = rows(got[2]).filter((r) => r !== '');
+    check_(`${name}.arc: scene 0 is the title (ticks 1..10), tick 11's fire enters the play scene`, want.ticks.slice(0, 10).every((r) => r.scene === 0) && want.ticks[10].scene === 1 && want.ticks[11].scene === 1, want.ticks.slice(0, 13).map((r) => r.scene).join(''));
+    check_(`${name}.arc: the title shows the game's name and PRESS FIRE TO PLAY`, title.includes(name.toUpperCase()) && title.includes('PRESS FIRE TO PLAY'), JSON.stringify(title));
+    check_(`${name}.arc: the title does not show on the play screen (the play scene clears it)`, !rows(got[40]).includes('PRESS FIRE TO PLAY') && !rows(got[40]).includes(name.toUpperCase()), JSON.stringify(rows(got[40]).filter((r) => r !== '')));
+    // the song: playing from the start (the interpreter says so; the machine's AY registers move: the volume of channel A or B is up and the tone of channel A changes), silent (A and B) once the game has started
+    const chip = (t) => got[t - 1].chip;
+    const toneA = new Set(), toneB = new Set();
+    for (let t = 1; t <= 10; t++) { toneA.add(chip(t)[0] | (chip(t)[1] << 8)); toneB.add(chip(t)[2] | (chip(t)[3] << 8)); }
+    check_(`${name}.arc: the song plays on the title (the interpreter's music.active; channel A's volume up, its tone changes over ticks 1..10)`, want.init.music?.active === true && want.ticks.slice(0, 10).every((r) => r.music.active) && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].some((t) => chip(t)[8] > 0) && toneA.size >= 2, `active ${want.init.music?.active}, ${toneA.size} tones in A, volume A ${[1, 4, 8].map((t) => chip(t)[8])}`);
+    check_(`${name}.arc: NOMUSIC when play starts: no song after tick 11, channels A and B silent from tick 14`, want.ticks.slice(10).every((r) => r.music.active === false) && got.slice(13, 230).every((g) => g.chip[8] === 0 && g.chip[9] === 0), `active ${want.ticks[10].music.active}`);
+    // the joystick's fire button starts the game too (BIT(JOYPRESS(1), 4)); with no input at all the title stays
+    const js = H5.differential(src, assets, { ticks: 30, keys: null, stick: (t) => (t === 11 || t === 12 ? 16 : 0), sprites: true });
+    check_(`${name}.arc: the joystick's fire button leaves the title in tick 11 (30 ticks match the interpreter)`, js.ok && js.want.ticks.slice(0, 10).every((r) => r.scene === 0) && js.want.ticks[10].scene === 1, js.detail);
+    const idle = H5.differential(src, assets, { ticks: 60, keys: null, stick: null, sprites: true });
+    check_(`${name}.arc: with no key pressed the title and its song stay on (60 ticks, matching the interpreter)`, idle.ok && idle.want.ticks.every((r) => r.scene === 0 && r.music.active), idle.detail);
+    console.log(`   ${name}: code ${res.usage.code} bytes, music ${res.usage.data.music} bytes, game total ${res.usage.total} bytes`);
+  }
 }
 
 console.log(`\n${failed ? 'FAIL' : 'PASS'}: arcade-m4 (${passed} checks passed, ${failed} failed${notes ? `, ${notes} notes` : ''})`);

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run an Arcade v2 cartridge (shooter.dck) in ZEsarUX 13.0 (headless, stock TS2068 ROM, no input) and record the runtime
+NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 state at the end of every frame interrupt.  Adapted from breakout-zesarux.py; symbols from arcade/build/v2/runtime.json.
 
   python3 arcade/tools/xemu/shooter-zesarux-nofix.py [CART.dck] [--out arcade/build/xemu/nofix/shooter/zesarux] [--ticks 200] [--port 10777]

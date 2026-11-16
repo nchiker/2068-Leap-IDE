@@ -396,7 +396,7 @@ try {
   check('pf_world is a world map (the WINDOW names it): frame cells 0..23, camera 0', st.role === 'world' && st.frame && st.frame.x0 === 0 && st.frame.x1 === 23 && st.camX === 0, JSON.stringify(st.frame));
   check('the palette lists tiles 0..19 of pf_tiles with no blank entry; the ruler and camera slider are visible',
     st.paletteCount === 20 && await evaluate("document.querySelector('.mapd-pi').dataset.tile === '0' && !document.querySelector('[data-role=ruler]').hidden && !document.querySelector('[data-role=camera-row]').hidden && document.querySelector('[data-role=camera]').max === '832'"));
-  check('the data\'s own warning (background-attr-mix of pf_world) is shown and its minority cells are marked', st.warnings.includes('background-attr-mix') && st.minority > 0, `${st.minority} cells`);
+  check('the data has no background-attr-mix warning since stage 3 (pf_world\'s background tiles share one attribute, the others are fg): none shown, no minority cells', !st.warnings.includes('background-attr-mix') && st.minority === 0, `${st.minority} cells, ${JSON.stringify(st.warnings)}`);
   await shot('05-platformer-world');
   const sw = await sets();
   await evaluate("(() => { const s = document.querySelector('[data-role=camera]'); s.value = '400'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()");
@@ -457,7 +457,22 @@ try {
   check('painting a wall code (2) back on it clears the flag', st.ringBad.length === 0 && !st.warnings.includes('floorplan-shape') && cellAt(await asset('vl_maze'), 0, 5) === 2);
   await evaluate("(t.editor.select('vl_panel'), true)");
   st = await state();
-  check('vl_panel is an ordinary cell map with the example\'s own background-attr-mix warning', st.role === 'cell' && st.warnings.includes('background-attr-mix') && st.minority > 0, JSON.stringify(st.warnings));
+  check('vl_panel is an ordinary cell map and has no background-attr-mix warning of its own since stage 3 (one attribute)', st.role === 'cell' && !st.warnings.includes('background-attr-mix') && st.minority === 0, JSON.stringify(st.warnings));
+  // the T1 checks below need a real warning: one cell of vl_panel is set to a tile of another background attribute (not solid, not fg), through the host as an outside change
+  const vpOther = await evaluate(`(() => {
+    // every tile of vl_tiles but tile 0 is fg (billboards in the view): a tile the panel does not use is made a plain background tile of another attribute (paper 3), then painted into cell 0
+    const ts = JSON.parse(JSON.stringify(t.host.getAsset('tilesets', 'vl_tiles')));
+    const m = JSON.parse(JSON.stringify(t.host.getAsset('maps', 'vl_panel')));
+    const cells = typeof m.cells === 'string' ? m.cells.match(/../g).map((x) => parseInt(x, 16)) : m.cells.slice(), used = new Set(cells);
+    let i = ts.tiles.length - 1; while (i > 0 && used.has(i)) i--;
+    delete ts.tiles[i].fg; ts.tiles[i].flags = 0; for (const r of ts.tiles[i].rows) { r.paper = 3; r.bright = 0; }
+    t.externalSet('tilesets', 'vl_tiles', ts);
+    cells[0] = i; m.cells = typeof m.cells === 'string' ? cells.map((c) => c.toString(16).toUpperCase().padStart(2, '0')).join('') : cells;
+    t.externalSet('maps', 'vl_panel', m);
+    return i;
+  })()`);
+  st = await state();
+  check('a plain tile of another attribute painted into vl_panel raises background-attr-mix with one marked cell (the rule on this map, as a synthetic positive)', vpOther > 0 && st.warnings.includes('background-attr-mix') && st.minority === 1, `tile ${vpOther} ${JSON.stringify(st.warnings)} ${st.minority}`);
 
   // T1: a warning is one line (its first sentence) with a details toggle
   const mw = await evaluate(`(() => { const li = document.querySelector('[data-role=warnings] li[data-id=background-attr-mix]'), d = li.querySelector('[data-role=warn-detail]'), tg = li.querySelector('[data-role=warn-toggle]');

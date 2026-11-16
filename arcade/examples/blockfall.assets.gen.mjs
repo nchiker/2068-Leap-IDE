@@ -54,12 +54,12 @@ if (MAIN && process.argv.includes('--masks')) {
 const tile = (bytes, ink, paper, bright) => ({ rows: bytes.map((b) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })), flags: 0 });
 const BLOCK = [0xFF, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0xFF];            // black outline, coloured inside
 const tiles = [
-  tile([0, 0, 0, 0, 0x10, 0, 0, 0], 1, 0, 1),                                // 0 empty well cell: a dark blue dot
-  ...PIECES.map((p) => tile(BLOCK, 0, p.paper, 1)),                          // 1..7 blocks (all BRIGHT 1: one black everywhere; the flash tile is a checker, so L stays told apart by its outline)
-  tile([0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55], 0, 7, 1),          // 8 flash: bright white checker
+  tile([0, 0, 0, 0, 0x10, 0, 0, 0], 1, 0, 0),                                // 0 empty well cell: a dark blue dot (BRIGHT 0 on black paper: TSRun draws bright black as grey, Fuse as black)
+  ...PIECES.map((p) => tile(BLOCK, 0, p.paper, 0)),                          // 1..7 blocks: plain colours, BRIGHT 0 like every tile that has black in it (a black outline), so that the set has one black (TSRun draws BRIGHT black as grey)
+  tile([0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55], 0, 7, 0),          // 8 flash: white / black checker (BRIGHT 0: it has black)
   tile([0xFE, 0xFE, 0xFE, 0x00, 0xEF, 0xEF, 0xEF, 0x00], 5, 1, 1),          // 9 frame: cyan bricks on blue
-  tile([0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA], 1, 0, 1),          // 10 dimmed block: blue dither (BRIGHT stays 1: bright black and plain black differ on some displays)
-  tile([0, 0, 0, 0, 0, 0, 0, 0], 0, 0, 1),                                   // 11 blank (black, bright like the rest)
+  tile([0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA], 1, 0, 0),          // 10 dimmed block: blue dither on black paper (BRIGHT 0, like every black-paper area)
+  tile([0, 0, 0, 0, 0, 0, 0, 0], 0, 0, 0),                                   // 11 blank (black, BRIGHT 0)
 ];
 
 // ── sounds: one record per refresh (60 per second), on one AY channel; mix 6 = tone, 5 = noise, 4 = both ───────────────────────────

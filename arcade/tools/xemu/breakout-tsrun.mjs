@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 "use strict";
-// breakout-tsrun.mjs -- run an Arcade cartridge on TSRun's stock TS2068 (tsrun/roms, no input) and record, at every
+// breakout-tsrun.mjs -- run an Arcade cartridge on TSRun's stock TS2068 (tsrun/roms; the only input is the fire that leaves the title, see below) and record, at every
 // refresh, the runtime state that the cross-emulator check needs.  Adapted from tsrun-run.mjs and tsrun-screens.mjs;
 // the symbols are those of the runtime the cartridge was built against: v2 (arcade/build/v2/runtime.json), since breakout.arc uses KEYDOWN, which
 // the v1 runtime refuses (v1's addresses differ: V_TICKS 57352, v2's 57464).  --runtime vN reads another build's runtime.json.
@@ -8,9 +8,14 @@
 //   node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v2     -> arcade/build/breakout.dck
 //   node arcade/tools/xemu/breakout-tsrun.mjs arcade/build/breakout.dck [--out DIR]             -> <out>/breakout-tsrun-*
 //   python3 arcade/tools/xemu/breakout-zesarux.py arcade/build/breakout.dck [--out DIR]         -> <out>/breakout-zesarux-*
-//   sh arcade/tools/xemu/breakout-fuse.sh [CART] [OUTDIR]                                       -> <out>/fuse-breakout/frame-*.scr (OUTDIR must be new)
+//   node arcade/tools/xemu/breakout-patch.mjs                                                   -> arcade/build/breakout-script.dck (the keyboard read from a script: Fuse cannot be fed keys)
+//   sh arcade/tools/xemu/breakout-fuse.sh arcade/build/breakout-script.dck [OUTDIR]             -> <out>/fuse-breakout/frame-*.scr (OUTDIR must be new)
 //   node arcade/tools/xemu/breakout-compare.mjs [--dir DIR] [--fuse DIR]                        (the verdict lines)
 //   node arcade/tools/xemu/breakout-tsrun.mjs <cart.dck> [--out arcade/build/xemu] [--refreshes 1500] [--ticks 300] [--runtime v2]
+//
+// Input: breakout.arc starts on a TITLE scene (a song) and ENTERs play on a fresh press of SPACE (KEYPRESS(" ") or joystick fire).  The same input on every emulator: SPACE is
+// held while V_TICKS is FIRE_AT .. FIRE_AT + FIRE_HOLD - 1 (read after the refresh), so the run reaches the play scene and its first sound effect (the ball's wall / brick hit)
+// early; FIRE_AT = 2 and FIRE_HOLD = 3 by default (--fire-at N, --fire-hold N; breakout-zesarux.py and breakout-patch.mjs take the same values).
 //
 // Definitions (the same in the ZEsarUX and Fuse checks):
 //   displayed tick = V_TICKS when V_SYNC < 2 (the flip of the last tick has happened: the ISR sets V_SYNC = 1 when it
@@ -34,12 +39,14 @@ const TSRUN = join(ARCADE, '../tsrun');
 const M = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
 
 const args = process.argv.slice(2);
-const opt = { dck: null, out: join(ARCADE, 'build/xemu'), refreshes: 1500, ticks: 300, runtime: 'v2' };
+const opt = { fireAt: 2, fireHold: 3, dck: null, out: join(ARCADE, 'build/xemu'), refreshes: 1500, ticks: 300, runtime: 'v2' };
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--out') opt.out = resolve(args[++i]);
   else if (a === '--runtime') opt.runtime = args[++i];
   else if (a === '--refreshes') opt.refreshes = Number(args[++i]);
+  else if (a === '--fire-at') opt.fireAt = Number(args[++i]);
+  else if (a === '--fire-hold') opt.fireHold = Number(args[++i]);
   else if (a === '--ticks') opt.ticks = Number(args[++i]);
   else opt.dck = a;
 }
@@ -73,6 +80,7 @@ for (let f = 1; f <= opt.refreshes; f++) {
   M.runFrame(m);
   if (entry < 0 && rd16(m, S.HO_MARK) === 0x5AA5) entry = f;
   if (entry < 0) continue;              // before the cartridge's entry V_TICKS is not a tick count
+  { const t = rd16(m, S.V_TICKS); const down = t >= opt.fireAt && t < opt.fireAt + opt.fireHold; if (down) m.keyMatrix[7] &= ~0x01; else m.keyMatrix[7] |= 0x01; }   // SPACE: row 7 bit 0
   const dump = displayed();
   rows.push({
     f,
@@ -119,8 +127,8 @@ for (const r of rows) {
 }
 writeFileSync(join(opt.out, 'breakout-tsrun-log.txt'), logLines.join('\n') + '\n');
 
-// AY: the first sound effect (V_SFX_ACTIVE becomes non-zero) and the chip registers from there
-const firstSfx = rows.findIndex((r) => r.sfx !== 0);
+// AY: the first sound effect (V_SFX_ACTIVE bit 0, SB_FX, becomes set) and the chip registers from there
+const firstSfx = rows.findIndex((r) => (r.sfx & 1) !== 0);   // SB_FX (bit 0): an effect plays (bit 1 is the title's song)
 const ayLines = [];
 if (firstSfx < 0) {
   ayLines.push('no sound effect in the run');

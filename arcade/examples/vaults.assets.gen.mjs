@@ -119,29 +119,29 @@ const GOBLET_TILES = {
   tr: GOB_ROWS.slice(0, 8).map((r) => r.slice(8)), bl: GOB_ROWS.slice(8).map((r) => r.slice(0, 8)), br: GOB_ROWS.slice(8).map((r) => r.slice(8)),
 };
 export const TILES = [
-  /*  0 blank black */ tile(BLANK, 7, 0, 1),
-  /*  1 panel: a sparse dark-blue dot pattern, the stone of the walls around the window */ tile(['........', '..#.....', '........', '......#.', '........', '.#......', '........', '....#...'], 1, 0, 1),
-  /*  2 bezel: brass bricks round the window (BRIGHT 1 like every black-paper tile: bright black and plain black differ on some displays) */ tile(['########', '#.......', '#.......', '########', '...#....', '...#....', '########', '.......#'], 6, 0, 1),
-  /*  3 bar, full */ tile(['........', '########', '########', '########', '########', '########', '########', '........'], 2, 0, 1),
-  /*  4 bar, half */ tile(['........', '####....', '####....', '####....', '####....', '####....', '####....', '........'], 2, 0, 1),
-  /*  5 bar, empty: a dark outline */ tile(['........', '########', '#......#', '#......#', '#......#', '#......#', '########', '........'], 1, 0, 1),
-  /*  6 key icon */ tile(['..####..', '.#....#.', '.#....#.', '..####..', '...##...', '...###..', '...##...', '...###..'], 6, 0, 1),
-  /*  7 key slot, empty */ tile(['........', '........', '........', '..#..#..', '........', '........', '..#..#..', '........'], 1, 0, 1),
-  /*  8 gem icon */ tile(['........', '..####..', '.######.', '########', '.######.', '..####..', '...##...', '........'], 5, 0, 1),
-  /*  9 gem slot, empty */ tile(['........', '........', '........', '...##...', '........', '........', '........', '........'], 1, 0, 1),
+  /*  0 blank black */ tile(BLANK, 7, 0, 0),
+  /*  1 panel: a sparse dark-blue dot pattern, the stone of the walls around the window */ tile(['........', '..#.....', '........', '......#.', '........', '.#......', '........', '....#...'], 1, 0, 0),
+  /*  2 bezel: brass bricks round the window (BRIGHT 0 like every black-paper tile: bright black and plain black differ on some displays) */ tile(['########', '#.......', '#.......', '########', '...#....', '...#....', '########', '.......#'], 6, 0, 0),
+  /*  3 bar, full */ tile(['........', '########', '########', '########', '########', '########', '########', '........'], 2, 0, 0),
+  /*  4 bar, half */ tile(['........', '####....', '####....', '####....', '####....', '####....', '####....', '........'], 2, 0, 0),
+  /*  5 bar, empty: a dark outline */ tile(['........', '########', '#......#', '#......#', '#......#', '#......#', '########', '........'], 1, 0, 0),
+  /*  6 key icon */ tile(['..####..', '.#....#.', '.#....#.', '..####..', '...##...', '...###..', '...##...', '...###..'], 6, 0, 0),
+  /*  7 key slot, empty */ tile(['........', '........', '........', '..#..#..', '........', '........', '..#..#..', '........'], 1, 0, 0),
+  /*  8 gem icon */ tile(['........', '..####..', '.######.', '########', '.######.', '..####..', '...##...', '........'], 5, 0, 0),
+  /*  9 gem slot, empty */ tile(['........', '........', '........', '...##...', '........', '........', '........', '........'], 1, 0, 0),
   /* 10..17 the aiming marks */
-  /* 10 */ tile(WEDGE.downL, 7, 0, 1), /* 11 */ tile(WEDGE.downR, 7, 0, 1),
-  /* 12 */ tile(WEDGE.upL, 7, 0, 1), /* 13 */ tile(WEDGE.upR, 7, 0, 1),
-  /* 14 */ tile(WEDGE.rightT, 7, 0, 1), /* 15 */ tile(WEDGE.rightB, 7, 0, 1),
-  /* 16 */ tile(WEDGE.leftT, 7, 0, 1), /* 17 */ tile(WEDGE.leftB, 7, 0, 1),
+  /* 10 */ tile(WEDGE.downL, 7, 0, 0), /* 11 */ tile(WEDGE.downR, 7, 0, 0),
+  /* 12 */ tile(WEDGE.upL, 7, 0, 0), /* 13 */ tile(WEDGE.upR, 7, 0, 0),
+  /* 14 */ tile(WEDGE.rightT, 7, 0, 0), /* 15 */ tile(WEDGE.rightB, 7, 0, 0),
+  /* 16 */ tile(WEDGE.leftT, 7, 0, 0), /* 17 */ tile(WEDGE.leftB, 7, 0, 0),
   // 18..: the title screen (the SCENE title NOVIEW picture): the maze's four wall textures as tiles, the glinting gem and the goblet (the treasure's art, in cells)
-  /* 18 brick: the letters of the title (the room walls of the maze) */ tile(BRICK, 5, 0, 1),
-  /* 19 stone: the outer ring (grey stone: a checker) */ tile(STONE, 5, 0, 1),
-  /* 20 lining: the vault's scanlines */ tile(LINING, 5, 0, 1),
-  /* 21 the locked door: vertical bars, in brass */ tile(DOOR_BARS, 6, 0, 1),
-  /* 22 gem with a glint (the sparkle: tile 8 and this one swap) */ tile(GEM_GLINT, 7, 0, 1),
+  /* 18 brick: the letters of the title (the room walls of the maze) */ tile(BRICK, 5, 0, 0),
+  /* 19 stone: the outer ring (grey stone: a checker) */ tile(STONE, 5, 0, 0),
+  /* 20 lining: the vault's scanlines */ tile(LINING, 5, 0, 0),
+  /* 21 the locked door: vertical bars, in brass */ tile(DOOR_BARS, 6, 0, 0),
+  /* 22 gem with a glint (the sparkle: tile 8 and this one swap) */ tile(GEM_GLINT, 7, 0, 0),
   /* 23 goblet, top left, plain / 24 with a glint / 25 top right / 26 bottom left / 27 bottom right */
-  tile(GOBLET_TILES.tl0, 6, 0, 1), tile(GOBLET_TILES.tl1, 6, 0, 1), tile(GOBLET_TILES.tr, 6, 0, 1), tile(GOBLET_TILES.bl, 6, 0, 1), tile(GOBLET_TILES.br, 6, 0, 1),
+  tile(GOBLET_TILES.tl0, 6, 0, 0), tile(GOBLET_TILES.tl1, 6, 0, 0), tile(GOBLET_TILES.tr, 6, 0, 0), tile(GOBLET_TILES.bl, 6, 0, 0), tile(GOBLET_TILES.br, 6, 0, 0),
 ];
 export const T = {
   BLANK: 0, PANEL: 1, BEZEL: 2, BAR_FULL: 3, BAR_HALF: 4, BAR_EMPTY: 5, KEY: 6, KEY_SLOT: 7, GEM: 8, GEM_SLOT: 9,
@@ -195,7 +195,7 @@ function sprite(frames, extra = {}) {
   const hex = (bin) => parseInt(bin, 2).toString(16).toUpperCase().padStart(w / 4, '0');
   for (const f of frames) { if (f.length !== h) throw new Error('frame heights differ'); for (const r of f) if (r.length !== w) throw new Error(`sprite row "${r}" is ${r.length} wide, not ${w}`); }
   // ray mode ignores the hot box and the phases; they are kept at the asset format's defaults
-  return { w, h, hot: [0, 0, w, h], phases: 1, ...extra, frames: frames.map((f) => ({ rows: f.map((r) => ({ bits: hex([...r].map((c) => (c === '#' ? '1' : '0')).join('')), mask: hex(maskOfRow(r)), ink: 7, paper: 0, bright: 1 })) })) };
+  return { w, h, hot: [0, 0, w, h], phases: 1, ...extra, frames: frames.map((f) => ({ rows: f.map((r) => ({ bits: hex([...r].map((c) => (c === '#' ? '1' : '0')).join('')), mask: hex(maskOfRow(r)), ink: 7, paper: 0, bright: 0 })) })) };
 }
 /** a full row from its left half (the right half is the mirror image) */
 const sym = (half) => half + [...half].reverse().join('');
@@ -271,7 +271,9 @@ export function buildAssets() {
       'vl_key': sprite(KEY),
       'vl_treasure': sprite(TREASURE),
     },
-    tilesets: { 'vl_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
+    // every tile but the blank one is marked fg (sprites never pass over it): the HUD panel is outside the 3D view, and on the title the sprites walk only the blank corridor
+    // (rows 14..18 of blank cells, tile 0), so the background-attribute check sees one colour attribute under them
+    tilesets: { 'vl_tiles': { tiles: TILES.map((t, i) => ({ rows: t.rows, flags: t.flags, ...(i > 0 ? { fg: true } : {}) })) } },
     sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['vl_' + k, v])),
     maps: { 'vl_maze': { w: MAP_W, h: MAP_H, cells: CELLS }, 'vl_panel': buildPanel(), 'vl_title': buildTitle() },
     music: Object.fromEntries(Object.entries(music).map(([k, v]) => ['vl_' + k, v])),

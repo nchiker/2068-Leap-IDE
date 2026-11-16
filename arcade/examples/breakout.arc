@@ -1,5 +1,6 @@
 REM Breakout: acceptance game A (docs/ARCADE_LANGUAGE.md), for the v2 runtime.
-REM Assets (bat, ball, bricks, wall, brick, lose) are in breakout.assets.json.
+REM Assets (bat, ball, bricks, wall, brick, lose, the song "theme") are in breakout.assets.json, made by breakout.assets.gen.mjs.
+REM   A title scene (the song plays, and the first rows of bricks as a picture) starts the game with SPACE or fire; the game itself is silent but for the effects.
 REM   Keys O / P (left / right) or joystick 1 move the bat; SPACE or fire restarts after GAME OVER or YOU WIN.
 REM   Six rows of 30 bricks are TILEs (three colours, the upper rows score more); the ball finds a brick with TILEAT.
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v2
@@ -12,6 +13,29 @@ TILESET bricks = "bricks"
 SFX wall = "wall"
 SFX brick = "brick"
 SFX lose = "lose"
+MUSIC theme = "theme"
+
+SCENE title
+  PROC INIT():
+    PLAY theme
+    CLS
+    FOR j = 3 TO 5
+      FOR i = 1 TO 30
+        TILE i, j = j - 3
+      NEXT i
+    NEXT j
+    INK 1 : PRINT AT 9, 12; "BREAKOUT";
+    INK 2 : PRINT AT 13, 7; "PRESS FIRE TO PLAY";
+    INK 0 : PRINT AT 17, 2; "O P OR JOYSTICK MOVE THE BAT";
+  ENDP
+
+  REM KEYPRESS and JOYPRESS are true for the one tick the key or the button goes down.
+  PROC FRAME():
+    IF KEYPRESS(" ") OR BIT(JOYPRESS(1), 4) THEN
+      ENTER play
+    ENDIF
+  ENDP
+ENDSCENE
 
 SCENE play
   REM state: 0 = playing, 1 = game over / won (waiting for fire)
@@ -47,6 +71,7 @@ SCENE play
   ENDP
 
   PROC INIT():
+    NOMUSIC
     CALL NEWGAME()
     SHOW bat AT px, 176
     SHOW ball AT bx, by

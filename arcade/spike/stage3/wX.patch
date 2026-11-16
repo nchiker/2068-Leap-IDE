@@ -1,0 +1,442 @@
+diff --git a/arcade/tools/xemu/breakout-compare.mjs b/arcade/tools/xemu/breakout-compare.mjs
+index d4e65a1..6858761 100644
+--- a/arcade/tools/xemu/breakout-compare.mjs
++++ b/arcade/tools/xemu/breakout-compare.mjs
+@@ -168,6 +168,9 @@ const aySeq = (lines, ticksCol, sfxCol, first) => {
+     const key = ay.join(' ');
+     if (!out.length || out.at(-1).key !== key) out.push({ ticks, sfx: Number(p[sfxCol]), key });
+   }
++  // The title's song starts in the cartridge's entry frame.  TSRun samples that frame after it has run (the chip still silent, all 0: its first state), ZEsarUX at the first
++  // frame interrupt after the entry (the song already started): the leading all-zero state is a sampling artefact of the entry frame, so it is left out of both sequences.
++  if (out.length > 1 && out[0].key === '00 00 00 00 00 00 00 00 00 00 00') out.shift();
+   return out;
+ };
+ const tsAy = aySeq(logAll, 1, 6, 8);
+@@ -175,7 +178,7 @@ const zeLines = readFileSync(join(dir, 'breakout-zesarux-log.txt'), 'utf8').trim
+ const zeAy = aySeq(zeLines, 1, 4, 5);
+ const eq = tsAy.length === zeAy.length && tsAy.every((x, i) => x.key === zeAy[i].key);
+ console.log(`\n== AY registers (ticks 0..300): TSRun ${tsAy.length} distinct states, ZEsarUX ${zeAy.length}; ${eq ? 'the same states in the same order (R0..R10)' : 'DIFFER'}`);
+-const starts = (a) => a.map((x, i) => (i > 0 && x.sfx !== 0 && a[i - 1].sfx === 0 ? x.ticks : null)).filter((t) => t !== null);
++const starts = (a) => a.map((x, i) => (i > 0 && (x.sfx & 1) && !(a[i - 1].sfx & 1) ? x.ticks : null)).filter((t) => t !== null);
+ console.log(`sound effects start at ticks: TSRun ${starts(tsAy).join(' ')}; ZEsarUX ${starts(zeAy).join(' ')}`);
+ 
+ // verdict: the ZEsarUX screens equal TSRun's, every TSRun tick 1..60 is in the Fuse movie, Fuse's ticks are in order with none skipped, and the AY states agree
+diff --git a/arcade/tools/xemu/breakout-fuse.sh b/arcade/tools/xemu/breakout-fuse.sh
+index 6791552..56e8c55 100644
+--- a/arcade/tools/xemu/breakout-fuse.sh
++++ b/arcade/tools/xemu/breakout-fuse.sh
+@@ -1,14 +1,14 @@
+ #!/bin/sh
+-# breakout-fuse.sh -- run breakout.dck (no input) in Fuse 1.9.1 with no window and no sound, record a movie and convert it
++# breakout-fuse.sh -- run the SCRIPT cartridge (arcade/build/breakout-script.dck, made by breakout-patch.mjs: SPACE is read as down at V_TICKS 2..4, the fire that leaves the title; a headless Fuse cannot be fed keys) in Fuse 1.9.1 with no window and no sound, record a movie and convert it
+ # to one .scr per refresh (6912 bytes each, the displayed screen).  Adapted from fuse-movie.sh.
+ #   sh arcade/tools/xemu/breakout-fuse.sh [CART.dck] [OUTDIR] [SECONDS]
+-# Defaults: arcade/build/breakout.dck, arcade/build/xemu/fuse-breakout, 15 seconds (about 750 refreshes; tick 60 is at
++# Defaults: arcade/build/breakout-script.dck, arcade/build/xemu/fuse-breakout, 15 seconds (about 750 refreshes; tick 60 is at
+ # about refresh 240 after the entry, which is refresh ~104).  Compare with breakout-compare.mjs.  OUTDIR is emptied of an earlier movie, so give a new one
+ # to keep the old.  The cartridge is the runtime v2 build (arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json
+ # --runtime v2); order of the commands: see the header of breakout-tsrun.mjs.
+ set -e
+ here=$(cd "$(dirname "$0")/../../.." && pwd)
+-cart=${1:-$here/arcade/build/breakout.dck}; out=${2:-$here/arcade/build/xemu/fuse-breakout}; secs=${3:-15}
++cart=${1:-$here/arcade/build/breakout-script.dck}; out=${2:-$here/arcade/build/xemu/fuse-breakout}; secs=${3:-15}
+ mkdir -p "$out"
+ rm -f "$out"/frame-*.scr "$out/movie.fmf"
+ env -u DISPLAY -u WAYLAND_DISPLAY SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+diff --git a/arcade/tools/xemu/breakout-patch.mjs b/arcade/tools/xemu/breakout-patch.mjs
+new file mode 100755
+index 0000000..891e788
+--- /dev/null
++++ b/arcade/tools/xemu/breakout-patch.mjs
+@@ -0,0 +1,68 @@
++#!/usr/bin/env node
++"use strict";
++// breakout-patch.mjs -- make a TEST COPY of the Breakout cartridge whose keyboard reads come from a script instead of the keyboard, for Fuse (a headless Fuse cannot be fed keys).
++// Adapted from orbit-patch.mjs; arcade/build only, the committed game and runtime are untouched.  breakout.arc starts on a title scene that leaves for the play scene on a fresh SPACE
++// (KEYPRESS), so the only input of the run is that fire: SPACE is down while V_TICKS is FIRE_AT .. FIRE_AT + FIRE_HOLD - 1, the same rule as breakout-tsrun.mjs and breakout-zesarux.py
++// (2 and 3 by default).  In RT_KEYDOWN (runtime v2 keys.asm: `LD C,PORT_ULA / IN A,(C) / LD B,A`) the 3 bytes `IN A,(C) / LD B,A` become `CALL KS`; KS returns A = B = what the keyboard
++// row in D would read: $FE (SPACE, row 7 bit 0, down) in row 7 while the fire window is open, else $FF.  The stub lives at $BA00, in the free tail of the game area (the game is
++// about 3.6 KB from $8000; the chunk is ROM, so nothing writes there).  The rest of RT_KEYDOWN (V_KEYS, the rotate) is the runtime's own code, so KEYPRESS is exercised.
++//   node arcade/tools/xemu/breakout-patch.mjs [in.dck] [out.dck] [--fire-at N] [--fire-hold N]   (defaults: arcade/build/breakout.dck -> arcade/build/breakout-script.dck)
++import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
++import { execFileSync } from 'node:child_process';
++import { join, dirname, resolve } from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const HERE = dirname(fileURLToPath(import.meta.url));
++const ARCADE = resolve(HERE, '../..');
++const S = JSON.parse(readFileSync(join(ARCADE, 'build/v2/runtime.json'), 'utf8')).symbols;
++const KS = 0xBA00;
++const argv = process.argv.slice(2);
++const opt = (k, d) => (argv.includes(k) ? Number(argv.splice(argv.indexOf(k), 2)[1]) : d);
++const fireAt = opt('--fire-at', 2), fireHold = opt('--fire-hold', 3);
++const [inp = join(ARCADE, 'build/breakout.dck'), outp = join(ARCADE, 'build/breakout-script.dck')] = argv;
++
++const out = Uint8Array.from(readFileSync(inp));
++const game = (addr) => 9 + 16384 + (addr - 0x8000);   // the game area (chunks 4 and 5, $8000-$BFFF) follows chunks 0 and 1 (16 KB after the 9-byte header)
++const asm = `
++    ORG ${KS}
++KS: ld hl,(${S.V_TICKS})
++    ld a,d                      ; D = the row RT_KEYDOWN decoded
++    cp 7
++    jr nz,.none
++    ld bc,${fireAt}
++    or a
++    sbc hl,bc                   ; HL = V_TICKS - FIRE_AT (carry: before the window)
++    jr c,.none
++    ld bc,${fireHold}
++    or a
++    sbc hl,bc                   ; carry: inside the window
++    jr nc,.none
++    ld a,$FE                    ; row 7, SPACE (bit 0) down
++    jr .out
++.none:
++    ld a,$FF
++.out:
++    ld b,a                      ; the replaced LD B,A
++    ret
++KS_END:
++`;
++const dir = join(ARCADE, 'build/xemu/patch-work');   // the assembler's scratch files (arcade/build is git-ignored)
++mkdirSync(dir, { recursive: true });
++writeFileSync(join(dir, 'bks.asm'), asm);
++execFileSync('sjasmplus', ['--raw=bks.bin', 'bks.asm'], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
++const stub = readFileSync(join(dir, 'bks.bin'));
++// the sequence to patch: LD C,PORT_ULA ($0E $FE), IN A,(C) ($ED $78), LD B,A ($47); it must be unique and inside RT_KEYDOWN
++let hit = -1;
++for (let i = 9; i < 9 + 0x4000 - 5; i++) {
++  if (out[i] === 0x0E && out[i + 1] === 0xFE && out[i + 2] === 0xED && out[i + 3] === 0x78 && out[i + 4] === 0x47) {
++    if (hit >= 0) throw new Error('more than one LD C,$FE / IN A,(C) / LD B,A in the runtime');
++    hit = i;
++  }
++}
++if (hit < 0) throw new Error('RT_KEYDOWN IN A,(C) not found');
++if (hit - 9 < S.RT_KEYDOWN || hit - 9 > S.RT_KEYDOWN + 0x50) throw new Error(`the IN is at $${(hit - 9).toString(16)}, not inside RT_KEYDOWN ($${S.RT_KEYDOWN.toString(16)})`);
++for (let a = KS; a < KS + stub.length; a++) if (out[game(a)] !== 0) throw new Error(`free space of the game area is not empty at $${a.toString(16)}`);
++out[hit + 2] = 0xCD; out[hit + 3] = KS & 0xFF; out[hit + 4] = KS >> 8;
++out.set(stub, game(KS));
++writeFileSync(outp, out);
++console.log(`patched: IN A,(C) at $${(hit - 9 + 2).toString(16)} -> CALL $${KS.toString(16)}; stub ${stub.length} bytes; SPACE down while V_TICKS ${fireAt}..${fireAt + fireHold - 1}; wrote ${outp}`);
+diff --git a/arcade/tools/xemu/breakout-tsrun.mjs b/arcade/tools/xemu/breakout-tsrun.mjs
+index e6a585c..d8772e5 100644
+--- a/arcade/tools/xemu/breakout-tsrun.mjs
++++ b/arcade/tools/xemu/breakout-tsrun.mjs
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env node
+ "use strict";
+-// breakout-tsrun.mjs -- run an Arcade cartridge on TSRun's stock TS2068 (tsrun/roms, no input) and record, at every
++// breakout-tsrun.mjs -- run an Arcade cartridge on TSRun's stock TS2068 (tsrun/roms; the only input is the fire that leaves the title, see below) and record, at every
+ // refresh, the runtime state that the cross-emulator check needs.  Adapted from tsrun-run.mjs and tsrun-screens.mjs;
+ // the symbols are those of the runtime the cartridge was built against: v2 (arcade/build/v2/runtime.json), since breakout.arc uses KEYDOWN, which
+ // the v1 runtime refuses (v1's addresses differ: V_TICKS 57352, v2's 57464).  --runtime vN reads another build's runtime.json.
+@@ -8,10 +8,15 @@
+ //   node arcade/tools/arcadec.mjs arcade/examples/breakout.arc --assets arcade/examples/breakout.assets.json --runtime v2     -> arcade/build/breakout.dck
+ //   node arcade/tools/xemu/breakout-tsrun.mjs arcade/build/breakout.dck [--out DIR]             -> <out>/breakout-tsrun-*
+ //   python3 arcade/tools/xemu/breakout-zesarux.py arcade/build/breakout.dck [--out DIR]         -> <out>/breakout-zesarux-*
+-//   sh arcade/tools/xemu/breakout-fuse.sh [CART] [OUTDIR]                                       -> <out>/fuse-breakout/frame-*.scr (OUTDIR must be new)
++//   node arcade/tools/xemu/breakout-patch.mjs                                                   -> arcade/build/breakout-script.dck (the keyboard read from a script: Fuse cannot be fed keys)
++//   sh arcade/tools/xemu/breakout-fuse.sh arcade/build/breakout-script.dck [OUTDIR]             -> <out>/fuse-breakout/frame-*.scr (OUTDIR must be new)
+ //   node arcade/tools/xemu/breakout-compare.mjs [--dir DIR] [--fuse DIR]                        (the verdict lines)
+ //   node arcade/tools/xemu/breakout-tsrun.mjs <cart.dck> [--out arcade/build/xemu] [--refreshes 1500] [--ticks 300] [--runtime v2]
+ //
++// Input: breakout.arc starts on a TITLE scene (a song) and ENTERs play on a fresh press of SPACE (KEYPRESS(" ") or joystick fire).  The same input on every emulator: SPACE is
++// held while V_TICKS is FIRE_AT .. FIRE_AT + FIRE_HOLD - 1 (read after the refresh), so the run reaches the play scene and its first sound effect (the ball's wall / brick hit)
++// early; FIRE_AT = 2 and FIRE_HOLD = 3 by default (--fire-at N, --fire-hold N; breakout-zesarux.py and breakout-patch.mjs take the same values).
++//
+ // Definitions (the same in the ZEsarUX and Fuse checks):
+ //   displayed tick = V_TICKS when V_SYNC < 2 (the flip of the last tick has happened: the ISR sets V_SYNC = 1 when it
+ //   flips, the main loop sets 0 when it starts the next tick), else V_TICKS - 1 (the request for V_TICKS is pending,
+@@ -34,12 +39,14 @@ const TSRUN = join(ARCADE, '../tsrun');
+ const M = await import(pathToFileURL(join(TSRUN, 'machine.js')).href);
+ 
+ const args = process.argv.slice(2);
+-const opt = { dck: null, out: join(ARCADE, 'build/xemu'), refreshes: 1500, ticks: 300, runtime: 'v2' };
++const opt = { fireAt: 2, fireHold: 3, dck: null, out: join(ARCADE, 'build/xemu'), refreshes: 1500, ticks: 300, runtime: 'v2' };
+ for (let i = 0; i < args.length; i++) {
+   const a = args[i];
+   if (a === '--out') opt.out = resolve(args[++i]);
+   else if (a === '--runtime') opt.runtime = args[++i];
+   else if (a === '--refreshes') opt.refreshes = Number(args[++i]);
++  else if (a === '--fire-at') opt.fireAt = Number(args[++i]);
++  else if (a === '--fire-hold') opt.fireHold = Number(args[++i]);
+   else if (a === '--ticks') opt.ticks = Number(args[++i]);
+   else opt.dck = a;
+ }
+@@ -73,6 +80,7 @@ for (let f = 1; f <= opt.refreshes; f++) {
+   M.runFrame(m);
+   if (entry < 0 && rd16(m, S.HO_MARK) === 0x5AA5) entry = f;
+   if (entry < 0) continue;              // before the cartridge's entry V_TICKS is not a tick count
++  { const t = rd16(m, S.V_TICKS); const down = t >= opt.fireAt && t < opt.fireAt + opt.fireHold; if (down) m.keyMatrix[7] &= ~0x01; else m.keyMatrix[7] |= 0x01; }   // SPACE: row 7 bit 0
+   const dump = displayed();
+   rows.push({
+     f,
+@@ -119,8 +127,8 @@ for (const r of rows) {
+ }
+ writeFileSync(join(opt.out, 'breakout-tsrun-log.txt'), logLines.join('\n') + '\n');
+ 
+-// AY: the first sound effect (V_SFX_ACTIVE becomes non-zero) and the chip registers from there
+-const firstSfx = rows.findIndex((r) => r.sfx !== 0);
++// AY: the first sound effect (V_SFX_ACTIVE bit 0, SB_FX, becomes set) and the chip registers from there
++const firstSfx = rows.findIndex((r) => (r.sfx & 1) !== 0);   // SB_FX (bit 0): an effect plays (bit 1 is the title's song)
+ const ayLines = [];
+ if (firstSfx < 0) {
+   ayLines.push('no sound effect in the run');
+diff --git a/arcade/tools/xemu/breakout-zesarux.py b/arcade/tools/xemu/breakout-zesarux.py
+index 11575da..375be57 100644
+--- a/arcade/tools/xemu/breakout-zesarux.py
++++ b/arcade/tools/xemu/breakout-zesarux.py
+@@ -1,10 +1,13 @@
+ #!/usr/bin/env python3
+-"""Run an Arcade cartridge in ZEsarUX 13.0 (headless, stock TS2068 ROM, no input) and record the runtime state at the end
++"""Run an Arcade cartridge in ZEsarUX 13.0 (headless, stock TS2068 ROM; the only input is the fire that leaves the title) and record the runtime state at the end
+ of every frame interrupt.  Adapted from zesarux-run.py; the symbols are those of the runtime the cartridge was built against: v2
+ (arcade/build/v2/runtime.json; breakout.arc uses KEYDOWN, which v1 refuses; v1's addresses differ, V_TICKS 57352 against v2's 57464).
+ 
+   python3 arcade/tools/xemu/breakout-zesarux.py CART.dck [--out arcade/build/xemu] [--ticks 300] [--runtime v2]
+ 
++Input: as breakout-tsrun.mjs (see "Input" in its header): SPACE (ZRCP `send-keys-event 128`) is held while V_TICKS is FIRE_AT .. FIRE_AT + FIRE_HOLD - 1
++(--fire-at 2, --fire-hold 3), switched at the frame-end breakpoint where V_TICKS is read.
++
+ Order of the commands: see the header of breakout-tsrun.mjs (build the cartridge, then tsrun, zesarux, fuse, compare).
+ 
+ Method: a breakpoint at the runtime's ISR_DONE (end of the frame interrupt, after the flip).  At each hit, once the cartridge
+@@ -63,6 +66,8 @@ def main():
+     ap.add_argument("--ticks", type=int, default=300)
+     ap.add_argument("--port", type=int, default=10777)
+     ap.add_argument("--runtime", default="v2")
++    ap.add_argument("--fire-at", type=int, default=2)
++    ap.add_argument("--fire-hold", type=int, default=3)
+     ap.add_argument("--max-hits", type=int, default=20000)
+     a = ap.parse_args()
+     S, C = symbols(a.runtime)
+@@ -92,6 +97,7 @@ def main():
+ 
+         rows = []      # (hit, ticks, sync, shadow, sfx, ay[0..10])
+         dumped = {}
++        held = False                   # SPACE down (the fire that leaves the title)
+         entered = False
+         hits = 0
+         while hits < a.max_hits:
+@@ -110,6 +116,10 @@ def main():
+             sfx = read(c, S["V_SFX_ACTIVE"], 1)[0]
+             ay = list(read(c, S["AY_SHADOW"], 11))
+             rows.append((hits, ticks, sync, shadow, sfx, ay))
++            want = a.fire_at <= ticks < a.fire_at + a.fire_hold
++            if want != held:
++                c.command(f"send-keys-event 128 {1 if want else 0}")
++                held = want
+             if ticks in TICK_TARGETS and ticks not in dumped:
+                 shown = shadow & 1
+                 dfile, dattr = (C["DFILE1"], C["DATTR1"]) if shown else (C["DFILE0"], C["DATTR0"])
+@@ -142,7 +152,7 @@ def main():
+             log.append(f"{hit} {ticks} {sync} ${shadow:02X} {sfx} " + " ".join(f"{v:02x}" for v in ay))
+         (out / "breakout-zesarux-log.txt").write_text("\n".join(log) + "\n")
+ 
+-        first = next((i for i, r in enumerate(rows) if r[4] != 0), None)
++        first = next((i for i, r in enumerate(rows) if r[4] & 1), None)   # SB_FX (bit 0): an effect plays (bit 1 is the title's song)
+         ayl = []
+         if first is None:
+             ayl.append("no sound effect in the run")
+diff --git a/arcade/tools/xemu/fine-build.mjs b/arcade/tools/xemu/fine-build.mjs
+index 4d8f493..32eaff9 100644
+--- a/arcade/tools/xemu/fine-build.mjs
++++ b/arcade/tools/xemu/fine-build.mjs
+@@ -3,7 +3,7 @@
+ // fine-build.mjs -- compile a fine-colour sample game against runtime v2 (arcade/build/v2, which must be arcade/dist/v2) exactly as arcadec does (the assets file's "scenes" key is passed
+ // to the compiler) and write
+ //   arcade/build/<game>.dck                       the cartridge (byte-identical to `node arcade/tools/arcadec.mjs arcade/examples/<game>.arc --assets arcade/examples/<game>.assets.json --runtime v2`)
+-//   arcade/build/xemu/<game>-fine/meta.json       the game variables' addresses (a scene's variable SCENE.NAME is also given as plain NAME when the name is unique), the arrays, the
++//   arcade/build/xemu/<game>-fine/meta.json       the game variables' addresses (and `press`: the hidden KEYPRESS / JOYPRESS slots, press.key32.before ..., read by fine-compare.mjs) (a scene's variable SCENE.NAME is also given as plain NAME when the name is unique), the arrays, the
+ //                                                 scene slot (the driver's hidden slot of the current scene's index, read from the frame entry), the entries, the size of the game
+ //   node arcade/tools/xemu/fine-build.mjs shooter|lumen
+ // The whole cross-emulator flow for a game G (shooter = Starfall, lumen = Lumen) is, from the repository root (details in each script's header; the figures are in
+@@ -39,5 +39,5 @@ const unique = (o) => {
+   for (const [k, v] of Object.entries(o ?? {})) { const p = k.replace(/^[A-Z0-9]+\./, ''); if (p !== k && !(p in (o ?? {}))) out[p] = v; }
+   return out;
+ };
+-writeFileSync(join(dir, 'meta.json'), JSON.stringify({ game: GAMES[g].name, sceneAddr: slot?.addr ?? null, vars: unique(res.map.vars), arrays: unique(res.map.arrays), frame: res.map.entries.frame, init: res.map.entries.init, gameBytes: res.usage.total, shipped: res.shipped, scenes: assets.scenes }, null, 1));
++writeFileSync(join(dir, 'meta.json'), JSON.stringify({ game: GAMES[g].name, sceneAddr: slot?.addr ?? null, press: Object.fromEntries((res.map.slots ?? []).filter((x) => x.name.startsWith('press.')).map((x) => [x.name, x.addr])), vars: unique(res.map.vars), arrays: unique(res.map.arrays), frame: res.map.entries.frame, init: res.map.entries.init, gameBytes: res.usage.total, shipped: res.shipped, scenes: assets.scenes }, null, 1));
+ console.log(`${g}.dck (${GAMES[g].name}): ${res.dck.length} bytes (chunks ${res.shipped?.join(' ')}), game ${res.usage.total} bytes (ends $${(0x8000 + res.usage.total).toString(16)}), scene slot ${slot ? '$' + slot.addr.toString(16) : 'NOT FOUND'}, frame entry $${res.map.entries.frame.toString(16)}`);
+diff --git a/arcade/tools/xemu/fine-compare.mjs b/arcade/tools/xemu/fine-compare.mjs
+index 137df21..1761379 100644
+--- a/arcade/tools/xemu/fine-compare.mjs
++++ b/arcade/tools/xemu/fine-compare.mjs
+@@ -126,11 +126,18 @@ function compareRuns(A, B, label, { keys = true, ignore = [] } = {}) {
+   return { n, ticks: la.size, md5: bad.md5.length, groups, ticksDiffer, first };
+ }
+ 
++// The state bytes that legitimately differ between a keys run and a joystick run, and ONLY for that comparison (arcade/spike/fine/RESULTS.md, the line "TSRun keys vs script cartridge vs
++// joystick 1": "JS, the stick value STICK(1) returns, is the one state variable that differs with joystick input; left out"): the game variable JS holds STICK(1)'s value (0 when keys are
++// pressed instead), and, since language batch 5 (Starfall's title / over scenes read KEYPRESS(" ") OR JOYPRESS(1)), the compiler's hidden edge slots press.key32.* (SPACE: down in a keys
++// run only) and press.joy1.* (joystick 1: down in a joystick run only), each a `before` and an `edge` word.  They are named by address (meta.json: `vars.JS`, `press`, written by
++// fine-build.mjs); every other state byte and every picture is still compared.
++const JOY_ONLY = [...(meta.vars.JS != null ? [[meta.vars.JS, 2, 'the game variable JS (the joystick value STICK(1) returned; 0 when keys are pressed instead)']] : []),
++  ...Object.entries(meta.press ?? {}).map(([name, addr]) => [addr, 2, `the hidden slot ${name} (KEYPRESS / JOYPRESS edge state: SPACE in a keys run, joystick 1 in a joystick run)`])];
+ const R = {};
+ R.zk = compareRuns(`${g}-tsrun`, `${g}-zesarux`, 'TSRun vs ZEsarUX, real keys (TSRun keyMatrix, ZEsarUX send-keys-event)');
+ R.zs = compareRuns(`${g}-tsrun-script`, `${g}-zesarux-script`, 'TSRun vs ZEsarUX, script-driven keyboard reads');
+ R.ts = compareRuns(`${g}-tsrun`, `${g}-tsrun-script`, 'TSRun: real keys vs script-driven (validates the patched test cartridge)');
+-R.tj = compareRuns(`${g}-tsrun`, `${g}-tsrun-joystick`, 'TSRun: keys vs joystick 1 (STICK(1) reads the recorded stick bits; no key is pressed)', { keys: false, ignore: [[meta.vars.JS, 2, 'the game variable JS (the joystick value STICK(1) returned; 0 when keys are pressed instead)']] });
++R.tj = compareRuns(`${g}-tsrun`, `${g}-tsrun-joystick`, 'TSRun: keys vs joystick 1 (STICK(1) reads the recorded stick bits; no key is pressed)', { keys: false, ignore: JOY_ONLY });
+ R.zz = compareRuns(`${g}-zesarux`, `${g}-zesarux-script`, 'ZEsarUX: real keys vs script-driven');
+ 
+ // the sampling-phase artefact: V_FRAMES (the refresh counter) at the same tick
+diff --git a/arcade/tools/xemu/shooter-compare-nofix.mjs b/arcade/tools/xemu/shooter-compare-nofix.mjs
+index 9535a53..2392405 100644
+--- a/arcade/tools/xemu/shooter-compare-nofix.mjs
++++ b/arcade/tools/xemu/shooter-compare-nofix.mjs
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ "use strict";
+ // shooter-compare-nofix.mjs -- (no AY workaround) compare the shooter's screens and state at equal ticks: TSRun (live, via shooter-tsrun.mjs's runCart) against
++// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ // ZEsarUX's dumps (shooter-zesarux-nofix.py) and, if present, Fuse's movie frames (fuse-shooter/frame-*.scr).
+ //   node arcade/tools/xemu/shooter-compare-nofix.mjs [--dir arcade/build/xemu/nofix/shooter] [--cart arcade/build/shooter.dck]
+ // Writes ASCII art (192 lines of 256 chars, '#' ink) of each screen dump as <name>.txt next to it.
+diff --git a/arcade/tools/xemu/shooter-compare.mjs b/arcade/tools/xemu/shooter-compare.mjs
+index e374632..32b63e8 100644
+--- a/arcade/tools/xemu/shooter-compare.mjs
++++ b/arcade/tools/xemu/shooter-compare.mjs
+@@ -1,10 +1,11 @@
+ #!/usr/bin/env node
+ "use strict";
+ // shooter-compare.mjs -- compare the Starfall cartridge (arcade/examples/shooter.arc, runtime v2: title, play and GAME OVER scenes) on TSRun, ZEsarUX and Fuse at equal game ticks.
++// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ // Rewritten after language batch 4 on the model of runner-compare.mjs (the old version sent no input, so only the title was ever compared).
+ //   node arcade/tools/xemu/shooter-compare.mjs [--dir arcade/build/xemu] [--fuse DIR] [--ascii] [--verbose]
+ // Order of the commands (details in each script's header; the full list is in the header of shooter-tsrun.mjs):
+-//   node arcade/tools/xemu/shooter-scenario-make.mjs                    -> shooter-scenario.json (the title for 10 ticks, fire, play, GAME OVER, fire again: 513 ticks)
++//   node arcade/tools/xemu/shooter-scenario-make.mjs                    -> shooter-scenario.json (the title for 10 ticks, fire, play, GAME OVER, fire again: 687 ticks)
+ //   node arcade/tools/xemu/shooter-build.mjs                            -> arcade/build/shooter.dck, arcade/build/xemu/shooter/meta.json
+ //   node arcade/tools/xemu/shooter-patch.mjs                            -> arcade/build/shooter-script.dck (keyboard reads from a per-tick table)
+ //   node arcade/tools/xemu/shooter-tsrun.mjs [--mode keys|joystick|script]  -> <dir>/shooter/shooter-tsrun[-joystick|-script]-*     (run all three)
+diff --git a/arcade/tools/xemu/shooter-fuse.sh b/arcade/tools/xemu/shooter-fuse.sh
+index 01cdbaa..fccc919 100644
+--- a/arcade/tools/xemu/shooter-fuse.sh
++++ b/arcade/tools/xemu/shooter-fuse.sh
+@@ -1,9 +1,10 @@
+ #!/bin/sh
+ # shooter-fuse.sh -- run the SCRIPT-DRIVEN Starfall cartridge (arcade/build/shooter-script.dck, made by shooter-patch.mjs: the keyboard reads come from a per-tick table,
++# NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ # because a headless Fuse cannot be fed keys per tick: the title, fire, the play scene, GAME OVER, fire again) in Fuse 1.9.1 with no window and no sound, record a movie and
+ # convert it to one .scr per refresh (6912 bytes, the displayed screen).  Adapted from runner-fuse.sh.  Order of the commands: see the header of shooter-tsrun.mjs.
+ #   sh arcade/tools/xemu/shooter-fuse.sh [CART.dck] [OUTDIR] [SECONDS]
+-# Defaults: arcade/build/shooter-script.dck, arcade/build/xemu/fuse-shooter-script, 60 seconds (the scenario's 513 ticks are about 1,700 refreshes of TSRun, 3 a tick plus the
++# Defaults: arcade/build/shooter-script.dck, arcade/build/xemu/fuse-shooter-script, 60 seconds (the scenario's 687 ticks are about 2,100 refreshes of TSRun, 3 a tick plus the
+ # boot; the movie runs at 50 or 60 frames a second and the picture stays on after the last tick; Fuse's refresh rate is its own, so shooter-compare.mjs matches the frames to
+ # the ticks by screen, not by time).  OUTDIR must be new: an earlier movie is not overwritten.
+ set -e
+diff --git a/arcade/tools/xemu/shooter-keys-tsrun.mjs b/arcade/tools/xemu/shooter-keys-tsrun.mjs
+index 3f61530..8412850 100644
+--- a/arcade/tools/xemu/shooter-keys-tsrun.mjs
++++ b/arcade/tools/xemu/shooter-keys-tsrun.mjs
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ "use strict";
+ // shooter-keys-tsrun.mjs -- keyboard test of shooter.dck (Starfall, runtime v2) on TSRun only.  The host keys go through TSRun's own keyboard translation
++// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ // (tsrun/keyboard.js handleKeyDown / handleKeyUp, as tests/m4-runtime-api.mjs does), which sets m.keyMatrix.  Updated after language batch 4: the game starts on the TITLE scene,
+ // which waits for fire, so the script starts with SPACE; the play scene follows.  Order of the commands: see the header of shooter-tsrun.mjs (build first: shooter-build.mjs).
+ //   node arcade/tools/xemu/shooter-keys-tsrun.mjs [cart.dck] [--out arcade/build/xemu/shooter]
+diff --git a/arcade/tools/xemu/shooter-patch.mjs b/arcade/tools/xemu/shooter-patch.mjs
+index e169de9..33dd9fd 100644
+--- a/arcade/tools/xemu/shooter-patch.mjs
++++ b/arcade/tools/xemu/shooter-patch.mjs
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ "use strict";
+ // shooter-patch.mjs -- make a TEST COPY of the Starfall cartridge (runtime v2) whose keyboard reads come from a per-tick script instead of the keyboard (for Fuse, which
++// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ // cannot be fed keys per tick in a headless run).  Adapted from platformer-patch.mjs / runner-patch.mjs.  The committed game and runtime are untouched: this patches bytes
+ // of the built .dck in arcade/build only.
+ //
+diff --git a/arcade/tools/xemu/shooter-scenario-make.mjs b/arcade/tools/xemu/shooter-scenario-make.mjs
+index 6ff7761..11e888f 100644
+--- a/arcade/tools/xemu/shooter-scenario-make.mjs
++++ b/arcade/tools/xemu/shooter-scenario-make.mjs
+@@ -28,12 +28,12 @@ const xorshift = (seed) => { let x = seed; return () => { if (x === 0) x = 1; x
+ const play = (full) => interpret(parse(src).ast, { version: 2, ticks: full.length, assets, stick: (t) => full[t - 1] ?? 0, rnd: xorshift(rt.constants.RT_SEED_INIT), maxSteps: 4e9 }).ticks;
+ const sceneChanges = (recs) => { const o = []; let p = -1; recs.forEach((x, i) => { if (x.scene !== p) { o.push([i + 1, x.scene]); p = x.scene; } }); return o; };
+ 
+-// the first part: up to the fire that starts the game, play, and then standing still (still: 400 ticks, more than the enemies need)
++// the first part: up to the fire that starts the game, play, and then standing still (still: 500 ticks, more than the enemies need, GAME OVER comes at about tick 640 and 25 ticks of it must fit)
+ const PLAN = [[0, 10], [16, 2],                                   // the title, then fire (the tick that executes it switches the scene)
+   [20, 15], [16, 20],                                              // left with fire, then fire alone
+   [8, 30], [24, 40],                                               // right, then right with fire (a long burst)
+   [0, 20], [1, 10], [2, 10], [17, 60], [4, 40],                    // stand, up, down, up with fire, left
+-  [0, 400]];                                                       // no input: the enemies take the lives
++  [0, 500]];                                                       // no input: the enemies take the lives
+ const first = play(expand(PLAN));
+ const ch = sceneChanges(first);
+ const over = ch.find(([, s]) => s === 2)?.[0];
+diff --git a/arcade/tools/xemu/shooter-scenario.json b/arcade/tools/xemu/shooter-scenario.json
+index bb38e41..2527335 100644
+--- a/arcade/tools/xemu/shooter-scenario.json
++++ b/arcade/tools/xemu/shooter-scenario.json
+@@ -1,7 +1,7 @@
+ {
+  "comment": "Generated by shooter-scenario-make.mjs. runs: the stick value of every FRAME call, [value, ticks]; joystick 1 bits 1 up, 2 down, 4 left, 8 right, 16 fire (played as the keys Q A O P SPACE).",
+- "runs": [[0,10],[16,2],[20,15],[16,20],[8,30],[24,40],[0,20],[1,10],[2,10],[17,60],[4,40],[0,233],[16,3],[0,12],[4,8]],
+- "sample_ticks": [1,2,3,5,10,11,12,13,16,20,21,30,50,100,150,200,250,300,350,400,450,463,464,465,466,467,468,471,476,486,490,491,492,493,496,501,506,513],
+- "last_tick": 513,
+- "events": {"enter":11,"gameover":466,"again":491}
++ "runs": [[0,10],[16,2],[20,15],[16,20],[8,30],[24,40],[0,20],[1,10],[2,10],[17,60],[4,40],[0,407],[16,3],[0,12],[4,8]],
++ "sample_ticks": [1,2,3,5,10,11,12,13,16,20,21,30,50,100,150,200,250,300,350,400,450,500,550,600,637,638,639,640,641,642,645,650,660,664,665,666,667,670,675,680,687],
++ "last_tick": 687,
++ "events": {"enter":11,"gameover":640,"again":665}
+ }
+diff --git a/arcade/tools/xemu/shooter-tsrun-nofix.mjs b/arcade/tools/xemu/shooter-tsrun-nofix.mjs
+index f08642b..518acf9 100644
+--- a/arcade/tools/xemu/shooter-tsrun-nofix.mjs
++++ b/arcade/tools/xemu/shooter-tsrun-nofix.mjs
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ "use strict";
+ // shooter-tsrun-nofix.mjs -- run an Arcade v2 cartridge (shooter.dck) on TSRun's stock TS2068 (tsrun/roms, no input) and record, at
++// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ // every refresh, what the cross-emulator check needs.  Adapted from breakout-tsrun.mjs; symbols from arcade/build/v2/runtime.json.
+ //   node arcade/tools/xemu/shooter-tsrun-nofix.mjs [cart.dck] [--out arcade/build/xemu/nofix/shooter/tsrun] [--ticks 200] [--refreshes 4000] [--run-id A]
+ // Definitions (the same as breakout-tsrun.mjs): displayed tick = V_TICKS when V_SYNC < 2, else V_TICKS - 1.
+diff --git a/arcade/tools/xemu/shooter-tsrun.mjs b/arcade/tools/xemu/shooter-tsrun.mjs
+index ce13d3a..eefb926 100644
+--- a/arcade/tools/xemu/shooter-tsrun.mjs
++++ b/arcade/tools/xemu/shooter-tsrun.mjs
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ "use strict";
+ // shooter-tsrun.mjs -- run the Starfall cartridge (arcade/examples/shooter.arc, runtime v2, arcade/build/shooter.dck) on TSRun's stock TS2068 and sample it at the end of every tick.
++// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ // Rewritten after language batch 4 (the game starts on a TITLE scene that waits for fire, then the PLAY scene; GAME OVER is a third scene) on the model of runner-tsrun.mjs:
+ // same sampling point (the runtime's WORK_END, V_TICKS just incremented, the hidden display file V_HIDDEN holds the tick's finished picture; found by running each frame one
+ // instruction at a time; ZEsarUX breaks at the same address).
+@@ -8,7 +9,7 @@
+ // 4 left, 8 right, 16 fire).  Index t of the expanded list is the input the FRAME call made when V_TICKS = t reads (call t+1); it is applied at the WORK_END where V_TICKS becomes t
+ // (before the first tick: at the start).
+ // Order of the commands (details in each script's header):
+-//   node arcade/tools/xemu/shooter-scenario-make.mjs                   -> shooter-scenario.json (the title, fire, play, GAME OVER, fire again: 666 ticks)
++//   node arcade/tools/xemu/shooter-scenario-make.mjs                   -> shooter-scenario.json (the title, fire, play, GAME OVER, fire again: 687 ticks)
+ //   node arcade/tools/xemu/shooter-build.mjs                           -> arcade/build/shooter.dck + arcade/build/xemu/shooter/meta.json   (needs arcade/build/v2: node arcade/tools/build-runtime-v2.mjs)
+ //   node arcade/tools/xemu/shooter-patch.mjs                           -> arcade/build/shooter-script.dck (keyboard reads from a per-tick table)
+ //   node arcade/tools/xemu/shooter-tsrun.mjs [--mode keys|joystick|script]  -> <out>/shooter-tsrun[-joystick|-script]-*
+diff --git a/arcade/tools/xemu/shooter-zesarux-nofix.py b/arcade/tools/xemu/shooter-zesarux-nofix.py
+index 2fa7a44..6256362 100644
+--- a/arcade/tools/xemu/shooter-zesarux-nofix.py
++++ b/arcade/tools/xemu/shooter-zesarux-nofix.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Run an Arcade v2 cartridge (shooter.dck) in ZEsarUX 13.0 (headless, stock TS2068 ROM, no input) and record the runtime
++NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ state at the end of every frame interrupt.  Adapted from breakout-zesarux.py; symbols from arcade/build/v2/runtime.json.
+ 
+   python3 arcade/tools/xemu/shooter-zesarux-nofix.py [CART.dck] [--out arcade/build/xemu/nofix/shooter/zesarux] [--ticks 200] [--port 10777]
+diff --git a/arcade/tools/xemu/shooter-zesarux.py b/arcade/tools/xemu/shooter-zesarux.py
+index 2d35f53..39363d0 100644
+--- a/arcade/tools/xemu/shooter-zesarux.py
++++ b/arcade/tools/xemu/shooter-zesarux.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Run the Starfall cartridge (arcade/examples/shooter.arc, runtime v2, arcade/build/shooter.dck) in ZEsarUX 13.0 (headless, stock TS2068 ROM) and sample it at the end of every tick.
++NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
+ Rewritten after language batch 4 (title scene, play scene, GAME OVER scene) on the model of runner-zesarux.py: the same sampling point as shooter-tsrun.mjs, a breakpoint at
+ WORK_END (main.asm: the tick's work is done and V_TICKS was incremented), where the game state is "at V_TICKS = N" and the hidden display file (V_HIDDEN) holds the finished picture.
+ 

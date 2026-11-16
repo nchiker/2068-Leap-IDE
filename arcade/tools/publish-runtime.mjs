@@ -24,7 +24,8 @@ const check = process.argv.includes('--check');
 const EXAMPLES = [
   { id: 'bounce', title: 'Bounce', about: 'A ball bouncing off the screen edges and a paddle the joystick moves. Keys: O P or the arrows move the paddle.' },
   { id: 'breakout', title: 'Breakout', about: 'Bricks, bat and ball with text, tiles, collision and sound. Keys: O P or the arrows; fire (Space) serves.' },
-  { id: 'shooter', title: 'Shooter', about: 'A vertical shooter with pools of sprites, a sky map and sound, in three scenes (title, play, game over), with a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.' },
+  { id: 'shooter', title: 'Starfall (fine colour)', about: 'A vertical shooter in fine colour (8 x 1 colour): a planet and a starfield, every sprite shaded row by row, a rainbow title; pools of sprites, sound, three scenes (title, play, game over), a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.' },
+  { id: 'shooter-classic', title: 'Shooter (classic)', about: 'The first Starfall, a vertical shooter in plain two-buffer colour: pools of 16 sprites, a sky map and sound, in three scenes (title, play, game over), with a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.' },
   { id: 'platformer', title: 'Leap Runner (platformer)', about: 'A scrolling platformer: a 128-cell level with three parallax bands, a 16x24 hero with animation, enemies, coins and a goal. Keys: O P move, Q or Space jump, A drops through planks.' },
   { id: 'runner', title: 'Leap Runner (4 levels)', about: 'The platformer with four levels, more than the 16 KB game area holds: the worlds are banked into the cartridge (DOCK chunk 2) and loaded with WORLD. Keys: O P move, Q or Space jump, A drops through planks. Needs the v3 runtime.' },
   { id: 'vaults', title: 'Vaults (3D maze)', about: 'A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot; a title song (MUSIC). Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.' },
@@ -66,10 +67,8 @@ for (const ex of EXAMPLES) {
   const v = requiredRuntime(arc, assets).version, need = v >= 2 && v <= 4 ? v : 2;
   const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets, scenes: assets.scenes });
   if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
-  // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the "BRIGHT 1 on black paper" warning fires on today's example games; it is printed, not fatal. Any other warning fails.
-  const otherWarnings = [];
-  for (const w of res.warnings) { if (/BRIGHT 1 on black paper/.test(w.message)) console.error(`${ex.id}: warning: ${w.message}`); else otherWarnings.push(w); }
-  if (otherWarnings.length) { console.error(`${ex.id}: warning: ${otherWarnings[0].message}`); process.exit(1); }
+  // Any warning is fatal: every example opens with no warnings.
+  if (res.warnings.length) { console.error(`${ex.id}: warning: ${res.warnings[0].message}`); process.exit(1); }
   put(join(ARCADE, 'dist/examples', `${ex.id}.leapgame`), serializeProject(project));
   index.push({ id: ex.id, title: ex.title, about: ex.about, file: `${ex.id}.leapgame` });
 }

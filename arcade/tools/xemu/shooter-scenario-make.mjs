@@ -28,12 +28,12 @@ const xorshift = (seed) => { let x = seed; return () => { if (x === 0) x = 1; x 
 const play = (full) => interpret(parse(src).ast, { version: 2, ticks: full.length, assets, stick: (t) => full[t - 1] ?? 0, rnd: xorshift(rt.constants.RT_SEED_INIT), maxSteps: 4e9 }).ticks;
 const sceneChanges = (recs) => { const o = []; let p = -1; recs.forEach((x, i) => { if (x.scene !== p) { o.push([i + 1, x.scene]); p = x.scene; } }); return o; };
 
-// the first part: up to the fire that starts the game, play, and then standing still (still: 400 ticks, more than the enemies need)
+// the first part: up to the fire that starts the game, play, and then standing still (still: 500 ticks, more than the enemies need, GAME OVER comes at about tick 640 and 25 ticks of it must fit)
 const PLAN = [[0, 10], [16, 2],                                   // the title, then fire (the tick that executes it switches the scene)
   [20, 15], [16, 20],                                              // left with fire, then fire alone
   [8, 30], [24, 40],                                               // right, then right with fire (a long burst)
   [0, 20], [1, 10], [2, 10], [17, 60], [4, 40],                    // stand, up, down, up with fire, left
-  [0, 400]];                                                       // no input: the enemies take the lives
+  [0, 500]];                                                       // no input: the enemies take the lives
 const first = play(expand(PLAN));
 const ch = sceneChanges(first);
 const over = ch.find(([, s]) => s === 2)?.[0];

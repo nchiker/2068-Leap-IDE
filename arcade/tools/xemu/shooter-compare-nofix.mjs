@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // shooter-compare-nofix.mjs -- (no AY workaround) compare the shooter's screens and state at equal ticks: TSRun (live, via shooter-tsrun.mjs's runCart) against
+// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 // ZEsarUX's dumps (shooter-zesarux-nofix.py) and, if present, Fuse's movie frames (fuse-shooter/frame-*.scr).
 //   node arcade/tools/xemu/shooter-compare-nofix.mjs [--dir arcade/build/xemu/nofix/shooter] [--cart arcade/build/shooter.dck]
 // Writes ASCII art (192 lines of 256 chars, '#' ink) of each screen dump as <name>.txt next to it.

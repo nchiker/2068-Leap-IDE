@@ -6,7 +6,7 @@ REM   Keys: O left, P right, Q turn, A soft drop, SPACE hard drop, H pause.   Jo
 REM   Holding left or right moves at once, then after 8 ticks repeats every 2 ticks; holding A drops a row every 2 ticks.
 REM   Ten columns by twenty rows, seven pieces in four turns each, dealt from a 7-bag; the next piece is shown; every 10 lines make a level
 REM   and the piece falls faster; a piece that has landed waits 15 ticks (a lock delay) and moving it in that time restarts the wait (12 times at most).
-REM   A cleared line flashes (a bright tile), then the rows above fall one source row at a time; one to four lines have their own sound.
+REM   A cleared line flashes (a white tile), then the rows above fall one source row at a time; one to four lines have their own sound.
 REM   Scoring: 40 / 100 / 300 / 1200 for 1 / 2 / 3 / 4 lines times (level + 1, at most 20); 1 point a row of soft drop, 2 a row of hard drop.
 REM   States: 0 title, 1 clearing the well for a new game, 2 waiting for the next piece, 3 falling, 4 flashing lines, 5 collapsing, 6 game over, 7 paused.
 REM   Compile:  node arcade/tools/arcadec.mjs arcade/examples/blockfall.arc --assets arcade/examples/blockfall.assets.json --runtime v2
@@ -48,8 +48,10 @@ CONST FREESEED = 1
 
 SCENE play
   DIM st, tt, kl, kr, ku, kd, kf, kh, pu, pf, ph, ef, er, eh, hdir, hcnt, scnt
-  DIM pc, nx, rot, px, py, fit, gcnt, ldly, lres, wt
-  DIM shi, slo, hhi, hlo, lv, lns, nlin, mult, lvup, low, fr0, fr1, ft, cr, cw, wr, gor, hud, bagpos
+  DIM pc, nx, rot, px, py, fit, gcnt, ldly, lres
+  REM timers, counted down by the runtime once a tick: wt, the ticks to wait for the next piece; ft, the ticks of the line flash (13 when it starts, the rows flash at 12 and 6, the blocks come back at 9 and 3, the collapse starts at 1)
+  TIMER wt, ft
+  DIM shi, slo, hhi, hlo, lv, lns, nlin, mult, lvup, low, fr0, fr1, cr, cw, wr, gor, hud, bagpos
   REM sh: the 7 pieces (I O T S Z J L) x 4 turns as masks of a 4 x 4 box, bit (y * 4 + x); sdx, sdy: the 4 cells of each, decoded at the start (sdx already
   REM includes the board's wall, BX0, so that a board index is x + sdx(...) with no addition; on the screen it is WX - BX0 + x + sdx(...))
   REM I: 240 17476 3840 8738      O: 102 x 4      T: 114 610 624 562      S: 54 1122 864 561      Z: 99 612 1584 306      J: 113 550 1136 802      L: 116 1570 368 547
@@ -124,7 +126,7 @@ SCENE play
     FILL WX, FRT, BW, 1 = 9
     FILL WX, FRB, BW, 1 = 9
     FILL WX, WY, BW, BH = 0
-    BRIGHT 1 : PAPER 0
+    BRIGHT 0 : PAPER 0
     INK 6 : PRINT AT 0, 11; "BLOCKFALL";
     INK 5 : PRINT AT 3, 24; "NEXT";
     INK 5 : PRINT AT 10, 23; "SCORE";
@@ -140,7 +142,7 @@ SCENE play
   ENDP
 
   PROC SHOWTITLE():
-    BRIGHT 1 : PAPER 0
+    BRIGHT 0 : PAPER 0
     INK 2 : PRINT AT 6, 13; "B";
     INK 6 : PRINT "L";
     INK 4 : PRINT "O";
@@ -173,16 +175,14 @@ SCENE play
   PROC PSCORE(r, c, hi, lo):
     PRINT AT r, c;
     IF hi > 0 THEN
-      PRINT hi;
-      IF lo < 1000 THEN PRINT "0"; ENDIF
-      IF lo < 100 THEN PRINT "0"; ENDIF
-      IF lo < 10 THEN PRINT "0"; ENDIF
+      PRINT hi; lo USING "0000"; "   ";
+    ELSE
+      PRINT lo; "   ";
     ENDIF
-    PRINT lo; "   ";
   ENDP
 
   PROC SHOWHUD():
-    BRIGHT 1 : PAPER 0 : INK 7
+    BRIGHT 0 : PAPER 0 : INK 7
     CALL PSCORE(11, 23, shi, slo)
     PRINT AT 14, 23; lv + 1; "   ";
     PRINT AT 17, 23; lns; "   ";
@@ -309,7 +309,7 @@ SCENE play
     CALL CHECKLINES()
     IF nlin > 0 THEN
       CALL SCORELINES()
-      st = 4 : ft = 0
+      st = 4 : ft = 13
     ELSE
       PLAY thud
       st = 2 : wt = 4
@@ -426,8 +426,7 @@ SCENE play
   ENDP
 
   PROC WAITTICK():
-    wt = wt - 1
-    IF wt <= 0 THEN CALL SPAWN() ENDIF
+    IF wt = 0 THEN CALL SPAWN() ENDIF
   ENDP
 
   PROC HANDLEINPUT():
@@ -484,7 +483,7 @@ SCENE play
     IF eh THEN
       st = 7
       NOMUSIC
-      INK 2 : BRIGHT 1 : PAPER 0 : PRINT AT 16, 0; "PAUSED";
+      INK 2 : BRIGHT 0 : PAPER 0 : PRINT AT 16, 0; "PAUSED";
     ELSE
       CALL HANDLEINPUT()
       IF st = 3 THEN CALL GRAVITY() ENDIF
@@ -499,12 +498,11 @@ SCENE play
     ENDIF
   ENDP
 
-  REM The full rows flash (a bright tile for 3 ticks, the blocks for 3, twice), then they go.
+  REM The full rows flash (a white tile for 3 ticks, the blocks for 3, twice), then they go.
   PROC FLASHTICK():
     IF ft MOD 6 = 0 THEN CALL FLASHROWS(8) ENDIF
     IF ft MOD 6 = 3 THEN CALL FLASHROWS(-1) ENDIF
-    ft = ft + 1
-    IF ft >= 12 THEN
+    IF ft = 1 THEN
       cr = low : cw = low
       st = 5
     ENDIF
@@ -538,7 +536,7 @@ SCENE play
       NEXT i
       gor = gor - 1
       IF gor < 0 THEN
-        BRIGHT 1 : PAPER 0
+        BRIGHT 0 : PAPER 0
         INK 2 : PRINT AT 10, 11; "GAME OVER";
         INK 7 : PRINT AT 12, 13; "PRESS";
         INK 7 : PRINT AT 13, 13; "SPACE";
@@ -552,7 +550,7 @@ SCENE play
     CALL SETSHAPES()
     CALL CLEARBOARD()
     hhi = 0 : hlo = 0 : bagpos = 7
-    PAPER 0 : INK 7 : BRIGHT 1
+    PAPER 0 : INK 7 : BRIGHT 0
     CLS
     CALL DRAWSTATIC()
     CALL SHOWTITLE()

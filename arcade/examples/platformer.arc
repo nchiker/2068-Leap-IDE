@@ -151,7 +151,7 @@ SCENE play
           ENDIF
         NEXT k
       CASE 5
-        INK 7 : PAPER 0 : BRIGHT 1
+        INK 7 : PAPER 0 : BRIGHT 0
         FILLC 0, 1, 32, 1 = 32
       CASE 6
         FILLC 0, 2, 32, 1 = 32
@@ -180,7 +180,7 @@ SCENE play
         NEXT i
         inv = 0 : dropt = 0 : pj = 1 : pk = 0
       CASE 1
-        INK 7 : PAPER 0 : BRIGHT 1
+        INK 7 : PAPER 0 : BRIGHT 0
         FILLC 0, 1, 32, 1 = 32
       CASE 2
         FILLC 0, 21, 32, 1 = 32
@@ -242,7 +242,7 @@ SCENE play
           CALL SHOWHUD()
         WEND
       CASE 1
-        INK 7 : PAPER 0 : BRIGHT 1
+        INK 7 : PAPER 0 : BRIGHT 0
         FILLC 0, 21, 32, 1 = 32
       CASE 2
         FILLC 0, 22, 32, 1 = 32
@@ -464,7 +464,7 @@ SCENE play
   REM to print and the cells it dirties are redrawn by the runtime in the next tick.  While playing it is called on every fourth tick (fc MOD 4 = 3), after
   REM the tick that asks for a coin and the one that takes it.
   PROC SHOWHUD():
-    INK 6 : PAPER 0 : BRIGHT 1
+    INK 6 : PAPER 0 : BRIGHT 0
     IF BAND(hud, 1) <> 0 THEN
       PRINT AT 1, 8; score;
       hud = BAND(hud, 6)

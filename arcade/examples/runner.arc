@@ -140,7 +140,7 @@ REM starts (0 at power-on).  FC is the tick counter and CAM the camera the coin 
 
   REM A black row of the screen's cell map under the text (PAPER 0, bright white): the rows the HUD and the title text go on.
   PROC BAR(r):
-    INK 7 : PAPER 0 : BRIGHT 1
+    INK 7 : PAPER 0 : BRIGHT 0
     FILLC 0, r, 32, 1 = 32
   ENDP
 
@@ -358,7 +358,7 @@ SCENE play
 
   REM Pausing silences the sound once and puts PAUSED in the HUD's message row (6 cells, a piece of a row: not the 32 a whole row costs); going on clears those cells.
   PROC PAUSETOGGLE():
-    INK 7 : PAPER 0 : BRIGHT 1
+    INK 7 : PAPER 0 : BRIGHT 0
     IF paused = 0 THEN
       paused = 1
       SILENCE
@@ -448,7 +448,7 @@ SCENE play
 
   REM The HUD of the level just loaded (its coin total and number are printed here, the other labels once per game), and the player starts.
   PROC BEGINLEVEL():
-    INK 7 : PAPER 0 : BRIGHT 1
+    INK 7 : PAPER 0 : BRIGHT 0
     PRINT AT 2, 10; "/"; ce;
     PRINT AT 2, 16; "LEVEL "; lv + 1;
     hud = 7
@@ -751,7 +751,7 @@ SCENE play
   REM to print and the cells it dirties are redrawn by the runtime in the next tick.  While playing it is called on every fourth tick (fc MOD 4 = 3), after
   REM the tick that asks for a coin and the one that takes it.
   PROC SHOWHUD():
-    INK 6 : PAPER 0 : BRIGHT 1
+    INK 6 : PAPER 0 : BRIGHT 0
     IF BIT(hud, 0) THEN
       PRINT AT 1, 8; score;
       hud = BAND(hud, 6)

@@ -39,7 +39,6 @@ import { rng, ASSETS, PROGRAMS, worldModel, diffV3, TILE_FLAGS } from './arcade-
 import { compileMock, runMock, mockRuntime, ADDR } from './arcade-m6-mock.mjs';
 import { planPool, poolNeed } from '../arcade/tests/m6-common.mjs';        // the runtime's JS reference of the phase-pool plan (only to compare the compiler's port with)
 
-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -606,7 +605,7 @@ const interpFor = (src, ticks, stick, o = {}) => interpret(parse(src).ast, { ver
     for (const n of stubbed) rt.symbols[n] = 0xC000;
     const res = compile(readFileSync(src, 'utf8'), { runtime: rt, image: img, assets: JSON.parse(readFileSync(as, 'utf8')) });
     info(`platformer.arc on arcade/build/v3${stubbed.length ? ` (stubbed: ${stubbed.join(' ')})` : ''}: ${res.usage ? `game area ${res.usage.gameArea.used} of ${res.usage.gameArea.available} bytes, ${res.usage.gameArea.free} free` : 'no link'}`);
-    check_('platformer.arc compiles on the v3 build with no errors and no warnings', res.errors.length === 0 && res.warnings.filter(notTwoBlacks).length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
+    check_('platformer.arc compiles on the v3 build with no errors and no warnings', res.errors.length === 0 && res.warnings.length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
     if (res.usage) {
       const u = res.usage;
       check_('... and fits the 16 KB game area (code + data + frames + window data + scroll tables)', u.gameArea.used <= u.gameArea.available && u.gameArea.free >= 0, `${u.gameArea.used} of ${u.gameArea.available}`);

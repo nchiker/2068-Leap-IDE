@@ -26,13 +26,14 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
+import { checkAssets } from '../src/lang/arcade/arcade-assetcheck.js';
+import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
 import { diffV4, rng } from './arcade-m8-common.mjs';
 import { compileOnMock, runOnMock, interpretVaults, traceDigest, VAULTS_SRC, VAULTS_ASSETS } from './arcade-m8-vaults-harness.mjs';
 import { stripMusic, createSoundRecorder, soundOf, clockOf, compareSound, soundCoverage } from './arcade-m15-common.mjs';
 import { WIN_RUNS, WIN_SIGHT, LOSE_RUNS } from './arcade-m8-vaults-script.mjs';
 import { CELLS, THINGS, DOOR, MAP_W, MAP_H, GEM_CELLS, GOBLET_CELL, T as TILE, buildAssets, buildTitle } from '../arcade/examples/vaults.assets.gen.mjs';
 
-const notTwoBlacks = (w) => !/BRIGHT 1 on black paper/.test(w.message);      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the compiler's new warning fires on today's example games until stage 3 fixes them
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -138,9 +139,11 @@ function reach(grid, from) {
     title.cells[GOBLET_CELL[1] * 32 + GOBLET_CELL[0]] === TILE.GOB_TL && title.cells[(GOBLET_CELL[1] + 1) * 32 + GOBLET_CELL[0] + 1] === TILE.GOB_BR &&
     GEM_CELLS.length === 6 && GEM_CELLS.every(([x, y]) => title.cells[y * 32 + x] === TILE.GEM) &&
     [13, 14, 15, 16, 17, 18].every((y) => title.cells[y * 32 + 30] === TILE.DOOR && title.cells[y * 32 + 31] === TILE.DOOR));
-  check_('the title tiles are the game\'s own wall textures: brick, stone, lining and the door bars, the glinting gem and the goblet halves are defined, all black paper BRIGHT 1 like every tile of the set (no BRIGHT mix)',
-    [TILE.BRICK, TILE.STONE, TILE.LINING, TILE.DOOR, TILE.GLINT, TILE.GOB_TL, TILE.GOB_TL_GLINT, TILE.GOB_TR, TILE.GOB_BL, TILE.GOB_BR].every((i) => tiles[i] && tiles[i].rows.every((r) => r.paper === 0 && r.bright === 1)) &&
+  check_('the title tiles are the game\'s own wall textures: brick, stone, lining and the door bars, the glinting gem and the goblet halves are defined, all black paper BRIGHT 0 like every tile of the set (no BRIGHT mix; K4)',
+    [TILE.BRICK, TILE.STONE, TILE.LINING, TILE.DOOR, TILE.GLINT, TILE.GOB_TL, TILE.GOB_TL_GLINT, TILE.GOB_TR, TILE.GOB_BL, TILE.GOB_BR].every((i) => tiles[i] && tiles[i].rows.every((r) => r.paper === 0 && r.bright === 0)) &&
     tiles[TILE.GEM] !== undefined && tiles.length === 28);
+  { const f = checkAssets({ assets: A }, scanRoles(SRC));
+    check_('the asset check (checkAssets) finds nothing in the game\'s assets: no BRIGHT 1 on black paper (K4), no mix of plain and BRIGHT black, no background-attribute mix in the HUD panel or the title (E5: every tile but the blank one is marked fg, sprites never pass over it)', f.length === 0, f.map((x) => x.id).join(', ')); }
   check_('the wraith asset has 4 phases (the title\'s drift is in 2-pixel steps; ray mode ignores phases); every other sprite stays at 1 (aligned to bytes in the title)', S['vl_wraith'].phases === 4 && Object.entries(S).every(([k, v]) => k === 'vl_wraith' || v.phases === 1));
   check_('the eight SFX are declared and have records (shot thud kill pick door hurt win lose)', Object.keys(A.sfx).length === 8 && Object.values(A.sfx).every((s) => s.ticks.length >= 5));
   // messages: the message line is rewritten by a print with no clear, so every message is exactly as wide as the line it uses (30 characters at column 1)
@@ -154,13 +157,13 @@ function reach(grid, from) {
 console.log('\n2. The compiler');
 const res = compileOnMock();
 {
-  check_('vaults.arc compiles with no errors and no warnings (batch 3 mock runtime, v4)', res.errors.length === 0 && res.warnings.filter(notTwoBlacks).length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
+  check_('vaults.arc compiles with no errors and no warnings (batch 3 mock runtime, v4)', res.errors.length === 0 && res.warnings.length === 0, errText(res) + ' ' + res.warnings.map((w) => w.message).join(' | '));
   if (res.errors.length) { console.log(`\nFAIL: arcade-m8-vaults (${passed} checks passed, ${failed + 1} failed)`); process.exit(1); }
   const u = res.usage;
   info(`link report: code ${u.code} B (strings ${u.data.strings}, tileset ${u.data.tileset}, sfx ${u.data.sfx}, HUD map ${u.data.map}), sprite frames ${u.frames} B, view: map source ${u.view.mapSource} B (1,024 expanded) + descriptor ${u.view.descriptor} B => ${u.total} of 16384 B game area (${u.free} spare); variables ${u.gameVars.used} of ${u.gameVars.available} B`);
   // the song (slice M5) takes bytes: the 2 KB of room is asked of the game as it was before songs (its text without MUSIC / NOMUSIC / PLAY <song>); the shipped game, song included, must keep 1 KB
   const noSong = compileOnMock(stripMusic(VAULTS_SRC));
-  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.filter(notTwoBlacks).length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
+  check_('the game without its song compiles (stripMusic) with no errors and no warnings, and its image fits the 16 KB game area with room to spare (at least 2 KB: the title picture and the scenes took about 2 KB)', noSong.errors.length === 0 && noSong.warnings.length === 0 && noSong.usage.free >= 2048 && noSong.usage.banked.used === 0, noSong.errors.length ? errText(noSong) : `${noSong.usage.free} bytes free`);
   check_(`the shipped image, with the song (${u.data.music} bytes of song data), fits the 16 KB game area with room to spare (at least 1 KB), and nothing needs banking`, u.free >= 1024 && u.banked.used === 0, `${u.free} bytes free of ${u.total + u.free}; mapped ${u.mapped.used} of ${u.mapped.available}, banked ${u.banked.used}`);
   check_('16 sprite instances (the most there are), 6 assets of 8; the view is COLW 4; the header carries DIV_EXT | DIV_VIEW and the frame divisor 4 (15 a second)', u.codegen.instances === 16 && res.usage.view.colw === 4 && (res.memory[0x8004] & 0xC0) === 0xC0 && (res.memory[0x8004] & 0x3F) === 4);
   check_('three scenes: title (NOVIEW, the first, so the game starts in it), demo and play; the driver is built and the scene plan says so', u.codegen.scenes === 3 && u.codegen.driver === true && res.scenes.map((x) => x.name).join() === 'title,demo,play' && res.scenes[0].mode === 'noview' && !res.scenes[1].mode && !res.scenes[2].mode);
@@ -173,7 +176,7 @@ const res = compileOnMock();
   if (existsSync(rtJson)) {
     const rt = JSON.parse(readFileSync(rtJson, 'utf8')), img = new Uint8Array(readFileSync(join(dirname(rtJson), rt.image ?? 'runtime.bin')));
     const real = compile(SRC, { runtime: rt, image: img, assets: A });
-    check_('it compiles against arcade/build/v4 (the real runtime build) with no errors and no warnings', real.errors.length === 0 && real.warnings.filter(notTwoBlacks).length === 0, errText(real) + ' ' + real.warnings.map((w) => w.message).join(' | '));
+    check_('it compiles against arcade/build/v4 (the real runtime build) with no errors and no warnings', real.errors.length === 0 && real.warnings.length === 0, errText(real) + ' ' + real.warnings.map((w) => w.message).join(' | '));
     if (real.errors.length === 0) info(`on the real runtime: code ${real.usage.code} B, ${real.usage.free} B free`);
   } else skip_('it compiles against arcade/build/v4', 'arcade/build/v4/runtime.json does not exist (node arcade/tools/build-runtime-v4.mjs)');
 }
@@ -239,8 +242,8 @@ const wa = expandRuns(WIN_RUNS), la = expandRuns(LOSE_RUNS);
   const alt = interpretVaults(420, () => 0).ticks;
   const want = (t) => (t < 135 ? SCENE.title : t < 270 ? SCENE.demo : t < 405 ? SCENE.title : SCENE.demo);
   check_('with no input the title and the demo alternate every 135 ticks (9 seconds): title for ticks 1..134, demo 135..269, title 270..404, demo from 405 (the record of the ENTER tick is the target\'s)', alt.every((r, i) => r.scene === want(i + 1)));
-  check_('the title shows the whole cell screen (show "screen": no 3D view) and the demo shows the view (show "view"); the scene\'s own timer starts at 0 in the tick of the switch (TITLE.TM, DEMO.TM)', alt.every((r, i) => r.show === (want(i + 1) === SCENE.title ? 'screen' : 'view')) &&
-    alt[134].vars['DEMO.TM'] === 0 && alt[269].vars['TITLE.TM'] === 0 && alt[100].vars['TITLE.TM'] === 101 && alt[200].vars['DEMO.TM'] === 66 && alt[404].vars['DEMO.TM'] === 0);
+  check_('the title shows the whole cell screen (show "screen": no 3D view) and the demo shows the view (show "view"); the scene\'s own counter starts in the tick of the switch (TITLE.TM counts up from 0; DEMO.LEFT is a TIMER set to DEMOLEN = 135 that counts down)', alt.every((r, i) => r.show === (want(i + 1) === SCENE.title ? 'screen' : 'view')) &&
+    alt[134].vars['DEMO.LEFT'] === 135 && alt[269].vars['TITLE.TM'] === 0 && alt[100].vars['TITLE.TM'] === 101 && alt[200].vars['DEMO.LEFT'] === 69 && alt[404].vars['DEMO.LEFT'] === 135);
   check_('the game-level variables run through the scenes: FC counts every tick since the start (the title, the demo and the game share it: FC = tick), best is 0 and the game state ST stays 0 until a game is started', alt.every((r, i) => r.vars.FC === i + 1 && r.vars.BEST === 0 && r.vars.ST === 0));
   // the title's picture and animation, from independent formulas
   const tri = (x) => Math.abs(x - 4);
@@ -292,7 +295,9 @@ const wa = expandRuns(WIN_RUNS), la = expandRuns(LOSE_RUNS);
   // THE PLAY DID NOT CHANGE: digests of the state of every tick of the two recorded runs from the first tick of play on (variables, arrays, shown sprites, walls, pose, border, cell and attribute
   // maps, text attribute, sound), recorded from vaults.arc as ONE scene (the title a state of it) at 3a22ea1 with the runs of that time (the same walk: its idle ticks after the fire are gone, so the
   // fire is at tick 17 and the first tick of play is 18 as it was). The recording is also a record of the maze's behaviour: wraith AI, pickups, shots, the HUD one change a tick.
-  const WIN_DIGEST = '6b263f2f93ed608475e885207b0da256de1269d4026dc5219aff0695524d3912', LOSE_DIGEST = '08a33125e07419e5a121634c81a97bd7899947e07c363a9dfaa1c471e030cc26';
+  // RE-RECORDED in stage 3 (K4, G3), after a tick-by-tick comparison of the old and the new game over both runs (every variable, array, sprite, wall, the border, the cells, the pose and the sound
+  // identical; the attribute maps and the text attribute equal but for the BRIGHT bit on black paper; INV / COOL / BT / MT, now TIMERs, read one more than the old counters at the end of a tick while playing).
+  const WIN_DIGEST = '6ead9b4a155b831cd754c1387ce4d53048bab17f1deea732eb96e7327533d0da', LOSE_DIGEST = '09aac00e0693a1f0517656be6a0a754411f4563212aabf829d63e7d5c7a8a332';
   // (the digest includes the sound record, which a game with songs models differently: it is taken of the game's text without its songs, as the old game was; the play is the same word for word)
   const winNS = interpretVaults(WIN_N, winStick, { billboard: winBillboard, src: stripMusic(VAULTS_SRC) }), loseNS = interpretVaults(LOSE_N, loseStick, { src: stripMusic(VAULTS_SRC) });
   check_(`the play is tick for tick the one-scene game's: the WIN run's state of ticks ${PLAY0}..${WIN_N} (${WIN_N - PLAY0 + 1} ticks) of the game without its songs has the digest recorded from the old game`, traceDigest(winNS.ticks, PLAY0, WIN_N) === WIN_DIGEST);

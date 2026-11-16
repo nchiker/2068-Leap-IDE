@@ -1,0 +1,571 @@
+diff --git a/arcade/examples/lumen.arc b/arcade/examples/lumen.arc
+index e4e740a..7244694 100644
+--- a/arcade/examples/lumen.arc
++++ b/arcade/examples/lumen.arc
+@@ -17,6 +17,7 @@ CONST TDOOR = 9
+ CONST TWALL = 11
+ CONST STARTX = 112                  REM the wisp starts on block (7, 7)
+ CONST STARTY = 120
++CONST CTOL = 8                      REM cornering: a turn asked for up to 8 pixels (2 ticks) before or after a block boundary is taken on that boundary
+ CONST LAIRY = 88                    REM the lair is the blocks (7, 5) and (8, 5), behind the door (blocks (7, 4) and (8, 4))
+ 
+ MAP maze1 = "maze1"
+@@ -75,6 +76,7 @@ SCENE play
+   DIM js, ku, kd, kl, kr, wx, wy, wdir, wd, nw, wf, wbx, wby, cb, tk
+   DIM sstp, srem, sdir, fnew
+   DIM dbx, dby, dbase, dback, dn, dt, dd, bd, bk
++  DIM wtb, co, cl, cu, cah, cab, cbh, cbb, cs
+   DIM ex, ey, tt
+   DIM lives, orbs, scn, bn, pz, pr, pw, pwmax, eatn, fast, gap, hs, hl, hc
+   REM the maze as the program sees it: 0 open, 1 the lair's door (a wall to the wisp, open to the shades going up), 2 a wall, 3 the lair
+@@ -133,7 +135,7 @@ SCENE play
+       CALL SHOWSH(i)
+     NEXT i
+     HIDE wispb
+-    wx = STARTX : wy = STARTY : wdir = -1 : wd = -1 : wf = 0
++    wx = STARTX : wy = STARTY : wdir = -1 : wd = -1 : wf = 0 : wtb = -1
+     SHOW wispa AT wx, wy
+     pw = 0 : eatn = 0
+   ENDP
+@@ -228,7 +230,7 @@ SCENE play
+   ENDP
+ 
+   REM The direction keys: a direction is asked for by its key; of several keys the ones for another direction than the wisp's own win, and a key held for the wisp's own direction
+-  REM cancels a turn asked for before.  What was asked for is kept (until the next press), so a turn can be asked for a little before the boundary.
++  REM cancels a turn asked for before.  What was asked for is kept (until the next press), so a turn can be asked for before the boundary (and, by CORNER, a little after it).
+   PROC READKEYS():
+     js = STICK(1)
+     ku = KEYDOWN("Q") OR BIT(js, 0)
+@@ -247,19 +249,26 @@ SCENE play
+     IF nw >= 0 THEN wd = nw ENDIF
+   ENDP
+ 
+-  REM The wisp: 4 pixels a tick; it turns only on a block boundary into a free block, reverses at any time, stops against a wall; arriving on a block it eats what is there.
++  REM The wisp: 4 pixels a tick; it turns on a block boundary into a free block, reverses at any time, stops against a wall; arriving on a block it eats what is there.
++  REM Between two boundaries a turn that is asked for (and kept: see READKEYS) is still taken on the nearest boundary within CTOL pixels, by CORNER.
+   PROC MOVEWISP():
+     IF wdir >= 0 AND wd >= 0 THEN
+       IF wd = BXOR(wdir, 1) THEN wdir = wd ENDIF
+     ENDIF
+     IF BAND(wx, 15) = 0 AND BAND(wy, 15) = 8 THEN
+       cb = SHR(wy - 8, 4) * 16 + SHR(wx, 4)
++      IF cb <> wtb THEN wtb = -1 ENDIF
+       IF wd >= 0 THEN
+-        IF mz(cb + ddi(wd)) = 0 THEN wdir = wd ENDIF
++        IF mz(cb + ddi(wd)) = 0 THEN
++          IF wd <> wdir THEN wtb = cb ENDIF
++          wdir = wd
++        ENDIF
+       ENDIF
+       IF wdir >= 0 THEN
+         IF mz(cb + ddi(wdir)) <> 0 THEN wdir = -1 ENDIF
+       ENDIF
++    ELSE
++      IF wdir >= 0 AND wd >= 0 AND wd <> wdir THEN CALL CORNER() ENDIF
+     ENDIF
+     IF wdir >= 0 THEN
+       wx = wx + 4 * ddx(wdir)
+@@ -269,6 +278,35 @@ SCENE play
+     wbx = SHR(wx + 8, 4) : wby = SHR(wy, 4)
+   ENDP
+ 
++  REM Cornering.  The wisp is between two boundaries and a turn wd (never the reverse: that is already done) is wanted.  cl and cu are the blocks of the two boundaries (the lower and
++  REM the upper one on the wisp's axis; the wisp stands on both: they are open), cah / cbh the distances to the boundary ahead of it and behind it.  If the block next to the boundary
++  REM ahead (within CTOL) is open the wisp goes to that boundary and turns there; failing that, if the block next to the boundary behind it (within CTOL, and not the block it has
++  REM just turned on: it would undo its own turn) is open, it goes back to it and turns there.  The move onto the boundary is made on the old axis, the new axis starts at once (4 pixels),
++  REM so the wisp is on the corridor of its new direction exactly.  Reaching the boundary ahead is an arrival: what is there is eaten.
++  PROC CORNER():
++    cl = SHR(wy - 8, 4) * 16 + SHR(wx, 4)
++    cu = cl + ddi(BOR(wdir, 1))
++    IF wdir < 2 THEN co = BAND(wy - 8, 15) ELSE co = BAND(wx, 15) ENDIF
++    IF BAND(wdir, 1) = 1 THEN
++      cah = 16 - co : cab = cu : cbh = co : cbb = cl
++    ELSE
++      cah = co : cab = cl : cbh = 16 - co : cbb = cu
++    ENDIF
++    cs = 0
++    IF cah <= CTOL THEN
++      IF mz(cab + ddi(wd)) = 0 THEN cs = cah : wtb = cab ENDIF
++    ENDIF
++    IF cs = 0 AND cbh <= CTOL AND cbb <> wtb THEN
++      IF mz(cbb + ddi(wd)) = 0 THEN cs = 0 - cbh : wtb = cbb ENDIF
++    ENDIF
++    IF cs <> 0 THEN
++      wx = wx + cs * ddx(wdir)
++      wy = wy + cs * ddy(wdir)
++      wdir = wd
++      IF cs > 0 THEN CALL EAT() ENDIF
++    ENDIF
++  ENDP
++
+   REM The wisp has arrived on a block: an orb is eaten (10), a prism (50: the shades turn pale); the last orb clears the cave.
+   PROC EAT():
+     ex = SHR(wx, 4) * 2 : ey = SHR(wy - 8, 4) * 2 + 1
+diff --git a/arcade/examples/lumen.md b/arcade/examples/lumen.md
+index 477c23f..4b623ba 100644
+--- a/arcade/examples/lumen.md
++++ b/arcade/examples/lumen.md
+@@ -33,8 +33,17 @@ every scene in fine colour (8 x 1 colour; `docs/ARCADE_FINE_COLOUR_CONTRACT.md`)
+ 
+ ## Movement and the shades
+ 
+-* FRAMERATE 20. The wisp moves 4 pixels a tick. It turns at a block boundary (x and y both on the block grid) into the direction asked for if
+-  that block is open; otherwise it goes on if it can, else stops. Reversing works at any time. A step never goes past the next boundary.
++* FRAMERATE 20. The wisp moves 4 pixels a tick. Reversing works at any time; it stops against a wall; a step never goes past the next boundary.
++* **Turning is forgiving** (`CORNER`, `CONST CTOL = 8`). A direction asked for is **kept until another is pressed** (a key held for the wisp's own direction cancels it). On a block boundary
++  the wisp turns into the asked-for direction if that block is open, as before. **Between boundaries** a perpendicular turn that is asked for is taken on the **nearest boundary within 8
++  pixels (2 ticks, 100 ms) before or after the wisp**, if the block beside that boundary is open: the wisp goes onto the boundary on its old axis (a jump of at most 8 pixels) and moves 4
++  pixels on the new one in the same tick, a short diagonal, so that it is on the new corridor exactly. The boundary **ahead** is tried first (so at a tie, 8 pixels from each, the wisp
++  goes on to the next junction and does not jump back); reaching it counts as an arrival, so what is there is eaten. The boundary **behind** is tried next, except the block the wisp has just
++  turned on (without that rule a key still held for the old direction undid every turn: the wisp wiggled 4 pixels and went back). Why 8: steps are 4 pixels, so 4 is one tick (50 ms, below
++  a player's timing error), 8 is two ticks (100 ms) and the corner never looks like a teleport; 12 would be most of a block and a press could take a junction a whole block away from the one the
++  player meant. A press further ahead is kept as before (the turn is taken at the boundary, with the key lifted); a press more than 8 pixels late is missed, as at a real junction.
++  The wisp is always on the corridor grid of its direction (x a multiple of 16 going up or down, y - 8 a multiple of 16 going left or right): shades, eating (`EAT` runs only on a boundary)
++  and the bot rely on it. The cornering costs about 450 bytes of code (12,540 to 12,989 for the game) and runs only on a tick with a turn asked for between two boundaries.
+ * A shade moves 2 or 4 pixels a tick (its speed rises with the cave, e.g. a 4-pixel step on some ticks and 2 on the others, never passing
+   a boundary). At each boundary it picks one of the open directions other than back the way it came (back only at a dead end): with a
+   chance that grows with the cave it takes the one that brings it nearer the wisp (pale: farther from it), else a random one. Each shade
+@@ -54,6 +63,6 @@ every scene in fine colour (8 x 1 colour; `docs/ARCADE_FINE_COLOUR_CONTRACT.md`)
+ 
+ ## Budget
+ 
+-At most 5 moving 16 x 16 sprites (the wisp, four shades) at 20 Hz in the fine play scene; the target is FRAMERATE 20 in at least 99 % of the
++At most 5 moving 16 x 16 sprites (the wisp, four shades) at 20 Hz in the fine play scene; the target is FRAMERATE 20 in at least 99.5 % of the
+ play ticks over the recorded runs (contract section 8). If the logic does not fit, the shades' decisions may be spread over ticks (one shade
+ decides a tick), never the frame rate dropped.
+diff --git a/arcade/spike/fine/lumen-art-options.mjs b/arcade/spike/fine/lumen-art-options.mjs
+new file mode 100644
+index 0000000..4e176a3
+--- /dev/null
++++ b/arcade/spike/fine/lumen-art-options.mjs
+@@ -0,0 +1,242 @@
++#!/usr/bin/env node
++"use strict";
++// lumen-art-options.mjs -- stills of LUMEN's play scene with the CURRENT wall art and three alternative wall / corridor treatments that make the corridors readable at a glance.
++//   node arcade/spike/fine/lumen-art-options.mjs        writes arcade/spike/fine/lumen-art/*.png (each still at 2x) and lumen-art/contact-sheet.png
++// NOTHING in the game changes: the current art is read from arcade/examples/lumen.assets.json; the alternatives are painted here with the rules of fineart.mjs (a 256 x 192 picture, cut into
++// 8 x 8 tiles whose rows keep the two most used colours of each 8 x 1 group; BRIGHT 0 on black paper; at most 128 tiles in all, counted with the fixed tiles and the three text maps of the game),
++// then drawn with finePicture (the reference the runtime is tested against), the sprites and the HUD on top.
++//   1 CURRENT   rainbow / ice tubes joined into pipes (what the game shows now)
++//   2 SOLID     walls are solid blue blocks with a 1-pixel bright rim only where they face a corridor; the corridors are plain black
++//   3 BRICKS    every wall block is a raised block: bright top and left edges, dark bottom and right edges, a blue face; corridors black (the block grid shows the maze)
++//   4 BLUE FLOOR corridors have a dark blue floor, the walls are black with a 1-pixel bright rim (the rim is the same for both caves' colours); the actors' blue ink is lifted to cyan on it
++import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
++import { dirname, join } from 'node:path';
++import { fileURLToPath } from 'node:url';
++import { deflateSync } from 'node:zlib';
++import { picture, set, text, tiler, FONT } from '../../examples/fineart.mjs';
++import { MAZES, PALETTES } from '../../examples/lumen.assets.gen.mjs';
++import { finePicture, glyphSource, rowOff } from '../../../src/lang/arcade/arcade-fine.js';
++
++const HERE = dirname(fileURLToPath(import.meta.url));
++const OUT = join(HERE, 'lumen-art');
++const ASSETS = JSON.parse(readFileSync(join(HERE, '../../examples/lumen.assets.json'), 'utf8'));
++const BUDGET = 128;
++
++// ---- the pieces of the game's art that every option shares (copied from lumen.assets.gen.mjs: it does not export them) --------------------------------------------------------------------
++const ORB = ['.##.', '####', '####', '.##.'], ORB_INK = [7, 6, 6, 2];
++const PRISM = ['....##....', '...####...', '..######..', '.########.', '##########', '##########', '.########.', '..######..', '...####...', '....##....'];
++const PRISM_INK = [7, 7, 6, 6, 5, 4, 3, 3, 2, 1];
++const RAINBOW = [7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 3, 3, 1, 1];
++const GRADE = [6, 6, 6, 6, 2, 2, 2, 2];
++const mirror = (half) => half + [...half].reverse().join('');
++void mirror;
++const isWall = (m, bx, by) => by >= 0 && by < 11 && bx >= 0 && bx < 16 && (m[by][bx] === '#');
++const isWallOrDoor = (m, bx, by) => by >= 0 && by < 11 && bx >= 0 && bx < 16 && (m[by][bx] === '#' || m[by][bx] === '=');
++
++// ---- the options -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
++// each: {id, title, note, floor (the floor's colour: paper of tile 0), lift (a colour the options' art must not paint on its floor, mapped to another), wall(pic, m, bx, by, cave)}
++// A wall painter paints one wall block ('#') of the maze m; orbs, prisms and the door are painted by paintMaze below, the same in every option except for the floor colour under them.
++const px = (pic, x0, y0, x, y, c) => set(pic, x0 + x, y0 + y, c);
++
++// 1 CURRENT: the tubes of lumen.assets.gen.mjs
++function wallCurrent(pic, m, bx, by, cave) {
++  const pal = PALETTES[cave], x0 = 16 * bx, y0 = 8 + 16 * by;
++  const wall = (x, y) => isWallOrDoor(m, x, y);
++  const L = wall(bx - 1, by), R = wall(bx + 1, by), U = wall(bx, by - 1), D = wall(bx, by + 1);
++  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
++    const inH = y >= 3 && y <= 12 && (x >= 3 && x <= 12 || (L && x < 3) || (R && x > 12));
++    const inV = x >= 3 && x <= 12 && ((U && y < 3) || (D && y > 12));
++    if (!inH && !inV) continue;
++    const horiz = inH && (L || R || !(U || D));
++    px(pic, x0, y0, x, y, horiz ? pal.rows[y - 3] : (x < 8 ? pal.left : pal.right));
++  }
++}
++
++// 2 SOLID: a blue block with a rim of 1 pixel on every side that faces a corridor (and on the corner of a notch).  The rim's colour goes by pixel row (rainbow: white to red; ice: white, then cyan),
++// so a group of 8 pixels holds the blue and one rim colour: two colours.
++const RIM_RAINBOW = [7, 7, 6, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 2];
++const RIM_ICE = [7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
++function wallSolid(pic, m, bx, by, cave, { fill = 1, rim = cave === 0 ? RIM_RAINBOW : RIM_ICE } = {}) {
++  const x0 = 16 * bx, y0 = 8 + 16 * by, W = (x, y) => isWall(m, x, y);
++  const L = !W(bx - 1, by), R = !W(bx + 1, by), U = !W(bx, by - 1), D = !W(bx, by + 1);
++  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
++    let rimmed = (x === 0 && L) || (x === 15 && R) || (y === 0 && U) || (y === 15 && D);
++    if (!rimmed) {                                                    // a notch: a floor block touching only at the corner
++      if (x === 0 && y === 0 && !W(bx - 1, by - 1) && !L && !U) rimmed = true;
++      if (x === 15 && y === 0 && !W(bx + 1, by - 1) && !R && !U) rimmed = true;
++      if (x === 0 && y === 15 && !W(bx - 1, by + 1) && !L && !D) rimmed = true;
++      if (x === 15 && y === 15 && !W(bx + 1, by + 1) && !R && !D) rimmed = true;
++    }
++    px(pic, x0, y0, x, y, rimmed ? rim[y] : fill);
++  }
++}
++
++// 3 BRICKS: a raised block, bright top and left edge, dark right and bottom edge, a blue face (the face is a block of its own even next to another wall block, so the grid shows)
++const BRICK = {
++  rainbow: { light: [7, 7, 6, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 2], dark: 0, face: 1 },
++  ice: { light: [7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5], dark: 0, face: 1 },
++};
++function wallBricks(pic, m, bx, by, cave) {
++  const B = cave === 0 ? BRICK.rainbow : BRICK.ice, x0 = 16 * bx, y0 = 8 + 16 * by;
++  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
++    let c = B.face;
++    if (x === 0 || y === 0) c = B.light[y];
++    if (y === 15 || (x === 15 && y !== 0)) c = B.dark;
++    px(pic, x0, y0, x, y, c);
++  }
++}
++
++// 4 BLUE FLOOR: black walls with a 1-pixel bright rim where they face a corridor; the corridors' floor is blue
++function wallBlack(pic, m, bx, by, cave) { wallSolid(pic, m, bx, by, cave, { fill: 0 }); }
++
++const OPTIONS = [
++  { id: 'current', title: '1 CURRENT', floor: 0, wall: wallCurrent, lift: null },
++  { id: 'solid', title: '2 SOLID WALLS + RIM', floor: 0, wall: (p, m, bx, by, c) => wallSolid(p, m, bx, by, c), lift: null },
++  { id: 'bricks', title: '3 RAISED BLOCKS', floor: 0, wall: wallBricks, lift: null },
++  { id: 'bluefloor', title: '4 BLUE FLOOR', floor: 1, wall: wallBlack, lift: 5 },
++];
++
++// the floor, the objects: painted over the floor colour of the option (the floor of every block that is not a wall is `floor`)
++function paintMaze(pic, m, opt, cave) {
++  const lift = (c) => (opt.lift && c === 1 ? opt.lift : c);
++  for (let by = 0; by < 11; by++) for (let bx = 0; bx < 16; bx++) {
++    const ch = m[by][bx], x0 = 16 * bx, y0 = 8 + 16 * by;
++    if (ch !== '#') for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) if (opt.floor) set(pic, x0 + x, y0 + y, opt.floor);
++    if (ch === '#') opt.wall(pic, m, bx, by, cave);
++    else if (ch === '=') for (let x = 0; x < 16; x++) for (const y of [7, 8]) set(pic, x0 + x, y0 + y, y === 7 ? 3 : 2);
++    else if (ch === '.') ORB.forEach((row, k) => [...row].forEach((p, j) => { if (p === '#') set(pic, x0 + 6 + j, y0 + 6 + k, lift(ORB_INK[k])); }));
++    else if (ch === 'o') PRISM.forEach((row, k) => [...row].forEach((p, j) => { if (p === '#') set(pic, x0 + 3 + j, y0 + 3 + k, lift(PRISM_INK[k])); }));
++  }
++}
++
++// ---- the tileset of an option: the fixed tiles, both mazes, and the game's three text maps (their tiles count against the 128) -------------------------------------------------------------
++// the cutter keeps two colours per 8 x 1 group: a group painted with three or more would be altered; count them (rows 8..183 hold the maze)
++function threeColourGroups(pic) {
++  let n = 0;
++  for (let y = 8; y < 184; y++) for (let c = 0; c < 32; c++) {
++    const seen = new Set();
++    for (let b = 0; b < 8; b++) { const v = pic[y * 256 + 8 * c + b]; seen.add(v < 0 ? 0 : v); }
++    if (seen.size > 2) n++;
++  }
++  return n;
++}
++function buildOption(opt) {
++  const floorTile = { rows: Array.from({ length: 8 }, () => ({ bits: '00', ink: 7, paper: opt.floor, bright: 0 })), flags: 0 };
++  const T = tiler([floorTile]);
++  {
++    const pic = picture();
++    paintMaze(pic, ['.o=#############', ...Array(10).fill('################')].map((r) => r), opt, 0);
++    T.add(pic, 1, 0, 2, 2); T.add(pic, 1, 2, 2, 2); T.add(pic, 1, 4, 2, 2);                   // an orb, a prism, the door: tiles 1..10 as the game needs them
++  }
++  const blackIdx = T.add(picture(), 1, 0, 1, 1)[0];                  // a black cell for the HUD rows (the floor tile itself when the floor is black)
++  const caves = [], bad = [];
++  MAZES.forEach((m, cave) => {
++    const pic = picture();
++    paintMaze(pic, m, opt, cave);
++    bad.push(threeColourGroups(pic));
++    const cells = [...new Array(32).fill(blackIdx), ...T.add(pic, 1, 0, 22, 32), ...new Array(32).fill(blackIdx)];
++    caves.push(cells);
++  });
++  for (const [str, colourOf, o] of [['LUMEN', (py) => RAINBOW[py], { scale: 2, bold: true }], ['PRESS FIRE TO PLAY', (py) => GRADE[py], {}], ['GAME OVER', (py) => RAINBOW[py], { scale: 2, bold: true }]]) {
++    const pic = picture(), s = o.scale ?? 1;
++    text(pic, str, 0, 8, colourOf, o);
++    T.add(pic, 1, 0, s, str.length * s);
++  }
++  return { T, caves, bad };
++}
++
++// ---- drawing a still: the cells through finePicture, the actors and the HUD -------------------------------------------------------------------------------------------------------------------
++const hex = (h) => h.match(/../g).map((x) => parseInt(x, 16));
++function spriteAsset(name, lift) {
++  const a = ASSETS.sprites[name], rows = a.frames[0].rows, data = [], inks = [];
++  for (const r of rows) {
++    const bits = hex(r.bits), mask = hex(r.mask);
++    data.push((~mask[0]) & 255, (~mask[1]) & 255, bits[0], bits[1]);
++    inks.push(lift && r.ink === 1 ? lift : r.ink);
++  }
++  return { h: rows.length, data, inks, phases: a.phases };
++}
++const PAL = [[0, 0, 0], [0, 0, 0xD7], [0xD7, 0, 0], [0xD7, 0, 0xD7], [0, 0xD7, 0], [0, 0xD7, 0xD7], [0xD7, 0xD7, 0], [0xD7, 0xD7, 0xD7]];
++
++function still(T, cells, cave, opt) {
++  const tiles = T.tiles, tileBytes = new Uint8Array(9 * tiles.length), tileRows = new Uint8Array(8 * tiles.length);
++  tiles.forEach((t, i) => t.rows.forEach((r, k) => { tileBytes[9 * i + k] = parseInt(r.bits, 16); tileRows[8 * i + k] = (r.bright << 6) | (r.paper << 3) | r.ink; }));
++  const cv = new Uint8Array(768), at = new Uint8Array(768);
++  cells.forEach((t, i) => { cv[i] = 128 + t; });
++  const put = (r, c, str, attr) => [...str].forEach((ch, i) => { cv[r * 32 + c + i] = ch.charCodeAt(0); at[r * 32 + c + i] = attr; });
++  put(0, 1, 'SCORE', 6); put(0, 7, '1240', 6); put(0, 25, 'CAVE', 6); put(0, 30, String(cave + 1), 6);
++  put(23, 1, 'LIVES', 6); put(23, 7, '3', 6); put(23, 24, 'BEST 540', 6);
++  const lift = opt.lift;
++  const assets = { wispa: spriteAsset('wispa', lift), ember: spriteAsset('ember', lift), bloom: spriteAsset('bloom', lift), moss: spriteAsset('moss', lift), pale: spriteAsset('pale', lift) };
++  // the wisp on its start block, Ember and Bloom out, Moss at a corner, one pale shade
++  const sprites = [['wispa', 112, 120], ['ember', 32, 24], ['bloom', 176, 24], ['moss', 48, 152], ['pale', 192, 152]].map(([a, x, y]) => ({ visible: 1, x, y, asset: a }));
++  const { bits, colours } = finePicture({ cells: cv, attrs: at, tileRows, sprites, assets, glyph: glyphSource({ font: FONT, tileBytes }) });
++  const rgb = new Uint8Array(256 * 192 * 3);
++  for (let y = 0; y < 192; y++) for (let c = 0; c < 32; c++) {
++    const o = rowOff(y, c), a = colours[o], br = (a >> 6) & 1;
++    for (let b = 0; b < 8; b++) {
++      const col = PAL[(bits[o] >> (7 - b)) & 1 ? a & 7 : (a >> 3) & 7].map((v) => (v && br ? 0xFF : v)), p = (y * 256 + 8 * c + b) * 3;
++      rgb[p] = col[0]; rgb[p + 1] = col[1]; rgb[p + 2] = col[2];
++    }
++  }
++  return { rgb, bits, colours };
++}
++
++// ---- png ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
++const crcT = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
++const crc = (buf) => { let c = 0xFFFFFFFF; for (const x of buf) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
++function png(path, rgb, W, H) {
++  const raw = Buffer.alloc((W * 3 + 1) * H);
++  for (let y = 0; y < H; y++) Buffer.from(rgb.buffer, rgb.byteOffset + y * W * 3, W * 3).copy(raw, y * (W * 3 + 1) + 1);
++  const chunk = (type, data) => { const t = Buffer.from(type), len = Buffer.alloc(4), cr = Buffer.alloc(4); len.writeUInt32BE(data.length); cr.writeUInt32BE(crc(Buffer.concat([t, data]))); return Buffer.concat([len, t, data, cr]); };
++  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2;
++  writeFileSync(path, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
++}
++const scale2 = (rgb) => { const o = new Uint8Array(512 * 384 * 3); for (let y = 0; y < 384; y++) for (let x = 0; x < 512; x++) { const s = ((y >> 1) * 256 + (x >> 1)) * 3, d = (y * 512 + x) * 3; o[d] = rgb[s]; o[d + 1] = rgb[s + 1]; o[d + 2] = rgb[s + 2]; } return o; };
++function label(canvas, W, str, x, y, rgbc = [230, 230, 230], z = 2) {
++  [...str].forEach((ch, i) => {
++    const g = FONT[ch.charCodeAt(0) - 32] ?? FONT[0];
++    for (let r = 0; r < 8; r++) for (let b = 0; b < 8; b++) if ((g[r] >> (7 - b)) & 1) for (let sy = 0; sy < z; sy++) for (let sx = 0; sx < z; sx++) {
++      const p = ((y + z * r + sy) * W + x + 8 * z * i + z * b + sx) * 3; canvas[p] = rgbc[0]; canvas[p + 1] = rgbc[1]; canvas[p + 2] = rgbc[2];
++    }
++  });
++}
++
++// ---- main --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
++mkdirSync(OUT, { recursive: true });
++const CAVE_NAMES = ['rainbow cave', 'ice cave'];
++const shots = [], over = {};
++for (const opt of OPTIONS) {
++  const built = buildOption(opt);
++  let cells2 = built.caves;
++  if (opt.id === 'current') {
++    // the game's own maps (exact): the generator's tiles and cells
++    const tiles = ASSETS.tilesets.gfx.tiles;
++    built.T.tiles.length = 0; tiles.forEach((t) => built.T.tiles.push(t));
++    cells2 = [ASSETS.maps.maze1.cells, ASSETS.maps.maze2.cells];
++    // (the count of the rebuilt current art must agree with the game's: a sanity check of this script's pipeline)
++    const rebuilt = buildOption(opt).T.count;
++    if (rebuilt !== tiles.length) throw new Error(`the rebuilt current art has ${rebuilt} tiles, the game's has ${tiles.length}`);
++  }
++  over[opt.id] = built.bad;
++  const count = opt.id === 'current' ? ASSETS.tilesets.gfx.tiles.length : built.T.count;
++  for (let cave = 0; cave < 2; cave++) {
++    const s = still(built.T, cells2[cave], cave, opt);
++    const big = scale2(s.rgb);
++    png(join(OUT, `${opt.id}-${cave === 0 ? 'rainbow' : 'ice'}.png`), big, 512, 384);
++    shots.push({ opt, cave, big, count });
++  }
++  console.log(`${opt.title}: ${count} tiles of ${BUDGET}${count > BUDGET ? '  OVER BUDGET' : ''}; groups of 8 x 1 with more than two colours: ${built.bad.join(' / ')}`);
++}
++{
++  const PAD = 10, LAB = 36, cw = 512, ch = 384, cols = OPTIONS.length, rows = 2;
++  const W = PAD + cols * (cw + PAD), H = PAD + rows * (LAB + ch + PAD), sheet = new Uint8Array(W * H * 3).fill(46);
++  shots.forEach(({ opt, cave, big, count }) => {
++    const ox = PAD + OPTIONS.indexOf(opt) * (cw + PAD), oy = PAD + cave * (LAB + ch + PAD);
++    for (let y = 0; y < ch; y++) sheet.set(big.subarray(y * cw * 3, (y + 1) * cw * 3), ((oy + LAB + y) * W + ox) * 3);
++    label(sheet, W, `${opt.title}`, ox, oy + 2);
++    label(sheet, W, `${CAVE_NAMES[cave]}  ${count}/${BUDGET} tiles  (${over[opt.id][cave]} bad groups)`, ox, oy + 22, [170, 170, 170], 1);
++  });
++  png(join(OUT, 'contact-sheet.png'), sheet, W, H);
++  console.log(`wrote ${shots.length} stills and contact-sheet.png (${W} x ${H}) in ${OUT}`);
++}
+diff --git a/tests/arcade-lumen.mjs b/tests/arcade-lumen.mjs
+index f8e88ae..f444684 100644
+--- a/tests/arcade-lumen.mjs
++++ b/tests/arcade-lumen.mjs
+@@ -8,14 +8,18 @@
+ //   1  the build: the assets file is the generator's output and agrees with the numbers written into lumen.arc; compiles for v2 with no errors and no warnings; every scene is built fine; 10 sprite
+ //      instances, 28 sprite phases (a fine game may have 32); the two mazes of the generator are the maps' wall / orb / prism / door blocks
+ //   2  a bot plays the game on the real runtime (it reads the game's variables and the cells from RAM, walks the maze to the nearest orb or prism by a breadth-first search, avoids the shades and
+-//      hunts the pale ones; it uses Q A O P, SPACE (to start) and the joystick), 99 lives so that the run goes on.  The interpreter then plays the same script: every tick's variables, arrays, cells,
++//      hunts the pale ones; it uses Q A O P, SPACE (to start) and the joystick; every third decision it presses one tick late, which the wisp corners), 99 lives so that the run goes on.  The interpreter then plays the same script: every tick's variables, arrays, cells,
+ //      attributes, sprites equal the real runtime's (the "records"), and the sound at song level
+ //   3  the game's rules, read off the real runtime's records (all of them on the full mazes AND on mazes with only a few orbs, so that caves are cleared inside the run): an orb eaten = +10 and its
+ //      four cells become tile 0; a prism = +50, every shade outside the lair turns pale; a pale shade touched scores 200 / 400 / 800 / 1600 in one prism and goes back to the lair; a shade touching the
+-//      wisp costs exactly one life; clearing the last orb gives the bonus and starts the next cave with the other maze; no sprite ever overlaps a wall block; the wisp turns on block boundaries only;
++//      wisp costs exactly one life; clearing the last orb gives the bonus and starts the next cave with the other maze; no sprite ever overlaps a wall block; the wisp turns on block boundaries or corners (a turn taken up to 8 pixels before or after a boundary, onto it) and is always on the corridor grid;
+ //      the score never falls; the cave number counts up by one
++//   3b turning: the wisp is driven through Q A O P along a corridor to a junction of maze 1 and the key of the turn is tapped one tick, 4 and 8 pixels before the boundary, on it, and 4 and 8 pixels
++//      after it (lifting the key of the travel, or holding it): the wisp takes that junction's turn (CTOL = 8 pixels, lumen.arc's cornering); 12 pixels after it, or with the travel key held 12
++//      before it, it does not; at a tie (8 pixels from each of two open boundaries) it goes on to the one ahead.  (Before cornering the old test pinned "turns on block boundaries only": that
++//      rule is now "turns on a boundary or corners onto one", checked on every tick of the bot runs, whose every third decision is made one tick late)
+ //   4  the picture: after every tick of the play scene the real screen ($4000 bitmap, $6000 colours, $FF = 2) equals the reference picture of the interpreter's state (finePicture)
+-//   5  the speed: FRAMERATE 20 = a tick every 3 refreshes: the share of play ticks that kept it (the gap between two ticks <= 3 refreshes), the worst gap
++//   5  the speed: FRAMERATE 20 = a tick every 3 refreshes: the share of play ticks that kept it (the gap between two ticks <= 3 refreshes; at least 99.5 %), the worst gap
+ //   6  the beam (video on, one instruction at a time): every frame TSRun paints, per 8 x 1 group, equals the screen before or after the update in flight (0 broken frames, split writes apart),
+ //      and the work of every tick against the budget of 3 refreshes (176,064 T): median, 95th percentile, worst
+ //   7  the real game (3 lives): a bot that eats a few orbs and then stands still loses its lives, the game over scene follows with the best score and a "new best" line, fire restarts the game, twice
+@@ -120,6 +124,7 @@ function makeBot(res_, { idleFrom = Infinity, restartAt = 25 } = {}) {
+     if (k >= idleFrom) return out;
+     const wx = rd(m, VAR('PLAY.WX')), wy = rd(m, VAR('PLAY.WY')), cave = rd(m, VAR('CAVE'));
+     if (rd(m, VAR('PLAY.PZ')) > 0 || rd(m, VAR('PLAY.BN')) > 0) return out;
++    if (st.late !== undefined) { out.keys.push(KEYS[st.late]); st.late = undefined; return out; }      // a press that was held back one tick (below): the wisp is 4 pixels past the boundary
+     if ((wx & 15) !== 0 || ((wy - 8) & 15) !== 0) return out;                  // between blocks: the wisp goes on
+     const bx = wx >> 4, by = (wy - 8) >> 4, maze = mazeOf(cave);
+     const pw = rd(m, VAR('PLAY.PW'));
+@@ -147,6 +152,7 @@ function makeBot(res_, { idleFrom = Infinity, restartAt = 25 } = {}) {
+     if (pick && pick.d > 8) pick = null;
+     pick ??= search((x, y) => live(x, y), true) ?? search((x, y) => live(x, y), false);
+     if (!pick) return out;
++    if (k % 3 === 0 && rd(m, VAR('PLAY.WDIR')) >= 0 && pick.first !== rd(m, VAR('PLAY.WDIR'))) { st.late = pick.first; return out; }      // every third decision is made one tick LATE: the turn is cornered
+     // the keys O P Q A, but on every 5th tick the joystick; on a boundary tick that is not the first of a held key the key is simply held
+     if (k % 5 === 0) out.stick |= 1 << pick.first; else out.keys.push(KEYS[pick.first]);
+     return out;
+@@ -207,7 +213,7 @@ const wallFree = (maze, x, y, forShade) => {            // the blocks the 16 x 1
+ function rules(label, run, orbsOf) {
+   const { got, want } = run, T = got.ticks, playIdx = want.scenes.indexOf('play');
+   const v = (t, n) => T[t].vars[n], a = (t, n, i) => T[t].arrays[n][i];
+-  const bad = [], st = { orbs: 0, prisms: 0, shades: 0, lives: 0, caves: 0, pts: [0, 0, 0, 0], palings: 0, steps: 0, shadeSteps: 0, turns: 0, maxCave: 1, clears: 0, mzOk: 0, reverse: 0 };
++  const bad = [], st = { orbs: 0, prisms: 0, shades: 0, lives: 0, caves: 0, pts: [0, 0, 0, 0], palings: 0, steps: 0, shadeSteps: 0, turns: 0, corners: 0, cornersAhead: 0, cornersBack: 0, gridOk: 0, maxCave: 1, clears: 0, mzOk: 0, reverse: 0 };
+   const fail = (s) => { if (bad.length < 6) bad.push(s); };
+   let eatnModel = 0;
+   for (let t = 3; t < T.length; t++) {
+@@ -276,18 +282,27 @@ function rules(label, run, orbsOf) {
+       if (paleTouch && dLives === 0) fail(`${at}: a pale shade overlaps the wisp and was not eaten`);
+       if (touch && dLives === -1) { st.lives++; if (v(t, 'PLAY.PZ') !== 30 || v(t, 'PLAY.PR') !== 1) fail(`${at}: a life lost without its pause`); }
+     } else if (dLives !== 0) fail(`${at}: the lives changed by ${dLives} in a pause or on a cleared cave`);
+-    // the movement: the wisp 4 pixels a tick along one axis, turning only on a boundary (or reversing); the shades 2 or 4 (a pale one 2), never past a boundary
++    // the movement: the wisp 4 pixels a tick along one axis, turning on a boundary, reversing, or CORNERING (a turn taken on the nearest boundary within CTOL = 8 pixels before or after
++    // it: that tick the wisp moves up to 8 pixels along its old axis, onto the boundary, and 4 along the new one); the shades 2 or 4 (a pale one 2), never past a boundary
+     const dx = wx - wx0, dy = wy - wy0, boundary0 = (wx0 & 15) === 0 && ((wy0 - 8) & 15) === 0;
+-    if (!paused || (v(t - 1, 'PLAY.BN') === 0 && v(t - 1, 'PLAY.PZ') === 0)) {
+-      if (!((dx === 0 && dy === 0) || (Math.abs(dx) === 4 && dy === 0) || (dx === 0 && Math.abs(dy) === 4))) { if (!(cave !== cavePrev || v(t - 1, 'PLAY.PZ') > 0)) fail(`${at}: the wisp moved (${dx}, ${dy})`); }
++    const d0 = v(t - 1, 'PLAY.WDIR'), d1 = v(t, 'PLAY.WDIR'), stepOk = !paused || (v(t - 1, 'PLAY.BN') === 0 && v(t - 1, 'PLAY.PZ') === 0);
++    // a corner: both coordinates changed, the direction went to the other axis; the old axis moved by at most CTOL onto a boundary line, the new one by 4 in its direction
++    const isCorner = stepOk && dx !== 0 && dy !== 0 && cave === cavePrev && d0 >= 0 && d1 >= 0 && (d1 >> 1) !== (d0 >> 1);
++    if (stepOk) {
++      if (isCorner) {
++        const oldD = d0 >> 1 === 0 ? dy : dx, newD = d1 >> 1 === 0 ? dy : dx, newSign = (d1 & 1) ? 4 : -4;
++        if (Math.abs(oldD) > 8 || newD !== newSign) fail(`${at}: a corner moved the wisp (${dx}, ${dy}) turning ${d0} -> ${d1}`);
++        else { st.corners++; if (oldD * ((d0 & 1) ? 1 : -1) > 0) st.cornersAhead++; else st.cornersBack++; }
++      } else if (!((dx === 0 && dy === 0) || (Math.abs(dx) === 4 && dy === 0) || (dx === 0 && Math.abs(dy) === 4))) { if (!(cave !== cavePrev || v(t - 1, 'PLAY.PZ') > 0)) fail(`${at}: the wisp moved (${dx}, ${dy})`); }
+       else if (dx || dy) {
+         st.steps++;
+-        const d0 = v(t - 1, 'PLAY.WDIR'), d1 = v(t, 'PLAY.WDIR');
+         if (d1 !== d0 && d0 >= 0 && d1 >= 0 && d1 !== (d0 ^ 1) && !boundary0) fail(`${at}: the wisp turned between blocks (${d0} -> ${d1})`);
+         if (d1 !== d0 && d0 >= 0 && d1 >= 0 && boundary0 && d1 !== (d0 ^ 1)) st.turns++;
+         if (d1 !== d0 && d0 >= 0 && d1 === (d0 ^ 1)) st.reverse++;
+       }
+     }
++    // the wisp is always on the corridor grid of its direction: moving up or down it stands on a block column (x a multiple of 16), moving left or right on a block row (y - 8 a multiple of 16)
++    if (cave === cavePrev && d1 >= 0 && !paused) { if ((d1 < 2 ? wx : wy - 8) & 15) fail(`${at}: the wisp is off the corridor grid at (${wx}, ${wy}) going ${d1}`); else st.gridOk++; }
+     if (!wallFree(maze, wx, wy, false)) fail(`${at}: the wisp at (${wx}, ${wy}) overlaps a wall block`);
+     for (let k = 0; k < 4; k++) {
+       const sx = a(t, 'PLAY.SX', k), sy = a(t, 'PLAY.SY', k), sx0 = a(t - 1, 'PLAY.SX', k), sy0 = a(t - 1, 'PLAY.SY', k);
+@@ -323,12 +338,12 @@ console.log('\n3. The rules, read off the real runtime\'s records');
+ const RA = rules('full', runA, ORBS), RB = rules('small', runB, SMALL_ORBS);
+ for (const [label, r, run] of [['full mazes', RA, runA], ['small caves', RB, runB]]) {
+   const s = r.st;
+-  info(`${label}: orbs eaten ${s.orbs}, prisms ${s.prisms}, pale shades eaten ${s.shades} (200 x${s.pts[0]}, 400 x${s.pts[1]}, 800 x${s.pts[2]}, 1600 x${s.pts[3]}), lives lost ${s.lives}, caves cleared ${s.clears}, caves started ${s.caves}, highest cave ${s.maxCave}, wisp steps ${s.steps} (turns ${s.turns}, reversals ${s.reverse}), shade steps ${s.shadeSteps}; score ${run.got.ticks.at(-1).vars.SCORE}`);
++  info(`${label}: orbs eaten ${s.orbs}, prisms ${s.prisms}, pale shades eaten ${s.shades} (200 x${s.pts[0]}, 400 x${s.pts[1]}, 800 x${s.pts[2]}, 1600 x${s.pts[3]}), lives lost ${s.lives}, caves cleared ${s.clears}, caves started ${s.caves}, highest cave ${s.maxCave}, wisp steps ${s.steps} (turns ${s.turns}, reversals ${s.reverse}, corners ${s.corners}: ${s.cornersAhead} to the boundary ahead, ${s.cornersBack} back to the one behind; on the corridor grid ${s.gridOk} ticks), shade steps ${s.shadeSteps}; score ${run.got.ticks.at(-1).vars.SCORE}`);
+ }
+ {
+   const all = [...RA.bad, ...RB.bad].slice(0, 3).join(' | ');
+   check_('every rule held on every tick of both runs: orbs and prisms eaten (+10 / +50, the four cells become tile 0), pale shades eaten (200 .. 1600, back to the lair), a shade touching the wisp costs exactly one life, the cleared cave\'s bonus, the score never falls, the cave number counts up, the shades\' moves', RA.bad.length === 0 && RB.bad.length === 0, all);
+-  check_('the rules were exercised: orbs eaten, prisms eaten, pale shades eaten in a row (200, 400, ...), lives lost, the wisp turned and reversed', RA.st.orbs >= 20 && RA.st.prisms >= 1 && RA.st.lives >= 2 && RA.st.turns >= 10 && RB.st.prisms >= 2 && RB.st.shades >= 2 && RB.st.pts[1] >= 1 && RA.st.reverse + RB.st.reverse >= 1, JSON.stringify({ A: RA.st, B: RB.st }));
++  check_('the rules were exercised: orbs eaten, prisms eaten, pale shades eaten in a row (200, 400, ...), lives lost, the wisp turned and reversed (turns on a boundary, reversals), and was on the corridor grid on every moving tick', RA.st.orbs >= 20 && RA.st.prisms >= 1 && RA.st.lives >= 2 && RA.st.turns >= 10 && RB.st.prisms >= 2 && RB.st.shades >= 2 && RB.st.pts[1] >= 1 && RA.st.reverse + RB.st.reverse >= 1 && RA.st.gridOk > 500 && RA.st.corners + RB.st.corners >= 3, JSON.stringify({ A: RA.st, B: RB.st }));
+   check_('caves are cleared and the next one starts with the other maze, the bonus and the maze read (the second cave and the third are reached)', RB.st.clears >= (QUICK ? 2 : 3) && RB.st.caves >= (QUICK ? 2 : 3) && RB.st.maxCave >= (QUICK ? 3 : 4) && RB.st.mzOk >= RB.st.caves, `cleared ${RB.st.clears}, started ${RB.st.caves}, maze read ok ${RB.st.mzOk}, highest cave ${RB.st.maxCave}`);
+ }
+ {
+@@ -348,6 +363,80 @@ for (const [label, r, run] of [['full mazes', RA, runA], ['small caves', RB, run
+   check_('the shades are faster in the later caves than in the first', slow.length > 100 && fast.length > 100 && avg(fast) > avg(slow));
+ }
+ 
++// ---- 3b. turning: presses early and late at a junction ------------------------------------------------------------------------------------------
++// The wisp is driven through the game's own keys (Q A O P) along a corridor of maze 1 towards a junction J; at the tick when it stands e pixels before J's boundary (e < 0: after it) the
++// key of the turn is tapped for ONE tick.  Two ways of tapping: "lift" (the key of the travel is let go with the tap, as a player lifts one finger and presses the other) and "hold" (the key
++// of the travel stays down, the other finger taps).  The wisp must turn exactly on J's corridor (CTOL = 8 pixels before or after the boundary, both ways of tapping; a turn asked for further
++// ahead is kept by "lift" and taken on J's boundary as before, but a held key of the travel cancels it, so "hold" only up to CTOL).  Further than CTOL after the boundary the turn is missed.
++console.log('\n3b. Turning at a junction: a press up to CTOL = 8 pixels before or after the boundary takes the turn');
++{
++  const CTOL = constOf('CTOL');
++  check_('lumen.arc has CONST CTOL = 8 (the tolerance this section tests)', CTOL === 8, String(CTOL));
++  const CASES = [
++    { name: 'left, then up at block (4, 7)', dir: 2, perp: 0, J: [4, 7], axis: 'x', sg: -1 },
++    { name: 'right, then up at block (11, 7)', dir: 3, perp: 0, J: [11, 7], axis: 'x', sg: 1 },
++    { name: 'down, then right at block (7, 8)', dir: 1, perp: 3, J: [7, 8], axis: 'y', sg: 1, tieAhead: true },
++  ];
++  const probe = (cs, e, mode) => {
++    const r0 = runA.res, VAR = (n) => r0.map.vars[n];
++    const uJ = 16 * cs.J[cs.axis === 'x' ? 0 : 1], uTrig = uJ - e * cs.sg;
++    const st = { m: null, trig: -1 }, script = [];
++    const decide = (k) => {
++      const m = st.m, out = { keys: [], stick: 0 };
++      if (k >= 6 && k <= 8) { out.keys.push(32); return out; }
++      if (!m || rd(m, VAR('PLAY.BN')) > 0 || rd(m, VAR('PLAY.PZ')) > 0 || rd(m, VAR('PLAY.LIVES')) === 0) return out;
++      if (st.trig >= 0) { if (mode === 'hold') out.keys.push(KEYS[cs.dir]); return out; }          // after the tap: nothing (lift) or the key of the travel held on (hold)
++      const u = cs.axis === 'x' ? rd(m, VAR('PLAY.WX')) : rd(m, VAR('PLAY.WY')) - 8;
++      if (u === uTrig) { st.trig = k; out.keys.push(KEYS[cs.perp]); if (mode === 'hold') out.keys.push(KEYS[cs.dir]); return out; }
++      out.keys.push(KEYS[cs.dir]);
++      return out;
++    };
++    const got = runReal(r0, { ticks: 80, keys: (k) => (script[k - 1] ??= decide(k)).keys, stick: (k) => (script[k - 1] ??= decide(k)).stick, hooks: { afterTick: (k, m) => { st.m = m; } } });
++    if (got.error) return { error: got.error };
++    const T = got.ticks;
++    if (st.trig < 0) return { error: 'the wisp never stood where the press was to be made' };
++    const at = (i) => ({ x: T[i].vars['PLAY.WX'], y: T[i].vars['PLAY.WY'], d: T[i].vars['PLAY.WDIR'], lives: T[i].vars['PLAY.LIVES'] });
++    const u_ = (p) => (cs.axis === 'x' ? p.x : p.y - 8), w_ = (p) => (cs.axis === 'x' ? p.y - 8 : p.x);      // along the travel / across it
++    let turnTick = -1;
++    for (let i = st.trig - 1; i < Math.min(T.length, st.trig + 20); i++) if (at(i).d === cs.perp) { turnTick = i; break; }
++    if (T[Math.min(T.length - 1, st.trig + 20)].vars['PLAY.LIVES'] !== T[st.trig - 1].vars['PLAY.LIVES']) return { error: 'a shade interfered (a life was lost)' };
++    if (turnTick < 0) return { e, turned: false, atJ: false, path: 'never turned' };
++    const p = at(turnTick), q = at(turnTick + 3), sg = cs.perp & 1 ? 1 : -1;
++    // not undone: the wisp keeps going along the new corridor (lift: three more ticks of 4 pixels straight; hold: the key of the travel, still down, asks for it again, so the wisp may corner
++    // onto the next boundary, but it never goes back towards the junction's boundary)
++    let away = true, prev = 0;
++    for (let i = turnTick + 1; i <= turnTick + 3; i++) {
++      const d = (w_(at(i)) - w_(p)) * sg;
++      if (mode === 'lift' ? d !== 4 * (i - turnTick) || u_(at(i)) !== u_(p) : d < prev) away = false;
++      prev = d;
++    }
++    if (mode === 'hold' && prev < 8) away = false;
++    return { e, turned: true, atJ: u_(p) === uJ, aheadJ: u_(p) === uJ + 16 * cs.sg, away, path: `press at tick ${st.trig}: wisp then (${at(st.trig - 1).x},${at(st.trig - 1).y}) -> turned at tick ${turnTick + 1} (${p.x},${p.y}) -> (${q.x},${q.y})` };
++  };
++  const probes = [];
++  const t0 = Date.now();
++  for (const cs of CASES) for (const mode of ['lift', 'hold']) {
++    const es = mode === 'lift' ? [20, 12, 8, 4, 0, -4, -8, -12, -16] : [12, 8, 4, 0, -4, -8, -12];
++    const list = QUICK ? es.filter((e) => [12, 8, 4, 0, -4, -8, -12].includes(e)) : es;
++    for (const e of list) {
++      if (cs.axis === 'y' && e > 12) continue;                   // going down from the start block the press cannot be earlier than 12 pixels before block (7, 8)
++      const r = probe(cs, e, mode);
++      const tie = e === -CTOL && cs.tieAhead;                    // 8 pixels after J and 8 before the next boundary, whose side block is open as well: the boundary ahead wins
++      const want = e >= -CTOL && (mode === 'lift' || e <= CTOL) && !tie;
++      probes.push({ cs: cs.name, mode, e, want, tie, ...r });
++    }
++  }
++  const bad = probes.filter((p) => p.error || p.atJ !== p.want || (p.want && !p.away) || (p.tie && !p.aheadJ));
++  info(`${probes.length} probes (${((Date.now() - t0) / 1000).toFixed(0)} s); the wisp turned on the junction's corridor in ${probes.filter((p) => p.atJ).length}, missed it in ${probes.filter((p) => !p.atJ && !p.error).length} (presses more than 8 pixels after the boundary, with the travel key held more than 8 before it, and the two ties, which go to the boundary ahead)`);
++  if (process.env.VERBOSE) for (const p of probes) info(`${p.cs} ${p.mode} e=${p.e}: want ${p.want} got ${p.atJ}  ${p.path ?? p.error}`);
++  const early = probes.filter((p) => p.e > 0 && p.e <= 8), late = probes.filter((p) => p.e < 0 && p.e >= -8 && !p.tie);
++  check_(`a press 4 and 8 pixels BEFORE the boundary takes the turn at that junction (${early.length} probes: 3 junctions x lift / hold; 12 and 20 pixels too with the key lifted)`, early.length >= 12 && early.every((p) => p.atJ && p.away), bad.filter((p) => p.e > 0).slice(0, 2).map((p) => `${p.cs} ${p.mode} e=${p.e}: ${p.path ?? p.error}`).join(' | '));
++  check_(`a press 4 and 8 pixels AFTER the boundary takes the turn at that junction: the wisp goes back onto the boundary and turns (${late.length} probes)`, late.length >= 10 && late.every((p) => p.atJ && p.away), bad.filter((p) => p.e < 0 && p.e >= -8).slice(0, 2).map((p) => `${p.cs} ${p.mode} e=${p.e}: ${p.path ?? p.error}`).join(' | '));
++  const ties = probes.filter((p) => p.tie);
++  check_(`a press 8 pixels after one boundary and 8 before the next, both with an open side block: the boundary ahead wins (${ties.length} probes: the wisp turns on the next block, not back)`, ties.length >= 2 && ties.every((p) => p.turned && p.aheadJ && !p.error), ties.map((p) => p.path).join(' | '));
++  check_('a press exactly on the boundary takes it; a press 12 pixels after it (more than CTOL) or, with the key of the travel held, 12 pixels before it, does not take that junction', probes.filter((p) => p.e === 0).every((p) => p.atJ && p.away) && probes.filter((p) => p.e <= -12 || (p.mode === 'hold' && p.e >= 12)).every((p) => !p.atJ && !p.error), bad.slice(0, 2).map((p) => `${p.cs} ${p.mode} e=${p.e}: ${p.path ?? p.error}`).join(' | '));
++}
++
+ // ---- 4. the picture ----------------------------------------------------------------------------------------------------------------------------
+ console.log('\n4. The picture: the real screen against the reference fine picture');
+ for (const [label, run] of [['full mazes', runA], ['small caves', runB]]) {
+@@ -374,7 +463,7 @@ for (const [label, run] of [['full mazes', runA], ['small caves', runB]]) {
+   for (let k = 6; k < R_.length; k++) if (run.want.ticks.slice(k - 5, k).every((q) => q.scene === playIdx)) gaps.push(R_[k] - R_[k - 1]);
+   const ok = gaps.filter((g) => g <= 3).length, share = (100 * ok) / gaps.length;
+   info(`${label}: ${gaps.length} play ticks: ${ok} started on time, 3 refreshes after the one before (${share.toFixed(1)} %); gaps in refreshes: ${[3, 4, 5, 6].map((g) => `${g}: ${gaps.filter((x) => x === g).length}`).join(', ')}, other ${gaps.filter((x) => x < 3 || x > 6).length}; median ${pct(gaps, 0.5)}, 95th ${pct(gaps, 0.95)}, worst ${Math.max(...gaps)}`);
+-  check_(`${label}: at least 99 % of the play ticks kept FRAMERATE 20 (a tick every 3 refreshes)`, share >= 99, `${share.toFixed(1)} %`);
++  check_(`${label}: at least 99.5 % of the play ticks kept FRAMERATE 20 (a tick every 3 refreshes)`, share >= 99.5, `${share.toFixed(1)} %`);
+ }
+ 
+ // ---- 6. the beam -------------------------------------------------------------------------------------------------------------------------------

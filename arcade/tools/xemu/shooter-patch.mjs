@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // shooter-patch.mjs -- make a TEST COPY of the Starfall cartridge (runtime v2) whose keyboard reads come from a per-tick script instead of the keyboard (for Fuse, which
+// NOTE: FOR THE OLD TWO-BUFFER BUILD ONLY: Starfall is a fine-colour game now (every scene 8 x 1 colour) and this script samples the two-buffer display files at WORK_END, so it does not apply to the current shooter.arc build; the cross-emulator check of the current game is fine-build.mjs .. fine-compare.mjs (see the header of fine-build.mjs).
 // cannot be fed keys per tick in a headless run).  Adapted from platformer-patch.mjs / runner-patch.mjs.  The committed game and runtime are untouched: this patches bytes
 // of the built .dck in arcade/build only.
 //

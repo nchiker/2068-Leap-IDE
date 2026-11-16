@@ -31,7 +31,7 @@ import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
 import { convertSfx, convertSfxC, convertMusic, sfxRefreshRegisters, assetTables } from '../src/lang/arcade/arcade-assets.js';
 import { createSoundChip, SB_FX, SB_MUS, SB_SYNC } from '../src/lang/arcade/arcade-sound.js';
 import { ASSETS15, T, expectChip, songRow, rng, ROOT, stripMusic, musicWordsIn } from './arcade-m15-common.mjs';
-// TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
+// Older-compiler comparison (permanent; stage 3 kept it on purpose) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
 // a statement with no BRIGHT clause gets an explicit `BRIGHT 1` (the old default) for BOTH compilers, so the identity still covers it byte for byte.
 const pinOldBright = (text) => text.split('\n').map((l) => (/^\s*(VIEW3D|WIRE3D)\b/i.test(l) && !/\bBRIGHT\b/i.test(l.replace(/\bREM\b.*$/i, '')) ? l.replace(/(\s*\bREM\b.*)?$/i, (rem) => ` BRIGHT 1${rem}`) : l)).join('\n');
 
@@ -308,7 +308,7 @@ console.log('\n3. Byte identity: every example and fixture (no MUSIC) against th
       if (hasSongs) {
         songGames++;
         const left = musicWordsIn(text), Rq = RT[requiredRuntime(text, assets).version] ?? RT[2], w = compile(text, { runtime: Rq.rt, image: Rq.img, assets });
-        const ws = w.warnings.filter((x) => !/BRIGHT 1 on black paper/.test(x.message));      // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the two-blacks warning is expected on today's games (fixed in stage 3, K4)
+        const ws = p.src.startsWith('arcade/tests/fixtures') ? w.warnings.filter((x) => !/BRIGHT 1 on black paper/.test(x.message)) : w.warnings;      // old fixture: it still uses BRIGHT 1 on black paper (not ours to change); an example gives no warning at all
         if (left.length || w.errors.length || ws.length) strayBad += `${p.src}: ${left.length ? left.join(' ') + ' left; ' : ''}${w.errors.length ? 'errors ' + errText(w) + '; ' : ''}${ws.length ? 'warnings ' + ws.map((x) => x.message).join(' | ') + '; ' : ''}`;
       }
       for (const v of [2, 3, 4]) {

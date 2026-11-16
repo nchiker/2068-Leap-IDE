@@ -21,6 +21,11 @@
 // ART RULES (arcade/spike/scroll/parallax/RESULTS.md): every cell a sprite can pass over in the gameplay band has the sky's paper (cyan, BRIGHT)
 // - the sky, the plank (the sky's attribute exactly), the sign, the spikes and the flag (their own ink, cyan paper); the ground, the brick and
 // the island tiles have their own colours, but a sprite is never drawn over them (it stands on them, the collision stops it a pixel above).
+// BACKGROUND-ATTRIBUTE RULE (the asset check's background-attr-mix, Studio completion E5): a sprite takes the ink of the cell under it, so a map may
+// not mix background tiles with different colour attributes unless the others are marked `fg: true` ("sprites never pass over"). The sky (ink 0, paper 5,
+// BRIGHT) is the one background attribute: the blank cloud-band tile 14 has the sky's attribute too (it draws no pixel, so only the ink of a sprite over
+// it changed, from white to black), and every tile with another colour is marked fg: the mountains (10-13) and clouds (15-17), which only a jump from
+// the highest plank reaches, and the spikes, coins, pole and flag (5-8, 18-19), which a sprite overlaps only for the moment a pickup or a touch lasts.
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -30,9 +35,9 @@ const MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1
 
 // ── tiles ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const bitsOf = (row) => { if (row.length !== 8) throw new Error(`tile row "${row}" is not 8 wide`); return parseInt([...row].map((c) => (c === '#' ? '1' : '0')).join(''), 2); };
-const tile = (art, ink, paper, bright, flags = 0) => {
+const tile = (art, ink, paper, bright, flags = 0, fg = false) => {
   if (art.length !== 8) throw new Error('tile is not 8 rows');
-  return { art, flags, rows: art.map((r) => ({ bits: bitsOf(r).toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })) };
+  return { art, flags, fg, rows: art.map((r) => ({ bits: bitsOf(r).toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })) };
 };
 export const FLAG = { SOLID: 1, HAZARD: 2, PICKUP: 4, ONEWAY: 8, GOAL: 16 };
 
@@ -43,23 +48,23 @@ const TILES = [
   /* 2 dirt */ tile(['........', '..#...#.', '........', '#....#..', '........', '...#...#', '.#......', '........'], 6, 2, 0, FLAG.SOLID),
   /* 3 brick */ tile(['########', '...#....', '...#....', '...#....', '########', '#.......', '#.......', '#.......'], 6, 2, 1, FLAG.SOLID),
   /* 4 plank: the sky's own attribute, so a sprite crossing it keeps its colour */ tile(['########', '#.#.#.#.', '########', '.#....#.', '........', '........', '........', '........'], 0, 5, 1, FLAG.ONEWAY),
-  /* 5 spikes */ tile(['........', '........', '........', '..#...#.', '..#...#.', '.###.###', '.###.###', '########'], 7, 5, 1, FLAG.HAZARD),
-  /* 6 coin (frame 0 of the spin) */ tile(['..####..', '.#.##.#.', '#..##..#', '#..##..#', '#..##..#', '#..##..#', '.#.##.#.', '..####..'], 6, 5, 1, FLAG.PICKUP),
-  /* 7 pole */ tile(['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'], 7, 5, 1, FLAG.GOAL),
-  /* 8 flag */ tile(['...#####', '...#####', '...####.', '...###..', '...##...', '...##...', '...##...', '...##...'], 2, 5, 1, FLAG.GOAL),
+  /* 5 spikes */ tile(['........', '........', '........', '..#...#.', '..#...#.', '.###.###', '.###.###', '########'], 7, 5, 1, FLAG.HAZARD, true),
+  /* 6 coin (frame 0 of the spin) */ tile(['..####..', '.#.##.#.', '#..##..#', '#..##..#', '#..##..#', '#..##..#', '.#.##.#.', '..####..'], 6, 5, 1, FLAG.PICKUP, true),
+  /* 7 pole */ tile(['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'], 7, 5, 1, FLAG.GOAL, true),
+  /* 8 flag */ tile(['...#####', '...#####', '...####.', '...###..', '...##...', '...##...', '...##...', '...##...'], 2, 5, 1, FLAG.GOAL, true),
   /* 9 sign */ tile(['........', '..#####.', '..##..##', '..#####.', '....#...', '....#...', '....#...', '....#...'], 0, 5, 1),
   // far band: blue paper, cyan ink (a mountain is two rows of the same 45 degree slope)
-  /* 10 */ tile(SKY, 5, 1, 0),
-  /* 11 slope up */ tile(['.......#', '......##', '.....###', '....####', '...#####', '..######', '.#######', '########'], 5, 1, 0),
-  /* 12 slope down */ tile(['#.......', '##......', '###.....', '####....', '#####...', '######..', '#######.', '########'], 5, 1, 0),
-  /* 13 fill */ tile(['########', '########', '########', '########', '########', '########', '########', '########'], 5, 1, 0),
+  /* 10 */ tile(SKY, 5, 1, 0, 0, true),
+  /* 11 slope up */ tile(['.......#', '......##', '.....###', '....####', '...#####', '..######', '.#######', '########'], 5, 1, 0, 0, true),
+  /* 12 slope down */ tile(['#.......', '##......', '###.....', '####....', '#####...', '######..', '#######.', '########'], 5, 1, 0, 0, true),
+  /* 13 fill */ tile(['########', '########', '########', '########', '########', '########', '########', '########'], 5, 1, 0, 0, true),
   // mid band: cyan paper (the gameplay sky), white clouds
-  /* 14 */ tile(SKY, 7, 5, 1),
-  /* 15 cloud left */ tile(['........', '........', '....###.', '..######', '.#######', '########', '########', '.#######'], 7, 5, 1),
-  /* 16 cloud middle */ tile(['........', '........', '........', '########', '########', '########', '########', '########'], 7, 5, 1),
-  /* 17 cloud right */ tile(['........', '........', '.###....', '######..', '#######.', '########', '########', '#######.'], 7, 5, 1),
-  /* 18 coin, turning (the animation is the tiles 6, 18, 19, 18 swapped by the game with SETWORLD) */ tile(['...##...', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '...##...'], 6, 5, 1, FLAG.PICKUP),
-  /* 19 coin, edge on */ tile(['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'], 6, 5, 1, FLAG.PICKUP),
+  /* 14 */ tile(SKY, 0, 5, 1),
+  /* 15 cloud left */ tile(['........', '........', '....###.', '..######', '.#######', '########', '########', '.#######'], 7, 5, 1, 0, true),
+  /* 16 cloud middle */ tile(['........', '........', '........', '########', '########', '########', '########', '########'], 7, 5, 1, 0, true),
+  /* 17 cloud right */ tile(['........', '........', '.###....', '######..', '#######.', '########', '########', '#######.'], 7, 5, 1, 0, true),
+  /* 18 coin, turning (the animation is the tiles 6, 18, 19, 18 swapped by the game with SETWORLD) */ tile(['...##...', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '..#..#..', '...##...'], 6, 5, 1, FLAG.PICKUP, true),
+  /* 19 coin, edge on */ tile(['...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...', '...##...'], 6, 5, 1, FLAG.PICKUP, true),
 ];
 export const T = { SKY: 0, GRASS: 1, DIRT: 2, BRICK: 3, PLANK: 4, SPIKES: 5, COIN: 6, POLE: 7, FLAG: 8, SIGN: 9, F_BLANK: 10, F_UP: 11, F_DOWN: 12, F_FILL: 13, M_BLANK: 14, CLOUD_L: 15, CLOUD_M: 16, CLOUD_R: 17, COIN_MID: 18, COIN_EDGE: 19 };
 
@@ -314,7 +319,7 @@ export function buildAssets() {
       'pf_walker': sprite(WALKER, { hot: [1, 4, 14, 12], phases: 4 }),
       'pf_bat': sprite(FLYER, { hot: [2, 3, 12, 10], phases: 4 }),
     },
-    tilesets: { 'pf_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags })) } },
+    tilesets: { 'pf_tiles': { tiles: TILES.map((t) => ({ rows: t.rows, flags: t.flags, ...(t.fg ? { fg: true } : {}) })) } },
     sfx: Object.fromEntries(Object.entries(sfx).map(([k, v]) => ['pf_' + k, v])),
     maps: { 'pf_world': { w: COLS, h: ROWS, cells } },
   };

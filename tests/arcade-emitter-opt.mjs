@@ -526,9 +526,12 @@ ENDSCENE
           how = 'driver';
         } else { const s = seg(f, uncond); want = s.n + items[s.i].bytes.length; how = 'stub'; }
       }
+      // lib$fmt (PRINT ... USING; Starfall and Blockfall use it since stage 3): its size in the listing, after the optimisations; a game without USING has none (fmtBytes undefined)
+      let fmtWant = 0;
+      { const i0 = items.findIndex((x) => x.labels.includes('lib$fmt')); if (i0 >= 0) for (let i = i0; i < items.length; i++) { if (i > i0 && items[i].labels.some((l) => !l.startsWith('fmt$'))) break; fmtWant += items[i].bytes.length; } }
       const offCg = off.res.usage.codegen;
-      check_(`${name}: usage.prologueBytes / fmtBytes / dataBytes agree with the listing (sizes taken after the optimisations)`,
-        (cg.prologueBytes ?? 0) === want && (cg.prologueBytes ?? 0) <= (offCg.prologueBytes ?? 0) && JSON.stringify(cg.dataBytes) === JSON.stringify(offCg.dataBytes) && cg.fmtBytes === undefined,
+      check_(`${name}: usage.prologueBytes / fmtBytes / dataBytes agree with the listing (sizes taken after the optimisations; fmtBytes is lib$fmt's size, or absent without USING)`,
+        (cg.prologueBytes ?? 0) === want && (cg.prologueBytes ?? 0) <= (offCg.prologueBytes ?? 0) && JSON.stringify(cg.dataBytes) === JSON.stringify(offCg.dataBytes) && (cg.fmtBytes ?? 0) === fmtWant,
         `prologue ${cg.prologueBytes ?? 0} (${how}; listing ${want}; not optimised ${offCg.prologueBytes ?? 0}), data ${JSON.stringify(cg.dataBytes)}`);
     }
     {

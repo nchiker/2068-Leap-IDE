@@ -24,7 +24,7 @@ import { check } from '../src/lang/arcade/arcade-check.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, ASSET_KINDS, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
-// TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
+// Older-compiler comparison (permanent; stage 3 kept it on purpose) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
 // a statement with no BRIGHT clause gets an explicit `BRIGHT 1` (the old default) for BOTH compilers, so the identity still covers it byte for byte.
 const pinOldBright = (text) => text.split('\n').map((l) => (/^\s*(VIEW3D|WIRE3D)\b/i.test(l) && !/\bBRIGHT\b/i.test(l.replace(/\bREM\b.*$/i, '')) ? l.replace(/(\s*\bREM\b.*)?$/i, (rem) => ` BRIGHT 1${rem}`) : l)).join('\n');
 
@@ -277,7 +277,7 @@ console.log('\n3. word tables');
 // =================================================================================================================
 console.log('\n4. requiredRuntime');
 {
-  const expectExample = { bounce: 2, 'bounce-static': 2, breakout: 2, shooter: 2, blockfall: 2, platformer: 3, runner: 3, vaults: 4, orbit: 2, lumen: 2 };
+  const expectExample = { bounce: 2, 'bounce-static': 2, breakout: 2, shooter: 2, 'shooter-classic': 2, blockfall: 2, platformer: 3, runner: 3, vaults: 4, orbit: 2, lumen: 2 };
   const dir = join(ROOT, 'arcade/examples');
   const names = readdirSync(dir).filter((f) => f.endsWith('.arc')).map((f) => f.slice(0, -4)).sort();
   eq('the examples are the ones this test knows', names, Object.keys(expectExample).sort());
@@ -524,7 +524,7 @@ console.log('\n6. byte identity with the compiler before the code generator (con
     }
     let n = 0, bad = '', built = 0;
     const same = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
-    // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): Stage 1 K1 / K2 (docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md): the two-blacks warnings are new; every other warning must stay the same.
+    // Older-compiler comparison (permanent): the previous compiler has no two-blacks warning (stage 1 K1) and the old fixtures in arcade/tests/fixtures still use BRIGHT 1 on black paper, so that one warning is left out of the comparison; every other warning must stay the same.
     const notTwoBlacks = (ws) => ws.filter((w) => !/BRIGHT 1 on black paper/.test(w.message));
     for (const dir of ['arcade/examples', 'arcade/tests/fixtures']) for (const f of readdirSync(join(ROOT, dir))) {
       if (!f.endsWith('.arc')) continue;

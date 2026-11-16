@@ -8,14 +8,18 @@
 //   1  the build: the assets file is the generator's output and agrees with the numbers written into lumen.arc; compiles for v2 with no errors and no warnings; every scene is built fine; 10 sprite
 //      instances, 28 sprite phases (a fine game may have 32); the two mazes of the generator are the maps' wall / orb / prism / door blocks
 //   2  a bot plays the game on the real runtime (it reads the game's variables and the cells from RAM, walks the maze to the nearest orb or prism by a breadth-first search, avoids the shades and
-//      hunts the pale ones; it uses Q A O P, SPACE (to start) and the joystick), 99 lives so that the run goes on.  The interpreter then plays the same script: every tick's variables, arrays, cells,
+//      hunts the pale ones; it uses Q A O P, SPACE (to start) and the joystick; every third decision it presses one tick late, which the wisp corners), 99 lives so that the run goes on.  The interpreter then plays the same script: every tick's variables, arrays, cells,
 //      attributes, sprites equal the real runtime's (the "records"), and the sound at song level
 //   3  the game's rules, read off the real runtime's records (all of them on the full mazes AND on mazes with only a few orbs, so that caves are cleared inside the run): an orb eaten = +10 and its
 //      four cells become tile 0; a prism = +50, every shade outside the lair turns pale; a pale shade touched scores 200 / 400 / 800 / 1600 in one prism and goes back to the lair; a shade touching the
-//      wisp costs exactly one life; clearing the last orb gives the bonus and starts the next cave with the other maze; no sprite ever overlaps a wall block; the wisp turns on block boundaries only;
+//      wisp costs exactly one life; clearing the last orb gives the bonus and starts the next cave with the other maze; no sprite ever overlaps a wall block; the wisp turns on block boundaries or corners (a turn taken up to 8 pixels before or after a boundary, onto it) and is always on the corridor grid;
 //      the score never falls; the cave number counts up by one
+//   3b turning: the wisp is driven through Q A O P along a corridor to a junction of maze 1 and the key of the turn is tapped one tick, 4 and 8 pixels before the boundary, on it, and 4 and 8 pixels
+//      after it (lifting the key of the travel, or holding it): the wisp takes that junction's turn (CTOL = 8 pixels, lumen.arc's cornering); 12 pixels after it, or with the travel key held 12
+//      before it, it does not; at a tie (8 pixels from each of two open boundaries) it goes on to the one ahead.  (Before cornering the old test pinned "turns on block boundaries only": that
+//      rule is now "turns on a boundary or corners onto one", checked on every tick of the bot runs, whose every third decision is made one tick late)
 //   4  the picture: after every tick of the play scene the real screen ($4000 bitmap, $6000 colours, $FF = 2) equals the reference picture of the interpreter's state (finePicture)
-//   5  the speed: FRAMERATE 20 = a tick every 3 refreshes: the share of play ticks that kept it (the gap between two ticks <= 3 refreshes), the worst gap
+//   5  the speed: FRAMERATE 20 = a tick every 3 refreshes: the share of play ticks that kept it (the gap between two ticks <= 3 refreshes; at least 99.5 %), the worst gap
 //   6  the beam (video on, one instruction at a time): every frame TSRun paints, per 8 x 1 group, equals the screen before or after the update in flight (0 broken frames, split writes apart),
 //      and the work of every tick against the budget of 3 refreshes (176,064 T): median, 95th percentile, worst
 //   7  the real game (3 lives): a bot that eats a few orbs and then stands still loses its lives, the game over scene follows with the best score and a "new best" line, fire restarts the game, twice
@@ -120,6 +124,7 @@ function makeBot(res_, { idleFrom = Infinity, restartAt = 25 } = {}) {
     if (k >= idleFrom) return out;
     const wx = rd(m, VAR('PLAY.WX')), wy = rd(m, VAR('PLAY.WY')), cave = rd(m, VAR('CAVE'));
     if (rd(m, VAR('PLAY.PZ')) > 0 || rd(m, VAR('PLAY.BN')) > 0) return out;
+    if (st.late !== undefined) { out.keys.push(KEYS[st.late]); st.late = undefined; return out; }      // a press that was held back one tick (below): the wisp is 4 pixels past the boundary
     if ((wx & 15) !== 0 || ((wy - 8) & 15) !== 0) return out;                  // between blocks: the wisp goes on
     const bx = wx >> 4, by = (wy - 8) >> 4, maze = mazeOf(cave);
     const pw = rd(m, VAR('PLAY.PW'));
@@ -147,6 +152,7 @@ function makeBot(res_, { idleFrom = Infinity, restartAt = 25 } = {}) {
     if (pick && pick.d > 8) pick = null;
     pick ??= search((x, y) => live(x, y), true) ?? search((x, y) => live(x, y), false);
     if (!pick) return out;
+    if (k % 3 === 0 && rd(m, VAR('PLAY.WDIR')) >= 0 && pick.first !== rd(m, VAR('PLAY.WDIR'))) { st.late = pick.first; return out; }      // every third decision is made one tick LATE: the turn is cornered
     // the keys O P Q A, but on every 5th tick the joystick; on a boundary tick that is not the first of a held key the key is simply held
     if (k % 5 === 0) out.stick |= 1 << pick.first; else out.keys.push(KEYS[pick.first]);
     return out;
@@ -207,7 +213,7 @@ const wallFree = (maze, x, y, forShade) => {            // the blocks the 16 x 1
 function rules(label, run, orbsOf) {
   const { got, want } = run, T = got.ticks, playIdx = want.scenes.indexOf('play');
   const v = (t, n) => T[t].vars[n], a = (t, n, i) => T[t].arrays[n][i];
-  const bad = [], st = { orbs: 0, prisms: 0, shades: 0, lives: 0, caves: 0, pts: [0, 0, 0, 0], palings: 0, steps: 0, shadeSteps: 0, turns: 0, maxCave: 1, clears: 0, mzOk: 0, reverse: 0 };
+  const bad = [], st = { orbs: 0, prisms: 0, shades: 0, lives: 0, caves: 0, pts: [0, 0, 0, 0], palings: 0, steps: 0, shadeSteps: 0, turns: 0, corners: 0, cornersAhead: 0, cornersBack: 0, gridOk: 0, maxCave: 1, clears: 0, mzOk: 0, reverse: 0 };
   const fail = (s) => { if (bad.length < 6) bad.push(s); };
   let eatnModel = 0;
   for (let t = 3; t < T.length; t++) {
@@ -276,18 +282,27 @@ function rules(label, run, orbsOf) {
       if (paleTouch && dLives === 0) fail(`${at}: a pale shade overlaps the wisp and was not eaten`);
       if (touch && dLives === -1) { st.lives++; if (v(t, 'PLAY.PZ') !== 30 || v(t, 'PLAY.PR') !== 1) fail(`${at}: a life lost without its pause`); }
     } else if (dLives !== 0) fail(`${at}: the lives changed by ${dLives} in a pause or on a cleared cave`);
-    // the movement: the wisp 4 pixels a tick along one axis, turning only on a boundary (or reversing); the shades 2 or 4 (a pale one 2), never past a boundary
+    // the movement: the wisp 4 pixels a tick along one axis, turning on a boundary, reversing, or CORNERING (a turn taken on the nearest boundary within CTOL = 8 pixels before or after
+    // it: that tick the wisp moves up to 8 pixels along its old axis, onto the boundary, and 4 along the new one); the shades 2 or 4 (a pale one 2), never past a boundary
     const dx = wx - wx0, dy = wy - wy0, boundary0 = (wx0 & 15) === 0 && ((wy0 - 8) & 15) === 0;
-    if (!paused || (v(t - 1, 'PLAY.BN') === 0 && v(t - 1, 'PLAY.PZ') === 0)) {
-      if (!((dx === 0 && dy === 0) || (Math.abs(dx) === 4 && dy === 0) || (dx === 0 && Math.abs(dy) === 4))) { if (!(cave !== cavePrev || v(t - 1, 'PLAY.PZ') > 0)) fail(`${at}: the wisp moved (${dx}, ${dy})`); }
+    const d0 = v(t - 1, 'PLAY.WDIR'), d1 = v(t, 'PLAY.WDIR'), stepOk = !paused || (v(t - 1, 'PLAY.BN') === 0 && v(t - 1, 'PLAY.PZ') === 0);
+    // a corner: both coordinates changed, the direction went to the other axis; the old axis moved by at most CTOL onto a boundary line, the new one by 4 in its direction
+    const isCorner = stepOk && dx !== 0 && dy !== 0 && cave === cavePrev && d0 >= 0 && d1 >= 0 && (d1 >> 1) !== (d0 >> 1);
+    if (stepOk) {
+      if (isCorner) {
+        const oldD = d0 >> 1 === 0 ? dy : dx, newD = d1 >> 1 === 0 ? dy : dx, newSign = (d1 & 1) ? 4 : -4;
+        if (Math.abs(oldD) > 8 || newD !== newSign) fail(`${at}: a corner moved the wisp (${dx}, ${dy}) turning ${d0} -> ${d1}`);
+        else { st.corners++; if (oldD * ((d0 & 1) ? 1 : -1) > 0) st.cornersAhead++; else st.cornersBack++; }
+      } else if (!((dx === 0 && dy === 0) || (Math.abs(dx) === 4 && dy === 0) || (dx === 0 && Math.abs(dy) === 4))) { if (!(cave !== cavePrev || v(t - 1, 'PLAY.PZ') > 0)) fail(`${at}: the wisp moved (${dx}, ${dy})`); }
       else if (dx || dy) {
         st.steps++;
-        const d0 = v(t - 1, 'PLAY.WDIR'), d1 = v(t, 'PLAY.WDIR');
         if (d1 !== d0 && d0 >= 0 && d1 >= 0 && d1 !== (d0 ^ 1) && !boundary0) fail(`${at}: the wisp turned between blocks (${d0} -> ${d1})`);
         if (d1 !== d0 && d0 >= 0 && d1 >= 0 && boundary0 && d1 !== (d0 ^ 1)) st.turns++;
         if (d1 !== d0 && d0 >= 0 && d1 === (d0 ^ 1)) st.reverse++;
       }
     }
+    // the wisp is always on the corridor grid of its direction: moving up or down it stands on a block column (x a multiple of 16), moving left or right on a block row (y - 8 a multiple of 16)
+    if (cave === cavePrev && d1 >= 0 && !paused) { if ((d1 < 2 ? wx : wy - 8) & 15) fail(`${at}: the wisp is off the corridor grid at (${wx}, ${wy}) going ${d1}`); else st.gridOk++; }
     if (!wallFree(maze, wx, wy, false)) fail(`${at}: the wisp at (${wx}, ${wy}) overlaps a wall block`);
     for (let k = 0; k < 4; k++) {
       const sx = a(t, 'PLAY.SX', k), sy = a(t, 'PLAY.SY', k), sx0 = a(t - 1, 'PLAY.SX', k), sy0 = a(t - 1, 'PLAY.SY', k);
@@ -323,12 +338,12 @@ console.log('\n3. The rules, read off the real runtime\'s records');
 const RA = rules('full', runA, ORBS), RB = rules('small', runB, SMALL_ORBS);
 for (const [label, r, run] of [['full mazes', RA, runA], ['small caves', RB, runB]]) {
   const s = r.st;
-  info(`${label}: orbs eaten ${s.orbs}, prisms ${s.prisms}, pale shades eaten ${s.shades} (200 x${s.pts[0]}, 400 x${s.pts[1]}, 800 x${s.pts[2]}, 1600 x${s.pts[3]}), lives lost ${s.lives}, caves cleared ${s.clears}, caves started ${s.caves}, highest cave ${s.maxCave}, wisp steps ${s.steps} (turns ${s.turns}, reversals ${s.reverse}), shade steps ${s.shadeSteps}; score ${run.got.ticks.at(-1).vars.SCORE}`);
+  info(`${label}: orbs eaten ${s.orbs}, prisms ${s.prisms}, pale shades eaten ${s.shades} (200 x${s.pts[0]}, 400 x${s.pts[1]}, 800 x${s.pts[2]}, 1600 x${s.pts[3]}), lives lost ${s.lives}, caves cleared ${s.clears}, caves started ${s.caves}, highest cave ${s.maxCave}, wisp steps ${s.steps} (turns ${s.turns}, reversals ${s.reverse}, corners ${s.corners}: ${s.cornersAhead} to the boundary ahead, ${s.cornersBack} back to the one behind; on the corridor grid ${s.gridOk} ticks), shade steps ${s.shadeSteps}; score ${run.got.ticks.at(-1).vars.SCORE}`);
 }
 {
   const all = [...RA.bad, ...RB.bad].slice(0, 3).join(' | ');
   check_('every rule held on every tick of both runs: orbs and prisms eaten (+10 / +50, the four cells become tile 0), pale shades eaten (200 .. 1600, back to the lair), a shade touching the wisp costs exactly one life, the cleared cave\'s bonus, the score never falls, the cave number counts up, the shades\' moves', RA.bad.length === 0 && RB.bad.length === 0, all);
-  check_('the rules were exercised: orbs eaten, prisms eaten, pale shades eaten in a row (200, 400, ...), lives lost, the wisp turned and reversed', RA.st.orbs >= 20 && RA.st.prisms >= 1 && RA.st.lives >= 2 && RA.st.turns >= 10 && RB.st.prisms >= 2 && RB.st.shades >= 2 && RB.st.pts[1] >= 1 && RA.st.reverse + RB.st.reverse >= 1, JSON.stringify({ A: RA.st, B: RB.st }));
+  check_('the rules were exercised: orbs eaten, prisms eaten, pale shades eaten in a row (200, 400, ...), lives lost, the wisp turned and reversed (turns on a boundary, reversals), and was on the corridor grid on every moving tick', RA.st.orbs >= 20 && RA.st.prisms >= 1 && RA.st.lives >= 2 && RA.st.turns >= 10 && RB.st.prisms >= 2 && RB.st.shades >= 2 && RB.st.pts[1] >= 1 && RA.st.reverse + RB.st.reverse >= 1 && RA.st.gridOk > 500 && RA.st.corners + RB.st.corners >= 3, JSON.stringify({ A: RA.st, B: RB.st }));
   check_('caves are cleared and the next one starts with the other maze, the bonus and the maze read (the second cave and the third are reached)', RB.st.clears >= (QUICK ? 2 : 3) && RB.st.caves >= (QUICK ? 2 : 3) && RB.st.maxCave >= (QUICK ? 3 : 4) && RB.st.mzOk >= RB.st.caves, `cleared ${RB.st.clears}, started ${RB.st.caves}, maze read ok ${RB.st.mzOk}, highest cave ${RB.st.maxCave}`);
 }
 {
@@ -346,6 +361,80 @@ for (const [label, r, run] of [['full mazes', RA, runA], ['small caves', RB, run
   const avg = (x) => x.reduce((s, y) => s + y, 0) / (x.length || 1);
   info(`the shades' average step: cave 1 ${avg(slow).toFixed(2)} pixels a tick, later caves ${avg(fast).toFixed(2)}`);
   check_('the shades are faster in the later caves than in the first', slow.length > 100 && fast.length > 100 && avg(fast) > avg(slow));
+}
+
+// ---- 3b. turning: presses early and late at a junction ------------------------------------------------------------------------------------------
+// The wisp is driven through the game's own keys (Q A O P) along a corridor of maze 1 towards a junction J; at the tick when it stands e pixels before J's boundary (e < 0: after it) the
+// key of the turn is tapped for ONE tick.  Two ways of tapping: "lift" (the key of the travel is let go with the tap, as a player lifts one finger and presses the other) and "hold" (the key
+// of the travel stays down, the other finger taps).  The wisp must turn exactly on J's corridor (CTOL = 8 pixels before or after the boundary, both ways of tapping; a turn asked for further
+// ahead is kept by "lift" and taken on J's boundary as before, but a held key of the travel cancels it, so "hold" only up to CTOL).  Further than CTOL after the boundary the turn is missed.
+console.log('\n3b. Turning at a junction: a press up to CTOL = 8 pixels before or after the boundary takes the turn');
+{
+  const CTOL = constOf('CTOL');
+  check_('lumen.arc has CONST CTOL = 8 (the tolerance this section tests)', CTOL === 8, String(CTOL));
+  const CASES = [
+    { name: 'left, then up at block (4, 7)', dir: 2, perp: 0, J: [4, 7], axis: 'x', sg: -1 },
+    { name: 'right, then up at block (11, 7)', dir: 3, perp: 0, J: [11, 7], axis: 'x', sg: 1 },
+    { name: 'down, then right at block (7, 8)', dir: 1, perp: 3, J: [7, 8], axis: 'y', sg: 1, tieAhead: true },
+  ];
+  const probe = (cs, e, mode) => {
+    const r0 = runA.res, VAR = (n) => r0.map.vars[n];
+    const uJ = 16 * cs.J[cs.axis === 'x' ? 0 : 1], uTrig = uJ - e * cs.sg;
+    const st = { m: null, trig: -1 }, script = [];
+    const decide = (k) => {
+      const m = st.m, out = { keys: [], stick: 0 };
+      if (k >= 6 && k <= 8) { out.keys.push(32); return out; }
+      if (!m || rd(m, VAR('PLAY.BN')) > 0 || rd(m, VAR('PLAY.PZ')) > 0 || rd(m, VAR('PLAY.LIVES')) === 0) return out;
+      if (st.trig >= 0) { if (mode === 'hold') out.keys.push(KEYS[cs.dir]); return out; }          // after the tap: nothing (lift) or the key of the travel held on (hold)
+      const u = cs.axis === 'x' ? rd(m, VAR('PLAY.WX')) : rd(m, VAR('PLAY.WY')) - 8;
+      if (u === uTrig) { st.trig = k; out.keys.push(KEYS[cs.perp]); if (mode === 'hold') out.keys.push(KEYS[cs.dir]); return out; }
+      out.keys.push(KEYS[cs.dir]);
+      return out;
+    };
+    const got = runReal(r0, { ticks: 80, keys: (k) => (script[k - 1] ??= decide(k)).keys, stick: (k) => (script[k - 1] ??= decide(k)).stick, hooks: { afterTick: (k, m) => { st.m = m; } } });
+    if (got.error) return { error: got.error };
+    const T = got.ticks;
+    if (st.trig < 0) return { error: 'the wisp never stood where the press was to be made' };
+    const at = (i) => ({ x: T[i].vars['PLAY.WX'], y: T[i].vars['PLAY.WY'], d: T[i].vars['PLAY.WDIR'], lives: T[i].vars['PLAY.LIVES'] });
+    const u_ = (p) => (cs.axis === 'x' ? p.x : p.y - 8), w_ = (p) => (cs.axis === 'x' ? p.y - 8 : p.x);      // along the travel / across it
+    let turnTick = -1;
+    for (let i = st.trig - 1; i < Math.min(T.length, st.trig + 20); i++) if (at(i).d === cs.perp) { turnTick = i; break; }
+    if (T[Math.min(T.length - 1, st.trig + 20)].vars['PLAY.LIVES'] !== T[st.trig - 1].vars['PLAY.LIVES']) return { error: 'a shade interfered (a life was lost)' };
+    if (turnTick < 0) return { e, turned: false, atJ: false, path: 'never turned' };
+    const p = at(turnTick), q = at(turnTick + 3), sg = cs.perp & 1 ? 1 : -1;
+    // not undone: the wisp keeps going along the new corridor (lift: three more ticks of 4 pixels straight; hold: the key of the travel, still down, asks for it again, so the wisp may corner
+    // onto the next boundary, but it never goes back towards the junction's boundary)
+    let away = true, prev = 0;
+    for (let i = turnTick + 1; i <= turnTick + 3; i++) {
+      const d = (w_(at(i)) - w_(p)) * sg;
+      if (mode === 'lift' ? d !== 4 * (i - turnTick) || u_(at(i)) !== u_(p) : d < prev) away = false;
+      prev = d;
+    }
+    if (mode === 'hold' && prev < 8) away = false;
+    return { e, turned: true, atJ: u_(p) === uJ, aheadJ: u_(p) === uJ + 16 * cs.sg, away, path: `press at tick ${st.trig}: wisp then (${at(st.trig - 1).x},${at(st.trig - 1).y}) -> turned at tick ${turnTick + 1} (${p.x},${p.y}) -> (${q.x},${q.y})` };
+  };
+  const probes = [];
+  const t0 = Date.now();
+  for (const cs of CASES) for (const mode of ['lift', 'hold']) {
+    const es = mode === 'lift' ? [20, 12, 8, 4, 0, -4, -8, -12, -16] : [12, 8, 4, 0, -4, -8, -12];
+    const list = QUICK ? es.filter((e) => [12, 8, 4, 0, -4, -8, -12].includes(e)) : es;
+    for (const e of list) {
+      if (cs.axis === 'y' && e > 12) continue;                   // going down from the start block the press cannot be earlier than 12 pixels before block (7, 8)
+      const r = probe(cs, e, mode);
+      const tie = e === -CTOL && cs.tieAhead;                    // 8 pixels after J and 8 before the next boundary, whose side block is open as well: the boundary ahead wins
+      const want = e >= -CTOL && (mode === 'lift' || e <= CTOL) && !tie;
+      probes.push({ cs: cs.name, mode, e, want, tie, ...r });
+    }
+  }
+  const bad = probes.filter((p) => p.error || p.atJ !== p.want || (p.want && !p.away) || (p.tie && !p.aheadJ));
+  info(`${probes.length} probes (${((Date.now() - t0) / 1000).toFixed(0)} s); the wisp turned on the junction's corridor in ${probes.filter((p) => p.atJ).length}, missed it in ${probes.filter((p) => !p.atJ && !p.error).length} (presses more than 8 pixels after the boundary, with the travel key held more than 8 before it, and the two ties, which go to the boundary ahead)`);
+  if (process.env.VERBOSE) for (const p of probes) info(`${p.cs} ${p.mode} e=${p.e}: want ${p.want} got ${p.atJ}  ${p.path ?? p.error}`);
+  const early = probes.filter((p) => p.e > 0 && p.e <= 8), late = probes.filter((p) => p.e < 0 && p.e >= -8 && !p.tie);
+  check_(`a press 4 and 8 pixels BEFORE the boundary takes the turn at that junction (${early.length} probes: 3 junctions x lift / hold; 12 and 20 pixels too with the key lifted)`, early.length >= 12 && early.every((p) => p.atJ && p.away), bad.filter((p) => p.e > 0).slice(0, 2).map((p) => `${p.cs} ${p.mode} e=${p.e}: ${p.path ?? p.error}`).join(' | '));
+  check_(`a press 4 and 8 pixels AFTER the boundary takes the turn at that junction: the wisp goes back onto the boundary and turns (${late.length} probes)`, late.length >= 10 && late.every((p) => p.atJ && p.away), bad.filter((p) => p.e < 0 && p.e >= -8).slice(0, 2).map((p) => `${p.cs} ${p.mode} e=${p.e}: ${p.path ?? p.error}`).join(' | '));
+  const ties = probes.filter((p) => p.tie);
+  check_(`a press 8 pixels after one boundary and 8 before the next, both with an open side block: the boundary ahead wins (${ties.length} probes: the wisp turns on the next block, not back)`, ties.length >= 2 && ties.every((p) => p.turned && p.aheadJ && !p.error), ties.map((p) => p.path).join(' | '));
+  check_('a press exactly on the boundary takes it; a press 12 pixels after it (more than CTOL) or, with the key of the travel held, 12 pixels before it, does not take that junction', probes.filter((p) => p.e === 0).every((p) => p.atJ && p.away) && probes.filter((p) => p.e <= -12 || (p.mode === 'hold' && p.e >= 12)).every((p) => !p.atJ && !p.error), bad.slice(0, 2).map((p) => `${p.cs} ${p.mode} e=${p.e}: ${p.path ?? p.error}`).join(' | '));
 }
 
 // ---- 4. the picture ----------------------------------------------------------------------------------------------------------------------------
@@ -374,7 +463,7 @@ for (const [label, run] of [['full mazes', runA], ['small caves', runB]]) {
   for (let k = 6; k < R_.length; k++) if (run.want.ticks.slice(k - 5, k).every((q) => q.scene === playIdx)) gaps.push(R_[k] - R_[k - 1]);
   const ok = gaps.filter((g) => g <= 3).length, share = (100 * ok) / gaps.length;
   info(`${label}: ${gaps.length} play ticks: ${ok} started on time, 3 refreshes after the one before (${share.toFixed(1)} %); gaps in refreshes: ${[3, 4, 5, 6].map((g) => `${g}: ${gaps.filter((x) => x === g).length}`).join(', ')}, other ${gaps.filter((x) => x < 3 || x > 6).length}; median ${pct(gaps, 0.5)}, 95th ${pct(gaps, 0.95)}, worst ${Math.max(...gaps)}`);
-  check_(`${label}: at least 99 % of the play ticks kept FRAMERATE 20 (a tick every 3 refreshes)`, share >= 99, `${share.toFixed(1)} %`);
+  check_(`${label}: at least 99.5 % of the play ticks kept FRAMERATE 20 (a tick every 3 refreshes)`, share >= 99.5, `${share.toFixed(1)} %`);
 }
 
 // ---- 6. the beam -------------------------------------------------------------------------------------------------------------------------------

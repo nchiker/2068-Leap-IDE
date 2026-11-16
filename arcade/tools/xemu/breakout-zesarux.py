@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Run an Arcade cartridge in ZEsarUX 13.0 (headless, stock TS2068 ROM, no input) and record the runtime state at the end
+"""Run an Arcade cartridge in ZEsarUX 13.0 (headless, stock TS2068 ROM; the only input is the fire that leaves the title) and record the runtime state at the end
 of every frame interrupt.  Adapted from zesarux-run.py; the symbols are those of the runtime the cartridge was built against: v2
 (arcade/build/v2/runtime.json; breakout.arc uses KEYDOWN, which v1 refuses; v1's addresses differ, V_TICKS 57352 against v2's 57464).
 
   python3 arcade/tools/xemu/breakout-zesarux.py CART.dck [--out arcade/build/xemu] [--ticks 300] [--runtime v2]
+
+Input: as breakout-tsrun.mjs (see "Input" in its header): SPACE (ZRCP `send-keys-event 128`) is held while V_TICKS is FIRE_AT .. FIRE_AT + FIRE_HOLD - 1
+(--fire-at 2, --fire-hold 3), switched at the frame-end breakpoint where V_TICKS is read.
 
 Order of the commands: see the header of breakout-tsrun.mjs (build the cartridge, then tsrun, zesarux, fuse, compare).
 
@@ -63,6 +66,8 @@ def main():
     ap.add_argument("--ticks", type=int, default=300)
     ap.add_argument("--port", type=int, default=10777)
     ap.add_argument("--runtime", default="v2")
+    ap.add_argument("--fire-at", type=int, default=2)
+    ap.add_argument("--fire-hold", type=int, default=3)
     ap.add_argument("--max-hits", type=int, default=20000)
     a = ap.parse_args()
     S, C = symbols(a.runtime)
@@ -92,6 +97,7 @@ def main():
 
         rows = []      # (hit, ticks, sync, shadow, sfx, ay[0..10])
         dumped = {}
+        held = False                   # SPACE down (the fire that leaves the title)
         entered = False
         hits = 0
         while hits < a.max_hits:
@@ -110,6 +116,10 @@ def main():
             sfx = read(c, S["V_SFX_ACTIVE"], 1)[0]
             ay = list(read(c, S["AY_SHADOW"], 11))
             rows.append((hits, ticks, sync, shadow, sfx, ay))
+            want = a.fire_at <= ticks < a.fire_at + a.fire_hold
+            if want != held:
+                c.command(f"send-keys-event 128 {1 if want else 0}")
+                held = want
             if ticks in TICK_TARGETS and ticks not in dumped:
                 shown = shadow & 1
                 dfile, dattr = (C["DFILE1"], C["DATTR1"]) if shown else (C["DFILE0"], C["DATTR0"])
@@ -142,7 +152,7 @@ def main():
             log.append(f"{hit} {ticks} {sync} ${shadow:02X} {sfx} " + " ".join(f"{v:02x}" for v in ay))
         (out / "breakout-zesarux-log.txt").write_text("\n".join(log) + "\n")
 
-        first = next((i for i, r in enumerate(rows) if r[4] != 0), None)
+        first = next((i for i, r in enumerate(rows) if r[4] & 1), None)   # SB_FX (bit 0): an effect plays (bit 1 is the title's song)
         ayl = []
         if first is None:
             ayl.append("no sound effect in the run")

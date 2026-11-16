@@ -1,15 +1,38 @@
 REM Bounce: a ball bouncing off the screen edges and a paddle the joystick moves along the bottom.
-REM Arcade v0 subset. Assets (ball, paddle) are in bounce.assets.json.
+REM The smallest example: a title scene with a song, then the play scene.
+REM Assets (ball, paddle, the song "theme") are in bounce.assets.json, which bounce.assets.gen.mjs makes.
 GAME "bounce"
 FRAMERATE 30
 
 SPRITE ball = "ball"
 SPRITE paddle = "paddle"
+MUSIC theme = "theme"
+
+REM The title: the song plays until fire (the SPACE key or the joystick's button) starts the game.
+SCENE title
+  PROC INIT():
+    PLAY theme
+    CLS
+    INK 1 : PRINT AT 8, 13; "BOUNCE";
+    INK 2 : PRINT AT 12, 7; "PRESS FIRE TO PLAY";
+    INK 0 : PRINT AT 16, 7; "O P OR JOYSTICK 1";
+    PRINT AT 17, 8; "MOVE THE PADDLE";
+  ENDP
+
+  REM KEYPRESS and JOYPRESS are true for the one tick the key or the button goes down.
+  PROC FRAME():
+    IF KEYPRESS(" ") OR BIT(JOYPRESS(1), 4) THEN
+      ENTER play
+    ENDIF
+  ENDP
+ENDSCENE
 
 SCENE play
   DIM bx, by, dx, dy, px
 
   PROC INIT():
+    NOMUSIC
+    CLS
     bx = 120
     by = 60
     dx = 2
