@@ -17,6 +17,7 @@ CONST TDOOR = 9
 CONST TWALL = 11
 CONST STARTX = 112                  REM the wisp starts on block (7, 7)
 CONST STARTY = 120
+CONST CTOL = 8                      REM cornering: a turn asked for up to 8 pixels (2 ticks) before or after a block boundary is taken on that boundary
 CONST LAIRY = 88                    REM the lair is the blocks (7, 5) and (8, 5), behind the door (blocks (7, 4) and (8, 4))
 
 MAP maze1 = "maze1"
@@ -75,6 +76,7 @@ SCENE play
   DIM js, ku, kd, kl, kr, wx, wy, wdir, wd, nw, wf, wbx, wby, cb, tk
   DIM sstp, srem, sdir, fnew
   DIM dbx, dby, dbase, dback, dn, dt, dd, bd, bk
+  DIM wtb, co, cl, cu, cah, cab, cbh, cbb, cs
   DIM ex, ey, tt
   DIM lives, orbs, scn, bn, pz, pr, pw, pwmax, eatn, fast, gap, hs, hl, hc
   REM the maze as the program sees it: 0 open, 1 the lair's door (a wall to the wisp, open to the shades going up), 2 a wall, 3 the lair
@@ -133,7 +135,7 @@ SCENE play
       CALL SHOWSH(i)
     NEXT i
     HIDE wispb
-    wx = STARTX : wy = STARTY : wdir = -1 : wd = -1 : wf = 0
+    wx = STARTX : wy = STARTY : wdir = -1 : wd = -1 : wf = 0 : wtb = -1
     SHOW wispa AT wx, wy
     pw = 0 : eatn = 0
   ENDP
@@ -228,7 +230,7 @@ SCENE play
   ENDP
 
   REM The direction keys: a direction is asked for by its key; of several keys the ones for another direction than the wisp's own win, and a key held for the wisp's own direction
-  REM cancels a turn asked for before.  What was asked for is kept (until the next press), so a turn can be asked for a little before the boundary.
+  REM cancels a turn asked for before.  What was asked for is kept (until the next press), so a turn can be asked for before the boundary (and, by CORNER, a little after it).
   PROC READKEYS():
     js = STICK(1)
     ku = KEYDOWN("Q") OR BIT(js, 0)
@@ -247,19 +249,26 @@ SCENE play
     IF nw >= 0 THEN wd = nw ENDIF
   ENDP
 
-  REM The wisp: 4 pixels a tick; it turns only on a block boundary into a free block, reverses at any time, stops against a wall; arriving on a block it eats what is there.
+  REM The wisp: 4 pixels a tick; it turns on a block boundary into a free block, reverses at any time, stops against a wall; arriving on a block it eats what is there.
+  REM Between two boundaries a turn that is asked for (and kept: see READKEYS) is still taken on the nearest boundary within CTOL pixels, by CORNER.
   PROC MOVEWISP():
     IF wdir >= 0 AND wd >= 0 THEN
       IF wd = BXOR(wdir, 1) THEN wdir = wd ENDIF
     ENDIF
     IF BAND(wx, 15) = 0 AND BAND(wy, 15) = 8 THEN
       cb = SHR(wy - 8, 4) * 16 + SHR(wx, 4)
+      IF cb <> wtb THEN wtb = -1 ENDIF
       IF wd >= 0 THEN
-        IF mz(cb + ddi(wd)) = 0 THEN wdir = wd ENDIF
+        IF mz(cb + ddi(wd)) = 0 THEN
+          IF wd <> wdir THEN wtb = cb ENDIF
+          wdir = wd
+        ENDIF
       ENDIF
       IF wdir >= 0 THEN
         IF mz(cb + ddi(wdir)) <> 0 THEN wdir = -1 ENDIF
       ENDIF
+    ELSE
+      IF wdir >= 0 AND wd >= 0 AND wd <> wdir THEN CALL CORNER() ENDIF
     ENDIF
     IF wdir >= 0 THEN
       wx = wx + 4 * ddx(wdir)
@@ -267,6 +276,35 @@ SCENE play
       IF BAND(wx, 15) = 0 AND BAND(wy, 15) = 8 THEN CALL EAT() ENDIF
     ENDIF
     wbx = SHR(wx + 8, 4) : wby = SHR(wy, 4)
+  ENDP
+
+  REM Cornering.  The wisp is between two boundaries and a turn wd (never the reverse: that is already done) is wanted.  cl and cu are the blocks of the two boundaries (the lower and
+  REM the upper one on the wisp's axis; the wisp stands on both: they are open), cah / cbh the distances to the boundary ahead of it and behind it.  If the block next to the boundary
+  REM ahead (within CTOL) is open the wisp goes to that boundary and turns there; failing that, if the block next to the boundary behind it (within CTOL, and not the block it has
+  REM just turned on: it would undo its own turn) is open, it goes back to it and turns there.  The move onto the boundary is made on the old axis, the new axis starts at once (4 pixels),
+  REM so the wisp is on the corridor of its new direction exactly.  Reaching the boundary ahead is an arrival: what is there is eaten.
+  PROC CORNER():
+    cl = SHR(wy - 8, 4) * 16 + SHR(wx, 4)
+    cu = cl + ddi(BOR(wdir, 1))
+    IF wdir < 2 THEN co = BAND(wy - 8, 15) ELSE co = BAND(wx, 15) ENDIF
+    IF BAND(wdir, 1) = 1 THEN
+      cah = 16 - co : cab = cu : cbh = co : cbb = cl
+    ELSE
+      cah = co : cab = cl : cbh = 16 - co : cbb = cu
+    ENDIF
+    cs = 0
+    IF cah <= CTOL THEN
+      IF mz(cab + ddi(wd)) = 0 THEN cs = cah : wtb = cab ENDIF
+    ENDIF
+    IF cs = 0 AND cbh <= CTOL AND cbb <> wtb THEN
+      IF mz(cbb + ddi(wd)) = 0 THEN cs = 0 - cbh : wtb = cbb ENDIF
+    ENDIF
+    IF cs <> 0 THEN
+      wx = wx + cs * ddx(wdir)
+      wy = wy + cs * ddy(wdir)
+      wdir = wd
+      IF cs > 0 THEN CALL EAT() ENDIF
+    ENDIF
   ENDP
 
   REM The wisp has arrived on a block: an orb is eaten (10), a prism (50: the shades turn pale); the last orb clears the cave.

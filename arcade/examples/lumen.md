@@ -33,8 +33,17 @@ every scene in fine colour (8 x 1 colour; `docs/ARCADE_FINE_COLOUR_CONTRACT.md`)
 
 ## Movement and the shades
 
-* FRAMERATE 20. The wisp moves 4 pixels a tick. It turns at a block boundary (x and y both on the block grid) into the direction asked for if
-  that block is open; otherwise it goes on if it can, else stops. Reversing works at any time. A step never goes past the next boundary.
+* FRAMERATE 20. The wisp moves 4 pixels a tick. Reversing works at any time; it stops against a wall; a step never goes past the next boundary.
+* **Turning is forgiving** (`CORNER`, `CONST CTOL = 8`). A direction asked for is **kept until another is pressed** (a key held for the wisp's own direction cancels it). On a block boundary
+  the wisp turns into the asked-for direction if that block is open, as before. **Between boundaries** a perpendicular turn that is asked for is taken on the **nearest boundary within 8
+  pixels (2 ticks, 100 ms) before or after the wisp**, if the block beside that boundary is open: the wisp goes onto the boundary on its old axis (a jump of at most 8 pixels) and moves 4
+  pixels on the new one in the same tick, a short diagonal, so that it is on the new corridor exactly. The boundary **ahead** is tried first (so at a tie, 8 pixels from each, the wisp
+  goes on to the next junction and does not jump back); reaching it counts as an arrival, so what is there is eaten. The boundary **behind** is tried next, except the block the wisp has just
+  turned on (without that rule a key still held for the old direction undid every turn: the wisp wiggled 4 pixels and went back). Why 8: steps are 4 pixels, so 4 is one tick (50 ms, below
+  a player's timing error), 8 is two ticks (100 ms) and the corner never looks like a teleport; 12 would be most of a block and a press could take a junction a whole block away from the one the
+  player meant. A press further ahead is kept as before (the turn is taken at the boundary, with the key lifted); a press more than 8 pixels late is missed, as at a real junction.
+  The wisp is always on the corridor grid of its direction (x a multiple of 16 going up or down, y - 8 a multiple of 16 going left or right): shades, eating (`EAT` runs only on a boundary)
+  and the bot rely on it. The cornering costs about 450 bytes of code (12,540 to 12,989 for the game) and runs only on a tick with a turn asked for between two boundaries.
 * A shade moves 2 or 4 pixels a tick (its speed rises with the cave, e.g. a 4-pixel step on some ticks and 2 on the others, never passing
   a boundary). At each boundary it picks one of the open directions other than back the way it came (back only at a dead end): with a
   chance that grows with the cave it takes the one that brings it nearer the wisp (pale: farther from it), else a random one. Each shade
@@ -54,6 +63,6 @@ every scene in fine colour (8 x 1 colour; `docs/ARCADE_FINE_COLOUR_CONTRACT.md`)
 
 ## Budget
 
-At most 5 moving 16 x 16 sprites (the wisp, four shades) at 20 Hz in the fine play scene; the target is FRAMERATE 20 in at least 99 % of the
+At most 5 moving 16 x 16 sprites (the wisp, four shades) at 20 Hz in the fine play scene; the target is FRAMERATE 20 in at least 99.5 % of the
 play ticks over the recorded runs (contract section 8). If the logic does not fit, the shades' decisions may be spread over ticks (one shade
 decides a tick), never the frame rate dropped.
