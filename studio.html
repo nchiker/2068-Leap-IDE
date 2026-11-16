@@ -34,6 +34,7 @@
     <div class="toolbar-file">
       <span id="project-name" title="Click to rename the project">Untitled</span><span id="dirty-mark" title="Not saved to a file" hidden> •</span>
       <button class="phbtn" id="btn-new"  title="New project">New</button>
+      <button class="phbtn" id="btn-projects" title="The projects kept in this browser" hidden>Projects</button>
       <button class="phbtn" id="btn-open" title="Open a .leapgame project (or add a .arc source file) (Ctrl+O)">Open</button>
       <span class="menu-anchor">
         <button class="phbtn" id="btn-examples" title="Open an example game" aria-haspopup="menu" aria-expanded="false">Examples ▾</button>
@@ -124,6 +125,7 @@
           <button class="panel-tab" data-tab="maps">Maps</button>
           <button class="panel-tab" data-tab="sfx">Sounds</button>
           <button class="panel-tab" data-tab="models">Models</button>
+          <button class="panel-tab" data-tab="variables" title="The game's variables, live while it runs">Vars</button>
         </div>
       </div>
 
@@ -184,6 +186,7 @@
       <div class="tab-body tool-body asset-tool" id="tool-maps" data-tab="maps" hidden></div>
       <div class="tab-body tool-body asset-tool" id="tool-sfx" data-tab="sfx" hidden></div>
       <div class="tab-body tool-body asset-tool" id="tool-models" data-tab="models" hidden></div>
+      <div class="tab-body tool-body" id="tool-variables" data-tab="variables" hidden></div>
     </div>
 
   </div><!-- /workspace -->
@@ -220,7 +223,9 @@
     "./src/arcade-check-client.js": "./src/arcade-check-client.js?v=763f9f05d3",
     "./src/arcade-objects.js": "./src/arcade-objects.js?v=a968ad470b",
     "./src/arcade-project.js": "./src/arcade-project.js?v=baf7644cd2",
+    "./src/arcade-projects-session.js": "./src/arcade-projects-session.js?v=6e784a6234",
     "./src/arcade-starters.js": "./src/arcade-starters.js?v=07812518b8",
+    "./src/arcade-store.js": "./src/arcade-store.js?v=04d5363046",
     "./src/emulator.js": "./src/emulator.js?v=037ed0520d",
     "./src/files.js": "./src/files.js?v=70f9a1c03a",
     "./src/help.js": "./src/help.js?v=abf92fedef",
@@ -241,7 +246,7 @@
     "./src/lang/arcade/arcade-wire.js": "./src/lang/arcade/arcade-wire.js?v=294f92d580",
     "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=c0e83e7fa0",
     "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=fc2d17e338",
-    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=f13097dbd9",
+    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=463c77d22d",
     "./src/lang/arcade/z80-emit.js": "./src/lang/arcade/z80-emit.js?v=695f9865be",
     "./src/lang/basic/cartridge.js": "./src/lang/basic/cartridge.js?v=cb99a1e28a",
     "./src/lang/basic/editor.js": "./src/lang/basic/editor.js?v=cf1227edb8",
@@ -293,6 +298,7 @@
     "./src/tools/map-model.js": "./src/tools/map-model.js?v=eed4a48f2a",
     "./src/tools/model-preview.js": "./src/tools/model-preview.js?v=d1611c7399",
     "./src/tools/music-model.js": "./src/tools/music-model.js?v=bcdbfd9d6d",
+    "./src/tools/projects-dialog.js": "./src/tools/projects-dialog.js?v=7eca1fac25",
     "./src/tools/sound-editor.js": "./src/tools/sound-editor.js?v=84c1f92464",
     "./src/tools/sound-model.js": "./src/tools/sound-model.js?v=957d817742",
     "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=75ce75e97c",
@@ -300,6 +306,8 @@
     "./src/tools/symbols.js": "./src/tools/symbols.js?v=16320c0533",
     "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=ee58e82250",
     "./src/tools/tile-model.js": "./src/tools/tile-model.js?v=2adbd7aef1",
+    "./src/tools/variables-model.js": "./src/tools/variables-model.js?v=85b25547bc",
+    "./src/tools/variables-panel.js": "./src/tools/variables-panel.js?v=7f18e85a6b",
     "./src/tools/warning-list.js": "./src/tools/warning-list.js?v=40203e81f0",
     "./tsrun/ay.js": "./tsrun/ay.js?v=2c2092395e",
     "./tsrun/dock.js": "./tsrun/dock.js?v=316db509d1",
@@ -312,6 +320,7 @@
 }
 </script>
 
+<dialog id="projects-dialog" class="new-dialog" aria-label="Projects kept in this browser"></dialog>
 <dialog id="new-dialog" class="new-dialog" aria-labelledby="new-dialog-title">
   <form method="dialog" class="new-dialog-form">
     <div class="new-dialog-head">
@@ -322,8 +331,8 @@
     <div class="new-grid" id="new-grid" role="list"></div>
   </form>
 </dialog>
-<script type="module" src="src/editor.js?v=3439e8178d"></script>
-<script type="module" src="studio.js?v=1b47181aea"></script>
+<script type="module" src="src/editor.js?v=4146e4b200"></script>
+<script type="module" src="studio.js?v=c497d18ef0"></script>
 
 </body>
 </html>

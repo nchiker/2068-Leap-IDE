@@ -25,9 +25,11 @@ const status = () => evaluate("document.getElementById('status-text').textConten
 const compiled = () => waitFor('window.leapStudio?.lastCompile', 20000);
 // New opens the starter dialog (N1): this clicks New and picks the Blank starter (the project "Star Dash")
 async function newBlank() {
+  const opens = await evaluate('leapStudio.opens');
   await evaluate("document.getElementById('btn-new').click()");
   await waitFor("!!document.querySelector('#new-dialog[open] .new-card[data-starter=blank]')", 15000);
   await evaluate("document.querySelector('#new-dialog[open] .new-card[data-starter=blank]').click()");
+  await waitFor(`leapStudio.opens > ${opens}`, 10000);      // (the project list saves the open one first: the swap is asynchronous since P1)
 }
 /** Put a program in the main.arc editor and let the diagnostics compile settle. */
 async function setSource(text) {
@@ -126,7 +128,7 @@ async function runControlsBlock() {
   const projName = await evaluate("leapStudio.project.name");
   check('R5: Save screen downloads <project>-screen.png', !!dl && dl.name.endsWith('-screen.png') && dl.name.toLowerCase().startsWith(projName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3)), dl?.name);
   check('R5: it is a PNG of 320 x 240 with more than one colour (border and picture)', !!png && png.magic === '137,80,78,71,13,10,26,10' && png.w === 320 && png.h === 240 && png.colours >= 2, JSON.stringify(png));
-  // E2: no sideways scrollbar on the Display tab, and the seven tab names fit, at 1600 and at 1280 px wide
+  // E2: no sideways scrollbar on the Display tab, and the eight tab names fit, at 1600 and at 1280 px wide
   for (const w of [1600, 1280]) {
     await b.send('Emulation.setDeviceMetricsOverride', { width: w, height: 760, deviceScaleFactor: 1, mobile: false });
     await sleep(500);
@@ -135,7 +137,7 @@ async function runControlsBlock() {
       return { panel: p.scrollWidth - p.clientWidth, body: body.scrollWidth - body.clientWidth, ebody: p.querySelector('.emulator-body').scrollWidth - p.querySelector('.emulator-body').clientWidth,
         tabs: tabs.scrollWidth - tabs.clientWidth, hdr: hdr.scrollWidth - hdr.clientWidth, doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         tabsInside: [...tabs.children].every((t) => t.getBoundingClientRect().right <= r.right + 0.5), shown: p.querySelector('.panel-tab.active').dataset.tab }; })()`);
-    check(`E2: at ${w} px wide the Display tab has no sideways scrollbar and the seven tab names fit`, ov.shown === 'display' && ov.panel <= 0 && ov.body <= 0 && ov.ebody <= 0 && ov.tabs <= 0 && ov.hdr <= 0 && ov.doc <= 0 && ov.tabsInside, JSON.stringify(ov));
+    check(`E2: at ${w} px wide the Display tab has no sideways scrollbar and the eight tab names fit`, ov.shown === 'display' && ov.panel <= 0 && ov.body <= 0 && ov.ebody <= 0 && ov.tabs <= 0 && ov.hdr <= 0 && ov.doc <= 0 && ov.tabsInside, JSON.stringify(ov));
   }
   await b.shot('studio-1280');
   // E3 (at 1280 x 760): the problems list shows a count, folds and resizes; both are remembered
@@ -170,7 +172,7 @@ async function runControlsBlock() {
 }
 
 try {
-  await b.open('studio.html');
+  await b.open('studio.html?nolist=1');      // (nolist: the single-project behaviour these older checks were written for; the Projects list has its own block at the end)
 
   // ── Boot ──
   const ready = await waitFor('window.leapStudio?.lang && window.leapStudio?.emulator && window.leapStudio.lastCompile', 30000);
@@ -317,6 +319,20 @@ try {
   await sleep(200);
   const back = await evaluate("[document.getElementById('editor-title').textContent.split(' ')[0], document.querySelectorAll('.cm-lintRange-error').length].join(' | ')");
   check('switching to main.arc shows no marks there; the other file keeps its text', /^main\.arc \| 0/.test(back) && (await evaluate("leapStudio.project.files['extra.arc'].includes('helper')")), back);
+  // P3: undo survives a switch between files (one editor state per file)
+  await evaluate("document.querySelector('.proj-row[data-file=\"extra.arc\"]').click()");
+  await sleep(200);
+  await evaluate("leapEditor.insertLines('REM p3 edit')");
+  await evaluate("document.querySelector('.proj-row[data-file=\"main.arc\"]').click()");
+  await sleep(200);
+  await evaluate("document.querySelector('.proj-row[data-file=\"extra.arc\"]').click()");
+  await sleep(200);
+  const p3a = await evaluate("leapEditor.getSource().includes('REM p3 edit')");
+  const p3u = await evaluate("leapEditor.undo()");
+  const p3b = await evaluate("leapEditor.getSource().includes('REM p3 edit')");
+  check('P3: undo still works in extra.arc after switching to main.arc and back', p3a === true && p3u === true && p3b === false, JSON.stringify({ p3a, p3u, p3b }));
+  await evaluate("document.querySelector('.proj-row[data-file=\"main.arc\"]').click()");
+  await sleep(200);
   await evaluate(`(() => { window.confirm = (q) => !/^(Add .|Also change)/.test(q); document.querySelector('.proj-row[data-file="extra.arc"] .proj-act:last-child').click(); return true; })()`);
   check('deleting extra.arc removes it', (await evaluate("Object.keys(leapStudio.project.files).join()")) === 'main.arc');
 
@@ -1026,7 +1042,7 @@ try {
   const modelOk = await evaluate(`leapStudio.makeHost('t').setAsset('models', 'keepm', ${JSON.stringify(savedModel)}).ok`);
   await sleep(700);
   await b.open('about:blank'); await sleep(200);
-  await b.open('studio.html');
+  await b.open('studio.html?nolist=1');      // (nolist: the single-project behaviour these older checks were written for; the Projects list has its own block at the end)
   await waitFor('window.leapStudio?.lastCompile', 30000);
   const re = await evaluate(`({ src: leapEditor.getSource().split('\\n')[0], sprites: Object.keys(leapStudio.project.assets.sprites).join(), dirty: !document.getElementById('dirty-mark').hidden })`);
   check('auto-save restores the project after a reload (text, assets, unsaved mark)', re.src === 'REM survives a reload' && re.sprites === 'ball,extra1' && re.dirty, JSON.stringify(re));
@@ -1041,7 +1057,7 @@ try {
   for (const tab of ['maps', 'symbols', 'sfx']) {
     await evaluate(`document.querySelector('.panel-tab[data-tab="${tab}"]').click()`);
     await b.open('about:blank'); await sleep(200);
-    await b.open('studio.html');
+    await b.open('studio.html?nolist=1');      // (nolist: the single-project behaviour these older checks were written for; the Projects list has its own block at the end)
     await waitFor('window.leapStudio?.lastCompile', 30000);
     const shown = await waitFor(`document.querySelector('#right-panel .panel-tab.active')?.dataset.tab === '${tab}' && !document.querySelector('#right-panel .tab-body[data-tab="${tab}"]').hidden`, 8000);
     check(`E6: after a reload the ${tab} tab is open again`, !!shown, await evaluate("document.querySelector('#right-panel .panel-tab.active')?.dataset.tab"));
@@ -1049,17 +1065,65 @@ try {
   await evaluate(`document.querySelector('.panel-tab[data-tab="display"]').click()`);
   // E6: a brand-new first visit (nothing stored) shows no unsaved mark; the first edit shows it
   await b.open('about:blank'); await sleep(200);
-  await b.open('studio.html');
+  await b.open('studio.html?nolist=1');      // (nolist: the single-project behaviour these older checks were written for; the Projects list has its own block at the end)
   await waitFor('window.leapStudio?.lastCompile', 30000);
   await evaluate("(() => { localStorage.clear(); Storage.prototype.setItem = () => {}; return true; })()");      // (leaving the page auto-saves: nothing may be written)
   await b.open('about:blank'); await sleep(200);
-  await b.open('studio.html');
+  await b.open('studio.html?nolist=1');      // (nolist: the single-project behaviour these older checks were written for; the Projects list has its own block at the end)
   await waitFor('window.leapStudio?.lastCompile', 30000);
   check('E6: a first visit with nothing stored has no unsaved mark', await evaluate("document.getElementById('dirty-mark').hidden") && !(await evaluate('leapStudio.isDirty()')));
   await evaluate(`leapEditor.setSource('REM first edit\\n' + leapEditor.getSource())`);
   await sleep(200);
   check('E6: and the first edit shows it', await evaluate("!document.getElementById('dirty-mark').hidden"));
   // blocked storage must not break the page
+  // ── Stage 5: the Variables tab (R3) and the Projects list (P1) ──
+  await evaluate("(() => { window.confirm = () => true; return true; })()");      // (the page holds an unsaved edit from E6: New would ask)
+  await newBlank();
+  await evaluate("document.getElementById('btn-run').click()");
+  await waitFor('leapStudio.emulator.cartridge && leapStudio.ticks() >= 3', 20000);
+  await evaluate("document.querySelector('.panel-tab[data-tab=\"variables\"]').click()");
+  await sleep(600);
+  await evaluate("document.getElementById('btn-pause').click()");      // paused: the values are exact
+  await sleep(500);
+  const vr = await evaluate(`(() => { const rows = [...document.querySelectorAll('#tool-variables [data-role=row]')];
+    const vars = leapStudio.lastCompile.variables ?? [];
+    return { rows: rows.length, vars: vars.length, first: rows[0]?.textContent ?? '', tabFits: document.querySelector('.panel-tabs').scrollWidth <= document.querySelector('.panel-tabs').clientWidth + 1 }; })()`);
+  check('R3: the Variables tab lists the running game\'s variables with live values', vr.vars > 0 && vr.rows === vr.vars && /\d/.test(vr.first), JSON.stringify(vr));
+  // the value shown is the one in the machine's memory (read through the reported address)
+  const vv = await evaluate(`(() => { const v = leapStudio.lastCompile.variables.find((x) => x.kind === 'var');
+    const mem = leapStudio.emulator.machine.bus; const raw = mem.read(v.address) | (mem.read(v.address + 1) << 8); const signed = raw > 32767 ? raw - 65536 : raw;
+    const row = [...document.querySelectorAll('#tool-variables [data-role=row]')].find((r) => r.querySelector('[data-role=name]')?.textContent.toLowerCase() === v.name.toLowerCase());
+    return { name: v.name, signed, shown: row?.querySelector('[data-role=value]')?.textContent }; })()`);
+  check('R3: a variable\'s shown value equals the memory at its reported address', vv.shown !== undefined && Number(vv.shown.replace(/[^0-9-]/g, '')) === vv.signed, JSON.stringify(vv));
+  check('R3: eight tab names still fit the right panel (no sideways scroll)', vr.tabFits === true, JSON.stringify(vr));
+  await evaluate("document.querySelector('.panel-tab[data-tab=\"display\"]').click()");
+  await evaluate("document.getElementById('btn-stop').click()");
+
+  // P1: examples open as copies; the project you were working on stays in the list (a fresh page, the list on)
+  await b.open('about:blank'); await sleep(200);
+  await b.open('studio.html');
+  await waitFor('window.leapStudio?.lang && window.leapStudio?.emulator && window.leapStudio.lastCompile && window.leapStudio.projects.session?.available', 30000);
+  const p1 = await evaluate(`(async () => {
+    const before = (await leapStudio.projects.store.list()).length;
+    const nameBefore = leapStudio.project.name;
+    leapEditor.setSource('REM p1 work\\n' + leapEditor.getSource(), {fresh: true}); leapStudio.autosaveNow();
+    await new Promise((r) => setTimeout(r, 400));
+    document.querySelector('#btn-examples').click();
+    await new Promise((r) => setTimeout(r, 300));
+    document.querySelector('#examples-menu button').click();
+    await new Promise((r) => setTimeout(r, 1500));
+    const list = await leapStudio.projects.store.list();
+    const first = list.find((p) => p.name === nameBefore);
+    const doc = first ? await leapStudio.projects.store.get(first.id) : null;
+    return { before, after: list.length, names: list.map((p) => p.name), nameBefore, kept: !!doc && Object.values(doc.files).some((t) => t.includes('p1 work')), now: leapStudio.project.name };
+  })()`);
+  check('P1: opening an example keeps the open project in the list and adds a copy', p1.after === p1.before + 1 && p1.kept && p1.now !== p1.nameBefore, JSON.stringify(p1));
+  await evaluate("document.getElementById('btn-projects').click()");
+  await waitFor("document.querySelectorAll('#projects-dialog [data-role=project-row], #projects-dialog .pd-row').length >= 2", 5000).then(() => {}, () => {});
+  const rowsN = await evaluate("document.querySelectorAll('#projects-dialog .pd-row').length");
+  check('P1: the Projects dialog lists both projects', rowsN >= 2, String(rowsN));
+  await evaluate("document.querySelector('#projects-dialog').close()");
+
   check('no page errors', b.pageErrors.length === 0, b.pageErrors.join(' | '));
 } catch (err) {
   check('studio smoke test ran to the end', false, err.stack ?? err.message);

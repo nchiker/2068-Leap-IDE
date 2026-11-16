@@ -154,7 +154,7 @@ export function compileWithBuilds(builds, project, { replace = null, onBuild = n
   const at = (d) => locate(src.lineMap, d);
   return {
     ok: res.errors.length === 0 && !!res.dck,
-    dck: res.dck, map: res.map, usage: res.usage, scenes: res.scenes ?? null,
+    dck: res.dck, map: res.map, usage: res.usage, scenes: res.scenes ?? null, variables: res.variables ?? null,      // (variables: where every DIM'd name lives, the Variables tab)
     errors: res.errors.map(at), warnings: res.warnings.map(at),
     order: src.order, lineCount: src.lineMap.length, ms, build,
   };

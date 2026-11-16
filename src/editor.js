@@ -453,6 +453,19 @@ window.leapEditor = {
     forceLinting(view);
   },
 
+  /** The whole editor state (text, undo history, selection, folds) for restoreState(): the Studio keeps one per source file (P3). */
+  saveState() { return view.state; },
+
+  /** Show a state saved by saveState() again, the cursor and the undo history as they were. */
+  restoreState(state) {
+    view.setState(state);
+    view.dispatch({ selection: state.selection, effects: themeCompartment.reconfigure(leapTheme(darkTheme)) });       // (as setSource's fresh path: EditContext must hear the selection, the theme may have changed meanwhile)
+    if (onBreakpointsChanged) onBreakpointsChanged();
+    if (onDocChanged) onDocChanged();
+    reportHistory(view.state);
+    forceLinting(view);
+  },
+
   /**
    * Insert whole lines (generated code from the tools) after the line the
    * cursor is on, select them and scroll to them. One undo step removes them.
