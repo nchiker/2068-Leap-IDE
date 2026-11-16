@@ -1,0 +1,36 @@
+# Common rules (Leap Arcade Studio completion, stage 4)
+
+You work in a DISPOSABLE git worktree (given below). It is a copy of branch studio-stage4; `tsrun` is a symlink to the main tree's submodule and `arcade/build/` was copied (without xemu). Work only in your worktree, with absolute paths.
+
+Read first: `CLAUDE.md` section "Leap Arcade and Leap Arcade Studio", `docs/ARCADE_STUDIO.md` (the Studio as built, the asset-editor host interface), and the contract section for your item: `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` section 4 "Stage 4" (+ section 5 row 4, section 8). Follow the conventions of the neighbouring code: "use strict", plain ES modules, no innerHTML (textContent only), CSS from the page's variables, pure model modules with no DOM that Node can import, English plain-sentence messages.
+
+HARD RULES
+* Run NO git command that changes anything (no add / commit / checkout / reset / stash / worktree). `git diff`, `git status`, `git log` are fine. I (Claude) commit.
+* Never `pkill -f` / `pgrep -f` loops. Run long jobs in the background with output redirected to a file, then check the file. 
+* Do NOT run `node tools/verify.mjs` at all (it takes over an hour). Run only the exact test files named in your brief, plus the existing tests for any module you touch.
+* Edit only the files your brief says you own. If you need a change in a file you do not own (studio.js, studio.html, arcade/tests/steps.mjs, docs/*, shared tests), do NOT make it: describe the exact change (file, anchor, text) in your final report and I will apply it.
+* Browser tests: look at how tests/tile-editor-smoke.mjs / tests/sound-editor-smoke.mjs start headless Chrome (tests/browser-lib.mjs) and copy the pattern; poll for conditions, never sleep a fixed time.
+* Report claims with evidence (file:line, test output). Re-run your tests at the end and paste the PASS/FAIL summary lines. Do not claim a thing you did not run. If something in the brief is wrong or impossible, say so plainly instead of silently doing something else.
+* Final report: files created / changed (with line counts), tests run and results, the exact STEPS entries I should add to arcade/tests/steps.mjs, the exact Studio wiring I must do, and every deviation or open question.
+
+# Your item: N1, starters, part B (worktree: /tmp/claude-1000/-home-charlie-day-Projects-Leap-IDE/b01b783a-d3be-450c-b48c-cd9e7eebc069/scratchpad/wN1b)
+
+## What a starter is (N1, contract stage 4)
+`STARTERS` entries: `{id, title, about (one line), runtime ('v2' | 'v3' | 'v4'), make() -> project}`; `make()` builds a NEW project object each call (src/arcade-project.js: start from `newProject(title)` and set `files['main.arc']`, `framerate`, `assets` of sprites / tilesets / maps / sfx / music / models and `scenes` (per-scene display, e.g. fine colour) — see `exampleProject` and docs/ARCADE_ASSETS.md for the asset shapes; the project must pass `validateProject`). Assets are BUILT BY CODE in the module (as arcade/examples/*.assets.gen.mjs do), small, original, deterministic; no files are read at run time (the module ships to the browser, so it imports only from src/ and uses no Node APIs).
+Every starter:
+* is a small GAME WITH A POINT (memory rule): a clear goal stated on screen, live controls, a rising challenge, a score (and a high score where it costs little), game over and restart;
+* has UNDER 150 LINES of source, heavily commented for a beginner (what each part does, which words to change first), and shows its type's words;
+* compiles with NO warning and NO asset finding at all (compile warnings, arcade-assetcheck findings), on its runtime ('v2' | 'v3' | 'v4' is how the Studio picks the runtime; look at how studio.js / arcade-project.js compile and at tests/arcade-m5-harness.mjs `compileReal(src, assets, opts)` for how to select the runtime);
+* follows the two-blacks rule: BRIGHT 0 on black paper (never two different blacks; a black ink on a bright paper is allowed);
+* uses the later language words where they fit (KEYPRESS / JOYPRESS for fire presses, TIMER, USING for score text) — read docs/ARCADE_LANGUAGE.md and the finished examples arcade/examples/*.arc (shooter-classic.arc, blockfall.arc, orbit.arc, platformer.arc, vaults.arc, lumen.arc) for idiomatic code; copy idioms, never copy third-party code;
+* its test (below) compiles it on the REAL runtime and runs it scripted against the reference interpreter tick by tick, as tests/arcade-shooter-classic.mjs does (use tests/arcade-m5-harness.mjs: real(), compileReal, runReal, interpFor, diffRecords; read how those two suites call them), checks the script reaches the play scene, the score changes, and (where the starter has a game over) reaches it and restarts. Keep scripts short (a few hundred ticks); honour ARCADE_QUICK=1 like the other suites. Also check: the project round-trips through `serializeProject` / `parseProject`, and `validateProject` accepts it.
+Look at the neighbouring code for the CONTENTS: the review doc's table is in the brief below. Original art and original game ideas only; names such as the title are yours.
+
+Your three starters (file `src/starters/starters-b.js`, exporting `STARTERS_B`; I compose the final `src/arcade-starters.js`; another agent writes starters-a.js in parallel):
+1. **platformer** (v3): WINDOW, a short scrolling world (a MAP the game loads; the compiler banks big maps), SOLID tiles, jump and gravity, the camera, a NOWINDOW title scene. Goal: reach the flag / collect all coins, with something that moves (an enemy), a score. Study arcade/examples/platformer.arc + platformer.assets.gen.mjs + platformer.md (the reference one-level platformer) and docs/ARCADE_PLATFORMER_CONTRACT.md; make a much smaller, simpler game of your own (original art, original level).
+2. **raycaster** (v4): VIEW3D on a 16 x 16 floor plan, walking and turning, one billboard sprite, a NOVIEW title. Goal: find the exit / collect the keys with a billboard "guard" or pickup, a score or time. Study arcade/examples/vaults.arc + vaults.assets.gen.mjs + vaults.md and docs/ARCADE_RAYCASTER_CONTRACT.md, docs/ARCADE_BILLBOARDS_CONTRACT.md; make a much smaller game of your own (16 x 16 plan, original).
+3. **wireframe** (v2): WIRE3D, a model, EYE, DRAWMODEL turning, steering. Goal e.g. fly through gates / dodge rocks in 3D wireframe with a score (Orbit Gates is the finished example: arcade/examples/orbit.arc, orbit.assets.gen.mjs, orbit.md, docs/ARCADE_WIREFRAME_CONTRACT.md; make a smaller, simpler game). Models: keep each within 128 points / 255 edges / |c| <= 64.
+Note the other items of this stage: the wireframe starter's models should be simple enough to open and edit in the new model editor (W1), and the starters' tile maps in the map editor.
+Also write `tests/arcade-starters-b.mjs` (one section per starter; the v3 / v4 runtimes need the matching harness helpers: read tests/arcade-m6-platformer-harness.mjs, tests/arcade-m8-vaults-harness.mjs, tests/arcade-orbit.mjs for how the finished games' suites run those runtimes against the interpreter; reuse them).
+Own files: src/starters/starters-b.js (helpers named src/starters/starter-b-*.js allowed), tests/arcade-starters-b.mjs.
+In your report give me each starter's id, title, source line count, compile usage (bytes, tick cost vs budget if the harness reports it), and the test output.
