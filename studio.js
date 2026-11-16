@@ -113,9 +113,11 @@ function syncEditor() {
 
 /** Show a file in the editor (the previous file's text has been kept by syncEditor()). */
 function showFile(name, { line = 0, col = 0 } = {}) {
+  if (P.isGeneratedFile(name) && P.fileText(project, name) === null) name = P.MAIN_FILE;      // objects.arc exists only while a map has objects
   activeFile = name;
   loading = true;
-  window.leapEditor.setSource(project.files[name] ?? '', { fresh: true });
+  window.leapEditor.setSource(P.fileText(project, name) ?? '', { fresh: true });
+  window.leapEditor.setReadOnly(P.isGeneratedFile(name));         // the generated objects.arc cannot be typed in
   loading = false;
   $('editor-title').textContent = name;
   if (line > 0) window.leapEditor.setCursor(line, col);
@@ -179,6 +181,7 @@ function changed(ev) {
   version++;
   statusOverride = null; statusHoldUntil = 0;
   if (booted) syncEditor();              // (the unsaved mark compares the text in the editor)
+  if (booted && P.isGeneratedFile(activeFile)) showFile(activeFile);      // the open objects.arc follows the maps (or goes back to main.arc when the objects are gone)
   renderProject();
   updateDirty();
   scheduleAutosave();
@@ -296,6 +299,20 @@ function makeHost(id) {
       return r;
     },
     exampleEffects: () => exampleEffects(),
+    // Object layer (M2, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md section 4): the project's object kinds, edited by the map editor's Kinds panel
+    getObjectKinds: () => JSON.parse(JSON.stringify(project.objectKinds ?? {})),
+    setObjectKinds(kinds) {
+      const r = P.setObjectKinds(project, kinds);
+      if (!r.ok) return { ok: false, message: r.error };
+      fire({ type: 'project' });
+      return { ok: true };
+    },
+    renameObjectKind(from, to) {
+      const r = P.renameKindIn(project, from, to);
+      if (!r.ok) return { ok: false, message: r.error };
+      fire({ type: 'project' });
+      return { ok: true, changed: r.changed };
+    },
   };
 }
 const studioHost = makeHost('studio');
@@ -487,11 +504,15 @@ function renderProject() {
   const files = $('file-list');
   const bad = problemFiles();
   files.replaceChildren();
-  for (const name of P.sourceOrder(project)) {
+  for (const { name, generated } of P.fileList(project)) {
     const li = el('li', 'proj-row' + (name === activeFile ? ' active' : '') + (bad.has(name) ? ' has-error' : ''));
     li.dataset.file = name;
     li.append(el('span', 'proj-name', name));
-    if (name !== P.MAIN_FILE) {
+    if (generated) {
+      const lock = el('span', 'proj-meta', 'generated');
+      lock.title = 'Written by the Studio from the maps\' objects; read-only';
+      li.append(lock);
+    } else if (name !== P.MAIN_FILE) {
       const ren = el('button', 'proj-act', '✎'); ren.title = 'Rename';
       const del = el('button', 'proj-act', '✕'); del.title = 'Delete';
       ren.addEventListener('click', (e) => { e.stopPropagation(); renameFileUi(name); });

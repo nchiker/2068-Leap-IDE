@@ -39,7 +39,8 @@ import { interpret } from '../src/lang/arcade/arcade-interp.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { diffV3 } from './arcade-m6-common.mjs';
 import { createSoundRecorder, soundOf, clockOf, compareSound, soundCoverage } from './arcade-m15-common.mjs';
-import { LEVELS, COLS, ROWS, levelTables, dataLines, buildRunnerAssets } from '../arcade/examples/runner.assets.gen.mjs';
+import { LEVELS, COLS, ROWS, levelTables, buildRunnerAssets } from '../arcade/examples/runner.assets.gen.mjs';
+import { completeSource, generateObjectsSource } from '../src/arcade-objects.js';
 
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -47,15 +48,25 @@ const ROOT = join(HERE, '..');
 const EX = join(ROOT, 'arcade/examples');
 const SELF = fileURLToPath(import.meta.url);
 const QUICK = !!process.env.ARCADE_QUICK;
-const SRC = readFileSync(join(EX, 'runner.arc'), 'utf8');
+const ARC_TEXT = readFileSync(join(EX, 'runner.arc'), 'utf8');
 const ASSETS_TEXT = readFileSync(join(EX, 'runner.assets.json'), 'utf8');
 const ASSETS = JSON.parse(ASSETS_TEXT);
+// the level data are the worlds' OBJECTS (assets.maps.<world>.objects): the compiler puts the tables it generates from them (the Studio's objects.arc) in front of the game, and so does this test, for the interpreter
+const SRC = completeSource(ARC_TEXT, ASSETS).text;
 // The banker banks only what the mapped part needs, and since the compiler size pass (docs/ARCADE_COMPILER_SIZE_CONTRACT.md) the game's code is smaller, so the build as the linker
 // places it (ASSETS: every map `auto`) keeps level3 in the mapped part. The banked worlds themselves are tested on this build: the same assets with the four worlds' maps set to
 // `banked` (assets.maps.<name>.bank, docs/ARCADE_BANKING_CONTRACT.md; pf_world / rn_world2 / rn_world3 / rn_world4 are the maps of level / level2 / level3 / level4).
 const WORLD_MAPS = ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'];
 const ASSETS_BANKED = JSON.parse(ASSETS_TEXT); for (const k of WORLD_MAPS) ASSETS_BANKED.maps[k].bank = 'banked';
 const s16 = (v) => ((v & 0xFFFF) ^ 0x8000) - 0x8000;
+/** What RESPAWN of runner.arc works out at the start and at each checkpoint: cf = the first coin with x + 8 > camera (SPINCOINS' skip loop), nx = the first enemy with x >= camera - 48 (its own loop); [cf, nx] four times. */
+const rcfRnx = (arrays, L) => [24, ...arrays.ckx].map((x) => {
+  const cam = Math.max(0, Math.min(832, x - 72));
+  let cf = 0, nx = 0;
+  while (cf < arrays.ce[0] && arrays.cxs[cf] + 8 <= cam) cf++;
+  while (nx < arrays.se[0] && arrays.sx[nx] < cam - 48) nx++;
+  return [cf, nx];
+});
 
 // ── the level starts: the one place the source is changed for a test (a variant of GSTAGE 0, "lv = 0", and of the lives) ─────────────────────────────────────
 const START_MARK = 'score = 0 : lives = 3 : hud = 0 : lv = 0';
@@ -200,17 +211,25 @@ console.log('1. The level data');
 // =================================================================================================================
 {
   check_('runner.assets.json is what runner.assets.gen.mjs makes', ASSETS_TEXT === JSON.stringify(buildRunnerAssets(), null, 1) + '\n');
-  const a = SRC.indexOf('  REM @@DATA-BEGIN@@\n') + '  REM @@DATA-BEGIN@@\n'.length, b = SRC.indexOf('  REM @@DATA-END@@');
-  check_('the level data of runner.arc is what runner.assets.gen.mjs --data prints', a > 30 && b > a && SRC.slice(a, b) === dataLines());
+  const gen = generateObjectsSource(ASSETS);
+  check_('runner.arc carries no level data of its own any more (no TABLE, no @@DATA markers); the objects of the maps generate the tables', !/^\s*TABLE\b/im.test(ARC_TEXT) && !ARC_TEXT.includes('@@DATA') && gen.text !== '' && SRC === gen.text + ARC_TEXT);
   const maps = ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'];
+  check_(`the generated tables are ${maps.length}, one a world in the order of the map names (what LOADTABLE lv indexes): ${gen.tables.map((t) => t.table).join(' ')}`, JSON.stringify(gen.tables.map((t) => [t.map, t.index])) === JSON.stringify(maps.map((m, i) => [m, i])) && Object.keys(ASSETS.objectKinds).join() === 'coin,enemy,checkpoint');
   const flags = ASSETS.tilesets.pf_tiles.tiles.map((t) => t.flags);
   const T = levelTables();
-  // the four TABLE blocks of the data (TABLE lv1 .. lv4): one object a level, row name -> its values (level-relative lists, and the counts ce / se as one value)
-  const blocks = [...SRC.slice(a, b).matchAll(/ {2}TABLE (\w+)\n([\s\S]*?) {2}ENDTABLE/g)];
-  const level = blocks.map((m) => { const o = {}; for (const r of m[2].matchAll(/^ {4}(\w+) = ([-\d, ]+)$/gm)) o[r[1]] = r[2].split(',').map(Number); return o; });
-  check_(`the data are four tables lv1 .. lv4 (${blocks.map((m) => m[1]).join(' ')}), in level order`, blocks.map((m) => m[1]).join(' ') === 'lv1 lv2 lv3 lv4' && level.every((o) => o.ce.length === 1 && o.se.length === 1));
+  // the rows of each generated TABLE: one object a level, row name -> its values (level-relative lists, and the counts as one value)
+  const blocks = [...gen.text.matchAll(/^TABLE (\w+)\n([\s\S]*?)^ENDTABLE/gm)];
+  const level = blocks.map((m) => { const o = {}; for (const r of m[2].matchAll(/^ {2}(\w+) = ([-\d, ]+)$/gm)) o[r[1]] = r[2].split(',').map(Number); return o; });
+  // the same lists straight from the objects (sorted by x, then y), named as the old data were: cxs cys sx sy wlo whi ckx cky and the counts
+  const fromObjects = (name) => {
+    const objs = ASSETS.maps[name].objects, by = (k) => objs.filter((o) => o.kind === k).sort((p, q) => p.x - q.x || p.y - q.y);
+    const c = by('coin'), e = by('enemy'), k = by('checkpoint');
+    return { cxs: c.map((o) => o.x), cys: c.map((o) => o.y), sx: e.map((o) => o.x), sy: e.map((o) => o.y), wlo: e.map((o) => o.props.lo), whi: e.map((o) => o.props.hi), ckx: k.map((o) => o.x), cky: k.map((o) => o.y), ce: [c.length], se: [e.length] };
+  };
   LEVELS.forEach((L, i) => {
-    const arrays = level[i];
+    const arrays = fromObjects(maps[i]);
+    const gl = level[i];
+    check_(`level ${i + 1}: the generated table ${blocks[i][1]} lists the objects: coinx coiny enemyx enemyy enemylo enemyhi checkpointx checkpointy and the counts`, JSON.stringify([gl.coinx, gl.coiny, gl.enemyx, gl.enemyy, gl.enemylo, gl.enemyhi, gl.checkpointx, gl.checkpointy, gl.ncoin, gl.nenemy, gl.ncheckpoint]) === JSON.stringify([arrays.cxs, arrays.cys, arrays.sx, arrays.sy, arrays.wlo, arrays.whi, arrays.ckx, arrays.cky, arrays.ce, arrays.se, [3]]));
     const m = ASSETS.maps[maps[i]], cell = (c, r) => m.cells[r * COLS + c];
     const ok = m.w === COLS && m.h === ROWS && m.cells.length === COLS * ROWS;
     check_(`level ${i + 1}: the world ${maps[i]} is 128 x 16`, ok);
@@ -221,11 +240,11 @@ console.log('1. The level data');
     // coins: exactly the coin tiles of the map, in the order of the list
     const coins = []; for (let c = 0; c < COLS; c++) for (let r = 5; r < ROWS; r++) if (cell(c, r) === 6) coins.push([c * 8, r * 8]);
     const listed = []; for (let k = 0; k < arrays.ce[0]; k++) listed.push([arrays.cxs[k], arrays.cys[k]]);
-    check_(`level ${i + 1}: cxs / cys list exactly ce = ${arrays.ce[0]} coins (the array row is as long as the count)`, arrays.cxs.length === arrays.ce[0] && arrays.cys.length === arrays.ce[0]);
+    check_(`level ${i + 1}: the coin lists have exactly ncoin = ${arrays.ce[0]} coins (the array row is as long as the count)`, arrays.cxs.length === arrays.ce[0] && arrays.cys.length === arrays.ce[0]);
     check_(`level ${i + 1}: the ${listed.length} coins of the list are the coin tiles of the map (sorted by x)`, JSON.stringify(coins.sort((p, q) => p[0] - q[0] || p[1] - q[1])) === JSON.stringify(listed));
     // enemies: sorted by x; a walker stands on a solid top (16 px above it), a bat has no turning points
     const sl = 0, sh = arrays.se[0];
-    check_(`level ${i + 1}: sx / sy / wlo / whi list exactly se = ${sh} enemies`, [arrays.sx, arrays.sy, arrays.wlo, arrays.whi].every((r) => r.length === sh));
+    check_(`level ${i + 1}: the enemy lists have exactly nenemy = ${sh} enemies`, [arrays.sx, arrays.sy, arrays.wlo, arrays.whi].every((r) => r.length === sh));
     let sorted = true, standing = true, bats = 0;
     for (let k = sl; k < sh; k++) {
       if (k > sl && arrays.sx[k] < arrays.sx[k - 1]) sorted = false;
@@ -243,12 +262,12 @@ console.log('1. The level data');
       const walk = (dir) => { let x = arrays.sx[k]; const y = arrays.sy[k]; for (let n = 0; n < 200; n++) { const px = dir > 0 ? x + 16 : x - 1; if ((fl(px, y + 4) & 1) || (fl(px, y + 11) & 1) || !(fl(px, y + 16) & 9)) return x; x += 8 * dir; } return null; };
       if (walk(-1) !== arrays.wlo[k] || walk(1) !== arrays.whi[k]) bad++;
     }
-    check_(`level ${i + 1}: the turning points (WLO / WHI) of the walkers agree with a second computation from the map`, bad === 0);
+    check_(`level ${i + 1}: the turning points (enemylo / enemyhi) of the walkers agree with a second computation from the map`, bad === 0);
     // the checkpoints: three, on ground, at the hero's standing height, and no hazard under the hero's box there
     const cps = [0, 1, 2].map((j) => [arrays.ckx[j], arrays.cky[j]]);
     const okc = cps.every(([x, y]) => { const c0 = (x + 3) >> 3, c1 = (x + 12) >> 3, g = (y + 24) >> 3; return [c0, c1].every((c) => flags[cell(c, g)] & 1) && [c0, c1].every((c) => [y >> 3, (y >> 3) + 1, (y >> 3) + 2].every((r) => !(flags[cell(c, r)] & 3))); }) && cps[0][0] < cps[1][0] && cps[1][0] < cps[2][0];
     check_(`level ${i + 1}: three checkpoints in order, on solid ground, clear of walls and spikes`, okc);
-    check_(`level ${i + 1}: the respawn tables (RCF / RNX) and the coin index (CIX) follow the lists`, JSON.stringify([arrays.rcf, arrays.rnx, arrays.cix]) === JSON.stringify([T[i].rcf, T[i].rnx, T[i].cix]) && arrays.rcf.every((v) => v >= 0 && v <= arrays.ce[0]) && arrays.rnx.every((v) => v >= 0 && v < arrays.se[0]));
+    check_(`level ${i + 1}: the coin bucket index (coinix) is the first coin with x >= 128 b, as the generator's model says (levelTables cix); the respawn values RESPAWN works out equal the model's rcf / rnx`, JSON.stringify(gl.coinix) === JSON.stringify(T[i].cix) && rcfRnx(arrays, L).every((v, n) => v[0] === T[i].rcf[n] && v[1] === T[i].rnx[n]));
   });
   info(`coins per level ${LEVELS.map((L) => L.coins.length).join(' / ')}, enemies per level ${LEVELS.map((L) => L.spawns.length).join(' / ')}`);
 }
@@ -368,6 +387,7 @@ let script = null, scriptInfo = null;
 if (existsSync(SCRIPT_FILE)) { scriptInfo = JSON.parse(readFileSync(SCRIPT_FILE, 'utf8')); script = unrle(scriptInfo.runs); }
 const PLAY_SRC = scriptInfo && scriptInfo.lives !== 3 ? variant({ lives: scriptInfo.lives }) : SRC;       // the game as it is, unless the recorded route needs more than its three lives
 const stickOf = (arr) => (t) => arr[t - 1] ?? 0;
+const RESPAWN_DIGEST = '86876355588a395ed8dd85c3167c9a05998e96ac2104cb8d00d63c6224538749';
 const PLAY_DIGEST = { state: 'f21d5e0511bcb3044d5b70ca55be93be694b0afbecd6fdeaa74895a648312ba5', world: '9f6305a5ce042a3895b42c7b56dff9af7ff42a2c8c3c2fbca6de95f2a417d745' };
 
 // =================================================================================================================
@@ -401,8 +421,22 @@ else {
   if (PLAY_SRC !== SRC) skip_('the play is the pre-scenes game\'s', 'the recorded route needed a variant of the game (more lives)');
   else {
     const keep = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !/^(TITLE|DEMO)\./.test(k) && k !== 'TI' && k !== 'SC0').sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+    // PLAY_DIGEST was taken before the level data became object layers: the records are put back into the old names and shape first.  The arrays and counts are renamed (coinx -> cxs, coiny -> cys, coinix -> cix,
+    // enemyx / enemyy / enemylo / enemyhi -> sx / sy / wlo / whi, checkpointx / checkpointy -> ckx / cky, ncoin / nenemy -> ce / se); the two arrays the generated tables add (enemyix, checkpointix) and the count
+    // ncheckpoint are left out; rcf / rnx (which RESPAWN now works out) are put back from the model's tables for the level that is loaded (zeros before the first load).
+    const OLD = { COINX: 'CXS', COINY: 'CYS', COINIX: 'CIX', ENEMYX: 'SX', ENEMYY: 'SY', ENEMYLO: 'WLO', ENEMYHI: 'WHI', CHECKPOINTX: 'CKX', CHECKPOINTY: 'CKY', NCOIN: 'CE', NENEMY: 'SE' };
+    const NEWONLY = new Set(['ENEMYIX', 'CHECKPOINTIX', 'NCHECKPOINT']);
+    const TL = levelTables();
+    const oldShape = (r) => {
+      const ren = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !NEWONLY.has(k)).map(([k, v]) => [OLD[k] ?? k, v]));
+      const arrays = ren(r.arrays), vars = ren(r.vars);
+      const loaded = r.vars.NCOIN > 0 ? TL[r.vars.LV] : null;
+      arrays.RCF = loaded ? loaded.rcf : [0, 0, 0, 0];
+      arrays.RNX = loaded ? loaded.rnx : [0, 0, 0, 0];
+      return { vars: keep(vars), arrays: keep(arrays) };
+    };
     const hs = createHash('sha256'), hw = createHash('sha256');
-    for (let t = 21; t <= script.length; t++) { const r = full.ticks[t - 1]; hs.update(JSON.stringify([keep(r.vars), keep(r.arrays), r.sprites, r.cam])); if (t >= 26) hw.update(Buffer.from(r.worldRam)); }
+    for (let t = 21; t <= script.length; t++) { const r = full.ticks[t - 1]; const o = oldShape(r); hs.update(JSON.stringify([o.vars, o.arrays, r.sprites, r.cam])); if (t >= 26) hw.update(Buffer.from(r.worldRam)); }
     const state = hs.digest('hex'), world = hw.digest('hex');
     check_(`the play from tick 21 to ${script.length} (variables, arrays, sprites, camera of ${script.length - 20} ticks) is the pre-scenes game's, tick for tick (digest ${state.slice(0, 12)}...)`, state === PLAY_DIGEST.state);
     check_(`... and so is the world (WORLD_RAM of ${script.length - 25} ticks, from tick 26: digest ${world.slice(0, 12)}...)`, world === PLAY_DIGEST.world);
@@ -453,6 +487,47 @@ else {
   const wantR = playInterp(RETRY_SRC, rt, retryStick);
   check_(`game over and back to the title (a variant with one life): ${rt} ticks equal to the interpreter`, !rr.error && vsInterp(rr, wantR, rt) === null, rr.error ?? vsInterp(rr, wantR, rt) ?? '');
   { const sv = soundVs(rr, RETRY_SRC, rt, retryStick, undefined, ['song', 'effect', 'cOver']); check_(`game over and back to the title (a variant with one life), sound at song level: V_SFX_ACTIVE, AY_SHADOW and the chip equal the interpreter's on every sample`, sv.ok, sv.detail); }
+}
+
+// =================================================================================================================
+console.log('\n4b. The respawn at a checkpoint (RESPAWN works out the first enemy and coin to show again: the object layers carry no such columns)');
+// =================================================================================================================
+if (!script || !full) skip_('the respawn', 'no recorded play-through');
+else {
+  // the recorded route to tick 200 (past the first checkpoint, at x 416), then the hero runs right and never jumps: a walker touches him (a life, no respawn), he falls into the pit after the second checkpoint
+  // (x 592) and is put back there, and a walker touches him again.  RESPAWN_DIGEST is the digest of this run of the game as it was with RCF / RNX in its data (the run of the old source on this interpreter, in the
+  // old names and shape: the same method as PLAY_DIGEST above).
+  const CUT = 200, N = CUT + 250;
+  const stick = (t) => (t <= CUT ? script[t - 1] ?? 0 : RIGHT);
+  const run = playInterp(PLAY_SRC, N, stick).ticks;
+  const respawn = run.findIndex((x, k) => k > 0 && x.vars.LIVES < run[k - 1].vars.LIVES && x.vars.PX === x.vars.RX && x.vars.CK > 0) + 1;
+  const T0 = levelTables()[0];
+  check_(`the hero falls into the pit after the second checkpoint and is put back there (tick ${respawn}, lives ${respawn ? run[respawn - 2].vars.LIVES + ' -> ' + run[respawn - 1].vars.LIVES : '?'}, checkpoint ${respawn ? run[respawn - 1].vars.CK : '?'})`, respawn > 0 && run[respawn - 1].vars.CK === 2);
+  if (respawn > 0) {
+    const ck = run[respawn - 1].vars.CK, v = run[respawn - 1].vars;
+    check_(`in the respawn tick CF is the first coin not left of the camera (${v.CF} = the model's rcf(${ck}) ${T0.rcf[ck]}) and NX the first enemy not left of camera - 48 (${v.NX}: rnx(${ck}) ${T0.rnx[ck]}, or one more when the SPAWNER took that entry in the same tick)`,
+      v.CF === T0.rcf[ck] && T0.rcf[ck] > 0 && (v.NX === T0.rnx[ck] || v.NX === T0.rnx[ck] + 1) && T0.rnx[ck] > 0);
+  }
+  {
+    const OLDN = { COINX: 'CXS', COINY: 'CYS', COINIX: 'CIX', ENEMYX: 'SX', ENEMYY: 'SY', ENEMYLO: 'WLO', ENEMYHI: 'WHI', CHECKPOINTX: 'CKX', CHECKPOINTY: 'CKY', NCOIN: 'CE', NENEMY: 'SE' };
+    const NEWONLY = new Set(['ENEMYIX', 'CHECKPOINTIX', 'NCHECKPOINT']);
+    const keep = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !/^(TITLE|DEMO)\./.test(k) && k !== 'TI' && k !== 'SC0').sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+    const ren = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !NEWONLY.has(k)).map(([k, v]) => [OLDN[k] ?? k, v]));
+    const h = createHash('sha256');
+    for (let t = 21; t <= N; t++) {
+      const r = run[t - 1], arrays = ren(r.arrays);
+      arrays.RCF = r.vars.NCOIN > 0 ? levelTables()[r.vars.LV].rcf : [0, 0, 0, 0]; arrays.RNX = r.vars.NCOIN > 0 ? levelTables()[r.vars.LV].rnx : [0, 0, 0, 0];
+      h.update(JSON.stringify([keep(ren(r.vars)), keep(arrays), r.sprites, r.cam]));
+    }
+    const digest = h.digest('hex');
+    check_(`the run (${N} ticks, ${run.filter((x, k) => k && x.vars.LIVES < run[k - 1].vars.LIVES).length} lives lost, one respawn) is the old game's tick for tick: variables, arrays, sprites, camera (digest ${digest.slice(0, 12)}...)`, digest === RESPAWN_DIGEST);
+  }
+  if (realOk && respawn > 0) {
+    const rr = runFramed(R3, compile(PLAY_SRC, { runtime: R3.rt, image: R3.img, assets: ASSETS }), { ticks: respawn + 20, stick });
+    const want = playInterp(PLAY_SRC, respawn + 20, stick);
+    const d = rr.error ?? vsInterp(rr, want, respawn + 20);
+    check_(`the same run on the real runtime: ${respawn + 20} ticks, through the respawn, equal to the interpreter (variables, arrays, SPR_TAB, WORLD_RAM, camera, text cells)`, d === null, d ?? '');
+  }
 }
 
 // =================================================================================================================

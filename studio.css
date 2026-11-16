@@ -85,8 +85,9 @@
 /* E2: the six tab names have the header to themselves and scroll sideways if the panel is narrower still */
 .panel-right > .panel-header { padding: 0 6px; }
 .panel-right .panel-tabs { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.panel-right .panel-tabs { gap: 1px; }
 .panel-right .panel-tabs::-webkit-scrollbar { display: none; }
-.panel-right .panel-tab { padding: 0 6px; white-space: nowrap; flex: none; }
+.panel-right .panel-tab { padding: 0 4px; white-space: nowrap; flex: none; }
 .display-tools { display: flex; align-items: center; gap: 4px; padding: 6px 12px 0; flex: none; }
 .display-tools-label { margin-right: auto; font: 700 10px var(--font-ui); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-muted); }
 

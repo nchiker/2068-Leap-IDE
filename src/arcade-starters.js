@@ -8,8 +8,9 @@
 
 "use strict";
 
-import { newProject } from './arcade-project.js';
+import { STARTERS_A } from './starters/starters-a.js';
 
-export const STARTERS = [
-  { id: 'blank', title: 'Blank', about: 'A ball you steer with the joystick: the smallest game.', runtime: 'v2', make: () => newProject('Blank') },
-];
+// The order of the dialog: the plain starters first, then one per game type, fine colour last.
+const A = Object.fromEntries(STARTERS_A.map((s) => [s.id, s]));
+
+export const STARTERS = [A.blank, A['sprites-tiles'], A['scenes-music'], A['fine-colour']];

@@ -45,6 +45,7 @@ export const SUITES = [
   'tests/arcade-starfall.mjs',
   'tests/arcade-shooter-classic.mjs',          // Starfall, the classic two-buffer plain-colour version (shooter-classic.arc): the real v2 runtime against the interpreter, tick by tick, sound at song level, tick costs
   'tests/arcade-lumen.mjs',                     // Lumen (the fine colour showcase, a maze chase): a bot plays it on the real runtime (full mazes and small caves), interpreter equal, the rules, the picture, >= 99 % of the ticks at 20 Hz, the beam
+  'tests/arcade-starters-a.mjs',                // the first four starters (blank, sprites-tiles, scenes-music, fine-colour): compile clean, a bot plays each on the real v2 runtime, interpreter equal tick by tick, the fine picture equals finePicture, 20 Hz
   'tests/arcade-starfall-fine.mjs',            // Starfall's fine-colour play scene: every picture against the interpreter's, >= 95 % of the ticks at 20 Hz (the script and late waves), 0 broken frames on the beam
   'tests/arcade-m6-compiler.mjs',
   'tests/arcade-m6-platformer.mjs',
@@ -169,6 +170,7 @@ export const OTHER_SUITES = [
   { file: 'tests/sound-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/arcade-editor-perf.mjs', group: BROWSER_GROUP },   // stage 1 B2: typing in Vaults makes no long task
   { file: 'tests/arcade-project.mjs' },
+  { file: 'tests/arcade-objects.mjs' },
   { file: 'tests/arcade-assetcheck.mjs' },
   { file: 'tests/sprite-model.mjs' },
   { file: 'tests/tile-model.mjs' },

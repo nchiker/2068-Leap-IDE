@@ -24,6 +24,7 @@ import { check } from '../src/lang/arcade/arcade-check.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { ARCADE_WORDS, RESERVED, ASSET_KINDS, LIMITS, BATCH11_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { scanArcade } from '../src/lang/arcade/arcade-scan.js';
+import { completeSource, shiftDiagnostic } from '../src/arcade-objects.js';
 // Older-compiler comparison (permanent; stage 3 kept it on purpose) -- stage 1 K2 changed the VIEW3D / WIRE3D default from BRIGHT 1 to BRIGHT 0 on purpose:
 // a statement with no BRIGHT clause gets an explicit `BRIGHT 1` (the old default) for BOTH compilers, so the identity still covers it byte for byte.
 const pinOldBright = (text) => text.split('\n').map((l) => (/^\s*(VIEW3D|WIRE3D)\b/i.test(l) && !/\bBRIGHT\b/i.test(l.replace(/\bREM\b.*$/i, '')) ? l.replace(/(\s*\bREM\b.*)?$/i, (rem) => ` BRIGHT 1${rem}`) : l)).join('\n');
@@ -288,7 +289,7 @@ console.log('\n4. requiredRuntime');
     const r = requiredRuntime(text, assets);
     check_(`example ${n} needs v${expectExample[n]}`, r.version === expectExample[n], `got v${r.version}: ${r.reasons.join(', ')}`);
     if (n === 'vaults') check_('... and vaults names VIEW3D as a reason (not COSA / SINA / FXMUL)', r.reasons.includes('VIEW3D') && !r.reasons.some((x) => /COSA|SINA|FXMUL/.test(x)), r.reasons.join(', '));
-    const e = errs(text, r.version);
+    const e = errs(completeSource(text, assets).text, r.version);      // (an example with an object layer is checked with the tables the compiler generates in front of it)
     check_(`example ${n} checks with no error on v${r.version}`, e.length === 0, msgs(e));
   }
   const rr = (src) => requiredRuntime(src, { sprites: {} });
@@ -535,9 +536,9 @@ console.log('\n6. byte identity with the compiler before the code generator (con
         if (!RT[v]) continue;
         if ((v === 2 || v === 3) && /\b(COSA|SINA|FXMUL)\s*\(/i.test(text)) continue;      // COSA / SINA / FXMUL changed on v2 (allowed) and v3 (new message) on purpose
         for (const variant of [{}, { bankAll: true }]) {
-          const src = pinOldBright(text), a = oldCompile(src, { ...RT[v], assets, ...variant }), b = compile(src, { ...RT[v], assets, ...variant });
+          const src = pinOldBright(text), a = oldCompile(completeSource(src, assets).text, { ...RT[v], assets, ...variant }), b = compile(src, { ...RT[v], assets, ...variant });      // (the old compiler has no object layer: it gets the text with the generated tables in front, which compile() puts there itself)
           n++;
-          if (a.errors.length || b.errors.length) { if (JSON.stringify(a.errors) !== JSON.stringify(b.errors)) bad += `${dir}/${f} v${v}: errors differ; `; continue; }
+          if (a.errors.length || b.errors.length) { const off = completeSource(src, assets).offset; if (JSON.stringify(a.errors.map((d) => shiftDiagnostic(d, off))) !== JSON.stringify(b.errors)) bad += `${dir}/${f} v${v}: errors differ; `; continue; }      // (compile() reports lines in the caller's own text)
           built++;
           if (!same(a.dck, b.dck) || !same(a.memory, b.memory)) bad += `${dir}/${f} v${v}${variant.bankAll ? ' bankAll' : ''}: bytes differ; `;
           else if (JSON.stringify(a.warnings) !== JSON.stringify(notTwoBlacks(b.warnings))) bad += `${dir}/${f} v${v}${variant.bankAll ? ' bankAll' : ''}: warnings differ; `;
