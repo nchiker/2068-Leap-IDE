@@ -102,10 +102,39 @@ try {
   check('New refuses a name in use (and a bad one), with a message', await (async () => { const w = await writes(() => click('[data-role=model-new]')); const m1 = await message(); await stubDialogs('9bad'); await click('[data-role=model-new]'); return w === 0 && /already/.test(m1) && /letter/.test(await message()); })());
   await b.shot('02-new-cube');
 
+  // ── gallery strip (stage 5, S1): a picture of every model, the edited one highlighted, a click selects ──
+  const gal = () => evaluate(`(() => { const st = document.querySelector('[data-role=gallery-strip]'); if (!st) return null;
+    const items = [...st.querySelectorAll('[data-role=gallery-item]')];
+    return { names: items.map((i) => i.dataset.asset), current: items.filter((i) => i.classList.contains('current')).map((i) => i.dataset.asset), draws: Object.fromEntries(items.map((i) => [i.dataset.asset, +i.dataset.draws])),
+      captions: items.map((i) => i.textContent), titles: items.map((i) => i.title), h: st.getBoundingClientRect().height, sw: st.scrollWidth, cw: st.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
+  const galPic = (n) => evaluate(`document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas').toDataURL()`);
+  const galInk = (n) => evaluate(`(() => { const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const set = new Set(); let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { n++; set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, colours: set.size, w: c.width, h: c.height }; })()`);
+  /** Does the item's canvas equal asset-thumbs.js's picture of the stored model? */
+  const galIsModel = (n) => evaluate(`(async () => { const A = await import('../src/tools/asset-thumbs.js'); const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas');
+    const want = A.thumbModel(t.project.assets.models[${J(n)}], { box: 36 }); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; return c.width === want.w && c.height === want.h && d.every((v, i) => v === want.rgba[i]); })()`);
+  {
+    const g0 = await gal(), list = await evaluate("t.host.listAssets('models')");
+    check('S1: the strip lists every model (the four of Orbit Gates and the new ship), the edited one highlighted, each with its name as caption and tooltip',
+      !!g0 && eq(g0.names, list) && g0.names.length === 5 && eq(g0.current, ['ship']) && eq(g0.captions, list) && eq(g0.titles, list), J(g0?.names));
+    check('S1: the pictures are the wireframes (light lines on a dark ground), not blank', (await galIsModel('gate')) && (await galIsModel('ship')) && (await galInk('gate')).colours === 2 && (await galInk('gate')).n === 36 * 36);
+    check('S1: the strip is at most 72 px high and the page does not scroll sideways', g0.h <= 72 && g0.page <= 0, `h ${g0.h}, page overflow ${g0.page}`);
+    await click('[data-role=gallery-item][data-asset="rock"]');
+    const g1 = await gal();
+    check('S1: a click on another picture selects that model (the editor shows it, the drop-down follows)', (await state()).name === 'rock' && eq(g1.current, ['rock']) && (await evaluate("document.querySelector('[data-role=model-picker]').value")) === 'rock');
+    await click('[data-role=gallery-item][data-asset="ship"]');
+    check('S1: and back; the drop-down still works too', (await state()).name === 'ship' && (await setSelect('model-picker', 'shards')) === 'shards' && (await state()).name === 'shards' && eq((await gal()).current, ['shards']) && (await setSelect('model-picker', 'ship')) === 'ship' && (await state()).name === 'ship');
+  }
+
   // ── add points by clicking ──
   await b.evaluate('document.querySelector(\'[data-role=view][data-view=front]\').focus()');
+  const gd0 = (await gal()).draws, gp0 = await galPic('ship');
   n = await writes(() => clickView('front', [50, 50, 0]));
   st = await state();
+  {
+    const gd1 = (await gal()).draws, changed = Object.keys(gd1).filter((k) => gd1[k] !== gd0[k]);
+    check('S1: that edit redrew the edited model\'s picture only, and the picture is the stored model\'s', eq(changed, ['ship']) && (await galPic('ship')) !== gp0 && (await galIsModel('ship')), J(changed));
+  }
   check('a click in empty space of the front view adds a point: x, y from the click, z = 0 with nothing selected; one write; it is selected',
     n === 1 && st.model.points.length === 9 && eq(st.model.points[8], [50, 50, 0]) && eq(st.sel, [8]) && await allValid());
   n = await writes(() => clickView('front', [50, -50, 0]));
@@ -310,6 +339,7 @@ try {
   await stubDialogs('ship2');
   n = await writes(() => click('[data-role=model-rename]'));
   check('Rename renames the model in the host (no write of the shape); the editor follows', eq(await evaluate('t.log.renames'), [['ship', 'ship2']]) && (await state()).name === 'ship2' && (await evaluate("t.host.listAssets('models')")).includes('ship2'));
+  { const g = await gal(); check('S1: Rename replaces the picture\'s name and keeps the highlight', !g.names.includes('ship') && g.names.includes('ship2') && eq(g.current, ['ship2']) && g.captions.includes('ship2') && eq(g.names, await evaluate("t.host.listAssets('models')")), J(g.names)); }
   await stubDialogs('x', false);
   await click('[data-role=model-delete]');
   check('Delete asks first: declining deletes nothing', (await evaluate("t.host.listAssets('models')")).includes('ship2') && (await evaluate('t.log.deletes.length')) === 0);
@@ -318,6 +348,15 @@ try {
   st = await state();
   check('...accepting deletes it, and the editor shows the next model', eq(await evaluate('t.log.deletes'), ['ship2']) && !(await evaluate("t.host.listAssets('models')")).includes('ship2') && st.name === 'gate');
 
+  { const g = await gal(); check('S1: Delete removes the picture; the next model is highlighted', !g.names.includes('ship2') && eq(g.current, ['gate']) && eq(g.names, await evaluate("t.host.listAssets('models')")), J(g.names)); }
+  const rock0 = await asset('rock');
+  await evaluate("(t.externalSet('models', 'rock', { points: [[0, 0, 0], [30, 0, 0], [0, 30, 0]], edges: [[0, 1], [1, 2], [2, 0]] }), true)");
+  check('S1: a change made by another editor to a model that is not shown redraws that picture', await galIsModel('rock') && eq((await gal()).current, ['gate']));
+  await evaluate(`(t.externalSet('models', 'rock', ${J(rock0)}), true)`);
+  await evaluate(`(() => { for (let i = 0; i < 40; i++) t.project.assets.models['many' + String(i).padStart(2, '0')] = t.M.makePreset('cube'); t.editor.refresh(); return true; })()`);
+  { const g = await gal(); check('S1: 40 more models: the strip scrolls sideways inside itself and stays at most 72 px high', g.names.length >= 40 && g.sw > g.cw + 100 && g.h <= 72 && g.page <= 0, `scrollWidth ${g.sw} clientWidth ${g.cw} h ${g.h} page ${g.page}`); }
+  await b.shot('03a-gallery-long');
+  await evaluate(`(() => { for (const n of Object.keys(t.project.assets.models)) if (/^many/.test(n)) delete t.project.assets.models[n]; t.editor.refresh(); return true; })()`);
   // ── select from outside; a project replaced ──
   await evaluate("t.host.selectAsset('models', 'rock')");
   check('the Studio selecting a model (onSelectAsset) opens it', (await state()).name === 'rock');

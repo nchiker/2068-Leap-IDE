@@ -30,6 +30,8 @@ import * as T from './tile-model.js';
 import { mapRole, effectiveTileset } from '../lang/arcade/arcade-assetcheck.js';
 import { paletteRgb, fromAsset as spriteFromAsset, framePixels, keyRGB as spriteKeyRGB } from './sprite-model.js';
 import { createWarningList, warningListCss } from './warning-list.js';
+import { thumbMap } from './asset-thumbs.js';
+import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
 
 const PREF_KEY = 'leap-studio.mapd';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -147,6 +149,7 @@ ${warningListCss('warnl', '.mapd-warn', { fg: '--mp-fg', muted: '--mp-muted', bo
 .mapd-orow.sel { border-color: var(--mp-amber); background: var(--mp-active); }
 .mapd-orow.bad { color: var(--mp-red); }
 .mapd-orow .rest { color: var(--mp-muted); }
+${galleryCss('.mapd', { bg: '--mp-bg', border: '--mp-border', borderHi: '--mp-border-hi', hover: '--mp-hover', active: '--mp-active', amber: '--mp-amber', muted: '--mp-muted', fg: '--mp-fg' })}
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -455,7 +458,13 @@ export function createMapEditor(container, host) {
   const warnView = createWarningList(warnList, { idAttr: 'data-id' });
   const msg = el('div', 'mapd-msg');
   msg.dataset.role = 'message';
-  root.append(bar, newBox, sizeRow, layerRow, toolRow, emptyNote, body, warnList, msg);
+  // the gallery strip: every map of the project, drawn with the tile set the program gives it, the edited one highlighted (asset-gallery.js);
+  // a click does what the drop-down does
+  const gallery = createGallery({
+    label: 'Maps', get: (n) => H.get('maps', n), onSelect: (n) => loadMap(n),
+    thumb: (n, asset, ctx) => thumbMap(asset, ctx, { box: GALLERY_BOX, palette: pal }),
+  });
+  root.append(gallery.el, bar, newBox, sizeRow, layerRow, toolRow, emptyNote, body, warnList, msg);
 
   /** The 8 flag names: the host's (project.flagNames) when it offers them, else the defaults; an unnamed flag shows its number. */
   function flagNames() {
@@ -849,9 +858,27 @@ export function createMapEditor(container, host) {
     if (sel && (sel.x0 >= map.w || sel.y0 >= map.h)) sel = null;
     else if (sel) { sel.x1 = Math.min(sel.x1, map.w - 1); sel.y1 = Math.min(sel.y1, map.h - 1); }
   }
+  /** The gallery: each map is drawn with its own role and tile set (the program's roles and the map's `tileset`, as readContext resolves them for the edited one). */
+  function renderGallery() {
+    const rl = map ? roles : H.roles(), project = H.project(), memo = new Map();       // (readContext has just read the roles when a map is open)
+    let fine = false;
+    try { fine = T.projectHasFine(project); } catch { fine = false; }
+    const tsJson = (n) => { if (!memo.has(n)) { const a = H.get('tilesets', n); memo.set(n, { asset: a, json: JSON.stringify(a ?? null) }); } return memo.get(n); };
+    gallery.render({
+      names: H.list(), current: name,
+      describe: (n, asset) => {
+        const role = rl ? mapRole(n, rl) : 'cell';
+        let ts = null;
+        try { ts = role === 'floorplan' ? null : effectiveTileset(project, asset, rl); } catch { ts = null; }
+        const t = ts ? tsJson(ts) : null;
+        return { key: `${role}|${fine}|${ts}|${t?.json}`, ctx: { role, fine, tileset: t?.asset ?? null } };
+      },
+    });
+  }
   function renderAll() {
     if (destroyed) return;
     if (map) readContext(); else { role = 'cell'; roleKnown = false; tiles = null; tileCanvases = []; tsKey = ''; }
+    renderGallery();
     readKinds();
     syncControls();
     refreshWarnings();

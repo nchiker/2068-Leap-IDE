@@ -19,6 +19,8 @@ import * as T from './tile-model.js';
 import * as M from './map-model.js';
 import { colourKey } from './sprite-model.js';
 import { createWarningList, warningListCss } from './warning-list.js';
+import { thumbTileset } from './asset-thumbs.js';
+import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
 
 const PREF_KEY = 'leap-studio.tiled';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -102,6 +104,7 @@ ${warningListCss('warnl', '.tiled-warn', { fg: '--td-fg', muted: '--td-muted', b
 .tiled-empty { color: var(--td-muted); padding: 24px 8px; }
 .tiled-h { color: var(--td-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .tiled-fg-note { color: var(--td-muted); font-size: 10px; max-width: 240px; line-height: 1.35; }
+${galleryCss('.tiled', { bg: '--td-bg', border: '--td-border', borderHi: '--td-border-hi', hover: '--td-hover', active: '--td-active', amber: '--td-amber', muted: '--td-muted', fg: '--td-fg' })}
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -218,7 +221,12 @@ export function createTileEditor(container, host) {
   const msg = el('div', 'tiled-msg');
   msg.dataset.role = 'message';
   const body = el('div', 'tiled-body');
-  root.append(bar, warnList, emptyNote, body, msg);
+  // the gallery strip: every tile set of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
+  const gallery = createGallery({
+    label: 'Tile sets', get: (n) => H.get(n), onSelect: (n) => loadSet(n),
+    thumb: (n, asset, ctx) => thumbTileset(asset, { box: GALLERY_BOX, palette: pal, fine: !!ctx?.fine }),
+  });
+  root.append(gallery.el, bar, warnList, emptyNote, body, msg);
 
   // left: tile strip
   const stripCol = el('div', 'tiled-col tiled-strip-col');
@@ -762,8 +770,14 @@ export function createTileEditor(container, host) {
     const a = document.activeElement;
     if (hadFocus && (!a || a === document.body || a.disabled || !root.contains(a))) root.focus({ preventScroll: true });
   }
+  function renderGallery() {
+    let fine = false;                                    // a fine-colour game's tiles are drawn row by row, as the scene draws them
+    try { fine = T.projectHasFine(host.getProject?.()); } catch { fine = false; }
+    gallery.render({ names: H.list(), current: name, describe: () => ({ key: String(fine), ctx: { fine } }) });
+  }
   function renderAll_() {
     fillNameList();
+    renderGallery();
     const show = !!set;
     body.hidden = !show; emptyNote.hidden = show;
     emptyNote.textContent = name && !show ? `The tile set "${name}" cannot be edited (see the message below).` : 'No tile sets in this project yet. Press New to create one.';

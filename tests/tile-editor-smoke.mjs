@@ -413,6 +413,59 @@ try {
   await click('[data-role=set-delete]');
   check('Delete removes the set after the confirmation and selects another', (await evaluate("!t.host.listAssets('tilesets').includes('renamed')")) && (await state()).name === 'pf_tiles');
 
+  // ── gallery strip (stage 5, S1): a picture of every tile set, the edited one highlighted, a click selects ──
+  {
+    const J = JSON.stringify;
+    const gal = () => evaluate(`(() => { const st = document.querySelector('[data-role=gallery-strip]'); if (!st) return null;
+      const items = [...st.querySelectorAll('[data-role=gallery-item]')];
+      return { names: items.map((i) => i.dataset.asset), current: items.filter((i) => i.classList.contains('current')).map((i) => i.dataset.asset), draws: Object.fromEntries(items.map((i) => [i.dataset.asset, +i.dataset.draws])),
+        captions: items.map((i) => i.textContent), titles: items.map((i) => i.title), h: st.getBoundingClientRect().height, sw: st.scrollWidth, cw: st.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
+    const pic = (n) => evaluate(`document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas').toDataURL()`);
+    const ink = (n) => evaluate(`(() => { const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const set = new Set(); let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { n++; set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, colours: set.size, w: c.width, h: c.height }; })()`);
+    const list0 = await evaluate("t.host.listAssets('tilesets')");
+    const g0 = await gal();
+    check('S1: the strip lists every tile set of the project (pf_tiles), with its name as caption and tooltip, and it is the highlighted one', !!g0 && J(g0.names) === J(list0) && J(g0.captions) === J(list0) && J(g0.titles) === J(list0) && J(g0.current) === J([(await state()).name]), J(g0?.names));
+    const ik = await ink('pf_tiles');
+    check('S1: the picture of a tile set is not blank (a grid of 20 tiles with several colours)', ik.n > 100 && ik.colours >= 3, J(ik));
+    check('S1: the strip is at most 72 px high and the page does not scroll sideways', g0.h <= 72 && g0.page <= 0, `h ${g0.h}, page overflow ${g0.page}`);
+    await evaluate("(window.__names = ['galx'], window.prompt = (q, d) => window.__names.shift() ?? d, window.confirm = () => true, true)");
+    await click('[data-role=set-new]');
+    await waitFor("t.editor.getState().name === 'galx'");
+    let g1 = await gal();
+    check('S1: New adds a picture and highlights it', J(g1.names) === J(await evaluate("t.host.listAssets('tilesets')")) && g1.names.includes('galx') && J(g1.current) === J(['galx']), J(g1.names));
+    await click('[data-role=gallery-item][data-asset="pf_tiles"]');
+    g1 = await gal();
+    check('S1: a click on another picture selects that tile set (the editor shows it, the drop-down follows)', (await state()).name === 'pf_tiles' && J(g1.current) === J(['pf_tiles']) && (await evaluate("document.querySelector('[data-role=set-picker]').value")) === 'pf_tiles' && (await state()).set.tiles.length === 20);
+    // an edit redraws the edited set's picture only
+    const d0 = (await gal()).draws, p0 = await pic('pf_tiles');
+    await clickCell(1, 1);
+    await waitFor("t.log.sets.length > 0");
+    const d1 = (await gal()).draws, changed = Object.keys(d1).filter((n) => d1[n] !== d0[n]);
+    check('S1: an edit redraws the edited set\'s picture only, and the picture shows it', J(changed) === J(['pf_tiles']) && (await pic('pf_tiles')) !== p0, J(changed));
+    await key('z', { ctrl: true });
+    await click('[data-role=gallery-item][data-asset="galx"]');
+    await evaluate("(window.__names = ['galy'], true)");
+    await click('[data-role=set-rename]');
+    g1 = await gal();
+    check('S1: Rename replaces the picture\'s name and keeps the highlight', !g1.names.includes('galx') && g1.names.includes('galy') && J(g1.current) === J(['galy']) && g1.captions.includes('galy'), J(g1.names));
+    await click('[data-role=set-delete]');
+    g1 = await gal();
+    check('S1: Delete removes the picture; another tile set is highlighted', !g1.names.includes('galy') && J(g1.names) === J(await evaluate("t.host.listAssets('tilesets')")) && J(g1.current) === J([(await state()).name]), J(g1.names));
+    // another editor changes a tile set that is not being edited
+    await evaluate(`(() => { t.externalSet('tilesets', 'other1', t.T.toAsset(t.T.newTileset())); return true; })()`);
+    const g2 = await gal(), o0 = g2.draws.other1;
+    await evaluate(`(() => { const s = t.T.newTileset(); t.T.setPixel(s.tiles[0], 0, 0, 1); t.externalSet('tilesets', 'other1', t.T.toAsset(s)); return true; })()`);
+    const g3 = await gal();
+    check('S1: a new tile set made elsewhere appears, and a change to it redraws its picture only', g2.names.includes('other1') && g3.draws.other1 === o0 + 1 && g3.current.length === 1 && g3.current[0] === (await state()).name, `${o0} -> ${g3.draws.other1}`);
+    await evaluate(`(() => { for (let i = 0; i < 40; i++) t.project.assets.tilesets['many' + String(i).padStart(2, '0')] = t.T.toAsset(t.T.newTileset()); t.editor.refresh(); return true; })()`);
+    const g4 = await gal();
+    check('S1: 40 more tile sets: the strip scrolls sideways inside itself and stays at most 72 px high', g4.names.length >= 40 && g4.sw > g4.cw + 100 && g4.h <= 72 && g4.page <= 0, `scrollWidth ${g4.sw} clientWidth ${g4.cw} h ${g4.h} page ${g4.page}`);
+    await shot('05a-gallery-long');
+    await evaluate(`(() => { for (const n of Object.keys(t.project.assets.tilesets)) if (/^many|^other/.test(n)) delete t.project.assets.tilesets[n]; t.editor.refresh(); return true; })()`);
+    check('S1: back to the original list', J((await gal()).names) === J(await evaluate("t.host.listAssets('tilesets')")) && (await gal()).names.length === list0.length);
+  }
+
   // ── the shooter (a cell map, no WINDOW) and the project replaced ──
   await evaluate("(t.openExample('shooter'), true)");
   await waitFor("t.editor.getState().name === 'gfx'");

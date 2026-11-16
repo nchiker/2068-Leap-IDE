@@ -16,6 +16,8 @@
 "use strict";
 
 import * as S from './sprite-model.js';
+import { thumbSprite } from './asset-thumbs.js';
+import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
 
 const PREF_KEY = 'leap-studio.sprited';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -119,6 +121,7 @@ const CSS = `
 .sprited-import canvas { image-rendering: pixelated; border: 1px solid var(--sp-border-hi); max-width: 100%; }
 .sprited-empty { color: var(--sp-muted); padding: 24px 8px; }
 .sprited-hotbad { border-color: var(--sp-red); }
+${galleryCss('.sprited', { bg: '--sp-bg', border: '--sp-border', borderHi: '--sp-border-hi', hover: '--sp-hover', active: '--sp-active', amber: '--sp-amber', muted: '--sp-muted', fg: '--sp-fg' }, '#b8b8b8')}
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -249,7 +252,12 @@ export function createSpriteEditor(container, host) {
   const emptyNote = el('div', 'sprited-empty', 'No sprites in this project yet. Press New to draw one, or Import image… to convert a picture.');
   const msg = el('div', 'sprited-msg');
   msg.dataset.role = 'message';
-  root.append(bar, warnList, importBox, emptyNote, body, msg);
+  // the gallery strip: every sprite of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
+  const gallery = createGallery({
+    label: 'Sprites', get: (n) => H.get(n), onSelect: (n) => loadSprite(n),
+    thumb: (n, asset) => thumbSprite(asset, { box: GALLERY_BOX, palette: pal }),
+  });
+  root.append(gallery.el, bar, warnList, importBox, emptyNote, body, msg);
 
   // tools
   const tools = el('div', 'sprited-tools');
@@ -806,9 +814,11 @@ export function createSpriteEditor(container, host) {
     if (name && names.includes(name)) nameSel.value = name;
     nameSel.disabled = names.length === 0;
   }
+  function renderGallery() { gallery.render({ names: H.list(), current: name }); }
   function renderAll() {
     if (destroyed) return;
     fillNameList();
+    renderGallery();
     const show = !!sprite;
     body.hidden = !show; emptyNote.hidden = show;
     emptyNote.textContent = name && !show ? `The sprite "${name}" cannot be edited (see the message below).` : 'No sprites in this project yet. Press New to draw one, or Import image… to convert a picture.';

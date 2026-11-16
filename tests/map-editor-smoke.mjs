@@ -150,6 +150,48 @@ try {
   check('the canvas is w x cellPx wide, the ruler and the camera row are hidden for a cell map',
     await evaluate("(() => { const c = document.querySelector('[data-role=map-canvas]'), z = t.editor.getState().cellPx; return c.width === 32 * z && c.height === 24 * z && document.querySelector('[data-role=ruler]').hidden && document.querySelector('[data-role=camera-row]').hidden; })()"));
   check('no warnings for the shooter\'s own map', (await warnIds()).length === 0, (await warnIds()).join());
+  // ── gallery strip (stage 5, S1): a picture of every map, drawn with its tile set, the edited one highlighted, a click selects ──
+  const J = JSON.stringify;
+  const gal = () => evaluate(`(() => { const st = document.querySelector('[data-role=gallery-strip]'); if (!st) return null;
+    const items = [...st.querySelectorAll('[data-role=gallery-item]')];
+    return { names: items.map((i) => i.dataset.asset), current: items.filter((i) => i.classList.contains('current')).map((i) => i.dataset.asset), draws: Object.fromEntries(items.map((i) => [i.dataset.asset, +i.dataset.draws])),
+      captions: items.map((i) => i.textContent), titles: items.map((i) => i.title), h: st.getBoundingClientRect().height, sw: st.scrollWidth, cw: st.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; })()`);
+  const galPic = (n) => evaluate(`document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas').toDataURL()`);
+  const galInk = (n) => evaluate(`(() => { const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const set = new Set(); let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { n++; set.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); } return { n, colours: set.size, w: c.width, h: c.height }; })()`);
+  /** Does the item's canvas equal asset-thumbs.js's picture of the map with this tile set (and role / fine)? */
+  const galIsMap = (n, ts, role, fine) => evaluate(`(async () => { const A = await import('../src/tools/asset-thumbs.js'); const c = document.querySelector('[data-role=gallery-item][data-asset=' + ${J(J(n))} + '] canvas');
+    const want = A.thumbMap(t.project.assets.maps[${J(n)}], { tileset: ${J(ts)} ? t.project.assets.tilesets[${J(ts)}] : null, role: ${J(role)}, fine: ${fine} }, { box: 36, palette: t.host.palette });
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; return c.width === want.w && c.height === want.h && d.every((v, i) => v === want.rgba[i]); })()`);
+  {
+    const g0 = await gal(), list = await evaluate("t.host.listAssets('maps')");
+    check('S1: the strip lists the four maps of Starfall, the edited one (sky) highlighted, each with its name as caption and tooltip', !!g0 && J(g0.names) === J(list) && J(g0.current) === J(['sky']) && J(g0.captions) === J(list) && J(g0.titles) === J(list), J(g0?.names));
+    const fine = await evaluate('t.T.projectHasFine(t.project)');
+    check('S1: the pictures are the maps drawn with their tile set gfx (Starfall is a fine-colour game), not blank', (await galIsMap('sky', 'gfx', 'cell', fine)) && (await galIsMap('logo', 'gfx', 'cell', fine)) && (await galInk('sky')).colours >= 3, J(await galInk('sky')));
+    check('S1: the strip is at most 72 px high and the page does not scroll sideways', g0.h <= 72 && g0.page <= 0, `h ${g0.h}, page overflow ${g0.page}`);
+    await click('[data-role=gallery-item][data-asset="logo"]');
+    const g1 = await gal();
+    check('S1: a click on another picture selects that map (the editor shows it, the drop-down follows)', (await state()).name === 'logo' && J(g1.current) === J(['logo']) && (await evaluate("document.querySelector('[data-role=map-select]').value")) === 'logo', J(g1.current));
+    await click('[data-role=gallery-item][data-asset="sky"]');
+    check('S1: and back: the drop-down still works too', (await state()).name === 'sky' && (await setSelect('[data-role=map-select]', 'press')) && (await state()).name === 'press' && J((await gal()).current) === J(['press']) && (await setSelect('[data-role=map-select]', 'sky')) && (await state()).name === 'sky');
+    // an edit redraws the edited map's picture only; the tile set's edit (made elsewhere) redraws every map that uses it
+    const d0 = (await gal()).draws, p0 = await galPic('sky'), n0 = await sets();
+    await click('.mapd-pi[data-tile="5"]');
+    await clickCell(10, 10);
+    await waitFor(`t.log.sets.length > ${n0}`);
+    const d1 = (await gal()).draws, changed = Object.keys(d1).filter((n) => d1[n] !== d0[n]);
+    check('S1: an edit redraws the edited map\'s picture only, and the picture shows it (it is still the tile-set drawing of the stored map)', J(changed) === J(['sky']) && (await galPic('sky')) !== p0 && (await galIsMap('sky', 'gfx', 'cell', fine)), J(changed));
+    await key('z', { ctrl: true });
+    const e0 = (await gal()).draws;
+    await evaluate(`(() => { const ts = JSON.parse(JSON.stringify(t.project.assets.tilesets.gfx)); ts.tiles[3].rows[0].bits = ts.tiles[3].rows[0].bits === 'FF' ? '00' : 'FF'; t.externalSet('tilesets', 'gfx', ts); return true; })()`);
+    const e1 = (await gal()).draws;
+    check('S1: a change to the tile set (made by another editor) redraws the maps drawn with it', Object.keys(e1).every((n) => e1[n] === e0[n] + 1) && (await galIsMap('logo', 'gfx', 'cell', fine)), J(e1));
+    // a map whose tile set is missing is still drawn, in greys
+    await evaluate(`(() => { const m = JSON.parse(JSON.stringify(t.project.assets.maps.sky)); m.tileset = 'nothere'; t.externalSet('maps', 'press', m); return true; })()`);
+    const cnt = await galInk('press');
+    check('S1: a map that names a tile set that does not exist is still drawn (with the program\'s tile set, as the editor draws it), not a hole', cnt.n > 0 && cnt.colours >= 2, J(cnt));
+    await evaluate(`(() => { t.externalSet('maps', 'press', t.project.assets.maps.logo); return true; })()`);
+  }
   // ── the Bank select (banked cartridge map, slice B4): Auto removes the key; Mapped / Banked write it and keep the cells ──
   {
     const opts = await evaluate("[...document.querySelectorAll('[data-role=bank-select] option')].map((o) => o.value).join()");
@@ -367,6 +409,7 @@ try {
   await click('[data-role=new-create]');
   a = await asset('fresh');
   check('Create makes a 32 x 24 map stored as a hex string of blanks and selects it', a && typeof a.cells === 'string' && a.cells === 'FF'.repeat(768) && (await state()).name === 'fresh');
+  { const g = await gal(); check('S1: New adds the map\'s picture (a map of blanks is still drawn) and highlights it', g.names.includes('fresh') && J(g.current) === J(['fresh']) && J(g.names) === J(await evaluate("t.host.listAssets('maps')")) && (await galInk('fresh')).n > 0, J(g.names)); }
   await click('.mapd-pi[data-tile="2"]');
   await clickCell(1, 0);
   a = await asset('fresh');
@@ -384,6 +427,7 @@ try {
   await evaluate("(window.prompt = () => 'fresh2', true)");
   await click('[data-role=btn-rename]');
   check('Rename goes through the host', (await evaluate('JSON.stringify(t.log.renames.at(-1))')) === '["wide","fresh2"]' && (await state()).name === 'fresh2');
+  { const g = await gal(); check('S1: Rename replaces the picture\'s name and keeps the highlight', !g.names.includes('wide') && g.names.includes('fresh2') && J(g.current) === J(['fresh2']) && g.captions.includes('fresh2'), J(g.names)); }
   await evaluate("(window.prompt = () => 'copy1', true)");
   await click('[data-role=btn-dup]');
   check('Duplicate stores a copy under a new name and selects it', (await state()).name === 'copy1' && (await asset('copy1')).w === 128);
@@ -391,6 +435,10 @@ try {
   await click('[data-role=btn-delete]');
   check('Delete removes it (after the confirmation) and selects another map', !(await evaluate("t.host.listAssets('maps').includes('copy1')")) && (await state()).name !== 'copy1' && (await state()).name !== null);
 
+  {
+    const g = await gal();
+    check('S1: New, Rename, Duplicate and Delete kept the strip equal to the project\'s map list, with the highlight on the edited map', J(g.names) === J(await evaluate("t.host.listAssets('maps')")) && J(g.current) === J([(await state()).name]) && !g.names.includes('copy1') && !g.names.includes('wide'), J(g.names));
+  }
   // ── platformer: the world map ──
   await evaluate("t.load('platformer')");
   await evaluate("(t.editor.select('pf_world'), true)");
