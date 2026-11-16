@@ -21,6 +21,11 @@
  * three steps itself with setObjectKinds and setAsset), getAsset('sprites', name) for a marker sprite. One completed edit is one setAsset of the map
  * (undo covers object edits); kind edits belong to the host, and a kind rename / delete / property removal that touches other maps rewrites them
  * through setAsset and clears this map's undo history.
+ *
+ * Picture import (M3), a cell map only: "Import picture…" converts a picture (scaled / cropped to 256 x 192) into tiles for the map's tile set (appended,
+ * replacing, or a new set) and the 32 x 24 cell map. The tile set is written first (host.setAsset 'tilesets'), then the map in ONE edit (one setAsset, one undo
+ * step of the map); undo / redo of that step also put the tile set back (see importLog) as long as nobody has changed the set since. Engine: picture-import.js,
+ * panel: picture-import-ui.js (shared with the tile editor).
  */
 
 "use strict";
@@ -32,6 +37,8 @@ import { paletteRgb, fromAsset as spriteFromAsset, framePixels, keyRGB as sprite
 import { createWarningList, warningListCss } from './warning-list.js';
 import { thumbMap } from './asset-thumbs.js';
 import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
+import * as PI from './picture-import.js';
+import { createImportDialog, readPictureFile } from './picture-import-ui.js';
 
 const PREF_KEY = 'leap-studio.mapd';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -200,6 +207,7 @@ export function createMapEditor(container, host) {
         return r;
       } catch (e) { return { ok: false, error: e.message }; }
     },
+    setTileset(n, asset) { try { return host.setAsset('tilesets', n, asset) ?? { ok: true }; } catch (e) { return { ok: false, error: e.message }; } },
     roles() { try { return host.roles ? host.roles() ?? null : null; } catch { return null; } },
     warnings(n) { try { return host.assetWarnings ? host.assetWarnings('maps', n) ?? [] : null; } catch { return null; } },
     usedBy(n) { try { return host.usedBy ? host.usedBy('maps', n) ?? [] : []; } catch { return []; } },
@@ -293,7 +301,15 @@ export function createMapEditor(container, host) {
   }), 'Where the cartridge keeps this map: Auto (banked only when the game would not fit), Mapped (always in the game\'s 16 KB) or Banked (always in the bank window)');
   bankSel.dataset.role = 'bank-select';
   const bankLabel = el('span', 'mapd-label', 'Bank');
-  bar.append(nameSel, btnNew, btnDup, btnRen, btnDel, el('span', 'mapd-sep'), tsLabel, tsSel, el('span', 'mapd-sep'), bankLabel, bankSel);
+  // picture import (M3): a cell map only
+  const picFile = el('input', null, null, { type: 'file', accept: 'image/*' });
+  picFile.style.display = 'none';
+  picFile.dataset.role = 'import-file';
+  picFile.addEventListener('change', () => { const f = picFile.files?.[0]; picFile.value = ''; if (f) startImport(f); });
+  const btnImport = button('Import picture…', 'Turn a picture into tiles and a 32 × 24 map (a cell map only): two colours per 8 × 8 cell, repeated cells share a tile', () => picFile.click());
+  btnImport.dataset.role = 'import-picture';
+  const importDlg = createImportDialog({ palette: pal });
+  bar.append(nameSel, btnNew, btnDup, btnRen, btnDel, el('span', 'mapd-sep'), tsLabel, tsSel, el('span', 'mapd-sep'), bankLabel, bankSel, el('span', 'mapd-sep'), btnImport, picFile);
 
   const newBox = el('div', 'mapd-newbox');
   newBox.dataset.role = 'new-box';
@@ -464,7 +480,7 @@ export function createMapEditor(container, host) {
     label: 'Maps', get: (n) => H.get('maps', n), onSelect: (n) => loadMap(n),
     thumb: (n, asset, ctx) => thumbMap(asset, ctx, { box: GALLERY_BOX, palette: pal }),
   });
-  root.append(gallery.el, bar, newBox, sizeRow, layerRow, toolRow, emptyNote, body, warnList, msg);
+  root.append(gallery.el, bar, importDlg.el, newBox, sizeRow, layerRow, toolRow, emptyNote, body, warnList, msg);
 
   /** The 8 flag names: the host's (project.flagNames) when it offers them, else the defaults; an unnamed flag shows its number. */
   function flagNames() {
@@ -748,6 +764,8 @@ export function createMapEditor(container, host) {
     emptyNote.hidden = has || !!H.list().length;
     body.hidden = !has; sizeRow.hidden = !has; toolRow.hidden = !has; warnList.hidden = !has;
     btnDup.disabled = btnRen.disabled = btnDel.disabled = !has;
+    btnImport.hidden = !(has && role === 'cell');                  // a world map (WINDOW) or a floor plan has no picture import
+    if (btnImport.hidden && importDlg.isOpen) importDlg.close();
     for (const [id, b] of Object.entries(toolBtns)) b.classList.toggle('on', id === tool);
     btnUndo.disabled = !hist?.canUndo; btnRedo.disabled = !hist?.canRedo;
     btnCopy.disabled = btnCut.disabled = btnClear.disabled = !sel;
@@ -824,7 +842,7 @@ export function createMapEditor(container, host) {
     if (asset === null || asset === undefined) { say(`Map "${n}" is not in the project`, 'err'); return false; }
     let m;
     try { m = M.fromAsset(asset); } catch (e) { name = n; map = null; hist = null; lastStored = ''; say(`Cannot read map "${n}": ${e.message}`, 'err'); renderAll(); return false; }
-    if (name !== n || !keepView) { camX = 0; sel = null; pasteMode = false; selObj = null; objDrag = null; }
+    if (name !== n || !keepView) { camX = 0; sel = null; pasteMode = false; selObj = null; objDrag = null; if (name !== n) importDlg.close(); }
     name = n; map = m;
     lastStored = JSON.stringify(asset);
     hist = M.createHistory(map, UNDO_STEPS + 1);
@@ -848,11 +866,11 @@ export function createMapEditor(container, host) {
   }
   function undo() {
     if (!hist?.canUndo) return;
-    map = hist.undo(); selObj = null; fixView(); save(); renderAll();
+    map = hist.undo(); selObj = null; fixView(); restoreImportedSet(preLog); save(); renderAll();
   }
   function redo() {
     if (!hist?.canRedo) return;
-    map = hist.redo(); selObj = null; fixView(); save(); renderAll();
+    map = hist.redo(); selObj = null; fixView(); restoreImportedSet(postLog); save(); renderAll();
   }
   function fixView() {
     if (sel && (sel.x0 >= map.w || sel.y0 >= map.h)) sel = null;
@@ -887,6 +905,96 @@ export function createMapEditor(container, host) {
     drawFlagLegend();
     drawMap();
     showReadout();
+  }
+
+
+  // ── picture import (M3) ──
+  const preLog = new Map(), postLog = new Map();     // map snapshot (as the history keeps it) -> {name, pre, post}: the tile set (JSON) before / after a picture import that changed it
+  const logImport = (preSnap, postSnap, rec) => {
+    for (const [log, snap] of [[preLog, preSnap], [postLog, postSnap]]) { log.set(snap, rec); if (log.size > 30) log.delete(log.keys().next().value); }
+  };
+  /** Undo / redo reached a state a picture import made or left: put the tile set that went with it back, unless somebody changed the set since. */
+  function restoreImportedSet(log) {
+    const rec = log.get(JSON.stringify(map));
+    if (!rec) return;
+    const into = log === preLog ? rec.pre : rec.post, from = log === preLog ? rec.post : rec.pre;
+    const cur = H.get('tilesets', rec.name);
+    if (!cur || JSON.stringify(cur) !== from) return;
+    const r = H.setTileset(rec.name, JSON.parse(into));
+    if (r.ok === false) say(`The tile set "${rec.name}" could not be put back: ${r.error ?? 'refused'}`, 'err');
+  }
+  /** The other maps (names) that are drawn with the tile set `ts`. */
+  function mapsSharing(ts) {
+    const out = [], rl = H.roles(), project = H.project();
+    for (const n of H.list()) {
+      if (n === name) continue;
+      try {
+        const a = H.get('maps', n);
+        if ((rl ? mapRole(n, rl) : 'cell') !== 'floorplan' && effectiveTileset(project, a, rl) === ts) out.push(n);
+      } catch { /* an unreadable map says nothing */ }
+    }
+    return out;
+  }
+  async function startImport(file) {
+    if (!map || role !== 'cell') { say('Picture import is for a cell map (a world map or a floor plan is not drawn from a picture)', 'err'); return; }
+    let img;
+    try { img = await readPictureFile(file); } catch (e) { say(`Could not read the picture: ${e.message}`, 'err'); return; }
+    let existing = null;
+    if (tsName) {
+      const a = H.get('tilesets', tsName);
+      try { existing = a ? T.fromAsset(a) : null; } catch (e) { say(`Cannot read the tile set "${tsName}": ${e.message}`, 'err'); return; }
+    }
+    const others = tsName && existing ? mapsSharing(tsName) : [];
+    let fine = false;
+    try { fine = T.projectHasFine(H.project()); } catch { fine = false; }
+    const untouched = !!existing && existing.tiles.length === 1 && T.tileIsBlank(existing.tiles[0]) && !others.length;
+    const targets = existing ? [{ value: 'append', label: `append to "${tsName}" (room for ${PI.roomIn(existing)} more)` }, { value: 'replace', label: `replace the tiles of "${tsName}"` }, { value: 'new', label: 'a new tile set' }]
+      : [{ value: 'new', label: 'a new tile set' }];
+    importDlg.open({
+      img, fileName: file.name, mode: 'map', fine, existing, targets, target: !existing ? 'new' : (untouched ? 'replace' : 'append'), sizeEditable: false,
+      cols: M.ROLE_LIMITS.cell.maxW, rows: M.ROLE_LIMITS.cell.maxH, fit: 'fit', foreground: true,
+      notes: {
+        always: `The map becomes 32 × 24 cells (a whole screen of 256 × 192 pixels); its cells are replaced.${others.length ? ` The tile set "${tsName}" is also used by ${others.join(', ')}.` : ''}`,
+        replace: others.length ? `Replacing the tiles changes how ${others.join(', ')} look: their tile numbers stay but mean other pictures. Append is safe.` : (tsName ? `Replacing the tiles of "${tsName}" is undone together with the map (Undo).` : ''),
+        new: 'A new tile set gets this map\'s "tileset" key; the program\'s TILESET statement names the set the game really uses.',
+      },
+      onApply: applyImport,
+    });
+    say(`Import ${file.name}: choose the options, then press Import`);
+  }
+  function applyImport({ result, target }) {
+    if (!map || role !== 'cell') return false;
+    const lim = M.ROLE_LIMITS.cell;
+    if (result.cols > lim.maxW || result.rows > lim.maxH) { say(`A cell map is at most ${lim.maxW} × ${lim.maxH} cells`, 'err'); return false; }
+    const what = PI.describeImport(result);
+    let ts = tsName ? H.get('tilesets', tsName) : null, existing = null;
+    try { existing = ts ? T.fromAsset(ts) : null; } catch { existing = null; }
+    let setName = tsName, set, preJson = null;
+    if (target === 'new' || !existing) {
+      const have = new Set(H.list('tilesets').map(upper));
+      let base = `${name}_tiles`.slice(0, 28), n = base, i = 1;
+      while (have.has(upper(n))) n = `${base}${++i}`;
+      setName = n;
+      set = { tiles: result.tiles.map(T.cloneTile), tilesKey: 'tiles' };
+    } else {
+      preJson = JSON.stringify(ts);
+      set = { ...existing, tiles: target === 'append' ? [...existing.tiles, ...result.tiles.map(T.cloneTile)] : result.tiles.map(T.cloneTile) };
+    }
+    const bad = T.validateTileset(set);
+    if (bad) { say(bad, 'err'); return false; }
+    const w = H.setTileset(setName, T.toAsset(set));
+    if (w.ok === false) { say(`The Studio did not accept the tile set: ${w.error ?? 'unknown reason'}`, 'err'); return false; }
+    const postJson = preJson === null ? null : JSON.stringify(H.get('tilesets', setName));
+    const preSnap = JSON.stringify(map);
+    edit(() => {
+      map.w = result.cols; map.h = result.rows;
+      map.cells = Array.from(result.map, (v) => (v === 255 ? M.BLANK : v));
+      if (setName !== tsName || target === 'new') map.tileset = setName;
+      sel = null; pasteMode = false;
+    });
+    if (preJson !== null && postJson !== preJson) logImport(preSnap, JSON.stringify(map), { name: setName, pre: preJson, post: postJson });
+    say(`Imported ${result.cols} × ${result.rows} cells ${target === 'new' || !existing ? `into the new tile set "${setName}"` : target === 'append' ? `(tiles appended to "${setName}")` : `(tiles of "${setName}" replaced)`}: ${what}`);
+    return true;
   }
 
   // ── commands ──

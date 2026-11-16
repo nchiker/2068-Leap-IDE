@@ -932,6 +932,162 @@ try {
   await waitFor('window.testReady === true', 60000);
   }
 
+  // ── picture import (stage 5, M3) ──
+  {
+    await send('Page.navigate', { url: base + 'tests/map-editor-test.html' });
+    await waitFor('window.testReady === true', 60000);
+    const J = JSON.stringify;
+    const feedPicture = (w, h, draw, fileName = 'pic.png') => evaluate(`(async () => {
+      const c = document.createElement('canvas'); c.width = ${w}; c.height = ${h};
+      const x = c.getContext('2d'); (${draw})(x, ${w}, ${h});
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      const dt = new DataTransfer(); dt.items.add(new File([blob], ${J(fileName)}, { type: 'image/png' }));
+      const input = document.querySelector('[data-role=import-file]'); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true; })()`);
+    const dlgOpen = () => waitFor("(() => { const b = document.querySelector('[data-role=pic-import]'); return !!b && !b.hidden && b.querySelector('canvas').width > 0 && /cell/.test(document.querySelector('[data-role=pic-info]').textContent); })()");
+    const info = () => evaluate("document.querySelector('[data-role=pic-info]').textContent");
+    const pset = (role, v) => evaluate(`(() => { const s = document.querySelector('[data-role=${role}]'); s.value = ${J(String(v))}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    const pcheck = (role, on) => evaluate(`(() => { const s = document.querySelector('[data-role=${role}]'); if (s.checked !== ${on}) s.click(); return true; })()`);
+    const tset = (n) => evaluate(`t.host.getAsset('tilesets', ${J(n)})`);
+    const hostWarn = () => evaluate("t.host.assetWarnings().map((w) => w.id)");
+    /** The set of colour keys (0..7, ink and paper of any row) that the tile a cell shows is drawn with. */
+    const colourOfCell = (mapA, tsA, x, y) => evaluate(`(() => { const m = t.M.fromAsset(${J(mapA)}), ts = t.T.fromAsset(${J(tsA)}), v = m.cells[${y} * m.w + ${x}]; if (v < 0) return 'blank'; return [...new Set(t.T.tilePixels(ts.tiles[v], { fine: true }))].sort().join(); })()`);
+    // a 256 x 192 picture: blue / white 4-pixel stripes above, green / yellow 2 x 2 checks below, a red / white block of 2-pixel stripes, a magenta / cyan stripe row (cells row 20)
+    const scenePic = `(x, w, h) => {
+      for (let y = 0; y < h; y++) for (let px = 0; px < w; px++) {
+        const cx = px >> 3, cy = y >> 3; let c;
+        if (cy === 20) c = (y >> 1) & 1 ? '#cc00c4' : '#00cccc';
+        else if (cx >= 8 && cx < 12 && cy >= 4 && cy < 8) c = (px >> 1) & 1 ? '#cccccc' : '#c90500';
+        else if (cy < 12) c = (px >> 2) & 1 ? '#cccccc' : '#0000cc';
+        else c = ((px >> 1) + (y >> 1)) & 1 ? '#cccc00' : '#00cc08';
+        x.fillStyle = c; x.fillRect(px, y, 1, 1);
+      } }`;
+
+    await evaluate("t.load('shooter')");
+    await evaluate("(t.host.selectAsset('maps', 'sky'), true)");
+    check('M3: a cell map ("sky") has the Import picture… button', await evaluate("!document.querySelector('[data-role=import-picture]').hidden && document.querySelector('[data-role=import-file]').type === 'file'") && (await state()).role === 'cell');
+    const gfx0 = await tset('gfx'), sky0 = await asset('sky'), logo0 = await asset('logo');
+    const baseWarn = await hostWarn();
+    const s0 = await sets();
+    await feedPicture(256, 192, scenePic, 'scene.png');
+    check('M3: choosing a picture opens the panel with a 32 × 24 preview and the report', !!(await dlgOpen()) && await evaluate("(() => { const c = document.querySelector('[data-role=pic-preview]'); return c.width === 512 && c.height === 384; })()"), await info());
+    await shot('09-import-panel');
+    check('M3: the size is fixed at 32 × 24 (256 × 192 pixels): the size fields are disabled', await evaluate("document.querySelector('[data-role=pic-cols]').value === '32' && document.querySelector('[data-role=pic-rows]').value === '24' && document.querySelector('[data-role=pic-cols]').disabled && /256 × 192/.test(document.querySelector('[data-role=pic-size-note]').textContent)"));
+    check('M3: the project is a fine-colour game, so 8 × 1 colour is on; the foreground mark is on; the report counts 4 new tiles', await evaluate("document.querySelector('[data-role=pic-fine]').checked && document.querySelector('[data-role=pic-foreground]').checked") && /768 cells became 4 new tiles/.test(await info()), await info());
+    const note = await evaluate("document.querySelector('[data-role=pic-note]').textContent");
+    check('M3: the tile set gfx is shared with the other maps: the panel says so and offers append (default), replace, a new set', /also used by gameover, logo, press/.test(note) && await evaluate("(() => { const t = document.querySelector('[data-role=pic-target]'); return t.value === 'append' && [...t.options].map((o) => o.value).join() === 'append,replace,new'; })()"), note);
+    await pset('pic-target', 'replace');
+    check('M3: choosing replace warns that the other maps change', /Replacing the tiles changes how gameover, logo, press look/.test(await evaluate("document.querySelector('[data-role=pic-note]').textContent")));
+    await pset('pic-target', 'append');
+    check('M3: nothing is written while the panel is open', (await sets()) === s0 && J(await tset('gfx')) === J(gfx0) && J(await asset('sky')) === J(sky0));
+    await click('[data-role=pic-ok]');
+    let sky = await asset('sky'), gfx = await tset('gfx');
+    check('M3: Import writes the tile set (4 tiles appended: 120) and then the map, two host calls, the other maps untouched', gfx.tiles.length === 120 && J(gfx.tiles.slice(0, 116)) === J(gfx0.tiles) && (await sets()) === s0 + 2 && J(await asset('logo')) === J(logo0) && (await evaluate('t.log.bad.length')) === 0, `tiles ${gfx.tiles.length}, writes ${(await sets()) - s0}`);
+    check('M3: the map is 32 × 24 and every cell uses one of the 4 new tiles (116..119)', sky.w === 32 && sky.h === 24 && cellsOf(sky).every((v) => v >= 116 && v <= 119), J([...new Set(cellsOf(sky))]));
+    check('M3: the cells show the picture: stripes of blue / white (top-left), red / white (the block), green / yellow (bottom), magenta / cyan (row 20)',
+      (await colourOfCell(sky, gfx, 0, 0)) === '1,7' && (await colourOfCell(sky, gfx, 9, 5)) === '2,7' && (await colourOfCell(sky, gfx, 3, 15)) === '4,6' && (await colourOfCell(sky, gfx, 20, 20)) === '3,5');
+    check('M3: the map still reads the same representation, and the host accepted both assets', (Array.isArray(sky0.cells) === Array.isArray(sky.cells)) && (await evaluate('t.log.bad.length')) === 0);
+    check('M3: the editor shows the new map: the palette lists the 4 new tiles and the canvas is redrawn', (await state()).paletteCount === 121 && (await state()).tileCount === 120, J({ pal: (await state()).paletteCount, n: (await state()).tileCount }));
+    check('M3: the asset check says nothing new (the new tiles are foreground-marked, all colours BRIGHT-0 black rule)', J(await hostWarn()) === J(baseWarn), J(await hostWarn()));
+    check('M3: the new tiles are marked fg (sprites never pass over)', gfx.tiles.slice(116).every((t2) => t2.fg === true));
+    await key('z', { ctrl: true });
+    check('M3: ONE Undo puts the old map AND the old tile set back (116 tiles, the map as it was)', J(await asset('sky')) === J(sky0) && J(await tset('gfx')) === J(gfx0));
+    await key('y', { ctrl: true });
+    check('M3: Redo brings the import back: the 4 tiles and the picture map', (await tset('gfx')).tiles.length === 120 && J(await asset('sky')) === J(sky));
+    await key('z', { ctrl: true });
+    // a change to the tile set made elsewhere in between: Undo of the map does not overwrite it
+    await key('y', { ctrl: true });
+    await evaluate(`(() => { const ts = JSON.parse(JSON.stringify(t.project.assets.tilesets.gfx)); ts.tiles[3].rows[0].bits = ts.tiles[3].rows[0].bits === 'FF' ? '00' : 'FF'; t.externalSet('tilesets', 'gfx', ts); return true; })()`);
+    const edited = await tset('gfx');
+    await key('z', { ctrl: true });
+    check('M3: the map goes back, but a tile set somebody else changed meanwhile is left as it is', J(await asset('sky')) === J(sky0) && J(await tset('gfx')) === J(edited));
+    await evaluate("(t.load('shooter'), true)");
+    await evaluate("(t.host.selectAsset('maps', 'sky'), true)");
+
+    // the limit: 768 distinct cells appended to 116 tiles: 12 fit, the report says the rest
+    const noise = `(x, w, h) => { let s = 4242; const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s >>> 24; };
+      for (let y = 0; y < h; y++) for (let px = 0; px < w; px++) { x.fillStyle = r() & 1 ? '#c90500' : '#0000cc'; x.fillRect(px, y, 1, 1); } }`;
+    await feedPicture(256, 192, noise, 'noise.png');
+    await dlgOpen();
+    const msg1 = await info();
+    check('M3: a picture needing more tiles than fit says "needs N tiles but the limit is 128: N cells use the nearest tile" (12 free of 128)', /needs \d+ tiles but the limit is 128: \d+ cells/.test(msg1) && /12 new tiles/.test(msg1), msg1);
+    await click('[data-role=pic-ok]');
+    sky = await asset('sky'); gfx = await tset('gfx');
+    check('M3: appended: the set is exactly 128 tiles, every map cell < 128, all valid', gfx.tiles.length === 128 && cellsOf(sky).every((v) => v >= 116 && v < 128) && (await evaluate('t.log.bad.length')) === 0);
+    check('M3: the editor says what it did in the message line', /Imported 32 × 24 cells \(tiles appended to "gfx"\)/.test(await evaluate("document.querySelector('[data-role=message]').textContent")), await evaluate("document.querySelector('[data-role=message]').textContent"));
+    await feedPicture(256, 192, scenePic, 'scene.png');
+    await dlgOpen();
+    check('M3: with the set full, append says nothing can be added (and the map import is still allowed: every cell takes the nearest tile)', /already has 128 tiles/.test(await info()) && await evaluate("!document.querySelector('[data-role=pic-ok]').disabled"), await info());
+    await click('[data-role=pic-cancel]');
+    await key('z', { ctrl: true });
+    check('M3: Undo of the 128-tile import: back to 116 tiles and the old map', (await tset('gfx')).tiles.length === 116 && J(await asset('sky')) === J(sky0));
+
+    // a new tile set: the map gets its "tileset" key, the shared set is not touched
+    await feedPicture(256, 192, scenePic, 'scene.png');
+    await dlgOpen();
+    await pset('pic-target', 'new');
+    check('M3: "a new tile set" explains the tileset key', /"tileset" key/.test(await evaluate("document.querySelector('[data-role=pic-note]').textContent")));
+    await click('[data-role=pic-ok]');
+    sky = await asset('sky');
+    const nts = await tset('sky_tiles');
+    check('M3: the new set sky_tiles has the 4 tiles, the map names it, gfx is unchanged, and the map is drawn with it', !!nts && nts.tiles.length === 4 && sky.tileset === 'sky_tiles' && J(await tset('gfx')) === J(gfx0) && (await state()).tileset === 'sky_tiles' && cellsOf(sky).every((v) => v >= 0 && v < 4), J({ ts: (await state()).tileset, tk: sky.tileset }));
+    check('M3: the new set is not shared, and no black or colour warning appears', (await hostWarn()).every((id) => !/black|attr-mix/.test(id)), J(await hostWarn()));
+    await shot('10-imported-map');
+    // now the set is the map\'s own: replace is the default (a set made by the import, shared with nobody) is not assumed: it is append; replace it and undo it
+    await feedPicture(256, 192, `(x, w, h) => { x.fillStyle = '#c90500'; x.fillRect(0, 0, w, h); x.fillStyle = '#00cc08'; x.fillRect(0, 0, 128, 96); }`, 'two.png');
+    await dlgOpen();
+    check('M3: a set shared with no other map has no sharing note', !/also used by/.test(await evaluate("document.querySelector('[data-role=pic-note]').textContent")));
+    await pset('pic-target', 'replace');
+    const before2 = await tset('sky_tiles'), sky2 = await asset('sky');
+    await click('[data-role=pic-ok]');
+    const after2 = await tset('sky_tiles');
+    check('M3: replace swaps the tiles of sky_tiles (now 2: flat red, flat green) and the map points at them', after2.tiles.length === 2 && cellsOf(await asset('sky')).every((v) => v === 0 || v === 1) && J(after2) !== J(before2));
+    await key('z', { ctrl: true });
+    check('M3: Undo puts back the replaced tiles and the earlier map', J(await tset('sky_tiles')) === J(before2) && J(await asset('sky')) === J(sky2));
+    await key('z', { ctrl: true });
+    check('M3: and one more Undo undoes the first import (the map is as it was; the new set stays as an unused set)', J(await asset('sky')) === J(sky0) && !!(await tset('sky_tiles')));
+
+    // fit / crop on a wide picture, transparent cells (stripes: Starfall's own set has flat red, green and black tiles, which an import reuses)
+    await evaluate("(t.load('shooter'), true)");
+    await evaluate("(t.host.selectAsset('maps', 'sky'), true)");
+    const wide = `(x, w, h) => { for (let y = 0; y < h; y++) for (let px = 0; px < w; px++) { x.fillStyle = px < w / 2 ? ((px >> 1) & 1 ? '#cccccc' : '#c90500') : (((px >> 1) + (y >> 1)) & 1 ? '#cccc00' : '#00cc08'); x.fillRect(px, y, 1, 1); } }`;
+    await feedPicture(512, 192, wide, 'wide.png');
+    await dlgOpen();
+    check('M3: a wide picture (512 × 192) defaults to fit: the whole picture, black bars', await evaluate("document.querySelector('[data-role=pic-fit]').value === 'fit'"), await info());
+    await pset('pic-target', 'append');
+    await click('[data-role=pic-ok]');
+    sky = await asset('sky'); gfx = await tset('gfx');
+    check('M3: fit: black bars above and below, the picture between (left red / white stripes, right green / yellow checks)', (await colourOfCell(sky, gfx, 5, 0)) === '0' && (await colourOfCell(sky, gfx, 5, 23)) === '0' && (await colourOfCell(sky, gfx, 2, 12)) === '2,7' && (await colourOfCell(sky, gfx, 29, 12)) === '4,6',
+      J([await colourOfCell(sky, gfx, 5, 0), await colourOfCell(sky, gfx, 2, 12), await colourOfCell(sky, gfx, 29, 12)]));
+    await key('z', { ctrl: true });
+    await feedPicture(512, 192, wide, 'wide.png');
+    await dlgOpen();
+    await pset('pic-fit', 'crop');
+    await click('[data-role=pic-ok]');
+    sky = await asset('sky'); gfx = await tset('gfx');
+    check('M3: crop fills the whole screen (no bars): the top row is the picture too, the left half red / white, the right half green / yellow', (await colourOfCell(sky, gfx, 5, 0)) === '2,7' && (await colourOfCell(sky, gfx, 2, 20)) === '2,7' && (await colourOfCell(sky, gfx, 29, 18)) === '4,6');
+    await key('z', { ctrl: true });
+    // a transparent picture: blank cells are blank map cells
+    await feedPicture(256, 192, `(x, w, h) => { x.clearRect(0, 0, w, h); for (let y = 0; y < h; y++) for (let px = 0; px < 128; px++) { x.fillStyle = (px >> 1) & 1 ? '#cccccc' : '#c90500'; x.fillRect(px, y, 1, 1); } }`, 'half.png');
+    await dlgOpen();
+    check('M3: a picture with transparent cells reports them as left blank', /384 transparent cells left blank/.test(await info()), await info());
+    await click('[data-role=pic-ok]');
+    check('M3: those map cells are blank (255), the others show the red / white stripes', await evaluate("(() => { const m = t.M.fromAsset(t.host.getAsset('maps', 'sky')); return m.cells.filter((v) => v === -1).length === 384 && m.cells[0] >= 0 && m.cells[16] === -1; })()") && (await colourOfCell(await asset('sky'), await tset('gfx'), 3, 3)) === '2,7');
+    await key('z', { ctrl: true });
+
+    // an unreadable file; the role limits: no button for a world map or a floor plan
+    await evaluate(`(async () => { const dt = new DataTransfer(); dt.items.add(new File(['nope'], 'bad.png', { type: 'image/png' })); const i = document.querySelector('[data-role=import-file]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    check('M3: a file that is not a picture gives a plain message and no panel', !!(await waitFor("/Could not read the picture/.test(document.querySelector('[data-role=message]').textContent)")) && await evaluate("document.querySelector('[data-role=pic-import]').hidden"));
+    await evaluate("t.load('platformer')");
+    await evaluate("(t.editor.select('pf_world'), true)");
+    check('M3: a world map (WINDOW) has no Import picture button', (await state()).role === 'world' && await evaluate("document.querySelector('[data-role=import-picture]').hidden"));
+    await evaluate("t.load('vaults')");
+    await evaluate("(t.editor.select('vl_maze'), true)");
+    check('M3: a floor plan has no Import picture button', (await state()).role === 'floorplan' && await evaluate("document.querySelector('[data-role=import-picture]').hidden"));
+    await evaluate("(t.editor.select('vl_maze'), true)");
+    check('M3: no page errors during picture import', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
+  }
+
   // ── destroy ──
   await evaluate("(t.editor.destroy(), true)");
   check('destroy removes the editor', await evaluate("!document.querySelector('.mapd')"));

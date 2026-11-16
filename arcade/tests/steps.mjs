@@ -184,6 +184,7 @@ export const OTHER_SUITES = [
   { file: 'tests/sprite-model.mjs' },
   { file: 'tests/tile-model.mjs' },
   { file: 'tests/model-model.mjs' },
+  { file: 'tests/picture-import.mjs' },              // T2 / M3: picture import engine (cells, two colours, error diffusion, merging, the 128-tile limit)
   { file: 'tests/asset-thumbs.mjs' },                // S1: the gallery thumbnails
   { file: 'tests/arcade-check-worker.mjs' },         // B3: the worker's answer equals the page's compile, field by field
   { file: 'tests/variables-panel.mjs' },             // R3: the reported addresses read the interpreter's values on the real runtime
