@@ -276,3 +276,14 @@ pixel rows, "Rows → one colour" folds them back, the "8 x 1 colour view" shows
 follow `projectHasFine`, and the asset check reads a fine project's tiles row by row (`black-bright-mix`, `bright-black-paper`) and gives no `background-attr-mix` when every scene is fine (`fineScenes`, from `scanRoles(...).scenes` and `project.scenes`).
 `tests/studio-smoke.mjs` covers the select, the plan text, the missing "not built" warning, the three error cases and the phase cap (once the v2 runtime that has `RT_FINEMODE` is published; until then it checks the compiler's
 "needs RT_FINEMODE" error is shown).
+
+## As built: stage 4 (2026-11-16)
+The Studio gained, all as asset-editor plug-ins or host members (details and numbers in `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` "As built (stage 4)"):
+* **New opens a dialog of seven starters** (`src/arcade-starters.js`; `#new-dialog`); a starter is `{id, title, about, runtime, make()}` and `make()` returns a fresh project.
+* **Models tab** (`ASSET_EDITORS.models`, `createModelEditor`): the same host interface as the other editors (`assetWarnings` and `usedBy` optional).
+* **Object layer.** Host members `getObjectKinds()`, `setObjectKinds(kinds)`, `renameObjectKind(from, to)` (project document keys `objectKinds`, `objectBucket`). The map editor's
+  Objects layer appears only when the host has `getObjectKinds`. `objects.arc` is generated (`P.fileList`, `P.fileText`, `P.isGeneratedFile`), first in the joined source,
+  listed read-only, and `leapEditor.setReadOnly(on)` shows it that way. The Studio's compile, `arcadec` and the test harness all go through `compile()`, which adds the
+  generated text itself (`src/arcade-objects.js` `completeSource`).
+* **Note view** in the sound editor's song mode (no host change).
+

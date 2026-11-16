@@ -9,8 +9,9 @@
 "use strict";
 
 import { STARTERS_A } from './starters/starters-a.js';
+import { STARTERS_B } from './starters/starters-b.js';
 
-// The order of the dialog: the plain starters first, then one per game type, fine colour last.
-const A = Object.fromEntries(STARTERS_A.map((s) => [s.id, s]));
+// The order of the dialog: the plain starters first, then one per game type (v3 platformer, v4 raycaster, v2 wireframe), fine colour last.
+const BY_ID = Object.fromEntries([...STARTERS_A, ...STARTERS_B].map((s) => [s.id, s]));
 
-export const STARTERS = [A.blank, A['sprites-tiles'], A['scenes-music'], A['fine-colour']];
+export const STARTERS = ['blank', 'sprites-tiles', 'scenes-music', 'platformer', 'raycaster', 'wireframe', 'fine-colour'].map((id) => BY_ID[id]);

@@ -437,6 +437,64 @@ try {
   await b.shot('studio-platformer');
   await evaluate("document.getElementById('btn-stop').click()");
   await sleep(300);
+  // ── The object layer (M2): Leap Runner's level data are object layers; the Studio lists the generated objects.arc read-only ──
+  {
+    // (the 4-level game, example "runner"; the one-level "platformer" above has no objects)
+    await evaluate("document.getElementById('btn-examples').click()");
+    await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="runner"]\')', 5000);
+    await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="runner"]\').click()');
+    const rn = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && /4 levels/.test(leapStudio.project.name) && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length })", 25000);
+    check('M2: Leap Runner (4 levels) compiles in the Studio with its object layers, no errors and no warnings', !!rn && rn.errors === 0 && rn.warnings === 0, JSON.stringify(rn));
+    const row = await evaluate(`(() => { const r = document.querySelector('#file-list .proj-row[data-file="objects.arc"]'); return r ? { meta: r.querySelector('.proj-meta')?.textContent, buttons: r.querySelectorAll('button').length } : null; })()`);
+    check('M2: Leap Runner lists the generated objects.arc, marked "generated", with no rename or delete button', !!row && row.meta === 'generated' && row.buttons === 0, JSON.stringify(row));
+    await evaluate(`document.querySelector('#file-list .proj-row[data-file="objects.arc"]').click()`);
+    const shown = await waitFor(`leapStudio.activeFile === 'objects.arc' && /^\\s*REM .*generated/i.test(leapEditor.getSource()) && leapEditor.getSource()`, 8000);
+    check('M2: opening objects.arc shows the generated tables (coin, enemy and checkpoint arrays)', !!shown && /pfworldobjects/.test(shown) && /ncoin/.test(shown) && /enemyhi/.test(shown), (shown || '').slice(0, 120));
+    await evaluate("document.querySelector('#editor-mount .cm-content').focus()");
+    await b.send('Input.insertText', { text: 'REM typed' });
+    await sleep(300);
+    check('M2: objects.arc is read-only (typing changes nothing)', !(await evaluate('leapEditor.getSource()')).includes('REM typed'));
+    // the map editor's Objects layer reads the kinds from the host, and an object added through the host shows up in objects.arc
+    const kinds = await evaluate("JSON.stringify(Object.keys(leapStudio.makeHost('smoke-m2').getObjectKinds()))");
+    check('M2: the host gives the project\'s object kinds (coin, enemy, checkpoint)', kinds === JSON.stringify(['coin', 'enemy', 'checkpoint']), kinds);
+    await evaluate("leapStudio.selectAsset('maps', 'pf_world')");
+    const lay = await waitFor("(() => { const b = document.querySelector('#tool-maps [data-role=layer-objects]'); return b && b.offsetParent !== null ? true : null; })()", 10000);
+    check('M2: the map editor shows an Objects layer button for a project with object kinds', !!lay);
+    await evaluate("document.querySelector('#tool-maps [data-role=layer-objects]').click()");
+    const listed = await waitFor(`(() => { const t = document.querySelector('#tool-maps').textContent; const m = /coin\\s*#\\d+/.exec(t); return m ? t.length : null; })()`, 8000);
+    check('M2: in the Objects layer the objects are listed by kind with their table position (coin #n)', !!listed);
+    const add = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-m2'); const a = JSON.parse(JSON.stringify(h.getAsset('maps', 'pf_world')));
+      const n0 = a.objects.filter((o) => o.kind === 'coin').length; a.objects.push({ kind: 'coin', x: 8, y: 8, props: {} });
+      const r = h.setAsset('maps', 'pf_world', a); return { ok: r.ok, n0, err: r.error }; })()`);
+    check('M2: adding an object through the host is accepted', add.ok === true, JSON.stringify(add));
+    await evaluate(`document.querySelector('#file-list .proj-row[data-file="objects.arc"]').click()`);
+    const regen = await waitFor(`(() => { const s = leapEditor.getSource(); const m = /ncoin\\s*=\\s*(\\d+)/.exec(s); return m ? Number(m[1]) : null; })()`, 8000);
+    check('M2: objects.arc follows the map (the coin count rose by one)', regen === add.n0 + 1, `${add.n0} -> ${regen}`);
+    // (Leap Runner reads at most 50 coins a level: the extra coin is a limit finding, so put the project back to what it was)
+    await evaluate(`(() => { const h = leapStudio.makeHost('smoke-m2'); const a = JSON.parse(JSON.stringify(h.getAsset('maps', 'pf_world'))); a.objects.pop(); return h.setAsset('maps', 'pf_world', a).ok; })()`);
+    await evaluate(`document.querySelector('#file-list .proj-row[data-file="main.arc"]').click()`);
+  }
+  // ── New project: the starters dialog (N1) ──
+  {
+    await evaluate("document.getElementById('btn-new').click()");
+    const cards = await waitFor(`(() => { const d = document.getElementById('new-dialog'); const c = [...document.querySelectorAll('#new-grid .new-card')]; return d.open && c.length ? c.map((x) => x.dataset.starter).join() : null; })()`, 15000);
+    check('N1: New opens a dialog with the seven starters', cards === 'blank,sprites-tiles,scenes-music,platformer,raycaster,wireframe,fine-colour', cards);
+    const pics = await waitFor(`(() => { const im = [...document.querySelectorAll('#new-grid .new-card img')]; return im.length === 7 && im.every((i) => i.complete) ? im.filter((i) => i.naturalWidth > 0).length : null; })()`, 15000);
+    check('N1: every starter card shows its still (no missing picture)', pics === 7, String(pics));
+    await evaluate(`document.querySelector('#new-grid .new-card[data-starter="wireframe"]').click()`);
+    const wf = await waitFor("leapStudio.lastCompile && leapStudio.lastCompile.ok && leapStudio.project.name === 'Ring Run' && ({ errors: leapStudio.lastCompile.errors.length, warnings: leapStudio.lastCompile.warnings.length, models: Object.keys(leapStudio.project.assets.models).length })", 25000);
+    check('N1: picking Wireframe opens "Ring Run" (two models), compiling with no error and no warning; the dialog closes', !!wf && wf.errors === 0 && wf.warnings === 0 && wf.models === 2 && !(await evaluate("document.getElementById('new-dialog').open")), JSON.stringify(wf));
+    // the Models tab opens it: select a model
+    await evaluate(`leapStudio.selectAsset('models', Object.keys(leapStudio.project.assets.models)[0])`);
+    const mt = await waitFor(`(() => { const b = document.getElementById('tool-models'); return b && !b.hidden && b.querySelector('canvas') ? true : null; })()`, 10000);
+    check('W1: selecting a starter\'s model opens the model editor (a canvas in the Models tab)', !!mt);
+    await evaluate("document.getElementById('btn-new').click()");
+    await waitFor("document.getElementById('new-dialog').open", 8000);
+    await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await b.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(300);
+    check('N1: Escape closes the dialog and keeps the project', !(await evaluate("document.getElementById('new-dialog').open")) && (await evaluate('leapStudio.project.name')) === 'Ring Run');
+  }
   // Vaults needs runtime v4 (the raycaster): chosen by itself, runs, and draws walls into its 16 x 12 cell window
   await evaluate("document.getElementById('btn-examples').click()");
   await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="vaults"]\')', 5000);
