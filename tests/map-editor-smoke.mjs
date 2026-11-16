@@ -493,6 +493,15 @@ try {
     st.role === 'floorplan' && st.paletteCount === 5 && await evaluate("document.querySelector('[data-role=ruler]').hidden && document.querySelector('[data-role=tileset-select]').hidden && [...document.querySelectorAll('.mapd-pi')].map((e) => e.dataset.tile).join() === '0,1,2,3,4'"));
   check('the example floor plan is valid: nothing on the outer ring is red', st.ringBad.length === 0 && !st.warnings.includes('floorplan-shape'));
   await shot('07-vaults-floorplan');
+  // M4: the 3D preview sits under the plan of a floor plan only; it draws the view, follows an edit and goes away on a cell map
+  const fpv = async () => evaluate(`(() => { const box = document.querySelector('[data-role=floorplan-preview]'); const cv = box?.querySelector('[data-role=view]');
+    let ink = 0; if (cv) { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 120) ink++; }
+    return { shown: !!box && !box.hidden, hasView: !!cv, ink, sig: cv ? cv.toDataURL().length : 0 }; })()`);
+  const fp1 = await fpv();
+  check('M4: a floor plan shows the 3D preview, and its picture has walls in it', fp1.shown && fp1.hasView && fp1.ink > 200, JSON.stringify(fp1));
+  await evaluate("document.querySelector('[data-role=floorplan-preview] [data-role=turn-left]')?.click()");
+  const fp2 = await fpv();
+  check('M4: turning the viewer changes the picture', fp2.sig !== fp1.sig, `${fp1.sig} vs ${fp2.sig}`);
   const sv = await sets();
   await clickCell(0, 5, { button: 'right' });
   st = await state();
@@ -506,6 +515,7 @@ try {
   st = await state();
   check('painting a wall code (2) back on it clears the flag', st.ringBad.length === 0 && !st.warnings.includes('floorplan-shape') && cellAt(await asset('vl_maze'), 0, 5) === 2);
   await evaluate("(t.editor.select('vl_panel'), true)");
+  check('M4: a cell map has no 3D preview', !(await fpv()).shown);
   st = await state();
   check('vl_panel is an ordinary cell map and has no background-attr-mix warning of its own since stage 3 (one attribute)', st.role === 'cell' && !st.warnings.includes('background-attr-mix') && st.minority === 0, JSON.stringify(st.warnings));
   // the T1 checks below need a real warning: one cell of vl_panel is set to a tile of another background attribute (not solid, not fg), through the host as an outside change

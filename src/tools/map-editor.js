@@ -39,6 +39,8 @@ import { thumbMap } from './asset-thumbs.js';
 import { createGallery, galleryCss, GALLERY_BOX } from './asset-gallery.js';
 import * as PI from './picture-import.js';
 import { createImportDialog, readPictureFile } from './picture-import-ui.js';
+import { createFloorplanPreview } from './floorplan-preview.js';
+import { viewAttr } from '../lang/arcade/arcade-view.js';
 
 const PREF_KEY = 'leap-studio.mapd';
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,30}$/;
@@ -480,7 +482,25 @@ export function createMapEditor(container, host) {
     label: 'Maps', get: (n) => H.get('maps', n), onSelect: (n) => loadMap(n),
     thumb: (n, asset, ctx) => thumbMap(asset, ctx, { box: GALLERY_BOX, palette: pal }),
   });
-  root.append(gallery.el, bar, importDlg.el, newBox, sizeRow, layerRow, toolRow, emptyNote, body, warnList, msg);
+  // M4: the 3D preview of a floor plan (floorplan-preview.js): shown under the plan while the open map is the VIEW3D's floor plan, walked with the
+  // runtime's own wall cast. The game's CEIL / FLOOR paper and BRIGHT come from the source roles (INK is not read from the source: white).
+  const fpBox = el('div', 'mapd-fp');
+  fpBox.dataset.role = 'floorplan-preview';
+  fpBox.hidden = true;
+  let fpPreview = null;
+  function syncFloorplanPreview() {
+    const on = !!map && role === 'floorplan';
+    fpBox.hidden = !on;
+    if (!on) { fpPreview?.destroy(); fpPreview = null; fpBox.replaceChildren(); return; }
+    if (!fpPreview) {
+      fpPreview = createFloorplanPreview(fpBox, {
+        getMap: () => (map ? { w: map.w, h: map.h, cells: map.cells } : null),
+        getAttrs: () => { const v = roles?.view; return v ? { top: viewAttr(v.bright ?? 0, v.ceil ?? 0, 7), bottom: viewAttr(v.bright ?? 0, v.floor ?? 1, 7) } : null; },
+      });
+    }
+    fpPreview.refresh();
+  }
+  root.append(gallery.el, bar, importDlg.el, newBox, sizeRow, layerRow, toolRow, emptyNote, body, fpBox, warnList, msg);
 
   /** The 8 flag names: the host's (project.flagNames) when it offers them, else the defaults; an unnamed flag shows its number. */
   function flagNames() {
@@ -627,6 +647,7 @@ export function createMapEditor(container, host) {
   }
   function drawMap() {
     if (!map || destroyed) return;
+    if (fpPreview && !fpBox.hidden) fpPreview.refresh();      // (M4: the 3D preview follows every edit, a few ms)
     const cp = cellPx(), m = previewMap();
     lastCellPx = cp;
     const W = map.w * cp, Hh = map.h * cp;
@@ -904,6 +925,7 @@ export function createMapEditor(container, host) {
     buildObjectPanel();
     drawFlagLegend();
     drawMap();
+    syncFloorplanPreview();
     showReadout();
   }
 
@@ -1780,6 +1802,7 @@ export function createMapEditor(container, host) {
     else { name = null; map = null; hist = null; lastStored = ''; renderAll(); }
   }
   function destroy() {
+    fpPreview?.destroy(); fpPreview = null;
     destroyed = true;
     for (const u of unsub) { try { u(); } catch { /* ignore */ } }
     for (const c of cleanups) c();
