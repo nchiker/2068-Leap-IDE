@@ -265,7 +265,7 @@ function gemsAssets() {
 const ARROW_SOURCE = `REM ARROW RUSH (the starter "Scenes and music", runtime v2): a reaction game in three scenes.
 REM Four arrows on a pad; one lights up yellow.  Press its key (Q up, A down, O left, P right, or joystick 1) before the bar
 REM runs out.  A right answer scores, and every round gives you less time.  A wrong key or no key costs a life (3 lives).
-REM Scenes: TITLE (a song plays) -> PLAY -> OVER (your score and the best one this session) -> PLAY again.
+REM Scenes: TITLE (a picture and a song) -> PLAY -> OVER (your score and the best one this session) -> PLAY again.
 REM Change first: START (the time for the first arrow), the points in RIGHT, the song "tune" (Sounds tab).
 GAME "Arrow Rush"
 FRAMERATE 30
@@ -279,22 +279,19 @@ SFX good = "good"                  REM sound effects
 SFX buzz = "buzz"
 SFX doom = "doom"
 MUSIC tune = "tune"                REM a song: PLAY tune starts it, ENTER stops it
+TILESET gfx = "title"              REM the title picture: 7 tiles and a 32 x 24 map, made with Import picture in the Maps tab
+MAP pic = "title"
 
 REM Variables declared outside a scene belong to the whole game and keep their value when the scene changes.
 DIM score, best
 
 SCENE title                        REM the first scene starts by itself; ENTER name goes to another one
-  REM The title screen: some coloured text and the song.
+  REM The title screen: a picture of tiles (LOADMAP fills the whole screen), a line of text and the song.
   PROC INIT():
     BORDER 0 : PAPER 0 : INK 7 : BRIGHT 0
-    FILLC 0, 0, 32, 24 = 32
+    LOADMAP pic
     PLAY tune
-    INK 6 : PRINT AT 4, 11; "ARROW RUSH";
-    INK 5 : PRINT AT 8, 4; "PRESS THE LIT ARROW'S KEY";
-    PRINT AT 10, 5; "BEFORE THE BAR RUNS OUT";
-    INK 4 : PRINT AT 14, 3; "Q UP  A DOWN  O LEFT  P RIGHT";
-    PRINT AT 16, 8; "OR USE JOYSTICK 1";
-    INK 2 : PRINT AT 21, 7; "PRESS FIRE TO PLAY";
+    INK 6 : PRINT AT 23, 7; "PRESS FIRE TO PLAY";
   ENDP
 
   REM FRAME runs every tick; here it waits for fire.
@@ -332,6 +329,7 @@ SCENE play
     BORDER 0 : PAPER 0 : INK 7 : BRIGHT 0
     FILLC 0, 0, 32, 24 = 32                                    REM fill the screen with black blanks
     NOMUSIC                                                    REM the title song goes on until it is stopped
+    INK 4 : PRINT AT 23, 1; "Q UP  A DOWN  O LEFT  P RIGHT";     REM the keys, for those who skipped the title
     score = 0 : lives = 3 : round = 0
     REM place the four arrows once (pixel x, y): they stay where they are, only their colour changes
     SHOW up AT 112, 48 : SHOW down AT 112, 96 : SHOW left AT 80, 72 : SHOW right AT 144, 72
@@ -405,6 +403,41 @@ const flipRows = (rows) => [...rows].reverse();
 const flipCols = (rows) => rows.map((r) => [...r].reverse().join(''));
 const transpose = (rows) => rows[0].split('').map((_, c) => rows.map((r) => r[c]).join(''));
 
+// the title picture (candidate C of arcade/tools/make-title-art.mjs, made by src/tools/picture-import.js; the Studio's Import picture does the same for any picture):
+// 7 tiles, 0 a star, 1 black, 2..6 a bevelled block (white edge, red / yellow / green / magenta / cyan), and the 32 x 24 map of them, one digit a cell
+const TITLE_TILE = (bytes, ink, paper, bright) => ({ rows: bytes.map((b) => ({ bits: b.toString(16).toUpperCase().padStart(2, '0'), ink, paper, bright })), flags: 0, fg: true });
+const TITLE_MAP = [
+  '01111111111111111111111111111111',
+  '11122211222211222211122211211120',
+  '11211121211121211121211121211121',
+  '11211121211121211121211121211121',
+  '11222221222211222211211121212121',
+  '11211121212111212111211121212121',
+  '11211121211211211211211121212121',
+  '11211121211121211121122211121211',
+  '11111111111111111111111111111111',
+  '10111333311311131133331311131111',
+  '11111311131311131311111311131101',
+  '11111311131311131311111311131111',
+  '11111333311311131133311333331111',
+  '11111313111311131111131311131111',
+  '11111311311311131111131311131111',
+  '11111311131133311333311311131111',
+  '01111111111111111111111111111111',
+  '11133111111441111115111111116110',
+  '11333311111441111155111111116611',
+  '13333331111441111555555116666661',
+  '11133111144444411555555116666661',
+  '11133111114444111155111111116611',
+  '11133111111441111115111111116111',
+  '11110111111111011111111111101111',
+];
+function titleAssets() {
+  const block = [0xFF, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80];
+  const tiles = [TITLE_TILE([0, 0, 0, 0, 0x10, 0, 0, 0], 7, 0, 0), TITLE_TILE(new Array(8).fill(0), 7, 0, 0), ...[2, 6, 4, 3, 5].map((paper) => TITLE_TILE(block, 7, paper, 1))];
+  return { tilesets: { title: { tiles } }, maps: { title: { w: 32, h: 24, tileset: 'title', cells: TITLE_MAP.map((r) => [...r].map((d) => '0' + d).join('')).join('') } } };
+}
+
 function arrowAssets() {
   const art = { up: ARROW_UP, down: flipRows(ARROW_UP), left: transpose(ARROW_UP), right: flipCols(transpose(ARROW_UP)) };
   const sprites = {};
@@ -426,7 +459,7 @@ function arrowAssets() {
       B: '@bass !10 L32 | C3 G3 | A2 E3 | F2 C3 | G2 G3', C: drums,
     }, 'answer'),
   ], [0, 1], 0);
-  return { sprites, sfx, music: { tune } };
+  return { sprites, sfx, music: { tune }, ...titleAssets() };
 }
 
 // ── 4. fine-colour: Rainbow Gold ─────────────────────────────────────────────────────────────────────────────────────────────────
