@@ -18,7 +18,7 @@
 import { createEmulator } from './src/emulator.js';
 import { cpuHz, tStatesPerFrame } from './tsrun/machine.js';
 import { STUDIO_PROFILES } from './src/lang/profiles.js';
-import { setAssetSource } from './src/lang/arcade/editor.js';
+import { setAssetSource, setProjectContext } from './src/lang/arcade/editor.js';
 import { inputHints, scanArcade, scanRoles } from './src/lang/arcade/arcade-scan.js';
 import { parse as parseArcade } from './src/lang/arcade/arcade-parse.js';
 import { checkAssets } from './src/lang/arcade/arcade-assetcheck.js';
@@ -1586,6 +1586,14 @@ symbolsTool = createSymbolsTool($('tool-symbols'), {
     else { window.leapEditor.setCursor(at.line, 0); window.leapEditor.focus(); }
   },
   getProfile: () => profile,
+});
+// P4: go to definition, hover and rename see the whole project (the joined source and its line map), not only the open file
+setProjectContext({
+  source: () => { syncEditor(); return P.buildSource(project); },
+  activeFile: () => activeFile,
+  files: () => Object.fromEntries(Object.entries(project.files).filter(([name]) => !P.isGeneratedFile(name))),
+  openFile: (name, line, col) => switchFile(name, { line, col }),
+  setFileText: (name, text) => { P.setFile(project, name, text); changed({ type: 'source', source: 'studio' }); },
 });
 /** In a project of several files a row says which file its line is in ("extra.arc line 3"), not the joined text's line. */
 function labelSymbolRows() {

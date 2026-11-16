@@ -46,6 +46,34 @@ let assetSource = () => [];
 /** fn(kind) -> asset names of that kind ('sprites' | 'tilesets' | 'maps' | 'sfx' | 'music'), for the completion inside quotes. */
 export function setAssetSource(fn) { assetSource = typeof fn === 'function' ? fn : () => []; }
 
+// ── The project's files (set by the Studio; P4) ───────────────────
+/**
+ * The Studio gives the editor the whole project so go to definition, hover and rename work across files (a file on its own is only a piece of a program):
+ *   source()               -> {text, lineMap}  the joined source the compiler gets and its map back ({file, line} per joined line; src/arcade-project.js buildSource)
+ *   activeFile()           -> the name of the file the editor shows
+ *   files()                -> {name: text} of the other files that can be edited (the generated objects.arc is not among them)
+ *   openFile(name, line, col)   show another file with the cursor there
+ *   setFileText(name, text)     replace the text of a file that is not open (the project changes; the Studio saves and recompiles)
+ * Without it (or in a single-file project) everything works on the open file alone, as before.
+ */
+let projectCtx = null;
+export function setProjectContext(ctx) { projectCtx = ctx && typeof ctx === 'object' ? ctx : null; }
+
+/** Where a name is defined in the project: {kind, file, line, col} (the line in its own file), the open file's own scan when there is no context. */
+function resolveDef(state, name) {
+  if (projectCtx) {
+    try {
+      const src = projectCtx.source();
+      const def = definitionOf(src.text, name);
+      const at = def && src.lineMap[def.line - 1];
+      if (def && at) return { ...def, file: at.file, line: at.line };
+    } catch { /* fall back to the open file */ }
+  }
+  const def = definitionOf(state.doc.toString(), name);
+  return def ? { ...def, file: projectCtx?.activeFile?.() ?? null } : undefined;
+}
+const inOtherFile = (def) => !!projectCtx && !!def.file && def.file !== projectCtx.activeFile();
+
 const ASSET_KIND_OF = { SPRITE: 'sprites', TILESET: 'tilesets', MAP: 'maps', SFX: 'sfx', MUSIC: 'music', MODEL: 'models' };
 
 // ── Language mode ─────────────────────────────────────────────────
@@ -188,8 +216,8 @@ const arcadeHover = hoverTooltip((view, pos) => {
   let make = null;
   if (entry && entry.reserved) make = () => helpDom(entry);
   else {
-    const def = definitionOf(view.state.doc.toString(), w.text);
-    if (def) make = () => el('div', 'cm-leap-tooltip', `${def.kind} ${w.text} — defined on line ${def.line}`);
+    const def = resolveDef(view.state, w.text);
+    if (def) make = () => el('div', 'cm-leap-tooltip', `${def.kind} ${w.text} — defined ${inOtherFile(def) ? `in ${def.file} ` : ''}on line ${def.line}`);
     else if (entry) make = () => helpDom(entry);
     else {
       const msg = notInArcadeMessage(w.text);
@@ -376,30 +404,51 @@ function tidy(view) {
 
 function goToDefinition(view, pos = view.state.selection.main.head) {
   const w = wordAt(view.state, pos);
-  const def = w && definitionOf(view.state.doc.toString(), w.text);
+  const def = w && resolveDef(view.state, w.text);
   if (!def) return false;
+  if (inOtherFile(def)) { projectCtx.openFile(def.file, def.line, def.col); return true; }      // (P4: the definition is in another file of the project)
   const at = view.state.doc.line(def.line).from + def.col;
   view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'center' }) });
   view.focus();
   return true;
 }
 
-/** Every occurrence of a name outside strings and REM text, in this file: [{from, to}]. */
-function occurrences(state, name) {
+/** Every occurrence of a name outside strings and REM text in a text: [{from, to}] (offsets). */
+export function occurrencesInText(text, name) {
   const up = name.toUpperCase();
   const out = [];
-  for (let n = 1; n <= state.doc.lines; n++) {
-    const line = state.doc.line(n);
-    for (const t of tokenize(line.text)) {
-      if (t.type === 'ident' && t.value === up) out.push({ from: line.from + t.col, to: line.from + t.end });
+  let base = 0;
+  for (const line of text.split('\n')) {
+    for (const t of tokenize(line)) {
+      if (t.type === 'ident' && t.value === up) out.push({ from: base + t.col, to: base + t.end });
     }
+    base += line.length + 1;
+  }
+  return out;
+}
+const occurrences = (state, name) => occurrencesInText(state.doc.toString(), name);
+/** The other editable files of the project that use a name: [{file, text, spots}] (none without a project context). */
+function otherFilesUsing(name) {
+  if (!projectCtx) return [];
+  const out = [];
+  let files = {};
+  try { files = projectCtx.files() ?? {}; } catch { files = {}; }
+  const active = projectCtx.activeFile?.();
+  for (const [file, text] of Object.entries(files)) {
+    if (file === active) continue;
+    const spots = occurrencesInText(text, name);
+    if (spots.length) out.push({ file, text, spots });
   }
   return out;
 }
 
 function rename(view, say) {
   const w = wordAt(view.state, view.state.selection.main.head);
-  const def = w && definitionOf(view.state.doc.toString(), w.text);
+  const def = w && resolveDef(view.state, w.text);
+  if (def && def.file && projectCtx && !Object.hasOwn(projectCtx.files() ?? {}, def.file) && def.file !== projectCtx.activeFile()) {
+    say(`${w.text} is defined in ${def.file}, which is generated: change it in the editor that makes it`, 'error');
+    return true;
+  }
   if (!def || def.kind === 'sprite' || def.kind === 'tileset' || def.kind === 'map' || def.kind === 'sfx' || def.kind === 'music') {
     say('Put the cursor on a procedure, function, scene or variable this file defines to rename it', 'error');
     return true;
@@ -411,10 +460,18 @@ function rename(view, say) {
   if (!/^[A-Za-z][A-Za-z0-9_]*\$?$/.test(name) || name.length > 31) why = 'A name is a letter, then letters, digits and _ (up to 31 characters)';
   else if (ARCADE_WORDS.has(name.toUpperCase())) why = `${name.toUpperCase()} is a word of the language`;
   else if (occurrences(view.state, name).length) why = `The file already uses ${name}`;
+  else if (otherFilesUsing(name).length) why = `${otherFilesUsing(name)[0].file} already uses ${name}`;
   if (why) { say(why, 'error'); view.focus(); return true; }
   const spots = occurrences(view.state, w.text);
-  view.dispatch({ changes: spots.map((s) => ({ ...s, insert: name })), userEvent: 'rename' });
-  say(`Renamed ${w.text} to ${name} in ${spots.length} place${spots.length === 1 ? '' : 's'}`, 'idle');
+  const others = otherFilesUsing(w.text);          // (P4: the same name in the project's other files)
+  if (spots.length) view.dispatch({ changes: spots.map((s) => ({ ...s, insert: name })), userEvent: 'rename' });
+  for (const o of others) {
+    let text = o.text;
+    for (const sp of [...o.spots].reverse()) text = text.slice(0, sp.from) + name + text.slice(sp.to);
+    projectCtx.setFileText(o.file, text);
+  }
+  const total = spots.length + others.reduce((n, o) => n + o.spots.length, 0);
+  say(`Renamed ${w.text} to ${name} in ${total} place${total === 1 ? '' : 's'}${others.length ? ` (${[spots.length ? 'this file' : null, ...others.map((o) => o.file)].filter(Boolean).join(', ')})` : ''}`, 'idle');
   view.focus();
   return true;
 }

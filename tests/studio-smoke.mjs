@@ -900,6 +900,23 @@ try {
   await evaluate(`[...document.querySelectorAll('#tool-symbols .sym-row')].find((x) => /^sprite ball/.test(x.textContent)).click()`);
   const backMain = await waitFor(`leapStudio.activeFile === 'main.arc'`, 5000);
   check('B7: and a row of main.arc switches back to it', !!backMain, await evaluate('leapStudio.activeFile'));
+  // P4: go to definition and rename work across the files of the project
+  await openFresh(`(p) => { p.files['main.arc'] = 'GAME "p4"\\nFRAMERATE 30\\nSCENE play\\n  PROC INIT():\\n    CALL helper(1)\\n  ENDP\\n  PROC FRAME():\\n  ENDP\\nENDSCENE\\n';
+    __P.setFile(p, 'extra.arc', 'REM helpers\\nPROC helper(a):\\n  a = a + 1\\nENDP\\n'); }`);
+  await sleep(700);
+  await evaluate("leapEditor.setCursor(5, 11)");
+  const gd = await evaluate("leapEditor.goToDefinition()");
+  const gdDone = await waitFor(`leapStudio.activeFile === 'extra.arc' && /^Ln 2,/.test(document.getElementById('sb-cursor').textContent)`, 5000);
+  check('P4: F12 on a PROC called in main.arc opens extra.arc at its definition', gd === true && !!gdDone, await evaluate("leapStudio.activeFile + ' ' + document.getElementById('sb-cursor').textContent"));
+  await evaluate("document.querySelector('.proj-row[data-file=\"main.arc\"]').click()");
+  await sleep(300);
+  await evaluate("(() => { leapEditor.setCursor(5, 11); window.prompt = () => 'helper2'; leapEditor.rename(); return true; })()");
+  await sleep(300);
+  const rn = await evaluate("({ main: leapEditor.getSource().includes('CALL helper2(1)'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper2(a):'), old: /helper\\(|helper\\b/.test(leapStudio.project.files['extra.arc'].replace(/helper2/g, '')) })");
+  check('P4: rename changes the call in main.arc and the definition in extra.arc, and no old name is left', rn.main && rn.extra && !rn.old, JSON.stringify(rn));
+  await waitFor('leapStudio.compileSettled', 20000);
+  await sleep(300);
+  check('P4: the renamed project still compiles', await evaluate('leapStudio.lastCompile.ok'), await evaluate("JSON.stringify(leapStudio.lastCompile.errors.slice(0, 1))"));
   await evaluate("document.querySelector('.panel-tab[data-tab=\"display\"]').click()");
 
   // N2: "+" on an asset kind offers the declaration line (one edit; the word per kind)
