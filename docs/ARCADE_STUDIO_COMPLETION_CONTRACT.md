@@ -425,6 +425,15 @@ re-ran every suite in the main tree, wired the Studio (`studio.js`, `studio.html
 * **M4. Floor-plan 3D preview** (`src/tools/raycast-ref.js` moved out of `arcade/tests/m8-common.mjs`, which re-exports it unchanged: the m8 runtime suites are green; `floorplan-view.js`
   pure, `floorplan-preview.js`): under the plan of a floor plan, the view the runtime draws from any cell and direction (click a cell, turn, walk with collision). The test compares the
   preview with the real v4 runtime's screen on 36 poses of 7 maps and with the m8 reference byte for byte. INK is not read from the source (white).
+* **Samples.** *Title by picture import:* **Arrow Rush**'s title is a picture made by the import (the owner chose candidate C of three stills, `arcade/spike/stage5/title/title-sheet.png`,
+  drawn by `arcade/tools/make-title-art.mjs` and run through `pictureToAssets`): 7 tiles and a 32 x 24 map, `LOADMAP pic` fills the screen, one text row is left (the keys hint moved to
+  the play scene); the source is 132 lines. `tests/arcade-starters-a.mjs` now allows BRIGHT 1 on coloured paper (the rule is no BRIGHT 1 on BLACK paper). *Vaults' floor plan in M4's preview:* open Vaults,
+  Maps tab, `vl_maze`; the start pose of the game is `{x: 640, y: 7296, a: 34}` (the preview starts at the first free cell: click cell (2, 28) to stand there).
+* **Traps (stage 5).** (1) The Studio's New / Open / examples are asynchronous (the list saves the open project first): tests wait for `leapStudio.opens`; `studio.html?nolist=1` is the
+  old single-project path. (2) `forceLinting` does not re-run a lint that is not due: use `leapEditor.relint()`. (3) A worker does not see the import map (unstamped module copies;
+  the fingerprint check ignores the worker's closure). (4) Eight right-panel tab names only fit 1280 px as "Vars" with tight padding. (5) A page with an unsaved edit raises a native
+  `confirm` on New when the list is off: stub `window.confirm` or the test hangs with 0 % CPU. (6) Leaked headless Chromes (a crashed browser test never closes its browser) slow every
+  timing check: look at `ps` for `chrome-headless-shell` parents older than the run before trusting a wall-clock failure (a load average of 63 made the speed-ratio check fail).
 
 ## 5. Sample games (owner's rule: every improvement used in the sample games, each new feature shown off)
 
