@@ -90,6 +90,45 @@ export function requiredRuntime(text, assets) {
   return { version: reasons.length ? 3 : 2, reasons };
 }
 
+/**
+ * The program's variables with the addresses the linker gave them (the Studio's Variables tab; docs/ARCADE_STUDIO.md). One entry per DIM'd variable and array of the game and of every scene, and per
+ * parameter and local of every PROC and DEF FN the compiler generated (a callable that nothing reaches has no storage and is not listed). Every Leap Arcade value is a 16-bit signed integer in
+ * one 2-byte little-endian slot at GAME_VARS_BASE + 2 * i, so every entry has `type: 'int16'`, `elementSize: 2`, `signed: true`; there are no string variables and no byte variables. Hidden slots the
+ * compiler adds (FOR limit and step, SELECT selector, key and stick snapshots, the scene driver's) have no source name and are not listed.
+ *   {name (as declared; a local's is its upper-case key), key (upper case), kind 'var' | 'array', scopeKind 'game' | 'scene' | 'proc' | 'fn', scope ('game', the scene's name, or the callable's name),
+ *    scene (the scene's name or null: where the name lives; a callable of a scene has it too), role 'dim' | 'timer' | 'param' | 'local', address, size (bytes), length (elements; 1 for a variable),
+ *    elementSize 2, signed true, type 'int16', dims ([n + 1] or [w + 1, h + 1] elements per index; flat slot i * (h + 1) + j) for an array, line, col (of the declaration; a local's is its callable's)}
+ * `key` is how the interpreter's records name it (`SCENE.NAME` for a scene's own names in a game with several scenes). Sorted by address.
+ */
+export function collectVariables(ast, gen) {
+  const out = [];
+  const up = (n) => n.toUpperCase();
+  const scenes = ast.scenes ?? [], multi = scenes.length > 1;
+  const sym = gen.symbols ?? {};
+  const add = (e) => out.push({ elementSize: 2, signed: true, type: 'int16', ...e });
+  const dims = (decls, scopeKind, scene) => {
+    for (const d of decls ?? []) {
+      if (d.type !== 'Dim') continue;
+      for (const it of d.items) {
+        const k = up(it.name), key = multi && scene ? `${up(scene.name)}.${k}` : k;
+        const base = { name: it.name, key: k, scopeKind, scope: scene ? scene.name : 'game', scene: scene ? scene.name : null, role: d.timer ? 'timer' : 'dim', line: it.line, col: it.col };
+        if (sym.arrays?.[key]) {
+          const a = sym.arrays[key], length = a.n + 1;
+          add({ ...base, kind: 'array', address: a.addr, size: 2 * length, length, dims: a.h !== undefined ? [a.w + 1, a.h + 1] : [length] });
+        } else if (sym.vars?.[key] !== undefined) add({ ...base, kind: 'var', address: sym.vars[key], size: 2, length: 1 });
+      }
+    }
+  };
+  dims(ast.decls, 'game', null);
+  scenes.forEach((sc) => dims(sc.decls, 'scene', sc));
+  for (const c of gen.locals ?? []) {
+    for (const s of c.slots) {
+      add({ name: s.name, key: s.key, kind: 'var', scopeKind: c.kind === 'F' ? 'fn' : 'proc', scope: c.name, scene: c.scene >= 0 ? scenes[c.scene].name : null, role: s.param ? 'param' : 'local', address: s.addr, size: 2, length: 1, line: c.line, col: c.col });
+    }
+  }
+  return out.sort((a, b) => a.address - b.address);
+}
+
 /** The link report as text lines (bytes per category, phase memory, variables), for the CLI and the Studio. */
 export function usageLines(u) {
   const lines = [
@@ -134,6 +173,7 @@ export function compile(text, opts = {}) {
   out.errors = out.errors.map((d) => shiftDiagnostic(d, full.offset));
   out.warnings = out.warnings.map((d) => shiftDiagnostic(d, full.offset));
   if (out.scenes) for (const sc of out.scenes) if (Number.isInteger(sc.line)) sc.line = Math.max(1, sc.line - full.offset);
+  if (out.variables) for (const v of out.variables) if (Number.isInteger(v.line)) v.line = Math.max(1, v.line - full.offset);      // (a variable of the generated object tables reads line 1, as a diagnostic there does)
   out.lineOffset = full.offset;
   out.objects = full.generated;
   return out;
@@ -188,5 +228,6 @@ function compileText(text, { runtime, image, assets, scenes, bankAll = false, em
   out.usage = { ...linked.usage, codegen: gen.usage };
   out.gen = gen;
   out.ast = ast;
+  out.variables = collectVariables(ast, gen);      // report only: where every DIM'd variable, array, parameter and local lives (collectVariables)
   return out;
 }

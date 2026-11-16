@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- tests/variables-panel-test.html: a blank page that mounts the Studio's Variables tab (src/tools/variables-panel.js) on a fake host: a made-up variable list (as compile().variables
+     reports it) and a fake memory the test writes into. Driven by tests/variables-panel-smoke.mjs. ?theme=light|dark picks the ide.css palette. window.t exposes the host's state
+     (t.mem, t.state), the panel (t.panel) and the list (t.vars). -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Variables panel test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } #mount { width: 340px; height: 520px; } </style>
+</head>
+<body>
+<div id="mount"></div>
+<script type="module">
+import { createVariablesPanel } from '../src/tools/variables-panel.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+
+const base = { elementSize: 2, signed: true, type: 'int16', line: 1, col: 0, role: 'dim', scene: null, scopeKind: 'game', scope: 'game' };
+const v = (name, address, extra = {}) => ({ ...base, name, key: name.toUpperCase(), kind: 'var', address, size: 2, length: 1, ...extra });
+const a = (name, address, length, extra = {}) => v(name, address, { kind: 'array', size: 2 * length, length, dims: [length], ...extra });
+const vars = [
+  v('score', 0xE100), v('lives', 0xE102), v('neg', 0xE104), v('big', 0xE106),
+  a('table', 0xE108, 40), a('grid', 0xE158, 12, { dims: [3, 4] }),
+  v('t', 0xE170, { scopeKind: 'scene', scope: 'play', scene: 'play' }),
+  v('pv', 0xE172, { scopeKind: 'proc', scope: 'SETP', scene: 'play', role: 'param' }),
+  v('lv', 0xE174, { scopeKind: 'proc', scope: 'SETP', scene: 'play', role: 'local' }),
+  v('clock', 0xE176, { role: 'timer' }),
+];
+const t = { vars, mem: new Uint8Array(0x10000), state: { list: vars, readable: false, running: false }, panel: null, reads: 0 };
+const put = (addr, ...words) => words.forEach((w, i) => { t.mem[addr + 2 * i] = w & 255; t.mem[addr + 2 * i + 1] = (w >> 8) & 255; });
+t.put = put;
+const host = {
+  getVariables: () => t.state.list,
+  readByte: (addr) => { t.reads++; return t.state.readable ? t.mem[addr] : null; },
+  isRunning: () => t.state.running,
+};
+t.host = host;
+t.panel = createVariablesPanel(document.getElementById('mount'), host);
+window.t = t;
+</script>
+</body>
+</html>
