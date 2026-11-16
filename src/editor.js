@@ -47,6 +47,8 @@ class BreakpointMarker extends GutterMarker {
 }
 const breakpointMark = new BreakpointMarker();
 
+/** relint(): asks the linter to run again although the text did not change (a diagnostics worker answers after the 500 ms timer; forceLinting alone only hurries a lint that is already due). */
+const relintEffect = StateEffect.define();
 const toggleBreakpoint = StateEffect.define();
 const breakpointState = StateField.define({
   create() { return RangeSet.empty; },
@@ -382,7 +384,7 @@ const extensions = () => [
     // The language's checker (Leap V2 BASIC: the ROM's compiler) checks the
     // program 500 ms after typing stops (ide.js lintSource). Until the hidden
     // machine has booted there is nothing to report; ide.js calls relint().
-    linter(v => window.leapIDE?.lintSource ? window.leapIDE.lintSource(v.state.doc.toString()) : [], { delay: 500 }),
+    linter(v => window.leapIDE?.lintSource ? window.leapIDE.lintSource(v.state.doc.toString()) : [], { delay: 500, needsRefresh: (u) => u.transactions.some((tr) => tr.effects.some((e) => e.is(relintEffect))) }),
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap,
@@ -593,7 +595,7 @@ window.leapEditor = {
   },
 
   /** Check the program again now (the checker has just become available) */
-  relint() { forceLinting(view); },
+  relint() { view.dispatch({ effects: relintEffect.of(null) }); forceLinting(view); },
 
   /** Toggle the breakpoint on a 1-based line */
   toggleBreakpoint(lineNum) {

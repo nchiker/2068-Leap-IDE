@@ -171,6 +171,11 @@ export const OTHER_SUITES = [
   { file: 'tests/tile-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/model-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/map-editor-smoke.mjs', group: BROWSER_GROUP },
+  { file: 'tests/arcade-check-client-smoke.mjs', group: BROWSER_GROUP },   // stage 5 B3: the diagnostics Web Worker
+  { file: 'tests/variables-panel-smoke.mjs', group: BROWSER_GROUP },       // R3: the Variables panel
+  { file: 'tests/projects-dialog-smoke.mjs', group: BROWSER_GROUP },        // P1: the Projects dialog on the real IndexedDB
+  { file: 'tests/help-overlay-smoke.mjs', group: BROWSER_GROUP },           // P5: Help examples, section links, the "How a game is built" page (Studio and IDE)
+  { file: 'tests/floorplan-preview-smoke.mjs', group: BROWSER_GROUP },      // M4: the floor plan's 3D preview component
   { file: 'tests/sound-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/arcade-editor-perf.mjs', group: BROWSER_GROUP },   // stage 1 B2: typing in Vaults makes no long task
   { file: 'tests/arcade-project.mjs' },
@@ -179,6 +184,13 @@ export const OTHER_SUITES = [
   { file: 'tests/sprite-model.mjs' },
   { file: 'tests/tile-model.mjs' },
   { file: 'tests/model-model.mjs' },
+  { file: 'tests/asset-thumbs.mjs' },                // S1: the gallery thumbnails
+  { file: 'tests/arcade-check-worker.mjs' },         // B3: the worker's answer equals the page's compile, field by field
+  { file: 'tests/variables-panel.mjs' },             // R3: the reported addresses read the interpreter's values on the real runtime
+  { file: 'tests/arcade-store.mjs' },                // P1: the IndexedDB store (a fake IDB)
+  { file: 'tests/arcade-projects-session.mjs' },     // P1: the current-project session
+  { file: 'tests/arcade-help-data.mjs' },            // P5: the generated help data is current, every example compiles, every anchor exists
+  { file: 'tests/floorplan-view.mjs' },              // M4: the preview equals the m8 reference and the real v4 runtime's screen
   { file: 'tests/map-model.mjs' },
   { file: 'tests/sound-model.mjs' },
   { file: 'tests/music-model.mjs' },

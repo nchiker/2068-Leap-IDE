@@ -28,6 +28,7 @@ import * as P from './src/arcade-project.js';
 import { drawModelPreview } from './src/tools/model-preview.js';
 import { newSong, toSong, fromSong, songInfo } from './src/tools/music-model.js';
 import { PALETTE } from './src/tools/sprite-model.js';
+import { createCheckClient } from './src/arcade-check-client.js';
 
 const profile = STUDIO_PROFILES[0];
 
@@ -36,6 +37,7 @@ const restored = P.loadProject();
 let project = restored ?? P.newProject();
 let activeFile = P.MAIN_FILE;
 let emulator = null;
+let checker = null;              // the diagnostics worker's client (B3); null or unavailable: the page compiles for the marks itself
 let lang = null;                 // profile.attach(): {compileProject, runtime, ...}
 let lastCompile = null;          // the latest compileProject() result
 let lastGood = null;             // the latest one that compiled (the size panel shows it)
@@ -640,14 +642,37 @@ function renderScenes() {
 let analyzeTimer = null;
 function scheduleAnalyze() {
   clearTimeout(analyzeTimer);
-  analyzeTimer = setTimeout(() => { analyze(); window.leapEditor.relint(); refreshSymbols(); }, ANALYZE_MS);
+  analyzeTimer = setTimeout(analyzeInWorker, ANALYZE_MS);
+}
+
+/**
+ * The debounced compile for the error marks (B3): the diagnostics worker (src/arcade-check-client.js) compiles the project off the page's thread.
+ * Its result has no cartridge (`viaWorker`); Run and the DCK export ask analyze({full: true}) for the page's own compile. Without a Worker (or after
+ * it failed) the page compiles as it always did.
+ */
+async function analyzeInWorker() {
+  if (!lang) return;
+  const done = () => { window.leapEditor.relint(); refreshSymbols(); };
+  syncEditor();
+  if (compiledVersion === version && lastCompile) { done(); return; }
+  if (!checker?.available) { analyze(); done(); return; }
+  const mine = version;
+  let res;
+  try { res = await checker.check({ project }); } catch (e) { console.warn('[Studio] the diagnostics worker failed:', e.message); analyze(); done(); return; }
+  if (res.superseded || mine !== version) return;            // a newer edit is already waiting for its own answer
+  res.viaWorker = true;
+  lastCompile = res;
+  compiledVersion = mine;
+  if (res.ok) lastGood = res;
+  renderResult();
+  done();
 }
 
 /** Compile the project as it is now (cached until something changes). Null until the compiler is loaded. */
-function analyze() {
+function analyze({ full = false } = {}) {
   if (!lang) return null;
   syncEditor();
-  if (compiledVersion === version && lastCompile) return lastCompile;
+  if (compiledVersion === version && lastCompile && !(full && lastCompile.viaWorker)) return lastCompile;      // (a worker's result has no cartridge: Run and DCK ask for `full`)
   lastCompile = lang.compileProject(project);
   compiledVersion = version;
   if (lastCompile.ok) lastGood = lastCompile;
@@ -658,6 +683,8 @@ function analyze() {
 function allProblems() {
   return [...(lastCompile?.errors ?? []), ...(lastCompile?.warnings ?? [])];
 }
+/** The runtime a result was built for: a worker's result names it, the page's own compile leaves it to lang.runtimeLabel(). */
+const runtimeLabelOf = (res) => res?.runtimeLabel ?? (lang ? lang.runtimeLabel() : 'runtime —');
 const firstProblem = () => lastCompile?.errors?.[0] ?? null;
 
 function renderResult() {
@@ -768,7 +795,7 @@ function renderSizes() {
     ['Header and tables', (u.header ?? 0) + (u.descriptors ?? 0)],
     ['Variables (RAM)', u.varBytes],
     ['Sprites', cg.sprites !== undefined ? `${plural(cg.sprites, 'asset')}, ${cg.instances} on screen` : undefined],
-    ['Runtime', lang ? lang.runtimeLabel() : '—'],
+    ['Runtime', runtimeLabelOf(lastCompile)],
     ['Compile time', `${Math.max(1, Math.round(good.ms))} ms`],
     ['Cartridge file', `${fmt(u.dckBytes ?? 0)} bytes`],
   ];
@@ -778,7 +805,7 @@ function renderSizes() {
     tr.append(el('td', null, k), el('td', null, typeof v === 'number' ? fmt(v) : v));
     table.append(tr);
   }
-  $('sb-runtime').textContent = lang ? lang.runtimeLabel() : 'runtime —';
+  $('sb-runtime').textContent = lang ? runtimeLabelOf(lastCompile) : 'runtime —';
 }
 
 /** The bank window's bar and its list of banked assets (hidden for an old result without `usage.banked`, or a game with no maps). */
@@ -806,7 +833,7 @@ function renderBank(good, u, stale) {
 
 /** The editor's linter source (src/editor.js): this file's problems as CodeMirror diagnostics. */
 function lintSource(text) {
-  const res = analyze();
+  const res = checker?.available ? lastCompile : analyze();      // (with the worker the marks follow its answer; its relint() refreshes them)
   if (!res) return [];
   const lines = text.split('\n');
   const starts = [];
@@ -835,7 +862,7 @@ function jumpTo(d) {
 async function runProject() {
   if (!lang || !emulator) { say('The compiler or the TS2068 is not ready yet', 'error'); return; }
   statusOverride = null;
-  const res = analyze();
+  const res = analyze({ full: true });
   window.leapEditor.relint();
   if (!res.ok) {
     refreshStatus();
@@ -872,7 +899,7 @@ function download(blob, name) {
 }
 
 function downloadDck() {
-  const res = analyze();
+  const res = analyze({ full: true });
   if (!res || !res.ok) { say('Fix the errors first: a game with errors has no cartridge', 'error'); return; }
   const base = P.projectFileName(project).replace(/\.leapgame$/, '');
   download(new Blob([res.dck], { type: 'application/octet-stream' }), base + '.dck');
@@ -1070,6 +1097,7 @@ function openProject(p, { saved = true, message = null, handle = null } = {}) {
   autosaveRefused = false;
   version++;
   selected = null;
+  checker?.cancel();
   lastCompile = null; lastGood = null; compiledVersion = -1;
   savedHash = saved ? hashOf(project) : null;
   if (saved) writeSaved(savedHash);
@@ -1505,6 +1533,7 @@ async function boot() {
   updateRunUi();
   try {
     lang = await profile.attach({ fetchAsset });
+    try { checker = createCheckClient(); } catch (e) { console.warn('[Studio] no diagnostics worker:', e.message); }
   } catch (err) {
     console.error('[Studio] the compiler could not be loaded', err);
     setStatus(`The Arcade runtime is not available (${err.message}). Build it: node arcade/tools/build-runtime-v2.mjs and build-runtime-v3.mjs, then node arcade/tools/publish-runtime.mjs`, 'error');
@@ -1513,7 +1542,7 @@ async function boot() {
   $('btn-run').disabled = !emulator;
   analyze();
   window.leapEditor.relint();
-  $('sb-runtime').textContent = lang.runtimeLabel();
+  $('sb-runtime').textContent = runtimeLabelOf(lastCompile);
   refreshStatus();
   // the right-hand tab open when the page was left (any of them)
   let tab = null;
@@ -1536,6 +1565,7 @@ window.leapStudio = {
   get lang() { return lang; },
   get lastCompile() { return lastCompile; },
   get lastGood() { return lastGood; },
+  get compileSettled() { return !!lang && compiledVersion === version && !!lastCompile; },      // (the diagnostics for the current text have arrived: tests wait for it)
   /** The frame budget meter's numbers {framerate, div, fps, used, worst, over, total}, or null before the first counted tick. */
   meterStats: () => meter.stats(),
   screenPng,

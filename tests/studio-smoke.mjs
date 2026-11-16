@@ -32,7 +32,9 @@ async function newBlank() {
 /** Put a program in the main.arc editor and let the diagnostics compile settle. */
 async function setSource(text) {
   await evaluate(`leapEditor.setSource(${JSON.stringify(text)}, {fresh: true})`);
-  await sleep(1100);        // 400 ms analyze + 500 ms linter
+  await sleep(450);         // 400 ms before the diagnostics compile starts
+  await waitFor('leapStudio.compileSettled', 20000);      // (the worker's answer; the page compiles itself without one)
+  await sleep(700);         // the linter (500 ms after the last change, and again when the answer arrives)
 }
 
 /** The Pause / Step / speed / meter / Save screen / layout checks of stage 1 (R1, R2, R5, E2, E3), run on the game that is running. */
@@ -177,7 +179,10 @@ try {
     sprites: Object.keys(leapStudio.project.assets.sprites).join(), lang: leapEditor.language, run: !document.getElementById('btn-run').disabled })`);
   check('new project: main.arc and the ball sprite compile', first.ok && first.files === 'main.arc' && first.sprites === 'ball' && first.lang === 'arcade' && first.run, JSON.stringify(first));
   const modules = await evaluate(`performance.getEntriesByType('resource').map(e => e.name).filter(n => n.startsWith(location.origin) && /\\.js(\\?|$)/.test(n))`);
-  const bare = modules.filter((n) => !/\?v=[0-9a-f]+$/.test(n));
+  // the diagnostics worker (B3) loads the compiler's modules itself, by plain URLs (an import map does not reach a worker): those copies, and the worker's own two files, are not the page's
+  const stamped = (n) => /\?v=[0-9a-f]+$/.test(n);
+  const stampedPaths = new Set(modules.filter(stamped).map((n) => n.replace(/\?.*$/, '')));
+  const bare = modules.filter((n) => !stamped(n) && !stampedPaths.has(n) && !/\/arcade-check-(worker|handler)\.js$/.test(n));
   check('every own module loads with its fingerprint', modules.length > 10 && bare.length === 0, `${modules.length} modules${bare.length ? ', unstamped: ' + bare.join(' ') : ''}`);
   check('the size panel shows the template: "Mapped N / 16,384 bytes", and no bank budget (the template has no map)',
     /^Mapped [\d,]+ \/ 16,384 bytes/.test(await evaluate("document.getElementById('size-total').textContent")) && await evaluate("document.getElementById('bank-block').hidden"),
@@ -539,6 +544,17 @@ try {
     const loaded = await waitFor(`document.querySelector('#tool-sprites').children.length > 0 && document.querySelector('.panel-tab[data-tab="sprites"]').classList.contains('active') && !document.getElementById('tool-sprites').hidden`, 10000);
     check('selecting a sprite opens the Sprites tab with the sprite editor', !!loaded, await status());
     await b.shot('studio-sprites');
+    // S1: the gallery strip shows one picture per sprite, the edited one highlighted, and a click selects
+    const nSpr = await evaluate("Object.keys(leapStudio.project.assets.sprites).length");
+    check('S1: the Sprites tab shows one picture per sprite, the edited one (ship) highlighted',
+      nSpr >= 2 && (await evaluate("document.querySelectorAll('#tool-sprites [data-role=gallery-item]').length")) === nSpr
+      && (await evaluate("document.querySelector('#tool-sprites [data-role=gallery-item].current')?.dataset.asset")) === 'ship', `${nSpr} sprites`);
+    const other = await evaluate("[...document.querySelectorAll('#tool-sprites [data-role=gallery-item]')].map((n) => n.dataset.asset).find((n) => n !== 'ship')");
+    await evaluate(`document.querySelector('#tool-sprites [data-role=gallery-item][data-asset="${other}"]').click()`);
+    check('S1: a click on another picture switches the sprite editor to it',
+      (await evaluate("document.querySelector('#tool-sprites .sprited-select').value")) === other
+      && (await evaluate("document.querySelector('#tool-sprites [data-role=gallery-item].current').dataset.asset")) === other, other);
+    await evaluate(`document.querySelector('#tool-sprites [data-role=gallery-item][data-asset="ship"]').click()`);
     // an edit through the host reaches the project, and the editor is told about a change made elsewhere
     const roundTrip = await evaluate(`(() => { const h = leapStudio.makeHost('smoke2'); const a = h.getAsset('sprites', 'ship'); a.frames[0].rows[0].bits = '00FF';
       return h.setAsset('sprites', 'ship', a).ok && leapStudio.project.assets.sprites.ship.frames[0].rows[0].bits === '00FF'; })()`);
@@ -717,8 +733,8 @@ try {
     check('B4: choosing Banked writes assets.maps.sky.bank, keeps the map, marks the project changed', wrote.key === 'banked' && wrote.w === 32 && wrote.dirty, JSON.stringify(wrote));
     const rc = await waitFor(`leapStudio.lastCompile?.usage?.banked?.assets?.length === 1 && leapStudio.lastCompile`, 10000).then(() => true, () => false);
     bp = await bankPanel();
-    const cmp = await evaluate(`({ ok: leapStudio.lastCompile.ok, errors: leapStudio.lastCompile.errors.map((e) => e.message), dck: leapStudio.lastCompile.dck?.length ?? 0,
-      shipped: JSON.stringify(leapStudio.lastCompile.shipped ?? null), asset: JSON.stringify(leapStudio.lastCompile.usage?.banked?.assets?.[0] ?? null) })`);
+    const cmp = await evaluate(`(() => { const full = leapStudio.analyze({ full: true }); return ({ ok: full.ok, errors: full.errors.map((e) => e.message), dck: full.dck?.length ?? 0,
+      shipped: JSON.stringify(full.shipped ?? null), asset: JSON.stringify(full.usage?.banked?.assets?.[0] ?? null) }); })()`);
     check('B4: the game recompiles with the map banked and builds a DCK', rc && cmp.ok && cmp.errors.length === 0 && cmp.dck > 0, JSON.stringify(cmp));
     check('B4: the banked list names it ("banked: map sky (N bytes, set to Banked)"), the Banked budget counts it, the status bar says so',
       bp.rows.length === 1 && /^banked: map sky \([\d,]+ bytes, set to Banked\)$/.test(bp.rows[0]) && !/^Banked 0 \//.test(bp.bank) && /\+ [\d,]+ banked/.test(bp.status), JSON.stringify(bp));
