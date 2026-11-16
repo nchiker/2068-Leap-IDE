@@ -383,6 +383,49 @@ P5 (Help examples from `ARCADE_LANGUAGE.md`, per-word anchors, a "How a game is 
 JS reference of `arcade/tests/m8-common.mjs`, moved into `src/`).
 **S1. Gallery strip** (owner, 2026-11-16: in Starfall's Sprites tab only one sprite is visible; the editor edits one asset at a time and the others are in a drop-down and the project panel): a row of small thumbnails of every asset of the tab's kind (sprites, tile sets, maps, models) at the top of each of those four editors, the edited one highlighted, a click selects it; one pure helper for the thumbnails (`src/tools/asset-thumbs.js`) and a check per tab. Do it first: it is small and makes every game's art visible at a glance.
 
+#### As built (stage 5, 2026-11-16, branch `studio-stage5`)
+Seven Sonnet agents in disposable worktrees (S1, B3, R3, P1, P5, T2 + M3, M4, and the title-screen stills), briefs in `arcade/spike/stage5/briefs/`; Claude reviewed every diff,
+re-ran every suite in the main tree, wired the Studio (`studio.js`, `studio.html`, `studio.css`, `src/editor.js`) and wrote the Studio-level checks (`tests/studio-smoke.mjs`).
+* **S1. Gallery strip** (`src/tools/asset-thumbs.js` pure, `src/tools/asset-gallery.js` the shared strip, one `renderGallery()` per editor): a row of thumbnails of every
+  sprite / tile set / map / model at the top of the four editors, the edited one highlighted (`current`), a click selects (what the drop-down does; the project panel does not
+  follow), drawn lazily and cached by the asset's JSON so only the edited picture is redrawn. A map without its tile set is drawn in greys. 61 px high.
+* **B3. Diagnostics in a Web Worker** (`src/arcade-check-handler.js` pure, `-worker.js`, `-client.js`; `compileWithBuilds` / `loadBuilds` in `src/lang/arcade/profile.js` are
+  the ONE compile the page and the worker run). The worker gets `{project}` (not the joined source), answers everything the panels read except `dck` and `map` (it adds
+  `runtimeLabel`, `variables`). Vaults: the main thread's longest gap while checking 15-17 ms with the worker against 297-485 ms compiling on the page. Studio wiring:
+  `analyzeInWorker()` (the debounced path), `analyze({full: true})` is the page's own compile for Run and DCK (a worker result has `viaWorker` and no cartridge). **Found by
+  the Studio test:** CodeMirror's `forceLinting` only hurries a lint that is already due, so the marks never updated after a late worker answer; `leapEditor.relint()` now
+  dispatches a `relintEffect` (the linter's `needsRefresh`). **Trap:** a worker does not see the import map, so its modules load by plain URL (a second, unstamped copy of the
+  compiler's modules; cached up to 10 minutes by Pages): the fingerprint check in `studio-smoke` ignores them, a stale worker only means older marks (Run always compiles on the page).
+* **R3. Variables** (`out.variables` of `compile()`, `collectVariables` in `arcade-compile.js`; `gen.locals` in the code generator, report only: the compiled bytes are identical on
+  41 outputs). Every value is a 16-bit signed integer in a 2-byte slot at `GAME_VARS_BASE + 2 * i`; entries: DIM'd variables and arrays of the game and each scene, TIMERs, the
+  parameters and locals of every generated PROC / DEF FN (a callable nothing reaches has no storage and is not listed). The panel (`variables-model.js`, `variables-panel.js`)
+  decodes the machine's memory; the Studio tab is called **Vars** (eight tab names no longer fit 1280 px with "Variables"; padding and letter spacing were tightened too),
+  refreshes five times a second while running and once at each pause, and lists the running cartridge's own build (`runBuild`). The test compares the values decoded from the
+  real runtime's RAM with the interpreter's on four games tick by tick (274,400 + 6,000 + 1,500 + 3,000 values) and mutation-checks the addresses.
+* **P1. Projects list** (`src/arcade-store.js` IndexedDB with an injectable factory, `src/arcade-projects-session.js` the current-project logic, `src/tools/projects-dialog.js`). The
+  open project is saved to the list before another replaces it: New, an example and an opened file give a new entry (examples and files are named uniquely, "X 2"), nothing is lost
+  and the "discard changes?" question is gone (it stays for a browser without IndexedDB). `localStorage` `leap-studio.project` is still written first at every save (older pages and
+  the page-unload path), the id is kept beside it in `leap-studio.project-id`. A failed list write warns once and loses nothing. **`studio.html?nolist=1`** switches the list off
+  (the single-project path, used by the older checks of `studio-smoke`; the P1 block runs with it on). The Studio's New / Open are asynchronous now: tests wait for `leapStudio.opens`.
+* **P3. One editor state per file** (`saveState()` / `restoreState()` in `src/editor.js`, `fileStates` in `studio.js`): undo, cursor and folds survive a file switch; a state is
+  shown again only when its text is still the file's text (a rename of an asset can rewrite a closed file).
+* **P4. Project-wide go to definition, hover and rename** (`setProjectContext` in `src/lang/arcade/editor.js`): the definition is looked up in the joined source and its line map;
+  F12 / Ctrl+click opens the file; F2 renames in every editable file (other files are rewritten through the project, so that part is not one undo step of the open editor;
+  `objects.arc` is refused as generated). **B7** was already done in stage 1 (Symbols tab over all files).
+* **P5. Help** (`tools/gen-arcade-help.mjs` -> `src/lang/arcade/arcade-help-data.js` GENERATED; `arcade-help-examples.js` hand-written: 90 examples, 24 aliases and the page "How a
+  game is built"; `help.pages` in `src/help.js`, backward compatible). Every example and page code block is compiled by `tests/arcade-help-data.mjs` in a wrapper that declares
+  the standard assets and variables. The docs' own code blocks are syntax outlines, so the examples are all curated; the data holds each word's section anchor (many words share
+  a section: the language document has few per-word headings). **11 words have no example because the compiler refuses them** ("not supported yet": END TAB FLASH PLOT POKE OUT LEN PEEK IN USR POINT);
+  the test fails if the compiler starts accepting one.
+* **T2 + M3. Picture import** (`src/tools/picture-import.js` pure engine, `picture-import-ui.js` the shared panel): two colours per 8 x 8 cell (or per 8 x 1 row in fine mode),
+  serpentine Sierra-lite error diffusion (or ordered / none), identical and inverted cells merged, the 128-tile limit reported with a nearest-cell merge ("needs N tiles, M cells
+  merged"), the two-blacks rule kept (a BRIGHT pair never holds black). Tile editor: Import picture (append / replace / new set, one undo step) and Export PNG (1x to 8x); map editor
+  (cell maps only): 256 x 192 picture -> tile set + 32 x 24 map. `pictureToAssets(img, opts)` is the Node entry for a starter. Imported tiles are marked `fg` by default in the map
+  editor (a picture has many attributes, which would warn `background-attr-mix`). 89 engine checks.
+* **M4. Floor-plan 3D preview** (`src/tools/raycast-ref.js` moved out of `arcade/tests/m8-common.mjs`, which re-exports it unchanged: the m8 runtime suites are green; `floorplan-view.js`
+  pure, `floorplan-preview.js`): under the plan of a floor plan, the view the runtime draws from any cell and direction (click a cell, turn, walk with collision). The test compares the
+  preview with the real v4 runtime's screen on 36 poses of 7 maps and with the m8 reference byte for byte. INK is not read from the source (white).
+
 ## 5. Sample games (owner's rule: every improvement used in the sample games, each new feature shown off)
 
 | Stage | Sample |
