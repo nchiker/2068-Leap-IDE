@@ -28,7 +28,7 @@ export const RUNTIME_PATHS = Object.freeze({
   4: { json: 'arcade/dist/v4/runtime.json', image: 'arcade/dist/v4/runtime.bin' },
 });
 /** The runtime a program needs (2, 3 or 4) -> the build to compile against; a version that could not be loaded falls back to the newest loaded one, so the compiler reports the missing words. */
-const pickBuild = (builds, version) => builds[version] || builds[Math.max(...Object.keys(builds).map(Number))];
+export const pickBuild = (builds, version) => builds[version] || builds[Math.max(...Object.keys(builds).map(Number))];
 export const DCK_BYTES_LIMIT = 16384;          // the game's own share of the cartridge (usage.total + usage.free)
 const LANGUAGE_DOC = 'https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_LANGUAGE.md';
 
@@ -117,6 +117,44 @@ export async function loadRuntime(fetchAsset, version = 2) {
   return { runtime, image };
 }
 
+/**
+ * Load the published runtime builds the compiler links against: v2 and v3 (both required), v4 when it is published.
+ * The one function the page (attach) and the diagnostics worker (src/arcade-check-handler.js) both use.
+ * @returns {Promise<{[version: number]: {runtime: object, image: Uint8Array}}>}
+ */
+export async function loadBuilds(fetchAsset) {
+  const builds = { 2: await loadRuntime(fetchAsset, 2), 3: await loadRuntime(fetchAsset, 3) };
+  try { builds[4] = await loadRuntime(fetchAsset, 4); } catch { /* v4 not published yet: v4 programs then fail to compile with the compiler's own message */ }
+  return builds;
+}
+
+/**
+ * Compile a project against loaded builds: the runtime is chosen by requiredRuntime() (pickBuild), the object layer's kinds travel with the assets,
+ * and the compiler's diagnostics are mapped back to {file, line}. This is the ONE compile the page's compileProject() and the diagnostics worker run.
+ * `replace` ({file, text}) substitutes one file's text (the editor's unsaved text); `onBuild(build)` is called as soon as the runtime is chosen.
+ * @returns {{ok: boolean, dck: Uint8Array|null, errors: object[], warnings: object[], usage: object|null,
+ *            map: object|null, scenes: object[]|null, order: string[], lineCount: number, ms: number, build: {runtime: object, image: Uint8Array}}}
+ *          diagnostics are {file, line, col, endCol, severity, message}
+ */
+export function compileWithBuilds(builds, project, { replace = null, onBuild = null } = {}) {
+  const p = replace ? { ...project, files: { ...project.files, [replace.file]: replace.text } } : project;
+  const src = buildSource(p);
+  const t0 = performance.now();
+  const build = pickBuild(builds, requiredRuntime(src.text, p.assets).version);
+  if (onBuild) onBuild(build);
+  // the object layer: the kinds travel with the assets, as in an assets json (src/arcade-objects.js); buildSource has put objects.arc first already, so compile() adds nothing
+  const assets = p.objectKinds ? { ...p.assets, objectKinds: p.objectKinds, ...(p.objectBucket !== undefined ? { objectBucket: p.objectBucket } : {}) } : p.assets;
+  const res = compile(src.text, { runtime: build.runtime, image: build.image, assets, scenes: p.scenes });
+  const ms = performance.now() - t0;
+  const at = (d) => locate(src.lineMap, d);
+  return {
+    ok: res.errors.length === 0 && !!res.dck,
+    dck: res.dck, map: res.map, usage: res.usage, scenes: res.scenes ?? null,
+    errors: res.errors.map(at), warnings: res.warnings.map(at),
+    order: src.order, lineCount: src.lineMap.length, ms, build,
+  };
+}
+
 /** An editor mark ({line0, message, cols?, severity?}) from a compiler diagnostic, for the profile's lint(). */
 const toMark = (d) => ({ line0: d.line - 1, message: d.message, severity: d.severity, cols: d.endCol > d.col ? { from: d.col, to: d.endCol } : undefined });
 
@@ -158,8 +196,7 @@ export const arcadeProfile = {
    * }>}
    */
   async attach({ fetchAsset }) {
-    const builds = { 2: await loadRuntime(fetchAsset, 2), 3: await loadRuntime(fetchAsset, 3) };
-    try { builds[4] = await loadRuntime(fetchAsset, 4); } catch { /* v4 not published yet: v4 programs then fail to compile with the compiler's own message */ }
+    const builds = await loadBuilds(fetchAsset);
     let current = builds[2];                    // the build the last compile used (the Studio reads symbols from lang.runtime)
     /**
      * Compile a project. `replace` ({file, text}) substitutes one file's text (the editor's unsaved text).
@@ -167,21 +204,8 @@ export const arcadeProfile = {
      *            map: object|null, order: string[], ms: number}}  diagnostics are {file, line, col, endCol, severity, message}
      */
     function compileProject(project, { replace = null } = {}) {
-      const p = replace ? { ...project, files: { ...project.files, [replace.file]: replace.text } } : project;
-      const src = buildSource(p);
-      const t0 = performance.now();
-      current = pickBuild(builds, requiredRuntime(src.text, p.assets).version);
-      // the object layer: the kinds travel with the assets, as in an assets json (src/arcade-objects.js); buildSource has put objects.arc first already, so compile() adds nothing
-      const assets = p.objectKinds ? { ...p.assets, objectKinds: p.objectKinds, ...(p.objectBucket !== undefined ? { objectBucket: p.objectBucket } : {}) } : p.assets;
-      const res = compile(src.text, { runtime: current.runtime, image: current.image, assets, scenes: p.scenes });
-      const ms = performance.now() - t0;
-      const at = (d) => locate(src.lineMap, d);
-      return {
-        ok: res.errors.length === 0 && !!res.dck,
-        dck: res.dck, map: res.map, usage: res.usage, scenes: res.scenes ?? null,
-        errors: res.errors.map(at), warnings: res.warnings.map(at),
-        order: src.order, lineCount: src.lineMap.length, ms,
-      };
+      const { build, ...result } = compileWithBuilds(builds, project, { replace, onBuild: (b) => { current = b; } });
+      return result;
     }
     return {
       get runtime() { return current.runtime; },
