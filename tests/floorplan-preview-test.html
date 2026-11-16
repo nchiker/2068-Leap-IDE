@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- tests/floorplan-preview-test.html: a blank page that mounts the Studio's floor plan 3D preview on a fake host.  Driven by tests/floorplan-preview-smoke.mjs.
+     ?theme=light picks the ide.css light palette.  ?map=vaults loads the Vaults floor plan (32 x 32) instead of the small test map (10 x 7); ?colw=2.
+     window.t exposes the host state (t.map, t.colw, t.attrs), the preview (t.preview) and the log of onPoseChange calls (t.poses). -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Floor plan preview test page</title>
+<link rel="stylesheet" href="../ide.css">
+<style> body { margin: 0; padding: 12px; background: var(--bg); color: var(--fg); font: 12px var(--font-ui, sans-serif); } #mount { width: 420px; } </style>
+</head>
+<body>
+<div id="mount"></div>
+<script type="module">
+import { createFloorplanPreview } from '../src/tools/floorplan-preview.js';
+
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+
+const ring = (w, h, f) => Array.from({ length: w * h }, (_, i) => { const x = i % w, y = (i / w) | 0; return x === 0 || y === 0 || x === w - 1 || y === h - 1 ? ((x + y) % 4) + 1 : f(x, y); });
+const small = { w: 10, h: 7, cells: ring(10, 7, (x, y) => (x === 5 && y > 1 && y < 6 ? 3 : (x === 2 && y === 3 ? 4 : 0))) };
+const t = { map: small, colw: Number(q.get('colw')) === 2 ? 2 : 4, attrs: { top: 0x07, bottom: 0x07 }, poses: [], start: null, patterns: null };
+if (q.get('map') === 'vaults') {
+  const a = await (await fetch('../arcade/examples/vaults.assets.json')).json();
+  t.map = { w: a.maps.vl_maze.w, h: a.maps.vl_maze.h, cells: a.maps.vl_maze.cells.slice() };
+  t.start = { x: 640, y: 7296, a: 34 };
+}
+const host = {
+  getMap: () => t.map,
+  getColw: () => t.colw,
+  getAttrs: () => t.attrs,
+  getPatterns: () => t.patterns,
+  getStartPose: () => t.start,
+  onPoseChange: (p) => t.poses.push(p),
+};
+t.preview = createFloorplanPreview(document.getElementById('mount'), host);
+window.t = t;
+</script>
+</body>
+</html>
