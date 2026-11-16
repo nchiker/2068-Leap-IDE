@@ -368,5 +368,42 @@ ENDSCENE
   } else console.log('SKIP  arcade/dist/examples/runner.leapgame is missing');
 }
 
+// ---- the map editor's kind rules (src/tools/map-model.js kindProblems) and the project's (validateObjectKinds) must agree: the editor never refuses what the
+// project accepts, and what the editor accepts but the project refuses is only what the editor leaves to the host (the language's reserved words, the
+// names every kind already has: a property x / y / ix, and a null sprite)
+{
+  const MM = await import('../src/tools/map-model.js');
+  check('the editor and the project share the limits (16 kinds, 8 props, 12 characters, -32768..32767)', MM.MAX_KINDS === O.MAX_KINDS && MM.MAX_PROPS === O.MAX_PROPS && MM.KIND_NAME_MAX === O.KIND_NAME_MAX && MM.PROP_MIN === O.PROP_MIN && MM.PROP_MAX === O.PROP_MAX);
+  let seed = 12345;
+  const rnd = (n) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) % n; };
+  const NAMES = ['coin', 'enemy', 'key', 'door', 'a', 'x', 'y', 'ix', 'abcdefghijkl', 'abcdefghijklm', 'Coin', '1up', 'up1', 'a_b', '', 'if', 'print', 'rnd', 'ab', 'abx', 'aby', 'nab', 'a1', 'lo', 'hi', 'ab', 'cdx'];
+  const PROPS = ['lo', 'hi', 'x', 'y', 'ix', 'dir', 'Dir', 'a_b', 'x1', '', 'abcdefghijklm', 'n', 'if'];
+  const COLOURS = [0, 7, 15, 16, -1, 3.5, '3', null];
+  const SPRITES = [undefined, 'hero', 'ghost', null, 'x y', 7];
+  let both = 0, onlyProject = 0, onlyEditor = 0, editorRefusesWhatProjectAccepts = [];
+  const reasons = new Set();
+  for (let i = 0; i < 3000; i++) {
+    const kinds = {};
+    const n = rnd(4) + (rnd(40) === 0 ? 15 : 0);
+    for (let j = 0; j < n; j++) {
+      const k = { colour: COLOURS[rnd(COLOURS.length) < 3 ? rnd(3) : rnd(COLOURS.length)] };
+      if (rnd(3)) { const s = SPRITES[rnd(SPRITES.length)]; if (s !== undefined) k.sprite = s; }
+      if (rnd(4)) { k.props = []; const m = rnd(4) + (rnd(30) === 0 ? 8 : 0); for (let q = 0; q < m; q++) k.props.push(PROPS[rnd(PROPS.length)]); }
+      kinds[NAMES[rnd(NAMES.length)]] = k;
+    }
+    const sprites = ['hero', 'ghost'];
+    const proj = O.validateObjectKinds(kinds, { sprites }), ed = MM.kindProblems(kinds, { sprites });
+    if (proj === null && ed.length === 0) both++;
+    else if (proj === null && ed.length) editorRefusesWhatProjectAccepts.push(JSON.stringify(kinds) + ' -> ' + ed[0].message);
+    else if (proj !== null && ed.length === 0) { onlyProject++; reasons.add(proj.replace(/"[^"]*"/g, '"_"').replace(/\d+/g, 'N')); }
+    else onlyEditor++;
+  }
+  check('the editor never refuses a kinds table the project accepts (3000 random tables; ' + both + ' accepted by both)', editorRefusesWhatProjectAccepts.length === 0, editorRefusesWhatProjectAccepts.slice(0, 2).join(' | '));
+  // the only tables the project refuses and the editor accepts are those with a sprite name that is not an identifier of the language, or a word of the language
+  // (the host judges reserved words; the editor checks the sprite against the project's own sprite list, so a name outside it is refused there too)
+  check('the project and the editor refuse the same kinds tables, but for the language\'s reserved words (which the host judges)', onlyProject === 0 || [...reasons].every((r) => /word of the language/.test(r)), [...reasons].join(' | '));
+  console.log('  INFO  ' + onlyProject + ' tables only the project refuses (' + [...reasons].length + ' kinds of reason), ' + onlyEditor + ' both refuse');
+}
+
 console.log(`\n${failed === 0 ? 'All checks passed' : `${failed} FAILED`} (${passed} passed)`);
 process.exit(failed === 0 ? 0 : 1);

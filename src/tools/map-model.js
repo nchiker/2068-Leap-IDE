@@ -37,6 +37,7 @@
 "use strict";
 
 import { line, createHistory } from './sprite-model.js';
+import { MAX_KINDS, MAX_PROPS, KIND_NAME_MAX, PROP_MIN, PROP_MAX, kindArrays } from '../arcade-objects.js';
 
 export { line, createHistory };
 
@@ -323,11 +324,8 @@ export function windowFrame(m, camX, { codes = [3] } = {}) {
 // ── the object layer (stage 4, M2) ────────────────────────────────────────────────────────────────────────────
 export const OBJECT_GRIDS = Object.freeze([1, 4, 8, 16]);   // the snap grids of the editor, in pixels
 export const DEFAULT_OBJECT_GRID = 8;
-export const MAX_KINDS = 16;
-export const MAX_PROPS = 8;
-export const KIND_NAME_MAX = 12;
-export const PROP_MIN = -32768;
-export const PROP_MAX = 32767;
+// The limits and the generated names are the project's (src/arcade-objects.js, the single source: the editor and the project must never disagree on them).
+export { MAX_KINDS, MAX_PROPS, KIND_NAME_MAX, PROP_MIN, PROP_MAX };
 export const DEFAULT_MARKER = Object.freeze({ w: 8, h: 8 });  // the size of a marker without a sprite
 const NAME_OK = /^[a-z][a-z0-9]*$/;
 
@@ -473,7 +471,7 @@ export function objectProblems(m, kinds = null) {
 export function validateObjects(m, kinds = null) { return objectProblems(m, kinds).map((p) => p.message); }
 
 /** The names the generated source declares for a kind and its properties (src/arcade-objects.js): <kind>x, <kind>y, <kind><prop>, n<kind>, <kind>ix. */
-export function kindArrayNames(name, props = []) { return [`${name}x`, `${name}y`, ...props.map((p) => name + p), `n${name}`, `${name}ix`]; }
+export function kindArrayNames(name, props = []) { const { arrays, count } = kindArrays(name, { props }, true); return [...arrays.slice(0, -1), count, arrays[arrays.length - 1]]; }
 /** The problem with one identifier (a kind or property name), or null: a lower-case letter, then lower-case letters and digits, 1..12 characters. */
 export function nameProblem(name, what = 'name') {
   if (typeof name !== 'string' || !name) return `a ${what} cannot be empty`;
@@ -496,7 +494,7 @@ export function kindProblems(kinds, { sprites = null } = {}) {
     if (bad) { out.push({ kind: 'name', name: n, message: bad }); continue; }
     if (!k || typeof k !== 'object') { out.push({ kind: 'name', name: n, message: `kind "${n}" must be an object {colour, sprite?, props}` }); continue; }
     if (!Number.isInteger(k.colour) || k.colour < 0 || k.colour > 15) out.push({ kind: 'colour', name: n, message: `the colour of kind "${n}" is a palette index 0..15, got ${JSON.stringify(k.colour)}` });
-    if (k.sprite !== undefined && k.sprite !== null && (typeof k.sprite !== 'string' || (sprites && !sprites.includes(k.sprite)))) out.push({ kind: 'sprite', name: n, message: `the sprite of kind "${n}" is "${k.sprite}", which the project does not have` });
+    if (k.sprite !== undefined && (typeof k.sprite !== 'string' || (sprites && !sprites.includes(k.sprite)))) out.push({ kind: 'sprite', name: n, message: `the sprite of kind "${n}" is "${k.sprite}", which the project does not have` });
     const props = Array.isArray(k.props) ? k.props : [];
     if (k.props !== undefined && !Array.isArray(k.props)) out.push({ kind: 'props', name: n, message: `the properties of kind "${n}" must be a list of names` });
     if (props.length > MAX_PROPS) out.push({ kind: 'props', name: n, message: `kind "${n}" has ${props.length} properties, at most ${MAX_PROPS}` });

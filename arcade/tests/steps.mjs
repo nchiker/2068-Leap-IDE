@@ -6,7 +6,7 @@
 //                     is where the build writes runtime.json / runtime.bin
 //   SUITES            the suites run-all runs, in run-all's order
 //   MUTATION_SUITES   the mutation suites (run-all --full runs each whole; verify.mjs runs each as `shards` steps `--shard=i/n`)
-//   EXCLUSIVE         steps that write shared files under arcade/build: never beside another step
+//   EXCLUSIVE         steps that write shared files under arcade/build, or measure wall-clock time: never beside another step
 //   SLOW_FIRST        run-all's order for its slowest suites (verify.mjs prefers the times it recorded)
 //   OTHER_SUITES      the suites outside run-all: the Studio and editor smoke tests, the model tests, the IDE's own two suites
 //   CHECKS            the two no-write checks (stamp-modules.py, publish-runtime.mjs)
@@ -28,7 +28,9 @@ export const RUNTIME_BUILDS = [
 // Shard i runs every N-th random program; shard 0 also runs the other sections.  (2026-11-14 under 8 jobs: m10 544 s, m9 486 s whole.)
 export const SHARDED_SUITES = new Map([['tests/arcade-m10-differential.mjs', 4], ['tests/arcade-m9-differential.mjs', 4]]);
 
-export const EXCLUSIVE = new Set(['tests/arcade-blockfall.mjs']);
+// (tests/arcade-assetcheck.mjs is here for its wall-clock check, "three example projects in under 20 ms": it measures 17-18 ms alone, with little headroom,
+// and fails beside 8 parallel jobs (21-27 ms), on the tree before stage 4 as well; stage 4 verify run 2026-11-16)
+export const EXCLUSIVE = new Set(['tests/arcade-blockfall.mjs', 'tests/arcade-assetcheck.mjs']);
 
 // The slowest steps (sequential run, 2026-11-11: 270, 198, 139, 114, 53, 44, 42, 37 s) start first, so none of them is the tail.
 export const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m11-differential.mjs',
@@ -167,6 +169,7 @@ export const OTHER_SUITES = [
   { file: 'tests/studio-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/sprite-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/tile-editor-smoke.mjs', group: BROWSER_GROUP },
+  { file: 'tests/model-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/map-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/sound-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/arcade-editor-perf.mjs', group: BROWSER_GROUP },   // stage 1 B2: typing in Vaults makes no long task
@@ -175,6 +178,7 @@ export const OTHER_SUITES = [
   { file: 'tests/arcade-assetcheck.mjs' },
   { file: 'tests/sprite-model.mjs' },
   { file: 'tests/tile-model.mjs' },
+  { file: 'tests/model-model.mjs' },
   { file: 'tests/map-model.mjs' },
   { file: 'tests/sound-model.mjs' },
   { file: 'tests/music-model.mjs' },

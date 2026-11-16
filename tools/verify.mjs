@@ -70,7 +70,7 @@ function allSteps() {
     if (!n) { steps.push({ id: f, kind: 'suite', cmd: 'node', file: f, args: [], exclusive: EXCLUSIVE.has(f), est: slow(f), roots: [f], rts: [] }); continue; }
     for (let i = 0; i < n; i++) steps.push({ id: `${f} --shard=${i}/${n}`, kind: 'suite', cmd: 'node', file: f, args: [`--shard=${i}/${n}`], est: slow(f) / n, roots: [f], rts: [] });
   }
-  for (const o of OTHER_SUITES) steps.push({ id: [o.file, ...(o.args ?? [])].join(' '), kind: 'suite', cmd: 'node', file: o.file, args: o.args ?? [], group: o.group, est: 5, roots: [o.file, ...(o.args ?? []).filter((x) => x.includes('/'))], rts: [] });
+  for (const o of OTHER_SUITES) steps.push({ id: [o.file, ...(o.args ?? [])].join(' '), kind: 'suite', cmd: 'node', file: o.file, args: o.args ?? [], group: o.group, exclusive: EXCLUSIVE.has(o.file), est: 5, roots: [o.file, ...(o.args ?? []).filter((x) => x.includes('/'))], rts: [] });
   for (const m of MUTATION_SUITES) {
     const roots = [m.file, ...m.tests];
     const rts = m.runtimes ?? [];
