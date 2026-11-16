@@ -66,6 +66,13 @@ for (const id of EX) {
   const project = P.exampleProject('orbit', arc, assets);
   examples.orbit = { arc, assets, project, text: P.buildSource(project).text };
 }
+// Starfall, the classic two-buffer version (plain colour)
+{
+  const arc = readFileSync(ROOT + 'arcade/examples/shooter-classic.arc', 'utf8').replace(/\r\n?/g, '\n');
+  const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/shooter-classic.assets.json', 'utf8'));
+  const project = P.exampleProject('shooter-classic', arc, assets);
+  examples['shooter-classic'] = { arc, assets, project, text: P.buildSource(project).text };
+}
 // Lumen (fine colour in every scene)
 {
   const arc = readFileSync(ROOT + 'arcade/examples/lumen.arc', 'utf8').replace(/\r\n?/g, '\n');
@@ -394,7 +401,7 @@ const usesBlackRaw = (t) => { const r = raw(t); return (r.paper === 0 && r.clear
 const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map((x) => parseInt(x, 16)) : m.cells);
 {
   const out = {};
-  const ALL = ['bounce', 'breakout', 'shooter', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit'];      // all nine examples
+  const ALL = ['bounce', 'breakout', 'shooter', 'shooter-classic', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit'];      // all ten examples
   for (const id of ALL) {
     const { project, text } = examples[id];
     const rl = scanRoles(text);
@@ -409,7 +416,7 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   const summary = ALL.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
   // Stage 3 (K4, E5) fixed every example: BRIGHT 0 on black paper, tiles marked fg or colours unified. No example gives a finding of any kind. The rules themselves are
   // tested on hand-built projects in section 3 (black-bright-mix, bright-black-paper, background-attr-mix and the per-row rules), not on the examples.
-  check('all nine examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
+  check('all ten examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
   check('no example finding is an error or a compilerAlso finding', ALL.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
 
   // each one is TRUE, recomputed from the raw JSON
@@ -425,7 +432,7 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   // bright-black-paper, independently: the tiles with paper 0, BRIGHT 1 and a clear bit, from the JSON
   const bbpRaw = (id, ts) => examples[id].assets.tilesets[ts].tiles.map((t, i) => [raw(t), i]).filter(([r]) => r.paper === 0 && r.bright === 1 && r.clear > 0).map(([, i]) => i);
   const bbpOf = (id, ts) => out[id].filter((f) => f.id === 'bright-black-paper' && f.asset === ts).flatMap((f) => f.tiles);
-  check('bright-black-paper on the examples: none in any tile set of the nine examples; each tile set is also clean when read independently from the JSON (paper 0, BRIGHT 1 and a clear bit in row 0)',
+  check('bright-black-paper on the examples: none in any tile set of the ten examples; each tile set is also clean when read independently from the JSON (paper 0, BRIGHT 1 and a clear bit in row 0)',
     ALL.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => bbpOf(id, ts).length === 0 && bbpRaw(id, ts).length === 0)) && Object.keys(examples.vaults.assets.tilesets).length > 0,
     JSON.stringify(ALL.map((id) => [id, Object.keys(examples[id].assets.tilesets ?? {}).map((ts) => bbpRaw(id, ts).length)])));
   check('every example tile set: the bright-black-paper tiles equal the independent reading of the JSON (none for any)',

@@ -457,7 +457,7 @@ try {
     await evaluate("document.getElementById('btn-examples').click()");
     await waitFor(`document.querySelector('#examples-menu .menu-item[data-example="${id}"]')`, 5000);
     await evaluate(`document.querySelector('#examples-menu .menu-item[data-example="${id}"]').click()`);
-    const r = await waitFor(`leapStudio.project.name.toLowerCase() === '${id}' && leapStudio.lastCompile && leapStudio.lastCompile.ok !== undefined && ({ ok: leapStudio.lastCompile.ok, errors: leapStudio.lastCompile.errors.length, bytes: leapStudio.lastCompile.usage?.total })`, 15000);
+    const r = await waitFor(`leapStudio.project.name.toLowerCase() === '${id === 'shooter' ? 'starfall (fine colour)' : id}' && leapStudio.lastCompile && leapStudio.lastCompile.ok !== undefined && ({ ok: leapStudio.lastCompile.ok, errors: leapStudio.lastCompile.errors.length, bytes: leapStudio.lastCompile.usage?.total })`, 15000);
     names[id] = r;
   }
   check('the four examples open and compile with 0 errors', Object.values(names).every((r) => r && r.ok && r.errors === 0), JSON.stringify(names));
@@ -591,7 +591,7 @@ try {
   await evaluate("leapStudio.openProject(window.structuredClone(leapStudio.project), {saved: false}) || true");
   await evaluate("document.getElementById('btn-save').click()");
   const saved = await waitFor('window.smokeDownloads[0]', 5000);
-  check('Save downloads <name>.leapgame', saved && saved.name === 'Shooter.leapgame', saved?.name);
+  check('Save downloads <name>.leapgame', saved && saved.name === 'Starfall_fine_colour.leapgame', saved?.name);
   const parsed = JSON.parse(saved.text);
   check('the saved document is format 1 with files and assets', parsed.format === 1 && 'main.arc' in parsed.files && Object.keys(parsed.assets.sprites).length === 5, Object.keys(parsed.assets.sprites).join());
   check('the saved document keeps the models (cube, tri) with their points and edges', Object.keys(parsed.assets.models ?? {}).join() === 'cube,tri' && parsed.assets.models.cube.points.length === 8 && parsed.assets.models.tri.edges.length === 3, JSON.stringify(Object.keys(parsed.assets.models ?? {})));
@@ -601,14 +601,14 @@ try {
   await sleep(200);
   check('New makes a fresh project', (await evaluate('leapStudio.project.name')) === 'Untitled' && (await evaluate("Object.keys(leapStudio.project.assets.sprites).join()")) === 'ball');
   await evaluate(`(() => { const dt = new DataTransfer();
-    dt.items.add(new File([${JSON.stringify(saved.text)}], 'Shooter.leapgame'));
+    dt.items.add(new File([${JSON.stringify(saved.text)}], 'Starfall_fine_colour.leapgame'));
     const input = document.getElementById('file-input'); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
-  const reopened = await waitFor(`leapStudio.project.name === 'Shooter' && leapStudio.lastCompile?.ok && JSON.stringify(leapStudio.project) === ${JSON.stringify(JSON.stringify(parsed))}`, 15000);
+  const reopened = await waitFor(`leapStudio.project.name === 'Starfall (fine colour)' && leapStudio.lastCompile?.ok && JSON.stringify(leapStudio.project) === ${JSON.stringify(JSON.stringify(parsed))}`, 15000);
   check('Open reads the .leapgame back: identical project, compiles', !!reopened, await status());
   await evaluate(`(() => { const dt = new DataTransfer(); dt.items.add(new File(['{"format":1,"files":{}}'], 'bad.leapgame'));
     const input = document.getElementById('file-input'); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
   await sleep(500);
-  check('a damaged project is refused with a message and the project stays', /not a usable project/.test(await status()) && (await evaluate('leapStudio.project.name')) === 'Shooter', await status());
+  check('a damaged project is refused with a message and the project stays', /not a usable project/.test(await status()) && (await evaluate('leapStudio.project.name')) === 'Starfall (fine colour)', await status());
 
   // ── Assets through the host interface ──
   const host = await evaluate(`(() => {
@@ -633,7 +633,7 @@ try {
     await evaluate("document.getElementById('btn-examples').click()");
     await waitFor('document.querySelector(\'#examples-menu .menu-item[data-example="shooter"]\')', 5000);
     await evaluate('document.querySelector(\'#examples-menu .menu-item[data-example="shooter"]\').click()');
-    await waitFor("leapStudio.project.name.toLowerCase() === 'shooter' && leapStudio.lastCompile?.ok", 15000);
+    await waitFor("leapStudio.project.name.toLowerCase() === 'starfall (fine colour)' && leapStudio.lastCompile?.ok", 15000);
     const bankPanel = () => evaluate(`({ mapped: document.getElementById('size-total').textContent, bank: document.getElementById('bank-total').textContent,
       hidden: document.getElementById('bank-block').hidden, rows: [...document.querySelectorAll('#bank-list .bank-row')].map((r) => r.textContent),
       status: document.getElementById('sb-prog').textContent, bankKey: leapStudio.project.assets.maps.sky.bank ?? null })`);
@@ -673,14 +673,15 @@ try {
     const m3 = await evaluate(`Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank')`);
     check('B4: Auto removes the key', m3 === false);
     await setBank('banked');
-    await sleep(1200);
-    const saved = await evaluate(`JSON.parse(localStorage.getItem('leap-studio.project')).assets.maps.sky.bank`);
+    // the auto-save runs after a debounce: poll for it (a fixed 1.2 s wait failed under verify --all's 8 jobs)
+    let saved;
+    for (let t = 0; t < 50 && saved !== 'banked'; t++) { await sleep(200); saved = await evaluate(`JSON.parse(localStorage.getItem('leap-studio.project')).assets.maps.sky.bank`); }
     check('B4: the override is auto-saved with the project', saved === 'banked', String(saved));
     // reload from the saved document: the key survives validation, a bad value is dropped with a warning
     const badDoc = await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.assets.maps.sky.bank = 'q'; return JSON.stringify(p); })()`);
     await evaluate(`(() => { const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(badDoc)}], 'bad-bank.leapgame'));
       const input = document.getElementById('file-input'); input.files = dt.files; input.dispatchEvent(new Event('change')); return true; })()`);
-    await waitFor("leapStudio.project.name.toLowerCase() === 'shooter' && leapStudio.lastCompile?.ok && !Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank') && !leapStudio.isDirty()", 10000).catch(() => null);
+    await waitFor("leapStudio.project.name.toLowerCase() === 'starfall (fine colour)' && leapStudio.lastCompile?.ok && !Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank') && !leapStudio.isDirty()", 10000).catch(() => null);
     const dropped = await evaluate(`({ key: Object.hasOwn(leapStudio.project.assets.maps.sky, 'bank'), ok: leapStudio.lastCompile?.ok, banked: leapStudio.lastCompile?.usage?.banked?.used })`);
     check('B4: a bad bank value in an opened file is dropped (auto used, the game still builds)', dropped.key === false && dropped.ok === true && dropped.banked === 0, JSON.stringify(dropped));
     // an old compiler result without usage.mapped / usage.banked still renders (the size panel falls back)
@@ -853,7 +854,7 @@ try {
   // host: exampleEffects()
   const fx = await evaluate(`(async () => { const h = leapStudio.makeHost('smoke-fx'); const a = h.exampleEffects(), b = h.exampleEffects(); const list = await a;
     return { same: a === b, n: list.length, games: [...new Set(list.map((x) => x.game))].length, shape: list.every((x) => typeof x.game === 'string' && typeof x.name === 'string' && Array.isArray(x.sfx?.ticks)), one: list[0] && Object.keys(list[0]).join() }; })()`);
-  check('host: exampleEffects() lists the 47 sound effects of the 8 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 47 && fx.games === 8 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
+  check('host: exampleEffects() lists the 52 sound effects of the 9 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 52 && fx.games === 9 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
 
   // P2: Save in place with the File System Access API where there is one; the download otherwise
   await evaluate(`(() => { window.__saves = []; window.__pickerCalls = 0; window.__written = null; window.__downloads = [];

@@ -195,14 +195,14 @@ if (builds[2] && builds[3] && builds[4]) {
     return { r, k1: k12.filter((w) => !/^(WIRE3D|VIEW3D)/.test(w.message)), k2: k12.filter((w) => /^(WIRE3D|VIEW3D)/.test(w.message)), k3, project };
   };
   const out = {};
-  for (const id of ['bounce', 'breakout', 'orbit', 'shooter', 'lumen', 'vaults', 'blockfall', 'platformer', 'runner']) {
+  for (const id of ['bounce', 'breakout', 'orbit', 'shooter', 'shooter-classic', 'lumen', 'vaults', 'blockfall', 'platformer', 'runner']) {
     out[id] = load(id);
     const tiles = out[id].k3.reduce((n, f) => n + f.tiles.length, 0);
     info(`${id}: K1 ${out[id].k1.length} (lines ${out[id].k1.map((w) => w.line).join(', ') || '-'}), K2 ${out[id].k2.length}, K3 ${out[id].k3.length} finding(s) naming ${tiles} tile(s)${out[id].k3.map((f) => ` [${f.asset}: ${f.tiles.length} of ${tilesOf(out[id].project, f.asset)}]`).join('')}`);
   }
   function tilesOf(project, name) { return (project.assets.tilesets?.[name]?.tiles ?? []).length; }
   // Stage 3 (K4, E5) fixed every example: none gives a K1, K2 or K3 finding, no compiler warning at all, and no asset-check finding of any kind
-  for (const id of ['bounce', 'breakout', 'shooter', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit']) {
+  for (const id of ['bounce', 'breakout', 'shooter', 'shooter-classic', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit']) {
     const o = out[id], any = checkAssets(o.project, scanRoles(P.buildSource(o.project).text));
     check_(`${id}: compiles, no K1, K2 or K3 finding, no warning of any kind, no asset-check finding`, o.r.errors.length === 0 && o.k1.length === 0 && o.k2.length === 0 && o.k3.length === 0 && o.r.warnings.length === 0 && any.length === 0,
       [o.r.errors.map((e) => e.message), o.r.warnings.map((w) => `${w.line}: ${w.message}`), any.map((f) => f.id)].flat().join(' | '));

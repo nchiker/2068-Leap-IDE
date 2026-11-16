@@ -13,9 +13,15 @@
  },
  {
   "id": "shooter",
-  "title": "Shooter",
-  "about": "A vertical shooter with pools of sprites, a sky map and sound, in three scenes (title, play, game over), with a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.",
+  "title": "Starfall (fine colour)",
+  "about": "A vertical shooter in fine colour (8 x 1 colour): a planet and a starfield, every sprite shaded row by row, a rainbow title; pools of sprites, sound, three scenes (title, play, game over), a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.",
   "file": "shooter.leapgame"
+ },
+ {
+  "id": "shooter-classic",
+  "title": "Shooter (classic)",
+  "about": "The first Starfall, a vertical shooter in plain two-buffer colour: pools of 16 sprites, a sky map and sound, in three scenes (title, play, game over), with a title song and an in-game song (MUSIC). Keys: Q A O P or the arrows move; Space fires.",
+  "file": "shooter-classic.leapgame"
  },
  {
   "id": "platformer",
