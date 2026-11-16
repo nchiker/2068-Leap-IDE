@@ -259,3 +259,20 @@ editors (loaded with `import(variable)`, so they and their models had no stamp a
 
 **Not done here** (other slices): the Symbols tab listing songs (needs `scanArcade` to know `MUSIC`, the language slice M3); the size panel's music row (the compiler's
 `usage`, M3); songs for the sample games (M5).
+
+## As built: fine colour (F4, 2026-11-15)
+
+Docs/ARCADE_FINE_COLOUR_CONTRACT.md sections 1, 6 (Studio) and 12. **The display select** of a multi-scene game offers "Finer colour (8 x 1)" (no "not built yet") whenever the game
+builds on runtime v2 without a WIRE3D (`fineIsBuilt()` in `studio.js`: the build of the last compile is v2 and the source has no WIRE3D); in a v3 / v4 / WIRE3D game the option is
+listed only when the project already carries it (a loaded file), so it can be switched back, and the compiler's error of contract 1.2 ("needs runtime v2; this game uses X (runtime vN)" /
+"cannot be used in a WIRE3D game") is in the problems list on the scene's line, as is the linker's "sprite art too large for a fine-colour game: N phases, at most 32" (no extra chip or Size line).
+`hires` keeps "not built yet" and its compiler warning. **The plan text** of a built fine scene: "Drawn in 8 x 1 colour: one screen, each pixel row of a cell its own colours; at most 32 sprite
+phases in the game." (a scene the compiler would choose fine for, but not set so, says a "Finer colour" choice would give that). **The previews.** The sprite editor's `ecm` family now shows
+what a fine scene draws (`familyPixels(s, f, 'ecm', {onto: {paper, bright}})`, `finePixels`; the editor passes black paper, normal brightness): the pixels of the image take the INK of their row, the paper and BRIGHT
+are the background's, so a row's authored paper and BRIGHT are not shown (without `onto` it is still "as authored"). `tests/sprite-model.mjs` 6b compares it with `finePicture` (arcade-fine.js) for 300
+random sprites, row inks and backgrounds. A tile keeps its eight row colours (`rowColours` in tile-model.js; ink / paper / bright stay row 0's, as the compiler reads them, so a one-colour tile is as before): `fromAsset` / `toAsset` round-trip Starfall's and Lumen's tile sets
+unchanged, `tilePixels(tile, {fine: true})` is what `finePicture` draws (`tests/tile-model.mjs` 4b, every example tile), the tile editor's "apply to" row selector (Whole tile, or rows 0..7) sets ink / paper / BRIGHT for the whole tile or the chosen
+pixel rows, "Rows → one colour" folds them back, the "8 x 1 colour view" shows each row in its own colours (on by default when the project has a fine scene or the tile set has row colours; other scenes draw row 0's), the map editor's thumbnails
+follow `projectHasFine`, and the asset check reads a fine project's tiles row by row (`black-bright-mix`, `bright-black-paper`) and gives no `background-attr-mix` when every scene is fine (`fineScenes`, from `scanRoles(...).scenes` and `project.scenes`).
+`tests/studio-smoke.mjs` covers the select, the plan text, the missing "not built" warning, the three error cases and the phase cap (once the v2 runtime that has `RT_FINEMODE` is published; until then it checks the compiler's
+"needs RT_FINEMODE" error is shown).

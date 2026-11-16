@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 // arcadec.mjs -- Leap Arcade command-line compiler (milestones M2 and M3).
-//   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime auto|v0|v1|v2|v3|v4|<dir or runtime.json>] [-o out.dck]
+//   node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--scenes <scenes.json>] [--runtime auto|v0|v1|v2|v3|v4|<dir or runtime.json>] [-o out.dck]
 // Compiles with src/lang/arcade/arcade-compile.js against a runtime build.  --runtime auto (the default) is the rule the Studio and the
 // compiler use (requiredRuntime(): v2, v3 or v4 by what the program uses); v0 and v1 are frozen milestone runtimes, chosen only by naming
 // them: --runtime v0 is
@@ -11,6 +11,8 @@
 // docs/ARCADE_RUNTIME_API_V2.md); --runtime v3 is arcade/build/v3 (the scrolling window, frames; language batch 2) and --runtime v4 arcade/build/v4 (the 3D view, VIEW3D; language batch 3);
 // --runtime auto picks v2, v3 or v4 by what the program uses (requiredRuntime()). The assets file may also be {sprites, tilesets, sfx, maps} (a sprite asset may carry "phases": 1|2|4|8).
 // A runtime.json holds its own "version", which selects the compiler's code path. Errors and warnings print as file:line:col: severity: message. Exit 1 on errors.
+// The per-scene display setting (the project's `scenes`, {name: {display: 'auto'|'buffers'|'fine'|'hires'}}; display 'fine' = 8 x 1 colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md 1.1) comes from a top-level
+// "scenes" key of the assets file, or from --scenes <file.json> (a file holding that object), which wins when both are given.
 // Without -o the cartridge goes to arcade/build/<source name>.dck. The assets file is {sprites: {name: {w, h, frames|rows}}}.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, basename, join, resolve } from 'node:path';
@@ -22,15 +24,17 @@ const BUILD = join(HERE, '../build');
 
 function usage(msg) {
   if (msg) console.error(`arcadec: ${msg}`);
-  console.error('usage: node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--runtime auto|v0|v1|v2|v3|v4|<dir|runtime.json>] [-o out.dck]');
+  console.error('usage: node arcade/tools/arcadec.mjs <source.arc> [--assets <assets.json>] [--scenes <scenes.json>] [--runtime auto|v0|v1|v2|v3|v4|<dir|runtime.json>] [-o out.dck]');
+  console.error('  scenes: {"name": {"display": "fine"}}: the per-scene display setting; also read from a top-level "scenes" key of the assets file (--scenes wins)');
   process.exit(2);
 }
 
 const argv = process.argv.slice(2);
-let src = null, assetsFile = null, out = null, runtimeArg = 'auto';
+let src = null, assetsFile = null, scenesFile = null, out = null, runtimeArg = 'auto';
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--assets') assetsFile = argv[++i] ?? usage('--assets needs a file');
+  else if (a === '--scenes') scenesFile = argv[++i] ?? usage('--scenes needs a file');
   else if (a === '--runtime') runtimeArg = argv[++i] ?? usage('--runtime needs auto, v0 .. v4, a directory or a runtime.json');
   else if (a === '-o') out = argv[++i] ?? usage('-o needs a file');
   else if (a === '-h' || a === '--help') usage();
@@ -56,7 +60,8 @@ if (!existsSync(rtJson)) usage(`no runtime build at ${rtJson}`);
 const runtime = JSON.parse(readFileSync(rtJson, 'utf8'));
 const image = new Uint8Array(readFileSync(join(dirname(rtJson), runtime.image ?? 'runtime.bin')));
 
-const res = compile(text, { runtime, image, assets });
+const scenes = scenesFile ? JSON.parse(readFileSync(resolve(scenesFile), 'utf8')) : assets.scenes;      // --scenes wins over the assets file's "scenes" key
+const res = compile(text, { runtime, image, assets, scenes });
 const name = basename(src);
 const fmt = (d) => `${src}:${d.line}:${d.col + 1}: ${d.severity}: ${d.message}`;
 for (const d of [...res.errors, ...res.warnings]) console.log(fmt(d));

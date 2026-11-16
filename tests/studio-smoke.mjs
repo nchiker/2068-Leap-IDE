@@ -319,7 +319,7 @@ try {
   check('the first scene carries the start marker, the second none', rows && rows[0].name === 'title' && rows[0].start === '▶' && rows[1].name === 'play' && rows[1].start === '', JSON.stringify(rows));
   check('E4: the plan text is plain words: "Drawn with two screen buffers, swapped every tick, because sprites move." for play; the text-only title says it is drawn with two buffers for now',
     rows && rows[1].plan === 'Drawn with two screen buffers, swapped every tick, because sprites move.' && /^Text only\. For now it is drawn with two screen buffers/.test(rows[0].plan) && !rows.some((r) => /hi-res|8 ?x ?1|512|64 columns|auto:/i.test(r.plan)), JSON.stringify(rows?.map((r) => r.plan)));
-  check('E4: the select offers only what is built (Automatic, Two screen buffers), Automatic chosen; the note says it in plain words', rows && rows.every((r) => r.value === 'auto' && r.opts === 'auto,buffers') &&
+  check('E4: the select offers only what is built (Automatic, Two screen buffers, and for this runtime v2 game Finer colour), Automatic chosen; the note says it in plain words', rows && rows.every((r) => r.value === 'auto' && r.opts === 'auto,buffers,fine') &&
     /^How each scene is drawn/.test(await evaluate("document.querySelector('#scene-section .proj-note').textContent")), JSON.stringify(rows?.map((r) => r.opts)));
   const sizeRow = await evaluate("[...document.querySelectorAll('#size-table tr')].map((r) => r.textContent).find((t) => /^Scenes/.test(t)) ?? null");
   const okNow = await evaluate('leapStudio.lastCompile.ok');
@@ -337,15 +337,57 @@ try {
   const savedScenes = await evaluate(`JSON.parse(localStorage.getItem('leap-studio.project')).scenes`);
   check('it is auto-saved with the project', JSON.stringify(savedScenes) === '{"play":{"display":"buffers"}}', JSON.stringify(savedScenes));
   const after = await evaluate(`({ value: document.querySelector('#scene-list select[data-scene="play"]').value, rows: document.querySelectorAll('#scene-list .scene-row').length, fine: !!document.querySelector('#scene-list select[data-scene="play"] option[value="fine"]') })`);
-  check('after the recompile the group is rebuilt with the choice kept (the unbuilt finer colour is not offered)', after.value === 'buffers' && after.rows === 2 && after.fine === false, JSON.stringify(after));
-  // a project that carries "fine" (loaded from a file): the option is shown and selectable, and the compiler warns that it is not built
+  check('after the recompile the group is rebuilt with the choice kept (finer colour is offered: the game builds on runtime v2)', after.value === 'buffers' && after.rows === 2 && after.fine === true, JSON.stringify(after));
+  // a project that carries "fine" (loaded from a file): the option is shown and selectable; fine is built, so only the unknown 'q' warns
   await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes.play.display = 'fine'; p.scenes.title = { display: 'q' }; leapStudio.openProject(p, {saved: false}); return true; })()`);
   const fineRow = await waitFor(`(() => { const s = document.querySelector('#scene-list select[data-scene="play"]'); return s ? [s.value, s.querySelector('option[value="fine"]').disabled, document.querySelector('#scene-list select[data-scene="title"]').value].join() : null; })()`, 8000);
   check('a loaded "fine" shows as chosen and enabled; an unknown value is shown too', fineRow === 'fine,false,q', fineRow);
-  const warns = await waitFor(`(() => { const w = leapStudio.lastCompile?.warnings?.map((d) => d.message).filter((m) => /display/.test(m)); return w && w.length === 2 ? w : null; })()`, 8000);
-  check('the compiler warnings reach the problems list ("is not built into any runtime yet", "is not a display setup")',
-    !!warns && warns.some((m) => /display 'fine' \(8 x 1 colour\) is not built/.test(m)) && warns.some((m) => /'q' is not a display setup/.test(m)) &&
-    (await evaluate("[...document.querySelectorAll('#problems .problem.warning')].filter((r) => /display/.test(r.textContent)).length")) === 2, JSON.stringify(warns));
+  const warns = await waitFor(`(() => { const w = leapStudio.lastCompile?.warnings?.map((d) => d.message).filter((m) => /display/.test(m)); return w && w.length === 1 ? w : null; })()`, 8000);
+  check('the compiler warns only about the unknown value "q" (fine colour is built: no "not built" warning; a hires override still would)',
+    !!warns && warns.some((m) => /'q' is not a display setup/.test(m)) && !warns.some((m) => /not built/.test(m)) &&
+    (await evaluate("[...document.querySelectorAll('#problems .problem.warning')].filter((r) => /display/.test(r.textContent)).length")) === 1, JSON.stringify(warns));
+  const finePlan = await evaluate(`[...document.querySelectorAll('#scene-list .scene-row')].map((r) => r.dataset.scene + ': ' + r.querySelector('.scene-plan').textContent)`);
+  check('a fine scene says in plain words what it is: 8 x 1 colour, one screen, each pixel row of a cell its own colours, at most 32 sprite phases',
+    finePlan.some((x) => /^play: Drawn in 8 x 1 colour: one screen, each pixel row of a cell its own colours; at most 32 sprite phases in the game\.$/.test(x)), JSON.stringify(finePlan));
+  await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes = { play: { display: 'hires' } }; leapStudio.openProject(p, {saved: false}); return true; })()`);
+  const hiresWarn = await waitFor(`(() => { const w = leapStudio.lastCompile?.warnings?.map((d) => d.message).filter((m) => /display/.test(m)); return w && w.length === 1 ? w : null; })()`, 8000);
+  check('a hires override still warns "not built into any runtime yet"', !!hiresWarn && /display 'hires'.*is not built/.test(hiresWarn[0]), JSON.stringify(hiresWarn));
+  // fine scenes where they cannot be built: the compiler's error reaches the problems list; the option stays listed because the project carries it
+  const fineText = (extra, scene2) => 'GAME "two"\nFRAMERATE 30\nSPRITE ball = "ball"\n' + extra + 'SCENE title\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    IF KEYDOWN(" ") THEN\n      ENTER play\n    ENDIF\n  ENDP\nENDSCENE\n' + scene2;
+  const PLAY = (flip) => 'SCENE play\n  DIM x\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    SHOW ball AT x, 8' + flip + '\n  ENDP\nENDSCENE\n';
+  const fineErr = async (src, scenes = { play: { display: 'fine' } }) => {
+    await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes = ${JSON.stringify(scenes)}; p.files['main.arc'] = ${JSON.stringify(src)}; leapStudio.openProject(p, {saved: false}); return true; })()`);
+    await sleep(1500);
+    return evaluate(`({ errs: leapStudio.lastCompile?.errors?.map((d) => d.message) ?? [], rows: [...document.querySelectorAll('#problems .problem.error')].map((r) => r.textContent), fine: [...document.querySelectorAll('#scene-list select[data-scene="play"] option')].map((o) => o.value).join() })`);
+  };
+  const v3 = await fineErr(fineText('', PLAY(' FLIP')));
+  check('a fine scene in a game that needs runtime v3 (FLIP) shows "needs runtime v2; this game uses FLIP (runtime v3)" in the problems list, and the carried option stays listed',
+    v3.errs.some((m) => /scene 'play': fine colour \(display 'fine'\) needs runtime v2; this game uses FLIP \(runtime v3\)/.test(m)) && v3.rows.some((r) => /needs runtime v2/.test(r)) && /fine/.test(v3.fine), JSON.stringify(v3));
+  const v3none = await fineErr(fineText('', PLAY(' FLIP')), {});
+  check('a v3 game whose scenes do not carry "fine" is not offered the option (auto, buffers only)', v3none.fine === 'auto,buffers' && !v3none.errs.some((m) => /fine colour/.test(m)), JSON.stringify(v3none));
+  const wire = await fineErr(fineText('WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 0\n', PLAY('')));
+  check('a fine scene in a WIRE3D game shows "cannot be used in a WIRE3D game" in the problems list',
+    wire.errs.some((m) => /scene 'play': fine colour \(display 'fine'\) cannot be used in a WIRE3D game/.test(m)) && wire.rows.some((r) => /WIRE3D/.test(r)), JSON.stringify(wire));
+  const wireNone = await fineErr(fineText('WIRE3D ROWS 2 TO 21 INK 5 PAPER 0 BRIGHT 0\n', PLAY('')), {});
+  check('a WIRE3D game whose scenes do not carry "fine" is not offered the option', wireNone.fine === 'auto,buffers', JSON.stringify(wireNone));
+  // the 32-phase cap: a fine game with 33 sprite phases in all (the compiler's linker error reaches the problems list)
+  const phases = await evaluate(`(async () => {
+    const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes = { play: { display: 'fine' } };
+    const row = { bits: 'FF', mask: 'FF', ink: 2, paper: 0, bright: 0 };
+    p.assets.sprites = { ball: { w: 8, h: 2, phases: 8, frames: [{ rows: [row, row] }] }, big1: { w: 8, h: 2, phases: 8, frames: [{ rows: [row, row] }] }, big2: { w: 8, h: 2, phases: 8, frames: [{ rows: [row, row] }] }, big3: { w: 8, h: 2, phases: 8, frames: [{ rows: [row, row] }] }, one: { w: 8, h: 2, phases: 1, frames: [{ rows: [row, row] }] } };
+    p.files['main.arc'] = ${JSON.stringify(fineText('SPRITE big1 = "big1"\nSPRITE big2 = "big2"\nSPRITE big3 = "big3"\nSPRITE one = "one"\n', PLAY('') .replace('SHOW ball AT x, 8', 'SHOW ball AT x, 8\n    SHOW big1 AT x, 16\n    SHOW big2 AT x, 24\n    SHOW big3 AT x, 32\n    SHOW one AT x, 40')))};
+    leapStudio.openProject(p, {saved: false});
+    return true; })()`);
+  await sleep(1500);
+  const cap = await evaluate(`({ errs: leapStudio.lastCompile?.errors?.map((d) => d.message) ?? [], rows: [...document.querySelectorAll('#problems .problem.error')].map((r) => r.textContent) })`);
+  const hasFineRt = await evaluate("leapStudio.lang.runtime.symbols?.RT_FINEMODE !== undefined");
+  if (hasFineRt) {
+    check('a fine game with 33 sprite phases shows "sprite art too large for a fine-colour game: 33 phases, at most 32" in the problems list',
+      cap.errs.some((m) => /sprite art too large for a fine-colour game: 33 phases, at most 32/.test(m)) && cap.rows.some((r) => /at most 32/.test(r)), JSON.stringify(cap));
+  } else {      // (the published v2 runtime has no RT_FINEMODE yet: the compiler stops with its own message before the linker's phase cap, which is shown instead)
+    check('(no RT_FINEMODE in the published v2 runtime yet) a fine game reports the missing runtime routine in the problems list; the 33-phase cap check runs once it is published',
+      cap.errs.some((m) => /RT_FINEMODE/.test(m)) && cap.rows.some((r) => /RT_FINEMODE/.test(r)), JSON.stringify(cap));
+  }
   // Save and Open round trip of the override
   await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes = { play: { display: 'buffers' } }; leapStudio.openProject(p, {saved: false}); return true; })()`);
   await evaluate(`(() => { window.smokeDownloads = []; HTMLAnchorElement.prototype.click = function () { if (this.download) fetch(this.href).then(r => r.text()).then(t => smokeDownloads.push({ name: this.download, text: t })); }; return true; })()`);
@@ -482,7 +524,7 @@ try {
     check('clicking an asset warning selects that asset', !!sel);
   }
   const hostApi = await evaluate(`(() => { const h = leapStudio.makeHost('smoke-s3'); return { roles: !!h.roles(), w: Array.isArray(h.assetWarnings()), by: h.usedBy('tilesets', 'gfx').assets.join(), sfx: h.soundCount() }; })()`);
-  check('host: roles(), assetWarnings(), usedBy() and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
+  check('host: roles(), assetWarnings(), usedBy() (Starfall: its four maps) and soundCount() answer', hostApi.roles && hostApi.w && hostApi.by === 'gameover,logo,press,sky' && hostApi.sfx >= 4, JSON.stringify(hostApi));
 
   // ── Music M4: songs in the project panel and the sound editor (docs/ARCADE_MUSIC_CONTRACT.md section 7) ──
   await evaluate("(window.prompt = () => 'theme', document.querySelector('[data-new-asset=music]').click(), true)");
@@ -813,7 +855,7 @@ try {
   // host: exampleEffects()
   const fx = await evaluate(`(async () => { const h = leapStudio.makeHost('smoke-fx'); const a = h.exampleEffects(), b = h.exampleEffects(); const list = await a;
     return { same: a === b, n: list.length, games: [...new Set(list.map((x) => x.game))].length, shape: list.every((x) => typeof x.game === 'string' && typeof x.name === 'string' && Array.isArray(x.sfx?.ticks)), one: list[0] && Object.keys(list[0]).join() }; })()`);
-  check('host: exampleEffects() lists the 41 sound effects of the 7 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 41 && fx.games === 7 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
+  check('host: exampleEffects() lists the 47 sound effects of the 8 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 47 && fx.games === 8 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
 
   // P2: Save in place with the File System Access API where there is one; the download otherwise
   await evaluate(`(() => { window.__saves = []; window.__pickerCalls = 0; window.__written = null; window.__downloads = [];

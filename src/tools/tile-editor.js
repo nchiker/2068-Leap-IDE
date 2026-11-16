@@ -9,7 +9,7 @@
  * roles(): a missing member switches its feature off (no warnings; no "used in N cells", and a tile is deleted without the map check).
  *
  * The data model and every operation on it are in tile-model.js. This file is the UI: a tile strip (indices never move), an 8x8 pixel
- * grid, ink / paper / BRIGHT, flags and the fg mark, previews, the set's warnings, tools, tile add / duplicate / delete-last, and the
+ * grid, ink / paper / BRIGHT (for the whole tile or for chosen pixel rows: a fine-colour game's tile has colours of its own in each of its 8 rows), flags and the fg mark, previews, the set's warnings, tools, tile add / duplicate / delete-last, and the
  * tile set picker (New / Rename / Delete). One completed edit (a click, a whole drag, a button) is one host.setAsset call.
  */
 
@@ -177,11 +177,21 @@ export function createTileEditor(container, host) {
   let wrapShift = prefs.wrap !== false;
   let zoom = Number.isInteger(prefs.zoom) ? prefs.zoom : 24;
   let hover = null;
-  let differing = [];                   // tiles of the stored asset whose rows had different colours
+  let rowSel = new Set();               // the pixel rows the colour controls apply to (empty = the whole tile, every row)
+  let fineViewOn = null;                // the "8 x 1 colour" view: true / false once the user chose, null = automatic (a fine scene or a tile with row colours)
   let destroyed = false;
   const cleanups = [];
   const keepPrefs = () => savePrefs({ zoom, wrap: wrapShift });
   const tile = () => set.tiles[sel];
+  const rowArg = () => (rowSel.size ? [...rowSel].sort((a, b) => a - b) : undefined);
+  const perRowTiles = () => (set ? set.tiles.map((t, i) => (T.hasRowColours(t) ? i : -1)).filter((i) => i >= 0) : []);
+  /** Show every pixel row in its own colours (what a fine scene draws): when the project has a fine scene or a tile here has row colours, unless the user chose. */
+  function fineView() {
+    if (fineViewOn !== null) return fineViewOn;
+    let p = null;
+    try { p = host.getProject?.(); } catch { p = null; }
+    return T.projectHasFine(p) || perRowTiles().length > 0;
+  }
 
   // ── skeleton ──
   const root = el('div', 'tiled', null, { tabindex: '0' });
@@ -278,7 +288,7 @@ export function createTileEditor(container, host) {
     for (let c = 0; c < 8; c++) {
       const b = el('button', 'tiled-sw', null, { type: 'button' });
       b.dataset.role = which + '-sw'; b.dataset.colour = String(c);
-      b.addEventListener('click', () => edit(() => T.setColours(tile(), { [which]: c })));
+      b.addEventListener('click', () => edit(() => T.setColours(tile(), { [which]: c }, rowArg())));
       swatches[which].set(c, b);
       row.append(b);
     }
@@ -286,10 +296,33 @@ export function createTileEditor(container, host) {
   };
   const brightChk = el('input', null, null, { type: 'checkbox' });
   brightChk.dataset.role = 'bright';
-  brightChk.addEventListener('change', () => { const on = brightChk.checked ? 1 : 0; edit(() => T.setColours(tile(), { bright: on })); });
-  const brightLbl = el('label', 'tiled-check'); brightLbl.title = 'BRIGHT applies to the whole 8x8 cell (ink and paper)'; brightLbl.append(brightChk, 'BRIGHT');
+  brightChk.addEventListener('change', () => { const on = brightChk.checked ? 1 : 0; edit(() => T.setColours(tile(), { bright: on }, rowArg())); });
+  const brightLbl = el('label', 'tiled-check'); brightLbl.title = 'BRIGHT applies to the ink and the paper of the whole tile, or of the chosen pixel rows'; brightLbl.append(brightChk, 'BRIGHT');
   const attrInfo = el('span', 'tiled-label', '');
   attrInfo.dataset.role = 'attr';
+  // which pixel rows the colour controls apply to: "Whole tile" (all 8 rows) or one or more rows (8 x 1 colour, what a fine scene draws)
+  const rowBar = el('div', 'tiled-row');
+  rowBar.dataset.role = 'row-bar';
+  const rowBtns = [];
+  const btnWhole = button('Whole tile', 'The colours below apply to all 8 pixel rows (a tile with colours of its own in each row becomes one-colour)', () => { rowSel = new Set(); syncControls(); drawGrid(); }, 'sm');
+  btnWhole.dataset.role = 'row-whole';
+  rowBar.append(btnWhole);
+  for (let y = 0; y < 8; y++) {
+    const b = button(String(y), `Pixel row ${y}: the colours below apply to the chosen rows only (click more rows to add them; fine-colour scenes draw each row in its own colours)`, () => {
+      if (rowSel.has(y)) rowSel.delete(y); else rowSel.add(y);
+      syncControls(); drawGrid();
+    }, 'sm');
+    b.dataset.role = 'row-btn'; b.dataset.row = String(y);
+    rowBtns.push(b);
+    rowBar.append(b);
+  }
+  const btnUnify = button('Rows → one colour', 'Give all 8 pixel rows the colours of the chosen row (or row 0)', () => edit(() => T.unifyRows(tile(), rowSel.size ? Math.min(...rowSel) : 0)), 'sm');
+  btnUnify.dataset.role = 'rows-unify';
+  rowBar.append(btnUnify);
+  const fineChk = el('input', null, null, { type: 'checkbox' });
+  fineChk.dataset.role = 'fine-view';
+  fineChk.addEventListener('change', () => { fineViewOn = fineChk.checked; renderAll(); });
+  const fineLbl = el('label', 'tiled-check'); fineLbl.title = 'Show every pixel row in its own colours (8 x 1 colour, what a fine-colour scene draws). Off: the tile in row 0\'s colours, as every other scene draws it'; fineLbl.append(fineChk, '8 x 1 colour view');
   const flagBox = el('div', 'tiled-flags');
   flagBox.dataset.role = 'flags';
   const flagChks = [];
@@ -377,8 +410,8 @@ export function createTileEditor(container, host) {
   prevRow.append(pv1, pv4);
   const tileInfo = el('pre', 'tiled-info');
   tileInfo.dataset.role = 'tile-info';
-  side.append(el('div', 'tiled-h', 'Colours'), el('span', 'tiled-label', 'ink'), palBox('ink'), el('span', 'tiled-label', 'paper'), palBox('paper'),
-    brightLbl, attrInfo, el('div', 'tiled-h', 'Flags'), flagBox, fgLbl, fgNote, el('div', 'tiled-h', 'Preview'), prevRow, tileInfo);
+  side.append(el('div', 'tiled-h', 'Colours'), el('span', 'tiled-label', 'apply to'), rowBar, el('span', 'tiled-label', 'ink'), palBox('ink'), el('span', 'tiled-label', 'paper'), palBox('paper'),
+    brightLbl, attrInfo, fineLbl, el('div', 'tiled-h', 'Flags'), flagBox, fgLbl, fgNote, el('div', 'tiled-h', 'Preview'), prevRow, tileInfo);
   body.append(stripCol, mid, side);
 
   // ── messages ──
@@ -394,10 +427,9 @@ export function createTileEditor(container, host) {
     const asset = H.get(n);
     if (asset === null || asset === undefined) { say(`Tile set "${n}" is not in the project`, 'err'); return false; }
     let s;
-    try { s = T.fromAsset(asset); } catch (e) { name = n; set = null; hist = null; lastStored = ''; differing = []; say(`Cannot read tile set "${n}": ${e.message}`, 'err'); renderAll(); return false; }
+    try { s = T.fromAsset(asset); } catch (e) { name = n; set = null; hist = null; lastStored = ''; say(`Cannot read tile set "${n}": ${e.message}`, 'err'); renderAll(); return false; }
     name = n;
     lastStored = JSON.stringify(asset);
-    differing = T.rowsDiffer(asset);
     set = s;
     hist = T.createHistory(set, UNDO_STEPS + 1);
     if (!keep) sel = 0;
@@ -410,7 +442,7 @@ export function createTileEditor(container, host) {
     const asset = T.toAsset(set);
     const r = H.set(name, deepCopy(asset));
     if (r && r.ok === false) say(`The Studio did not accept the tile set: ${r.error ?? 'unknown reason'}`, 'err');
-    else { lastStored = JSON.stringify(asset); differing = []; }
+    else lastStored = JSON.stringify(asset);
   }
   /** Apply an edit, record it for undo, store it in the project (once) and redraw. */
   function edit(fn) {
@@ -582,7 +614,7 @@ export function createTileEditor(container, host) {
 
   // ── drawing the views ──
   function paintTile(ctx, t, ox, oy, sc) {
-    const keys = T.tilePixels(t);
+    const keys = T.tilePixels(t, { fine: fineView() });
     for (let i = 0; i < 64; i++) { ctx.fillStyle = rgbCss(rgbOfKey(keys[i])); ctx.fillRect(ox + (i % 8) * sc, oy + ((i / 8) | 0) * sc, sc, sc); }
   }
   function layoutGrid() {
@@ -598,6 +630,9 @@ export function createTileEditor(container, host) {
     ctx.beginPath();
     for (let i = 1; i < 8; i++) { ctx.moveTo(i * zoom + .5, 0); ctx.lineTo(i * zoom + .5, 8 * zoom); ctx.moveTo(0, i * zoom + .5); ctx.lineTo(8 * zoom, i * zoom + .5); }
     ctx.stroke();
+    ctx.strokeStyle = '#e3b341'; ctx.lineWidth = 2;
+    for (const y of rowSel) ctx.strokeRect(1, y * zoom + 1, 8 * zoom - 2, zoom - 2);       // the pixel rows the colour controls apply to
+    ctx.lineWidth = 1;
     if (hover) { ctx.strokeStyle = '#ffffff'; ctx.strokeRect(hover[0] * zoom + .5, hover[1] * zoom + .5, zoom - 1, zoom - 1); ctx.strokeStyle = '#000'; ctx.strokeRect(hover[0] * zoom + 1.5, hover[1] * zoom + 1.5, zoom - 3, zoom - 3); }
   }
   function drawPreview() {
@@ -666,15 +701,19 @@ export function createTileEditor(container, host) {
         } : null,
       };
     });
+    const differing = perRowTiles();
     if (differing.length) {
-      items.push({ role: 'rows-note', note: true, message: `Tile${differing.length > 1 ? 's' : ''} ${differing.slice(0, 12).join(', ')}${differing.length > 12 ? ', …' : ''} had rows with different colours. A tile has one colour cell (the compiler reads row 0), so the editor shows row 0's colours and will unify the rows when you change this set.` });
+      items.push({ role: 'rows-note', note: true, message: `Tile${differing.length > 1 ? 's' : ''} ${differing.slice(0, 12).join(', ')}${differing.length > 12 ? ', …' : ''} ${differing.length > 1 ? 'have' : 'has'} colours of their own in each pixel row (8 x 1 colour: a fine scene draws every row so; other scenes draw row 0's colours). The editor keeps them. Pick rows under "apply to" to change some; "Whole tile" sets all 8 rows.` });
     }
     if (set.tiles.length >= T.MAX_TILES) items.push({ note: true, message: `This set has the most tiles a map cell can hold (${T.MAX_TILES}).` });
     warnView.render(items);
   }
   function drawInfo() {
     const t = tile(), sm = T.tileSummary(t, sel);
-    const lines = [sm.text, `attribute byte $${T.attrByte(t).toString(16).toUpperCase().padStart(2, '0')}  (bright ${t.bright}, paper ${t.paper}, ink ${t.ink})`, `flags ${t.flags}`];
+    const hex2 = (v) => v.toString(16).toUpperCase().padStart(2, '0');
+    const lines = [sm.text, `attribute byte $${hex2(T.attrByte(t))}  (bright ${t.bright}, paper ${t.paper}, ink ${t.ink})`];
+    if (T.hasRowColours(t)) lines.push(`row attributes ${T.rowAttrs(t).map((a) => '$' + hex2(a)).join(' ')}`);
+    lines.push(`flags ${t.flags}`);
     const n = cellsOfTile(sel);
     if (usage.length) lines.push(n ? `used in ${n} map cell${n === 1 ? '' : 's'}: ${usage.filter((u) => u.counts.get(sel)).map((u) => `${u.name} ${u.counts.get(sel)}`).join(', ')}` : 'not used by any map');
     tileInfo.textContent = lines.join('\n');
@@ -687,13 +726,20 @@ export function createTileEditor(container, host) {
     btnRen.disabled = btnDel.disabled = !set;
     if (!set) { syncUndo(); return; }
     const t = tile();
+    const shown = T.rowColoursOf(t)[rowSel.size ? Math.min(...rowSel) : 0];          // the colours the swatches show: the first chosen row's, else row 0's
     for (const w of ['ink', 'paper']) for (const [c, b] of swatches[w]) {
-      b.style.background = rgbCss(rgbOf(c, t.bright));
-      b.classList.toggle('sel', t[w] === c);
+      b.style.background = rgbCss(rgbOf(c, shown.bright));
+      b.classList.toggle('sel', shown[w] === c);
       b.title = `${w}: ${T.PALETTE[c].name}`;
     }
-    brightChk.checked = !!t.bright;
-    attrInfo.textContent = `attribute $${T.attrByte(t).toString(16).toUpperCase().padStart(2, '0')}`;
+    brightChk.checked = !!shown.bright;
+    const attrs = T.rowAttrs(t), hex2 = (v) => v.toString(16).toUpperCase().padStart(2, '0');
+    const chosen = [...rowSel].sort((a, b) => a - b);
+    attrInfo.textContent = chosen.length ? `row${chosen.length > 1 ? 's' : ''} ${chosen.join(', ')}: attribute ${[...new Set(chosen.map((y) => '$' + hex2(attrs[y])))].join(' ')}` : T.hasRowColours(t) ? `attribute $${hex2(attrs[0])} in row 0; the other rows differ` : `attribute $${hex2(attrs[0])}`;
+    btnWhole.classList.toggle('on', rowSel.size === 0);
+    rowBtns.forEach((b, y) => b.classList.toggle('on', rowSel.has(y)));
+    btnUnify.disabled = !T.hasRowColours(t);
+    fineChk.checked = fineView();
     flagChks.forEach((c, i) => { c.checked = !!(t.flags & (1 << i)); });
     fgChk.checked = !!t.fg;
     btnAdd.disabled = btnDup.disabled = set.tiles.length >= T.MAX_TILES;
@@ -782,7 +828,7 @@ export function createTileEditor(container, host) {
       if (cur && JSON.stringify(cur) !== lastStored) loadSet(name, true);
       else renderAll();
     } else if (names.length) loadSet(names[0]);
-    else { name = null; set = null; hist = null; lastStored = ''; differing = []; renderAll(); }
+    else { name = null; set = null; hist = null; lastStored = ''; renderAll(); }
   }
   function select_(n) {
     if (!n || !H.list().includes(n)) return;
@@ -799,7 +845,7 @@ export function createTileEditor(container, host) {
       if (cur && JSON.stringify(cur) !== lastStored) loadSet(name, true);
       else renderAll();
     } else if (names.length) loadSet(names[0]);
-    else { name = null; set = null; hist = null; lastStored = ''; differing = []; renderAll(); }
+    else { name = null; set = null; hist = null; lastStored = ''; renderAll(); }
   }
   function destroy() {
     destroyed = true;
@@ -812,6 +858,6 @@ export function createTileEditor(container, host) {
   return {
     refresh, render: refresh, destroy, select: select_,
     /** For tests and debugging: a copy of what is being edited. */
-    getState: () => ({ name, sel, tool, zoom, set: set ? T.cloneSet(set) : null, asset: set ? T.toAsset(set) : null, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo, warnings: warns.map((w) => w.id), differing: differing.slice() }),
+    getState: () => ({ name, sel, tool, zoom, set: set ? T.cloneSet(set) : null, asset: set ? T.toAsset(set) : null, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo, warnings: warns.map((w) => w.id), differing: perRowTiles(), rowSel: [...rowSel].sort((a, b) => a - b), fineView: set ? fineView() : false }),
   };
 }

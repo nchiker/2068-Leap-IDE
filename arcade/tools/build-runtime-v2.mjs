@@ -79,7 +79,9 @@ const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITE
   // wireframe 3D (docs/ARCADE_WIREFRAME_CONTRACT.md section 3)
   'W_REC', 'W_REC_LEN', 'W_VARS', 'W_VARS_LEN', 'W_ON', 'W_MAXPTS', 'W_NEAR', 'W_QMAX', 'W_DMAX', 'RA_W0', 'RA_W1', 'RA_W2', 'RA_W3', 'RA_W4',
   // wireframe 3D in the tick (slice W2): the header bit, the descriptor pointer, the mode byte
-  'DIV_WIRE', 'GAME_WIREDESC', 'GAME_HEADER_WIRE_LEN', 'V_WIRE', 'WIRE_HAS', 'WIRE_ON'];
+  'DIV_WIRE', 'GAME_WIREDESC', 'GAME_HEADER_WIRE_LEN', 'V_WIRE', 'WIRE_HAS', 'WIRE_ON',
+  // fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md section 5; fine.asm): the mode byte, the fine variables and the areas the fine tick uses
+  'V_FINE', 'F_TBASE', 'F_INKS', 'F_LIST', 'F_OVF', 'F_NOVF', 'F_STRIP', 'F_INFO', 'F_CMAP', 'F_REC', 'F_RL', 'F_LLOW', 'F_LTOP', 'F_GUARD'];
 
 export function buildRuntime({ quiet = true } = {}) {
   // run-all --jobs: one work directory per step (the lst / sym are assembled there and copied over OUT afterwards)

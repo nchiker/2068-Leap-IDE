@@ -2,26 +2,29 @@
  * src/tools/tile-model.js — the data model of the Leap Arcade Studio tile editor (pure: no DOM, Node can import it).
  *
  * A tile set is edited as a plain object ("set"), different from the stored asset in three ways: the row bit masks are
- * integers, a tile has ONE colour attribute (the compiler reads the attribute from row 0 only, so the stored form repeats it in all 8
- * rows), and everything the editor does not understand is kept aside and written back unchanged.
+ * integers, a tile has ONE colour attribute (row 0's: the compiler reads the attribute from row 0 only, and every scene but a fine one
+ * draws the tile in it) plus, for a tile of a fine-colour game (8 x 1 colour), an optional colour of its own in each of the 8 pixel rows,
+ * and everything the editor does not understand is kept aside and written back unchanged.
  *
  *   set  = { tiles: [tile x 1..128], tilesKey: 'tiles' | 'frames', extra?: {unknown keys of the set} }
- *   tile = { bits: [8 integers 0..255, one per row, MSB = leftmost pixel, 1 = ink], ink 0..7, paper 0..7, bright 0 | 1,
+ *   tile = { bits: [8 integers 0..255, one per row, MSB = leftmost pixel, 1 = ink], ink 0..7, paper 0..7, bright 0 | 1   (row 0's colours),
+ *            rowColours?: [{ink, paper, bright} x 8]  (present only when some row differs from row 0; rowColours[0] always equals ink / paper / bright;
+ *                          absent = every row carries ink / paper / bright),
  *            flags 0..255 (bit 0 solid, 1 hazard, 2 pickup, 3..7 game-defined), fg (boolean: "sprites never pass over"),
  *            extra?: {unknown keys of the tile}, rowExtra?: [object | null x 8] (unknown keys of each row),
  *            hadFlags, hadFg: whether the stored tile had those keys (a stored tile without them is written back without them) }
  *
  * Stored form (docs/ARCADE_ASSETS.md, src/lang/arcade/arcade-assets.js convertTileset):
  *   { tiles: [ { rows: [ {bits: "2-digit upper-case hex", ink, paper, bright} x 8 ], flags, fg? , ...unknown } ], ...unknown }
- * toAsset(fromAsset(x)) deep-equals x (and serialises to the same JSON text) for every tile set of the example assets, as long as
- * the stored rows of a tile carry the same colours (the compiler ignores all but row 0, so fromAsset takes row 0's).
+ * toAsset(fromAsset(x)) deep-equals x (and serialises to the same JSON text) for every tile set of the example assets, the fine-colour
+ * ones (Starfall, Lumen: a different ink / paper / bright in each pixel row) included: no row colour is dropped.
  *
  *   fromAsset(asset) / toAsset(set)           stored <-> editing form (fromAsset throws an Error with a plain message)
  *   newTileset, newTile, cloneTile, cloneSet  creation
  *   addTile, duplicateTile, pasteTile, deleteLastTile    set operations (indices never move; see the contract, section 4)
  *   getPixel, setPixel, fill, line, drawLine, clearTile, invertTile, flipH, flipV, rotate90, shift     the pixels of one tile
- *   setColours, setFlag, setFg, attrByte      colour attribute, flags, the foreground mark
- *   tilePixels, tileIsBlank, tileUsesBlack, tileSummary, rowsDiffer     what a tile looks like / is
+ *   setColours, unifyRows, rowColoursOf, hasRowColours, setFlag, setFg, attrByte, rowAttrs     colours (the whole tile or chosen pixel rows), flags, the foreground mark
+ *   tilePixels, projectHasFine, tileIsBlank, tileUsesBlack, tileSummary, rowsDiffer     what a tile looks like / is (tilePixels(tile, {fine}): row 0's colours, or each row's)
  *   validateTileset, validateAsset            the compiler's limits (null = fine, else a message)
  *   createHistory                             undo / redo (re-exported from sprite-model.js), PALETTE, keyRGB likewise
  */
@@ -44,6 +47,7 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 const bitAt = (v, x) => (v >>> (7 - x)) & 1;
 const withBit = (v, x, on) => ((on ? (v | (0x80 >>> x)) : (v & ~(0x80 >>> x))) & 0xFF);
 const toHex2 = (v) => (v & 0xFF).toString(16).toUpperCase().padStart(2, '0');
+const sameColour = (a, b) => a.ink === b.ink && a.paper === b.paper && a.bright === b.bright;
 const inb = (x, y) => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < 8 && y >= 0 && y < 8;
 
 // ── creation ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -72,8 +76,8 @@ function attrPart(v, lo, hi, dflt, what) {
 }
 
 /**
- * The stored asset -> the editing form. A tile's colours come from its row 0 (as the compiler reads them), so rows that differ from row 0
- * lose their own colours (rowsDiffer tells which tiles). Throws an Error with a plain message when the asset cannot be read.
+ * The stored asset -> the editing form. A tile's colours are row 0's (as the compiler reads them); when the other rows carry other colours
+ * (a fine-colour tile, 8 x 1 colour) they are kept in `rowColours`, so nothing is lost. Throws an Error with a plain message when the asset cannot be read.
  */
 export function fromAsset(asset) {
   if (!isObj(asset)) throw new Error('the tile set is not an object');
@@ -92,15 +96,17 @@ export function fromAsset(asset) {
     if (!Array.isArray(rows) || rows.length !== 8) throw new Error(`tile ${i} needs exactly 8 rows`);
     const what = (y, f) => `tile ${i} row ${y} ${f}`;
     rows.forEach((r, y) => { if (!isObj(r)) throw new Error(`tile ${i} row ${y} is not an object`); });
-    const r0 = rows[0];
-    const bright = r0.bright === true ? 1 : r0.bright === false ? 0 : attrPart(r0.bright, 0, 1, DEFAULT_COLOURS.bright, what(0, 'bright'));
+    const colours = rows.map((r, y) => ({
+      ink: attrPart(r.ink, 0, 7, DEFAULT_COLOURS.ink, what(y, 'ink')),
+      paper: attrPart(r.paper, 0, 7, DEFAULT_COLOURS.paper, what(y, 'paper')),
+      bright: r.bright === true ? 1 : r.bright === false ? 0 : attrPart(r.bright, 0, 1, DEFAULT_COLOURS.bright, what(y, 'bright')),
+    }));
     const tile = {
       bits: rows.map((r, y) => parseBits(r.bits, what(y, 'bits'))),
-      ink: attrPart(r0.ink, 0, 7, DEFAULT_COLOURS.ink, what(0, 'ink')),
-      paper: attrPart(r0.paper, 0, 7, DEFAULT_COLOURS.paper, what(0, 'paper')),
-      bright,
+      ink: colours[0].ink, paper: colours[0].paper, bright: colours[0].bright,
       flags: 0, fg: false, hadFlags: false, hadFg: false,
     };
+    if (colours.some((c) => !sameColour(c, colours[0]))) tile.rowColours = colours;
     if (t.flags !== undefined && t.flags !== null) {
       if (!isInt(t.flags, 0, 255)) throw new Error(`tile ${i} flags must be a whole number 0..255, got ${JSON.stringify(t.flags)}`);
       tile.flags = t.flags; tile.hadFlags = true;
@@ -123,12 +129,12 @@ export function fromAsset(asset) {
   return set;
 }
 
-/** The editing form -> the stored asset: bits as 2-digit upper-case hex, the tile's colours in all 8 rows, unknown keys written back. */
+/** The editing form -> the stored asset: bits as 2-digit upper-case hex, each row's colours (the tile's in all 8 rows when it has no rowColours), unknown keys written back. */
 export function toAsset(set) {
   const out = {};
   out[set.tilesKey === 'frames' ? 'frames' : 'tiles'] = set.tiles.map((t) => {
     const o = {
-      rows: t.bits.map((b, y) => ({ bits: toHex2(b), ink: t.ink, paper: t.paper, bright: t.bright, ...(t.rowExtra?.[y] ? clone(t.rowExtra[y]) : {}) })),
+      rows: t.bits.map((b, y) => { const c = rowColoursOf(t)[y]; return { bits: toHex2(b), ink: c.ink, paper: c.paper, bright: c.bright, ...(t.rowExtra?.[y] ? clone(t.rowExtra[y]) : {}) }; }),
     };
     if (t.flags !== 0 || t.hadFlags) o.flags = t.flags;
     if (t.fg || t.hadFg) o.fg = !!t.fg;
@@ -139,7 +145,7 @@ export function toAsset(set) {
   return out;
 }
 
-/** Indices of the stored tiles whose rows do not all carry row 0's colours (the compiler ignores the others; fromAsset drops them). */
+/** Indices of the stored tiles whose rows do not all carry row 0's colours (fine-colour tiles: the editor keeps every row's colours in `rowColours`; it only tells the user). */
 export function rowsDiffer(asset) {
   const list = asset?.tiles ?? asset?.frames;
   if (!Array.isArray(list)) return [];
@@ -150,11 +156,13 @@ export function rowsDiffer(asset) {
 }
 
 // ── set operations (indices never move) ───────────────────────────────────────────────────────────────────────
-/** Append a blank tile with the colours of tile `like` (an index; default: the default "sky" colours). Returns its index. Throws RangeError at 128. */
+/** Append a blank tile with the colours (every row's) of tile `like` (an index; default: the default "sky" colours). Returns its index. Throws RangeError at 128. */
 export function addTile(set, { like } = {}) {
   if (set.tiles.length >= MAX_TILES) throw new RangeError(`at most ${MAX_TILES} tiles`);
   const src = Number.isInteger(like) ? set.tiles[like] : null;
-  set.tiles.push(newTile(src ? { ink: src.ink, paper: src.paper, bright: src.bright } : DEFAULT_COLOURS));
+  const t = newTile(src ? { ink: src.ink, paper: src.paper, bright: src.bright } : DEFAULT_COLOURS);
+  if (src?.rowColours) t.rowColours = clone(src.rowColours);          // a fine-colour tile's blank copy keeps the rows' colours (a sky gradient stays a gradient)
+  set.tiles.push(t);
   return set.tiles.length - 1;
 }
 /** Append a copy of tile `index` (flags, fg and unknown keys included). Returns the new index. Throws RangeError at 128 or for a bad index. */
@@ -227,8 +235,8 @@ export function invertTile(tile) { tile.bits = tile.bits.map((b) => (~b) & 0xFF)
 const reverse8 = (v) => { let o = 0; for (let x = 0; x < 8; x++) if (bitAt(v, x)) o |= 0x80 >>> (7 - x); return o; };
 /** Mirror left-right. */
 export function flipH(tile) { tile.bits = tile.bits.map(reverse8); }
-/** Mirror top-bottom. */
-export function flipV(tile) { tile.bits.reverse(); }
+/** Mirror top-bottom (a fine tile's row colours mirror with the pixels; rotate and shift leave the colours in their rows). */
+export function flipV(tile) { tile.bits.reverse(); if (tile.rowColours) { tile.rowColours.reverse(); syncRow0(tile); } }
 /** Rotate by 90 degrees (clockwise when cw, default). */
 export function rotate90(tile, cw = true) {
   const old = tile.bits.slice();
@@ -258,11 +266,51 @@ export function shift(tile, dx = 0, dy = 0, wrap = true) {
 }
 
 // ── colours, flags ────────────────────────────────────────────────────────────────────────────────────────────
-/** Set (a part of) the tile's colours: patch = {ink?, paper?, bright?}. Returns true when valid (and applied). */
-export function setColours(tile, patch) {
+const validColours = (c) => isInt(c.ink, 0, 7) && isInt(c.paper, 0, 7) && (c.bright === 0 || c.bright === 1);
+/** The colours of the 8 pixel rows as [{ink, paper, bright} x 8] (a fresh array; a tile without rowColours repeats its own colours). */
+export function rowColoursOf(tile) {
+  return tile.rowColours ? tile.rowColours.map((c) => ({ ink: c.ink, paper: c.paper, bright: c.bright }))
+    : Array.from({ length: 8 }, () => ({ ink: tile.ink, paper: tile.paper, bright: tile.bright }));
+}
+/** True when some pixel row has colours other than row 0's (a fine-colour tile). */
+export function hasRowColours(tile) { return !!tile.rowColours && tile.rowColours.some((c) => !sameColour(c, tile.rowColours[0])); }
+/** Keep ink / paper / bright equal to row 0's and drop rowColours when every row is alike (the one-colour form). */
+function syncRow0(tile) {
+  const rc = tile.rowColours;
+  if (!rc) return;
+  tile.ink = rc[0].ink; tile.paper = rc[0].paper; tile.bright = rc[0].bright;
+  if (rc.every((c) => sameColour(c, rc[0]))) delete tile.rowColours;
+}
+/**
+ * Set (a part of) the tile's colours: patch = {ink?, paper?, bright?}. `rows` (optional) is a list of pixel rows 0..7; without it the patch applies to
+ * the whole tile (every row, so a tile that had colours of its own in each row becomes one-colour). With it only those rows change; the tile keeps
+ * rowColours while the rows differ, and the tile's ink / paper / bright stay row 0's. Returns true when valid (and applied).
+ */
+export function setColours(tile, patch, rows) {
   const next = { ink: tile.ink, paper: tile.paper, bright: tile.bright, ...patch };
-  if (!isInt(next.ink, 0, 7) || !isInt(next.paper, 0, 7) || !(next.bright === 0 || next.bright === 1)) return false;
-  tile.ink = next.ink; tile.paper = next.paper; tile.bright = next.bright;
+  if (rows === undefined || rows === null) {
+    if (!validColours(next)) return false;
+    tile.ink = next.ink; tile.paper = next.paper; tile.bright = next.bright;
+    delete tile.rowColours;
+    return true;
+  }
+  if (!Array.isArray(rows) || !rows.length || !rows.every((y) => isInt(y, 0, 7))) return false;
+  const rc = rowColoursOf(tile);
+  for (const y of new Set(rows)) {
+    const c = { ...rc[y], ...patch };
+    if (!validColours(c)) return false;
+    rc[y] = c;
+  }
+  tile.rowColours = rc;
+  syncRow0(tile);
+  return true;
+}
+/** Give every pixel row the colours of row `from` (default 0): the one-colour form. Returns true when valid. */
+export function unifyRows(tile, from = 0) {
+  if (!isInt(from, 0, 7)) return false;
+  const c = rowColoursOf(tile)[from];
+  tile.ink = c.ink; tile.paper = c.paper; tile.bright = c.bright;
+  delete tile.rowColours;
   return true;
 }
 /** Turn flag bit 0..7 on or off. Returns true when valid. */
@@ -276,20 +324,35 @@ export function setFlag(tile, bit, on) {
 export function setFg(tile, on) { tile.fg = !!on; if (on) tile.hadFg = true; }
 /** The attribute byte the compiler makes: bright << 6 | paper << 3 | ink. */
 export function attrByte(tile) { return (tile.bright << 6) | (tile.paper << 3) | tile.ink; }
+/** The attribute bytes of the 8 pixel rows (what a fine scene draws; the first is attrByte). */
+export function rowAttrs(tile) { return rowColoursOf(tile).map((c) => (c.bright << 6) | (c.paper << 3) | c.ink); }
+
+/** True when some scene of the project (project.scenes, {name: {display}}) is set to fine colour (any case), so its tiles are drawn row by row. */
+export function projectHasFine(project) {
+  const sc = isObj(project) ? project.scenes : null;
+  return isObj(sc) && Object.values(sc).some((e) => isObj(e) && typeof e.display === 'string' && e.display.trim().toLowerCase() === 'fine');
+}
 
 // ── what a tile looks like ────────────────────────────────────────────────────────────────────────────────────
-/** 64 colour keys (row-major; the keys of sprite-model: 0 black, 1..7 normal, 9..15 bright), for rendering with keyRGB(key, palette). */
-export function tilePixels(tile) {
-  const out = new Int8Array(64), ik = colourKey(tile.ink, tile.bright), pk = colourKey(tile.paper, tile.bright);
-  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) out[y * 8 + x] = bitAt(tile.bits[y], x) ? ik : pk;
+/**
+ * 64 colour keys (row-major; the keys of sprite-model: 0 black, 1..7 normal, 9..15 bright), for rendering with keyRGB(key, palette).
+ * `fine: true` colours every pixel row with its own ink / paper / BRIGHT (8 x 1 colour, what a fine scene draws: arcade-fine.js finePicture);
+ * otherwise the tile has row 0's colours throughout (what every other scene draws).
+ */
+export function tilePixels(tile, { fine = false } = {}) {
+  const out = new Int8Array(64), rc = fine ? rowColoursOf(tile) : null;
+  for (let y = 0; y < 8; y++) {
+    const c = rc ? rc[y] : tile, ik = colourKey(c.ink, c.bright), pk = colourKey(c.paper, c.bright);
+    for (let x = 0; x < 8; x++) out[y * 8 + x] = bitAt(tile.bits[y], x) ? ik : pk;
+  }
   return out;
 }
 /** True when no pixel is set (the bitmap is all paper). */
 export function tileIsBlank(tile) { return tile.bits.every((b) => b === 0); }
-/** True when black shows: paper is 0 and a pixel is clear, or ink is 0 and a pixel is set (the black-bright-mix rule). */
+/** True when black shows in any pixel row: paper 0 and a clear bit, or ink 0 and a set bit (the black-bright-mix rule, per row for a fine-colour tile). */
 export function tileUsesBlack(tile) {
-  const set = tile.bits.reduce((n, b) => n + popcount(b), 0);
-  return (tile.paper === 0 && set < 64) || (tile.ink === 0 && set > 0);
+  const rc = rowColoursOf(tile);
+  return tile.bits.some((b, y) => (rc[y].paper === 0 && b !== 0xFF) || (rc[y].ink === 0 && b !== 0));
 }
 const popcount = (b) => { let n = 0; for (let v = b & 0xFF; v; v &= v - 1) n++; return n; };
 /** {pixels (set), blank, attr, flagNames, fg, text}: a one-line description for the tile strip's tooltip. */
@@ -299,6 +362,7 @@ export function tileSummary(tile, index) {
   const colour = (c) => PALETTE[c].name;
   const parts = [`${index === undefined ? 'tile' : 'tile ' + index}: ink ${colour(tile.ink)}, paper ${colour(tile.paper)}${tile.bright ? ', bright' : ''}`,
     pixels === 0 ? 'blank' : `${pixels} pixel${pixels === 1 ? '' : 's'}`];
+  if (hasRowColours(tile)) parts.push('8 x 1 colour (each pixel row has its own colours; row 0\'s are shown above)');
   if (flagNames.length) parts.push(flagNames.join(' + '));
   if (tile.fg) parts.push('foreground (sprites never pass over)');
   return { pixels, blank: pixels === 0, attr: attrByte(tile), flagNames, fg: !!tile.fg, text: parts.join('; ') };
@@ -306,7 +370,7 @@ export function tileSummary(tile, index) {
 
 // ── validation ────────────────────────────────────────────────────────────────────────────────────────────────
 /**
- * Check an editing-form set against the compiler's limits (1..128 tiles, 8 bytes of bitmap each, colours 0..7 / 0..1, flags 0..255).
+ * Check an editing-form set against the compiler's limits (1..128 tiles, 8 bytes of bitmap each, colours 0..7 / 0..1 (each row's, for a tile with rowColours), flags 0..255).
  * Returns null when fine, else a message. Whatever it accepts, validateAsset('tilesets', toAsset(set)) in src/arcade-project.js
  * accepts (that one allows up to 256 tiles, the compiler 128, so this one is the stricter).
  */
@@ -324,12 +388,16 @@ export function validateTileset(set) {
     if (!(t.bright === 0 || t.bright === 1)) return `tile ${i}: bright must be 0 or 1`;
     if (!isInt(t.flags, 0, 255)) return `tile ${i}: flags must be a whole number 0..255`;
     if (typeof t.fg !== 'boolean') return `tile ${i}: fg must be true or false`;
+    if (t.rowColours !== undefined) {
+      const rc = t.rowColours;
+      if (!Array.isArray(rc) || rc.length !== 8 || !rc.every((c) => isObj(c) && validColours(c))) return `tile ${i}: rowColours needs 8 rows of ink 0..7, paper 0..7 and bright 0 or 1`;
+      if (!sameColour(rc[0], t)) return `tile ${i}: rowColours[0] must equal the tile's own colours`;
+    }
   }
   return null;
 }
 /**
- * The same check for a STORED asset: the colours of EVERY row (as arcade-project's validateAsset does; the compiler and fromAsset read row 0
- * only), then fromAsset, then validateTileset. null = fine, else a message.
+ * The same check for a STORED asset: the colours of EVERY row (as arcade-project's validateAsset does), then fromAsset, then validateTileset. null = fine, else a message.
  */
 export function validateAsset(asset) {
   const list = isObj(asset) ? (asset.tiles ?? asset.frames) : null;

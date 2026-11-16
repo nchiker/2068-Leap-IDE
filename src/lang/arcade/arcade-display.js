@@ -2,10 +2,10 @@
  * src/lang/arcade/arcade-display.js — the per-scene display plan (pure; no DOM, no CodeMirror; Node can import it).
  * Language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md section 10 (and docs/ARCADE_PLAN.md section 4).
  *
- *   sceneDisplayPlan(ast, {scenes}) -> [{name, line, col, auto, reason, override, setting, built, notes}]   (one per SCENE, source order; never throws)
+ *   sceneDisplayPlan(ast, {scenes, version}) -> [{name, line, col, auto, reason, override, setting, built, notes}]   (one per SCENE, source order; never throws)
  *
- * The compiler reads what each scene does and says which of the plan's three display setups suits it, and why. Only the two-buffer 8 x 8 colour setup
- * is built into the runtimes, so an override can only pin it; the rest is reported (`notes` holds the warnings the compiler puts on the scene's line).
+ * The compiler reads what each scene does and says which of the plan's three display setups suits it, and why. The two-buffer 8 x 8 colour setup and, in a runtime v2 game,
+ * the 8 x 1 colour setup ('fine') are built into the runtimes, so an override can only pin one of those; the rest is reported (`notes` holds the warnings the compiler puts on the scene's line).
  *
  * WHAT A SCENE RUNS. Its `INIT` and its `FRAME`, and every PROC (`CALL`) and DEF FN (`FN`) they reach. A name is looked up in the scene first (scene-level
  * PROCs and DEF FNs shadow the game-level ones, as in the checker), then at the top level. Reachability from `FRAME` is kept apart from that from `INIT`.
@@ -18,9 +18,10 @@
  *   'hires'    else: "text only: 512 x 192 hi-res would give 64 columns".
  * `override` is `scenes[name].display` of the project (matched on the exact name, then ignoring case; 'auto' when absent or not a string); a value that is not
  * one of auto / buffers / fine / hires (any case) is kept as written in `override`, ignored, and noted. `setting` is the override unless 'auto' (or ignored),
- * else `auto`. `built` is always 'buffers'. `notes` (warning texts, no severity):
+ * else `auto`. `built` is 'buffers', except 'fine' for a scene whose setting is 'fine' in a game for runtime v2 (`version`, default 2: the least a game needs) without a WIRE3D (fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md
+ * 1.3: the scene is built with 8 x 1 colour; elsewhere the compiler reports an error on the scene's line, arcade-compile.js). `notes` (warning texts, no severity):
  *   scenes.x.display: 'q' is not a display setup (auto, buffers, fine, hires); ignored
- *   scene 'x': display 'fine' (8 x 1 colour) is not built into any runtime yet; the scene is built with two buffers      ('hires' says "(512 x 192 hi-res)")
+ *   scene 'x': display 'hires' (512 x 192 hi-res) is not built into any runtime yet; the scene is built with two buffers      (fine colour has no note any more: it is built, on v2)
  * A scene whose `auto` is not 'buffers' while its setting is gets no note: that is advice for the Studio's report.
  *
  * Language batch 7 (docs/ARCADE_LANGUAGE_BATCH7.md): a scene with the clause NOWINDOW / NOVIEW draws no window or 3D view, so "the game has a WINDOW or a VIEW3D" does not make it 'buffers' by itself (it is
@@ -102,7 +103,7 @@ export function sceneModes(ast) {
 }
 
 /** The display file offset of pixel row y, byte column c (the ZX layout). */
-const rowOff = (y, c) => ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | c;
+export const rowOff = (y, c) => ((y & 0xC0) << 5) | ((y & 7) << 8) | ((y & 0x38) << 2) | c;
 
 /** See the header: the play area over the cell picture of a record. Returns {bits, attrs, stale} (copies; `bits` and `attrs` are not changed). */
 export function wireLayer(rec, bits, attrs) {
@@ -126,16 +127,17 @@ function overrideOf(scenes, name) {
 
 /**
  * @param {object} ast  the parser's Program
- * @param {{scenes?: object}} [opts]  `scenes`: the project's scenes object, {name: {display?: 'auto'|'buffers'|'fine'|'hires'}}
+ * @param {{scenes?: object, version?: number}} [opts]  `scenes`: the project's scenes object, {name: {display?: 'auto'|'buffers'|'fine'|'hires'}}; `version`: the runtime version the game is built for (default 2)
  * @returns {{name: string, line: number, col: number, auto: 'buffers'|'fine'|'hires', reason: string, override: string,
- *            setting: 'buffers'|'fine'|'hires', built: 'buffers', notes: string[]}[]}
+ *            setting: 'buffers'|'fine'|'hires', built: 'buffers'|'fine', notes: string[]}[]}
  */
-export function sceneDisplayPlan(ast, { scenes } = {}) {
+export function sceneDisplayPlan(ast, { scenes, version = 2 } = {}) {
   const out = [];
   try {
     if (!ast || !Array.isArray(ast.scenes)) return out;
     const topProcs = byName(ast.procs, 'Proc');
     const topFns = byName(ast.decls, 'DefFn');
+    const fineOk = version === 2 && !(Array.isArray(ast.wires) && ast.wires.length > 0);       // fine colour lives in runtime v2, and not beside the wireframe tick
     const windowed = (Array.isArray(ast.windows) && ast.windows.length > 0) || (Array.isArray(ast.views) && ast.views.length > 0) || (Array.isArray(ast.wires) && ast.wires.length > 0);
     for (const sc of ast.scenes) {
       if (!sc || typeof sc !== 'object') continue;
@@ -163,12 +165,12 @@ export function sceneDisplayPlan(ast, { scenes } = {}) {
           notes.push(`scenes.${name}.display: '${raw}' is not a display setup (auto, buffers, fine, hires); ignored`);
         }
       }
-      if (chosen === 'fine' || chosen === 'hires') {
+      if (chosen === 'hires') {
         notes.push(`scene '${name}': display '${chosen}' (${WHAT[chosen]}) is not built into any runtime yet; the scene is built with two buffers`);
       }
       out.push({
         name, line: at.line ?? 1, col: at.col ?? 0, auto, reason, override,
-        setting: chosen === 'auto' ? auto : chosen, built: 'buffers', notes,
+        setting: chosen === 'auto' ? auto : chosen, built: chosen === 'fine' && fineOk ? 'fine' : 'buffers', notes,
         ...(sc.mode ? { mode: sc.mode } : {}),
       });
     }

@@ -140,10 +140,11 @@ try {
 
   // ── shooter: a cell map ──
   const names = await evaluate("t.load('shooter')");
-  check('loading the shooter project (a "project" event) selects its map "sky"', names.join() === 'sky' && (await state()).name === 'sky');
+  await evaluate("(t.host.selectAsset('maps', 'sky'), true)");        // (Starfall has four maps: sky, logo, press, gameover)
+  check('loading the shooter project (Starfall: four cell maps) and choosing its map "sky" selects it', names.slice().sort().join() === 'gameover,logo,press,sky' && (await state()).name === 'sky');
   let st = await state();
-  check('"sky" is a cell map the source uses, drawn with the tile set "gfx" (16 tiles + a blank entry in the palette)',
-    st.role === 'cell' && st.roleKnown && st.tileset === 'gfx' && st.tileCount === 16 && st.paletteCount === 17, JSON.stringify({ role: st.role, ts: st.tileset, pal: st.paletteCount }));
+  check('"sky" is a cell map the source uses, drawn with the tile set "gfx" (Starfall\'s 116 tiles + a blank entry in the palette)',
+    st.role === 'cell' && st.roleKnown && st.tileset === 'gfx' && st.tileCount === 116 && st.paletteCount === 117, JSON.stringify({ role: st.role, ts: st.tileset, pal: st.paletteCount }));
   check('the canvas is w x cellPx wide, the ruler and the camera row are hidden for a cell map',
     await evaluate("(() => { const c = document.querySelector('[data-role=map-canvas]'), z = t.editor.getState().cellPx; return c.width === 32 * z && c.height === 24 * z && document.querySelector('[data-role=ruler]').hidden && document.querySelector('[data-role=camera-row]').hidden; })()"));
   check('no warnings for the shooter\'s own map', (await warnIds()).length === 0, (await warnIds()).join());
@@ -309,20 +310,35 @@ try {
   await setSelect('[data-role=tileset-select]', '');
   check('choosing "(auto)" removes it again', (await asset('sky')).tileset === undefined);
 
-  // the background-attr-mix marker
-  await click('.mapd-pi[data-tile="8"]');                        // gfx tile 8 has another attribute (0x46) than tiles 0..3 (0x47)
+  // the background-attr-mix marker. Starfall is a fine-colour game (no such warning for it, and its art has many attributes), so this block works on a plain project:
+  // the scenes' display setting is cleared and the map is made all tile 0 (one attribute), then one cell of a tile with another attribute is painted. Both are put back after.
+  const keepSky = await asset('sky'), keepScenes = await evaluate('JSON.parse(JSON.stringify(t.project.scenes))');
+  const other = await evaluate(`(() => {
+    const ts = t.host.getAsset('tilesets', 'gfx').tiles, attr = (x) => { const r = x.rows[0]; return (r.bright << 6) | (r.paper << 3) | r.ink; };
+    const i = ts.findIndex((x, k) => k > 0 && attr(x) !== attr(ts[0]) && !(x.flags & 1) && x.fg !== true);
+    const m = t.host.getAsset('maps', 'sky'); m.cells = new Array(m.w * m.h).fill(0);
+    t.project.scenes = {};
+    t.externalSet('maps', 'sky', m);
+    return i;
+  })()`);
+  check('a plain project and an all-tile-0 map have no background-attr-mix (the sky map of a fine game would not either)', other > 0 && !(await warnIds()).includes('background-attr-mix'), String(other));
+  await click(`.mapd-pi[data-tile="${other}"]`);                  // a tile with another attribute than tile 0
   await key('p');
   await clickCell(15, 15);
   st = await state();
   check('painting a minority-attribute tile raises background-attr-mix, one cell is marked and the palette tile carries a marker',
-    st.warnings.includes('background-attr-mix') && st.minority === 1 && await evaluate("document.querySelector('.mapd-pi[data-tile=\"8\"]').classList.contains('warn')"), JSON.stringify(st.warnings));
+    st.warnings.includes('background-attr-mix') && st.minority === 1 && await evaluate(`document.querySelector('.mapd-pi[data-tile="${other}"]').classList.contains('warn')`), JSON.stringify(st.warnings));
   const mk = await pixel(15, 15, 1, Math.floor((await state()).cellPx / 2));
   check('the marked cell is outlined in amber on the canvas', mk[0] > 230 && mk[1] > 180 && mk[2] < 60, JSON.stringify(mk));
   check('the warning text is listed under the canvas', await evaluate("[...document.querySelectorAll('[data-role=warnings] li')].some((l) => l.dataset.id === 'background-attr-mix' && /sprite/.test(l.textContent))"));
   await shot('02-attr-mix');
+  await evaluate(`(t.project.scenes = { title: { display: 'fine' }, play: { display: 'fine' }, over: { display: 'fine' } }, t.externalSet('maps', 'sky', t.host.getAsset('maps', 'sky')), true)`);
+  check('the same map in a project whose every scene is fine colour has no background-attr-mix any more (a sprite carries its own ink there)', !(await state()).warnings.includes('background-attr-mix') && (await state()).minority === 0);
+  await evaluate(`(t.project.scenes = {}, t.externalSet('maps', 'sky', t.host.getAsset('maps', 'sky')), true)`);
   await clickCell(15, 15, { button: 'right' });
   st = await state();
-  check('erasing that cell removes the warning and the marker', !st.warnings.includes('background-attr-mix') && st.minority === 0 && !(await evaluate("document.querySelector('.mapd-pi[data-tile=\"8\"]').classList.contains('warn')")));
+  check('erasing that cell removes the warning and the marker', !st.warnings.includes('background-attr-mix') && st.minority === 0 && !(await evaluate(`document.querySelector('.mapd-pi[data-tile="${other}"]').classList.contains('warn')`)));
+  await evaluate(`(t.project.scenes = ${JSON.stringify(keepScenes)}, t.externalSet('maps', 'sky', ${JSON.stringify(keepSky)}), true)`);
 
   // undefined tile: a tile set that lost tiles
   const gfx = await evaluate("t.host.getAsset('tilesets', 'gfx')");

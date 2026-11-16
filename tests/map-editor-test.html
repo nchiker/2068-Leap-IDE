@@ -71,7 +71,7 @@ const editor = createMapEditor(document.getElementById('mount'), host);
 async function load(ex) {
   const [arc, assets] = await Promise.all([fetch(`../arcade/examples/${ex}.arc`).then((r) => r.text()), fetch(`../arcade/examples/${ex}.assets.json`).then((r) => r.json())]);
   const p = exampleProject(ex, arc, assets);
-  project.files = p.files; project.assets = p.assets;
+  project.files = p.files; project.assets = p.assets; project.scenes = p.scenes;     // (the scenes carry a fine game's display setting)
   log.sets.length = 0; log.bad.length = 0;
   fire({ type: 'project', source: 'studio' });
   return Object.keys(project.assets.maps);

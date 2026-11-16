@@ -43,6 +43,8 @@ export const SUITES = [
   'tests/arcade-m5.mjs',
   'tests/arcade-blockfall.mjs',
   'tests/arcade-starfall.mjs',
+  'tests/arcade-lumen.mjs',                     // Lumen (the fine colour showcase, a maze chase): a bot plays it on the real runtime (full mazes and small caves), interpreter equal, the rules, the picture, >= 99 % of the ticks at 20 Hz, the beam
+  'tests/arcade-starfall-fine.mjs',            // Starfall's fine-colour play scene: every picture against the interpreter's, >= 95 % of the ticks at 20 Hz (the script and late waves), 0 broken frames on the beam
   'tests/arcade-m6-compiler.mjs',
   'tests/arcade-m6-platformer.mjs',
   'tests/arcade-runner.mjs',
@@ -65,6 +67,8 @@ export const SUITES = [
   'tests/arcade-m15-compiler.mjs',
   'tests/arcade-m17-compiler.mjs',
   'tests/arcade-m17-interp.mjs',
+  'tests/arcade-m19-compiler.mjs',              // fine colour F3a: the scenes setting, plan, errors, descriptor and RT_FINEMODE calls, finePicture, the interpreter's fine records, byte identity of every non-fine program
+  'tests/arcade-m19-differential.mjs',          // fine colour F3b: the compiled game on the real v2 runtime against the interpreter, state and picture after every tick, switches fine <-> two-buffer in every direction, the frames around a switch (contract 4.3)
   'tests/arcade-k-warnings.mjs',                 // stage 1 K1 / K2: the two-blacks warnings (and that they fire on today's games)
   'tests/arcade-orbit.mjs',                      // the wireframe sample game "Orbit Gates" on the reference interpreter (the runtime part is a TODO in the file)
   'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
@@ -118,6 +122,8 @@ export const SUITES = [
   'arcade/tests/m15-runtime-music.mjs',
   'arcade/tests/m17-runtime-wire.mjs',
   'arcade/tests/m17-runtime-tick.mjs',
+  'arcade/tests/m19-runtime-fine.mjs',
+  'arcade/tests/m19-runtime-perf.mjs',
 ];
 
 /**
@@ -143,9 +149,11 @@ export const MUTATION_SUITES = [
   { file: 'arcade/tests/m14-mutations.mjs', shards: 12, runtimes: ['v3', 'v4'], tests: ['arcade/tests/m14-runtime-mode.mjs', 'tests/arcade-m14-differential.mjs', 'arcade/tests/m7-runtime-regs.mjs', 'tests/arcade-m13-differential.mjs', 'arcade/tests/m11-runtime-bank.mjs'] },
   { file: 'arcade/tests/m15-mutations.mjs', shards: 15, runtimes: ['v2'], tests: ['arcade/tests/m15-runtime-music.mjs', 'arcade/tests/m10-runtime-sound.mjs'] },
   { file: 'arcade/tests/m17-mutations.mjs', shards: 33, runtimes: ['v2'], tests: ['arcade/tests/m17-runtime-wire.mjs', 'arcade/tests/m17-runtime-tick.mjs'] },
+  { file: 'arcade/tests/m19-mutations.mjs', shards: 12, runtimes: ['v2'], tests: ['arcade/tests/m19-runtime-fine.mjs'] },
   { file: 'arcade/tests/m15c-mutations.mjs', shards: 2, src: ['src/lang/arcade/'], tests: ['tests/arcade-m15-compiler.mjs', 'tests/arcade-m15-differential.mjs', 'tests/arcade-m10-compiler.mjs'] },
   { file: 'arcade/tests/m16c-mutations.mjs', shards: 8, src: ['src/lang/arcade/'], tests: ['tests/arcade-emitter-opt.mjs', 'tests/arcade-codegen-exhaustive.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m5.mjs'] },
   { file: 'arcade/tests/m18c-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-k-warnings.mjs', 'tests/arcade-assetcheck.mjs'] },
+  { file: 'arcade/tests/m19c-mutations.mjs', shards: 8, src: ['src/lang/arcade/', 'arcade/tools/arcadec.mjs'], tests: ['tests/arcade-m19-compiler.mjs', 'tests/arcade-display.mjs', 'tests/arcade-m17-interp.mjs'] },
 ];
 
 /** Steps in this group never run at once: the browser tests choose Chrome's remote-debugging port at random (9300 + random 500, the sound editor's 9800 + random 500), so two together can collide. */

@@ -101,19 +101,22 @@ the new scene's `INIT` when `FRAME` executed an `ENTER`.
   pose in `INIT`.
 * **Overlaying scene variables** in the same RAM (each scene's slots are separate); worthwhile only when `GAME_VARS` fills up.
 * **Per-scene frame rate**, **a run-time scene index** (`ENTER n`), `CALL SCENE` / return to the previous scene, scene transitions (fades): none is in the language.
-* **Display setups other than the two-buffer 8 x 8 colour mode** (section 10). The plan's "the runtime switches setup at the scene change" has nothing to switch between yet: only one setup is built.
+* **Display setups other than the two-buffer 8 x 8 colour mode and fine colour** (section 10). The plan's "the runtime switches setup at the scene change" now switches between those two (v2 only: `RT_FINEMODE`); 512 x 192 hi-res is not built.
 
 ## 10. Per-scene display plan and override (docs/ARCADE_PLAN.md section 4)
-The compiler reads each scene and reports which of the plan's three setups suits it, and why; the project may override per scene; **only the two-buffer setup is built into the runtimes**, so today the
-override can only pin it and the report says what is not built.
-* `arcade-display.js`: `sceneDisplayPlan(ast, {scenes})` (pure) -> `[{name, line, col, auto: 'buffers' | 'fine' | 'hires', reason, override, setting, built: 'buffers', notes: []}]`.
+The compiler reads each scene and reports which of the plan's three setups suits it, and why; the project may override per scene; **the two-buffer setup is built into every runtime and `fine` (8 x 1 colour) into runtime v2 only** (fine colour, 2026-11-15: `docs/ARCADE_FINE_COLOUR_CONTRACT.md`); `hires` is not built, so that override still only warns.
+* `arcade-display.js`: `sceneDisplayPlan(ast, {scenes, version})` (pure) -> `[{name, line, col, auto: 'buffers' | 'fine' | 'hires', reason, override, setting, built: 'buffers' | 'fine', notes: []}]`.
   The code a scene runs is its `INIT` and `FRAME` and every PROC / DEF FN they reach (scene-level and game-level); `override` is `project.scenes.<name>.display` (`auto` when absent).
   `auto` is `buffers` ("two display files flipped each tick, because sprites move" / "because the window or 3D view is drawn" / "because FRAME redraws text or tiles") when the reachable code has `SHOW` or
   `HIDE`, or the game has a `WINDOW` / `VIEW3D`, or code reachable from `FRAME` uses `PRINT`, `TILE`, `FILL`, `FILLC`, `COPY`, `LOADMAP` or `CLS`; otherwise `fine` ("a static picture: 8 x 1 colour
   would give a colour per pixel row") when it draws tiles or a map in `INIT`, else `hires` ("text only: 512 x 192 hi-res would give 64 columns"). `setting` is the override unless `auto`.
 * `compile(text, {runtime, image, assets, scenes})` returns `out.scenes` (that list) and warnings on the scene's line: an override that is not one of `auto buffers fine hires`
-  (`scenes.x.display: 'q' is not a display setup (auto, buffers, fine, hires); ignored`), and `fine` / `hires` (`scene 'x': display 'fine' (8 x 1 colour) is not built into any runtime yet; the scene is
-  built with two buffers`). A report line "would suit fine" when `auto` is not `buffers` is advice and gives no warning.
+  (`scenes.x.display: 'q' is not a display setup (auto, buffers, fine, hires); ignored`), and `hires` (`scene 'x': display 'hires' ... is not built into any runtime yet; the scene is built with two buffers`).
+  **`fine` is built on v2** (fine colour, `docs/ARCADE_FINE_COLOUR_CONTRACT.md` section 1): `built` is `'fine'` for a scene the project sets to `fine` in a game that compiles for runtime v2 with no `WIRE3D`
+  (only the project's own setting counts: a scene whose `auto` is `fine` is built with two buffers like any other), and `compile` calls `RT_FINEMODE` at that scene's `ENTER`. Everywhere else the setting is an **error on the scene's line**
+  (the section 1 errors of the contract, `arcade-compile.js`): `scene 'x': fine colour (display 'fine') needs runtime v2; this game uses WINDOW | VIEW3D (runtime v3 | v4)` (or `... this game is built for runtime vN` when no
+  word decides), and `scene 'x': fine colour (display 'fine') cannot be used in a WIRE3D game`. The setting comes from the assets file's top-level `"scenes"` key or `arcadec --scenes <file.json>`
+  (which wins). The scene's source does not change. A report line "would suit fine" when `auto` is not `buffers` is advice and gives no warning.
 * `src/arcade-project.js`: `validateProject` keeps `scenes` as an object `{name: {display?: 'auto'|'buffers'|'fine'|'hires', ...}}`, dropping a non-object entry with a warning; `setSceneDisplay(project,
   name, value)` (`auto` removes the key).
 
@@ -121,7 +124,7 @@ override can only pin it and the report says what is not built.
 * **Symbols tab, Scenes group**: each scene `name` with `(start)` on the first, and its `ENTER` targets (`title (start) -> play`); a click goes to the `SCENE` line. `scanArcade` gets `enters:
   [{from, to, line}]` (`from` the scene name or null for a top-level PROC).
 * **Scenes panel** (project panel, left, under the assets): one row per scene of the last compile: name, a start marker, the plan text (`auto: two buffers, because sprites move`), a select `Auto` / `Two buffers` /
-  `8x1 colour (not built yet)` / `Hi-res text (not built yet)` (the last two disabled while the runtime lacks them, still shown if a loaded project carries them), which calls `setSceneDisplay`, marks the project
+  `Finer colour (8 x 1)` (offered for a v2 game without `WIRE3D`) / `Wider text (not built yet)` (the plan's hi-res) (disabled while the runtime lacks it, still shown if a loaded project carries it), which calls `setSceneDisplay`, marks the project
   changed and recompiles. The panel is empty for a one-scene game with no `ENTER`.
 * The size panel gets a `Scenes` row (`3 scenes`), problems show the display warnings, and the scene examples (below) are in the Examples menu.
 

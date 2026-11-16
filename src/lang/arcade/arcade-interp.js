@@ -47,6 +47,9 @@
  *     before the first tick like any other (the first tick starts frameDiv refreshes after INIT in this model).
  *   - STR$(n) is only valid as a PRINT item (or joined to text with +); there are no string variables.
  *
+ * ── Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 6): `opts.scenes` ({name: {display}}, as compile() takes it) says which scenes are built with 8 x 1 colour (arcade-display.js sceneDisplayPlan, version `opts.version ?? 2`).
+ *   Only in a game with such a scene: every record has `fine` (true while a fine scene is the current one) and the result has `fine` {scenes: [bool per scene], tileRows (count x 8 row attributes | null), tileBytes (9 per tile |
+ *   null), assets: [{h, data, inks, phases} | null] (per asset index), instAsset}: with a record's cells / attrs / sprites that is what finePicture (arcade-fine.js) draws the picture from. No other program's records or result change.
  * ── M4a additions (v2 runtime, `opts.version >= 2`; docs/ARCADE_RUNTIME_API_V2.md) ───────────────────────────────────────────
  *   - Arrays `DIM a(n)`: n + 1 16-bit elements, all 0 at the start. An index outside 0..n reads 0 and a write is ignored (the value
  *     and the index are still evaluated, index first). The record has `arrays: {NAME: [n + 1 values]}` beside `vars`.
@@ -187,6 +190,8 @@ import { assetTables, lookupAsset, convertTileset, convertSfx, convertSfxC, conv
 import { createSoundChip } from './arcade-sound.js';
 import { convertViewMap, cosa as viewCosa, sina as viewSina, fxmul as viewFxmul, wallAt, setWallAt, clampPose, billboardRadius } from './arcade-view.js';
 import { areaOf as wireAreaOf, clearArea as wireClear, drawModel as wireDrawModel, drawLine as wireDrawLine, EYE0 as WIRE_EYE0, modelError as wireModelError } from './arcade-wire.js';
+import { sceneDisplayPlan } from './arcade-display.js';
+import { convertSprite } from './arcade-codegen.js';
 import { convertWorldMap, scanSpriteUse, ratioCode, camMax as camMaxOf, buildTileFlags, worldTile as winWorldTile, tileFlags as winTileFlags, tileHit as winTileHit } from './arcade-window.js';
 
 export const wrap16 = (v) => ((v + 32768) & 0xFFFF) - 32768;
@@ -444,6 +449,10 @@ export function interpret(ast, opts = {}) {
   // language batch 7: does the current scene show the window / 3D view? A scene with NOWINDOW / NOVIEW does not: it runs as a game without the window / view would (positions clamped to the screen by the 2D
   // sprite rule, HIT on the hot boxes); the world / view state (camera, world, pose, walls) is kept and used by the world words as ever. Set by every scene entry, the first one at the start.
   const hasModes = sceneList.some((sc) => sc && sc.mode);
+  // fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 6): `opts.scenes` is the project's scenes object, as compile() takes it; the plan says which scenes are built fine (a game for runtime v2 without WIRE3D). Only a game with such a scene
+  // has the record key `fine` and the result key `fine`, so the records of every other program are exactly what they were.
+  const fineScenes = opts.scenes ? sceneDisplayPlan(ast, { scenes: opts.scenes, version: opts.version ?? 2 }).map((sc) => sc.built === 'fine') : [];
+  const hasFine = fineScenes.some(Boolean);
   let screenOnly = !!sceneList[0]?.mode;
   const fnTable = new Map(), procTable = new Map();
   const clock = opts.clock ?? null;
@@ -475,7 +484,7 @@ export function interpret(ast, opts = {}) {
     for (const r of vRecs) vars[r.key] = cellOf(r).v;
     for (const r of aRecs) arrays[r.key] = cellOf(r).arr.slice();
     return {
-      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : wire ? 'wire' : 'screen' } : {}), vars, arrays, border, sprites: spr.map(copySpr), events,
+      tick, scene: curScene, ...(hasModes ? { show: screenOnly ? 'screen' : win ? 'window' : view ? 'view' : wire ? 'wire' : 'screen' } : {}), ...(hasFine ? { fine: fineScenes[curScene] === true } : {}), vars, arrays, border, sprites: spr.map(copySpr), events,
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       ...(wire ? { wire: { on: wire.on, fresh: wire.fresh, eye: { ...wire.eye }, r0: wire.r0, r1: wire.r1, attr: wire.attr, bits: wire.bm.slice() } } : {}),
@@ -1138,6 +1147,15 @@ export function interpret(ast, opts = {}) {
     }
   };
 
+  /** What finePicture (arcade-fine.js) needs besides a record: which scenes are fine, the tiles' row attributes and bitmaps, and every sprite asset's blit rows, row inks and phases. */
+  const fineInfo = () => ({
+    scenes: fineScenes.slice(),
+    tileRows: tileset ? tileset.rowAttrs : null,
+    tileBytes: tileset ? tileset.bytes : null,
+    assets: assetObjs.map((as, a) => { try { if (!as) return null; const c = convertSprite(as); return { h: c.h, data: c.data, inks: c.inks, phases: assetPhases[a] }; } catch { return null; } }),
+    instAsset: instAsset.slice(),
+  });
+
   tick = 0;
   events = [];
   playN = 0; musicN = 0; rndN = 0;
@@ -1154,5 +1172,5 @@ export function interpret(ast, opts = {}) {
     execute('FRAME'); settle();
     ticks.push(snapshot(events));
   }
-  return { init, ticks, varNames, arrNames, scenes: sceneList.map((n) => n.name), spriteNames: sprites, sfxNames, ...(songMode ? { songNames } : {}), frameDiv, instAsset, assetPhases };
+  return { init, ticks, varNames, arrNames, scenes: sceneList.map((n) => n.name), spriteNames: sprites, sfxNames, ...(songMode ? { songNames } : {}), frameDiv, instAsset, assetPhases, ...(hasFine ? { fine: fineInfo() } : {}) };
 }

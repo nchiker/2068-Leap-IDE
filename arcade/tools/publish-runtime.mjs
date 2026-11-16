@@ -29,6 +29,7 @@ const EXAMPLES = [
   { id: 'runner', title: 'Leap Runner (4 levels)', about: 'The platformer with four levels, more than the 16 KB game area holds: the worlds are banked into the cartridge (DOCK chunk 2) and loaded with WORLD. Keys: O P move, Q or Space jump, A drops through planks. Needs the v3 runtime.' },
   { id: 'vaults', title: 'Vaults (3D maze)', about: 'A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot; a title song (MUSIC). Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.' },
   { id: 'blockfall', title: 'Blockfall', about: 'A falling-blocks puzzle: tiles and text only, no sprites; a three-channel song plays during the game (MUSIC: the effects borrow its drum channel). Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.' },
+  { id: 'lumen', title: 'Lumen (maze chase)', about: 'A maze chase in fine colour (8 x 1 colour): eat every light orb, take a prism to turn the four shades pale and send them home for 200 to 1600 points, clear caves that get faster and alternate between two mazes; title and in-game songs (MUSIC). Keys: Q A O P move; Space or fire starts the game.' },
   { id: 'orbit', title: 'Orbit Gates (wireframe 3D)', about: 'A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.' },
 ];
 
@@ -63,7 +64,7 @@ for (const ex of EXAMPLES) {
   const assets = JSON.parse(readFileSync(join(ARCADE, 'examples', `${ex.id}.assets.json`), 'utf8'));
   const project = exampleProject(ex.title, arc, assets);
   const v = requiredRuntime(arc, assets).version, need = v >= 2 && v <= 4 ? v : 2;
-  const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets });
+  const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets, scenes: assets.scenes });
   if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
   // TWO-BLACKS ALLOWANCE (stage 1 K1; remove in stage 3, K4): the "BRIGHT 1 on black paper" warning fires on today's example games; it is printed, not fatal. Any other warning fails.
   const otherWarnings = [];

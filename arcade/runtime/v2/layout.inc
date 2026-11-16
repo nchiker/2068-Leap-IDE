@@ -399,3 +399,46 @@ W_VARS_END      EQU W_VARS+124
     ASSERT W_VARS_END <= W_VARS+W_VARS_LEN && W_VARS+W_VARS_LEN <= T3 && W_REC+W_REC_LEN <= W_VARS
     ASSERT POOL_B+45*PHASE_LEN-POOL_A_SLOTS*PHASE_LEN <= W_REC    ; phase slots 32..44 end below W_REC
     ASSERT (W_REC & $FF) == 0
+
+; ---------------------------------------------------------------------------------------------------------------
+; Fine colour (SCLD mode 2, 8x1 colour; docs/ARCADE_FINE_COLOUR_CONTRACT.md sections 3a, 4, 5; fine.asm).  ADDITIVE: nothing above changed.
+; Variables in $E062-$E06F (zeroed by the boot).  The areas below belong to fine.asm only while V_FINE = 1 (in every other state they are what the
+; rest of this file says: attributes, the second dirty map, SPR_DRAWN, phase pool B).  A game with a fine scene has at most 32 phases (the linker
+; checks; RT_FINEMODE refuses ON when the boot handed out more), so POOL_B is never phase art there.
+; ---------------------------------------------------------------------------------------------------------------
+V_FINE          EQU VARS+$62    ; byte: 0 = no fine scene running, 1 = running (RT_FINEMODE)
+F_TBASE         EQU VARS+$63    ; word: tile_rows - 1024 (so F_TBASE + 8 v = the row attributes of a tile cell of value v), 0 = no tileset
+F_INKS          EQU VARS+$65    ; word: sprite_inks (asset a's row k ink at + 16 a + k)
+F_LIST          EQU VARS+$67    ; word: the first entry of the update list (the publish's SP)
+F_OVF           EQU VARS+$69    ; byte: cell rows 0 .. F_OVF - 1 did not fit the list: the publish composes them itself, first (0 = none)
+F_NOVF          EQU VARS+$6A    ; word: ticks whose update did not fit the list (the tests read it)
+F_SP            EQU VARS+$6C    ; word: the SP saved while SP walks the list
+F_R             EQU VARS+$6E    ; byte: compose: the cell row
+F_M             EQU VARS+$6F    ; byte: compose: an instance / the marked columns left
+F_STRIP         EQU DATTR0      ; $5800: the strip (one cell row being composed): column c, pixel row k at + 8 c + k; colours at + $100
+F_INFO          EQU DATTR0+$200 ; $5A00: 16 x F_INFO_LEN bytes, the new window of each visible instance (fine.asm I_*)
+F_INFO_LEN      EQU 16
+F_CMAP          EQU DIRTY1      ; the cells to recompose, one bit each (the layout of a dirty map; mark_dirty sets them with the dirty cells)
+F_REC           EQU SPR_DRAWN   ; 16 x 4: what the screen shows of each instance: flag (1 = drawn), x rounded, y, asset
+F_RLC           EQU SPR_DRAWN+64        ; 24 bytes: the instances in each cell row's list
+F_RBITS         EQU SPR_DRAWN+88        ; 5 bytes: the four F_CMAP bytes of the cell row being composed and a 0
+F_COLS          EQU SPR_DRAWN+93        ; 32 bytes: its marked columns
+F_RL            EQU DATTR1      ; $7800: 24 x 16: per cell row, the visible instances (ascending) whose window meets it
+F_LLOW          EQU POOL_B      ; the update list's lowest byte: all of phase pool B ($F000-$FA7F)
+F_LTOP          EQU T3          ; $FA80 (the end of phase pool B): the list is pushed downwards from here (T3 is not touched)
+F_RMASK         EQU DATTR1+$180     ; $7980: 24 x 4 (byte 4 r used): the pixel rows (bit k = row k) of cell row r that changed instance windows cover
+F_FV            EQU DATTR1+$1E0     ; $79E0: the compose's per-row values:
+F_GP            EQU F_FV            ;   byte: the glyph plane of pixel row K0 (the first row recomposed)
+F_TB0           EQU F_FV+1          ;   word: F_TBASE + K0
+F_NW            EQU F_FV+3          ;   word: N (the rows K0 .. K1 recomposed), 0
+F_TMASK         EQU F_FV+5          ;   byte: $80 with a tileset, 0 without (ON)
+F_K1            EQU F_FV+6          ;   byte: K1, the last row recomposed
+F_SCR1          EQU F_FV+7          ;   byte: the screen page of pixel row K1 of the cell row
+F_DENT          EQU F_FV+8          ;   word: the diff's entry (block 8 - N)
+F_BENT          EQU F_FV+10         ;   word: the background's entry (block 8 - N)
+F_K0            EQU F_FV+12         ;   byte: K0
+F_LASTM         EQU F_FV+13         ;   byte: the rows (bit k = row k) these values are for (0 = none: ON)
+F_LOWBIT        EQU DATTR1+$200     ; $7A00: the index of the lowest set bit of each byte (ON builds it)
+F_GUARD         EQU 48              ; bytes kept free below the list (pushes of calls inside the compose and of the frame interrupt land there)
+    ASSERT F_TBASE > V_WIRE && F_M < VARS+$70 && F_RBITS+5 <= SPR_DRAWN+128 && (F_RBITS>>8) == ((F_RBITS+4)>>8) && F_COLS+32 <= SPR_DRAWN+128
+    ASSERT (F_STRIP&$FF) == 0 && F_INFO+16*F_INFO_LEN <= DATTR0+DATTR_LEN

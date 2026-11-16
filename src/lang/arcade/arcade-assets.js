@@ -1,7 +1,8 @@
 /**
  * src/lang/arcade/arcade-assets.js — Leap Arcade asset converters for milestone M3 (pure; no DOM, no node: imports).
  *
- *   convertTileset(asset)   -> {count, bytes, tiles}   bytes = count x (8 bitmap bytes + 1 attribute byte), the runtime v1 format
+ *   convertTileset(asset)   -> {count, bytes, tiles, flags, flagsProblem, rowAttrs, rowAttrsProblem}   bytes = count x (8 bitmap bytes + 1 attribute byte), the runtime v1 format; rowAttrs = count x 8 row attributes (fine colour)
+ *   tileRowAttrs(tile)      -> Uint8Array(8)   the tile's eight row attributes (bright<<6 | paper<<3 | ink per row)
  *   convertSfx(asset)       -> {records, channels, bytes}   one channel: 4 bytes per tick + a 4-byte terminator (tone_hi byte $FF); three channels: a register delta stream (batch 5)
  *   convertMap(asset, n)    -> {w, h, cells, bytes}    bytes = the 768 CELL_TILE bytes (tile = 128 + index, blank = 32)
  *   lookupAsset(table, ...names) -> asset | undefined  exact name first, then case-insensitive
@@ -79,13 +80,23 @@ export function tileAttr(row0, what = 'tile') {
   return (bright << 6) | (paper << 3) | ink;
 }
 
+/** The eight row attributes of a tile (fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md 2 and 6): row k = bright<<6 | paper<<3 | ink, the defaults and range checks of tileAttr. Returns 8 bytes. */
+export function tileRowAttrs(tile, what = 'tile') {
+  const rows = tile?.rows;
+  const out = new Uint8Array(8);
+  for (let k = 0; k < 8; k++) out[k] = tileAttr(rows?.[k], `${what} row ${k}`);
+  return out;
+}
+
 export function convertTileset(asset) {
   const tiles = asset?.tiles ?? asset?.frames;
   if (!Array.isArray(tiles)) throw new Error('the tileset has no "tiles" array');
   if (tiles.length < 1) throw new Error('the tileset has no tiles');
   if (tiles.length > MAX_TILES) throw new Error(`the tileset has ${tiles.length} tiles; at most ${MAX_TILES} are supported`);
   const bytes = new Uint8Array(tiles.length * 9);
+  const rowAttrs = new Uint8Array(tiles.length * 8);   // fine colour: the eight row attributes of every tile (`bytes` is unchanged)
   const flags = new Array(tiles.length).fill(0);
+  let rowAttrsProblem = null;                  // fine colour: the first tile row (1..7) whose ink / paper / bright is out of range; only a fine scene refuses it
   let flagsProblem = null;                     // language batch 2: a tile's flags (0..255); only a WINDOW game needs them, so a bad value is reported there
   tiles.forEach((t, i) => {
     const f = t?.flags;
@@ -94,8 +105,9 @@ export function convertTileset(asset) {
     if (!Array.isArray(rows) || rows.length !== 8) throw new Error(`tile ${i} needs exactly 8 rows`);
     rows.forEach((r, y) => { bytes[i * 9 + y] = bits8(r?.bits, `tile ${i} row ${y} bits`); });
     bytes[i * 9 + 8] = tileAttr(rows[0], `tile ${i}`);
+    try { rowAttrs.set(tileRowAttrs(t, `tile ${i}`), i * 8); } catch (e) { rowAttrsProblem ??= e.message; rowAttrs.fill(bytes[i * 9 + 8], i * 8, i * 8 + 8); }   // (rows 1..7 are only read by a fine scene, so a bad one is only reported there)
   });
-  return { count: tiles.length, bytes, tiles, flags, flagsProblem };
+  return { count: tiles.length, bytes, tiles, flags, flagsProblem, rowAttrs, rowAttrsProblem };
 }
 
 /** The silent record that pads a shorter channel of a multi-channel effect: tone 0, vol 0, noise 0, mix 7 (both off). */

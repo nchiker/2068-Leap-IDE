@@ -20,6 +20,7 @@ import { cpuHz, tStatesPerFrame } from './tsrun/machine.js';
 import { STUDIO_PROFILES } from './src/lang/profiles.js';
 import { setAssetSource } from './src/lang/arcade/editor.js';
 import { inputHints, scanArcade, scanRoles } from './src/lang/arcade/arcade-scan.js';
+import { parse as parseArcade } from './src/lang/arcade/arcade-parse.js';
 import { checkAssets } from './src/lang/arcade/arcade-assetcheck.js';
 import { toggleHelp, setHelpProfile } from './src/help.js';
 import { createSymbolsTool } from './src/tools/symbols.js';
@@ -550,8 +551,17 @@ function renderProject() {
 
 // ── Scenes group (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md section 11) ──
 // Only the display setups that are built are offered (a loaded project may carry another one: it is shown, as "unknown" or "not built yet").
+// "Finer colour" (8 x 1 colour, fine colour F4) is built in a game for runtime v2 without WIRE3D: it is offered there; elsewhere it is listed only when the project already carries it,
+// and the compiler's error (docs/ARCADE_FINE_COLOUR_CONTRACT.md 1.2) is in the problems list.
 const DISPLAY_CHOICES = [['auto', 'Automatic'], ['buffers', 'Two screen buffers']];
-const DISPLAY_LABEL = { fine: 'finer colour (not built yet)', hires: 'wider text (not built yet)' };
+const FINE_CHOICE = ['fine', 'Finer colour (8 x 1)'];
+const DISPLAY_LABEL = { fine: 'finer colour (8 x 1)', hires: 'wider text (not built yet)' };
+
+/** Does the game build on runtime v2 without WIRE3D (the only games a fine scene can be built in)? Judged on the build of the last compile and the project's source. */
+function fineIsBuilt() {
+  if ((lang?.runtime?.version ?? 0) !== 2) return false;
+  try { return !(parseArcade(P.buildSource(project).text).ast.wires?.length > 0); } catch { return false; }
+}
 
 /** The scenes of the last compile that got as far as reading them, else of the last good one (a broken edit keeps the panel). */
 const currentScenes = () => lastCompile?.scenes ?? lastGood?.scenes ?? [];
@@ -559,8 +569,9 @@ const currentScenes = () => lastCompile?.scenes ?? lastGood?.scenes ?? [];
 /** Plain words for how a scene is drawn (the compiler's reason, said without the technical names). */
 function planText(sc) {
   const why = sc.reason.replace(/^two display files flipped each tick, because /, '');
+  if (sc.built === 'fine') return 'Drawn in 8 x 1 colour: one screen, each pixel row of a cell its own colours; at most 32 sprite phases in the game.';
   if (sc.auto === 'buffers') return `Drawn with two screen buffers, swapped every tick, because ${why.replace(/^FRAME redraws/, 'the frame redraws')}.`;
-  if (sc.auto === 'fine') return 'A still picture. For now it is drawn with two screen buffers (a finer colour mode is planned).';
+  if (sc.auto === 'fine') return 'A still picture. It is drawn with two screen buffers; "Finer colour" would give each pixel row of a cell its own colours (one screen, at most 32 sprite phases in the game).';
   return 'Text only. For now it is drawn with two screen buffers (a wider text mode is planned).';
 }
 
@@ -577,6 +588,7 @@ function renderScenes() {
   const list = $('scene-list');
   list.replaceChildren();
   if (!multi) return;
+  const fineOk = fineIsBuilt();
   scenes.forEach((sc, i) => {
     const li = el('li', 'proj-row scene-row');
     li.dataset.scene = sc.name;
@@ -591,6 +603,7 @@ function renderScenes() {
     sel.dataset.scene = sc.name;
     const current = Object.hasOwn(project.scenes ?? {}, sc.name) ? (project.scenes[sc.name]?.display ?? 'auto') : 'auto';
     const choices = DISPLAY_CHOICES.slice();
+    if (fineOk) choices.push(FINE_CHOICE);
     if (!choices.some(([v]) => v === current)) choices.push([current, DISPLAY_LABEL[current] ?? `${current} (unknown)`]);   // a loaded project may carry any text
     for (const [value, label] of choices) {
       const o = el('option', null, label);
@@ -1149,10 +1162,14 @@ function showExamples(open) {
   if (open) examplesMenu.querySelector('button')?.focus();
 }
 
+/** Fetch options for the files publish-runtime.mjs rewrites (the example index and games, the runtime builds): the browser asks the server
+ * whether its copy is current (a 304 costs little), so an update is never hidden by a cached copy (python3 -m http.server lets browsers guess). */
+const FRESH = { cache: 'no-cache' };
+
 async function loadExampleIndex() {
   if (exampleIndex) return exampleIndex;
   try {
-    const resp = await fetch('arcade/dist/examples/index.json');
+    const resp = await fetch('arcade/dist/examples/index.json', FRESH);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     exampleIndex = await resp.json();
   } catch (e) {
@@ -1174,7 +1191,7 @@ async function loadExampleIndex() {
 async function openExample(ex) {
   if (!confirmDiscard()) return;
   try {
-    const resp = await fetch(`arcade/dist/examples/${ex.file}`);
+    const resp = await fetch(`arcade/dist/examples/${ex.file}`, FRESH);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const r = P.parseProject(await resp.text());
     if (!r.ok) throw new Error(r.errors[0]);
@@ -1194,12 +1211,12 @@ function exampleEffects() {
   effectsCache ??= (async () => {
     const out = [];
     try {
-      const resp = await fetch('arcade/dist/examples/index.json');
+      const resp = await fetch('arcade/dist/examples/index.json', FRESH);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const index = await resp.json();
       const games = await Promise.all(index.map(async (ex) => {
         try {
-          const r = await fetch(`arcade/dist/examples/${ex.file}`);
+          const r = await fetch(`arcade/dist/examples/${ex.file}`, FRESH);
           if (!r.ok) return null;
           const parsed = P.parseProject(await r.text());
           return parsed.ok ? { ex, project: parsed.project } : null;
@@ -1412,7 +1429,7 @@ new MutationObserver(labelSymbolRows).observe($('tool-symbols'), { childList: tr
 
 // ── Boot ─────────────────────────────────────────────────────────
 async function fetchAsset(path) {
-  const resp = await fetch(path);
+  const resp = await fetch(path, FRESH);
   if (!resp.ok) throw new Error(`Could not load ${path} (HTTP ${resp.status})`);
   return new Uint8Array(await resp.arrayBuffer());
 }

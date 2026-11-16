@@ -583,7 +583,10 @@ ENDSCENE
     // Stack-neutral SP uses that a tail call cannot break (docs/ARCADE_WIREFRAME_CONTRACT.md 7a): w_accline's EX (SP),HL swaps a word it pushed itself
     // (a computed jump), never the caller's return address; wire_clear (the PUSH clear, called by the tick, never by compiled code) saves SP and puts it back.
     // RT_DRAWMODEL's EX (SP),HL swaps the model address it pushed itself for the SCALE routine's address, which POP IY takes off at once (bfa0782).
-    const STACK_NEUTRAL = { 'v2/wire.asm': ['w_accline', 'wire_clear', 'RT_DRAWMODEL'] };
+    // fine colour (arcade/runtime/v2/NOTES-FINE.md): fine_publish (POP walk of the list) and fine_compose (PUSH into the list) are called by the fine tick,
+    // never by compiled code, and save SP in F_SP and put it back; RT_FINEMODE, which compiled code calls, finds its caller by the word at STACK_TOP - 2
+    // (absolute), not by SP, so a tail JP to it changes nothing.
+    const STACK_NEUTRAL = { 'v2/wire.asm': ['w_accline', 'wire_clear', 'RT_DRAWMODEL'], 'v2/fine.asm': ['fine_publish', 'fine_compose'] };
     for (const v of ['v2', 'v3', 'v4']) {
       const dir = join(ROOT, 'arcade/runtime', v);
       for (const f of readdirSync(dir).filter((x) => x.endsWith('.asm') && !/^test_|^game_placeholder/.test(x))) {      // (the test_*.asm drivers are not part of the runtime)

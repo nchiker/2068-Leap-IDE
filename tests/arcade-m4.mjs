@@ -841,7 +841,7 @@ const costs = {};
 console.log('\n8. Example: the shooter as it was before language batch 4 (arcade/tests/fixtures/shooter-v1.arc: one scene and a state variable; arcade/examples/shooter.arc now has three scenes and is tested by tests/arcade-m9-*.mjs)');
 const SH_FILE = join(ROOT, 'arcade/tests/fixtures/shooter-v1.arc');
 const SH_SRC = readFileSync(SH_FILE, 'utf8');
-const SH_ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/shooter.assets.json'), 'utf8'));
+const SH_ASSETS = JSON.parse(readFileSync(join(ROOT, 'arcade/tests/fixtures/shooter-v1.assets.json'), 'utf8'));
 const SH_TICKS = 1300;
 /** The scripted player: keys (Q up, A down, O left, P right, space fire) or joystick 1; fire to restart. Pure function of the tick. */
 const shooterInput = (t) => {
@@ -1100,7 +1100,7 @@ if (existsSync(RT_JSON)) {
       let ok = false, detail = '';
       try {
         const out = join(TMP, 'shooter-cli.dck');
-        const txt = execFileSync('node', [join(ROOT, 'arcade/tools/arcadec.mjs'), SH_FILE, '--assets', join(ROOT, 'arcade/examples/shooter.assets.json'), '--runtime', 'v2', '-o', out], { encoding: 'utf8' });
+        const txt = execFileSync('node', [join(ROOT, 'arcade/tools/arcadec.mjs'), SH_FILE, '--assets', join(ROOT, 'arcade/tests/fixtures/shooter-v1.assets.json'), '--runtime', 'v2', '-o', out], { encoding: 'utf8' });
         const want = compile(SH_SRC, { runtime: rt, image: img, assets: SH_ASSETS });
         const same = Buffer.compare(Buffer.from(readFileSync(out)), Buffer.from(want.dck)) === 0;
         ok = same && /0 errors/.test(txt) && /16 instances/.test(txt);

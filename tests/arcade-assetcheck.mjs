@@ -18,7 +18,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as P from '../src/arcade-project.js';
 import { scanRoles } from '../src/lang/arcade/arcade-scan.js';
-import { checkAssets, tileAttr, isForeground, tileUsesBlack, effectiveTileset, mapRole, readCells } from '../src/lang/arcade/arcade-assetcheck.js';
+import { checkAssets, tileAttr, tileRowAttrs, fineScenes, isForeground, tileUsesBlack, effectiveTileset, mapRole, readCells } from '../src/lang/arcade/arcade-assetcheck.js';
 import { convertSfx, convertMusic } from '../src/lang/arcade/arcade-assets.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -59,22 +59,29 @@ for (const id of EX) {
   const project = P.exampleProject('runner', arc, assets);
   examples.runner = { arc, assets, project, text: P.buildSource(project).text };
 }
+// Lumen (fine colour in every scene): its own entry too
+{
+  const arc = readFileSync(ROOT + 'arcade/examples/lumen.arc', 'utf8').replace(/\r\n?/g, '\n');
+  const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/lumen.assets.json', 'utf8'));
+  const project = P.exampleProject('lumen', arc, assets);
+  examples.lumen = { arc, assets, project, text: P.buildSource(project).text };
+}
 {
   const r = (id) => scanRoles(examples[id].text);
-  check('scanRoles shooter: a cell map "sky", tile set gfx, no world, no floor plan, no view', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky' }, world: null, worlds: [], floorplans: [], view: null }), JSON.stringify(r('shooter')));
-  check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', worlds: ['pf_world'], floorplans: [], view: null }), JSON.stringify(r('platformer')));
+  check('scanRoles shooter (Starfall): four cell maps (sky, logo, press, gameover), tile set gfx, no world, no floor plan, no view; scenes title, play, over', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky', logo: 'logo', press: 'press', gameover: 'gameover' }, world: null, worlds: [], floorplans: [], view: null, scenes: ['title', 'play', 'over'] }), JSON.stringify(r('shooter')));
+  check('scanRoles platformer: world pf_world (MAP level, WINDOW level), tile set pf_tiles', eq(r('platformer'), { tileset: 'pf_tiles', maps: { level: 'pf_world' }, world: 'pf_world', worlds: ['pf_world'], floorplans: [], view: null, scenes: ['play'] }), JSON.stringify(r('platformer')));
   check('scanRoles vaults: floor plan vl_maze, cell maps vl_panel and vl_title (the NOVIEW title picture), view BRIGHT 0 (default, since K2) CEIL 0 FLOOR 1',
-    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze', splash: 'vl_title' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 0, ceil: 0, floor: 1 } }), JSON.stringify(r('vaults')));
-  check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null }));
+    eq(r('vaults'), { tileset: 'vl_tiles', maps: { panel: 'vl_panel', level: 'vl_maze', splash: 'vl_title' }, world: null, worlds: [], floorplans: ['vl_maze'], view: { bright: 0, ceil: 0, floor: 1 }, scenes: ['title', 'demo', 'play'] }), JSON.stringify(r('vaults')));
+  check('scanRoles blockfall / breakout: a tile set and nothing else; bounce: nothing', eq(r('blockfall'), { tileset: 'gfx', maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }) && eq(r('breakout'), { tileset: 'bricks', maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }) && eq(r('bounce'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: null, scenes: ['play'] }));
   const src = [
     'CONST dark = 0', 'CONST lite = 5 + 1', 'TILESET t = "ts"', 'MAP m = "m1"', 'MAP Maze = "mz"', 'MAP other = "o"',
     'VIEW3D maze FLOOR lite CEIL dark BRIGHT 0 COLW 2', 'WINDOW OTHER',
   ].join('\n');
   check('scanRoles: names are case-insensitive, CONSTs and + fold, BRIGHT 0 is read, WINDOW and VIEW3D together are both reported',
-    eq(scanRoles(src), { tileset: 'ts', maps: { m: 'm1', Maze: 'mz', other: 'o' }, world: 'o', worlds: ['o'], floorplans: ['mz'], view: { bright: 0, ceil: 0, floor: 6 } }), JSON.stringify(scanRoles(src)));
+    eq(scanRoles(src), { tileset: 'ts', maps: { m: 'm1', Maze: 'mz', other: 'o' }, world: 'o', worlds: ['o'], floorplans: ['mz'], view: { bright: 0, ceil: 0, floor: 6 }, scenes: [] }), JSON.stringify(scanRoles(src)));
   const v2 = scanRoles('TILESET t = "ts"\nMAP m = "m1"\nVIEW3D m CEIL FLOOR2 FLOOR 9 BRIGHT 7\n');
   check('scanRoles: a clause that is not a constant 0..7 (or BRIGHT 0..1) is null for that field, the others keep their defaults', eq(v2.view, { bright: null, ceil: null, floor: null }) || (v2.view !== null && v2.view.bright === null && v2.view.floor === null), JSON.stringify(v2));
-  check('scanRoles: WINDOW / VIEW3D naming an undeclared MAP give world null / no floor plan (the view is still read)', eq(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: { bright: 0, ceil: 3, floor: 1 } }), JSON.stringify(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3')));
+  check('scanRoles: WINDOW / VIEW3D naming an undeclared MAP give world null / no floor plan (the view is still read)', eq(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3'), { tileset: null, maps: {}, world: null, worlds: [], floorplans: [], view: { bright: 0, ceil: 3, floor: 1 }, scenes: [] }), JSON.stringify(scanRoles('WINDOW nowhere\nVIEW3D nowhere CEIL 3')));
   let threw = false, junk;
   try { junk = [scanRoles(''), scanRoles(undefined), scanRoles(null), scanRoles('TILESET'), scanRoles('\u0000"""((('), scanRoles('MAP = "x"\nWINDOW\nVIEW3D'), scanRoles(5)]; } catch { threw = true; }
   // maps a WORLD statement loads (banking contract section 4, batch 6): worlds with a WINDOW, floor plans with a VIEW3D, as the compiler's checker says
@@ -89,7 +96,7 @@ for (const id of EX) {
   check('runner: no map-shape error for its 128 x 16 level maps (they were checked as cell maps before), each world has its background-attr-mix warning, no error at all',
     !rw.some((w) => w.severity === 'error') && ['pf_world', 'rn_world2', 'rn_world3', 'rn_world4'].every((m) => mapRole(m, rr) === 'world' && rw.some((w) => w.id === 'background-attr-mix' && w.asset === m)), JSON.stringify(rw.map((w) => [w.id, w.asset])));
   check('mapRole: roles without `worlds` (the older shape) still give the WINDOW\'s map the world role', mapRole('o', { world: 'o' }) === 'world' && mapRole('p', { world: 'o' }) === 'cell');
-  check('scanRoles never throws on empty / broken / non-string input and always has the five fields', !threw && junk.every((x) => ['tileset', 'maps', 'world', 'worlds', 'floorplans', 'view'].every((k) => k in x)));
+  check('scanRoles never throws on empty / broken / non-string input and always has its seven fields', !threw && junk.every((x) => ['tileset', 'maps', 'world', 'worlds', 'floorplans', 'view', 'scenes'].every((k) => k in x)));
 }
 
 // ═══ 2  helpers ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -179,6 +186,54 @@ const plain = (extra = {}) => tile({ paper: 6, ink: 1, bits: 'AA', ...extra }); 
   check('background-attr-mix: three attributes list three groups', cm([bg1, bg2, plain({ ink: 4, paper: 6 })], [0, 1, 2, 2])[0].groups.length === 3);
   check('background-attr-mix: uses the map\'s own tileset when it exists', checkAssets(mkProject({ tilesets: { a: { tiles: [bg1, bg1] }, b: { tiles: [bg1, bg2] } }, maps: { m: { w: 2, h: 1, cells: [0, 1], tileset: 'b' } } }), roles({ tileset: 'a', maps: { m: 'm' } })).some((x) => x.id === 'background-attr-mix'));
   check('with roles null every map check is skipped, never guessed (tile-set checks still run)', cm([bg1, bg2], [0, 1], 2, 1, {}, null).length === 0 && has(checkAssets(mkProject({ tilesets: { ts: { tiles: [blackA(0), blackA(1)] } }, maps: { m: { w: 1, h: 1, cells: [99] } } }), null), 'black-bright-mix') && !has(checkAssets(mkProject({ tilesets: { ts: { tiles: [plain()] } }, maps: { m: { w: 1, h: 1, cells: [99] } } }), null), 'map-undefined-tile'));
+
+  // fine-colour scenes (docs/ARCADE_FINE_COLOUR_CONTRACT.md sections 2 and 2.4)
+  {
+    const fineProj = (scenes, tiles = [bg1, bg2]) => ({ ...mkProject({ tilesets: { ts: { tiles } }, maps: { m: { w: 4, h: 1, cells: [0, 1, 1, 0] } } }), scenes });
+    const rl = (names) => roles({ tileset: 'ts', maps: { m: 'm' }, scenes: names });
+    const mixOf = (p, r) => checkAssets(p, r).filter((x) => x.id === 'background-attr-mix');
+    check('fineScenes: every scene fine / some fine / none / no scene at all', (() => {
+      const a = fineScenes({ scenes: { a: { display: 'fine' }, b: { display: 'fine' } } }, { scenes: ['a', 'b'] }), b = fineScenes({ scenes: { a: { display: 'fine' } } }, { scenes: ['a', 'b'] });
+      const c = fineScenes({ scenes: {} }, { scenes: ['a'] }), d = fineScenes({ scenes: { a: { display: 'fine' } } }, { scenes: [] });
+      return eq(a, { any: true, all: true }) && eq(b, { any: true, all: false }) && eq(c, { any: false, all: false }) && eq(d, { any: false, all: false });
+    })());
+    check('fineScenes: the setting is read in any case and with spaces; the scene name ignoring case; other settings and non-text are not fine', (() => {
+      const f = (display, name = 'a', scene = 'a') => fineScenes({ scenes: { [name]: { display } } }, { scenes: [scene] }).all;
+      return f('FINE') && f(' Fine ') && f('fine', 'PLAY', 'play') && !f('buffers') && !f('auto') && !f('hires') && !f('finer') && !f('refine') && !f('fine colour') && !f(true) && !f(undefined) && !f(null) && !f('fine', 'b', 'a');
+    })());
+    check('fineScenes: roles without `scenes` (older shape) or null use the scenes the project names; junk never throws', (() => {
+      const p = { scenes: { a: { display: 'fine' }, b: { display: 'fine' } } }, q = { scenes: { a: { display: 'fine' }, b: { display: 'auto' } } };
+      return eq(fineScenes(p, null), { any: true, all: true }) && eq(fineScenes(p, {}), { any: true, all: true }) && eq(fineScenes(q, null), { any: true, all: false }) &&
+        [null, undefined, 5, {}, { scenes: 5 }, { scenes: { a: null } }].every((x) => { try { return typeof fineScenes(x, { scenes: 5 }).all === 'boolean' && typeof fineScenes({ scenes: { a: 3 } }, x).any === 'boolean'; } catch { return false; } });
+    })());
+    check('background-attr-mix: none when every scene of the project is fine (a sprite carries its own ink there), though the map has two attributes', mixOf(fineProj({ play: { display: 'fine' } }), rl(['play'])).length === 0 && mixOf(fineProj({ a: { display: 'fine' }, b: { display: 'FINE' } }), rl(['a', 'b'])).length === 0);
+    check('background-attr-mix: the same project with the scene not fine (no entry, auto, buffers, hires) warns', ['auto', 'buffers', 'hires', 'bogus'].every((d) => mixOf(fineProj({ play: { display: d } }), rl(['play'])).length === 1) && mixOf(fineProj({}), rl(['play'])).length === 1);
+    check('background-attr-mix: a mixed project (one scene fine, another not) keeps the warning, and so does a scene the project does not name', mixOf(fineProj({ a: { display: 'fine' }, b: { display: 'buffers' } }), rl(['a', 'b'])).length === 1 && mixOf(fineProj({ a: { display: 'fine' } }), rl(['a', 'b'])).length === 1);
+    check('background-attr-mix: a program with no SCENE has no fine scene, so a scenes entry does not silence it; roles from before `scenes` use the project\'s entries', mixOf(fineProj({ play: { display: 'fine' } }), rl([])).length === 1 && mixOf(fineProj({ play: { display: 'fine' } }), roles({ tileset: 'ts', maps: { m: 'm' } })).length === 0 && mixOf(fineProj({ a: { display: 'fine' }, b: { display: 'auto' } }), roles({ tileset: 'ts', maps: { m: 'm' } })).length === 1);
+    // black-bright-mix / bright-black-paper per pixel row in a project with a fine scene (contract 2.4)
+    const rowTile = (rows, bits = '00') => ({ rows: Array.from({ length: 8 }, (_, y) => ({ bits: Array.isArray(bits) ? bits[y] : bits, ink: 7, paper: 6, bright: 0, ...(rows[y] ?? {}) })), flags: 0 });
+    const asProject = (tiles, scenes) => ({ ...mkProject({ tilesets: { ts: { tiles } } }), scenes });
+    const FINE = { play: { display: 'fine' } }, R1 = roles({ tileset: 'ts', scenes: ['play'] });
+    const kinds = (p, r) => ids(checkAssets(p, r).filter((x) => x.kind === 'tilesets'));
+    const lateBlack = rowTile({ 3: { paper: 0, bright: 1 } });                       // row 0 is plain; row 3 is paper 0 with BRIGHT 1
+    check('per row: a tile whose row 3 has paper 0 BRIGHT 1 is bright-black-paper in a fine project and quiet in a plain one (the compiler reads row 0)', eq(kinds(asProject([lateBlack], FINE), R1), ['bright-black-paper']) && kinds(asProject([lateBlack], {}), R1).length === 0);
+    check('per row: a tile with black BRIGHT 0 in row 0 and black BRIGHT 1 in row 5 mixes the blacks in a fine project (the tile is in both lists, named once)', (() => {
+      const t = rowTile({ 0: { paper: 0 }, 5: { paper: 0, bright: 1 } });
+      const f = checkAssets(asProject([t, rowTile({})], FINE), R1).find((x) => x.id === 'black-bright-mix');
+      return !!f && eq(f.bright0, [0]) && eq(f.bright1, [0]) && eq(f.tiles, [0]) && kinds(asProject([t], {}), R1).length === 0;
+    })());
+    check('per row: two tiles, one black BRIGHT 0 in row 2 and one BRIGHT 1 in row 6, mix in a fine project and not in a plain one (row 0 is plain in both)', eq(kinds(asProject([rowTile({ 2: { paper: 0 } }), rowTile({ 6: { paper: 0, bright: 1 } })], FINE), R1), ['black-bright-mix', 'bright-black-paper']) && kinds(asProject([rowTile({ 2: { paper: 0 } }), rowTile({ 6: { paper: 0, bright: 1 } })], {}), R1).length === 0);
+    check('per row: ink 0 in a row with a set bit is black; paper 0 in a row of all-ink bits (FF) is not', eq(kinds(asProject([rowTile({ 4: { ink: 0, bright: 1 } }, ['00', '00', '00', '00', '10', '00', '00', '00']), rowTile({ 2: { paper: 0 } })], FINE), R1), ['black-bright-mix']) && kinds(asProject([rowTile({ 2: { paper: 0, bright: 1 } }, ['00', '00', 'FF', '00', '00', '00', '00', '00'])], FINE), R1).length === 0);
+    check('per row: the fine project is read row by row for every tile set, the verdict follows the project (any scene fine), and a malformed row skips the tile', (() => {
+      const bad = rowTile({}); bad.rows[6] = { bits: '00', ink: 9 };
+      const mixed = { a: { display: 'fine' }, b: { display: 'auto' } };
+      return eq(kinds(asProject([lateBlack], mixed), roles({ tileset: 'ts', scenes: ['a', 'b'] })), ['bright-black-paper']) && eq(kinds(asProject([lateBlack], FINE), null), ['bright-black-paper']) && kinds(asProject([bad, rowTile({ 6: { paper: 0, bright: 1 } })], FINE), R1).length === 1;
+    })());
+    check('tileUsesBlack(tile, perRow) and tileRowAttrs: row 0 by default, every row with perRow; the 8 attribute bytes; malformed gives null', (() => {
+      const t = rowTile({ 4: { paper: 0 } });
+      return tileUsesBlack(t) === false && tileUsesBlack(t, true) === true && eq(tileRowAttrs(t), [0x37, 0x37, 0x37, 0x37, 0x07, 0x37, 0x37, 0x37]) && tileRowAttrs({ rows: [] }) === null && tileRowAttrs(null) === null && tileRowAttrs(rowTile({ 1: { ink: 8 } })) === null;
+    })());
+  }
 
   // tile0-not-blank
   const t0 = (tiles, rl, extraMaps = {}) => checkAssets(mkProject({ tilesets: { ts: { tiles } }, maps: { w: { w: 24, h: 1, cells: grid(24, 1, () => 0) }, ...extraMaps } }), rl);
@@ -344,10 +399,9 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   }
   console.log('');
   const summary = EX.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
-  // K3 (stage 1 of the Studio completion) and K2's default (the VIEW3D is BRIGHT 0 now): Starfall's, Vaults' and Blockfall's tiles are BRIGHT 1 on black paper, and Vaults' BRIGHT 1 tiles
+  // K3 (stage 1 of the Studio completion) and K2's default (the VIEW3D is BRIGHT 0 now): Vaults' and Blockfall's tiles are BRIGHT 1 on black paper, and Vaults' BRIGHT 1 tiles
   // now also mix with its view. Stage 3 (K4) fixes the games and removes these entries.
   const EXPECTED = [
-    'shooter: bright-black-paper gfx',
     'platformer: background-attr-mix pf_world',
     'vaults: black-bright-mix vl_tiles',
     'vaults: bright-black-paper vl_tiles',
@@ -371,8 +425,8 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   // bright-black-paper, independently: the tiles with paper 0, BRIGHT 1 and a clear bit, from the JSON
   const bbpRaw = (id, ts) => examples[id].assets.tilesets[ts].tiles.map((t, i) => [raw(t), i]).filter(([r]) => r.paper === 0 && r.bright === 1 && r.clear > 0).map(([, i]) => i);
   const bbpOf = (id, ts) => out[id].filter((f) => f.id === 'bright-black-paper' && f.asset === ts).flatMap((f) => f.tiles);
-  check('bright-black-paper on the examples: Starfall all 16, Vaults 28, Blockfall tiles 0, 10, 11; recomputed from the JSON',
-    eq(bbpOf('shooter', 'gfx'), bbpRaw('shooter', 'gfx')) && bbpOf('shooter', 'gfx').length === 16 && eq(bbpOf('vaults', 'vl_tiles'), bbpRaw('vaults', 'vl_tiles')) && bbpOf('vaults', 'vl_tiles').length === 28 && eq(bbpOf('blockfall', 'gfx'), bbpRaw('blockfall', 'gfx')) && eq(bbpOf('blockfall', 'gfx'), [0, 10, 11]),
+  check('bright-black-paper on the examples: Starfall none (its fine-colour art is all BRIGHT 0), Vaults 28, Blockfall tiles 0, 10, 11; recomputed from the JSON',
+    eq(bbpOf('shooter', 'gfx'), bbpRaw('shooter', 'gfx')) && bbpOf('shooter', 'gfx').length === 0 && eq(bbpOf('vaults', 'vl_tiles'), bbpRaw('vaults', 'vl_tiles')) && bbpOf('vaults', 'vl_tiles').length === 28 && eq(bbpOf('blockfall', 'gfx'), bbpRaw('blockfall', 'gfx')) && eq(bbpOf('blockfall', 'gfx'), [0, 10, 11]),
     JSON.stringify([bbpOf('shooter', 'gfx').length, bbpOf('vaults', 'vl_tiles').length, bbpOf('blockfall', 'gfx')]));
   check('every example tile set: the bright-black-paper tiles equal the independent reading of the JSON (none for breakout and the platformer)',
     EX.every((id) => Object.keys(examples[id].assets.tilesets ?? {}).every((ts) => eq(bbpOf(id, ts), bbpRaw(id, ts)))) && bbpRaw('breakout', 'bricks').length === 0 && bbpRaw('platformer', 'pf_tiles').length === 0);
@@ -402,7 +456,19 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   const fvt = out.vaults.filter((f) => f.id === 'background-attr-mix').find((f) => f.asset === 'vl_title');
   check('vaults vl_title (the title picture: black, cyan wall textures, brass door and goblet; the title\'s sprites only move over its black corridor): background attribute groups recomputed from the JSON',
     eq(gt, fvt.groups.map((g) => ({ attr: g.attr, tiles: [...g.tiles].sort((x, y) => x - y), cells: g.cells }))) && gt.length === 3, JSON.stringify(gt));
-  check('shooter sky: no warning, and the JSON agrees (at most one background attribute, no mixed black)', groupsOf('shooter', 'gfx', 'sky', false).length <= 1 && (() => { const bb = black('shooter', 'gfx'); return !(bb[0].length && bb[1].length); })());
+  // The two fine-colour games (every scene fine): their cell maps use several background attributes, which does not matter in a fine scene, and no pixel row of any tile
+  // shows black with the other BRIGHT or black paper with BRIGHT 1 (an independent reading of the JSON, row by row)
+  const rowsRaw = (t) => t.rows.map((r) => ({ ink: r.ink ?? 0, paper: r.paper ?? 7, bright: r.bright ? 1 : 0, bits: hexb(r.bits) }));
+  const fineBlack = (set) => { const o = { 0: new Set(), 1: new Set() }; set.tiles.forEach((t, i) => rowsRaw(t).forEach((r) => { if ((r.paper === 0 && r.bits !== 255) || (r.ink === 0 && r.bits !== 0)) o[r.bright].add(i); })); return o; };
+  const fineBrightPaper = (set) => set.tiles.map((t, i) => [t, i]).filter(([t]) => rowsRaw(t).some((r) => r.paper === 0 && r.bright === 1 && r.bits !== 255)).map(([, i]) => i);
+  for (const [id, mapNames] of [['shooter', ['sky', 'logo', 'press', 'gameover']], ['lumen', ['maze1', 'maze2', 'logo', 'press', 'over']]]) {
+    const ex = examples[id], fs = checkAssets(ex.project, scanRoles(ex.text)), set = ex.assets.tilesets.gfx;
+    check(`${id} (fine colour in every scene): the JSON has "display": "fine" for every scene of the source and checkAssets gives no finding at all`, eq(scanRoles(ex.text).scenes.slice().sort(), Object.keys(ex.assets.scenes).sort()) && Object.values(ex.assets.scenes).every((s2) => s2.display === 'fine') && fs.length === 0, JSON.stringify(ids(fs)));
+    check(`${id}: no pixel row of any of its ${set.tiles.length} tiles mixes the two blacks or has BRIGHT 1 black paper (recomputed from the JSON, row by row)`, !(fineBlack(set)[0].size && fineBlack(set)[1].size) && fineBrightPaper(set).length === 0);
+    const attrsUsed = mapNames.map((m) => groupsOf(id, 'gfx', m, false).length);
+    check(`${id}: the warning is what the fine rule removes: some cell map has several background attributes (row 0), and the same project with its scenes not fine warns about it`,
+      attrsUsed.some((n) => n > 1) && checkAssets({ ...ex.project, scenes: {} }, scanRoles(ex.text)).filter((x) => x.id === 'background-attr-mix').length >= 1, JSON.stringify(attrsUsed));
+  }
   check('vaults vl_maze (the floor plan) has a wall ring in the JSON and gets no map finding; platformer pf_world is 128 x 16 with tiles <= 31',
     (() => { const m = examples.vaults.assets.maps.vl_maze, c = cellsRaw(m); return c.every((v, i) => { const x = i % m.w, y = Math.floor(i / m.w); return !(x === 0 || y === 0 || x === m.w - 1 || y === m.h - 1) || (v >= 1 && v <= 4); }); })() &&
     cellsRaw(examples.platformer.assets.maps.pf_world).every((v) => v === 255 || (v >= 0 && v <= 31)) && !out.vaults.some((f) => f.asset === 'vl_maze') && !out.platformer.some((f) => f.id.includes('shape')));
@@ -461,7 +527,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'v3/runtime.json')
     ['world-shape', 'platformer a cell with tile 32', (p) => { p.assets.maps.pf_world.cells[100] = 32; }, /0\.\.31/],
     ['world-shape', 'platformer height 17 (cells padded)', (p) => { const m = p.assets.maps.pf_world; m.h = 17; m.cells = m.cells.concat(Array(128).fill(0)); }, /height/],
     ['map-undefined-tile', 'platformer a cell with tile 25 (20 tiles defined)', (p) => { p.assets.maps.pf_world.cells[100] = 25; }, /does not define/],
-    ['map-undefined-tile', 'shooter a cell with tile 40 in the cell map (16 tiles)', (p) => { p.assets.maps.sky.cells[5] = 40; }, /tile index|does not define|tile/],
+    ['map-undefined-tile', 'shooter a cell with the first undefined tile in the cell map (Starfall\'s tile set has 116)', (p) => { p.assets.maps.sky.cells[5] = p.assets.tilesets.gfx.tiles.length; }, /tile index|does not define|tile/],
     ['floorplan-shape', 'vaults an empty cell on the outer ring', (p) => { p.assets.maps.vl_maze.cells[3] = 0; }, /outer ring/],
     ['floorplan-shape', 'vaults wall code 5', (p) => { p.assets.maps.vl_maze.cells[40] = 5; }, /wall types/],
     ['sfx-unstorable', 'shooter pew with tone 3840 vol 15', (p) => { p.assets.sfx.pew.ticks[0] = { tone: 3840, vol: 15, noise: 0, mix: 6 }; }, /cannot be stored/],
@@ -472,7 +538,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'v3/runtime.json')
     const mine = checkAssets(p, rl).filter((x) => x.id === id && x.compilerAlso);
     check(`${id} agrees with the compiler: ${name}`, r.errors.length > 0 && re.test(msgs(r)) && mine.length >= 1, `compiler: ${msgs(r).slice(0, 140)}  rule: ${mine.map((x) => x.message).join(' / ').slice(0, 100)}`);
   }
-  for (const id of ['shooter', 'platformer', 'vaults', 'blockfall', 'breakout']) {
+  for (const id of ['shooter', 'lumen', 'platformer', 'vaults', 'blockfall', 'breakout']) {
     const p = examples[id].project, { r, roles: rl } = build(p);
     check(`${id}: compiles with no error, and no compilerAlso finding`, r.errors.length === 0 && !checkAssets(p, rl).some((x) => x.compilerAlso), msgs(r));
   }

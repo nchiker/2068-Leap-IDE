@@ -21,6 +21,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import * as M from '../src/tools/sprite-model.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
+import { convertSprite } from '../src/lang/arcade/arcade-codegen.js';
+import { finePicture, rowOff } from '../src/lang/arcade/arcade-fine.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -76,8 +78,8 @@ console.log('\n1. Creation and the stored form');
   ok(`fromAsset -> toAsset reproduces bits, mask, size, hot and phases of every sprite in the example assets (${all} sprites)`, all >= 8 && exact === all);
   const shooter = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/shooter.assets.json'), 'utf8')).sprites;
   const ship = M.fromAsset(shooter.ship);
-  ok('the shooter ship keeps its row colours (ink 7, paper 0, bright 1) and an asset without colours gets the defaults',
-    ship.frames[0].rows.every((r) => r.ink === 7 && r.paper === 0 && r.bright === 1) && M.fromAsset({ w: 8, h: 1, frames: [{ rows: [{ bits: 'FF' }] }] }).frames[0].rows[0].mask === 255);
+  ok('the shooter ship keeps its row colours (a shaded ship for fine colour: each row its own ink, white at the top, paper 0, BRIGHT 0) and an asset without colours gets the defaults',
+    ship.frames[0].rows.every((r, k) => r.ink === shooter.ship.frames[0].rows[k].ink && r.ink >= 1 && r.ink <= 7 && r.paper === 0 && r.bright === 0) && ship.frames[0].rows[0].ink === 7 && new Set(ship.frames[0].rows.map((r) => r.ink)).size >= 3 && M.fromAsset({ w: 8, h: 1, frames: [{ rows: [{ bits: 'FF' }] }] }).frames[0].rows[0].mask === 255);
   ok('fromAsset reads the M2 shape (top-level rows) and numeric bits; it names the problem otherwise',
     M.fromAsset({ w: 8, h: 2, rows: [{ bits: 0x81, mask: 0xFF }, { bits: '18' }] }).frames[0].rows[0].bits === 0x81
     && throws(() => M.fromAsset({ w: 8, h: 2, frames: [{ rows: [{ bits: 'FF' }] }] })) && throws(() => M.fromAsset({ w: 8, h: 1, frames: [{ rows: [{ bits: 'ZZ' }] }] })) && throws(() => M.fromAsset(null)));
@@ -281,6 +283,44 @@ console.log('\n6. Onion skin and display families');
 }
 
 // ── 7 ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+console.log('\n6b. The fine (ecm) preview is what a fine scene draws (arcade-fine.js finePicture is the reference)');
+{
+  // The picture of a fine scene for the sprite at (0, 0) on an empty background of paper P, BRIGHT B, read pixel by pixel as colour keys.
+  const sceneKeys = (s, f, P, B) => {
+    const asset = s.w <= 16 && s.h <= 16 ? (() => { const c = convertSprite(M.toAsset(s)); return { h: c.h, data: c.data, inks: c.inks, phases: 8 }; })() : null;
+    if (!asset) return null;
+    const attr = (B << 6) | (P << 3) | 7;
+    const pic = finePicture({ cells: new Uint8Array(768), attrs: new Uint8Array(768).fill(attr), tileRows: null, sprites: [{ visible: true, x: 0, y: 0, asset: 0 }], instAsset: [0], assets: [asset], glyph: () => new Array(8).fill(0) });
+    const keys = new Int8Array(s.w * s.h);
+    for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) {
+      const o = rowOff(y, x >> 3), set = (pic.bits[o] >> (7 - (x & 7))) & 1, c = pic.colours[o];
+      keys[y * s.w + x] = M.colourKey(set ? c & 7 : (c >> 3) & 7, (c >> 6) & 1);
+    }
+    return keys;
+  };
+  const r = rng(61);
+  let bad = 0, n = 0, sample = '';
+  for (let i = 0; i < (QUICK ? 60 : 300); i++) {
+    const w = [8, 16][(r() * 2) | 0], h = 1 + ((r() * 16) | 0);
+    const s = M.newSprite(w, h);
+    for (let y = 0; y < h; y++) {
+      M.setRowColours(s, 0, y, { ink: (r() * 8) | 0, paper: (r() * 8) | 0, bright: (r() * 2) | 0 });
+      for (let x = 0; x < w; x++) { M.setPixel(s, 0, x, y, 'mask', r() < 0.7 ? 1 : 0); M.setPixel(s, 0, x, y, 'image', r() < 0.5 ? 1 : 0); }
+    }
+    const P = (r() * 8) | 0, B = (r() * 2) | 0;
+    const want = sceneKeys(s, 0, P, B), got = M.familyPixels(s, 0, 'ecm', { onto: { paper: P, bright: B } }).pixels;
+    n++;
+    if (!same([...got], [...want])) { bad++; sample = `${w}x${h} paper ${P} bright ${B}`; }
+  }
+  ok('familyPixels(ecm, onto) equals the pixels finePicture draws for the sprite, for random sprites, row inks and backgrounds (set pixel: row ink; the rest: the background paper; BRIGHT the background\'s)', bad === 0 && n > 0, `${bad} of ${n} differ ${sample}`);
+  const demo = M.newSprite(8, 1); M.setRowColours(demo, 0, 0, { ink: 2, paper: 5, bright: 1 }); M.paintRole(demo, 0, 0, 0, 'ink'); M.paintRole(demo, 0, 1, 0, 'paper');
+  const d = M.familyPixels(demo, 0, 'ecm', { onto: { paper: 1, bright: 0 } });
+  ok('hand case: ink 2 bright 1 paper 5 on blue (paper 1, normal): the ink pixel is plain red (key 2), the covered paper pixel and the rest are blue (key 1); no warning',
+    d.pixels[0] === 2 && d.pixels[1] === 1 && [...d.pixels].slice(2).every((k) => k === 1) && d.warning === null, JSON.stringify([...d.pixels]));
+  const as = M.familyPixels(demo, 0, 'ecm');
+  ok('without onto, ecm is still the sprite as authored (bright red ink 10, green-cyan paper 13)', as.pixels[0] === 10 && as.pixels[1] === 13 && as.pixels[2] === -1);
+}
+
 console.log('\n7. Image import');
 {
   const mkImg = (w, h, fn) => { const data = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const [r, g, b, a = 255] = fn(x, y); data.set([r, g, b, a], (y * w + x) * 4); } return { width: w, height: h, data }; };

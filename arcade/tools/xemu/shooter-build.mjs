@@ -14,7 +14,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = resolve(HERE, '../..');
 const rt = JSON.parse(readFileSync(join(ARCADE, 'build/v2/runtime.json'), 'utf8'));
 const img = new Uint8Array(readFileSync(join(ARCADE, 'build/v2', rt.image ?? 'runtime.bin')));
-const res = compile(readFileSync(join(ARCADE, 'examples/shooter.arc'), 'utf8'), { runtime: rt, image: img, assets: JSON.parse(readFileSync(join(ARCADE, 'examples/shooter.assets.json'), 'utf8')) });
+const assets = JSON.parse(readFileSync(join(ARCADE, 'examples/shooter.assets.json'), 'utf8'));
+// Starfall is a FINE-colour game now (the assets file's "scenes" key, which arcadec hands to the compiler too): without `scenes` this would build the two-buffer game.  The rest of the shooter-*
+// scripts (shooter-tsrun / -zesarux / -compare ...) sample the two-buffer display files at WORK_END and are for that older build; the fine game's cross-emulator check is fine-build.mjs ..
+// fine-compare.mjs (fine-build.mjs shooter does what this script does and also writes the build/xemu/shooter-fine/ meta file those scripts read).
+const res = compile(readFileSync(join(ARCADE, 'examples/shooter.arc'), 'utf8'), { runtime: rt, image: img, assets, scenes: assets.scenes });
 if (res.errors.length || res.warnings.length) throw new Error('compile: ' + [...res.errors, ...res.warnings].map((e) => `${e.line}:${e.col} ${e.message}`).join(' | '));
 writeFileSync(join(ARCADE, 'build/shooter.dck'), res.dck);
 mkdirSync(join(ARCADE, 'build/xemu/shooter'), { recursive: true });

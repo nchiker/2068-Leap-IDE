@@ -23,7 +23,7 @@
   },
   {
    "src": "arcade/tests/fixtures/shooter-v1.arc",
-   "assets": "arcade/examples/shooter.assets.json",
+   "assets": "arcade/tests/fixtures/shooter-v1.assets.json",
    "runtime": 2,
    "bytes": 6472,
    "sha256": "c6e0f7acda42a971559f440267615715366c8207af8adc0f03dbaa095f9520cc",
