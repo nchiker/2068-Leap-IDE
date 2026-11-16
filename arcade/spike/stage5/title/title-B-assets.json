@@ -1,0 +1,2712 @@
+{
+ "tileset": {
+  "tiles": [
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "04",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "FF",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "0F",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "F0",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "20",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 6,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 6,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 2,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 2,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 2,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 5,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     },
+     {
+      "bits": "0F",
+      "ink": 0,
+      "paper": 5,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "FF",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 5,
+      "paper": 0,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 7,
+      "paper": 1,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   },
+   {
+    "rows": [
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "38",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "38",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "38",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "38",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     },
+     {
+      "bits": "00",
+      "ink": 6,
+      "paper": 1,
+      "bright": 0
+     }
+    ],
+    "flags": 0,
+    "fg": true
+   }
+  ]
+ },
+ "map": {
+  "w": 32,
+  "h": 24,
+  "cells": "000000010000000000000000000000000000000100000000000000000000000000020304050304050304020304060006000000050304060006020307060006000008090A08090B08090B0A000A0A040A00000008090B0A000A0C090008090A00000D0E0F0D10000D10000F000F0F0F0F0000000D10000F000F110E120D0E0F00001300131311141311141516171515170000001311141516171616171300130000000000000000000000001800000000000000000000000100000000000000000000000000000018000000000000000000000000000000000000180000000001000000000000000019191919191919191919191919191A00000000000000000000000009090909090909090909090909090909091B1B1C1A000000000000000000000000000000000000000000000000000000001D1D1C1E0000000000000000000000000000000000000000001F1F1F1F1F1F1F1F1F1E000000000000000000000000000000000000000000000020202020202020202020202020202100000000000000000000000022222222222222222222222222222222222323242100000000000000000000000000000000000000000000000000000000252524260000000000000000000000000000000000000000002727272727272727272600000000000028282828282828282828282828282900000000000000000000000000002A2A2A2A2A2A2A2A2A2A2A2A2A2A2A2B2B2C29000000000000000000000000000000000000000000000000000000002D2D2C2E0000000000000000000000000000000000000000002F2F2F2F2F2F2F2F2F2E000000000000000000000000000000000000303030300000000000000000000000003030303000000000000000000000000030303130000000003030303000000000313030310000000030303030303030303031303000000000313030313030303030303130000000003031303030303130313030313030303030303130313030313031303030303030313030313031303030303130313030313031303030303130313030313031303030303130",
+  "tileset": "title"
+ }
+}

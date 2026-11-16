@@ -1,0 +1,193 @@
+[
+ {
+  "id": "A",
+  "name": "SUNSET LOGO",
+  "about": "a 4x pixel-font logo on a banded sky (blue, magenta, red, a yellow horizon, checker steps between the bands), four big arrows, a road",
+  "chosenDither": "none",
+  "options": [
+   {
+    "dither": "none",
+    "needed": 49,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 49,
+    "differingPixels": 0,
+    "differingPct": 0
+   },
+   {
+    "dither": "ordered",
+    "needed": 49,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 49,
+    "differingPixels": 0,
+    "differingPct": 0
+   },
+   {
+    "dither": "diffusion",
+    "needed": 49,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 49,
+    "differingPixels": 0,
+    "differingPct": 0
+   }
+  ],
+  "firstDiff": null,
+  "withoutForegroundFlag": [
+   "background-attr-mix"
+  ],
+  "describe": "768 cells became 49 new tiles; 719 repeated cells merged.",
+  "jsonBytes": 19985,
+  "check": {
+   "findings": [],
+   "tileValidate": null,
+   "mapValidate": [],
+   "projectTileset": null,
+   "projectMap": null,
+   "roles": {
+    "tileset": "title",
+    "maps": {
+     "pic": "title"
+    }
+   }
+  }
+ },
+ {
+  "id": "B",
+  "name": "NIGHT STREAK",
+  "about": "a night city under stars, three arrows streaking right with speed lines, the logo in yellow and red on top (dull colours on black)",
+  "chosenDither": "none",
+  "options": [
+   {
+    "dither": "none",
+    "needed": 50,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 50,
+    "differingPixels": 0,
+    "differingPct": 0
+   },
+   {
+    "dither": "ordered",
+    "needed": 50,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 50,
+    "differingPixels": 0,
+    "differingPct": 0
+   },
+   {
+    "dither": "diffusion",
+    "needed": 50,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 50,
+    "differingPixels": 0,
+    "differingPct": 0
+   }
+  ],
+  "firstDiff": null,
+  "withoutForegroundFlag": [
+   "background-attr-mix"
+  ],
+  "describe": "768 cells became 50 new tiles; 718 repeated cells merged.",
+  "jsonBytes": 20360,
+  "check": {
+   "findings": [],
+   "tileValidate": null,
+   "mapValidate": [],
+   "projectTileset": null,
+   "projectMap": null,
+   "roles": {
+    "tileset": "title",
+    "maps": {
+     "pic": "title"
+    }
+   }
+  }
+ },
+ {
+  "id": "C",
+  "name": "BRICK LOGO",
+  "about": "the logo and four arrows built of 8 x 8 blocks, one colour each with a white highlight edge, on black: bold and almost free in tiles",
+  "chosenDither": "none",
+  "options": [
+   {
+    "dither": "none",
+    "needed": 7,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 7,
+    "differingPixels": 0,
+    "differingPct": 0
+   },
+   {
+    "dither": "ordered",
+    "needed": 7,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 7,
+    "differingPixels": 0,
+    "differingPct": 0
+   },
+   {
+    "dither": "diffusion",
+    "needed": 7,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 7,
+    "differingPixels": 0,
+    "differingPct": 0
+   }
+  ],
+  "firstDiff": null,
+  "withoutForegroundFlag": [
+   "background-attr-mix"
+  ],
+  "describe": "768 cells became 7 new tiles; 761 repeated cells merged.",
+  "jsonBytes": 4235,
+  "check": {
+   "findings": [],
+   "tileValidate": null,
+   "mapValidate": [],
+   "projectTileset": null,
+   "projectMap": null,
+   "roles": {
+    "tileset": "title",
+    "maps": {
+     "pic": "title"
+    }
+   }
+  }
+ },
+ {
+  "id": "A-smooth-experiment",
+  "options": [
+   {
+    "dither": "none",
+    "needed": 56,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 56,
+    "meanColourError": 13.9
+   },
+   {
+    "dither": "ordered",
+    "needed": 78,
+    "overflow": false,
+    "lossyCells": 0,
+    "tiles": 78,
+    "meanColourError": 16.4
+   },
+   {
+    "dither": "diffusion",
+    "needed": 473,
+    "overflow": true,
+    "lossyCells": 408,
+    "tiles": 128,
+    "meanColourError": 15.4
+   }
+  ]
+ }
+]
