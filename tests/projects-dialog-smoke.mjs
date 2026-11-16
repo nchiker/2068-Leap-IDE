@@ -33,12 +33,14 @@ const dialogOpen = () => evaluate("document.getElementById('projects-dialog').op
 const listNames = () => evaluate('t.store.list().then((l) => l.map((p) => p.name).sort())');
 /** Click the button `role` in the row of the project called `name`. */
 async function rowClick(name, role) {
-  const id = (await rows()).find((r) => r.name === name)?.id;
+  let id = null;
+  for (let i = 0; i < 50 && !id; i++) { id = (await rows()).find((r) => r.name === name)?.id; if (!id) await b.sleep(100); }      // (the dialog redraws after each store call: wait for the row, not a fixed time)
   if (!id) throw new Error(`no row for ${name}`);
   await click(`#projects-dialog .pd-row[data-id="${id}"] [data-role=${role}]`);
 }
 const settled = async (expr, ms) => !!(await waitFor(expr, ms));
-const openDialog = async () => { await click('#btn-projects'); await waitFor("document.getElementById('projects-dialog').open && !!document.querySelector('#projects-dialog .pd-row, #projects-dialog .pd-empty, #projects-dialog .pd-error:not([hidden])')"); };
+const openDialog = async () => { await click('#btn-projects'); await waitFor("document.getElementById('projects-dialog').open && !!document.querySelector('#projects-dialog .pd-row, #projects-dialog .pd-empty, #projects-dialog .pd-error:not([hidden])')");
+  await waitFor("t.store.list().then((l) => document.querySelectorAll('#projects-dialog .pd-row').length === l.length)", 8000); };      // (and until the rows are the whole list: a redraw in the middle of a click moved the target)
 
 try {
   // ── page 1: first run ──
