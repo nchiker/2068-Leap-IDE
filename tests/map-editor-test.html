@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- tests/map-editor-test.html: a blank page that mounts the Studio's map editor on a fake host. Driven by tests/map-editor-smoke.mjs.
-     ?theme=light|dark picks the ide.css palette. window.t exposes the host, the editor, the project and a log of what the editor did;
+     ?theme=light|dark picks the ide.css palette. ?nokinds=1 leaves out getObjectKinds / setObjectKinds (a host with no object layer). window.t exposes the host, the editor, the project and a log of what the editor did;
      t.load(name) replaces the project by an example of arcade/examples (name.arc + name.assets.json). -->
 <html lang="en" data-theme="dark">
 <head>
@@ -26,7 +26,7 @@ if (q.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const project = { format: 1, name: 'test', framerate: 30, files: { 'main.arc': '' }, assets: { sprites: {}, tilesets: {}, maps: {}, sfx: {}, music: {} }, scenes: {} };
 const listeners = new Set(), selListeners = new Set();
-const log = { sets: [], bad: [], deletes: [], renames: [], status: [], selects: [] };
+const log = { sets: [], bad: [], deletes: [], renames: [], status: [], selects: [], kindSets: [], kindRefused: [] };
 const ID = 'map-editor';
 const fire = (ev) => { for (const fn of [...listeners]) fn(ev); };
 let rolesCache = { text: null, roles: null };
@@ -64,15 +64,27 @@ const host = {
   roles,
   assetWarnings: (kind, name) => checkAssets(project, roles()).filter((w) => (!kind || w.kind === kind) && (!name || w.asset === name)),
   usedBy: (kind, name) => assetReferences(project, kind, name).map((r) => `${r.file}:${r.line}`),
+  // the object layer (stage 4, M2): project.objectKinds, validated the way the Studio will (shape rules here, a few reserved words as the compiler's stand-in)
+  getObjectKinds: () => copy(project.objectKinds ?? {}),
+  setObjectKinds(kinds) {
+    const bad = M.validateKinds(kinds, { sprites: Object.keys(project.assets.sprites ?? {}) });
+    const reserved = Object.keys(kinds).find((k) => ['print', 'plot', 'end', 'if', 'for'].includes(k));
+    if (bad.length || reserved) { const message = bad[0] ?? `"${reserved}" is a reserved word`; log.kindRefused.push(message); return { ok: false, message }; }
+    project.objectKinds = copy(kinds);
+    log.kindSets.push(Object.keys(kinds).join());
+    fire({ type: 'project', source: 'object-kinds' });
+    return { ok: true };
+  },
 };
+if (q.get('nokinds') === '1') { delete host.getObjectKinds; delete host.setObjectKinds; }
 if (q.get('noroles') === '1') { delete host.roles; delete host.assetWarnings; delete host.usedBy; }
 const editor = createMapEditor(document.getElementById('mount'), host);
 
 async function load(ex) {
   const [arc, assets] = await Promise.all([fetch(`../arcade/examples/${ex}.arc`).then((r) => r.text()), fetch(`../arcade/examples/${ex}.assets.json`).then((r) => r.json())]);
   const p = exampleProject(ex, arc, assets);
-  project.files = p.files; project.assets = p.assets; project.scenes = p.scenes;     // (the scenes carry a fine game's display setting)
-  log.sets.length = 0; log.bad.length = 0;
+  project.files = p.files; project.assets = p.assets; project.scenes = p.scenes; project.objectKinds = copy(p.objectKinds ?? {});     // (the scenes carry a fine game's display setting)
+  log.sets.length = 0; log.bad.length = 0; log.kindSets.length = 0; log.kindRefused.length = 0;
   fire({ type: 'project', source: 'studio' });
   return Object.keys(project.assets.maps);
 }
@@ -80,6 +92,8 @@ window.t = {
   host, editor, project, log, M, T,
   load,
   /** An asset change made by somebody else (another editor, an example, Open). */
+  /** The object kinds changed by somebody else (the Studio's undo, an example opening). */
+  externalKinds(kinds) { project.objectKinds = copy(kinds); fire({ type: 'project', source: 'other' }); },
   externalSet(kind, name, asset) { project.assets[kind][name] = copy(asset); fire({ type: 'asset', kind, name, source: 'other' }); },
   setSource(text) { project.files['main.arc'] = text; fire({ type: 'source', source: 'studio' }); },
 };

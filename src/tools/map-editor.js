@@ -13,6 +13,14 @@
  * Roles (from host.roles()): 'world' (the map a WINDOW names: ruler, 24-cell frame, tiles 0..31), 'floorplan' (the VIEW3D map: wall codes 0..4,
  * the outer ring must be walls), 'cell' (the rest). A map the source does not use is a cell map with a note and relaxed size limits.
  * Choices made here: right button / the erase tool paint tile 0 in a world map (blank means tile 0 there), code 0 in a floor plan, blank in a cell map.
+ *
+ * The object layer (stage 4, M2): a second layer, "Objects", beside the tile painting (button or the O key). Objects are the map asset's
+ * `objects: [{kind, x, y, props?}]` (pixels), their kinds are the project's `objectKinds`. Extra host members, all optional (without
+ * getObjectKinds the layer is off): getObjectKinds() -> {name: {colour, sprite?, props}} (a copy), setObjectKinds(kinds) -> {ok, message?} (the host
+ * validates), renameObjectKind(from, to) -> {ok, message?} (optional: renames the kind in the table and in every map; without it the editor does the
+ * three steps itself with setObjectKinds and setAsset), getAsset('sprites', name) for a marker sprite. One completed edit is one setAsset of the map
+ * (undo covers object edits); kind edits belong to the host, and a kind rename / delete / property removal that touches other maps rewrites them
+ * through setAsset and clears this map's undo history.
  */
 
 "use strict";
@@ -20,7 +28,7 @@
 import * as M from './map-model.js';
 import * as T from './tile-model.js';
 import { mapRole, effectiveTileset } from '../lang/arcade/arcade-assetcheck.js';
-import { paletteRgb } from './sprite-model.js';
+import { paletteRgb, fromAsset as spriteFromAsset, framePixels, keyRGB as spriteKeyRGB } from './sprite-model.js';
 import { createWarningList, warningListCss } from './warning-list.js';
 
 const PREF_KEY = 'leap-studio.mapd';
@@ -118,6 +126,27 @@ ${warningListCss('warnl', '.mapd-warn', { fg: '--mp-fg', muted: '--mp-muted', bo
 .mapd-msg.err { color: var(--mp-red); }
 .mapd-empty { color: var(--mp-muted); padding: 24px 8px; }
 .mapd-cam { width: 180px; }
+.mapd:focus-visible { outline: 1px dashed var(--mp-amber); outline-offset: -2px; }
+.mapd-btn:focus-visible, .mapd-pi:focus-visible, .mapd-orow:focus-visible, .mapd-kcol:focus-visible, .mapd-num:focus-visible, .mapd-text:focus-visible, .mapd-select:focus-visible { outline: 2px solid var(--mp-amber); outline-offset: 1px; }
+.mapd-side.obj { flex-basis: 300px; }
+.mapd-objside { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mapd-ksw { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--mp-border-hi); border-radius: 2px; flex: none; vertical-align: middle; }
+.mapd-kinds { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--mp-border-hi); border-radius: 6px; padding: 6px; background: var(--mp-surface); }
+.mapd-krow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.mapd-krow .detail { color: var(--mp-muted); font-size: 10px; flex: 1 1 100%; }
+.mapd-kform { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--mp-border); padding-top: 6px; }
+.mapd-kcols { display: flex; flex-wrap: wrap; gap: 3px; }
+.mapd-kcol { width: 18px; height: 18px; padding: 0; border: 1px solid var(--mp-border-hi); border-radius: 3px; cursor: pointer; }
+.mapd-kcol.sel { outline: 2px solid var(--mp-amber); outline-offset: 1px; }
+.mapd-propbox { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--mp-border); border-radius: 6px; padding: 6px; background: var(--mp-surface); }
+.mapd-prop { display: flex; align-items: center; gap: 6px; }
+.mapd-prop .mapd-label { min-width: 54px; }
+.mapd-olist { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow: auto; }
+.mapd-orow { display: flex; align-items: center; gap: 6px; text-align: left; font: 11px var(--font-code, monospace); color: var(--mp-fg); background: var(--mp-bg); border: 1px solid transparent; border-radius: 3px; padding: 2px 4px; cursor: pointer; }
+.mapd-orow:hover { background: var(--mp-hover); }
+.mapd-orow.sel { border-color: var(--mp-amber); background: var(--mp-active); }
+.mapd-orow.bad { color: var(--mp-red); }
+.mapd-orow .rest { color: var(--mp-muted); }
 `;
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -171,6 +200,13 @@ export function createMapEditor(container, host) {
     roles() { try { return host.roles ? host.roles() ?? null : null; } catch { return null; } },
     warnings(n) { try { return host.assetWarnings ? host.assetWarnings('maps', n) ?? [] : null; } catch { return null; } },
     usedBy(n) { try { return host.usedBy ? host.usedBy('maps', n) ?? [] : []; } catch { return []; } },
+    /** project.objectKinds as the host has it (a copy); {} when the host has none. */
+    kinds() {
+      try { const k = host.getObjectKinds?.(); return k && typeof k === 'object' ? deepCopy(k) : {}; } catch { return {}; }
+    },
+    setKinds(k) {
+      try { if (!host.setObjectKinds) return { ok: false, message: 'This project cannot store object kinds.' }; const r = host.setObjectKinds(deepCopy(k)) ?? { ok: true }; return r.ok === false ? { ok: false, message: r.message ?? r.error ?? 'The Studio did not accept the kinds' } : { ok: true }; } catch (e) { return { ok: false, message: e.message }; }
+    },
     /** The project as effectiveTileset reads it: getProject(), else a stand-in built from the listing. */
     project() {
       try { const p = host.getProject?.(); if (p) return p; } catch { /* fall through */ }
@@ -197,6 +233,20 @@ export function createMapEditor(container, host) {
   let showGrid = prefs.grid !== false;
   let showFlags = prefs.flags === true;
   let showWarn = prefs.warn !== false;
+  // the object layer
+  const objectsSupported = typeof host?.getObjectKinds === 'function';
+  let layer = 'tiles';                  // tiles | objects
+  let kinds = {};                       // project.objectKinds (a copy, read in renderAll)
+  let kindMarks = new Map();            // kind name -> {w, h, canvas} for a kind with a sprite
+  let curKind = null;                   // the kind a click places
+  let selObj = null;                    // the selected object's index in map.objects
+  let objGrid = M.OBJECT_GRIDS.includes(prefs.ogrid) ? prefs.ogrid : M.DEFAULT_OBJECT_GRID;
+  let showObjects = prefs.objects !== false;
+  let hoverPx = null;                   // the pointer in map pixels
+  let objDrag = null;                   // {index, offX, offY, moved}
+  let kindsOpen = false;                // the Kinds panel
+  let kindForm = null;                  // {editing: name | null, colour}
+  let propKey = '';
   let camX = 0;                         // the window frame's camera position in pixels (display only)
   let sel = null;                       // {x0, y0, x1, y1} normalised
   let clip = null;                      // a copied block
@@ -208,7 +258,7 @@ export function createMapEditor(container, host) {
   let destroyed = false;
   let lastCellPx = 0;
   const cleanups = [];
-  const keepPrefs = () => savePrefs({ zoom, grid: showGrid, flags: showFlags, warn: showWarn });
+  const keepPrefs = () => savePrefs({ zoom, grid: showGrid, flags: showFlags, warn: showWarn, objects: showObjects, ogrid: objGrid });
 
   // ── skeleton ──
   const root = el('div', 'mapd', null, { tabindex: '0' });
@@ -295,7 +345,25 @@ export function createMapEditor(container, host) {
   const btnUndo = button('Undo', 'Undo (Ctrl+Z)', () => undo());
   const btnRedo = button('Redo', 'Redo (Ctrl+Y)', () => redo());
   btnUndo.dataset.role = 'undo'; btnRedo.dataset.role = 'redo';
-  toolRow.append(el('span', 'mapd-sep'), btnCopy, btnCut, btnPaste, btnClear, el('span', 'mapd-sep'), btnUndo, btnRedo);
+  const sepA = el('span', 'mapd-sep'), sepB = el('span', 'mapd-sep');
+  toolRow.append(sepA, btnCopy, btnCut, btnPaste, btnClear, sepB, btnUndo, btnRedo);
+  const tileOnly = [...Object.values(toolBtns), sepA, btnCopy, btnCut, btnPaste, btnClear, sepB];     // hidden in the Objects layer (Undo / Redo stay)
+
+  // the layer row: Tiles | Objects, show, snap grid
+  const layerRow = el('div', 'mapd-row');
+  layerRow.dataset.role = 'layer-row';
+  layerRow.hidden = !objectsSupported;
+  const btnLayerTiles = button('Tiles', 'Paint tiles', () => setLayer('tiles'));
+  const btnLayerObjects = button('Objects O', 'Place and edit the map\'s objects: coins, enemies, the start, keys, doors. Press O to switch', () => setLayer('objects'));
+  btnLayerTiles.dataset.role = 'layer-tiles'; btnLayerObjects.dataset.role = 'layer-objects';
+  const [objShowLabel, objShowChk] = checkbox('Show objects', 'Draw the objects over the map (in the Tiles layer too)', (on) => { showObjects = on; keepPrefs(); drawMap(); });
+  objShowChk.dataset.role = 'objects-show';
+  const objGridSel = selectEl(M.OBJECT_GRIDS.map((g) => [g, g + ' px']), objGrid, (v) => { objGrid = +v; keepPrefs(); syncControls(); }, 'Snap: objects are placed and dragged to a multiple of this many pixels (arrow keys move 1 pixel, Shift+arrow one grid step)');
+  objGridSel.dataset.role = 'objects-grid';
+  const objGridLabel = el('span', 'mapd-label', 'Snap');
+  const objTotal = el('span', 'mapd-label', '');
+  objTotal.dataset.role = 'objects-total';
+  layerRow.append(el('span', 'mapd-label', 'Layer'), btnLayerTiles, btnLayerObjects, el('span', 'mapd-sep'), objShowLabel, objGridLabel, objGridSel, objTotal);
 
   // canvas, ruler, camera
   const main = el('div', 'mapd-main');
@@ -332,6 +400,53 @@ export function createMapEditor(container, host) {
   palBox.dataset.role = 'palette';
   side.append(palTitle, palBox);
 
+  // the Objects layer's side: kind palette, Kinds panel, selected object, list
+  const objSide = el('div', 'mapd-objside');
+  objSide.dataset.role = 'object-panel';
+  objSide.hidden = true;
+  const kindPal = el('div', 'mapd-pal');
+  kindPal.dataset.role = 'kind-palette';
+  const kindRow = el('div', 'mapd-row');
+  const btnKinds = button('Kinds…', 'Add, edit or delete the project\'s object kinds', () => { kindsOpen = !kindsOpen; if (!kindsOpen) kindForm = null; buildObjectPanel(); });
+  btnKinds.dataset.role = 'kinds-toggle';
+  kindRow.append(btnKinds);
+  const kindsPanel = el('div', 'mapd-kinds');
+  kindsPanel.dataset.role = 'kinds-panel';
+  kindsPanel.hidden = true;
+  const kindList = el('div');
+  kindList.dataset.role = 'kind-list';
+  const btnKindAdd = button('Add kind', 'A new object kind: a name, a marker colour, an optional sprite and properties', () => openKindForm(null));
+  btnKindAdd.dataset.role = 'kind-add';
+  const kfBox = el('div', 'mapd-kform');
+  kfBox.dataset.role = 'kind-form';
+  kfBox.hidden = true;
+  const kfTitle = el('div', 'mapd-label', '');
+  const kfName = el('input', 'mapd-text', null, { type: 'text', maxlength: String(M.KIND_NAME_MAX), placeholder: 'name, e.g. coin', 'aria-label': 'Kind name' });
+  kfName.dataset.role = 'kind-name';
+  const kfProps = el('input', 'mapd-text', null, { type: 'text', placeholder: 'properties, e.g. hp speed', 'aria-label': 'Properties' });
+  kfProps.dataset.role = 'kind-props';
+  kfProps.title = `Up to ${M.MAX_PROPS} property names (lower case, up to ${M.KIND_NAME_MAX} characters), separated by spaces or commas; every object of the kind gets a whole number for each`;
+  const kfColours = el('div', 'mapd-kcols');
+  kfColours.dataset.role = 'kind-colours';
+  const kfSprite = el('select', 'mapd-select', null, { 'aria-label': 'Marker sprite' });
+  kfSprite.dataset.role = 'kind-sprite';
+  kfSprite.title = 'A sprite of the project shown instead of the coloured square (optional)';
+  const kfOk = button('Save kind', 'Keep this kind', () => submitKindForm(), 'on');
+  const kfCancel = button('Cancel', 'Close without changing', () => { kindForm = null; buildObjectPanel(); });
+  kfOk.dataset.role = 'kind-ok'; kfCancel.dataset.role = 'kind-cancel';
+  const kfMsg = el('div', 'mapd-msg');
+  kfMsg.dataset.role = 'kind-message';
+  kfBox.append(kfTitle, kfName, el('span', 'mapd-label', 'Marker colour'), kfColours, el('span', 'mapd-label', 'Marker sprite'), kfSprite, el('span', 'mapd-label', 'Properties'), kfProps, kfMsg,
+    (() => { const r = el('div', 'mapd-row'); r.append(kfOk, kfCancel); return r; })());
+  kindsPanel.append(kindList, btnKindAdd, kfBox);
+  const propBox = el('div', 'mapd-propbox');
+  propBox.dataset.role = 'object-props';
+  const listTitle = el('div', 'mapd-label', 'Objects on this map');
+  const objList = el('div', 'mapd-olist');
+  objList.dataset.role = 'object-list';
+  objSide.append(el('div', 'mapd-label', 'Object kinds (click to choose what a click places)'), kindPal, kindRow, kindsPanel, propBox, listTitle, objList);
+  side.append(objSide);
+
   const body = el('div', 'mapd-body');
   body.append(main, side);
   const emptyNote = el('div', 'mapd-empty', 'No maps in this project yet. Press New to create one.');
@@ -340,7 +455,7 @@ export function createMapEditor(container, host) {
   const warnView = createWarningList(warnList, { idAttr: 'data-id' });
   const msg = el('div', 'mapd-msg');
   msg.dataset.role = 'message';
-  root.append(bar, newBox, sizeRow, toolRow, emptyNote, body, warnList, msg);
+  root.append(bar, newBox, sizeRow, layerRow, toolRow, emptyNote, body, warnList, msg);
 
   /** The 8 flag names: the host's (project.flagNames) when it offers them, else the defaults; an unnamed flag shows its number. */
   function flagNames() {
@@ -530,6 +645,7 @@ export function createMapEditor(container, host) {
       ctx.fillRect(0, 0, fx, Hh); ctx.fillRect(fx + fw, 0, W - fx - fw, Hh);
       ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 2; ctx.strokeRect(fx + 1, 1, fw - 2, fh - 2);
     }
+    drawObjects(ctx, cp);
     if (sel) {
       ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
       ctx.strokeStyle = '#000'; ctx.strokeRect(sel.x0 * cp + 0.5, sel.y0 * cp + 0.5, (sel.x1 - sel.x0 + 1) * cp - 1, (sel.y1 - sel.y0 + 1) * cp - 1);
@@ -629,6 +745,7 @@ export function createMapEditor(container, host) {
     btnPaste.disabled = !clip;
     btnPaste.classList.toggle('on', pasteMode);
     gridChk.checked = showGrid; flagChk.checked = showFlags; warnChk.checked = showWarn; zoomSel.value = String(zoom);
+    syncLayer();
     if (!has) return;
     const lim = limits();
     wIn.min = String(lim.minW); wIn.max = String(lim.maxW); hIn.min = String(lim.minH); hIn.max = String(lim.maxH);
@@ -680,6 +797,11 @@ export function createMapEditor(container, host) {
     const undef = undefinedCells();
     if (undef.length && !warnings.some((f) => f.id === 'map-undefined-tile')) add(`${undef.length} cell${undef.length > 1 ? 's use' : ' uses'} a tile the tile set does not define (red cross).`, 'err');
     if (w === null && roleKnown) for (const m of M.validateMap(map, role, { tileCount: tiles ? tileCanvases.length : null })) add(m, 'err');
+    if (objectsSupported && map.objects) {
+      const op = M.objectProblems(map, kinds);
+      for (const p of op.slice(0, 5)) add(p.message, 'err', 'object-' + p.kind);
+      if (op.length > 5) add(`…and ${op.length - 5} more problems with the objects`, 'err', 'object-more');
+    }
     for (const f of warnings) {
       if (role === 'floorplan' && f.id === 'floorplan-shape' && ringBad().length && /outer ring/.test(f.message)) { add(f.message, 'err', f.id); continue; }
       add(f.message, f.severity === 'error' ? 'err' : '', f.id);
@@ -693,7 +815,7 @@ export function createMapEditor(container, host) {
     if (asset === null || asset === undefined) { say(`Map "${n}" is not in the project`, 'err'); return false; }
     let m;
     try { m = M.fromAsset(asset); } catch (e) { name = n; map = null; hist = null; lastStored = ''; say(`Cannot read map "${n}": ${e.message}`, 'err'); renderAll(); return false; }
-    if (name !== n || !keepView) { camX = 0; sel = null; pasteMode = false; }
+    if (name !== n || !keepView) { camX = 0; sel = null; pasteMode = false; selObj = null; objDrag = null; }
     name = n; map = m;
     lastStored = JSON.stringify(asset);
     hist = M.createHistory(map, UNDO_STEPS + 1);
@@ -717,11 +839,11 @@ export function createMapEditor(container, host) {
   }
   function undo() {
     if (!hist?.canUndo) return;
-    map = hist.undo(); fixView(); save(); renderAll();
+    map = hist.undo(); selObj = null; fixView(); save(); renderAll();
   }
   function redo() {
     if (!hist?.canRedo) return;
-    map = hist.redo(); fixView(); save(); renderAll();
+    map = hist.redo(); selObj = null; fixView(); save(); renderAll();
   }
   function fixView() {
     if (sel && (sel.x0 >= map.w || sel.y0 >= map.h)) sel = null;
@@ -730,9 +852,11 @@ export function createMapEditor(container, host) {
   function renderAll() {
     if (destroyed) return;
     if (map) readContext(); else { role = 'cell'; roleKnown = false; tiles = null; tileCanvases = []; tsKey = ''; }
+    readKinds();
     syncControls();
     refreshWarnings();
     buildPalette();
+    buildObjectPanel();
     drawFlagLegend();
     drawMap();
     showReadout();
@@ -808,8 +932,10 @@ export function createMapEditor(container, host) {
       return;
     }
     if (w === map.w && h === map.h) { syncControls(); return; }
+    const moving = M.objectsOutside(map, w, h);
+    if (moving && window.confirm && !window.confirm(`${plural(moving, 'object')} would be outside the smaller map. They are kept: each moves to the last column or row. Resize?`)) { syncControls(); return; }
     edit(() => { M.resize(map, w, h); sel = null; });
-    say(`Resized to ${w} x ${h} (cropped or padded at the top-left; padding is blank)`);
+    say(`Resized to ${w} x ${h} (cropped or padded at the top-left; padding is blank)${moving ? `; ${plural(moving, 'object')} moved inside the map` : ''}`);
   }
   function selRect() { return sel ? { x: sel.x0, y: sel.y0, w: sel.x1 - sel.x0 + 1, h: sel.y1 - sel.y0 + 1 } : null; }
   function copyCmd(cut) {
@@ -834,6 +960,463 @@ export function createMapEditor(container, host) {
     syncControls(); drawMap();
   }
 
+  // ── the object layer: kinds, markers, panels ──
+  const colourCss = (c) => rgbCss(paletteRgb(pal[Number.isInteger(c) && c >= 0 && c < 16 ? c : 7]));
+  const textOn = (c) => { const [r, g, b] = paletteRgb(pal[Number.isInteger(c) && c >= 0 && c < 16 ? c : 7]); return r * 0.299 + g * 0.587 + b * 0.114 > 140 ? '#000' : '#fff'; };
+  const colourName = (c) => pal[c]?.name ?? `colour ${c}`;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const sizeOf = (kind) => kindMarks.get(kind) ?? null;
+  const objAtIndex = (i) => (map && i !== null ? map.objects?.[i] ?? null : null);
+
+  /** Read the project's kinds and make a marker bitmap for each kind that names a sprite (one frame-0 picture, drawn at 1 pixel = 1 map pixel). */
+  function readKinds() {
+    kinds = objectsSupported ? H.kinds() : {};
+    kindMarks = new Map();
+    for (const [n, k] of Object.entries(kinds)) {
+      if (!k || typeof k.sprite !== 'string') continue;
+      const a = H.get('sprites', k.sprite);
+      if (!a) continue;
+      try {
+        const sp = spriteFromAsset(a), px = framePixels(sp, 0);
+        const c = document.createElement('canvas');
+        c.width = sp.w; c.height = sp.h;
+        const cx = c.getContext('2d'), img = cx.createImageData(sp.w, sp.h);
+        for (let i = 0; i < sp.w * sp.h; i++) {
+          if (px[i] < 0) continue;
+          const rgb = spriteKeyRGB(px[i], pal);
+          img.data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
+        }
+        cx.putImageData(img, 0, 0);
+        kindMarks.set(n, { w: sp.w, h: sp.h, canvas: c });
+      } catch { /* an unreadable sprite: the coloured square is used */ }
+    }
+    if (!curKind || !kinds[curKind]) curKind = Object.keys(kinds)[0] ?? null;
+    if (selObj !== null && !objAtIndex(selObj)) selObj = null;
+  }
+  /** Every map's objects as the host has them (the map being edited from the editor): kind -> {objects, maps: Set, here}. */
+  function usageAll() {
+    const u = new Map();
+    for (const n of H.list('maps')) {
+      const list = n === name && map ? map.objects : H.get('maps', n)?.objects;
+      if (!Array.isArray(list)) continue;
+      for (const o of list) {
+        const e = u.get(o?.kind) ?? { objects: 0, maps: new Set(), here: 0 };
+        e.objects++; e.maps.add(n);
+        if (n === name) e.here++;
+        u.set(o?.kind, e);
+      }
+    }
+    return u;
+  }
+  /** Rewrite the object lists of every map that has some: fn(map in editing form) -> how many objects it changed; a map with changes is stored through the host. */
+  function rewriteMaps(fn) {
+    const changed = [];
+    for (const n of H.list('maps')) {
+      const a = H.get('maps', n);
+      if (!a || !Array.isArray(a.objects)) continue;
+      let m;
+      try { m = M.fromAsset(a); } catch { continue; }
+      if (!fn(m)) continue;
+      const r = H.set(n, M.toAsset(m));
+      if (r.ok === false) return { ok: false, message: `The Studio did not accept the map "${n}": ${r.error ?? 'unknown reason'}`, changed };
+      changed.push(n);
+    }
+    return { ok: true, changed };
+  }
+  function countPropValues(kind, props) {
+    let n = 0;
+    for (const m of H.list('maps')) {
+      const list = m === name && map ? map.objects : H.get('maps', m)?.objects;
+      for (const o of Array.isArray(list) ? list : []) if (o.kind === kind && o.props && props.some((p) => p in o.props)) n++;
+    }
+    return n;
+  }
+
+  function setLayer(l) {
+    if (!objectsSupported || (l !== 'tiles' && l !== 'objects') || l === layer) return;
+    layer = l;
+    pasteMode = false; stroke = null; objDrag = null; hoverPx = null;
+    if (l === 'objects') { showObjects = true; keepPrefs(); }
+    syncControls();
+    buildObjectPanel();
+    drawMap();
+    showReadout();
+    say(l === 'objects' ? 'Objects layer: click the map to place the chosen kind, drag to move, right-click or Delete removes' : 'Tiles layer');
+  }
+  function syncLayer() {
+    const obj = layer === 'objects' && objectsSupported;
+    layerRow.hidden = !objectsSupported || !map;
+    for (const n of tileOnly) n.hidden = obj;
+    palTitle.hidden = palBox.hidden = obj;
+    side.classList.toggle('obj', obj);
+    btnLayerTiles.classList.toggle('on', !obj); btnLayerObjects.classList.toggle('on', obj);
+    objGridSel.hidden = objGridLabel.hidden = !obj;
+    objShowChk.checked = showObjects; objGridSel.value = String(objGrid);
+    canvas.style.cursor = obj ? 'copy' : '';
+    const n = map?.objects?.length ?? 0;
+    objTotal.textContent = n ? plural(n, 'object') : '';
+  }
+
+  /** A kind's marker drawn into a size x size swatch (its sprite scaled to fit, else the colour). */
+  function drawSwatch(ctx, kind, size) {
+    const k = kinds[kind], mk = kindMarks.get(kind);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#14161c'; ctx.fillRect(0, 0, size, size);
+    if (mk) {
+      const sc = Math.max(1, Math.floor(Math.min(size / mk.w, size / mk.h))) || size / Math.max(mk.w, mk.h);
+      const w = mk.w * sc, h = mk.h * sc;
+      ctx.drawImage(mk.canvas, 0, 0, mk.w, mk.h, Math.floor((size - w) / 2), Math.floor((size - h) / 2), w, h);
+    } else if (k) {
+      ctx.fillStyle = colourCss(k.colour); ctx.fillRect(3, 3, size - 6, size - 6);
+    } else { ctx.strokeStyle = '#ff2a2a'; ctx.lineWidth = 2; ctx.strokeRect(3, 3, size - 6, size - 6); }
+  }
+
+  function buildObjectPanel() {
+    if (!objectsSupported) return;
+    const on = layer === 'objects' && !!map;
+    objSide.hidden = !on;
+    if (!on) return;
+    buildKindPalette();
+    kindsPanel.hidden = !kindsOpen;
+    if (kindsOpen) buildKindsPanel();
+    buildPropBox();
+    buildObjectList();
+  }
+  function syncKindSel() { for (const b of kindPal.querySelectorAll('.mapd-pi')) b.classList.toggle('sel', b.dataset.kind === curKind); }
+  function buildKindPalette() {
+    kindPal.replaceChildren();
+    const counts = M.objectCounts(map), names = Object.keys(kinds);
+    if (!names.length) kindPal.append(el('div', 'mapd-label', 'No object kinds yet. Press Kinds… and Add kind.'));
+    for (const n of names) {
+      const k = kinds[n];
+      const b = el('div', 'mapd-pi', null, { tabindex: '0', title: `${n}: choose it, then click the map to place one${k.props?.length ? ' (properties: ' + k.props.join(', ') + ')' : ''}` });
+      b.dataset.role = 'kind-item'; b.dataset.kind = n;
+      const c = el('canvas');
+      c.width = 24; c.height = 24;
+      drawSwatch(c.getContext('2d'), n, 24);
+      b.append(c, el('span', null, `${n} ${counts.get(n) ?? 0}`));
+      const choose = () => { curKind = n; syncKindSel(); buildPropBox(); say(`Placing ${n}: click the map`); };
+      b.addEventListener('click', choose);
+      b.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); choose(); } });
+      kindPal.append(b);
+    }
+    syncKindSel();
+  }
+
+  // the Kinds panel
+  for (let c = 0; c < 16; c++) {
+    const b = el('button', 'mapd-kcol', null, { type: 'button', title: `${c}: ${colourName(c)}`, 'aria-label': colourName(c) });
+    b.style.background = colourCss(c);
+    b.dataset.role = 'kind-colour'; b.dataset.colour = String(c);
+    b.addEventListener('click', () => { if (kindForm) { kindForm.colour = c; syncKfColours(); } });
+    kfColours.append(b);
+  }
+  function syncKfColours() { for (const b of kfColours.querySelectorAll('.mapd-kcol')) b.classList.toggle('sel', !!kindForm && +b.dataset.colour === kindForm.colour); }
+  function buildKindsPanel() {
+    kindList.replaceChildren();
+    const usage = usageAll(), names = Object.keys(kinds);
+    if (!names.length) kindList.append(el('div', 'mapd-label', 'No kinds yet.'));
+    for (const n of names) {
+      const k = kinds[n], u = usage.get(n);
+      const row = el('div', 'mapd-krow');
+      row.dataset.role = 'kind-row'; row.dataset.kind = n;
+      const sw = el('span', 'mapd-ksw');
+      sw.style.background = colourCss(k.colour);
+      const be = button('Edit', `Edit the kind ${n}`, () => openKindForm(n), 'sm');
+      const bd = button('Delete', `Delete the kind ${n}`, () => deleteKindCmd(n), 'sm');
+      be.dataset.role = 'kind-edit'; bd.dataset.role = 'kind-delete';
+      row.append(sw, el('b', null, n), be, bd,
+        el('div', 'detail', `${colourName(k.colour)}${k.sprite ? ', sprite ' + k.sprite : ''}; properties: ${k.props?.length ? k.props.join(', ') : 'none'}; ${u?.here ?? 0} here, ${u?.objects ?? 0} in ${plural(u?.maps.size ?? 0, 'map')}`));
+      kindList.append(row);
+    }
+    btnKindAdd.disabled = !host.setObjectKinds || Object.keys(kinds).length >= M.MAX_KINDS;
+    btnKindAdd.title = !host.setObjectKinds ? 'This project cannot store object kinds' : Object.keys(kinds).length >= M.MAX_KINDS ? `At most ${M.MAX_KINDS} kinds` : btnKindAdd.title;
+    kfBox.hidden = !kindForm;
+    kfTitle.textContent = kindForm ? (kindForm.editing ? `Edit the kind "${kindForm.editing}"` : 'New kind') : '';
+    syncKfColours();
+  }
+  function openKindForm(editing) {
+    const k = editing ? kinds[editing] : null;
+    const used = new Set(Object.values(kinds).map((x) => x.colour));
+    kindForm = { editing, colour: k ? k.colour : ([14, 10, 12, 13, 11, 9, 6, 2, 4, 5, 3, 1, 15, 7, 8, 0].find((c) => !used.has(c)) ?? 14) };
+    kindsOpen = true;
+    kfName.value = editing ?? '';
+    kfProps.value = (k?.props ?? []).join(' ');
+    kfSprite.replaceChildren();
+    const none = el('option', null, '(none: a coloured square)'); none.value = '';
+    kfSprite.append(none);
+    const sprites = H.list('sprites');
+    for (const sname of sprites) { const o = el('option', null, sname); o.value = sname; kfSprite.append(o); }
+    if (k?.sprite && !sprites.includes(k.sprite)) { const o = el('option', null, `${k.sprite} (missing)`); o.value = k.sprite; kfSprite.append(o); }
+    kfSprite.value = k?.sprite ?? '';
+    kfMsg.textContent = ''; kfMsg.className = 'mapd-msg';
+    buildObjectPanel();
+    kfName.focus();
+  }
+  function submitKindForm() {
+    if (!kindForm) return;
+    const nm = kfName.value.trim(), editing = kindForm.editing;
+    const props = kfProps.value.split(/[\s,]+/).filter(Boolean);
+    const fail = (t) => { kfMsg.textContent = t; kfMsg.className = 'mapd-msg err'; };
+    if (nm !== editing && kinds[nm]) { fail(`There is already a kind called "${nm}"`); return; }
+    const entry = { colour: kindForm.colour, props };
+    if (kfSprite.value) entry.sprite = kfSprite.value;
+    const next = {};
+    let placed = false;
+    for (const [k, v] of Object.entries(kinds)) { if (k === editing) { next[nm] = entry; placed = true; } else next[k] = v; }
+    if (!placed) next[nm] = entry;
+    const probs = M.kindProblems(next, { sprites: H.list('sprites') });
+    if (probs.length) { fail(probs[0].message); return; }
+    const err = applyKindChange(editing, nm, entry, next);
+    if (err) fail(err);
+  }
+  /** Store an added / edited kind. Returns an error text, or null. Touches the other maps when objects of the kind exist (see the header). */
+  function applyKindChange(editing, nm, entry, next) {
+    const old = editing ? kinds[editing] : null, u = editing ? usageAll().get(editing) : null;
+    const renamed = !!editing && nm !== editing;
+    const removed = old ? (old.props ?? []).filter((p) => !entry.props.includes(p)) : [];
+    const lost = removed.length && u ? countPropValues(editing, removed) : 0;
+    const q = [];
+    if (renamed && u?.objects) q.push(`${plural(u.objects, 'object')} in ${plural(u.maps.size, 'map')} become "${nm}" objects.`);
+    if (lost) q.push(`${plural(lost, 'object')} lose the value of ${removed.join(', ')} (this cannot be undone).`);
+    if (q.length && window.confirm && !window.confirm(`Change the kind "${editing}"?\n${q.join('\n')}`)) return 'Cancelled.';
+    if (removed.length) {
+      const r = rewriteMaps((m) => removed.reduce((n, p) => n + M.dropPropIn(m, editing, p), 0));
+      if (!r.ok) return r.message;
+    }
+    if (renamed) {
+      if (typeof host.renameObjectKind === 'function') {
+        let r;
+        try { r = host.renameObjectKind(editing, nm) ?? { ok: true }; } catch (e) { r = { ok: false, message: e.message }; }
+        if (r.ok === false) return r.message ?? r.error ?? 'The Studio could not rename the kind';
+      } else {
+        const both = {};                                   // both names exist while the maps are rewritten, so no map ever names a kind that is not there
+        for (const [k, v] of Object.entries(kinds)) { both[k] = v; if (k === editing) both[nm] = deepCopy(entry); }
+        const r1 = H.setKinds(both);
+        if (!r1.ok) return r1.message;
+        const r2 = rewriteMaps((m) => M.renameKindIn(m, editing, nm));
+        if (!r2.ok) return r2.message;
+      }
+    }
+    const r3 = H.setKinds(next);
+    if (!r3.ok) { refresh(); return r3.message; }
+    if (!editing || curKind === editing) curKind = nm;
+    kindForm = null;
+    refresh();
+    say(editing ? `Kind "${nm}" saved` : `Kind "${nm}" added: click the map to place one`);
+    return null;
+  }
+  function deleteKindCmd(n) {
+    const u = usageAll().get(n);
+    if (u?.objects) {
+      const ask = `Delete the kind "${n}"? Its ${plural(u.objects, 'object')} in ${plural(u.maps.size, 'map')} are deleted too (this cannot be undone).`;
+      if (window.confirm && !window.confirm(ask)) return;
+      const r = rewriteMaps((m) => M.deleteKindIn(m, n));
+      if (!r.ok) { say(r.message, 'err'); refresh(); return; }
+    }
+    const next = {};
+    for (const [k, v] of Object.entries(kinds)) if (k !== n) next[k] = v;
+    const r = H.setKinds(next);
+    if (!r.ok) { say(r.message, 'err'); refresh(); return; }
+    if (curKind === n) curKind = null;
+    kindForm = null;
+    refresh();
+    say(`Deleted the kind "${n}"`);
+  }
+
+  // the selected object's box
+  const fieldValue = (o, f) => (f === 'x' ? o.x : f === 'y' ? o.y : o.props?.[f.slice(2)] ?? 0);
+  function buildPropBox() {
+    const o = objAtIndex(selObj), k = o ? kinds[o.kind] : null;
+    const key = JSON.stringify([selObj, o?.kind, k?.props, o ? null : curKind]);
+    if (key === propKey && propBox.childElementCount) {                 // the same fields: update in place (an input being typed in keeps its focus)
+      if (o) for (const i of propBox.querySelectorAll('input[data-field]')) if (i !== document.activeElement) i.value = String(fieldValue(o, i.dataset.field));
+      return;
+    }
+    propKey = key;
+    propBox.replaceChildren();
+    if (!o) {
+      propBox.append(el('div', 'mapd-label', curKind ? `Click the map to place an object of the kind "${curKind}". Click an object to select it, drag to move it, right-click or Delete removes it.` : 'Add an object kind first (Kinds…).'));
+      return;
+    }
+    const rank = M.sortedView(map, { kinds: Object.keys(kinds) }).find((e) => e.index === selObj)?.rank ?? 0;
+    propBox.append(el('div', 'mapd-label', `${o.kind} #${rank}${k ? '' : ' (this kind is not defined in the project)'}`));
+    const field = (f, label, min, max, title) => {
+      const row = el('div', 'mapd-prop');
+      const i = numberInput(min, max, (v) => setField(f, v), title, 80);
+      i.dataset.field = f; i.dataset.role = f === 'x' || f === 'y' ? 'obj-' + f : 'obj-prop';
+      if (f.startsWith('p:')) i.dataset.prop = f.slice(2);
+      i.value = String(fieldValue(o, f));
+      i.setAttribute('aria-label', label);
+      row.append(el('span', 'mapd-label', label), i);
+      propBox.append(row);
+    };
+    field('x', 'x (pixels)', 0, map.w * 8 - 1, `0..${map.w * 8 - 1}`);
+    field('y', 'y (pixels)', 0, map.h * 8 - 1, `0..${map.h * 8 - 1}`);
+    for (const p of k?.props ?? []) field('p:' + p, p, M.PROP_MIN, M.PROP_MAX, `a whole number ${M.PROP_MIN}..${M.PROP_MAX}`);
+    const del = button('Delete object', 'Remove this object (Delete key)', () => { if (selObj !== null) deleteObjectCmd(selObj); });
+    del.dataset.role = 'obj-delete';
+    propBox.append(del);
+  }
+  function setField(f, v) {
+    const o = objAtIndex(selObj);
+    if (!o) return;
+    const n = Number(v);
+    if (v === '' || !Number.isFinite(n)) { say('Type a whole number', 'err'); buildPropBox(); return; }
+    if (f === 'x' || f === 'y') {
+      if (!Number.isInteger(n)) { say('A position is a whole number of pixels', 'err'); buildPropBox(); return; }
+      edit(() => { M.moveObject(map, selObj, f === 'x' ? n : o.x, f === 'y' ? n : o.y); });
+    } else edit(() => { M.setObjectProp(map, selObj, f.slice(2), n); });
+  }
+  function buildObjectList() {
+    const focused = objList.contains(document.activeElement) ? document.activeElement.dataset.index : null;
+    objList.replaceChildren();
+    const view = M.sortedView(map, { kinds: Object.keys(kinds) });
+    listTitle.textContent = `Objects on this map (${view.length}), by kind then x: the order of the generated tables`;
+    if (!view.length) objList.append(el('div', 'mapd-label', 'None yet.'));
+    for (const e of view.slice(0, 400)) {
+      const o = e.obj, k = kinds[o.kind];
+      const row = el('button', 'mapd-orow' + (e.index === selObj ? ' sel' : '') + (k ? '' : ' bad'), null, { type: 'button', title: k ? `${o.kind} number ${e.rank} in its table` : `${o.kind}: this kind is not defined in the project` });
+      row.dataset.role = 'object-row'; row.dataset.index = String(e.index); row.dataset.kind = o.kind; row.dataset.rank = String(e.rank);
+      const sw = el('span', 'mapd-ksw');
+      sw.style.background = k ? colourCss(k.colour) : '#ff2a2a';
+      const rest = `x ${o.x}  y ${o.y}${(k?.props ?? []).map((p) => `  ${p}=${o.props?.[p] ?? 0}`).join('')}`;
+      row.append(sw, el('span', null, `${o.kind} #${e.rank}`), el('span', 'rest', rest));
+      row.addEventListener('click', () => selectObject(e.index));
+      objList.append(row);
+    }
+    if (view.length > 400) objList.append(el('div', 'mapd-label', `…and ${view.length - 400} more`));
+    const selRow = objList.querySelector('.mapd-orow.sel');
+    if (selRow) { const top = selRow.offsetTop - objList.offsetTop; if (top < objList.scrollTop) objList.scrollTop = top; else if (top + selRow.offsetHeight > objList.scrollTop + objList.clientHeight) objList.scrollTop = top + selRow.offsetHeight - objList.clientHeight; }
+    if (focused !== null) objList.querySelector(`[data-index="${focused}"]`)?.focus({ preventScroll: true });
+  }
+  function selectObject(i) {
+    selObj = i;
+    buildPropBox(); buildObjectList(); drawMap(); showReadout();
+    const o = objAtIndex(i);
+    if (o) say(`Selected ${o.kind} at x ${o.x}, y ${o.y}`);
+  }
+  function deleteObjectCmd(i) {
+    const o = objAtIndex(i);
+    if (!o) return;
+    edit(() => { M.deleteObject(map, i); selObj = null; });
+    say(`Deleted ${o.kind} at x ${o.x}, y ${o.y}`);
+  }
+  /** Arrow keys: 1 pixel; Shift: to the next grid line in that direction. */
+  function nudge(dx, dy, big) {
+    const o = objAtIndex(selObj);
+    if (!o) return;
+    const step = (v, d) => (!d ? v : !big ? v + d : d > 0 ? (Math.floor(v / objGrid) + 1) * objGrid : (Math.ceil(v / objGrid) - 1) * objGrid);
+    const nx = step(o.x, dx), ny = step(o.y, dy);
+    let moved = false;
+    edit(() => { moved = M.moveObject(map, selObj, nx, ny); });
+    const now = objAtIndex(selObj);
+    say(moved ? `Moved ${now.kind} to x ${now.x}, y ${now.y}` : `${now.kind} is at the edge of the map`);
+  }
+
+  /** The objects, over the map (the Tiles layer shows them dimmed), and in the Objects layer the ghost of what a click would place. */
+  function drawObjects(ctx, cp) {
+    if (!objectsSupported || !showObjects || !map) return;
+    const k = cp / 8, objLayer = layer === 'objects';
+    const mark = (o, kind, alpha, selected) => {
+      const mk = kindMarks.get(o.kind), w = (mk?.w ?? M.DEFAULT_MARKER.w) * k, h = (mk?.h ?? M.DEFAULT_MARKER.h) * k, x = o.x * k, y = o.y * k;
+      ctx.globalAlpha = alpha;
+      if (mk) { ctx.imageSmoothingEnabled = false; ctx.drawImage(mk.canvas, 0, 0, mk.w, mk.h, x, y, w, h); }
+      else if (kind) { ctx.fillStyle = colourCss(kind.colour); ctx.fillRect(x, y, w, h); }
+      else { ctx.fillStyle = '#3a1d1d'; ctx.fillRect(x, y, w, h); }
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = kind ? colourCss(kind.colour) : '#ff2a2a';
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      if (!mk && w >= 12) {
+        ctx.fillStyle = kind ? textOn(kind.colour) : '#ff2a2a';
+        ctx.font = `bold ${Math.floor(Math.min(w, h) * 0.7)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(kind ? (o.kind[0] ?? '?').toUpperCase() : '?', x + w / 2, y + h / 2 + 1);
+      }
+      if (!kind) { ctx.strokeStyle = '#ff2a2a'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+      if (selected) {
+        ctx.setLineDash([4, 3]); ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000'; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3);
+        ctx.lineDashOffset = 3; ctx.strokeStyle = '#fff'; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3);
+        ctx.setLineDash([]); ctx.lineDashOffset = 0;
+      }
+    };
+    (map.objects ?? []).forEach((o, i) => mark(o, kinds[o.kind], objLayer ? 1 : 0.6, objLayer && i === selObj));
+    if (objLayer && hoverPx && !objDrag && curKind && kinds[curKind] && !M.objectsAt(map, hoverPx[0], hoverPx[1], null, sizeOf).length) {
+      const [gx, gy] = M.snap(hoverPx[0], hoverPx[1], objGrid, map);
+      mark({ kind: curKind, x: gx, y: gy }, kinds[curKind], 0.4, false);
+    }
+  }
+
+  // ── the object layer: pointer ──
+  function pixelAt(e) {
+    const r = canvas.getBoundingClientRect(), sx = canvas.width / (r.width || 1), sy = canvas.height / (r.height || 1), cp = lastCellPx || cellPx();
+    return [Math.floor((((e.clientX - r.left) * sx) / cp) * 8), Math.floor((((e.clientY - r.top) * sy) / cp) * 8)];
+  }
+  function objPointerDown(e) {
+    if (!map || objDrag) return;
+    root.focus({ preventScroll: true });
+    const right = e.button === 2;
+    if (e.button !== 0 && !right) return;
+    e.preventDefault();
+    const p = pixelAt(e);
+    hoverPx = p;
+    if (!showObjects) { say('The objects are hidden: tick Show objects first', 'err'); return; }
+    const hits = M.objectsAt(map, p[0], p[1], null, sizeOf);
+    if (right) {
+      if (hits.length) deleteObjectCmd(hits[0]);
+      else if (selObj !== null) { selObj = null; buildPropBox(); buildObjectList(); drawMap(); }
+      return;
+    }
+    if (hits.length) {
+      const o = map.objects[hits[0]];
+      selObj = hits[0];
+      objDrag = { index: hits[0], offX: p[0] - o.x, offY: p[1] - o.y, moved: false };
+      try { canvas.setPointerCapture?.(e.pointerId); } catch { /* synthetic pointer */ }
+      buildPropBox(); buildObjectList(); drawMap(); showReadout();
+      return;
+    }
+    if (!curKind || !kinds[curKind]) { say(Object.keys(kinds).length ? 'Choose an object kind first' : 'Add an object kind first (Kinds…)', 'err'); return; }
+    const [x, y] = M.snap(p[0], p[1], objGrid, map), props = {};
+    for (const pn of kinds[curKind].props ?? []) props[pn] = 0;
+    edit(() => { selObj = M.addObject(map, curKind, x, y, props); });
+    say(`Placed ${curKind} at x ${x}, y ${y}`);
+  }
+  function objPointerMove(e) {
+    if (!map) return;
+    const p = pixelAt(e);
+    hoverPx = p;
+    if (objDrag) {
+      const [x, y] = M.snap(p[0] - objDrag.offX, p[1] - objDrag.offY, objGrid, map);
+      if (M.moveObject(map, objDrag.index, x, y)) { objDrag.moved = true; buildPropBox(); }
+    }
+    showReadout();
+    drawMap();
+  }
+  function objEnd(e, cancel) {
+    if (!objDrag) return;
+    const d = objDrag;
+    objDrag = null;
+    try { canvas.releasePointerCapture?.(e.pointerId); } catch { /* not captured */ }
+    if (cancel) { map = hist.current; renderAll(); return; }
+    const o = objAtIndex(d.index);
+    if (d.moved) { commit(); if (o) say(`Moved ${o.kind} to x ${o.x}, y ${o.y}`); }
+    renderAll();
+  }
+  /** Keys of the Objects layer; true when handled. */
+  function objKey(e, k) {
+    if (k === 'escape') {
+      if (objDrag) { objDrag = null; map = hist.current; renderAll(); e.preventDefault(); return true; }
+      if (selObj !== null) { selObj = null; buildPropBox(); buildObjectList(); drawMap(); e.preventDefault(); return true; }
+      return false;
+    }
+    if (selObj === null) return false;
+    if (k === 'delete' || k === 'backspace') { deleteObjectCmd(selObj); e.preventDefault(); return true; }
+    const d = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] }[k];
+    if (d) { nudge(d[0], d[1], e.shiftKey); e.preventDefault(); return true; }
+    return false;
+  }
+
   // ── pointer ──
   const valueFor = (button) => (button === 2 || tool === 'erase' ? eraseValue() : tile);
   function describeCell(x, y) {
@@ -847,6 +1430,12 @@ export function createMapEditor(container, host) {
     return `tile ${v}${fl.length ? ' (' + fl.join(', ') + ')' : ''}`;
   }
   function showReadout() {
+    if (layer === 'objects' && objectsSupported && map) {
+      if (!hoverPx) { readout.textContent = ''; return; }
+      const hits = M.objectsAt(map, hoverPx[0], hoverPx[1], null, sizeOf), o = hits.length ? map.objects[hits[0]] : null;
+      readout.textContent = `x ${hoverPx[0]}, y ${hoverPx[1]} (col ${hoverPx[0] >> 3}, row ${hoverPx[1] >> 3})${o ? `: ${o.kind}${(kinds[o.kind]?.props ?? []).map((p) => `, ${p} ${o.props?.[p] ?? 0}`).join('')}` : ''}`;
+      return;
+    }
     readout.textContent = map && hover && hover[0] < map.w && hover[1] < map.h ? `col ${hover[0]}, row ${hover[1]}: ${describeCell(hover[0], hover[1])}` : '';
   }
   function pick(x, y) {
@@ -869,6 +1458,7 @@ export function createMapEditor(container, host) {
     return [x0 + Math.sign(dx || 1) * d, y0 + Math.sign(dy || 1) * d];
   }
   canvas.addEventListener('pointerdown', (e) => {
+    if (layer === 'objects' && objectsSupported) { objPointerDown(e); return; }
     if (!map || stroke) return;
     root.focus({ preventScroll: true });
     const c = cellAt(e);
@@ -912,6 +1502,7 @@ export function createMapEditor(container, host) {
     drawMap();
   });
   canvas.addEventListener('pointermove', (e) => {
+    if (layer === 'objects' && objectsSupported) { objPointerMove(e); return; }
     if (!map) return;
     const c = cellAt(e, !!stroke);
     if (!stroke) {
@@ -934,8 +1525,12 @@ export function createMapEditor(container, host) {
     }
     drawMap();
   });
-  canvas.addEventListener('pointerleave', () => { if (!stroke) { hover = null; showReadout(); if (pasteMode) drawMap(); } });
+  canvas.addEventListener('pointerleave', () => {
+    if (layer === 'objects' && objectsSupported) { if (!objDrag) { hoverPx = null; showReadout(); drawMap(); } return; }
+    if (!stroke) { hover = null; showReadout(); if (pasteMode) drawMap(); }
+  });
   const endStroke = (e, cancel) => {
+    if (objDrag) { objEnd(e, cancel); return; }
     if (!stroke) return;
     const s = stroke;
     stroke = null;
@@ -980,8 +1575,10 @@ export function createMapEditor(container, host) {
     if (mod && k === 'x') { e.preventDefault(); copyCmd(true); return; }
     if (mod && k === 'v') { e.preventDefault(); pasteCmd(); return; }
     if (mod || e.altKey) return;
+    if (k === 'o' && objectsSupported && map) { setLayer(layer === 'objects' ? 'tiles' : 'objects'); e.preventDefault(); return; }
+    if (layer === 'objects' && objectsSupported && objKey(e, k)) return;
     const keys = { p: 'pencil', l: 'line', r: 'rect', t: 'rectf', f: 'fill', i: 'eyedrop', e: 'erase', s: 'select' };
-    if (keys[k]) { tool = keys[k]; pasteMode = false; syncControls(); drawMap(); e.preventDefault(); }
+    if (keys[k]) { if (layer === 'objects') setLayer('tiles'); tool = keys[k]; pasteMode = false; syncControls(); drawMap(); e.preventDefault(); }
     else if (k === 'g') { showGrid = !showGrid; keepPrefs(); syncControls(); drawMap(); e.preventDefault(); }
     else if (k === 'delete' || k === 'backspace') { if (sel) { clearSelCmd(); e.preventDefault(); } }
     else if (k === 'escape') {
@@ -1003,7 +1600,7 @@ export function createMapEditor(container, host) {
         if (map && JSON.stringify(H.roles()) !== rolesKey) renderAll();
         return;
       }
-      if (ev.type === 'asset' && ev.kind && !['maps', 'tilesets'].includes(ev.kind)) return;
+      if (ev.type === 'asset' && ev.kind && !['maps', 'tilesets', 'sprites'].includes(ev.kind)) return;
       outsideChange(ev);
     });
     if (typeof u === 'function') unsub.push(u);
@@ -1062,6 +1659,7 @@ export function createMapEditor(container, host) {
       name, role, roleKnown, tool, tile, zoom, cellPx: lastCellPx, grid: showGrid, camX, sel: sel ? { ...sel } : null, clip: clip ? { w: clip.w, h: clip.h } : null, pasteMode,
       tileset: tsName, tileCount: tileCanvases.length, paletteCount: palBox.querySelectorAll('.mapd-pi').length,
       frame: map && role === 'world' ? M.windowFrame(map, camX) : null, ringBad: ringBad(), minority: markers.minority.length, undef: undefinedCells().length,
+      layer, kinds: deepCopy(kinds), curKind, selObj, objGrid, showObjects, kindsOpen, kindForm: kindForm ? { ...kindForm } : null, objectCount: map?.objects?.length ?? 0, hoverPx: hoverPx ? hoverPx.slice() : null,
       warnings: warnings.map((w) => w.id), map: map ? M.cloneMap(map) : null, asset: map ? M.toAsset(map) : null, canUndo: !!hist?.canUndo, canRedo: !!hist?.canRedo,
     }),
   };
