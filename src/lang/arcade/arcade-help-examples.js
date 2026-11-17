@@ -454,4 +454,32 @@ ENDSCENE` },
       { type: 'p', text: 'Size and budget (under the screen) shows how much of the game\'s 16 KB the last compile used, with a second bar for the maps the cartridge keeps in its bank window. The problems list under the editor shows every error and warning of the whole project, and a click goes to the line; the editor underlines an error about half a second after you stop typing. While the game runs, the frame meter shows how long a tick takes against the time FRAMERATE allows.' },
     ],
   },
+  {
+    id: 'debugging-a-game',
+    title: 'Debugging a game',
+    blocks: [
+      { type: 'h', text: 'Stop at a line' },
+      { type: 'p', text: 'Click the gutter left of a line number to put a breakpoint there (a red dot; click again to take it off). Press Run (F5). When the game is about to run that line it stops: the line is marked, the status line says "Paused at line N of file.arc (breakpoint)" and the screen keeps what the last tick drew. The marks are remembered for the project and move with the text as you edit.' },
+      { type: 'code', text: `GAME "Hit"
+FRAMERATE 30
+SPRITE ball = "ball"
+SCENE play
+  DIM x, y, dx
+  PROC INIT():
+    x = 0 : y = 88 : dx = 3
+  ENDP
+  PROC FRAME():
+    x = x + dx
+    IF x > 240 THEN dx = -3 ENDIF
+    IF x < 8 THEN dx = 3 ENDIF
+    SHOW ball AT x, y
+  ENDP
+ENDSCENE` },
+      { type: 'p', text: 'Put a breakpoint on the line IF x > 240 and Run. The game stops at the first tick; open the Vars tab to read x, y and dx (the values are exact while the game is stopped). Continue (F8) runs on and stops again at the same line in the next tick, so each Continue is one tick.' },
+      { type: 'h', text: 'Step through it' },
+      { type: 'p', text: 'At a stop, Step line (F11) runs to the next statement of your source and stops again; Step over (Shift+F11) does the same but runs a CALL to the end of the procedure instead of going into it. Step tick (F10) leaves the stop and runs one whole tick. The runtime\'s own routines have no source lines: a step through one of them runs straight past it.' },
+      { type: 'h', text: 'Good to know' },
+      { type: 'p', text: 'A mark that is a ring, not a dot, is not in the running game: its line has no code on or after it, or you changed the source after Run. It takes effect at the next Run. A game with a breakpoint set runs slower than the real TS2068 while it is running, because every instruction is looked at; take the marks off to measure speed (the Run meter is for that). Stop (F6) ends the stop and the game.' },
+    ],
+  },
 ];
