@@ -119,7 +119,7 @@ const bounceAssets = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/bounce.
   const inkGame = compile(bounceText, opts(ink, { play: { spriteColour: 'ink' } }));
   check('an ink game on the ink runtime has no error', inkGame.errors.length === 0 && !!inkGame.dck, json(inkGame.errors));
   check('its plan says ink', inkGame.scenes.find((s) => s.name === 'play').spriteColour.built === 'ink');
-  check('no codegen change: the image of the game with the setting equals the one without', Buffer.compare(Buffer.from(inkGame.dck), Buffer.from(onInk.dck)) === 0);
+  check('step 5: the game with the setting carries the ink table and setter calls (gen.ink), the one without does not and is unchanged', !!inkGame.gen.ink && !onInk.gen.ink && Buffer.compare(Buffer.from(inkGame.dck), Buffer.from(onInk.dck)) !== 0);
   const garbage = compile(bounceText, opts(v2, { play: { spriteColour: 'x' } }));
   check('a garbage setting is a warning and the game compiles on plain v2', garbage.errors.length === 0 && garbage.warnings.some((d) => /spriteColour/.test(d.message)));
 }

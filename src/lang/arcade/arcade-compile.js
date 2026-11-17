@@ -32,6 +32,7 @@ import { parse } from './arcade-parse.js';
 import { check } from './arcade-check.js';
 import { generate } from './arcade-codegen.js';
 import { link } from './arcade-link.js';
+import { inkClashes } from './arcade-spriteink.js';
 import { assetTables, lookupAsset } from './arcade-assets.js';
 import { sceneDisplayPlan } from './arcade-display.js';
 import { completeSource, shiftDiagnostic } from '../../arcade-objects.js';
@@ -224,9 +225,20 @@ function compileText(text, { runtime, image, assets, scenes, bankAll = false, em
     return out;
   }
 
-  const gen = generate(ast, runtime, assets, { bankAll, emit, cg, ...(out.scenes.some((sc) => sc.built === 'fine') ? { fine: out.scenes.map((sc) => sc.built === 'fine') } : {}) });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
+  const gen = generate(ast, runtime, assets, { bankAll, emit, cg, ...(out.scenes.some((sc) => sc.built === 'fine') ? { fine: out.scenes.map((sc) => sc.built === 'fine') } : {}), ...(out.scenes.some((sc) => sc.spriteColour.built === 'ink') ? { ink: out.scenes.map((sc) => sc.spriteColour.built === 'ink') } : {}) });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
   take(gen.errors ?? []);
   take(gen.warnings ?? []);
+  // sprite colour (SC): in an ink scene a cell takes one ink, so a sprite whose 8 x 8 block holds more than one ink loses that detail (a warning, once per ink scene and sprite asset)
+  if (gen.ink) {
+    for (const [k, sc] of out.scenes.entries()) {
+      if (!gen.ink.scenes[k]) continue;
+      for (const sp of gen.sprites ?? []) {
+        for (const b of inkClashes(sp)) {
+          out.warnings.push({ id: 'sprite-ink-clash', line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'warning', message: `scene '${sc.name}': sprite "${sp.asset}" block (row ${b.row}, column ${b.col}) has inks ${b.inks.join(' and ')}: the cell is drawn in one ink (the most used), the finer colour detail is lost` });
+        }
+      }
+    }
+  }
   if (out.errors.length || !gen.code) { sort(out.errors); sort(out.warnings); return out; }
 
   const linked = link(gen, runtime, image);

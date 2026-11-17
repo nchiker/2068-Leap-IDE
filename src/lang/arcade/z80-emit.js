@@ -79,6 +79,7 @@ export class Emitter {
     this.depth = 0;            // > 0 inside an instruction method (an encoder calling another one records one item)
     this.lastLabel = -1;       // offset of the last label(): data after it starts a new item
     this.fin = null;           // the result of finish()
+    this.endPad = null;        // {n, label}: see endAlign()
   }
 
   /** Address of the next byte (provisional, see the header). */
@@ -124,6 +125,18 @@ export class Emitter {
     // the padding is taken from the provisional address: finish() would move what follows when an optimisation shortens code before it
     if (this.opt.hl || this.opt.ret || this.opt.jr) throw new Error('align() cannot be used with the optimisations (the code before it may shrink)');
     while (this.pc % n) this.db(value); return this;
+  }
+
+  /**
+   * Make the END of the code a multiple of `n` (zero padding, added by finish() after the optimisations) and define `label` at that aligned end, for the
+   * caller to append data to the finished bytes at (`finish()` returns the code plus the padding; the data after it is the caller's). Call it last, once:
+   * nothing may be emitted after it. (align() cannot do this: it is placed before the optimisations shrink the code.)
+   */
+  endAlign(n, label) {
+    if (this.endPad) throw new Error('endAlign() called twice');
+    this.label(label);
+    this.endPad = { n, label };
+    return this;
   }
 
   // ── operand helpers ──
@@ -409,6 +422,7 @@ export class Emitter {
       }
       flush();
     }
+    if (this.endPad) lines.push(`  ds ${this.fin.bytes.length - items.reduce((n, it) => n + it.bytes.length, 0)}`);
     for (const l of items.endLabels) lines.push(`${nameOf(l)}:`);
     return lines.join('\n') + '\n';
   }
@@ -480,9 +494,14 @@ export class Emitter {
     const total = start[V.length];
     const labels = new Map(this.labels);
     for (const [name, i] of idx) labels.set(name, org + start[i]);
+    let endPad = 0;
+    if (this.endPad) {                                // endAlign(): the padding and the label after it
+      endPad = (this.endPad.n - ((org + total) % this.endPad.n)) % this.endPad.n;
+      labels.set(this.endPad.label, org + total + endPad);
+    }
     const at = new Map(V.map((w, i) => [w, start[i]]));
     const T = { prov: orig.map((w) => w.prov), fin: orig.map((w) => at.get(w)), len0: orig.map((w) => w.len0), len1: orig.map((w) => (w.dead ? 0 : w.bytes.length + (w.split ? 1 : 0))), total, end: this.buf.length, changed: orig.map((w) => !!(w.was || w.dead)) };
-    const out = new Uint8Array(total);
+    const out = new Uint8Array(total + endPad);
     V.forEach((w, i) => {
       if (w.dead) return;
       out.set(w.bytes, start[i]);
