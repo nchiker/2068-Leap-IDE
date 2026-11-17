@@ -48,13 +48,13 @@ const srcPath = resolve(src);
 const text = readFileSync(srcPath, 'utf8');
 const assets = assetsFile ? JSON.parse(readFileSync(resolve(assetsFile), 'utf8')) : { sprites: {} };
 if (runtimeArg === 'auto') {      // the compiler's own choice: v4 for the 3D view words (VIEW3D, VIEW, WALL, ...), v3 for window / frame / big-sprite features, else v2
-  const need = requiredRuntime(text, assets);
-  runtimeArg = need.version >= 4 ? 'v4' : need.version === 3 ? 'v3' : 'v2';
+  const need = requiredRuntime(text, assets, scenesFile ? JSON.parse(readFileSync(resolve(scenesFile), 'utf8')) : assets.scenes);
+  runtimeArg = need.version >= 4 ? 'v4' : need.version === 3 ? 'v3' : need.ink ? 'v2ink' : 'v2';
   console.log(`runtime ${runtimeArg}${need.reasons.length ? ` (${need.reasons.join('; ')})` : ''}`);
 }
 const rtJson = runtimeArg === 'v0' ? join(BUILD, 'runtime.json')
   : runtimeArg === 'v1' ? join(BUILD, 'v1/runtime.json')
-  : runtimeArg === 'v4' ? join(BUILD, 'v4/runtime.json') : runtimeArg === 'v3' ? join(BUILD, 'v3/runtime.json') : runtimeArg === 'v2' ? join(BUILD, 'v2/runtime.json')
+  : runtimeArg === 'v4' ? join(BUILD, 'v4/runtime.json') : runtimeArg === 'v3' ? join(BUILD, 'v3/runtime.json') : runtimeArg === 'v2' ? join(BUILD, 'v2/runtime.json') : runtimeArg === 'v2ink' ? join(BUILD, 'v2ink/runtime.json')
   : (runtimeArg.endsWith('.json') ? resolve(runtimeArg) : join(resolve(runtimeArg), 'runtime.json'));
 if (!existsSync(rtJson)) usage(`no runtime build at ${rtJson}`);
 const runtime = JSON.parse(readFileSync(rtJson, 'utf8'));

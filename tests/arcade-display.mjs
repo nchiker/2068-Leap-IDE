@@ -79,7 +79,7 @@ const one = (text, scenes) => plan(text, scenes)[0];
   const at = parse(text).ast.scenes[1].namePos;
   check('line / col are the scene name\'s', p[1].line === at.line && p[1].col === at.col && p[1].line === text.split('\n').findIndex((l) => l.startsWith('SCENE play')) + 1 && p[1].col === 6, json(p[1]));
   check('every entry has the contract\'s fields, built "buffers", empty notes, override "auto" without a project',
-    p.every((s) => json(Object.keys(s)) === json(['name', 'line', 'col', 'auto', 'reason', 'override', 'setting', 'built', 'notes']) && s.built === 'buffers' && s.notes.length === 0 && s.override === 'auto' && s.setting === s.auto));
+    p.every((s) => json(Object.keys(s)) === json(['name', 'line', 'col', 'auto', 'reason', 'override', 'setting', 'built', 'spriteColour', 'notes']) && s.built === 'buffers' && s.notes.length === 0 && s.override === 'auto' && s.setting === s.auto));
   same('a program without scenes gives an empty plan', plan('GAME "x"\n'), []);
   same('DISPLAY_SETUPS', DISPLAY_SETUPS, ['auto', 'buffers', 'fine', 'hires']);
 }

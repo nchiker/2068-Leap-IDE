@@ -28,9 +28,11 @@ export const RUNTIME_PATHS = Object.freeze({
   2: { json: 'arcade/dist/v2/runtime.json', image: 'arcade/dist/v2/runtime.bin' },
   3: { json: 'arcade/dist/v3/runtime.json', image: 'arcade/dist/v3/runtime.bin' },
   4: { json: 'arcade/dist/v4/runtime.json', image: 'arcade/dist/v4/runtime.bin' },
+  '2ink': { json: 'arcade/dist/v2ink/runtime.json', image: 'arcade/dist/v2ink/runtime.bin' },      // runtime v2 with sprite colour (SC; variant 'ink')
 });
 /** The runtime a program needs (2, 3 or 4) -> the build to compile against; a version that could not be loaded falls back to the newest loaded one, so the compiler reports the missing words. */
-export const pickBuild = (builds, version) => builds[version] || builds[Math.max(...Object.keys(builds).map(Number))];
+/** `need` is requiredRuntime()'s result ({version, ink}) or just a version number; an ink game takes the '2ink' build (if it is loaded: else the compiler reports it). */
+export const pickBuild = (builds, need) => (typeof need === 'object' && need?.ink && builds['2ink']) || builds[typeof need === 'object' ? need.version : need] || builds[Math.max(...Object.keys(builds).map(Number).filter(Number.isFinite))];
 export const DCK_BYTES_LIMIT = 16384;          // the game's own share of the cartridge (usage.total + usage.free)
 const LANGUAGE_DOC = DOCS_BASE + 'ARCADE_LANGUAGE.md';
 
@@ -130,6 +132,7 @@ export async function loadRuntime(fetchAsset, version = 2) {
 export async function loadBuilds(fetchAsset) {
   const builds = { 2: await loadRuntime(fetchAsset, 2), 3: await loadRuntime(fetchAsset, 3) };
   try { builds[4] = await loadRuntime(fetchAsset, 4); } catch { /* v4 not published yet: v4 programs then fail to compile with the compiler's own message */ }
+  try { builds['2ink'] = await loadRuntime(fetchAsset, '2ink'); } catch { /* the ink variant not published: an ink game then fails to compile with the compiler's own message */ }
   return builds;
 }
 
@@ -145,7 +148,7 @@ export function compileWithBuilds(builds, project, { replace = null, onBuild = n
   const p = replace ? { ...project, files: { ...project.files, [replace.file]: replace.text } } : project;
   const src = buildSource(p);
   const t0 = performance.now();
-  const build = pickBuild(builds, requiredRuntime(src.text, p.assets).version);
+  const build = pickBuild(builds, requiredRuntime(src.text, p.assets, p.scenes));
   if (onBuild) onBuild(build);
   // the object layer: the kinds travel with the assets, as in an assets json (src/arcade-objects.js); buildSource has put objects.arc first already, so compile() adds nothing
   const assets = p.objectKinds ? { ...p.assets, objectKinds: p.objectKinds, ...(p.objectBucket !== undefined ? { objectBucket: p.objectBucket } : {}) } : p.assets;
@@ -217,7 +220,7 @@ export const arcadeProfile = {
       compileProject,
       /** The profile shape's lint(text) for a single text with no assets (the Studio uses compileProject). */
       lint(text) {
-        const b = pickBuild(builds, requiredRuntime(text, {}).version);
+        const b = pickBuild(builds, requiredRuntime(text, {}));
         const res = compile(text, { runtime: b.runtime, image: b.image, assets: {} });
         return [...res.errors, ...res.warnings].map(toMark);
       },

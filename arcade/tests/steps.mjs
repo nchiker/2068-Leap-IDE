@@ -40,6 +40,7 @@ export const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9
 
 export const SUITES = [
   'arcade/tests/sc-runtime-ink.mjs',
+  'tests/arcade-sc-setting.mjs',
   'tests/arcade-parse.mjs',
   'tests/arcade-compile.mjs',
   'tests/arcade-m3.mjs',

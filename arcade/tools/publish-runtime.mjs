@@ -66,7 +66,7 @@ for (const ex of EXAMPLES) {
   const arc = readFileSync(join(ARCADE, 'examples', `${ex.id}.arc`), 'utf8');
   const assets = JSON.parse(readFileSync(join(ARCADE, 'examples', `${ex.id}.assets.json`), 'utf8'));
   const project = exampleProject(ex.title, arc, assets);
-  const v = requiredRuntime(arc, assets).version, need = v >= 2 && v <= 4 ? v : 2;
+  const v = requiredRuntime(arc, assets, assets.scenes).version, need = v >= 2 && v <= 4 ? v : 2;
   const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets, scenes: assets.scenes });
   if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
   // Any warning is fatal: every example opens with no warnings.
