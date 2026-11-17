@@ -69,7 +69,7 @@ for (const [name, project] of corpus) {
   check(`${name}: same runtime label, id echoed, ms numbers, no dck / map, structured-cloneable and equal after a clone`,
     got.runtimeLabel === label && got.id === n && typeof got.ms === 'number' && typeof got.workerMs === 'number' && !('dck' in got) && !('map' in got) && isDeepStrictEqual(structuredClone(got), got), `${got.runtimeLabel} vs ${label}`);
 }
-check('the corpus has the ten examples, the starters, the template and the broken sources', corpus.filter(([n]) => n.startsWith('example ')).length === 10 && corpus.length === 10 + STARTERS_B.length + 1 + 6, String(corpus.length));
+check('the corpus has the eleven examples, the starters, the template and the broken sources', corpus.filter(([n]) => n.startsWith('example ')).length === 11 && corpus.length === 11 + STARTERS_B.length + 1 + 6, String(corpus.length));
 check('some corpus entries compile and some do not (the comparison is not vacuous)', corpus.some(([, p]) => page.compileProject(p).ok) && corpus.some(([, p]) => !page.compileProject(p).ok));
 
 // replace: one file's unsaved text

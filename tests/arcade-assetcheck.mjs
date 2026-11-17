@@ -80,6 +80,13 @@ for (const id of EX) {
   const project = P.exampleProject('lumen', arc, assets);
   examples.lumen = { arc, assets, project, text: P.buildSource(project).text };
 }
+// Crabsmash (fine colour in every scene, runtime v2: symmetric sprites, one ink per row)
+{
+  const arc = readFileSync(ROOT + 'arcade/examples/crabsmash.arc', 'utf8').replace(/\r\n?/g, '\n');
+  const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/crabsmash.assets.json', 'utf8'));
+  const project = P.exampleProject('crabsmash', arc, assets);
+  examples.crabsmash = { arc, assets, project, text: P.buildSource(project).text };
+}
 {
   const r = (id) => scanRoles(examples[id].text);
   check('scanRoles shooter (Starfall): four cell maps (sky, logo, press, gameover), tile set gfx, no world, no floor plan, no view; scenes title, play, over', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky', logo: 'logo', press: 'press', gameover: 'gameover' }, world: null, worlds: [], floorplans: [], view: null, scenes: ['title', 'play', 'over'] }), JSON.stringify(r('shooter')));
@@ -402,7 +409,7 @@ const usesBlackRaw = (t) => { const r = raw(t); return (r.paper === 0 && r.clear
 const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map((x) => parseInt(x, 16)) : m.cells);
 {
   const out = {};
-  const ALL = ['bounce', 'breakout', 'shooter', 'shooter-classic', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit'];      // all ten examples
+  const ALL = ['bounce', 'breakout', 'shooter', 'shooter-classic', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit', 'crabsmash'];      // all eleven examples
   for (const id of ALL) {
     const { project, text } = examples[id];
     const rl = scanRoles(text);
@@ -417,7 +424,7 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   const summary = ALL.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
   // Stage 3 (K4, E5) fixed every example: BRIGHT 0 on black paper, tiles marked fg or colours unified. No example gives a finding of any kind. The rules themselves are
   // tested on hand-built projects in section 3 (black-bright-mix, bright-black-paper, background-attr-mix and the per-row rules), not on the examples.
-  check('all ten examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
+  check('all eleven examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
   check('no example finding is an error or a compilerAlso finding', ALL.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
 
   // each one is TRUE, recomputed from the raw JSON

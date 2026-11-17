@@ -379,7 +379,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
     check('empty ticksB / ticksC compile to exactly the one-channel size and image', sfxBytes(empties) === sfxBytes(one) && Buffer.compare(Buffer.from(empties.dck), Buffer.from(one.dck)) === 0);
   }
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
-  check('the examples index lists bounce, breakout, shooter, shooter-classic, blockfall, platformer, runner, vaults, orbit, lumen', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'lumen', 'orbit', 'platformer', 'runner', 'shooter', 'shooter-classic', 'vaults']));
+  check('the examples index lists bounce, breakout, shooter, shooter-classic, blockfall, platformer, runner, vaults, orbit, lumen, crabsmash', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'crabsmash', 'lumen', 'orbit', 'platformer', 'runner', 'shooter', 'shooter-classic', 'vaults']));
   for (const ex of index) {
     const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
     const res = doc.ok ? build(doc.project) : null;

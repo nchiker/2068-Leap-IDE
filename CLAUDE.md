@@ -1228,7 +1228,7 @@ JavaScript (`src/lang/arcade/`) to native Z80 for the stock TS2068 and delivered
 Studio** (`studio.html`, `studio.js`, `src/arcade-project.js`, `src/tools/sprite-*.js`), a browser editor with projects, a
 sprite editor, the compiler and the emulator. The IDE above is unchanged by it. Runtimes are `arcade/runtime/v0` to `v4`
 (published builds in `arcade/dist/`; the compiler and the Studio choose v2, v3 or v4 per program), examples are in
-`arcade/examples/` (bounce, breakout, shooter "Starfall", blockfall, platformer "Leap Runner", raycaster "Vaults", and "LUMEN", a maze chase that shows off
+`arcade/examples/` (bounce, breakout, shooter "Starfall", blockfall, platformer "Leap Runner", raycaster "Vaults", "Crabsmash" (a single-screen fine-colour arena game: bump platforms to stun crabs, smash them, symmetric sprites for v2), and "LUMEN", a maze chase that shows off
 fine colour: runtime v2 can run a scene in 8 x 1 colour, `scenes.<name>.display = 'fine'`, `docs/ARCADE_FINE_COLOUR_CONTRACT.md`; Starfall's scenes are fine too). Everything about it
 (plan, contracts, language batches, hardware notes, tests, traps) starts at **`docs/HANDOFF.md`** ("Leap Arcade / Leap Arcade
 Studio") and `docs/ARCADE_PLAN.md`. Test everything (Arcade, Studio, editors, models, the IDE's own suites, perf and stamp checks) with `node tools/verify.mjs --all`
