@@ -101,6 +101,11 @@ th { color: var(--muted); font-weight: 600; font-size: 14px; text-transform: upp
 .docs b { display: block; color: var(--accent); margin-bottom: 2px; }
 .docs span { color: var(--muted); font-size: 15px; line-height: 1.45; display: block; }
 .docs a.feature { grid-column: 1 / -1; border-color: var(--accent); border-width: 2px; }
+.credits { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.credits > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
+.credits h4 { margin: 0 0 4px; font-size: 18px; }
+.credits p { margin: 0; color: var(--muted); font-size: 15.5px; line-height: 1.55; }
+.credits b { color: var(--ink); }
 .leapide { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; display: flex; gap: 20px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .leapide h3 { margin: 0 0 4px; }
 .leapide p { margin: 0; color: var(--muted); }
@@ -123,6 +128,7 @@ footer a { color: var(--muted); }
     <a href="#getting-started">Getting started</a>
     <a href="#games">Games</a>
     <a href="#docs">Documentation</a>
+    <a href="#credits">Credits</a>
     <a href="studio.html">Open Studio</a>
     <button class="theme" id="theme" title="Switch between light and dark">☾</button>
   </nav>
@@ -362,6 +368,20 @@ ENDSCENE</code></pre>
   </div>
 </div></section>
 
+<section id="credits"><div class="wrap">
+  <h2>Credits and thanks</h2>
+  <p class="sub">Leap Arcade stands on other people's work. Thank you.</p>
+  <div class="credits">
+    <div><h4>TSRun, the emulator</h4><p>Everything you see running in the Studio runs on <a href="https://github.com/josef-jelinek/TSRun">TSRun</a>, the browser emulator for the Timex Sinclair 2068 written by <b>Josef Jelínek</b> (<a href="https://github.com/josef-jelinek">josef-jelinek</a>): the Z80, the TS2068's video, the AY sound chip, keyboard, joysticks, tape and cartridge dock. The Leap projects use a <a href="https://github.com/nchiker/TSRun">fork</a> that adds the Leap ROMs, a few small fixes and a Kempston mouse; the emulator itself is Josef's work. Thank you, Josef: without TSRun there would be no way to run any of this in a web page.</p></div>
+    <div><h4>The Timex Sinclair 2068</h4><p>The computer itself: the <b>TS2068</b> by Timex Computer Corporation, descended from the Sinclair ZX Spectrum by <b>Sir Clive Sinclair</b> and Sinclair Research. Its stock ROM is used by the cartridge test (the TS2068 ROM files are, as TSRun's notes say, partly released by Amstrad for non-commercial use and partly abandonware). The hardware notes the runtime relies on cite the TS2068 Technical Reference Manual. Timex, Sinclair and ZX Spectrum are trademarks of their owners; this project is not affiliated with them.</p></div>
+    <div><h4>The Leap family</h4><p><b>Leap Arcade</b>, the <b>Leap IDE</b> and the Leap ROM languages (<a href="https://github.com/nchiker/2068-Leap">Leap V2 BASIC</a>, <a href="https://github.com/nchiker/2068-Leap-Forth">Leap-Forth</a> and <a href="https://github.com/nchiker/2068-Leap-C">Leap-C</a>) are the work of <b>nchiker</b> (the project owner), who designed them, directed their development and approved the games. The ROMs are released under the MIT licence from their own repositories.</p></div>
+    <div><h4>Built with Claude Code</h4><p>Much of the code, the documentation, the example games and their art and music were written with <b>Claude Code</b> (Claude, by <a href="https://www.anthropic.com">Anthropic</a>) working under nchiker's direction, with nchiker reviewing, choosing and approving the results. Commits made that way say so in their messages.</p></div>
+    <div><h4>The example games</h4><p>All the example games are <b>original works</b>: their code, names, characters, art, sound effects and songs were made for this project. Several are in long-established genres (bat-and-ball, falling blocks, a vertical shooter, a platformer, a single-screen arena game, a maze chase, a ray-cast maze, wireframe space flight); they borrow the genre and the kind of mechanics, nothing else. Breakout, Blockfall and the rest are the names of genres of game that countless programmers have written; thanks to everyone who made those games worth imitating.</p></div>
+    <div><h4>Tools it is built and tested with</h4><p><b>CodeMirror 6</b> by <b>Marijn Haverbeke</b> and contributors is the code editor (loaded from jsDelivr, MIT licence). <b>SjASMPlus</b> assembles the Z80 runtime (a descendant of SjASM by Sjoerd Mastijn). The games and the runtime were cross-checked in two other TS2068 / Spectrum emulators, <a href="https://github.com/chernandezba/zesarux">ZEsarUX</a> by <b>César Hernández Baño</b> (whose TS2068 source was also a hardware reference) and <a href="https://fuse-emulator.sourceforge.net/">Fuse</a>, the Free Unix Spectrum Emulator, by <b>Philip Kendall</b> and its contributors. GitHub Pages hosts this site.</p></div>
+  </div>
+  <p class="fine">Full list: <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/CREDITS.md">CREDITS.md</a>.</p>
+</div></section>
+
 <section><div class="wrap">
   <div class="leapide">
     <div>
@@ -374,7 +394,7 @@ ENDSCENE</code></pre>
 </main>
 
 <footer><div class="wrap">
-  Leap Arcade · part of <a href="https://github.com/nchiker/2068-Leap-IDE">2068-Leap-IDE</a> on GitHub · runs on <a href="https://github.com/nchiker/TSRun">TSRun</a>, a TS2068 emulator. Emulator-tested; real hardware untried.
+  Leap Arcade · part of <a href="https://github.com/nchiker/2068-Leap-IDE">2068-Leap-IDE</a> on GitHub · runs on <a href="https://github.com/josef-jelinek/TSRun">TSRun</a> by Josef Jelínek · <a href="#credits">credits</a>. Emulator-tested; real hardware untried.
 </div></footer>
 
 <script>
