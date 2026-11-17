@@ -159,6 +159,10 @@ export const MUTATION_SUITES = [
   { file: 'arcade/tests/m15c-mutations.mjs', shards: 2, src: ['src/lang/arcade/'], tests: ['tests/arcade-m15-compiler.mjs', 'tests/arcade-m15-differential.mjs', 'tests/arcade-m10-compiler.mjs'] },
   { file: 'arcade/tests/m16c-mutations.mjs', shards: 8, src: ['src/lang/arcade/'], tests: ['tests/arcade-emitter-opt.mjs', 'tests/arcade-codegen-exhaustive.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m5.mjs'] },
   { file: 'arcade/tests/m18c-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-k-warnings.mjs', 'tests/arcade-assetcheck.mjs'] },
+  { file: 'tests/m20-floorplan-mutations.mjs', shards: 1, runtimes: ['v4'], tests: ['tests/floorplan-view.mjs'] },     // stage 6 C3
+  { file: 'tests/m20-thumbs-mutations.mjs', shards: 3, tests: ['tests/asset-thumbs.mjs'] },
+  { file: 'tests/m20-variables-mutations.mjs', shards: 2, runtimes: ['v2'], tests: ['tests/variables-panel.mjs'] },
+  { file: 'tests/m20-picture-mutations.mjs', shards: 4, tests: ['tests/picture-import.mjs'] },
   { file: 'tests/source-debug-mutations.mjs', shards: 4, src: ['src/tools/source-debug.js'], tests: ['tests/source-debug-model.mjs', 'tests/source-debug-runtime.mjs'] },   // stage 6 R4
   { file: 'arcade/tests/m19c-mutations.mjs', shards: 8, src: ['src/lang/arcade/', 'arcade/tools/arcadec.mjs'], tests: ['tests/arcade-m19-compiler.mjs', 'tests/arcade-display.mjs', 'tests/arcade-m17-interp.mjs'] },
 ];
