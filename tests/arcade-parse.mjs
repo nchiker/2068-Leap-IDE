@@ -144,7 +144,8 @@ const BREAKOUT = bm ? bm[1] : '';
   same('stmt: TILE x, y = t (y stops before "=")', (s => [s.type, sx(s.x), sx(s.y), sx(s.value)])(t('    TILE v + 1, w * 2 = n')[0]), ['Tile', '(+ v 1)', '(* w 2)', 'n']);
   same('stmt: EXIT FOR / EXIT WHILE, END', t('    FOR n = 1 TO 2\n      EXIT FOR\n    NEXT\n    END')[0].body.map(s => s.kind).concat(t('    END')[0].type), ['FOR', 'End']);
   same('stmt: INK PAPER BRIGHT FLASH', t('    INK 1\n    PAPER 2\n    BRIGHT 1\n    FLASH 0').map(s => [s.type, s.which]), [['Color', 'INK'], ['Color', 'PAPER'], ['Color', 'BRIGHT'], ['Color', 'FLASH']]);
-  same('stmt: PLOT LINE POKE OUT CLS BORDER RANDOMISE', t('    PLOT 1, 2\n    LINE 1, 2 TO 3, 4\n    POKE 30000, 1\n    OUT 254, 2\n    CLS\n    BORDER 1\n    RANDOMISE 5').map(s => s.type), ['Plot', 'Line', 'Poke', 'Out', 'Cls', 'Border', 'Randomise']);
+  same('stmt: LINE POKE END FLASH CLS BORDER RANDOMISE', t('    LINE 1, 2 TO 3, 4\n    POKE 30000, 1\n    END\n    FLASH 1\n    CLS\n    BORDER 1\n    RANDOMISE 5').map(s => s.type), ['Line', 'Poke', 'End', 'Color', 'Cls', 'Border', 'Randomise']);
+  for (const [w, body] of [['PLOT', 'PLOT 1, 2'], ['OUT', 'OUT 254, 2'], ['LEN', 'v = LEN("a")'], ['USR', 'v = USR(1)'], ['IN', 'v = IN(1)'], ['POINT', 'v = POINT(1, 2)']]) check(`words: ${w} is refused with "is not part of Leap Arcade"`, hasMsg(parse(wrap('    ' + body)).errors, new RegExp(`^${w} is not part of Leap Arcade: `)));
   same('stmt: LINE operands', (s => [sx(s.x0), sx(s.y0), sx(s.x1), sx(s.y1)])(t('    LINE 1, 2 TO 3, 4')[0]), ['1', '2', '3', '4']);
   const top = parse('DIM g, h(10), s$\nDEF FN dbl(x) = x * 2\nSCENE q\n  DIM z\nENDSCENE');
   same('stmt: DIM scalars and arrays, DEF FN', [top.ast.decls[0].items.map(i => [i.name, i.size]), top.ast.decls[1].type, top.ast.decls[1].name, top.ast.decls[1].param, sx(top.ast.decls[1].body)],
@@ -301,7 +302,7 @@ const BREAKOUT = bm ? bm[1] : '';
   check('args: too many arguments', hasMsg(errorsOf('    v = ABS(1, 2)'), /ABS takes 1 argument, got 2/));
   check('args: BIT needs two', hasMsg(errorsOf('    v = BIT(1)'), /BIT takes 2 arguments, got 1/));
   check('args: HIT needs two', hasMsg(errorsOf('    v = HIT(ball)'), /HIT takes 2 arguments, got 1/));
-  check('args: LEN needs a string', hasMsg(errorsOf('    v = LEN(5)'), /argument 1 of LEN must be a string/));
+  check('args: PEEK needs a number', hasMsg(errorsOf('    v = PEEK("a")'), /argument 1 of PEEK must be a number/));
   check('args: STR$ needs a number', hasMsg(errorsOf('    t$ = STR$("a")'), /argument 1 of STR\$ must be a number/));
   check('args: every table function has a consistent entry', [...W.FUNCTIONS.values()].every(f => f.args.length >= f.min && (f.ret === 'num' || f.ret === 'str') && f.desc.length > 0));
   check('args: every function in the table accepts exactly its argument count', [...W.FUNCTIONS.values()].every(f => {
@@ -375,7 +376,7 @@ const BREAKOUT = bm ? bm[1] : '';
 // ── 7. words table ──
 {
   const must = ['GAME', 'FRAMERATE', 'SPRITE', 'SFX', 'TILESET', 'MAP', 'SCENE', 'ENDSCENE', 'ENTER', 'SHOW', 'AT', 'HIDE', 'PLAY', 'SILENCE', 'TILE',
-    'HIT', 'BIT', 'STICK', 'KEYDOWN', 'TILEAT', 'STR$', 'LEN', 'ABS', 'SGN', 'RND', 'PEEK', 'IN', 'USR', 'WHILE', 'WEND', 'SELECT', 'CASE', 'ENDSEL'];
+    'HIT', 'BIT', 'STICK', 'KEYDOWN', 'TILEAT', 'STR$', 'ABS', 'SGN', 'RND', 'PEEK', 'POKE', 'END', 'FLASH', 'TAB', 'WHILE', 'WEND', 'SELECT', 'CASE', 'ENDSEL'];
   check('words: every word of the language doc is in the table', must.every(w => W.ARCADE_WORDS.has(w) && W.RESERVED.has(w)));
   check('words: every entry has a class, a syntax and a description', [...W.ARCADE_WORDS.values()].every(e => e.cls && e.syntax && e.desc));
   check('words: FRAME and INIT are contextual, not reserved', !W.RESERVED.has('FRAME') && !W.RESERVED.has('INIT') && W.wordEntry('frame').cls === 'game');

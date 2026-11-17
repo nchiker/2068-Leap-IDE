@@ -117,11 +117,14 @@
  *        order, each once. YAW PITCH SCALE are contextual (idents). Whether `m` is a MODEL and SCALE a constant 1 / 2 / 4 / 8 is the checker's.
  *      - `LINE x0, y0 TO x1, y1` is node Line {x0, y0, x1, y1} (a word since the first version; it means the wireframe play area's 2-D line now, and needs a WIRE3D).
  *      - WIRE3D MODEL EYE DRAWMODEL LINE are reserved for variables but, as BATCH11_WORDS, may still name an asset (`SFX eye = "eye"`, `DRAWMODEL eye AT ...`, `PLAY line`).
+ *  21. (language batch 8, docs/ARCADE_LANGUAGE.md "END, TAB, FLASH, PEEK and POKE") `END` is node End {}, `POKE a, v` is Poke {addr, value}, `PEEK(a)` is Func PEEK, `FLASH n` is Color {which: 'FLASH'}, and
+ *      `PRINT [AT r, c;] TAB col; ...` has `tab` (an expression, null without it) beside `at`: the same node as before. LEN USR OUT IN PLOT POINT (REMOVED_WORDS in arcade-words.js) are still
+ *      keywords, but a statement or an operand that starts with one is the error `X is not part of Leap Arcade: <reason>`; no Plot or Out node exists any more.
  */
 
 "use strict";
 
-import { RESERVED, BLOCK_WORDS, FUNCTIONS, ASSET_KINDS, NOT_IN_ARCADE, LIMITS, BATCH3_WORDS, BATCH11_WORDS, notInArcadeMessage } from './arcade-words.js';
+import { RESERVED, BLOCK_WORDS, FUNCTIONS, ASSET_KINDS, NOT_IN_ARCADE, REMOVED_WORDS, LIMITS, BATCH3_WORDS, BATCH11_WORDS, notInArcadeMessage, removedWordMessage } from './arcade-words.js';
 
 // ── Tokenizer ─────────────────────────────────────────────────────
 const WORD_RE = /[A-Za-z][A-Za-z0-9_]*\$?/y;
@@ -893,9 +896,7 @@ class Parser {
         const nx = this.peek();
         return this.close(this.mk('Randomise', t, { value: isEnd(nx) || isBlockWord(nx) ? null : this.expr() }));
       }
-      case 'PLOT': { this.next(); const x = this.expr(); this.expectSym(','); const y = this.expr(); return this.close(this.mk('Plot', t, { x, y })); }
       case 'POKE': { this.next(); const addr = this.expr(); this.expectSym(','); const value = this.expr(); return this.close(this.mk('Poke', t, { addr, value })); }
-      case 'OUT': { this.next(); const port = this.expr(); this.expectSym(','); const value = this.expr(); return this.close(this.mk('Out', t, { port, value })); }
       case 'LINE': {
         this.next();
         const x0 = this.expr(); this.expectSym(','); const y0 = this.expr();
@@ -904,6 +905,7 @@ class Parser {
         return this.close(this.mk('Line', t, { x0, y0, x1, y1 }));
       }
       default:
+        if (REMOVED_WORDS.has(t.value)) this.fail(t, removedWordMessage(t.text));      // language batch 8: LEN USR OUT IN PLOT POINT are not part of Leap Arcade
         if (t.value === 'AT' || t.value === 'TAB') this.fail(t, `${t.text} is not a statement: it only follows PRINT${t.value === 'AT' ? ' or SHOW' : ''}, e.g. PRINT AT 1, 2; "text"`);
         if (t.value === 'BAND' && !isSym(this.peek(1), '(')) this.fail(t, 'BAND rows, num, den declares a window band: it must be at the top level, outside any PROC');
         if (FUNCTIONS.has(t.value)) this.fail(t, `${t.text} is a function: it gives a value and cannot be a statement`);
@@ -1272,6 +1274,7 @@ class Parser {
           this.expectSym(')', `expected ')' but found ${describe(this.peek())}`);
           return this.close(this.mk('Func', t, { name: t.value, args }));
         }
+        if (REMOVED_WORDS.has(t.value)) this.fail(t, removedWordMessage(t.text));        // language batch 8
         if (t.value === 'NOT') this.fail(t, 'NOT cannot be an operand here: put it in brackets, (NOT x)');
         this.fail(t, `unexpected ${t.text}: expected an expression`);
         break;

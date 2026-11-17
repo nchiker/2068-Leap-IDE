@@ -166,6 +166,16 @@
  *  MU-3. In a game with at least one MUSIC declaration every ONE-channel SFX is compiled by convertSfxC (a channel-C stream, header `0, 0, noise, 4`); three-channel effects are unchanged.
  *        A game without MUSIC compiles to exactly the bytes it gave before (the batch 1-3 baselines). symbols.songs = {NAME: address} (only in a game with songs).
  *
+ * ── Language batch 8 (Studio completion stage 6, item C1; docs/ARCADE_LANGUAGE.md "END, TAB, FLASH, PEEK and POKE"; tests/arcade-c1-words.mjs): no runtime change, no change to a game that uses none of the words ─────
+ *  C1-1. END: `LD A,1 / LD (end.flag),A / LD SP,(saved sp) / RET`: the tick finishes in the runtime as any tick does (it draws what changed and flips; compiled code never touches a display file, so the picture cannot be half drawn).
+ *        A program that reaches an END allocates two hidden slots (`end.flag`, `end.sp`; the driver's `scene.sp` serves as the second), saves SP at `entry$init` (the same value the runtime calls INIT and FRAME with) and gets a frame
+ *        entry stub that starts `LD A,(flag) / OR A / RET NZ`: after an END neither the tick prologue (TIMER, KEYPRESS, JOYPRESS) nor PROC FRAME runs. The interrupt is untouched (sound goes on). v2 runtime or later.
+ *  C1-2. PRINT TAB col: the clamped column (a constant, or `lib$clamp` of the value) stored at V_CUR_COL; the row is kept. After the AT of the same PRINT, if any.
+ *  C1-3. FLASH n: bit 7 of V_TEXT_ATTR := n AND 1, inline (the runtime has no RT_FLASH; RT_INK / RT_PAPER / RT_BRIGHT leave the bit alone and RT_CLS keeps only the paper). A program that reaches a FLASH also clears the bit in the
+ *        ENTER reset (scn$reset), as the interpreter's resetMachine does.
+ *  C1-4. PEEK(addr) = `LD A,(addr) / LD L,A / LD H,0` (a constant address) or through HL; POKE addr, value stores the low byte through HL (so the emitter's slot tracking assumes a slot may have changed), the address first, then the
+ *        value. Addresses are taken AND 65535 by the hardware's own wrap; nothing else is checked (the checker warns about constant addresses in memory the runtime owns).
+ *
  * ── Contract points the text left open (decisions made here; the reference interpreter agrees) ───────────────
  *  1. frame_div = 60 / FRAMERATE; no FRAMERATE statement means 30 fps, frame_div 2.
  *  2. Sprite masks: docs/ARCADE_ASSETS.md says asset mask 1 = sprite covers the background; the runtime contract says
@@ -264,15 +274,15 @@ export function convertSprite(asset) {
 const SIMPLE_STMT = new Set(['Rem', 'Assign', 'If', 'While', 'For', 'Select', 'Call', 'Show', 'Hide', 'Exit']);
 const V1_STMT = new Set(['Print', 'Tile', 'Play', 'Silence', 'Cls', 'Color']);   // Color: INK / PAPER / BRIGHT only
 const UNSUPPORTED_STMT = {
-  Print: 'PRINT', Tile: 'TILE', Play: 'PLAY', Silence: 'SILENCE', Cls: 'CLS', End: 'END', Color: null, Border: 'BORDER',
-  Randomise: 'RANDOMISE', Plot: 'PLOT', Poke: 'POKE', Out: 'OUT', Line: 'LINE', Enter: 'ENTER', Dim: 'DIM inside a PROC',
+  Print: 'PRINT', Tile: 'TILE', Play: 'PLAY', Silence: 'SILENCE', Cls: 'CLS', End: 'END', Poke: 'POKE', Color: null, Border: 'BORDER',
+  Randomise: 'RANDOMISE', Line: 'LINE', Enter: 'ENTER', Dim: 'DIM inside a PROC',
 };
 /** Wireframe 3D statements (docs/ARCADE_WIREFRAME_CONTRACT.md, slice W3b): EYE, DRAWMODEL and LINE go through the runtime argument block (RT_ARGS: RA_W0..RA_W4) and RT_EYE / RT_DRAWMODEL / RT_LINE of the v2 runtime. */
 const WIRE_STMT = new Set(['Eye', 'DrawModel', 'Line']);
 const WIRE_RT = { Eye: 'RT_EYE', DrawModel: 'RT_DRAWMODEL', Line: 'RT_LINE' };
 const WIRE_WORD = { Eye: 'EYE', DrawModel: 'DRAWMODEL', Line: 'LINE' };
 const WIRE_RA = ['RA_W0', 'RA_W1', 'RA_W2', 'RA_W3', 'RA_W4'];
-const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK', 'BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR']);
+const SUPPORTED_FUNCS = new Set(['BIT', 'ABS', 'SGN', 'RND', 'STICK', 'BAND', 'BOR', 'BXOR', 'BNOT', 'SHL', 'SHR', 'PEEK']);
 const V1_FUNCS = new Set(['HIT', 'TILEAT']);
 const V2_FUNCS = new Set(['KEYDOWN']);
 const V3_FUNCS = new Set(['CAMX', 'WORLDTILE', 'TILEFLAGS', 'TILEHIT', 'SOLID']);        // language batch 2 (v3 runtime, need a WINDOW)
@@ -982,6 +992,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         else if (s.table && !visibleTabs(curScanScene).some((t) => up(t.node.name) === up(s.table.name))) scanExpr(s.table);
         continue;
       }
+      if (s.type === 'End') {                       // language batch 8: the game stops (the frame entry then returns at once); the stub needs the v2 runtime's driver conventions
+        if (!v2) err(s, `END needs the v2 runtime or later (it is not supported yet in ${v1 ? 'M3' : 'M2'}; build with --runtime v2)`);
+        continue;
+      }
+      if (s.type === 'Poke') {                      // language batch 8: plain store of the low byte of the value at the address
+        scanExpr(s.addr); scanExpr(s.value);
+        continue;
+      }
       if (s.type === 'Border' || s.type === 'Randomise') {
         const rt = s.type === 'Border' ? 'RT_BORDER' : 'RT_RANDOMISE';
         if (sym[rt] === undefined) notYet(s, s.type === 'Border' ? 'BORDER' : 'RANDOMISE');
@@ -1002,11 +1020,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         if (s.type !== 'LoadMap') for (const k of ['x', 'y', 'w', 'h', 'dx', 'dy', 'value']) if (s[k] && usesRA(s[k])) err(s[k], `${name} cannot have TILEHIT or SOLID (or a DEF FN that uses one) inside its arguments: they share the runtime's argument block; put it in a variable first`);
         continue;
       }
-      if (v1 && V1_STMT.has(s.type) && !(s.type === 'Color' && s.which === 'FLASH')) {
+      if (v1 && V1_STMT.has(s.type)) {
         switch (s.type) {
           case 'Print':
-            if (s.tab) notYet(s, 'PRINT ... TAB');
             if (s.at) { scanExpr(s.at.row); scanExpr(s.at.col); }
+            if (s.tab) scanExpr(s.tab);
             s.items.forEach(scanPrintItem);
             break;
           case 'Tile':
@@ -1130,7 +1148,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'DrawModel': ex(s.x); ex(s.y); ex(s.z); ex(s.yaw); ex(s.pitch); break;
           case 'Line': ex(s.x0); ex(s.y0); ex(s.x1); ex(s.y1); break;
           case 'Hide': ex(s.sprite); break;
-          case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } s.items.forEach(ex); break;
+          case 'Print': if (s.at) { ex(s.at.row); ex(s.at.col); } if (s.tab) ex(s.tab); s.items.forEach(ex); break;
+          case 'Poke': ex(s.addr); ex(s.value); break;
           case 'Tile': ex(s.x); ex(s.y); ex(s.value); break;
           case 'Color': ex(s.value); break;
           case 'Play': if (playIsIndex(s)) ex(s.index ?? s.sfx); break;
@@ -1204,7 +1223,8 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
           case 'DrawModel': ex(s.x, active); ex(s.y, active); ex(s.z, active); ex(s.yaw, active); ex(s.pitch, active); break;
           case 'Line': ex(s.x0, active); ex(s.y0, active); ex(s.x1, active); ex(s.y1, active); break;
           case 'Hide': ex(s.sprite, active); break;
-          case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } s.items.forEach((x) => ex(x, active)); break;
+          case 'Print': if (s.at) { ex(s.at.row, active); ex(s.at.col, active); } if (s.tab) ex(s.tab, active); s.items.forEach((x) => ex(x, active)); break;
+          case 'Poke': ex(s.addr, active); ex(s.value, active); break;
           case 'Tile': ex(s.x, active); ex(s.y, active); ex(s.value, active); break;
           case 'Color': case 'Border': case 'Randomise': ex(s.value, active); break;
           case 'Play': if (playIsIndex(s)) ex(s.index ?? s.sfx, active); break;
@@ -1270,6 +1290,24 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     scenes.forEach((sc, si) => { for (const d of timersOf(sc)) for (const it of d.items) { const a = sceneCtx[si].varSlots.get(up(it.name)); if (a !== undefined && !sceneTimerAddrs[si].includes(a)) sceneTimerAddrs[si].push(a); } });
   }
   const hasPrologue = gameTimerAddrs.length > 0 || sceneTimerAddrs.some((l) => l.length > 0) || pressKeyInfo.size > 0 || pressJoyInfo.size > 0;
+  // ── 4b2. language batch 8: END and FLASH ──
+  // END sets a hidden flag slot and returns to the runtime from where the runtime called INIT / FRAME (the stack pointer saved at entry$init; the driver already keeps it), so the tick finishes
+  // as any tick does (the runtime draws what changed and flips). The frame entry then begins with `LD A,(flag) / OR A / RET NZ`: no prologue and no FRAME runs again. Only a program that reaches an END
+  // has any of it. FLASH: only a program that reaches a FLASH statement clears the flash bit again in the ENTER reset.
+  let usesEnd = false, usesFlash = false;
+  {
+    const look = (n) => {
+      if (Array.isArray(n)) { n.forEach(look); return; }
+      if (!n || typeof n !== 'object') return;
+      if (n.type === 'End') usesEnd = true;
+      else if (n.type === 'Color' && n.which === 'FLASH') usesFlash = true;
+      for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') look(n[k]);
+    };
+    for (const c of reach) look(c.node.body);
+  }
+  let endFlagSlot = 0, endSpSlot = 0;
+  if (usesEnd && v2) { endFlagSlot = allocSlot('end.flag'); endSpSlot = driver ? sceneSpSlot : allocSlot('end.sp'); }
+  const hasFrameStub = driver || hasPrologue || (usesEnd && v2);
   if (errors.length) return fail();
 
   // ── 4c. compiler size pass, the code generator's fixes (docs/ARCADE_COMPILER_SIZE_CONTRACT.md section 4): all on; `opts.cg` {cmpc, sel, for, at, band, arr} switches one off, and so does
@@ -1721,6 +1759,13 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         e.ld('hl', M(info.edge));
         return;
       }
+      case 'PEEK': {                                              // language batch 8: the byte at the address (AND 65535), 0..255
+        const ac = fold(a[0]);
+        if (ac !== undefined) e.ld('a', M(ac & 0xFFFF));
+        else { gen(a[0]); e.ld('a', '(hl)'); }
+        e.ld('l', 'a'); e.ld('h', 0);
+        return;
+      }
       case 'TILEAT': {
         operands(a[0], a[1]);                // HL = x, DE = y
         used.tileat = true; e.call('lib$tileat');
@@ -1973,8 +2018,35 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.call(need('RT_AT'));
   }
 
+  /** Language batch 8: PRINT TAB col sets the column of the text cursor (clamped to 0..31 as AT does) and keeps its row: the byte RT_AT would store, without the call. */
+  function tabColumn(col) {
+    const cc = fold(col);
+    if (cc !== undefined) e.ld('a', cc < 0 ? 0 : cc > 31 ? 31 : cc);
+    else { gen(col); e.ld('a', 31); used.clamp = true; e.call('lib$clamp'); }
+    e.ld(M(need('V_CUR_COL')), 'a');
+  }
+
+  /** Language batch 8: FLASH n sets bit 7 of the text attribute to n AND 1 (the runtime has no RT_FLASH; RT_INK / RT_PAPER / RT_BRIGHT leave the bit alone, RT_CLS drops it from the cells it clears). */
+  function flashStmt(value, k) {
+    const ta = need('V_TEXT_ATTR');
+    if (k !== undefined) { e.ld('a', M(ta)); e.and(0x7F); if (k & 1) e.or(0x80); e.ld(M(ta), 'a'); return; }
+    gen(value); e.ld('a', 'l'); e.and(1); e.rrca(); e.ld('c', 'a');      // C = $80 or 0
+    e.ld('a', M(ta)); e.and(0x7F); e.or('c'); e.ld(M(ta), 'a');
+  }
+
+  /** Language batch 8: POKE addr, value stores the low byte of the value at the address (AND 65535). Always through (HL): the emitter then knows a slot may have changed. addr is evaluated first. */
+  function pokeStmt(s) {
+    const ac = fold(s.addr), vc = fold(s.value);
+    if (ac !== undefined && vc !== undefined) { e.ld('hl', ac & 0xFFFF); e.ld('(hl)', vc & 0xFF); return; }
+    if (vc !== undefined) { gen(s.addr); e.ld('(hl)', vc & 0xFF); return; }
+    if (ac !== undefined) { gen(s.value); e.ld('a', 'l'); e.ld('hl', ac & 0xFFFF); e.ld('(hl)', 'a'); return; }
+    if (s.value.type === 'Ident') { gen(s.addr); e.ld('a', M(addrOf(s.value.name))); e.ld('(hl)', 'a'); return; }
+    gen(s.addr); e.push('hl'); gen(s.value); e.ld('a', 'l'); e.pop('hl'); e.ld('(hl)', 'a');
+  }
+
   function printStmt(s) {
     if (s.at) setCursor(s.at.row, s.at.col);
+    if (s.tab) tabColumn(s.tab);
     for (const p of printPieces(s)) {
       if (p.expr && p.using) { need('RT_PRINTC'); gen(p.expr); used.fmt = true; e.ld('bc', (p.using.w << 8) | p.using.z); e.call('lib$fmt'); continue; }
       if (p.expr) { gen(p.expr); e.call(need('RT_PRINTN')); continue; }
@@ -2248,8 +2320,11 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
         e.label(SKIP);
         return;
       }
+      case 'End': e.ld('a', 1); e.ld(M(endFlagSlot), 'a'); e.ld('sp', M(endSpSlot)); e.ret(); return;      // batch 8: set the flag, cut the stack back to what the runtime called us with, return to it
+      case 'Poke': pokeStmt(s); return;
       case 'Color': {
         const k = fold(s.value);
+        if (s.which === 'FLASH') { flashStmt(s.value, k); return; }
         const mask = s.which === 'BRIGHT' ? 1 : 7;
         const rt = need(s.which === 'INK' ? 'RT_INK' : s.which === 'PAPER' ? 'RT_PAPER' : 'RT_BRIGHT');
         if (k !== undefined) e.ld('a', k & mask);
@@ -2523,6 +2598,9 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     span(m, (n) => { prologueBytes += n; });
   }
 
+  /** Language batch 8: the first instructions of the frame entry of a game with END: once END ran, return to the runtime (6 bytes, 25 T a tick). */
+  function emitEndTest() { e.ld('a', M(endFlagSlot)); e.or('a'); e.ret('nz'); }
+
   /** Language batch 7: A = 0 (the scene has NOWINDOW / NOVIEW) or 1, then the runtime's mode routine. Nothing at all in a program without the clause. */
   function emitSceneMode(k, boot = false) {
     if (!hasModes) return;
@@ -2543,6 +2621,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
   function emitDriver() {
     const n = scenes.length, curAddr = sceneCurSlot, spAddr = sceneSpSlot;
     e.label('frame$entry');
+    if (usesEnd) emitEndTest();                                   // batch 8: after an END the frame entry returns to the runtime at once
     e.ld(M(spAddr), 'sp');
     if (hasPrologue) emitTickPrologue();                          // batch 5: after the stack pointer is saved, before the dispatch
     const target = (k) => (sceneTimerAddrs[k].length ? `frame$tm$${k}` : labelOf('P', 'FRAME', k));       // a scene with timers counts them just before its FRAME
@@ -2575,6 +2654,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       e.call(need('RT_HIDE')); e.pop('bc'); e.djnz('scn$reset$l');
     }
     e.xor('a'); e.call(need('RT_INK')); e.xor('a'); e.call(need('RT_BRIGHT')); e.ld('a', 7); e.call(need('RT_PAPER'));
+    if (usesFlash) { const ta = need('V_TEXT_ATTR'); e.ld('a', M(ta)); e.and(0x7F); e.ld(M(ta), 'a'); }      // batch 8: FLASH 0 (the three routines above leave bit 7)
     e.ld('a', sym.BORDER_COLOUR ?? cst.BORDER_COLOUR); e.call(need('RT_BORDER'));
     e.call(need('RT_CLS'));
     if (mapList.length) { e.xor('a'); e.call(need('RT_LOADMAP')); }
@@ -2593,11 +2673,12 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.ld('(hl)', 0); e.ldir();
     for (const seg of initSegments) { if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
     emitSceneMode(0, true);                                                      // batch 7: the first scene's display mode, before its INIT
-    if (!driver) e.jp('P$INIT');
+    if (!driver) { if (usesEnd) e.ld(M(endSpSlot), 'sp'); e.jp('P$INIT'); }       // (END: the stack pointer the runtime called us with)
     else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }          // the stack pointer the runtime called us with: ENTER cuts the stack back to it
     if (driver) emitDriver();
-    else if (hasPrologue) {                                                      // batch 5: the frame entry is a stub that runs the prologue, then PROC FRAME
+    else if (hasPrologue || usesEnd) {                                           // batch 5: the frame entry is a stub that runs the prologue, then PROC FRAME (batch 8: and, after an END, returns at once)
       e.label('frame$entry');
+      if (usesEnd) emitEndTest();
       emitTickPrologue();
       const m5 = e.size;
       for (const a of sceneTimerAddrs[0] ?? []) timerStep(a);
@@ -2942,7 +3023,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     bankables,
     bank: plan ?? emptyBank(),
     code, base,
-    entries: { init: entry('entry$init'), frame: entry(driver || hasPrologue ? 'frame$entry' : 'P$FRAME') },
+    entries: { init: entry('entry$init'), frame: entry(hasFrameStub ? 'frame$entry' : 'P$FRAME') },
     frameDiv: 60 / rate,
     mapFlag: (extMaps || win || view || wire ? (cst.DIV_EXT ?? 0x80) : 0) | (win ? (cst.DIV_WIN ?? 0x40) : 0) | (view ? (cst.DIV_VIEW ?? 0x40) : 0) | (wire ? (cst.DIV_WIRE ?? 0x40) : 0),
     mapTableAt: extMaps ? (cst.GAME_MAPTAB ?? 0x8010) : 0,

@@ -24,7 +24,7 @@ import { autocompletion, snippetCompletion } from '@codemirror/autocomplete';
 import { StreamLanguage, HighlightStyle, syntaxHighlighting, indentService, foldService } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { tokenize } from './arcade-parse.js';
-import { ARCADE_WORDS, NOT_IN_ARCADE, notInArcadeMessage } from './arcade-words.js';
+import { ARCADE_WORDS, NOT_IN_ARCADE, notInArcadeMessage, REMOVED_WORDS, removedWordMessage } from './arcade-words.js';
 import { scanArcade, blockLines, indentLevel, inWorldList } from './arcade-scan.js';
 import { arcadeProfile } from './profile.js';
 
@@ -91,7 +91,7 @@ function classify(toks, i, atStart) {
   case 'invalid': return 'invalid';
   case 'keyword': {
     const w = ARCADE_WORDS.get(t.value);
-    if (!w) return 'keyword';
+    if (!w) return REMOVED_WORDS.has(t.value) ? 'invalid' : 'keyword';
     if (w.cls === 'function') return 'builtin';
     if (w.cls === 'operator') return 'operatorKeyword';
     if (w.cls === 'game') return 'packageKeyword';        // SPRITE, SHOW, PLAY, ... (orange, like Leap's package words)
@@ -220,7 +220,7 @@ const arcadeHover = hoverTooltip((view, pos) => {
     if (def) make = () => el('div', 'cm-leap-tooltip', `${def.kind} ${w.text} — defined ${inOtherFile(def) ? `in ${def.file} ` : ''}on line ${def.line}`);
     else if (entry) make = () => helpDom(entry);
     else {
-      const msg = notInArcadeMessage(w.text);
+      const msg = notInArcadeMessage(w.text) ?? removedWordMessage(w.text);
       if (msg) make = () => el('div', 'cm-leap-tooltip', msg);
     }
   }

@@ -26,9 +26,10 @@
  * Choices made where docs/ARCADE_LANGUAGE.md is silent (also listed in arcade-parse.js):
  *   - MOD and DIV are infix operators here (V2 has them as functions MOD(a,b) / DIV(a,b)); the call form is gone.
  *   - `/` is not a word: it is refused with a hint to use DIV (integers only).
- *   - (M3) PRINT is `PRINT [AT row, col;] item {; or , item}`; TAB is parsed but not supported by the compiler yet. AT is not
+ *   - (M3) PRINT is `PRINT [AT row, col;] [TAB col;] item {; or , item}` (TAB since language batch 8: it sets the column and keeps the row). AT is not
  *     a statement. Full semantics: docs/ARCADE_RUNTIME_API_V1.md "Language semantics" plus the notes in arcade-interp.js.
- *   - POINT(x,y) is kept from V2 (the language doc keeps it); INKEY$, CHR$, CODE, VAL, INT, ... are not in v0.
+ *   - (language batch 8, Studio completion stage 6, C1) END TAB FLASH PEEK POKE are built. LEN USR OUT IN PLOT POINT are NOT part of Leap Arcade: they are not words of the language (no entry
+ *     in the table, no Help), but they stay RESERVED (REMOVED_WORDS below) so that none of them becomes a variable name by accident, and each says why when it is used. INKEY$, CHR$, CODE, VAL, INT, ... are not in v0.
  *   - (M4a, runtime API v2, docs/ARCADE_RUNTIME_API_V2.md) arrays `DIM a(n)` (n 1..1000 with a v2 runtime), sprite pools
  *     `SPRITE name(n) = "asset"`, instance references `name` / `name(expr)` in SHOW, HIDE and HIT, and KEYDOWN("Q") / KEYDOWN(81).
  *     Decisions where the contract is silent: a bare pool name means instance 0; a single `SPRITE name = ...` accepts `name(0)`
@@ -201,22 +202,20 @@ const WORD_LIST = [
   W('SELECT', 'structure', 'SELECT CASE n ... CASE v[, v] ... [CASE ELSE ...] ENDSEL', 'Choose by value; no fall-through.'),
   W('CASE', 'structure', 'CASE v[, v] / CASE ELSE', 'A branch of SELECT.'),
   W('ENDSEL', 'structure', 'ENDSEL', 'Ends a SELECT.'),
-  W('END', 'statement', 'END', 'End the program.'),
+  W('END', 'statement', 'END', 'End the game: the rest of the tick is skipped, the picture last drawn stays on the screen, and no PROC runs again (no FRAME, no TIMER, no key or joystick reading). The interrupt keeps running, so a sound effect or song already playing finishes (or loops) as usual; follow it with SILENCE and NOMUSIC to stop them. Use it for a game over that does not restart; ENTER another scene to go on.'),
   W('REM', 'statement', 'REM text', 'A comment to the end of the line (an apostrophe is not a comment).'),
 
   // ── Statements kept from V2 ──
-  W('PRINT', 'statement', 'PRINT [AT row, col;] item [USING "pattern"] {; or , item [USING "pattern"]} [; or ,]', 'Print text (string literals, STR$(n)) and numbers (decimal, a leading - when negative, no padding unless the number has USING) at the cursor in the current INK, PAPER and BRIGHT. A number may be followed by USING and a pattern of # and 0, 1 to 8 characters, written out: the field is as wide as the pattern, padded on the left with spaces (#) or zeros (from the first 0 on), and prints asterisks when the number does not fit (PRINT 7 USING "0000" gives 0007, -5 USING "####" gives   -5, 12345 USING "0000" gives ****). AT row, col (0..23, 0..31) first moves the cursor. A comma prints one space. Without a trailing ; or , the cursor then moves to the start of the next row. Text wraps at column 32; the row after 23 is row 0 (no scrolling). TAB is not available yet.'),
-  W('TAB', 'structure', 'TAB col', 'Move the PRINT position to a column (after PRINT).'),
+  W('PRINT', 'statement', 'PRINT [AT row, col;] [TAB col;] item [USING "pattern"] {; or , item [USING "pattern"]} [; or ,]', 'Print text (string literals, STR$(n)) and numbers (decimal, a leading - when negative, no padding unless the number has USING) at the cursor in the current INK, PAPER and BRIGHT. A number may be followed by USING and a pattern of # and 0, 1 to 8 characters, written out: the field is as wide as the pattern, padded on the left with spaces (#) or zeros (from the first 0 on), and prints asterisks when the number does not fit (PRINT 7 USING "0000" gives 0007, -5 USING "####" gives   -5, 12345 USING "0000" gives ****). AT row, col (0..23, 0..31) first moves the cursor; TAB col (0..31) moves it to that column of the row it is on (both may be given, AT first). A comma prints one space. Without a trailing ; or , the cursor then moves to the start of the next row. Text wraps at column 32; the row after 23 is row 0 (no scrolling).'),
+  W('TAB', 'structure', 'PRINT TAB col; item', 'Move the cursor to a column (0..31: a constant outside is an error, a run-time value is clamped to the screen) of the row it is on, before the items of the PRINT: PRINT TAB 10; "HI" prints HI at column 10 of the current row. It is AT with the row kept. After PRINT only; with AT, write AT first: PRINT AT 3, 0; TAB 8; "X".'),
   W('CLS', 'statement', 'CLS', 'Clear every screen cell to a space on the current PAPER (ink 0) and put the cursor at row 0, column 0. Tiles go too; sprites stay.'),
   W('INK', 'statement', 'INK n', 'Ink colour 0..7 for the text printed after it (the value is taken AND 7).'),
   W('PAPER', 'statement', 'PAPER n', 'Paper colour 0..7 for the text printed after it (the value is taken AND 7).'),
   W('BRIGHT', 'statement', 'BRIGHT n', 'Bright 0 or 1 for the text printed after it (the value is taken AND 1).'),
-  W('FLASH', 'statement', 'FLASH n', 'Flash 0 or 1.'),
+  W('FLASH', 'statement', 'FLASH n', 'Flash 0 or 1 for the text printed after it (the value is taken AND 1), like BRIGHT: the character cells print with the attribute\'s flash bit, which swaps ink and paper about twice a second. ENTER and the start of a game put it back to 0. A cell drawn by TILE, FILL or LOADMAP takes its attribute from the tile or the map, not from FLASH.'),
   W('BORDER', 'statement', 'BORDER n', 'Border colour 0..7 (the value is taken AND 7). Needs a v2 runtime.'),
-  W('PLOT', 'statement', 'PLOT x, y', 'Set a pixel (y from the top).'),
   W('LINE', 'statement', 'LINE x0, y0 TO x1, y1', 'A 2-D line in screen pixels (y from the top, signed 16-bit values), drawn at once into the wireframe play area of a WIRE3D game and clipped exactly to it (the ink colour of the play area). Draw it in PROC FRAME: the play area is cleared at the start of every tick. Needs a WIRE3D and the v2 runtime.'),
-  W('POKE', 'statement', 'POKE addr, value', 'Write a byte.'),
-  W('OUT', 'statement', 'OUT port, value', 'Write to a port.'),
+  W('POKE', 'statement', 'POKE addr, value', 'Write one byte to memory: addr is taken AND 65535 (a negative or a large number wraps, so -1 is 65535), value AND 255 (256 writes 0). The runtime owns most of the RAM (its tables, the screens, the stack and the game itself): writing into those breaks the game, and the checker warns about a constant address there. Use it for your own data above the game, or to talk to the program you load yourself; a game that needs more variables should use DIM.'),
   W('RANDOMISE', 'statement', 'RANDOMISE  /  RANDOMISE n', 'Seed RND: RANDOMISE n starts the sequence at n (0 is taken as 1, so the same n always gives the same numbers); RANDOMISE alone seeds it from the frame counter, so it differs from run to run when called after the player has waited, e.g. on the title screen. Needs a v2 runtime.'),
 
   // ── Operators ──
@@ -246,14 +245,10 @@ const WORD_LIST = [
   W('JOYPRESS', 'function', 'JOYPRESS(1)  /  JOYPRESS(2)', 'The STICK bits that went down in this tick (STICK(n) AND NOT the previous tick\'s value, 0..31): BIT(JOYPRESS(1), 4) is a fresh fire press. The joystick number must be written out: 1 or 2. Same timing as KEYPRESS. Needs a v2 runtime.', { args: ['n:num'], ret: 'num' }),
   W('TILEAT', 'function', 'TILEAT(x, y)', 'The tile index (0..127) shown in the screen cell at column x, row y, or -1 when the cell holds text or is outside the screen.', { args: ['x:num', 'y:num'], ret: 'num' }),
   W('STR$', 'function', 'STR$(n)', 'A number as text; in M3 only as a PRINT item (or joined to other text with +).', { args: ['n:num'], ret: 'str' }),
-  W('LEN', 'function', 'LEN(s$)', 'The length of a string.', { args: ['s:str'], ret: 'num' }),
   W('ABS', 'function', 'ABS(n)', 'Absolute value.', { args: ['n:num'], ret: 'num' }),
   W('SGN', 'function', 'SGN(n)', '-1, 0 or 1.', { args: ['n:num'], ret: 'num' }),
   W('RND', 'function', 'RND(n)', 'A random whole number 0 .. n-1.', { args: ['n:num'], ret: 'num' }),
-  W('PEEK', 'function', 'PEEK(addr)', 'Read a byte.', { args: ['addr:num'], ret: 'num' }),
-  W('IN', 'function', 'IN(port)', 'Read a port.', { args: ['port:num'], ret: 'num' }),
-  W('USR', 'function', 'USR(addr)', 'Call machine code; the result is HL.', { args: ['addr:num'], ret: 'num' }),
-  W('POINT', 'function', 'POINT(x, y)', '1 if the pixel is set, else 0.', { args: ['x:num', 'y:num'], ret: 'num' }),
+  W('PEEK', 'function', 'PEEK(addr)', 'The byte (0..255) at memory address addr, which is taken AND 65535 (-1 reads 65535). It reads the machine as it is: the ROM, the runtime\'s tables, the screen cells and your own data. The checker warns when a constant address is in the runtime\'s own RAM, whose layout changes from build to build. In the Studio\'s test the same program reads the same bytes, except that the interpreter only knows the game\'s own memory (a read it cannot know gives 0).', { args: ['addr:num'], ret: 'num' }),
 
   // ── Contextual words (not reserved) ──
   W('FRAME', 'game', 'SHOW s AT x, y FRAME f   /   PROC FRAME()', 'Animation frame clause of SHOW; also the name of the per-tick scene procedure.', { reserved: false }),
@@ -275,8 +270,28 @@ const WORD_LIST = [
 /** upper-case word -> entry, for every word including the contextual ones. */
 export const ARCADE_WORDS = new Map(WORD_LIST.map(e => [e.name, e]));
 
-/** Words that tokenize as keywords (cannot be names). */
-export const RESERVED = new Set(WORD_LIST.filter(e => e.reserved).map(e => e.name));
+/**
+ * Words of Leap V2 that Leap Arcade does not have and never will (language batch 8). They are not in the word table (no Help entry, no completion) but stay reserved, so that
+ * `len = 1` or `PLOT 1, 2` is an error that says why instead of a variable or "unknown statement". word -> the reason, one sentence (the message is `X is not part of Leap Arcade: <reason>`).
+ */
+export const REMOVED_WORDS = new Map(Object.entries({
+  LEN: 'the language has no strings to measure (text is only printed)',
+  USR: 'it would let a game call machine code, but the runtime owns the stack and the screen',
+  OUT: 'it would let a game write to a port, but the runtime owns the ULA, the border and the AY chip',
+  IN: 'it would let a game read a port, but the runtime owns the keyboard and the joysticks (use KEYDOWN and STICK)',
+  PLOT: 'a pixel written to the screen is lost by the runtime\'s erase and redraw of every tick (draw a sprite or a tile instead)',
+  POINT: 'a pixel read from the screen is wrong while the runtime redraws two display files (read a tile with TILEAT or keep your own map)',
+}));
+
+/** "X is not part of Leap Arcade: reason" for one of the REMOVED_WORDS (any case), or null. */
+export function removedWordMessage(word) {
+  const key = String(word).toUpperCase();
+  const why = REMOVED_WORDS.get(key);
+  return why ? `${word} is not part of Leap Arcade: ${why}` : null;
+}
+
+/** Words that tokenize as keywords (cannot be names): the words of the table that are reserved, and the removed Leap V2 words. */
+export const RESERVED = new Set([...WORD_LIST.filter(e => e.reserved).map(e => e.name), ...REMOVED_WORDS.keys()]);
 
 /** Built-in functions: upper-case name -> entry. */
 export const FUNCTIONS = new Map(WORD_LIST.filter(e => e.cls === 'function').map(e => [e.name, e]));

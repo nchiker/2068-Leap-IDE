@@ -41,6 +41,10 @@ ENDSCENE`,
     PRINT AT 0, 6; score USING "0000";
   ENDP
 ENDSCENE`,
+  END: `IF lives = 0 THEN
+  PRINT AT 11, 11; "GAME OVER";
+  END               REM the picture stays; nothing runs again
+ENDIF`,
   ENTER: `SCENE title
   PROC INIT():
     PRINT AT 11, 8; "PRESS FIRE";
@@ -176,6 +180,9 @@ NOMUSIC           REM stops the song`,
 PRINT AT 2, 10; "SCORE "; score;
 PRINT AT 3, 10; score USING "0000";    REM 0042: right-aligned, zeros in front
 PRINT AT 4, 10; "LIVES "; lives;`,
+  TAB: `PRINT AT 5, 0; "NAME";
+PRINT TAB 12; "SCORE";      REM column 12 of the same row
+PRINT AT 7, 0; TAB 4; "INDENTED";`,
   USING: `PRINT AT 0, 0; score USING "00000";   REM 00042
 PRINT AT 1, 0; lives USING "##";       REM " 3"`,
   CLS: `CLS               REM clear the screen`,
@@ -185,6 +192,9 @@ PRINT AT 5, 5; "YELLOW ON BLACK";`,
 CLS`,
   BRIGHT: `PAPER 0 : INK 5 : BRIGHT 0     REM BRIGHT 1 on black paper shows grey in TSRun
 PRINT AT 5, 5; "CYAN";`,
+  FLASH: `FLASH 1
+PRINT AT 11, 11; "PRESS FIRE";
+FLASH 0           REM the text printed after this is steady again`,
   BORDER: `BORDER 2          REM red border`,
   LINE: `LINE 20, 40 TO 230, 150     REM in the WIRE3D play area (rows 2 to 21), in pixels`,
   TILE: `TILE 4, 4 = 1     REM tile number 1 of the TILESET at row 4, column 4`,
@@ -196,6 +206,10 @@ PRINT AT 5, 5; "CYAN";`,
 LOADMAP sky
 LOADMAP sky AT 4, 4        REM a smaller map at a cell position`,
   STR$: `PRINT AT 0, 0; "SCORE " + STR$(score);`,
+  POKE: `POKE p, 7         REM the byte at address p becomes 7 (p AND 65535, the value AND 255)
+POKE p + 1, 300   REM 300 is stored as 44`,
+  PEEK: `POKE p, 7
+x = PEEK(p)       REM 0..255: the byte at address p (AND 65535)`,
   RANDOMISE: `RANDOMISE          REM seed from the frame counter
 RANDOMISE 42       REM or a fixed seed: the same game every time
 x = RND(10)`,

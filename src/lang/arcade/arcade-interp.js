@@ -47,6 +47,10 @@
  *     before the first tick like any other (the first tick starts frameDiv refreshes after INIT in this model).
  *   - STR$(n) is only valid as a PRINT item (or joined to text with +); there are no string variables.
  *
+ * ── Language batch 8 (docs/ARCADE_LANGUAGE.md "END, TAB, FLASH, PEEK and POKE"): END throws EndGame, caught where INIT / FRAME was called: `ended` is set and no PROC, no timer and no key edge runs in the later ticks (the
+ *   records go on, equal to the last one; the refreshes of the sound model still pass). PRINT TAB col sets the cursor column (clamped) and keeps the row. FLASH n sets bit 7 of the text attribute; the ENTER reset clears it.
+ *   PEEK / POKE: a 64 KB array of zeros that only POKE writes (address AND 65535, value AND 255; a write below $4000 or in $8000..$BFFF is ignored, those chunks being the cartridge's); a PEEK of anything else reads 0.
+ *
  * ── Fine colour (docs/ARCADE_FINE_COLOUR_CONTRACT.md 6): `opts.scenes` ({name: {display}}, as compile() takes it) says which scenes are built with 8 x 1 colour (arcade-display.js sceneDisplayPlan, version `opts.version ?? 2`).
  *   Only in a game with such a scene: every record has `fine` (true while a fine scene is the current one) and the result has `fine` {scenes: [bool per scene], tileRows (count x 8 row attributes | null), tileBytes (9 per tile |
  *   null), assets: [{h, data, inks, phases} | null] (per asset index), instAsset}: with a record's cells / attrs / sprites that is what finePicture (arcade-fine.js) draws the picture from. No other program's records or result change.
@@ -233,6 +237,9 @@ class Unsupported extends Error {
   }
 }
 
+/** END (language batch 8): thrown by the statement, caught where INIT / FRAME was called; the game then runs no more PROC. */
+class EndGame {}
+
 /** ENTER (batch 4): thrown by the statement, caught where INIT / FRAME was called. */
 class SceneSwitch {
   constructor(index, node) { this.index = index; this.node = node; }
@@ -387,6 +394,7 @@ export function interpret(ast, opts = {}) {
   };
 
   // ── the cell map, the text state and the sound state ──
+  const mem = new Uint8Array(65536);          // language batch 8: PEEK / POKE: only what the game itself POKEd; everything else reads 0 (see the header)
   const cells = new Uint8Array(768).fill(BLANK_CELL), attrs = new Uint8Array(768).fill(BG_ATTR);
   let textAttr = BG_ATTR, curRow = 0, curCol = 0;
   const tileAttrOf = (t) => (tileset ? tileset.bytes[t * 9 + 8] : BG_ATTR);
@@ -779,6 +787,7 @@ export function interpret(ast, opts = {}) {
             const mask = e.name === 'SOLID' ? 1 : ev(args[4], sc);
             return winTileHit(win.ram, win.worldW, win.flags, x, y, w, h, mask);
           }
+          case 'PEEK': return mem[ev(args[0], sc) & 0xFFFF];                       // language batch 8: the byte at the address (AND 65535); 0 anywhere the game has not POKEd
           case 'TILEAT': {
             const x = ev(args[0], sc), y = ev(args[1], sc);
             if (x < 0 || x > 31 || y < 0 || y > 23) return -1;
@@ -981,11 +990,11 @@ export function interpret(ast, opts = {}) {
       }
       case 'Exit': return s.kind;
       case 'Print': {
-        if (s.tab) throw new Unsupported('PRINT TAB', s);
         if (s.at) {
           const r = ev(s.at.row, sc), c = ev(s.at.col, sc);
           curRow = clamp(r, 23); curCol = clamp(c, 31);
         }
+        if (s.tab) curCol = clamp(ev(s.tab, sc), 31);                                // language batch 8: the column, the row kept
         s.items.forEach((it, i) => {
           if (isStr(it)) putText(evStr(it, sc)); else if (s.usings?.[i]) putText(fmtUsing(ev(it, sc), s.usings[i].pattern)); else putText(String(ev(it, sc)));
           if (i < s.seps.length && s.seps[i] === ',') putChar(32);
@@ -994,10 +1003,16 @@ export function interpret(ast, opts = {}) {
         if (s.trailing === null) { curRow = (curRow + 1) % 24; curCol = 0; }
         return null;
       }
+      case 'End': throw new EndGame();                                              // language batch 8
+      case 'Poke': {                                                                // language batch 8: addr AND 65535, value AND 255; the cartridge's chunks are read-only (a write there is lost, as on the machine)
+        const a = ev(s.addr, sc) & 0xFFFF, v = ev(s.value, sc) & 0xFF;
+        if ((a >= 0x4000 && a < 0x8000) || a >= 0xC000) mem[a] = v;
+        return null;
+      }
       case 'Color': {
-        if (s.which === 'FLASH') throw new Unsupported('FLASH', s);
         const v = ev(s.value, sc);
-        if (s.which === 'INK') textAttr = (textAttr & ~7) | (v & 7);
+        if (s.which === 'FLASH') textAttr = (textAttr & ~0x80) | ((v & 1) << 7);
+        else if (s.which === 'INK') textAttr = (textAttr & ~7) | (v & 7);
         else if (s.which === 'PAPER') textAttr = (textAttr & ~0x38) | ((v & 7) << 3);
         else textAttr = (textAttr & ~0x40) | ((v & 1) << 6);
         return null;
@@ -1119,7 +1134,7 @@ export function interpret(ast, opts = {}) {
   const resetMachine = () => {
     sfx.active = false; playCall(); if (chip) chip.silence();                                 // SILENCE (the song plays on)
     for (let i = 0; i < spr.length; i++) spr[i] = V3 ? { visible: 0, asset: instAsset[i] ?? 0, x: 0, y: 0, frame: 0 } : { ...spr[i], visible: 0 };
-    textAttr = (textAttr & ~0x7F) | BG_ATTR;                                                  // INK 0, PAPER 7, BRIGHT 0
+    textAttr = BG_ATTR;                                                                       // INK 0, PAPER 7, BRIGHT 0, FLASH 0
     border = border0;
     cells.fill(BLANK_CELL); attrs.fill(((textAttr >> 3) & 7) << 3); curRow = 0; curCol = 0;   // CLS
     if (maps.length) loadMap(maps[0], 0, 0);
@@ -1136,8 +1151,9 @@ export function interpret(ast, opts = {}) {
   };
   let pending = null;
   /** Call INIT or FRAME of the current scene; an ENTER inside it is left in `pending`. */
+  let ended = false;                                                                          // END ran: no PROC runs any more
   const execute = (name) => {
-    try { callProc(name); } catch (ex) { if (ex instanceof SceneSwitch) pending = ex.index; else throw ex; }
+    try { callProc(name); } catch (ex) { if (ex instanceof SceneSwitch) pending = ex.index; else if (ex instanceof EndGame) ended = true; else throw ex; }
   };
   const settle = () => {
     for (let guard = 0; pending !== null; ) {
@@ -1168,8 +1184,10 @@ export function interpret(ast, opts = {}) {
     playN = 0; musicN = 0; rndN = 0;
     if (!clock) advanceRefreshes(frameDiv);   // the refreshes between the previous sample and this tick's PROC FRAME
     if (wire) { wire.fresh = false; if (wire.on) { wireClear(wire.bm, wire.area); wire.fresh = true; } }     // wireframe 3D: the play area of the hidden file is cleared as the tick starts
-    countTimers(); takeEdges(t);              // batch 5: the timers count down, then the key and stick edges are taken (the tick prologue of the compiled game)
-    execute('FRAME'); settle();
+    if (!ended) {                             // (after END the compiled game's frame entry returns at once: no prologue, no FRAME; the sound refreshes above still run)
+      countTimers(); takeEdges(t);            // batch 5: the timers count down, then the key and stick edges are taken (the tick prologue of the compiled game)
+      execute('FRAME'); settle();
+    }
     ticks.push(snapshot(events));
   }
   return { init, ticks, varNames, arrNames, scenes: sceneList.map((n) => n.name), spriteNames: sprites, sfxNames, ...(songMode ? { songNames } : {}), frameDiv, instAsset, assetPhases, ...(hasFine ? { fine: fineInfo() } : {}) };

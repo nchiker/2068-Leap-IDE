@@ -241,10 +241,10 @@ const GAME = (top, body, decl = 'DIM a, b') => `GAME "t"\nSPRITE ball = "ball"\n
   check_('TILE 4 is fine with 5 tiles, TILE 5 is refused with the tileset size', err1(GAME(T, '    TILE 1, 1 = 4')) === '' && /tile 5 is not in the tileset "ts" \(it has 5 tiles, 0\.\.4\)/.test(err1(GAME(T, '    TILE 1, 1 = 5'))), err1(GAME(T, '    TILE 1, 1 = 5')));
   check_('a MAP without a TILESET is refused', /a MAP needs a TILESET/.test(err1(GAME('MAP level = "level"\n', ''))));
   check_('a MAP naming a tile the tileset lacks is refused', /tile index 0\.\.1/.test(err1(GAME(T.replace('"ts"', '"two"') + 'MAP level = "level"\n', ''), { ...ASSETS, tilesets: { two: { tiles: TILESET.tiles.slice(0, 2) } } })));
-  check_('PRINT TAB is not supported yet in M3', /PRINT \.\.\. TAB is not supported yet in M3/.test(err1(GAME('', '    PRINT TAB 5; "x"'))));
-  check_('STR$ outside PRINT (and LEN) is not supported yet in M3', /LEN\(\.\.\.\) is not supported yet in M3/.test(err1(GAME('', '    a = LEN(STR$(5))'))));
+  check_('PRINT TAB compiles (language batch 8)', err1(GAME('', '    PRINT TAB 5; "x"')) === '', err1(GAME('', '    PRINT TAB 5; "x"')));
+  check_('LEN is not part of Leap Arcade (and STR$ outside PRINT is not a string value)', /LEN is not part of Leap Arcade/.test(err1(GAME('', '    a = LEN(STR$(5))'))));
   check_('a string variable is still not supported', /string variable/.test(err1(GAME('', '', 'DIM a$'))));
-  check_('FLASH and BORDER are not supported yet in M3', /FLASH is not supported yet in M3/.test(err1(GAME('', '    FLASH 1'))) && /BORDER is not supported yet in M3/.test(err1(GAME('', '    BORDER 1'))));
+  check_('FLASH compiles (language batch 8) and BORDER is not supported yet in M3', err1(GAME('', '    FLASH 1')) === '' && /BORDER is not supported yet in M3/.test(err1(GAME('', '    BORDER 1'))), err1(GAME('', '    FLASH 1')));
   const no = { ...mockRuntime(1), symbols: Object.fromEntries(Object.entries(mockRuntime(1).symbols).filter(([k]) => k !== 'RT_PRINTS')) };
   check_('a runtime without RT_PRINTS is reported at the PRINT line', compileM(GAME('', '    PRINT "x"'), ASSETS, no).errors.some((e) => /does not provide RT_PRINTS/.test(e.message) && e.line === 9), err1(GAME('', '    PRINT "x"'), ASSETS, no));
   check_('a v0 runtime still says "not supported yet in M2" for the new words', ['    PRINT "x"', '    CLS', '    INK 1', '    PLAY q', '    SILENCE', '    TILE 1, 1 = 0', '    a = HIT(ball, bat)', '    a = TILEAT(1, 1)']
