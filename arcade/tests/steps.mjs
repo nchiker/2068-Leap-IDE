@@ -40,6 +40,8 @@ export const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9
 
 export const SUITES = [
   'arcade/tests/sc-runtime-ink.mjs',
+  'arcade/tests/sc-runtime-mem.mjs',            // SC step 7: the ink build's memory (the m4 poison pattern): free areas poisoned, writes tracked, the ink table and the read-only tables untouched, the ink scratch written only where spritecol.asm says
+  'tests/arcade-sc-tables.mjs',                 // SC step 7: hand-computed table / applySpriteInk / compile-message checks that the first mutation run showed missing
   'tests/arcade-sc-setting.mjs',
   'tests/arcade-sc-codegen.mjs',
   'tests/arcade-sc-parity.mjs',
@@ -170,6 +172,7 @@ export const MUTATION_SUITES = [
   { file: 'tests/m20-variables-mutations.mjs', shards: 2, runtimes: ['v2'], tests: ['tests/variables-panel.mjs'] },
   { file: 'tests/m20-picture-mutations.mjs', shards: 4, tests: ['tests/picture-import.mjs'] },
   { file: 'tests/source-debug-mutations.mjs', shards: 4, src: ['src/tools/source-debug.js'], tests: ['tests/source-debug-model.mjs', 'tests/source-debug-runtime.mjs'] },   // stage 6 R4
+  { file: 'arcade/tests/sc-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-sc-tables.mjs', 'tests/arcade-sc-setting.mjs', 'tests/arcade-sc-codegen.mjs', 'tests/arcade-sc-parity.mjs'] },     // SC step 7: arcade-spriteink.js, the display plan, compile(), the code generator and the interpreter's ink code
   { file: 'arcade/tests/m19c-mutations.mjs', shards: 8, src: ['src/lang/arcade/', 'arcade/tools/arcadec.mjs'], tests: ['tests/arcade-m19-compiler.mjs', 'tests/arcade-display.mjs', 'tests/arcade-m17-interp.mjs'] },
 ];
 
@@ -216,6 +219,9 @@ export const OTHER_SUITES = [
   // the perf checks of the owner's checklist (T-states a tick of the recorded game runs: deterministic, so they can run beside other steps)
   { file: 'tests/arcade-runner-perf.mjs', args: ['--check'] },
   { file: 'tests/arcade-m6-platformer-perf.mjs' },
+  { file: 'tests/arcade-sc-perf.mjs' },                  // SC step 7: Starfall (classic) with and without sprite ink on the ink build against arcade/spike/sc/perf-reference.json (--save re-records it after an intended change)
+  { file: 'tests/arcade-sc-xemu.mjs' },                  // SC step 7: TSRun = ZEsarUX for the ink build (every tick's hidden file of a self-playing ink game); the ZEsarUX half says SKIPPED when it is not installed
+  { file: 'arcade/tools/regen-baselines.mjs', args: ['--build', 'v2ink', '--old', '8a5c6d1'] },   // SC step 7: the ink runtime compiles the baseline games exactly as main (8a5c6d1, before SC) does: 0 hashes changed, nothing written
   { file: 'tests/arcade-m8-vaults-perf.mjs' },
   { file: 'tests/arcade-codegen-perf.mjs', args: ['--compare', 'arcade/spike/codegen/perf-reference.json'] },   // no recorded tick slower than the reference (re-save it after an intended change: --save)
   { file: 'tests/browser-smoke.mjs', group: BROWSER_GROUP },

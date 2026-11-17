@@ -203,7 +203,7 @@ check('on the plain v2 runtime the ink game is still refused', run(GAME, v2, { a
 }
 
 // ── 5. games without an ink scene are unchanged (the DCKs the compiler gave before SC step 5, plain runtimes) ──
-const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', breakout: '700debd686c0d95a', lumen: '7f7b5072820e56d0', orbit: 'f7188341691f3065', platformer: '0ef02a7821ac945d',
+const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', breakout: '700debd686c0d95a', crabsmash: '01d88c36e79087a8', lumen: '7f7b5072820e56d0', orbit: 'f7188341691f3065', platformer: '0ef02a7821ac945d',
   runner: 'e9372c6d0dd0be34', 'shooter-classic': '78c997df68d55ed9', shooter: 'b9e154a15704dee5', vaults: 'eacfe20b943c4a1b' };
 {
   const rts = { 2: v2, 3: load('v3'), 4: load('v4') };
@@ -218,7 +218,7 @@ const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', br
     check(`example ${id}: the DCK is byte for byte the one before SC step 5 (plain runtime)`, !!res.dck && sh(res.dck) === want, res.dck ? sh(res.dck) : json(res.errors));
     n++;
   }
-  check('every example of the baseline was found', n === 10 && readdirSync(dir).filter((f) => f.endsWith('.arc') && !/static/.test(f)).length === n);
+  check('every example of the baseline was found', n === 11 && readdirSync(dir).filter((f) => f.endsWith('.arc') && !/static/.test(f)).length === n);
 }
 
 // ── 6. end to end on TSRun: the attribute file of a game with an ink scene ──
