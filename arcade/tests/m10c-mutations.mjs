@@ -51,7 +51,7 @@ const MUTANTS = [
   ["interp: negative timer counts", [E(IN, "const c = globalScope.vars.get(k); if (c && c.v > 0) c.v--;", "const c = globalScope.vars.get(k); if (c && c.v !== 0) c.v--;")]],
   ["interp: edge forgets before", [E(IN, "keyEdge.set(c, now & ~(keyBefore.get(c) ?? 0)); keyBefore.set(c, now);", "keyEdge.set(c, now); keyBefore.set(c, now);")]],
   ["interp: joy edge not masked by before", [E(IN, "joyEdge[n] = now & ~joyBefore[n] & 31;", "joyEdge[n] = now & 31;")]],
-  ["interp: edges taken after FRAME", [E(IN, "countTimers(); takeEdges(t);              // batch 5", "countTimers();              // batch 5")]],
+  ["interp: edges taken after FRAME", [E(IN, "countTimers(); takeEdges(t);            // batch 5", "countTimers();            // batch 5")]],
   ["interp: PLAY past the table not counted", [E(IN, "if (v >= sfxNames.length) { if (clock) ++playN; return null; }", "if (v >= sfxNames.length) { return null; }")]],
   ["interp: PLAY index negative plays", [E(IN, "if (v < 0 || v > 255) return null;", "if (v > 255) return null; if (v < 0) { i = 0; } ")]],
   ["check: JOYPRESS accepts 3", [E(CK, "if (k !== 1 && k !== 2) {", "if (k !== 1 && k !== 2 && k !== 3) {")]],

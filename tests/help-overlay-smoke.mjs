@@ -45,7 +45,7 @@ if (!existsSync(ROOT + 'arcade/dist/v2/runtime.json')) {
   const open = await waitFor("(() => { const o = document.querySelector('.help-overlay'); return !!o && !o.hidden && o.querySelectorAll('.help-item').length; })()", 5000);
   check('Studio: F1 opens Help with the language\'s words', open > 100, `${open} words`);
   const t = await tabs();
-  check('Studio: three tabs, "How a game is built" third', J(t) === J(['Keywords', 'Keys & tips', 'How a game is built']), J(t));
+  check('Studio: four tabs, "How a game is built" third, "Debugging a game" fourth', J(t) === J(['Keywords', 'Keys & tips', 'How a game is built', 'Debugging a game']), J(t));
 
   // a word with an example and a section
   check('Studio: TIMER can be picked', await pick('TIMER'));
@@ -65,10 +65,11 @@ if (!existsSync(ROOT + 'arcade/dist/v2/runtime.json')) {
   await pick('ENDP');
   d = await detail();
   check('Studio: ENDP shows the PROC example', d.example === ARCADE_HELP.PROC.example && /ENDP/.test(d.example), d.example?.slice(0, 30));
-  // a word the compiler does not take yet has no example block
-  await pick('PLOT');
+  // the words stage 6 added take an example and a link like any other; the six it removed are not in the list
+  await pick('POKE');
   d = await detail();
-  check('Studio: PLOT (not supported yet) shows no example block but still links to its section', d.example === null && d.href === `${DOCS_BASE}${ARCADE_HELP.PLOT.doc}#${ARCADE_HELP.PLOT.anchor}`, J(d));
+  check('Studio: POKE shows its example and the link of its section', d.name === 'POKE' && d.example === ARCADE_HELP.POKE.example && d.href === `${DOCS_BASE}${ARCADE_HELP.POKE.doc}#${ARCADE_HELP.POKE.anchor}`, J(d));
+  check('Studio: PLOT is not a word any more', ARCADE_HELP.PLOT === undefined);
   // search
   await evaluate("(() => { const s = document.querySelector('.help-overlay .help-search'); s.value = 'loadtable'; s.dispatchEvent(new Event('input')); })()");
   d = await detail();
