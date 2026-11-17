@@ -159,6 +159,7 @@ export const MUTATION_SUITES = [
   { file: 'arcade/tests/m15c-mutations.mjs', shards: 2, src: ['src/lang/arcade/'], tests: ['tests/arcade-m15-compiler.mjs', 'tests/arcade-m15-differential.mjs', 'tests/arcade-m10-compiler.mjs'] },
   { file: 'arcade/tests/m16c-mutations.mjs', shards: 8, src: ['src/lang/arcade/'], tests: ['tests/arcade-emitter-opt.mjs', 'tests/arcade-codegen-exhaustive.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m5.mjs'] },
   { file: 'arcade/tests/m18c-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-k-warnings.mjs', 'tests/arcade-assetcheck.mjs'] },
+  { file: 'tests/source-debug-mutations.mjs', shards: 4, src: ['src/tools/source-debug.js'], tests: ['tests/source-debug-model.mjs', 'tests/source-debug-runtime.mjs'] },   // stage 6 R4
   { file: 'arcade/tests/m19c-mutations.mjs', shards: 8, src: ['src/lang/arcade/', 'arcade/tools/arcadec.mjs'], tests: ['tests/arcade-m19-compiler.mjs', 'tests/arcade-display.mjs', 'tests/arcade-m17-interp.mjs'] },
 ];
 
@@ -167,6 +168,8 @@ export const BROWSER_GROUP = 'browser';
 
 /** The suites outside run-all (the owner's hand-run checklist, 2026-11-13), each a plain `node <file>`. */
 export const OTHER_SUITES = [
+  { file: 'tests/source-debug-model.mjs' },                       // stage 6 R4: the source debugger's pure half
+  { file: 'tests/source-debug-runtime.mjs' },                     // stage 6 R4: breakpoints, stepping and non-perturbation on the real runtimes
   { file: 'tests/studio-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/sprite-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/tile-editor-smoke.mjs', group: BROWSER_GROUP },
