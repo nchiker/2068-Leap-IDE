@@ -203,6 +203,7 @@ check('on the plain v2 runtime the ink game is still refused', run(GAME, v2, { a
 }
 
 // ── 5. games without an ink scene are unchanged (the DCKs the compiler gave before SC step 5, plain runtimes) ──
+const INK_SAMPLES = ['breakout', 'shooter-classic'];      // the examples that turn sprite colour on (stage 6B)
 const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', breakout: '700debd686c0d95a', crabsmash: '01d88c36e79087a8', lumen: '7f7b5072820e56d0', orbit: 'f7188341691f3065', platformer: '0ef02a7821ac945d',
   runner: 'e9372c6d0dd0be34', 'shooter-classic': '78c997df68d55ed9', shooter: 'b9e154a15704dee5', vaults: 'eacfe20b943c4a1b' };
 {
@@ -214,8 +215,15 @@ const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', br
     const a = existsSync(af) ? JSON.parse(readFileSync(af, 'utf8')) : { sprites: {} };
     const text = readFileSync(join(dir, id + '.arc'), 'utf8');
     const r = rts[requiredRuntime(text, a).version];
-    const res = compile(text, { runtime: r.runtime, image: r.image, assets: a, scenes: a.scenes });
-    check(`example ${id}: the DCK is byte for byte the one before SC step 5 (plain runtime)`, !!res.dck && sh(res.dck) === want, res.dck ? sh(res.dck) : json(res.errors));
+    // Breakout and Shooter (classic) carry spriteColour 'ink' on their play scene since stage 6B: the baseline is the game WITHOUT it (the plain build of the same program)
+    const plainScenes = Object.fromEntries(Object.entries(a.scenes ?? {}).map(([k, v]) => { const { spriteColour, ...rest } = v ?? {}; return [k, rest]; }));
+    const res = compile(text, { runtime: r.runtime, image: r.image, assets: a, scenes: plainScenes });
+    check(`example ${id}: the DCK is byte for byte the one before SC step 5 (plain runtime${INK_SAMPLES.includes(id) ? ', without its spriteColour setting' : ''})`, !!res.dck && sh(res.dck) === want, res.dck ? sh(res.dck) : json(res.errors));
+    if (INK_SAMPLES.includes(id)) {
+      const ink = load('v2ink');
+      const withInk = compile(text, { runtime: ink.runtime, image: ink.image, assets: a, scenes: a.scenes });
+      check(`example ${id}: with its spriteColour 'ink' it compiles on the ink runtime with no error and no warning, and carries the ink tables`, !!withInk.dck && withInk.errors.length === 0 && withInk.warnings.length === 0 && !!withInk.gen.ink && requiredRuntime(text, a, a.scenes).ink === true, json([...withInk.errors, ...withInk.warnings]));
+    }
     n++;
   }
   check('every example of the baseline was found', n === 11 && readdirSync(dir).filter((f) => f.endsWith('.arc') && !/static/.test(f)).length === n);

@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exampleProject, serializeProject } from '../../src/arcade-project.js';
 import { compile, requiredRuntime } from '../../src/lang/arcade/arcade-compile.js';
+import { pickBuild } from '../../src/lang/arcade/profile.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = join(HERE, '..');
@@ -60,16 +61,16 @@ function loadBuild(version) {
   put(join(ARCADE, `dist/v${version}/runtime.bin`), bytes);
   return { runtime: JSON.parse(text), image: new Uint8Array(bytes) };
 }
-const builds = { 2: loadBuild(2), 3: loadBuild(3), 4: loadBuild(4) };
-loadBuild('2ink');                                   // the sprite-colour variant of v2 (SC): only copied; the compiler selects it by `variant`
+const builds = { 2: loadBuild(2), 3: loadBuild(3), 4: loadBuild(4), '2ink': loadBuild('2ink') };      // '2ink': the sprite-colour variant of v2 (SC), picked by pickBuild for a game with a scene whose spriteColour is 'ink'
 const index = [];
 for (const ex of EXAMPLES) {
   const arc = readFileSync(join(ARCADE, 'examples', `${ex.id}.arc`), 'utf8');
   const assets = JSON.parse(readFileSync(join(ARCADE, 'examples', `${ex.id}.assets.json`), 'utf8'));
   const project = exampleProject(ex.title, arc, assets);
-  const v = requiredRuntime(arc, assets, assets.scenes).version, need = v >= 2 && v <= 4 ? v : 2;
-  const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets, scenes: assets.scenes });
-  if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
+  const need = requiredRuntime(arc, assets, assets.scenes), v = need.version;
+  const build = pickBuild(builds, v >= 2 && v <= 4 ? need : { ...need, version: 2 }), label = build.runtime.variant === 'ink' ? 'v2 ink' : `v${build.runtime.version}`;
+  const res = compile(arc, { runtime: build.runtime, image: build.image, assets, scenes: assets.scenes });
+  if (res.errors.length) { console.error(`${ex.id}: does not compile with the ${label} runtime: ${res.errors[0].message}`); process.exit(1); }
   // Any warning is fatal: every example opens with no warnings.
   if (res.warnings.length) { console.error(`${ex.id}: warning: ${res.warnings[0].message}`); process.exit(1); }
   put(join(ARCADE, 'dist/examples', `${ex.id}.leapgame`), serializeProject(project));

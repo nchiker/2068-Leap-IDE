@@ -303,7 +303,7 @@ interrupts on, so **that must stay so** (m17 checks it with the real handler).
 Contract: `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` section 3 (Z). Two Opus workers followed the shrink-z80 skill in disposable worktrees, on
 disjoint files, one change at a time (each built and quick-tested); the main thread combined the two patches. Each change, with its bytes and
 T effect, is in `arcade/spike/v2size/NOTES-A.md` (core modules) and `NOTES-B.md` (wireframe); the figures before / after are in the `perf-*`
-files beside them. **`runtime (chunks 0-1)` 15,378 -> 12,935 bytes (-2,443); `RT_END` `$3CAA` -> `$328A`: 3,446 bytes free after it (was 854).**
+files beside them. **`runtime (chunks 0-1)` 15,378 -> 12,935 bytes (-2,443); `RT_END` `$3CAA` -> `$328A`: 3,446 bytes free after it (was 854); since fine colour 1,068 free, and 786 in the sprite-colour ink build.**
 No `RT_*` contract changed; the `RT_*` entries moved, so compiled v2 programs change only in those addresses (10 hashes of `batch2-` /
 `batch3-baseline.json` regenerated with `regen-baselines.mjs --old c985065`: the old and new compiler agree byte for byte).
 

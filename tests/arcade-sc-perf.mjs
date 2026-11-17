@@ -25,8 +25,10 @@ const fmt = (v) => Math.round(v).toLocaleString('en-US');
 const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
 
 const SRC = readFileSync(join(ROOT, 'arcade/examples/shooter-classic.arc'), 'utf8');
-const A = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/shooter-classic.assets.json'), 'utf8'));
-const inkAssets = { ...A, scenes: { ...(A.scenes ?? {}), play: { spriteColour: 'ink' } } };
+const A0 = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/shooter-classic.assets.json'), 'utf8'));
+// the sample now carries spriteColour 'ink' on its play scene (stage 6B): the plain runs take the assets without it
+const { scenes: sampleScenes, ...A } = A0;
+const inkAssets = { ...A, scenes: { ...(sampleScenes ?? {}), play: { spriteColour: 'ink' } } };
 
 const dirInk = join(ROOT, 'arcade/build/v2ink');
 if (!existsSync(join(dirInk, 'runtime.json'))) { console.log('FAIL  arcade/build/v2ink is not built (node arcade/tools/build-runtime-v2ink.mjs)'); process.exit(1); }

@@ -224,7 +224,7 @@ export const arcadeProfile = {
         const res = compile(text, { runtime: b.runtime, image: b.image, assets: {} });
         return [...res.errors, ...res.warnings].map(toMark);
       },
-      runtimeLabel: () => `runtime v${current.runtime.version ?? 0}`,
+      runtimeLabel: () => `runtime v${current.runtime.version ?? 0}${current.runtime.variant === 'ink' ? ' (sprite colour)' : ''}`,
     };
   },
 };

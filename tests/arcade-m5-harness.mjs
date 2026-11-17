@@ -21,7 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse } from '../src/lang/arcade/arcade-parse.js';
 import { interpret } from '../src/lang/arcade/arcade-interp.js';
-import { compile } from '../src/lang/arcade/arcade-compile.js';
+import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { completeSource } from '../src/arcade-objects.js';
 import { compareSound, soundCoverage } from './arcade-m15-common.mjs';
 
@@ -46,7 +46,14 @@ export function real(version = 2) {
   _reals.set(version, r);
   return r;
 }
-function loadReal(version) {
+/** The ink variant of runtime v2 (arcade/build/v2ink; sprite colour, SC): the table for a game with an ink scene. */
+export function realInk() {
+  if (_reals.has('2ink')) return _reals.get('2ink');
+  const r = loadReal('2ink', 2);
+  _reals.set('2ink', r);
+  return r;
+}
+function loadReal(version, expect = version) {
   let _real;
   const json = join(ROOT, `arcade/build/v${version}/runtime.json`);
   if (!existsSync(json)) return (_real = { ok: false, why: `arcade/build/v${version}/runtime.json does not exist` });
@@ -54,14 +61,22 @@ function loadReal(version) {
   const img = new Uint8Array(readFileSync(join(dirname(json), rt.image ?? 'runtime.bin')));
   const need = ['RT_FILL', 'RT_FILLC', 'RT_COPY', 'RT_LOADMAP', 'RT_LOADMAPAT', 'RT_BORDER', 'RT_RANDOMISE', 'V_BORDER', 'RT_ARGS'];
   const missing = need.filter((n) => rt.symbols[n] === undefined);
-  _real = { rt, img, SYM: rt.symbols, ok: rt.version === version && missing.length === 0, why: missing.length ? `runtime.json lacks ${missing.join(' ')}` : '' };
+  _real = { rt, img, SYM: rt.symbols, ok: rt.version === expect && missing.length === 0, why: missing.length ? `runtime.json lacks ${missing.join(' ')}` : '' };
   return _real;
 }
 
 export const errText = (r) => r.errors.map((e) => `${e.line}:${e.col} ${e.message}`).join(' | ');
-export function compileReal(src, assets, { R = real(), compile: compileFn = compile } = {}) {      // (R: another runtime table, compile: another compiler; tools/regen-baselines.mjs)
+export function compileReal(src, assets, { R: Rgiven = null, compile: compileFn = compile } = {}) {      // (R: another runtime table, compile: another compiler; tools/regen-baselines.mjs)
+  // Without an R the runtime is the plain v2 build, or the ink variant (arcade/build/v2ink) for a game with a scene whose spriteColour is 'ink' (stage 6B: Breakout and Shooter classic); res.R is the table used
+  let R = Rgiven;
+  if (!R) {
+    let ink = false;
+    try { ink = !!assets?.scenes && requiredRuntime(src, assets, assets.scenes).ink === true; } catch { /* a source that does not parse is the compiler's to report */ }
+    R = ink ? realInk() : real();
+  }
   const res = compileFn(src, { runtime: R.rt, image: R.img, assets, ...(assets?.scenes ? { scenes: assets.scenes } : {}) });      // (the assets file's top-level "scenes" key is the project's per-scene display setting: fine colour, docs/ARCADE_FINE_COLOUR_CONTRACT.md 1)
   if (res.errors.length) throw new Error('compile: ' + errText(res));
+  res.R = R;
   return res;
 }
 
@@ -71,7 +86,7 @@ const KEYPOS = new Map(); KEYROWS.forEach((r, row) => [...r].forEach((ch, bit) =
 
 /** Boot the cartridge and run until `ticks` ticks have completed. */
 export function runReal(res, { ticks, stick = null, keys = null, measure = false, hooks = null, R: Rov = null, video = false } = {}) {
-  const R = Rov ?? real(), SYM = R.SYM;
+  const R = Rov ?? res.R ?? real(), SYM = R.SYM;
   const m = bootedMachine(res.dck, video ? { video: true } : {});      // restored from the boot snapshot (V9), video off (V8) unless the run looks at the picture (`video`; hooks.onBoot(m) and hooks.afterFrame(m, f) are for the beam: tests/arcade-starfall-fine.mjs)
   hooks?.onBoot?.(m);
   const rd16 = (a) => m.ram[a] | (m.ram[a + 1] << 8);

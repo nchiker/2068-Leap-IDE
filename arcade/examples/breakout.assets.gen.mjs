@@ -32,6 +32,8 @@ assets.music = {
   ], [0, 1], 0),
 };
 
+// Sprite colour (SC, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md "SC as built (stage 6B)"): in the play scene the bat and the ball take their own ink (a cell they cover is recoloured), so they no longer change colour over the bricks and the backdrop
+assets.scenes = { play: { spriteColour: 'ink' } };
 const text = JSON.stringify(assets, null, 1) + '\n';
 if (process.argv.includes('--check')) {
   const same = existsSync(out) && readFileSync(out, 'utf8') === text;

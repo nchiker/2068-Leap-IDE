@@ -651,5 +651,24 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'v3/runtime.json')
   check('models: checkAssets never throws on junk', (() => { try { for (const m of [null, 5, 'x', [], { points: null }, { points: [null], edges: [null] }]) checkAssets(mkProject({ models: { m } }), null); return true; } catch { return false; } })());
 }
 
+// ── sprites: sprite-ink-clash (SC step 8) ──
+{
+  const rows = (inks) => inks.map((ink) => ({ bits: 'ff', mask: 'ff', ink, paper: 0, bright: 0 }));
+  const sprite = (inks) => ({ w: 8, h: inks.length, rows: rows(inks) });
+  const withScenes = (scenes, sprites) => ({ ...mkProject({ sprites }), scenes });
+  const sp = (project) => checkAssets(project, null).filter((f) => f.id === 'sprite-ink-clash');
+  const clash = sprite([2, 2, 2, 2, 2, 4, 4, 4]), clean = sprite([2, 2, 2, 2, 2, 2, 2, 2]);
+  const f = sp(withScenes({ play: { spriteColour: 'ink' } }, { ship: clash, dot: clean }));
+  check('sprite-ink-clash: one warning for the sprite with two inks in a block, none for the one-ink sprite; kind sprites, asset name, the block, compilerAlso (the compiler says it per scene)',
+    f.length === 1 && f[0].severity === 'warning' && f[0].kind === 'sprites' && f[0].asset === 'ship' && f[0].compilerAlso === true && eq(f[0].blocks, [{ row: 0, col: 0, inks: [2, 4] }]) && /more than one ink/.test(f[0].message), JSON.stringify(f));
+  check('sprite-ink-clash: nothing when no scene has sprite colour (off, absent, "none")', sp(withScenes({}, { ship: clash })).length === 0 && sp(withScenes({ play: { spriteColour: 'none' } }, { ship: clash })).length === 0 && sp(mkProject({ sprites: { ship: clash } })).length === 0);
+  check('sprite-ink-clash: the setting is read in any case and with white space; a fine scene does not count (it has an ink per sprite row already)',
+    sp(withScenes({ a: { spriteColour: '  INK ' } }, { ship: clash })).length === 1 && sp(withScenes({ a: { spriteColour: 'ink', display: 'fine' } }, { ship: clash })).length === 0 && sp(withScenes({ a: { spriteColour: 'ink', display: 'fine' }, b: { spriteColour: 'ink' } }, { ship: clash })).length === 1);
+  const two = sp(withScenes({ a: { spriteColour: 'ink' } }, { b: clash, a: sprite([1, 1, 1, 1, 6, 6, 6, 6]) }));
+  check('sprite-ink-clash: one finding per sprite, in name order', two.map((x) => x.asset).join() === 'a,b');
+  check('sprite-ink-clash: the frames form and a sprite too wide for the classic runtime are read without a throw (the wide one is skipped)',
+    sp(withScenes({ a: { spriteColour: 'ink' } }, { fr: { w: 8, h: 8, frames: [{ rows: rows([2, 2, 2, 2, 2, 4, 4, 4]) }] }, wide: { w: 24, h: 8, rows: rows([2, 2, 2, 2, 2, 4, 4, 4]) }, junk: { rows: 5 } })).map((x) => x.asset).join() === 'fr');
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
 process.exit(failed ? 1 : 0);

@@ -16,7 +16,7 @@ flicker; Starfall's play scene first, then a new showcase game**). Branch `arcad
   224 T a line; a fitted figure, unverified on hardware). TSRun has no contention. **ZEsarUX uses 48K timing for the TS2068** (69,888 T a frame,
   312 lines, contention on `$4000-$7FFF`); Fuse's mode 2 and timing are checked in F1. So a method that needs the beam's exact position is
   fragile across emulators and hardware: section 3 prefers one that needs only "the update starts right after an interrupt".
-* **Runtime v2** (`arcade/runtime/v2/`): `RT_END` `$328A`, **3,446 bytes free** after it (size pass). The tick (`main.asm`): `TICK_LOOP` waits for
+* **Runtime v2** (`arcade/runtime/v2/`): `RT_END` `$328A` before fine colour (size pass: 3,446 bytes free then); with fine.asm in, **1,068 bytes free** after `RT_END` (786 in the ink variant, SC). The tick (`main.asm`): `TICK_LOOP` waits for
   `V_SYNC = READY` (set only by the interrupt) and the period, then `WORK_START`: `V_HOFF` = the hidden file, a `V_WIRE` test (27 T), `frame_entry`,
   `skip_analysis`, `erase_all`, `redraw_dirty`, `draw_all`, the flip request. The ISR flips only on a request (`V_SYNC` = 2 / 3) and saves only
   AF (+ `SND_TICK`'s BC, DE, HL): it never touches IX, IY or the alternates (keep it so). Sprites never write attributes today: a sprite takes the

@@ -325,6 +325,10 @@ export function validateProject(doc) {
       warnings.push(`scenes.${sname}.display is not text; ignored`);
       delete e.display;
     }
+    if (e.spriteColour !== undefined && typeof e.spriteColour !== 'string') {
+      warnings.push(`scenes.${sname}.spriteColour is not text; ignored`);
+      delete e.spriteColour;
+    }
     scenes[sname] = e;
   }
   // flagNames (optional): the names of the eight tile flags, shown in the tile editor and the map editor's Flags view. A bad value is dropped with a warning
@@ -484,6 +488,21 @@ export function setSceneDisplay(project, name, value) {
   }
   if (!Object.hasOwn(project.scenes, name) || !isObj(project.scenes[name])) project.scenes[name] = {};
   project.scenes[name].display = String(value);
+  return project;
+}
+
+/** Set a scene's sprite colour ('ink' or 'none'/empty = off, scenes.<name>.spriteColour; SC). Off removes the key (and the entry when it is then empty). */
+export function setSceneSpriteColour(project, name, value) {
+  if (!isObj(project.scenes)) project.scenes = {};
+  if (!value || String(value).toLowerCase() === 'none') {
+    if (Object.hasOwn(project.scenes, name) && isObj(project.scenes[name])) {
+      delete project.scenes[name].spriteColour;
+      if (Object.keys(project.scenes[name]).length === 0) delete project.scenes[name];
+    }
+    return project;
+  }
+  if (!Object.hasOwn(project.scenes, name) || !isObj(project.scenes[name])) project.scenes[name] = {};
+  project.scenes[name].spriteColour = String(value);
   return project;
 }
 

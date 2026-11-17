@@ -26,10 +26,14 @@
  * Models (kind 'models', docs/ARCADE_WIREFRAME_CONTRACT.md section 2.1): model-shape (error; `points` / `edges` / `positions` as the finding says: 1..128 points,
  * integer coordinates |c| <= 64, 1..255 edges, an edge whose two ends differ and name points that exist), model-unused-point (warning: a point no edge uses;
  * `points`), asset-malformed (no "points" / "edges" array, or a point or edge that is not a list of whole numbers).
+ * Sprites (kind 'sprites', SC): sprite-ink-clash (warning, `compilerAlso`: the compiler says it per scene; `blocks` [{row, col, inks}]) for a sprite of up to 16 x 16 whose 8 x 8 block holds more than one
+ * ink, when some scene is set to sprite colour 'ink' (scenes.<name>.spriteColour) and is not a fine scene: that scene draws the cell in one ink (arcade-spriteink.js inkClashes).
  */
 
 "use strict";
 
+import { convertSprite } from './arcade-codegen.js';
+import { inkClashes } from './arcade-spriteink.js';
 import { MAX_PATTERNS as MUSIC_MAX_PATTERNS, MAX_ORDER as MUSIC_MAX_ORDER, MAX_PATTERN_TICKS as MUSIC_MAX_TICKS } from './arcade-assets.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -368,6 +372,25 @@ function unstorableTicks(ticks) {
   return bad;
 }
 
+/** True when some scene has spriteColour 'ink' (any case) and is not fine colour: the scenes of project.scenes (a fine scene has an ink per sprite row already). */
+function inkScenes(project) {
+  const sc = isObj(project) ? project.scenes : null;
+  return isObj(sc) && Object.values(sc).some((e) => isObj(e) && typeof e.spriteColour === 'string' && e.spriteColour.trim().toLowerCase() === 'ink' && !(typeof e.display === 'string' && e.display.trim().toLowerCase() === 'fine'));
+}
+
+/** sprite-ink-clash for one sprite asset (only called when some scene is an ink scene). A sprite the classic runtime cannot take (wider or taller than 16) has no ink table: nothing to say. */
+function checkSpriteInk(name, asset, out) {
+  let conv;
+  try { conv = convertSprite(asset); } catch { return; }
+  const blocks = inkClashes(conv);
+  if (!blocks.length) return;
+  out.push({
+    id: 'sprite-ink-clash', severity: 'warning', kind: 'sprites', asset: name, blocks,
+    message: `sprite "${name}": ${blocks.length} 8 x 8 block${blocks.length > 1 ? 's' : ''} ${blocks.length > 1 ? 'hold' : 'holds'} more than one ink (${blocks.map((b) => `row ${b.row}, column ${b.col}: inks ${b.inks.join(' and ')}`).join('; ')}). In a scene with sprite colour on, a cell is drawn in one ink (the most used), so that colour detail is lost.`,
+    compilerAlso: true,
+  });
+}
+
 function checkSfx(name, asset, out) {
   const ticks = isObj(asset) ? asset.ticks : null;
   if (!Array.isArray(ticks)) {
@@ -489,6 +512,7 @@ export function checkAssets(project, roles) {
       for (const n of sets) guard('tilesets', n, () => checkTile0(n, tsTab[n], out));
     }
     if (r) for (const name of Object.keys(mapTab).sort()) guard('maps', name, () => checkMap(name, mapTab[name], mapRole(name, r), r, project, out));
+    if (inkScenes(project)) { const spTab = table(project, 'sprites'); for (const name of Object.keys(spTab).sort()) guard('sprites', name, () => checkSpriteInk(name, spTab[name], out)); }
     for (const name of Object.keys(sfxTab).sort()) guard('sfx', name, () => checkSfx(name, sfxTab[name], out));
     for (const name of Object.keys(musTab).sort()) guard('music', name, () => checkMusic(name, musTab[name], out));
     for (const name of Object.keys(modTab).sort()) guard('models', name, () => checkModel(name, modTab[name], out));

@@ -613,6 +613,9 @@ const currentScenes = () => lastCompile?.scenes ?? lastGood?.scenes ?? [];
 
 /** Plain words for how a scene is drawn (the compiler's reason, said without the technical names). */
 function planText(sc) {
+  return planTextBase(sc) + (sc.spriteColour?.built === 'ink' ? ' Sprite colour is on: a cell a sprite covers takes the sprite\'s ink.' : '');
+}
+function planTextBase(sc) {
   const why = sc.reason.replace(/^two display files flipped each tick, because /, '');
   if (sc.built === 'fine') return 'Drawn in 8 x 1 colour: one screen, each pixel row of a cell its own colours; at most 32 sprite phases in the game.';
   if (sc.auto === 'buffers') return `Drawn with two screen buffers, swapped every tick, because ${why.replace(/^FRAME redraws/, 'the frame redraws')}.`;
@@ -622,6 +625,15 @@ function planText(sc) {
 
 function setSceneDisplayUi(name, value) {
   P.setSceneDisplay(project, name, value);
+  changed({ type: 'project', source: 'studio' });
+}
+
+/** Sprite colour (SC) is offered in a scene that is not drawn in fine colour, in a game for runtime v2 (the ink build is a variant of v2): 'none' (off) or 'ink'. */
+function spriteColourIsBuilt(sc) {
+  return (lang?.runtime?.version ?? 0) === 2 && sc.built !== 'fine';
+}
+function setSceneSpriteColourUi(name, value) {
+  P.setSceneSpriteColour(project, name, value);
   changed({ type: 'project', source: 'studio' });
 }
 
@@ -658,6 +670,24 @@ function renderScenes() {
     }
     sel.addEventListener('change', () => setSceneDisplayUi(sc.name, sel.value));
     li.append(sel);
+    const inkCur = String((Object.hasOwn(project.scenes ?? {}, sc.name) ? project.scenes[sc.name]?.spriteColour : '') ?? '').trim().toLowerCase() === 'ink' ? 'ink' : 'none';
+    if (spriteColourIsBuilt(sc) || inkCur === 'ink') {
+      const row = el('label', 'scene-ink');
+      row.append(el('span', null, 'Sprite colour: '));
+      const isel = el('select', 'scene-ink-select');
+      isel.title = `Sprite colour of scene ${sc.name}: off, or each cell a sprite covers takes the sprite's ink (a larger runtime: about 282 bytes more, 2,500 T per moving sprite)`;
+      isel.setAttribute('aria-label', `Sprite colour of scene ${sc.name}`);
+      isel.dataset.inkScene = sc.name;
+      for (const [value, label] of [['none', 'off'], ['ink', 'ink']]) {
+        const o = el('option', null, label);
+        o.value = value;
+        if (value === inkCur) o.selected = true;
+        isel.append(o);
+      }
+      isel.addEventListener('change', () => setSceneSpriteColourUi(sc.name, isel.value));
+      row.append(isel);
+      li.append(row);
+    }
     list.append(li);
   });
 }

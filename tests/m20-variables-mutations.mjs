@@ -25,7 +25,7 @@ const TIMEOUT = 120000;                       // a mutant that loops is killed b
 const E = (file, from, to) => ({ file, from, to });
 const TESTS = ['tests/variables-panel.mjs'];
 const COPY_DIRS = ['src', 'tests', 'arcade/tests', 'arcade/examples'];     // what the test reads (the real v2 runtime is booted from arcade/build/v2)
-const BUILT_RUNTIMES = ['v2'];
+const BUILT_RUNTIMES = ['v2', 'v2ink'];
 
 const VM = 'src/tools/variables-model.js';
 const MUTANTS = [

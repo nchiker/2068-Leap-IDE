@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { bootedMachine } from '../arcade/tests/fast-boot.mjs';
-import { real, compileReal, ROOT, M_ } from './arcade-m5-harness.mjs';
+import { real, realInk, compileReal, ROOT, M_ } from './arcade-m5-harness.mjs';
 import { requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { completeSource } from '../src/arcade-objects.js';
 import * as S from '../src/tools/source-debug.js';
@@ -54,11 +54,11 @@ console.log('1. The build');
 for (const g of GAMES) {
   const assets = JSON.parse(readText(g.assets));
   const text = completeSource(readText(g.arc), assets).text;      // (the objects of a game with a map are put in front, as the Studio's project does: the map's lines are lines of this text)
-  const version = requiredRuntime(text, assets).version;
-  const R = real(version);
+  const need = requiredRuntime(text, assets, assets.scenes), version = need.version;
+  const R = need.ink ? realInk() : real(version);      // Breakout turns sprite colour on (stage 6B): the ink variant of v2
   if (!R.ok) { console.log(`  SKIP  ${g.name} (${R.why})`); process.exit(0); }
   let res;
-  try { res = compileReal(text, assets, { R }); } catch (e) { check(`${g.name} compiles for runtime v${version}`, false, e.message); process.exit(1); }
+  try { res = compileReal(text, assets, { R }); } catch (e) { check(`${g.name} compiles for runtime v${version}${need.ink ? ' (ink)' : ''}`, false, e.message); process.exit(1); }
   res.map.codeEnd = res.gen.base + res.gen.code.length;      // what the Studio sets (lineOf's end of the code)
   Object.assign(g, { res, map: res.map, R, SYM: R.SYM, version });
   const ents = res.map.lines;

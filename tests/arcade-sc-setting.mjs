@@ -124,7 +124,8 @@ const bounceAssets = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/bounce.
   check('a garbage setting is a warning and the game compiles on plain v2', garbage.errors.length === 0 && garbage.warnings.some((d) => /spriteColour/.test(d.message)));
 }
 
-// ── every example: unchanged ──
+// ── every example: unchanged, but the two that use sprite colour ──
+const INK_EXAMPLES = { breakout: ['play'], 'shooter-classic': ['play'] };
 {
   const dir = join(ROOT, 'arcade/examples');
   const ids = readdirSync(dir).filter((f) => f.endsWith('.arc')).map((f) => f.slice(0, -4));
@@ -135,9 +136,11 @@ const bounceAssets = JSON.parse(readFileSync(join(ROOT, 'arcade/examples/bounce.
     const text = readFileSync(join(dir, id + '.arc'), 'utf8');
     const old = requiredRuntime(text, assets), now = requiredRuntime(text, assets, assets.scenes);
     const p = plan(text, assets.scenes, now.version);
-    const ok = now.ink === false && old.ink === false && now.version === old.version && json(now.reasons) === json(old.reasons)
-      && p.every((e) => e.spriteColour.setting === 'none' && e.spriteColour.built === 'none' && e.spriteColour.note === '');
-    check(`example ${id}: v${now.version}, ink false, plan spriteColour none`, ok, json([old, now]));
+    const inkScenes = INK_EXAMPLES[id];      // Breakout and Shooter (classic) turn it on in their play scene (stage 6B); every other example is unchanged
+    const ok = old.ink === false && now.version === old.version && json(now.reasons) === json(old.reasons)
+      && (inkScenes ? now.ink === true && now.version === 2 && p.every((e) => (inkScenes.includes(e.name) ? e.spriteColour.setting === 'ink' && e.spriteColour.built === 'ink' : e.spriteColour.built === 'none') && e.spriteColour.note === '')
+        : now.ink === false && p.every((e) => e.spriteColour.setting === 'none' && e.spriteColour.built === 'none' && e.spriteColour.note === ''));
+    check(`example ${id}: v${now.version}, ink ${inkScenes ? `true (scenes ${inkScenes.join(', ')})` : 'false, plan spriteColour none'}`, ok, json([old, now]));
     n++;
   }
   check('examples were found', n >= 10, String(n));
