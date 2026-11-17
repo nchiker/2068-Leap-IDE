@@ -486,6 +486,8 @@ try {
   await setSelect('[data-role=zoom-select]', 4);
   check('at 4x the 128-wide world is 4096 px wide and scrolls', await evaluate("(() => { const s = document.querySelector('[data-role=scroll]'), c = document.querySelector('[data-role=map-canvas]'); return c.width === 4096 && s.scrollWidth > s.clientWidth; })()"));
   await setSelect('[data-role=zoom-select]', 0);
+  st = await state();
+  check('Fit width never shrinks a 128-wide world below 16 px a cell (readable; it scrolls sideways)', st.zoom === 0 && st.cellPx >= 16, String(st.cellPx));
 
   // ── vaults: the floor plan ──
   await evaluate("t.load('vaults')");
