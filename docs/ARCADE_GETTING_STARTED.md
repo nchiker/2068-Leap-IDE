@@ -1,5 +1,9 @@
 # Getting started with Leap Arcade
 
+**With screenshots and playable examples: <https://nchiker.github.io/2068-Leap-IDE/arcade.html>.** This file is the same guide as plain text.
+
+![The Leap Arcade Studio running Bounce](img/arcade/studio-overview.png)
+
 Leap Arcade is a language for writing action games for the Timex Sinclair 2068 (TS2068). You write a small
 structured-BASIC program, draw sprites, tiles and sounds in the **Leap Arcade Studio**, and press Run. The Studio
 compiles the game to native Z80 code and runs it in the built-in TS2068 emulator. When you are happy, **⬇ DCK**

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leap Arcade</title>
+<meta name="description" content="Write action games for the Timex Sinclair 2068 in your browser: a structured BASIC, a sprite, tile and music editor, and an emulator. Press Run, then download a cartridge.">
+<style>
+:root {
+  --bg: #fbfaf6; --panel: #ffffff; --ink: #1c1d22; --muted: #5c6070; --line: #e1ded3;
+  --accent: #0b5fd6; --accent-ink: #ffffff; --code-bg: #f1efe7; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08);
+  --r: #d8221f; --y: #f3c200; --g: #1da34a; --c: #11a8c4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101116; --panel: #181a21; --ink: #ecebe6; --muted: #9a9eae; --line: #2a2d38;
+    --accent: #5aa2ff; --accent-ink: #08111f; --code-bg: #1f222b; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101116; --panel: #181a21; --ink: #ecebe6; --muted: #9a9eae; --line: #2a2d38;
+  --accent: #5aa2ff; --accent-ink: #08111f; --code-bg: #1f222b; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); }
+img { max-width: 100%; height: auto; display: block; }
+.px { image-rendering: pixelated; image-rendering: crisp-edges; }
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 16px 18px; border-radius: 10px; overflow-x: auto; line-height: 1.5; border: 1px solid var(--line); }
+pre code { background: none; padding: 0; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+/* top bar */
+.bar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; align-items: center; gap: 18px; height: 56px; }
+.brand { font-weight: 800; letter-spacing: .02em; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 10px; }
+.stripe { display: inline-flex; transform: skewX(-20deg); }
+.stripe i { display: block; width: 7px; height: 16px; }
+.stripe i:nth-child(1) { background: var(--r); } .stripe i:nth-child(2) { background: var(--y); } .stripe i:nth-child(3) { background: var(--g); } .stripe i:nth-child(4) { background: var(--c); }
+.bar nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.bar nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 8px; font-size: 15px; }
+.bar nav a:hover { color: var(--ink); background: var(--code-bg); }
+.btn { display: inline-block; background: var(--accent); color: var(--accent-ink); padding: 12px 22px; border-radius: 12px; font-weight: 700; text-decoration: none; box-shadow: var(--shadow); border: 0; cursor: pointer; font-size: 17px; }
+.btn:hover { filter: brightness(1.08); }
+.btn.alt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+.btn.sm { padding: 6px 14px; font-size: 14px; border-radius: 9px; box-shadow: none; }
+
+/* hero */
+.hero { padding: 56px 0 40px; }
+.hero .wrap { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center; }
+.hero h1 { font-size: clamp(38px, 6vw, 62px); line-height: 1.05; margin: 0 0 16px; letter-spacing: -.02em; }
+.hero p.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; }
+.screen { background: #000; border-radius: 14px; padding: 14px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.screen img { width: 100%; border-radius: 4px; }
+.fine { font-size: 14px; color: var(--muted); margin-top: 16px; }
+
+/* sections */
+section { padding: 44px 0; }
+section + section { border-top: 1px solid var(--line); }
+h2 { font-size: 34px; letter-spacing: -.01em; margin: 0 0 8px; line-height: 1.2; }
+h3 { font-size: 22px; margin: 34px 0 6px; }
+.sub { color: var(--muted); margin: 0 0 26px; font-size: 18px; }
+.steps > h3 { counter-increment: s; }
+.steps { counter-reset: s; }
+.steps > h3::before { content: counter(s); display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: 12px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 18px; font-weight: 800; vertical-align: 2px; }
+figure { margin: 18px 0 26px; }
+figure img { border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); width: 100%; }
+figcaption { color: var(--muted); font-size: 15px; margin-top: 8px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.pair figure { margin: 10px 0 18px; }
+.callout { border-left: 4px solid var(--y); background: var(--panel); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 18px 0; border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; font-size: 16px; margin: 12px 0 20px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; }
+
+/* game gallery */
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 20px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.card .shot { background: #000; padding: 10px; }
+.card .shot img { width: 100%; }
+.card .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.card h4 { margin: 0; font-size: 18px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; flex: 1; }
+.card .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.tag { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 1px 9px; align-self: flex-start; }
+
+/* docs */
+.docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.docs a { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; text-decoration: none; color: var(--ink); }
+.docs a:hover { border-color: var(--accent); }
+.docs b { display: block; color: var(--accent); margin-bottom: 2px; }
+.docs span { color: var(--muted); font-size: 15px; line-height: 1.45; display: block; }
+.docs a.feature { grid-column: 1 / -1; border-color: var(--accent); border-width: 2px; }
+.leapide { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; display: flex; gap: 20px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.leapide h3 { margin: 0 0 4px; }
+.leapide p { margin: 0; color: var(--muted); }
+footer { padding: 36px 0 60px; color: var(--muted); font-size: 15px; border-top: 1px solid var(--line); }
+footer a { color: var(--muted); }
+.theme { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 15px; }
+@media (max-width: 820px) {
+  .hero .wrap { grid-template-columns: 1fr; gap: 26px; } .pair { grid-template-columns: 1fr; }
+  .bar nav a:nth-child(n+4) { display: none; }
+  h2 { font-size: 28px; }
+}
+</style>
+<script>try { var t = localStorage.getItem('leap-arcade-site.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body>
+
+<header class="bar"><div class="wrap">
+  <a class="brand" href="#top"><span class="stripe"><i></i><i></i><i></i><i></i></span> Leap Arcade</a>
+  <nav>
+    <a href="#getting-started">Getting started</a>
+    <a href="#games">Games</a>
+    <a href="#docs">Documentation</a>
+    <a href="studio.html">Open Studio</a>
+    <button class="theme" id="theme" title="Switch between light and dark">☾</button>
+  </nav>
+</div></header>
+
+<main id="top">
+<div class="hero"><div class="wrap">
+  <div>
+    <h1>Make your own TS2068 games, in the browser.</h1>
+    <p class="lead">Leap Arcade is a small structured BASIC for fast action games on the Timex Sinclair 2068, with a sprite, tile and music editor and an emulator built in. Write, press <b>Run</b>, play. When it is good, download a cartridge for a real machine.</p>
+    <div class="cta">
+      <a class="btn" href="studio.html?example=breakout&amp;run">▶ Play Breakout now</a>
+      <a class="btn alt" href="studio.html">Open the Studio</a>
+      <a class="btn alt" href="#getting-started">Getting started ↓</a>
+    </div>
+    <p class="fine">Nothing to install: it runs entirely in your browser. Every game below is made with Leap Arcade and opens in the Studio with its code, art and music.</p>
+  </div>
+  <a class="screen" href="studio.html?example=crabsmash&amp;run" title="Play Crabsmash"><img class="px" src="docs/img/arcade/crabsmash.gif" width="320" height="240" alt="Crabsmash, an arena game made with Leap Arcade, running"></a>
+</div></div>
+
+<section id="getting-started"><div class="wrap steps">
+  <h2>Getting started</h2>
+  <p class="sub">Ten minutes from nothing to your own game. Everything happens in the Studio, the page that opens when you press <b>Open the Studio</b>.</p>
+
+  <h3>Open the Studio</h3>
+  <p><a class="btn sm" href="studio.html">Open Leap Arcade Studio</a> &nbsp;It is one page with your code in the middle, the TS2068 on the right and your project on the left. Your work is saved in the browser as you type.</p>
+  <figure>
+    <img src="docs/img/arcade/studio-overview.png" width="1600" height="900" alt="The Leap Arcade Studio showing the Bounce example running">
+    <figcaption><b>Left:</b> your files, assets (sprites, tile sets, maps, sounds, songs, models) and scenes. <b>Middle:</b> the code editor, with colours, completion and error marks. <b>Right:</b> the emulated TS2068 and tabs for the tools. The status bar shows memory used and the runtime.</figcaption>
+  </figure>
+
+  <h3>Play an example first</h3>
+  <p>Open <b>Examples ▾</b>, choose <b>Bounce</b> and press <b>▶ Run</b> (F5). Click the TS2068 screen so it gets the keyboard, then press <b>Space</b> to start. <b>O</b> and <b>P</b> (or the arrow keys) move the paddle.</p>
+  <figure>
+    <img src="docs/img/arcade/examples-menu.png" width="1600" height="900" alt="The Examples menu listing eleven games">
+    <figcaption>Eleven complete games, from the 100-line Bounce to a ray-cast maze. Each one opens as a project you can change, run and save as your own.</figcaption>
+  </figure>
+
+  <h3>Start a new game</h3>
+  <p>Press <b>New</b>. Every new project starts from a small, finished game with comments that say what to change. <b>Blank game</b> (Star Dash) is the one to start with: steer a ball onto a star before the clock runs out.</p>
+  <figure>
+    <img src="docs/img/arcade/new-dialog.png" width="1600" height="900" alt="The New project dialog with seven starter games">
+    <figcaption>Seven starters: Blank game, Sprites and tiles, Scenes and music, Fine colour, Coin Hop (a scrolling platformer), Gem Maze (first-person) and Ring Run (wireframe 3D).</figcaption>
+  </figure>
+  <p>Run it, then try three small changes: set <code>CONST SPEED = 3</code> to <code>5</code> (a faster ball), change <code>clock = 300</code> in <code>NEWGAME</code> to <code>150</code> (it counts 30 to a second, so that is 5 seconds), and change the <code>"*"</code> in <code>NEWSTAR</code> to another character.</p>
+
+  <h3>How a program is shaped</h3>
+  <p>The language looks like BASIC: no line numbers, <code>IF</code> … <code>ENDIF</code>, <code>PROC</code> … <code>ENDP</code>. A game is split into <b>scenes</b> (title, play, game over). <b>You never write the main loop</b>: the runtime calls your <code>FRAME</code> procedure every tick, draws whatever you changed and keeps the sound going.</p>
+<pre><code>GAME "My game"        REM the title, once
+FRAMERATE 30          REM FRAME runs 30 times a second
+
+SPRITE ball = "ball"  REM a picture you draw in the Sprites tab
+
+SCENE play            REM a part of the game; the first scene starts it
+  DIM x, y            REM this scene's variables
+
+  PROC INIT():        REM runs once when the scene starts
+    x = 120 : y = 88
+  ENDP
+
+  PROC FRAME():       REM runs every tick
+    IF KEYDOWN("P") THEN
+      x = x + 2
+    ENDIF
+    SHOW ball AT x, y REM place the sprite; y counts from the top
+  ENDP
+ENDSCENE</code></pre>
+  <table>
+    <tr><th>Remember</th><th></th></tr>
+    <tr><td><code>ENTER name</code></td><td>switches scene. It does not return; the new scene's <code>INIT</code> runs at once.</td></tr>
+    <tr><td>Numbers</td><td>16-bit whole numbers only. To move slower than a pixel a tick, keep positions in 1/8 pixels and divide when you <code>SHOW</code>.</td></tr>
+    <tr><td>Screen</td><td>256 × 192 pixels, <b>y from the top</b>. Text is 32 columns × 24 rows: <code>PRINT AT row, col; "HI"</code>.</td></tr>
+    <tr><td>No <code>GOTO</code></td><td>Use <code>IF</code>, <code>FOR</code>, <code>WHILE</code>, <code>PROC</code>/<code>CALL</code> and scenes.</td></tr>
+    <tr><td>Input</td><td><code>KEYDOWN("O")</code> (held), <code>KEYPRESS(" ")</code> (the one tick it goes down), <code>STICK(1)</code> and <code>JOYPRESS(1)</code> (joystick bits: 0 up, 1 down, 2 left, 3 right, 4 fire; test with <code>BIT(v, n)</code>).</td></tr>
+  </table>
+
+  <h3>Read Bounce, line by line</h3>
+  <p>Open <b>Bounce</b> and read <code>main.arc</code>: about 100 lines, a title scene with a song and a play scene. The title waits for fire, then switches scene:</p>
+<pre><code>SCENE title
+  PROC INIT():
+    PLAY theme
+    CLS
+    INK 1 : PRINT AT 8, 13; "BOUNCE";
+  ENDP
+  PROC FRAME():
+    IF KEYPRESS(" ") OR BIT(JOYPRESS(1), 4) THEN
+      ENTER play
+    ENDIF
+  ENDP
+ENDSCENE</code></pre>
+  <p>The play scene, every tick: read the keys, move the numbers, <code>SHOW</code> the sprites where they are now. That is a whole game.</p>
+
+  <h3>The words you will use most</h3>
+  <table>
+    <tr><th>Group</th><th>Words</th></tr>
+    <tr><td>Structure</td><td><code>GAME</code> <code>FRAMERATE</code> <code>SCENE</code>/<code>ENDSCENE</code> <code>ENTER</code> <code>PROC</code>/<code>ENDP</code> <code>CALL</code> <code>CONST</code> <code>LOCAL</code> <code>END</code></td></tr>
+    <tr><td>Control</td><td><code>IF</code>/<code>ELSE</code>/<code>ENDIF</code> <code>FOR</code>/<code>NEXT</code> <code>WHILE</code>/<code>WEND</code></td></tr>
+    <tr><td>Sprites</td><td><code>SHOW s AT x, y [FRAME f]</code> <code>HIDE s</code> <code>HIT(a, b)</code></td></tr>
+    <tr><td>Text and colour</td><td><code>PRINT AT r, c; …</code> (with <code>TAB</code> and <code>USING "###"</code>) <code>CLS</code> <code>INK</code> <code>PAPER</code> <code>BRIGHT</code> <code>FLASH</code> <code>BORDER</code></td></tr>
+    <tr><td>Tiles</td><td><code>TILE x, y = t</code> <code>TILEAT(x, y)</code> <code>LOADMAP</code> <code>FILL</code></td></tr>
+    <tr><td>Sound</td><td><code>PLAY name</code> <code>SILENCE</code> <code>NOMUSIC</code></td></tr>
+    <tr><td>Maths</td><td><code>ABS</code> <code>RND</code> <code>MOD</code> <code>DIV</code> <code>BAND</code> <code>BOR</code> <code>SHL</code> <code>SHR</code> <code>BIT</code></td></tr>
+    <tr><td>Timing</td><td><code>TIMER a</code>: a variable the game counts down by itself</td></tr>
+  </table>
+  <p>Press <b>F1</b> in the Studio for every word with its forms and an example.</p>
+
+  <h3>Draw your own art and sound</h3>
+  <p>The tabs on the right are the editors. Each asset has a name; <code>SPRITE ship = "ship"</code> in your code connects the name to the picture.</p>
+  <figure>
+    <img src="docs/img/arcade/editor-sprites.png" width="1600" height="900" alt="The sprite editor drawing a crab, with row colours and a palette">
+    <figcaption><b>Sprites.</b> Draw with ink and paper per row, add frames for animation, set the size and the collision box. The editor warns when art will not look the same on the TS2068's colour grid.</figcaption>
+  </figure>
+  <div class="pair">
+    <figure><img src="docs/img/arcade/editor-tiles.png" width="1600" height="900" alt="The tile editor"><figcaption><b>Tiles.</b> Up to 128 tiles of 8 × 8, with flags such as solid, hazard and pickup.</figcaption></figure>
+    <figure><img src="docs/img/arcade/editor-maps.png" width="1600" height="900" alt="The map editor showing the arena of Crabsmash"><figcaption><b>Maps.</b> Paint levels, title pictures and floor plans from your tiles.</figcaption></figure>
+    <figure><img src="docs/img/arcade/editor-sounds.png" width="1600" height="900" alt="The sound effect editor"><figcaption><b>Sound effects.</b> Draw the pitch and volume over time, on up to three channels of the AY sound chip.</figcaption></figure>
+    <figure><img src="docs/img/arcade/editor-songs.png" width="1600" height="900" alt="The song editor, a piano roll with three channels"><figcaption><b>Songs.</b> A piano roll: patterns, an order and a loop point, three voices.</figcaption></figure>
+  </div>
+  <figure>
+    <img src="docs/img/arcade/editor-models.png" width="1600" height="900" alt="The wireframe model editor">
+    <figcaption><b>Models.</b> Wireframe 3D shapes for games like Orbit Gates and Ring Run.</figcaption>
+  </figure>
+
+  <h3>When something goes wrong</h3>
+  <p>The Studio compiles as you type and marks the first problem before you press Run. The message says what is wrong and where.</p>
+  <figure>
+    <img src="docs/img/arcade/error-mark.png" width="1600" height="900" alt="A syntax error marked in the editor with a message in the status bar and the problems list">
+    <figcaption>A half-typed line (<code>bx = bx +</code>): the toolbar, the status bar and the Problems list all point at line 60.</figcaption>
+  </figure>
+  <div class="pair">
+    <figure><img src="docs/img/arcade/tab-vars.png" width="1600" height="900" alt="The Vars tab showing the game's variables while it runs"><figcaption><b>Vars</b> shows the game's variables live while it runs.</figcaption></figure>
+    <figure><img src="docs/img/arcade/paused.png" width="1600" height="900" alt="The game paused"><figcaption><b>Pause</b> (F8) holds the game; <b>Step tick</b> (F10) runs exactly one <code>FRAME</code>. Set a breakpoint in the editor margin to stop on a line.</figcaption></figure>
+  </div>
+  <p>The <b>size and budget</b> table under the screen shows how much cartridge memory the code, art, text and sound use, and the meter above it says whether <code>FRAME</code> finishes within its time. If it does not, lower <code>FRAMERATE</code> (30 → 20) or draw fewer sprites.</p>
+  <figure><img src="docs/img/arcade/size-panel.png" alt="The size and budget table" style="max-width:520px"></figure>
+
+  <h3>Put it on a cartridge</h3>
+  <p>Press <b>⬇ DCK</b>. You get a TS2068 cartridge file holding the Arcade runtime and your game, which runs on a stock TS2068 with a cartridge dock and in emulators that load <code>.dck</code> files (TSRun, ZEsarUX, Fuse). <b>Save</b> keeps your whole project (code and art) as a <code>.leapgame</code> file; <b>Open</b> loads it again. <b>Save screen</b> makes a PNG of the screen for screenshots.</p>
+  <div class="callout">All of this has been tested in emulators only. Real TS2068 hardware has not been tried yet.</div>
+
+  <h3>Which runtime?</h3>
+  <p>Arcade ships a few runtimes and the Studio picks the one your words need (the status bar names it). Not every feature works in every runtime, and the compiler tells you when two words clash.</p>
+  <table>
+    <tr><th>Runtime</th><th>For</th></tr>
+    <tr><td>v2</td><td>the general one: sprites, tiles, text, sound, fine colour, wireframe 3D</td></tr>
+    <tr><td>v3</td><td>scrolling worlds: <code>WINDOW</code>, <code>CAMERA</code>, tile collision, <code>FLIP</code></td></tr>
+    <tr><td>v4</td><td>first-person ray-cast views: <code>VIEW3D</code></td></tr>
+  </table>
+  <p><a class="btn" href="studio.html">Open the Studio and make something</a></p>
+</div></section>
+
+<section id="games"><div class="wrap">
+  <h2>Games made with Leap Arcade</h2>
+  <p class="sub">Press <b>Play</b> to open a game in the Studio, already running. Then look at its code, change its art, and make it yours.</p>
+  <div class="games">
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/bounce.gif" width="320" height="240" alt="Bounce" loading="lazy"></div><div class="body"><span class="tag">simplest · start here</span><h4>Bounce</h4><p>A ball, a paddle and a title song. About 100 lines.</p><div class="acts"><a class="btn sm" href="studio.html?example=bounce&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=bounce">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/breakout.gif" width="320" height="240" alt="Breakout" loading="lazy"></div><div class="body"><span class="tag">tiles · collision · sound</span><h4>Breakout</h4><p>Bricks as tiles, a bat and ball, score, lives and effects.</p><div class="acts"><a class="btn sm" href="studio.html?example=breakout&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=breakout">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/shooter.gif" width="320" height="240" alt="Starfall" loading="lazy"></div><div class="body"><span class="tag">fine colour · sprite pools</span><h4>Starfall</h4><p>A vertical shooter with a planet, a starfield and a song for each scene.</p><div class="acts"><a class="btn sm" href="studio.html?example=shooter&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=shooter">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/crabsmash.gif" width="320" height="240" alt="Crabsmash" loading="lazy"></div><div class="body"><span class="tag">arena game · fine colour</span><h4>Crabsmash</h4><p>Bump a platform to stun the crabs, then smash them. Phases get harder.</p><div class="acts"><a class="btn sm" href="studio.html?example=crabsmash&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=crabsmash">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/platformer.gif" width="320" height="240" alt="Leap Runner" loading="lazy"></div><div class="body"><span class="tag">scrolling · runtime v3</span><h4>Leap Runner</h4><p>A scrolling platformer with parallax, animation, coins and a goal.</p><div class="acts"><a class="btn sm" href="studio.html?example=platformer&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=platformer">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/lumen.gif" width="320" height="240" alt="Lumen" loading="lazy"></div><div class="body"><span class="tag">fine colour</span><h4>Lumen</h4><p>A maze chase that shows off row-by-row colour.</p><div class="acts"><a class="btn sm" href="studio.html?example=lumen&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=lumen">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/blockfall.gif" width="320" height="240" alt="Blockfall" loading="lazy"></div><div class="body"><span class="tag">puzzle</span><h4>Blockfall</h4><p>A falling-blocks puzzle built from tiles.</p><div class="acts"><a class="btn sm" href="studio.html?example=blockfall&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=blockfall">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/vaults.gif" width="320" height="240" alt="Vaults" loading="lazy"></div><div class="body"><span class="tag">first-person 3D · runtime v4</span><h4>Vaults</h4><p>A ray-cast 3D maze: walls, keys, gems and a ghost.</p><div class="acts"><a class="btn sm" href="studio.html?example=vaults&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=vaults">Open</a></div></div></div>
+    <div class="card"><div class="shot"><img class="px" src="docs/img/arcade/orbit.gif" width="320" height="240" alt="Orbit Gates" loading="lazy"></div><div class="body"><span class="tag">wireframe 3D</span><h4>Orbit Gates</h4><p>Fly through wireframe gates in space.</p><div class="acts"><a class="btn sm" href="studio.html?example=orbit&amp;run">▶ Play</a><a class="btn sm alt" href="studio.html?example=orbit">Open</a></div></div></div>
+  </div>
+</div></section>
+
+<section id="docs"><div class="wrap">
+  <h2>Documentation</h2>
+  <p class="sub">The guide above is the place to begin. The rest is reference.</p>
+  <div class="docs">
+    <a class="feature" href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_GETTING_STARTED.md"><b>Getting started (text version)</b><span>The same guide as plain text, to read on GitHub or print.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_LANGUAGE.md"><b>Language reference</b><span>Every word of the language, what it does, and the history of changes.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_ASSETS.md"><b>Assets and project format</b><span>Sprites, tile sets, maps, sounds, songs and models; the colour rules behind them.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_STUDIO.md"><b>How the Studio works</b><span>Projects, the editors, build and run, for people extending the Studio.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_RUNTIME_API.md"><b>Runtime reference</b><span>What the Z80 runtime does each tick; versions v1 to v4.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_FINE_COLOUR_CONTRACT.md"><b>Fine colour</b><span>8 × 1 colour: how it works and what it costs.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_MUSIC_CONTRACT.md"><b>Music and sound</b><span>Songs, effects and the AY chip.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_PLATFORMER_CONTRACT.md"><b>Scrolling worlds</b><span><code>WINDOW</code>, <code>CAMERA</code> and tile collision.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_WIREFRAME_CONTRACT.md"><b>Wireframe 3D</b><span><code>WIRE3D</code>, models and drawing.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_RAYCASTER_CONTRACT.md"><b>First-person views</b><span><code>VIEW3D</code>, walls and billboards.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/blob/main/docs/ARCADE_HARDWARE_NOTES.md"><b>Hardware notes</b><span>The TS2068 details the runtime relies on.</span></a>
+    <a href="https://github.com/nchiker/2068-Leap-IDE/tree/main/arcade/examples"><b>Example sources</b><span>Every example's <code>.arc</code> code and art, with notes for the bigger ones.</span></a>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="leapide">
+    <div>
+      <h3>Looking for the Leap IDE?</h3>
+      <p>For Leap V2 BASIC, Leap-Forth and Leap-C (programs that run on the TS2068 with Leap's own ROMs), use the Leap IDE.</p>
+    </div>
+    <a class="btn alt" href="ide.html">Open the Leap IDE →</a>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  Leap Arcade · part of <a href="https://github.com/nchiker/2068-Leap-IDE">2068-Leap-IDE</a> on GitHub · runs on <a href="https://github.com/nchiker/TSRun">TSRun</a>, a TS2068 emulator. Emulator-tested; real hardware untried.
+</div></footer>
+
+<script>
+(function () {
+  var b = document.getElementById('theme'), root = document.documentElement;
+  function dark() { return root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  function label() { b.textContent = dark() ? '☀' : '☾'; }
+  label();
+  b.addEventListener('click', function () {
+    root.dataset.theme = dark() ? 'light' : 'dark';
+    try { localStorage.setItem('leap-arcade-site.theme', root.dataset.theme); } catch (e) {}
+    label();
+  });
+})();
+</script>
+</body>
+</html>

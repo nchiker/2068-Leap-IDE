@@ -1807,6 +1807,15 @@ async function boot() {
   let tab = null;
   try { tab = localStorage.getItem(TAB_KEY); } catch { /* storage blocked */ }
   if (tab && tab !== 'display' && document.querySelector(`#right-panel .panel-tab[data-tab="${CSS.escape(tab)}"]`)) showTab(tab);
+  // A link from the documentation: studio.html?example=<id> opens that example game, and &run also runs it.
+  try {
+    const qs = new URLSearchParams(location.search), id = qs.get('example');
+    if (id) {
+      const ex = (await loadExampleIndex()).find((e) => e.id === id);
+      if (!ex) say(`There is no example called "${id}"`, 'error');
+      else { await openExample(ex); if (qs.has('run') && !$('btn-run').disabled) $('btn-run').click(); }
+    }
+  } catch (e) { console.warn('[Studio] ?example failed:', e.message); }
 }
 
 // The editor's linter and tests reach the Studio through these.
