@@ -17,9 +17,9 @@
 
 "use strict";
 
-import { EditorState, StateField, Prec } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, Prec } from '@codemirror/state';
 import { EditorView, hoverTooltip } from '@codemirror/view';
-import { isolateHistory } from '@codemirror/commands';
+import { isolateHistory, invertedEffects } from '@codemirror/commands';
 import { autocompletion, snippetCompletion } from '@codemirror/autocomplete';
 import { StreamLanguage, HighlightStyle, syntaxHighlighting, indentService, foldService } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
@@ -442,6 +442,23 @@ function otherFilesUsing(name) {
   return out;
 }
 
+/** C2: the other files' part of a rename: [{file, from (text before), to (text after)}]. History inverts it (swapping from and to) so undo and redo reach those files too. */
+const renameOthers = StateEffect.define();
+const renameInverted = invertedEffects.of((tr) => tr.effects.filter((e) => e.is(renameOthers)).map((e) => renameOthers.of(e.value.map((r) => ({ file: r.file, from: r.to, to: r.from })))));
+/** On an undo or redo the files are put back, but only a file that still holds exactly the text the rename left (an edit made since is never overwritten). */
+const renameReplay = EditorView.updateListener.of((u) => {
+  if (!projectCtx) return;
+  for (const tr of u.transactions) {
+    if (!tr.isUserEvent('undo') && !tr.isUserEvent('redo')) continue;
+    for (const e of tr.effects) {
+      if (!e.is(renameOthers)) continue;
+      let files = {};
+      try { files = projectCtx.files() ?? {}; } catch { files = {}; }
+      for (const r of e.value) if (files[r.file] === r.from) projectCtx.setFileText(r.file, r.to);
+    }
+  }
+});
+
 function rename(view, say) {
   const w = wordAt(view.state, view.state.selection.main.head);
   const def = w && resolveDef(view.state, w.text);
@@ -464,12 +481,16 @@ function rename(view, say) {
   if (why) { say(why, 'error'); view.focus(); return true; }
   const spots = occurrences(view.state, w.text);
   const others = otherFilesUsing(w.text);          // (P4: the same name in the project's other files)
-  if (spots.length) view.dispatch({ changes: spots.map((s) => ({ ...s, insert: name })), userEvent: 'rename' });
-  for (const o of others) {
+  // (C2: the other files' rewrite rides on the same transaction as an effect that history inverts, so Ctrl+Z / Ctrl+Y in this editor take the whole rename back / again)
+  const rewrites = others.map((o) => {
     let text = o.text;
     for (const sp of [...o.spots].reverse()) text = text.slice(0, sp.from) + name + text.slice(sp.to);
-    projectCtx.setFileText(o.file, text);
-  }
+    return { file: o.file, from: o.text, to: text };
+  });
+  const effects = rewrites.length ? [renameOthers.of(rewrites)] : [];
+  if (spots.length) view.dispatch({ changes: spots.map((s) => ({ ...s, insert: name })), effects, userEvent: 'rename' });
+  else if (effects.length) view.dispatch({ effects, userEvent: 'rename' });
+  for (const r of rewrites) projectCtx.setFileText(r.file, r.to);
   const total = spots.length + others.reduce((n, o) => n + o.spots.length, 0);
   say(`Renamed ${w.text} to ${name} in ${total} place${total === 1 ? '' : 's'}${others.length ? ` (${[spots.length ? 'this file' : null, ...others.map((o) => o.file)].filter(Boolean).join(', ')})` : ''}`, 'idle');
   view.focus();
@@ -500,6 +521,8 @@ export const arcadeEditor = {
     arcadeIndent,
     arcadeIndentOnInput,
     definitionClick,
+    renameInverted,
+    renameReplay,
   ],
   tidy,
   goToDefinition,

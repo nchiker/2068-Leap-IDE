@@ -570,6 +570,9 @@ try {
     check('S1: a click on another picture switches the sprite editor to it',
       (await evaluate("document.querySelector('#tool-sprites .sprited-select').value")) === other
       && (await evaluate("document.querySelector('#tool-sprites [data-role=gallery-item].current').dataset.asset")) === other, other);
+    check('C2: a gallery click moves the project panel\'s selection too (leapStudio.selected and the highlighted row)',
+      (await evaluate('JSON.stringify(leapStudio.selected)')) === JSON.stringify({ kind: 'sprites', name: other })
+      && (await evaluate("document.querySelector('.proj-row.asset-row.active')?.textContent.includes(" + JSON.stringify(other) + ")")) === true, other);
     await evaluate(`document.querySelector('#tool-sprites [data-role=gallery-item][data-asset="ship"]').click()`);
     // an edit through the host reaches the project, and the editor is told about a change made elsewhere
     const roundTrip = await evaluate(`(() => { const h = leapStudio.makeHost('smoke2'); const a = h.getAsset('sprites', 'ship'); a.frames[0].rows[0].bits = '00FF';
@@ -914,6 +917,15 @@ try {
   await sleep(300);
   const rn = await evaluate("({ main: leapEditor.getSource().includes('CALL helper2(1)'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper2(a):'), old: /helper\\(|helper\\b/.test(leapStudio.project.files['extra.arc'].replace(/helper2/g, '')) })");
   check('P4: rename changes the call in main.arc and the definition in extra.arc, and no old name is left', rn.main && rn.extra && !rn.old, JSON.stringify(rn));
+  // C2: one Ctrl+Z of the open editor takes the whole rename back, other files included; Ctrl+Y does it again; an edited file is never overwritten
+  await evaluate('leapEditor.undo()');
+  await sleep(300);
+  const un = await evaluate("({ main: leapEditor.getSource().includes('CALL helper(1)') && !leapEditor.getSource().includes('helper2'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper(a):') && !leapStudio.project.files['extra.arc'].includes('helper2') })");
+  check('C2: undo of a cross-file rename restores the open file and the other file in one step', un.main && un.extra, JSON.stringify(un));
+  await evaluate('leapEditor.redo()');
+  await sleep(300);
+  const reDone = await evaluate("({ main: leapEditor.getSource().includes('CALL helper2(1)'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper2(a):') })");
+  check('C2: redo renames both again', reDone.main && reDone.extra, JSON.stringify(reDone));
   await waitFor('leapStudio.compileSettled', 20000);
   await sleep(300);
   check('P4: the renamed project still compiles', await evaluate('leapStudio.lastCompile.ok'), await evaluate("JSON.stringify(leapStudio.lastCompile.errors.slice(0, 1))"));

@@ -211,7 +211,7 @@ export function createTileEditor(container, host) {
   const nameSel = el('select', 'tiled-select', null, { 'aria-label': 'Tile set' });
   nameSel.dataset.role = 'set-picker';
   nameSel.style.minWidth = '110px';
-  nameSel.addEventListener('change', () => { if (nameSel.value) loadSet(nameSel.value); });
+  nameSel.addEventListener('change', () => { if (nameSel.value) pickAsset(nameSel.value); });
   const btnNew = button('New', 'Create a tile set with one blank tile', () => newSetCmd());
   const btnRen = button('Rename', 'Rename this tile set', () => renameCmd());
   const btnDel = button('Delete', 'Delete this tile set', () => deleteSetCmd());
@@ -238,9 +238,12 @@ export function createTileEditor(container, host) {
   const msg = el('div', 'tiled-msg');
   msg.dataset.role = 'message';
   const body = el('div', 'tiled-body');
+
+  /** C2: choosing an asset (gallery click, drop-down) goes through the host, so the project panel's selection follows (the host calls back select_); without a host: load it here. */
+  function pickAsset(n) { if (typeof host?.selectAsset === 'function') host.selectAsset('tilesets', n); else loadSet(n); }
   // the gallery strip: every tile set of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
   const gallery = createGallery({
-    label: 'Tile sets', get: (n) => H.get(n), onSelect: (n) => loadSet(n),
+    label: 'Tile sets', get: (n) => H.get(n), onSelect: (n) => pickAsset(n),
     thumb: (n, asset, ctx) => thumbTileset(asset, { box: GALLERY_BOX, palette: pal, fine: !!ctx?.fine }),
   });
   root.append(gallery.el, bar, importDlg.el, warnList, emptyNote, body, msg);

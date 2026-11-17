@@ -100,7 +100,7 @@ export function scanArcade(text) {
  *               with a WINDOW and no VIEW3D (the compiler's rule, arcade-check.js), each once; empty without a WINDOW's world
  *   floorplans  [assets of the MAP the VIEW3D names, then each MAP a WORLD statement names] (empty without a VIEW3D)
  *   scenes      [the SCENE names, source order]: arcade-assetcheck.js asks which are set to fine colour (project.scenes) to decide what the warnings mean
- *   view        {bright, ceil, floor}: the VIEW3D's effective BRIGHT (default 0), CEIL paper (0) and FLOOR paper (1), a number 0..7 (BRIGHT 0..1) when the
+ *   view        {bright, ink, ceil, floor}: the VIEW3D's effective BRIGHT (default 0), INK (7: the walls' ink), CEIL paper (0) and FLOOR paper (1), a number 0..7 (BRIGHT 0..1) when the
  *               clause is a constant expression (numbers, CONSTs, unary minus, + - *), else null for that field; null without a VIEW3D
  */
 export function scanRoles(text) {
@@ -159,7 +159,7 @@ export function scanRoles(text) {
         return v !== null && Number.isInteger(v) && v >= 0 && v <= hi ? v : null;
       };
       const c = view.clauses ?? {};
-      out.view = { bright: pick(c.bright, 0, 1), ceil: pick(c.ceil, 0, 7), floor: pick(c.floor, 1, 7) };
+      out.view = { bright: pick(c.bright, 0, 1), ink: pick(c.ink, 7, 7), ceil: pick(c.ceil, 0, 7), floor: pick(c.floor, 1, 7) };
     }
   } catch { /* keep what was found */ }
   return out;
