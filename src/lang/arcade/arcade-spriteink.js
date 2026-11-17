@@ -7,6 +7,7 @@
  *   classGrid(asset, xc, yc)        -> 3 x 3 grid (array of 3 rows of 3): ink 0..7, or LEAVE (8) for a cell the sprite does not touch; the class's 9 cells
  *   spriteCellInks(asset, xs, ys)   -> the same grid for ONE draw shift (xs, ys = x and y AND 7): what the sprite recolours at that position
  *   inkAt(asset, x, y)              -> the grid the runtime uses at a draw position (x rounded down to the asset's phase, then its class grid): the interpreter and the Studio's preview
+ *   applySpriteInk(attrs, sprites, instAsset, assets) -> a copy of the 768 background attributes with every visible sprite's ink applied, exactly as the Z80 (sc_erase / sc_draw2) leaves the attribute file
  *   inkClashes(asset)               -> [{row, col, inks}]  the 8 x 8 blocks of the art whose opaque pixels have more than one ink (the lost detail; the sprite-ink-clash warning)
  *   LEAVE (8), TABLE_BYTES (81), CLASS_BYTES (9)
  *
@@ -111,6 +112,35 @@ export function inkClashes(asset) {
       for (let p = 8 * col; p < 8 * col + 8; p++) if (!(mask & (0x8000 >> p))) { seen.add((asset.inks?.[k] ?? 7) & 7); break; }
     }
     if (seen.size > 1) out.push({ row, col, inks: [...seen].sort((a, b) => a - b) });
+  }
+  return out;
+}
+
+const tableCache = new WeakMap();
+const tableOf = (asset) => { let t = tableCache.get(asset); if (!t) { t = inkTable(asset); tableCache.set(asset, t); } return t; };
+
+/**
+ * The attribute file a classic ink scene shows: `attrs` is the BACKGROUND (the cell map's attributes, 768), `sprites` the records' [{visible, x, y}] (positions as SHOW clamped them), `instAsset[i]` the asset
+ * index of instance i and `assets[a]` its {h, data, inks, phases} (arcade-interp's result `ink.assets` / `fine.assets`). Returns a NEW array of attrs's type; `attrs` is not changed (the machine recomputes from the
+ * background every tick: the erase restores the cell map's attribute, then draw_all recolours, in instance order, a higher index on top).
+ * It is sc_draw2 to the letter: the grid of class (3 * xc + yc) at x rounded to the phase, the first cell (y >> 3, xd >> 3), NR = ((y AND 7) + h - 1) / 8 + 1 rows (at most 3), always 3 columns; a byte with bit 3 set leaves
+ * the cell, else attr = (attr AND $F8) OR ink. A cell outside the 24 x 32 screen is skipped (the runtime's clamps keep a sprite inside; this is only a guard).
+ */
+export function applySpriteInk(attrs, sprites, instAsset, assets) {
+  const out = attrs.slice();
+  for (let i = 0; i < sprites.length; i++) {
+    const s = sprites[i], a = assets[instAsset[i] ?? 0];
+    if (!s || !s.visible || !a) continue;
+    const ph = a.phases ?? 8, xd = s.x & ~((8 / ph) - 1), h = (a.h ?? 0) & 0x1F, t = s.y & 7;
+    const cls = 3 * shiftClass(xd & 7) + shiftClass(t), tab = tableOf(a), nr = Math.min(3, (((t + h - 1) >> 3) & 3) + 1);
+    const r0 = s.y >> 3, c0 = xd >> 3;
+    for (let dr = 0; dr < nr; dr++) for (let dc = 0; dc < 3; dc++) {
+      const b = tab[CLASS_BYTES * cls + 3 * dr + dc];
+      if (b & 8) continue;
+      const r = r0 + dr, c = c0 + dc;
+      if (r > 23 || c > 31) continue;
+      out[r * 32 + c] = (out[r * 32 + c] & 0xF8) | (b & 7);
+    }
   }
   return out;
 }

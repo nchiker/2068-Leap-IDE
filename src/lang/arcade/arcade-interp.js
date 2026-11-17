@@ -195,6 +195,7 @@ import { createSoundChip } from './arcade-sound.js';
 import { convertViewMap, cosa as viewCosa, sina as viewSina, fxmul as viewFxmul, wallAt, setWallAt, clampPose, billboardRadius } from './arcade-view.js';
 import { areaOf as wireAreaOf, clearArea as wireClear, drawModel as wireDrawModel, drawLine as wireDrawLine, EYE0 as WIRE_EYE0, modelError as wireModelError } from './arcade-wire.js';
 import { sceneDisplayPlan } from './arcade-display.js';
+import { applySpriteInk } from './arcade-spriteink.js';
 import { convertSprite } from './arcade-codegen.js';
 import { convertWorldMap, scanSpriteUse, ratioCode, camMax as camMaxOf, buildTileFlags, worldTile as winWorldTile, tileFlags as winTileFlags, tileHit as winTileHit } from './arcade-window.js';
 
@@ -461,6 +462,14 @@ export function interpret(ast, opts = {}) {
   // has the record key `fine` and the result key `fine`, so the records of every other program are exactly what they were.
   const fineScenes = opts.scenes ? sceneDisplayPlan(ast, { scenes: opts.scenes, version: opts.version ?? 2 }).map((sc) => sc.built === 'fine') : [];
   const hasFine = fineScenes.some(Boolean);
+  // sprite colour (SC, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md): a classic scene the plan builds with ink shows the sprites' ink in the records' attrs, by the one shared rule (applySpriteInk). A game with no such scene is untouched.
+  const inkScenes = opts.scenes ? sceneDisplayPlan(ast, { scenes: opts.scenes, version: opts.version ?? 2 }).map((sc) => sc.spriteColour?.built === 'ink') : [];
+  const hasInk = !V3 && inkScenes.some(Boolean);
+  let inkAssets = null;
+  const inkAttrs = () => {
+    inkAssets ??= assetObjs.map((as, a) => { try { if (!as) return null; const c = convertSprite(as); return { h: c.h, data: c.data, inks: c.inks, phases: assetPhases[a] }; } catch { return null; } });
+    return applySpriteInk(attrs, spr, instAsset, inkAssets);
+  };
   let screenOnly = !!sceneList[0]?.mode;
   const fnTable = new Map(), procTable = new Map();
   const clock = opts.clock ?? null;
@@ -496,7 +505,7 @@ export function interpret(ast, opts = {}) {
       ...(win ? { cam: win.cam, worldRam: win.ram.slice() } : {}),
       ...(view ? { view: { ...view.pose }, wallRam: view.ram.slice() } : {}),
       ...(wire ? { wire: { on: wire.on, fresh: wire.fresh, eye: { ...wire.eye }, r0: wire.r0, r1: wire.r1, attr: wire.attr, bits: wire.bm.slice() } } : {}),
-      cells: cells.slice(), attrs: attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
+      cells: cells.slice(), attrs: hasInk && inkScenes[curScene] ? inkAttrs() : attrs.slice(), cursor: { row: curRow, col: curCol }, textAttr,
       sfx: { active: st.active, index: st.index, played: st.played, rec: st.active && st.played >= 1 ? st.played - 1 : -1 },
       ...(chip ? { music: { active: chip.song() >= 0, index: lastSong }, ay: { flags: chip.flags(), regs: chip.regs() } } : {}),
     };

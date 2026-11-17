@@ -42,6 +42,7 @@ export const SUITES = [
   'arcade/tests/sc-runtime-ink.mjs',
   'tests/arcade-sc-setting.mjs',
   'tests/arcade-sc-codegen.mjs',
+  'tests/arcade-sc-parity.mjs',
   'tests/arcade-parse.mjs',
   'tests/arcade-compile.mjs',
   'tests/arcade-m3.mjs',
