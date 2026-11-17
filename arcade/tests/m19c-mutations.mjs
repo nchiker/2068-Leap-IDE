@@ -126,9 +126,9 @@ const MUTANTS = [
   ['D: a fine scene is built fine in a v3 game (version >= 2)', [E(DP, "const fineOk = version === 2 &&", "const fineOk = version >= 2 &&")]],
   ['D: a fine scene is built fine beside WIRE3D', [E(DP, "const fineOk = version === 2 && !(Array.isArray(ast.wires) && ast.wires.length > 0);", "const fineOk = version === 2;")]],
   ['D: a game with WIRE3D is never fine (the wires test is inverted)', [E(DP, "const fineOk = version === 2 && !(Array.isArray(ast.wires) && ast.wires.length > 0);", "const fineOk = version === 2 && (Array.isArray(ast.wires) && ast.wires.length > 0);")]],
-  ['D: a fine setting is built fine for any scene, the automatic choice counts too', [E(DP, "built: chosen === 'fine' && fineOk ? 'fine' : 'buffers'", "built: (chosen === 'fine' || auto === 'fine') && fineOk ? 'fine' : 'buffers'")]],
-  ['D: the setting counts (not only the project\'s own): hires is built fine', [E(DP, "built: chosen === 'fine' && fineOk ? 'fine' : 'buffers'", "built: (chosen === 'fine' || chosen === 'hires') && fineOk ? 'fine' : 'buffers'")]],
-  ['D: nothing is built fine', [E(DP, "built: chosen === 'fine' && fineOk ? 'fine' : 'buffers'", "built: 'buffers'")]],
+  ['D: a fine setting is built fine for any scene, the automatic choice counts too', [E(DP, "const built = chosen === 'fine' && fineOk ? 'fine' : 'buffers';", "const built = (chosen === 'fine' || auto === 'fine') && fineOk ? 'fine' : 'buffers';")]],
+  ['D: the setting counts (not only the project\'s own): hires is built fine', [E(DP, "const built = chosen === 'fine' && fineOk ? 'fine' : 'buffers';", "const built = (chosen === 'fine' || chosen === 'hires') && fineOk ? 'fine' : 'buffers';")]],
+  ['D: nothing is built fine', [E(DP, "const built = chosen === 'fine' && fineOk ? 'fine' : 'buffers';", "const built = 'buffers';")]],
   ['D: the default version is 3', [E(DP, '{ scenes, version = 2 } = {}', '{ scenes, version = 3 } = {}')]],
   // ---- arcade-compile.js: the errors ----
   ['C: a scene the project does not set to fine is checked too (setting, not override)', [E(CM, "sc.override !== 'fine' || sc.built === 'fine') continue;", "sc.setting !== 'fine' || sc.built === 'fine') continue;")]],

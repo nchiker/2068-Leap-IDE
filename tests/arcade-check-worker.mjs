@@ -97,7 +97,7 @@ check('some corpus entries compile and some do not (the comparison is not vacuou
   const r2 = await handleCheck({ id: 2, project: P.newProject('F') }, flaky);
   check('runtime images that cannot be loaded answer {id, error}; the next request loads them again', r1.error === 'offline' && r2.error === undefined && r2.ok === true, JSON.stringify(r1).slice(0, 100));
   const r3 = await handleCheck({ id: 3, project: P.newProject('F') }, flaky);
-  check('the builds are loaded once (the loader is memoised: one failed fetch + the six files of v2, v3 and v4)', r3.ok && calls === 7, String(calls));
+  check('the builds are loaded once (the loader is memoised: one failed fetch + the six files of v2, v3 and v4 + the two of the v2 ink build)', r3.ok && calls === 9, String(calls));
 }
 
 // ── 2. the client on a fake Worker ──

@@ -349,7 +349,7 @@ console.log('\n6. The display model: sceneDisplayPlan and sceneModes');
   const modes = sceneModes(ast(W3(sc('a', 'NOWINDOW') + sc('b', ''))));
   check_('sceneModes: a NOWINDOW scene shows the whole "screen", the other the "window"', JSON.stringify(modes.map((m) => [m.name, m.show, m.mode])) === '[["a","screen","nowindow"],["b","window",null]]', JSON.stringify(modes));
   check_('... a VIEW3D game\'s scenes: "view" and (NOVIEW) "screen"; a plain game: "screen"', JSON.stringify(sceneModes(ast(V4(sc('a', 'NOVIEW') + sc('b', '')))).map((m) => m.show)) === '["screen","view"]' && sceneModes(ast(PLAIN(sc('a', '')))).map((m) => m.show).join() === 'screen');
-  check_('no clause: the plan entries have exactly the keys they had (no `mode`), so the Studio panel and tests/arcade-display.mjs see no change', Object.keys(sceneDisplayPlan(ast(W3(sc('a', '') + sc('b', ''))))[0]).join() === 'name,line,col,auto,reason,override,setting,built,notes');
+  check_('no clause: the plan entries have exactly the keys they had (no `mode`), so the Studio panel and tests/arcade-display.mjs see no change', Object.keys(sceneDisplayPlan(ast(W3(sc('a', '') + sc('b', ''))))[0]).join() === 'name,line,col,auto,reason,override,setting,built,spriteColour,notes');
   check_('sceneModes never throws on a broken tree', JSON.stringify(sceneModes(null)) === '[]' && JSON.stringify(sceneModes({ scenes: [null, 3] })) === '[]');
 }
 

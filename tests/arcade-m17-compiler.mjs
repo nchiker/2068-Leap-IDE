@@ -301,7 +301,7 @@ console.log('\n4. requiredRuntime');
   eq('FXMUL alone needs v2 now', rr(body('    a = FXMUL(a, 2)\n')).version, 2);
   eq('a WIRE3D game with COSA / SINA / FXMUL needs v2', rr(game('    x = FXMUL(5, SINA(t)) + COSA(t)\n    DRAWMODEL gate AT x, 0, 0\n')).version, 2);
   eq('VIEW3D still needs v4', rr('GAME "r"\nMAP level = "level"\nVIEW3D level\n').version, 4);
-  eq('VIEW3D with COSA needs v4 (VIEW3D is the reason)', rr('GAME "r"\nMAP level = "level"\nVIEW3D level\nDIM a\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    a = COSA(a)\n  ENDP\nENDSCENE\n'), { version: 4, reasons: ['VIEW3D'] });
+  eq('VIEW3D with COSA needs v4 (VIEW3D is the reason)', rr('GAME "r"\nMAP level = "level"\nVIEW3D level\nDIM a\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    a = COSA(a)\n  ENDP\nENDSCENE\n'), { version: 4, reasons: ['VIEW3D'], ink: false });
   eq('WALL() still needs v4', rr(body('    a = WALL(1, 2)\n')).version, 4);
   eq('SETWALL / VIEW still need v4', [rr(body('    SETWALL 1, 2 = 1\n')).version, rr(body('    VIEW 1, 2, 3\n')).version], [4, 4]);
   eq('a WINDOW game with COSA needs v3 (the checker then refuses COSA)', rr('GAME "r"\nMAP level = "level"\nWINDOW level\nDIM a\nSCENE s\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    a = COSA(a)\n  ENDP\nENDSCENE\n').version, 3);
