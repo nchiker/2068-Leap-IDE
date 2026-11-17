@@ -1633,8 +1633,11 @@ function applyZoom() {
   bezel.style.width = w + 'px';
   bezel.style.height = h + 'px';
   const panel = $('right-panel');
-  // The panel keeps the zoom's width on every tab (the asset editors want room too).
-  panel.style.flexBasis = stacked ? '' : Math.max(w + PANEL_CHROME, 360) + 'px';
+  // The panel is as wide as the zoomed screen only on the Display tab, where the zoom buttons are. The other tabs (the asset editors, Symbols,
+  // Vars) take at most 600 px, so an enlarged screen never leaves a wide panel on a tab that has no way to make it smaller.
+  const onDisplay = (document.querySelector('#right-panel .panel-tab.active')?.dataset.tab ?? 'display') === 'display';
+  const want = Math.max(w + PANEL_CHROME, 360);
+  panel.style.flexBasis = stacked ? '' : (onDisplay ? want : Math.min(want, 600)) + 'px';
   $('zoom-label').textContent = z + '×';
   shownZoom = z;
 }

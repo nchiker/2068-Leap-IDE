@@ -1213,6 +1213,15 @@ try {
   check('P1: the Projects dialog lists both projects', rowsN >= 2, String(rowsN));
   await evaluate("document.querySelector('#projects-dialog').close()");
 
+  // Z1: an enlarged screen widens the right panel only on the Display tab (the zoom buttons are there); the other tabs stay at 600 px or less
+  await evaluate("document.querySelector('#right-panel .panel-tab[data-tab=display]').click()");
+  for (let i = 0; i < 3; i++) await evaluate("document.getElementById('btn-zoom-in').click()");
+  const z1 = await evaluate(`(() => { const w = () => Math.round(document.getElementById('right-panel').getBoundingClientRect().width), tab = (t) => document.querySelector('#right-panel .panel-tab[data-tab=' + t + ']').click();
+    const label = document.getElementById('zoom-label').textContent, display = w(); tab('sprites'); const sprites = w(); tab('display'); return { label, display, sprites, back: w() }; })()`);
+  check('Z1: at a large zoom the panel is wide on Display and at most 600 px on the Sprites tab', z1.label === '1×' || (z1.sprites <= 600 && z1.back === z1.display && z1.display > z1.sprites), JSON.stringify(z1));
+  await evaluate("(() => { for (let i = 0; i < 3; i++) document.getElementById('btn-zoom-out').click(); })()");
+  check('Z1: Smaller takes the screen back to 1×', (await evaluate("document.getElementById('zoom-label').textContent")) === '1×');
+
   check('no page errors', b.pageErrors.length === 0, b.pageErrors.join(' | '));
 } catch (err) {
   check('studio smoke test ran to the end', false, err.stack ?? err.message);
