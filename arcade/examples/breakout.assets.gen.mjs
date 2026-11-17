@@ -34,6 +34,8 @@ assets.music = {
 
 // Sprite colour (SC, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md "SC as built (stage 6B)"): in the play scene the bat and the ball take their own ink (a cell they cover is recoloured), so they no longer change colour over the bricks and the backdrop
 assets.scenes = { play: { spriteColour: 'ink' } };
+// A sprite in a sprite-colour scene is drawn in the ink of its rows, and a row with no ink means 7 (white): on this game's white paper the bat and the ball were invisible. The bat is blue, the ball black.
+for (const [name, ink] of [['bat', 1], ['ball', 0]]) for (const f of assets.sprites[name].frames) for (const r of f.rows) r.ink = ink;
 const text = JSON.stringify(assets, null, 1) + '\n';
 if (process.argv.includes('--check')) {
   const same = existsSync(out) && readFileSync(out, 'utf8') === text;

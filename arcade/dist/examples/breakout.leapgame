@@ -15,35 +15,43 @@
       "rows": [
        {
         "bits": "3FFC",
-        "mask": "3FFC"
+        "mask": "3FFC",
+        "ink": 1
        },
        {
         "bits": "7FFE",
-        "mask": "7FFE"
+        "mask": "7FFE",
+        "ink": 1
        },
        {
         "bits": "FFFF",
-        "mask": "FFFF"
+        "mask": "FFFF",
+        "ink": 1
        },
        {
         "bits": "FFFF",
-        "mask": "FFFF"
+        "mask": "FFFF",
+        "ink": 1
        },
        {
         "bits": "FFFF",
-        "mask": "FFFF"
+        "mask": "FFFF",
+        "ink": 1
        },
        {
         "bits": "FFFF",
-        "mask": "FFFF"
+        "mask": "FFFF",
+        "ink": 1
        },
        {
         "bits": "7FFE",
-        "mask": "7FFE"
+        "mask": "7FFE",
+        "ink": 1
        },
        {
         "bits": "3FFC",
-        "mask": "3FFC"
+        "mask": "3FFC",
+        "ink": 1
        }
       ]
      }
@@ -57,35 +65,43 @@
       "rows": [
        {
         "bits": "3C",
-        "mask": "3C"
+        "mask": "3C",
+        "ink": 0
        },
        {
         "bits": "7E",
-        "mask": "7E"
+        "mask": "7E",
+        "ink": 0
        },
        {
         "bits": "FF",
-        "mask": "FF"
+        "mask": "FF",
+        "ink": 0
        },
        {
         "bits": "FF",
-        "mask": "FF"
+        "mask": "FF",
+        "ink": 0
        },
        {
         "bits": "FF",
-        "mask": "FF"
+        "mask": "FF",
+        "ink": 0
        },
        {
         "bits": "FF",
-        "mask": "FF"
+        "mask": "FF",
+        "ink": 0
        },
        {
         "bits": "7E",
-        "mask": "7E"
+        "mask": "7E",
+        "ink": 0
        },
        {
         "bits": "3C",
-        "mask": "3C"
+        "mask": "3C",
+        "ink": 0
        }
       ]
      }
