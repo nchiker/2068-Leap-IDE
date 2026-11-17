@@ -235,7 +235,69 @@ The ZX-style colour rule is behind every warning: the standard display allows **
 
 After you draw a sprite called `ship`, declare it in the source with `SPRITE ship = "ship"` and use `SHOW ship AT x, y`.
 
-## 9. Debugging
+## 9. Music and sound effects
+
+Leap Arcade plays sound on the TS2068's AY chip: **three voices** (channels A, B and C) and a noise generator. There are two kinds
+of sound, both edited in the **Sounds** tab:
+
+| Kind | What it is | In your code |
+|---|---|---|
+| Sound effect | a short sound: a jump, a hit, a coin | `SFX coin = "coin"`, then `PLAY coin` |
+| Song | music on all three voices, in patterns that repeat | `MUSIC theme = "theme"`, then `PLAY theme`; `NOMUSIC` stops it |
+
+```
+SFX  coin  = "coin"       REM a sound effect from the Sounds tab
+MUSIC theme = "theme"     REM a song from the Songs view
+
+SCENE title
+  PROC INIT():
+    PLAY theme            REM the song starts and keeps playing
+  ENDP
+ENDSCENE
+
+SCENE play
+  PROC INIT():
+    NOMUSIC               REM a silent game scene (or PLAY another song)
+  ENDP
+  PROC FRAME():
+    IF HIT(ball, bat) THEN
+      PLAY coin           REM an effect, played over whatever else is going on
+    ENDIF
+  ENDP
+ENDSCENE
+```
+
+- **The music never stalls your game.** The TS2068's frame interrupt plays it, so a slow `FRAME` does not make it stutter.
+- **`ENTER` does not stop a song.** A title song carries on into the next scene until that scene says `NOMUSIC` or plays another song.
+  `SILENCE` stops only an effect.
+- A game can have up to 8 songs (each up to 32 patterns and an order list of 64 entries).
+
+**Writing a song.** In the Sounds tab switch from *Effects* to *Songs* and press **New**. A song is a set of **patterns**
+(short pieces of music) and an **order** (which pattern plays when); **loop** says where it starts again at the end, or that it stops.
+
+![The song editor](img/arcade/editor-songs.png)
+
+- **Click** in a lane to place a note, **drag** it to move it (drag its right end to lengthen it), **Delete** removes it.
+- Pick the note's instrument, length and loudness in the note row first. The keys `Z S X D C V G B H N J M` play the notes of
+  the octave like a piano.
+- **Space** or **Pattern** plays the pattern, **Song** plays the whole song, **Range** plays a part. Browsers keep the page silent
+  until you have clicked on it once.
+- **Duplicate** a pattern to make a variation, then **Append** it to the order.
+- The size table shows what the music costs on the cartridge (Bounce's song is 758 bytes).
+
+**Writing a sound effect.** Choose *Effects*, pick a **preset** and press **New**, draw the pitch, volume and noise over time, and press
+**Play**. **Copy from example…** brings in an effect from one of the example games.
+
+![The sound effect editor](img/arcade/editor-sounds.png)
+
+**Effects while music plays.** The voices are shared. A one-channel effect **borrows channel C** for its length while the song
+carries on in A and B; an effect that uses all three channels pauses the song until it ends. Keep the melody and bass on A and B
+if you want effects to sit on top, and use C for harmony or percussion.
+
+The **Scenes and music** starter is the quickest way to hear it all working. The full details are in
+[`ARCADE_MUSIC_CONTRACT.md`](ARCADE_MUSIC_CONTRACT.md).
+
+## 10. Debugging
 
 - **Errors** are marked in the editor as you type; hover for the message.
 - **Pause** (F8) holds the game; **Step tick** (F10) runs exactly one `FRAME` and holds.
@@ -244,14 +306,14 @@ After you draw a sprite called `ship`, declare it in the source with `SPRITE shi
 - The profile reports a `FRAME` that takes longer than its refresh budget (the game then runs slower than
   `FRAMERATE`). If it does, lower `FRAMERATE` (for example 30 to 20), move work into other ticks, or use fewer sprites.
 
-## 10. Make a cartridge
+## 11. Make a cartridge
 
 Press **⬇ DCK**. The file is a TS2068 cartridge, which holds the Arcade runtime and your game. It runs on a stock
 TS2068 with a dock, or in an emulator that loads DCK files (TSRun, ZEsarUX, Fuse). Nothing else needs loading.
 
 **Save screen** writes the current frame and border as a 320 x 240 PNG, useful for screenshots.
 
-## 11. Runtimes
+## 12. Runtimes
 
 Arcade ships several runtimes. The Studio picks the one your program needs, and the status bar names it.
 
@@ -264,7 +326,7 @@ Arcade ships several runtimes. The Studio picks the one your program needs, and 
 Not every feature works in every runtime. For example, fine colour needs v2, and `FLIP` and `WINDOW` need v3. If a word
 needs a different runtime than another word in the same game, the compiler says so.
 
-## 12. Where to go next
+## 13. Where to go next
 
 - Read **Breakout** (`arcade/examples/breakout.arc`): tiles as bricks, `TILEAT`, `HIT`, a score, lives, sound effects
   and a game-over restart.

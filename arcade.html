@@ -250,6 +250,55 @@ ENDSCENE</code></pre>
     <figcaption><b>Models.</b> Wireframe 3D shapes for games like Orbit Gates and Ring Run.</figcaption>
   </figure>
 
+  <h3>Add music and sound effects</h3>
+  <p>Leap Arcade plays sound on the TS2068's AY chip, which has <b>three voices</b> (channels A, B and C) and a noise generator. Games have two kinds of sound, and the Sounds tab edits both:</p>
+  <table>
+    <tr><th>Kind</th><th>What it is</th><th>In your code</th></tr>
+    <tr><td><b>Sound effect</b></td><td>a short sound: a jump, a hit, a coin</td><td><code>SFX coin = "coin"</code> then <code>PLAY coin</code></td></tr>
+    <tr><td><b>Song</b></td><td>music on all three voices, in patterns that repeat</td><td><code>MUSIC theme = "theme"</code> then <code>PLAY theme</code>, and <code>NOMUSIC</code> to stop it</td></tr>
+  </table>
+  <p>Declare them at the top of the program, next to your sprites, and start them from anywhere:</p>
+<pre><code>SFX  coin  = "coin"       REM a sound effect from the Sounds tab
+MUSIC theme = "theme"     REM a song from the Songs view
+
+SCENE title
+  PROC INIT():
+    PLAY theme            REM the song starts and keeps playing
+  ENDP
+  ...
+ENDSCENE
+
+SCENE play
+  PROC INIT():
+    NOMUSIC               REM a silent game scene (or PLAY another song)
+  ENDP
+  PROC FRAME():
+    IF HIT(ball, bat) THEN
+      PLAY coin           REM an effect, played over whatever else is going on
+    ENDIF
+  ENDP
+ENDSCENE</code></pre>
+  <div class="callout"><b>The music never stalls your game.</b> It is played by the TS2068's frame interrupt, so a slow <code>FRAME</code> does not make it stutter. <code>ENTER</code> does <b>not</b> stop a song: a title song carries on into the next scene until that scene says <code>NOMUSIC</code> or plays another song. <code>SILENCE</code> stops only an effect, not the music.</div>
+  <p><b>Writing a song.</b> Open the <b>Sounds</b> tab and switch from <b>Effects</b> to <b>Songs</b>, then press <b>New</b>. A song is built from <b>patterns</b>, short pieces of music, and an <b>order</b>, the list that says which pattern plays when. The <b>loop</b> setting says where the song starts again at the end (or that it stops).</p>
+  <figure>
+    <img src="docs/img/arcade/editor-songs.png" width="1600" height="900" alt="The song editor: patterns, the order list, and a piano roll with a lane for each of the three channels">
+    <figcaption>The song editor, showing Bounce's title song. <b>Patterns</b> and <b>Order</b> at the top, a piano roll below with one lane for each channel (A green, B blue, C gold).</figcaption>
+  </figure>
+  <ul>
+    <li><b>Click</b> in a lane to place a note, <b>drag</b> it to move it, drag its right end to make it longer, <b>Delete</b> removes it.</li>
+    <li>Pick the sound of the note (its instrument), length and loudness in the note row first. The keyboard works like a piano: <code>Z S X D C V G B H N J M</code> play the notes of the octave.</li>
+    <li><b>Space</b> or the <b>Pattern</b> button plays the pattern; <b>Song</b> plays the whole song in order; <b>Range</b> plays just the part you choose. Browsers keep the page silent until you have clicked on it once.</li>
+    <li>Use <b>Duplicate</b> on a pattern to make a variation, then <b>Append</b> to add it to the order. Repeating one bass pattern under a changing melody is how most game music is built.</li>
+    <li>The editor tells you if something cannot be stored, and the size table shows what the music costs on the cartridge (Bounce's song is 758 bytes).</li>
+  </ul>
+  <p><b>Writing a sound effect.</b> Choose <b>Effects</b>, pick a <b>preset</b> (beep, and others) and press <b>New</b>, then draw the pitch, the volume and the noise over time and press <b>Play</b>. <b>Copy from example…</b> brings in an effect from one of the example games. An effect usually uses one channel.</p>
+  <figure>
+    <img src="docs/img/arcade/editor-sounds.png" width="1600" height="900" alt="The sound effect editor">
+    <figcaption>The sound effect editor, drawing pitch and volume over time.</figcaption>
+  </figure>
+  <p><b>Effects while music plays.</b> The three voices are shared. When a one-channel effect plays during a song, it borrows <b>channel C</b> for its length while the song carries on in A and B. An effect that uses all three channels pauses the song until it ends. So keep your melody and bass on A and B if you want sound effects to sit on top of them, and use C for the harmony or the percussion.</p>
+  <p>The <b>Scenes and music</b> starter is the quickest way to hear it all working: a title song, play and game-over scenes, and effects. Bounce and every other example have a song you can open and change.</p>
+
   <h3>When something goes wrong</h3>
   <p>The Studio compiles as you type and marks the first problem before you press Run. The message says what is wrong and where.</p>
   <figure>
