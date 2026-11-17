@@ -1,3 +1,5 @@
+**New here? Start with [`ARCADE_GETTING_STARTED.md`](ARCADE_GETTING_STARTED.md), a tutorial. This file is the language reference and changelog.**
+
 # Leap Arcade language, version 0 (draft, 2026-11-09)
 
 **Policy (owner, 2026-11-09): only what is needed, adjusted as games are built.** A word enters the language when a
