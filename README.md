@@ -8,7 +8,7 @@ second language exists). It has a CodeMirror 6 editor, a TS2068 emulator (the
 TSRun emulator running the real Leap ROMs) and a debugger. No build step and no
 npm; it only needs a static file server.
 
-Credits and thanks (TSRun by Josef Jelínek, and others): [CREDITS.md](CREDITS.md). Leap Arcade, the game-making half: https://nchiker.github.io/2068-Leap-IDE/arcade.html
+Start here, with a getting-started guide and screenshots: https://nchiker.github.io/2068-Leap-IDE/leap-ide.html. Leap Arcade, the game-making studio: https://nchiker.github.io/2068-Leap-IDE/arcade.html. Credits and thanks (TSRun by Josef Jelínek, and others): [CREDITS.md](CREDITS.md).
 
 Live: https://nchiker.github.io/2068-Leap-IDE/ (GitHub Pages, built from
 `main` on every push). Source: https://github.com/nchiker/2068-Leap-IDE.

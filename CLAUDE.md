@@ -331,6 +331,7 @@ tables are split the same way: `leap-words.js` (pure) and `leap-lang.js`
   `initialLanguageId(known)` picks `?lang=<id>`, else that, else the first
   profile. Switching swaps documents; text is not translated, and breakpoints
   and undo do not cross languages.
+- Example links: `ide.html?lang=<id>&example=<example id>[&run]` opens an example of that language (and runs it); `studio.html?example=<id>[&run]` does the same for Arcade Studio. The documentation pages `leap-ide.html` and `arcade.html` (with `docs/img/leap/` and `docs/img/arcade/`) use them. They are plain static pages with no build step.
 - Share links carry `&lang=<id>` (`encodeShare(text, name, lang)`); absent
   means `basic`, so older links still open. `decodeShare` returns
   `{text, name, lang}`.

@@ -110,6 +110,17 @@ async function bootEmulator() {
   showLanguageTools();
   bootDone();
   await attachLanguage();
+  openLinkedExample();
+}
+
+/** A link from the documentation: ide.html?lang=<id>&example=<example id> opens that example, and &run also runs it. */
+function openLinkedExample() {
+  const qs = new URLSearchParams(location.search), id = qs.get('example');
+  if (!id) return;
+  const ex = profile.examples.find(e => e.id === id);
+  if (!ex) { setStatus(`There is no example called "${id}"`, 'error'); return; }
+  openExample(ex);
+  if (qs.has('run')) runProgram();
 }
 
 /** The per-ROM half of the active profile: checker machine, packages; then check the program. */
