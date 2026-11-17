@@ -233,6 +233,14 @@ export async function createEmulator(opts) {
     resume()     { if (emu.paused) { emu.paused = false; emu.skipWatch = true; setState(emu, emu.pausedFrom); } },
     /** While paused, execute exactly one Z80 instruction. */
     stepInstruction() { if (emu.paused) stepOneInstruction(emu); },
+    /**
+     * The two moves the Studio's source debugger (src/tools/source-debug.js stepLine) needs while paused: one instruction, and the end of the frame
+     * (what stepOneInstruction does at the frame's end, and for a HALTed CPU, where runZ80 with a budget of 1 does nothing: the frame interrupt must come).
+     */
+    debugMoves: {
+      step(m) { runZ80(m.cpu, m.bus, 1, m); },
+      frameEnd(m) { runFrame(m); takeAudio(m); },
+    },
     get paused() { return emu.paused; },
 
     // ── Run controls (the Studio: Pause / Step one tick / speed). Additive: nothing here is used until it is called. ──
@@ -500,6 +508,12 @@ function enterPause(emu) {
 /** One instruction while paused; finishes the frame if that crossed its end. */
 function stepOneInstruction(emu) {
   const m = emu.machine;
+  if (m.cpu.halted) {           // (R4) a HALT waits for the frame interrupt: runZ80 with a budget of 1 would do nothing, so finish the frame
+    runFrame(m);
+    takeAudio(m);
+    setState(emu, 'paused', { pc: m.cpu.pc });
+    return;
+  }
   runZ80(m.cpu, m.bus, 1, m);
   if (m.tstates >= m.frameStart + tStatesPerFrame) {
     runFrame(m);       // nothing left to run: paints, mixes and takes the interrupt

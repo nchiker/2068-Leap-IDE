@@ -46,6 +46,22 @@ class BreakpointMarker extends GutterMarker {
   }
 }
 const breakpointMark = new BreakpointMarker();
+/** A breakpoint the running build does not contain (R4: the line has no code after it, or the source changed since Run): drawn as a ring. */
+class HollowBreakpointMarker extends GutterMarker {
+  toDOM() {
+    const dot = document.createElement('span');
+    dot.className = 'bp-gutter-dot hollow';
+    dot.title = 'Breakpoint: not in the running game (no code on or after this line, or the source changed since Run)';
+    return dot;
+  }
+}
+const hollowMark = new HollowBreakpointMarker();
+const setHollow = StateEffect.define();
+/** The 1-based lines drawn hollow (a Set; replaced as a whole by setHollow, kept by position through edits' line numbers being recomputed by the host). */
+const hollowState = StateField.define({
+  create() { return new Set(); },
+  update(set, tr) { for (const e of tr.effects) if (e.is(setHollow)) return e.value; return set; },
+});
 
 /** relint(): asks the linter to run again although the text did not change (a diagnostics worker answers after the 500 ms timer; forceLinting alone only hurries a lint that is already due). */
 const relintEffect = StateEffect.define();
@@ -104,7 +120,13 @@ const breakpointGutter = gutter({
   class: 'cm-breakpoint-gutter',
   markers: v => {
     const exec = v.state.field(execLineState);
-    const bps = v.state.field(breakpointState);
+    let bps = v.state.field(breakpointState);
+    const hollow = v.state.field(hollowState);
+    if (hollow.size) {
+      const ranges = [];
+      for (const c = bps.iter(); c.value !== null; c.next()) ranges.push((hollow.has(v.state.doc.lineAt(c.from).number) ? hollowMark : breakpointMark).range(c.from));
+      bps = RangeSet.of(ranges, true);
+    }
     if (exec === null) return bps;
     let onBp = false;
     bps.between(exec, exec, () => { onBp = true; });
@@ -265,6 +287,7 @@ const leapThemeSpec = {
     margin: '0 4px',
     boxShadow: '0 0 4px var(--bp-glow)',
   },
+  '.bp-gutter-dot.hollow': { background: 'transparent', border: '1.5px solid var(--red-fg)', boxSizing: 'border-box', boxShadow: 'none' },
   '.cm-foldGutter': { padding: '0 4px' },
   '.cm-foldGutter .cm-gutterElement': { color: 'var(--fg-dim)', cursor: 'pointer' },
   '.cm-foldGutter .cm-gutterElement:hover': { color: 'var(--fg)' },
@@ -372,6 +395,7 @@ const extensions = () => [
     crosshairCursor(),
     indentUnit.of('  '),
     breakpointState,
+    hollowState,
     execLineState,
     breakpointGutter,
     breakpointListener,
@@ -614,6 +638,9 @@ window.leapEditor = {
   toggleBreakpoint(lineNum) {
     view.dispatch({ effects: toggleBreakpoint.of(view.state.doc.line(lineNum).from) });
   },
+
+  /** R4: draw these 1-based breakpoint lines as hollow rings (not in the running build); an empty list clears them. */
+  setHollowBreakpoints(lines) { view.dispatch({ effects: setHollow.of(new Set(lines)) }); },
 
   /** Called (no arguments) whenever the set of breakpoint lines changes */
   onBreakpointsChanged(fn) { onBreakpointsChanged = fn; },
