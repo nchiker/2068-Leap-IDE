@@ -286,7 +286,7 @@ export function createMapEditor(container, host) {
   const nameSel = el('select', 'mapd-select', null, { 'aria-label': 'Map' });
   nameSel.dataset.role = 'map-select';
   nameSel.style.minWidth = '110px';
-  nameSel.addEventListener('change', () => { if (nameSel.value) loadMap(nameSel.value); });
+  nameSel.addEventListener('change', () => { if (nameSel.value) pickAsset(nameSel.value); });
   const btnNew = button('New', 'Create a map from a preset', () => toggleNewBox(true));
   const btnDup = button('Duplicate', 'Copy this map under a new name', () => duplicateCmd());
   const btnRen = button('Rename', 'Rename this map', () => renameCmd());
@@ -477,13 +477,16 @@ export function createMapEditor(container, host) {
   const msg = el('div', 'mapd-msg');
   msg.dataset.role = 'message';
   // the gallery strip: every map of the project, drawn with the tile set the program gives it, the edited one highlighted (asset-gallery.js);
+
+  /** C2: choosing an asset (gallery click, drop-down) goes through the host, so the project panel's selection follows (the host calls back select_); without a host: load it here. */
+  function pickAsset(n) { if (typeof host?.selectAsset === 'function') host.selectAsset('maps', n); else loadMap(n); }
   // a click does what the drop-down does
   const gallery = createGallery({
-    label: 'Maps', get: (n) => H.get('maps', n), onSelect: (n) => loadMap(n),
+    label: 'Maps', get: (n) => H.get('maps', n), onSelect: (n) => pickAsset(n),
     thumb: (n, asset, ctx) => thumbMap(asset, ctx, { box: GALLERY_BOX, palette: pal }),
   });
   // M4: the 3D preview of a floor plan (floorplan-preview.js): shown under the plan while the open map is the VIEW3D's floor plan, walked with the
-  // runtime's own wall cast. The game's CEIL / FLOOR paper and BRIGHT come from the source roles (INK is not read from the source: white).
+  // runtime's own wall cast. The game's INK, CEIL / FLOOR paper and BRIGHT come from the source roles (C2: INK is read now; white when it is not a constant).
   const fpBox = el('div', 'mapd-fp');
   fpBox.dataset.role = 'floorplan-preview';
   fpBox.hidden = true;
@@ -495,7 +498,7 @@ export function createMapEditor(container, host) {
     if (!fpPreview) {
       fpPreview = createFloorplanPreview(fpBox, {
         getMap: () => (map ? { w: map.w, h: map.h, cells: map.cells } : null),
-        getAttrs: () => { const v = roles?.view; return v ? { top: viewAttr(v.bright ?? 0, v.ceil ?? 0, 7), bottom: viewAttr(v.bright ?? 0, v.floor ?? 1, 7) } : null; },
+        getAttrs: () => { const v = roles?.view; return v ? { top: viewAttr(v.bright ?? 0, v.ceil ?? 0, v.ink ?? 7), bottom: viewAttr(v.bright ?? 0, v.floor ?? 1, v.ink ?? 7) } : null; },
       });
     }
     fpPreview.refresh();

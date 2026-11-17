@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ARCADE_WORDS } from '../src/lang/arcade/arcade-words.js';
+import { ARCADE_WORDS, REMOVED_WORDS } from '../src/lang/arcade/arcade-words.js';
 import { compile, requiredRuntime } from '../src/lang/arcade/arcade-compile.js';
 import { arcadeProfile } from '../src/lang/arcade/profile.js';
 import { HELP_EXAMPLES, HELP_ALIASES, HELP_PAGES } from '../src/lang/arcade/arcade-help-examples.js';
@@ -168,14 +168,14 @@ console.log('3. every example compiles (no error, no warning)');
   }
   const noExample = [...ARCADE_WORDS.keys()].filter((w) => !HELP_EXAMPLES[w] && !HELP_ALIASES[w]);
   console.log(`  INFO  words with no example (${noExample.length}): ${noExample.join(' ')}`);
-  // A word is left without an example only while the compiler refuses it ("not supported yet"): when it learns one, this test says so and an example is due.
-  const PROBES = { END: 'END', TAB: 'PRINT TAB 5; "X";', FLASH: 'FLASH 1', PLOT: 'PLOT 1, 1', POKE: 'POKE 23624, 7', OUT: 'OUT 254, 2', LEN: 'x = LEN("A")',
-    PEEK: 'x = PEEK(23672)', IN: 'x = IN(254)', USR: 'x = USR(32768)', POINT: 'x = POINT(1, 1)' };
-  check('every word without an example is one the compiler does not take yet', noExample.length === Object.keys(PROBES).length && noExample.every((w) => PROBES[w]), noExample.filter((w) => !PROBES[w]).join(' '));
-  for (const w of noExample) {
-    if (!PROBES[w]) continue;
-    const res = compileText(wrap(PROBES[w]));
-    check(`${w} is refused by the compiler (so it has no example)`, res.errors.some((d) => /not supported|unknown|unexpected/i.test(d.message)), res.errors.map((d) => d.message).join(' | '));
+  // Every word of the table has an example: the compiler takes every word it lists (language batch 8 built END TAB FLASH PEEK POKE and took LEN USR OUT IN PLOT POINT out of the table).
+  check('every word of the table has an example (the compiler refuses none of them any more)', noExample.length === 0, noExample.join(' '));
+  // The six words Leap V2 has and Leap Arcade does not are not in the table (so no Help entry), but stay reserved and say why.
+  const REMOVED = { LEN: 'x = LEN("A")', USR: 'x = USR(32768)', OUT: 'OUT 254, 2', IN: 'x = IN(254)', PLOT: 'PLOT 1, 1', POINT: 'x = POINT(1, 1)' };
+  check('the removed words are exactly the six of REMOVED_WORDS', Object.keys(REMOVED).sort().join(' ') === [...REMOVED_WORDS.keys()].sort().join(' '));
+  for (const [w, probe] of Object.entries(REMOVED)) {
+    const res = compileText(wrap(probe));
+    check(`${w} is not in the table, has no Help entry and is refused with "is not part of Leap Arcade"`, !ARCADE_WORDS.has(w) && !ARCADE_HELP[w] && res.errors.some((d) => d.message.startsWith(`${w} is not part of Leap Arcade: `)), res.errors.map((d) => d.message).join(' | '));
   }
 }
 

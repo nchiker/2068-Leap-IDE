@@ -185,7 +185,7 @@ export function createModelEditor(container, host) {
   const nameSel = el('select', 'modeled-select', null, { 'aria-label': 'Model' });
   nameSel.dataset.role = 'model-picker';
   nameSel.style.minWidth = '110px';
-  nameSel.addEventListener('change', () => { if (nameSel.value) loadModel(nameSel.value); });
+  nameSel.addEventListener('change', () => { if (nameSel.value) pickAsset(nameSel.value); });
   const btnNew = button('New', 'Create a model: a cube you can reshape', () => newModelCmd());
   const btnRen = button('Rename', 'Rename this model', () => renameCmd());
   const btnDel = button('Delete', 'Delete this model', () => deleteModelCmd());
@@ -203,9 +203,12 @@ export function createModelEditor(container, host) {
   msg.setAttribute('aria-live', 'polite');
   const body = el('div', 'modeled-body');
   body.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+
+  /** C2: choosing an asset (gallery click, drop-down) goes through the host, so the project panel's selection follows (the host calls back select_); without a host: load it here. */
+  function pickAsset(n) { if (typeof host?.selectAsset === 'function') host.selectAsset('models', n); else loadModel(n); }
   // the gallery strip: every model of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
   const gallery = createGallery({
-    label: 'Models', get: (n) => H.get(n), onSelect: (n) => loadModel(n),
+    label: 'Models', get: (n) => H.get(n), onSelect: (n) => pickAsset(n),
     thumb: (n, asset) => thumbModel(asset, { box: GALLERY_BOX }),
   });
   root.append(gallery.el, bar, warnList, emptyNote, body, msg);

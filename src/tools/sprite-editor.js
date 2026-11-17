@@ -223,7 +223,7 @@ export function createSpriteEditor(container, host) {
   const bar = el('div', 'sprited-bar');
   const nameSel = el('select', 'sprited-select', null, { 'aria-label': 'Sprite' });
   nameSel.style.minWidth = '110px';
-  nameSel.addEventListener('change', () => { if (nameSel.value) loadSprite(nameSel.value); });
+  nameSel.addEventListener('change', () => { if (nameSel.value) pickAsset(nameSel.value); });
   const wSel = select(S.WIDTHS.map((w) => [w, `${w} wide`]), 16, (v) => edit(() => S.resizeSprite(sprite, +v, sprite.h)), 'Width in pixels');
   const hIn = numberInput(16, 1, S.MAX_H, (v) => { const h = Math.round(+v); if (h >= 1 && h <= S.MAX_H) edit(() => S.resizeSprite(sprite, sprite.w, h)); else syncControls(); }, `Height in pixels (1..${S.MAX_H})`);
   const phSel = select(S.PHASE_CHOICES.map((p) => [p, `${p}`]), 8, (v) => edit(() => { sprite.phases = +v; }), 'Phases: how many horizontal positions the art is pre-shifted for (8 = smoothest, 1 = least RAM)');
@@ -252,9 +252,12 @@ export function createSpriteEditor(container, host) {
   const emptyNote = el('div', 'sprited-empty', 'No sprites in this project yet. Press New to draw one, or Import image… to convert a picture.');
   const msg = el('div', 'sprited-msg');
   msg.dataset.role = 'message';
+
+  /** C2: choosing an asset (gallery click, drop-down) goes through the host, so the project panel's selection follows (the host calls back select_); without a host: load it here. */
+  function pickAsset(n) { if (typeof host?.selectAsset === 'function') host.selectAsset('sprites', n); else loadSprite(n); }
   // the gallery strip: every sprite of the project, the edited one highlighted (asset-gallery.js); a click does what the drop-down does
   const gallery = createGallery({
-    label: 'Sprites', get: (n) => H.get(n), onSelect: (n) => loadSprite(n),
+    label: 'Sprites', get: (n) => H.get(n), onSelect: (n) => pickAsset(n),
     thumb: (n, asset) => thumbSprite(asset, { box: GALLERY_BOX, palette: pal }),
   });
   root.append(gallery.el, bar, warnList, importBox, emptyNote, body, msg);

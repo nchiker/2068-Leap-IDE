@@ -154,6 +154,8 @@
         <div class="run-bar" id="run-bar" role="group" aria-label="Run controls">
           <button class="phbtn" id="btn-pause" title="Pause the game (F8); again to continue" disabled>Pause</button>
           <button class="phbtn" id="btn-step" title="Run until the game completes one tick, then hold (F10)" disabled>Step tick</button>
+          <button class="phbtn" id="btn-stepline" title="Run to the next source line (F11); at a breakpoint" hidden>Step line</button>
+          <button class="phbtn" id="btn-stepover" title="Run to the next source line, calls run through (Shift+F11); at a breakpoint" hidden>Step over</button>
           <span class="phbtn-sep"></span>
           <span class="run-speed" role="group" aria-label="Speed">
             <button class="phbtn speed-btn" data-speed="0.5" title="Half speed (sound is off)" disabled>½×</button>
@@ -226,27 +228,27 @@
     "./src/arcade-projects-session.js": "./src/arcade-projects-session.js?v=6e784a6234",
     "./src/arcade-starters.js": "./src/arcade-starters.js?v=07812518b8",
     "./src/arcade-store.js": "./src/arcade-store.js?v=04d5363046",
-    "./src/emulator.js": "./src/emulator.js?v=037ed0520d",
+    "./src/emulator.js": "./src/emulator.js?v=19fcf86cbb",
     "./src/files.js": "./src/files.js?v=70f9a1c03a",
     "./src/help.js": "./src/help.js?v=abf92fedef",
     "./src/lang/arcade/arcade-assetcheck.js": "./src/lang/arcade/arcade-assetcheck.js?v=710dcc499f",
     "./src/lang/arcade/arcade-assets.js": "./src/lang/arcade/arcade-assets.js?v=69fa5dcc4e",
     "./src/lang/arcade/arcade-bank.js": "./src/lang/arcade/arcade-bank.js?v=15fa367494",
-    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=f54d13cddc",
-    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=9e3e6c27f4",
+    "./src/lang/arcade/arcade-check.js": "./src/lang/arcade/arcade-check.js?v=c4ae1041b2",
+    "./src/lang/arcade/arcade-codegen.js": "./src/lang/arcade/arcade-codegen.js?v=a43a83dcd0",
     "./src/lang/arcade/arcade-compile.js": "./src/lang/arcade/arcade-compile.js?v=27aa702e62",
     "./src/lang/arcade/arcade-display.js": "./src/lang/arcade/arcade-display.js?v=919a13e096",
-    "./src/lang/arcade/arcade-help-data.js": "./src/lang/arcade/arcade-help-data.js?v=916b918e27",
-    "./src/lang/arcade/arcade-help-examples.js": "./src/lang/arcade/arcade-help-examples.js?v=2d1804316d",
+    "./src/lang/arcade/arcade-help-data.js": "./src/lang/arcade/arcade-help-data.js?v=7a7459921d",
+    "./src/lang/arcade/arcade-help-examples.js": "./src/lang/arcade/arcade-help-examples.js?v=f3b41a70e9",
     "./src/lang/arcade/arcade-link.js": "./src/lang/arcade/arcade-link.js?v=0d9f84e86c",
-    "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=35f3630d13",
-    "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=f648dca2f9",
+    "./src/lang/arcade/arcade-parse.js": "./src/lang/arcade/arcade-parse.js?v=b2c9407344",
+    "./src/lang/arcade/arcade-scan.js": "./src/lang/arcade/arcade-scan.js?v=96077207fa",
     "./src/lang/arcade/arcade-view.js": "./src/lang/arcade/arcade-view.js?v=3b08523ce8",
     "./src/lang/arcade/arcade-window.js": "./src/lang/arcade/arcade-window.js?v=9c0f8f6e11",
     "./src/lang/arcade/arcade-wire.js": "./src/lang/arcade/arcade-wire.js?v=294f92d580",
-    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=c0e83e7fa0",
-    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=2aa3efad28",
-    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=463c77d22d",
+    "./src/lang/arcade/arcade-words.js": "./src/lang/arcade/arcade-words.js?v=f084cb8847",
+    "./src/lang/arcade/editor.js": "./src/lang/arcade/editor.js?v=8801eb7ca8",
+    "./src/lang/arcade/profile.js": "./src/lang/arcade/profile.js?v=fe0f3f3afc",
     "./src/lang/arcade/z80-emit.js": "./src/lang/arcade/z80-emit.js?v=695f9865be",
     "./src/lang/basic/cartridge.js": "./src/lang/basic/cartridge.js?v=cb99a1e28a",
     "./src/lang/basic/editor.js": "./src/lang/basic/editor.js?v=cf1227edb8",
@@ -296,7 +298,7 @@
     "./src/tools/asset-thumbs.js": "./src/tools/asset-thumbs.js?v=0ce6919ddc",
     "./src/tools/floorplan-preview.js": "./src/tools/floorplan-preview.js?v=875148f40b",
     "./src/tools/floorplan-view.js": "./src/tools/floorplan-view.js?v=7c49601592",
-    "./src/tools/map-editor.js": "./src/tools/map-editor.js?v=3fb4831026",
+    "./src/tools/map-editor.js": "./src/tools/map-editor.js?v=0bdb29ac41",
     "./src/tools/map-model.js": "./src/tools/map-model.js?v=eed4a48f2a",
     "./src/tools/model-preview.js": "./src/tools/model-preview.js?v=d1611c7399",
     "./src/tools/music-model.js": "./src/tools/music-model.js?v=bcdbfd9d6d",
@@ -306,12 +308,13 @@
     "./src/tools/raycast-ref.js": "./src/tools/raycast-ref.js?v=045a407224",
     "./src/tools/sound-editor.js": "./src/tools/sound-editor.js?v=84c1f92464",
     "./src/tools/sound-model.js": "./src/tools/sound-model.js?v=957d817742",
-    "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=75ce75e97c",
+    "./src/tools/source-debug.js": "./src/tools/source-debug.js?v=b351aa9801",
+    "./src/tools/sprite-editor.js": "./src/tools/sprite-editor.js?v=3c628d8bc4",
     "./src/tools/sprite-model.js": "./src/tools/sprite-model.js?v=2274dcbed1",
     "./src/tools/symbols.js": "./src/tools/symbols.js?v=16320c0533",
-    "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=55fc132e3b",
+    "./src/tools/tile-editor.js": "./src/tools/tile-editor.js?v=53a30a2e92",
     "./src/tools/tile-model.js": "./src/tools/tile-model.js?v=2adbd7aef1",
-    "./src/tools/variables-model.js": "./src/tools/variables-model.js?v=85b25547bc",
+    "./src/tools/variables-model.js": "./src/tools/variables-model.js?v=c1e6cd2952",
     "./src/tools/variables-panel.js": "./src/tools/variables-panel.js?v=7f18e85a6b",
     "./src/tools/warning-list.js": "./src/tools/warning-list.js?v=40203e81f0",
     "./tsrun/ay.js": "./tsrun/ay.js?v=2c2092395e",
@@ -336,8 +339,8 @@
     <div class="new-grid" id="new-grid" role="list"></div>
   </form>
 </dialog>
-<script type="module" src="src/editor.js?v=4146e4b200"></script>
-<script type="module" src="studio.js?v=546f55128c"></script>
+<script type="module" src="src/editor.js?v=aaac71da80"></script>
+<script type="module" src="studio.js?v=72128fd9b2"></script>
 
 </body>
 </html>

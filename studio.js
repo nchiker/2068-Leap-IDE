@@ -33,6 +33,7 @@ import { createVariablesPanel } from './src/tools/variables-panel.js';
 import { openStore } from './src/arcade-store.js';
 import { createSession } from './src/arcade-projects-session.js';
 import { createProjectsDialog } from './src/tools/projects-dialog.js';
+import { breakpointAddresses, watchFor, stepLine, lineOf, describePause } from './src/tools/source-debug.js';
 
 const profile = STUDIO_PROFILES[0];
 
@@ -49,6 +50,8 @@ let version = 0;                 // bumped by every change to the project; compi
 let compiledVersion = -1;
 let loading = false;             // the editor is being given a file: not a user edit
 let emuState = 'booting';
+let dbg = null;                  // R4: while the game is stopped at a source line: {pc, file, line, reason, text}
+const gameLive = () => emuState === 'cartridge' || emuState === 'paused';      // a game is loaded (R4: 'paused' is a stop at a breakpoint)
 let booted = false;              // boot() has shown the project's main file in the editor (before that the editor does not hold the project)
 let selected = null;             // {kind, name} in the project panel
 let savedHash = null;            // hash of the project as last saved / opened (the unsaved mark)
@@ -106,7 +109,8 @@ function refreshStatus() {
   }
   if (statusOverride) { setStatus(statusOverride.text, statusOverride.mode); return; }
   const warn = res && res.warnings.length ? ` · ${plural(res.warnings.length, 'warning')}` : '';
-  if (emuState === 'cartridge') setStatus(`${emulator?.held ? 'Paused' : 'Running'} ${project.name}${warn}`, 'run');
+  if (dbg && emuState === 'paused') setStatus(dbg.text + warn, 'run');
+  else if (emuState === 'cartridge') setStatus(`${emulator?.held ? 'Paused' : 'Running'} ${project.name}${warn}`, 'run');
   else if (emuState === 'error') setStatus(emuMessage || 'Error', 'error');
   else setStatus((STATE_TEXT[emuState]?.[0] ?? 'Ready') + (res ? ` · compiles${warn}` : ''), STATE_TEXT[emuState]?.[1] ?? 'idle');
 }
@@ -123,17 +127,22 @@ const fileStates = new Map();
 
 /** Show a file in the editor (the previous file's text has been kept by syncEditor()). `forget`: a different project, the old states are dropped. */
 function showFile(name, { line = 0, col = 0, forget = false } = {}) {
-  if (forget) fileStates.clear();
+  if (forget) { fileStates.clear(); loadBreakpointsFor(project.name); }
   else if (booted && Object.hasOwn(project.files, activeFile)) fileStates.set(activeFile, window.leapEditor.saveState());
   if (P.isGeneratedFile(name) && P.fileText(project, name) === null) name = P.MAIN_FILE;      // objects.arc exists only while a map has objects
   activeFile = name;
   loading = true;
   const text = P.fileText(project, name) ?? '';
   const saved = fileStates.get(name);
-  if (saved && saved.doc.toString() === text) window.leapEditor.restoreState(saved);
+  const wantedBreakpoints = bpLines.get(name) ?? [];
+  const freshState = !(saved && saved.doc.toString() === text);
+  if (!freshState) window.leapEditor.restoreState(saved);
   else window.leapEditor.setSource(text, { fresh: true });
   window.leapEditor.setReadOnly(P.isGeneratedFile(name));         // the generated objects.arc cannot be typed in
   loading = false;
+  if (freshState) applyBreakpoints(wantedBreakpoints);             // (R4) a state made anew has no gutter marks: the saved ones go back on
+  showExecLine();
+  refreshBreakpoints();
   $('editor-title').textContent = name;
   if (line > 0) window.leapEditor.setCursor(line, col);
   renderProject();
@@ -895,6 +904,9 @@ async function runProject() {
   }
   hasRun = true;
   runBuild = res;                    // R3: the addresses of the cartridge that runs now
+  runLineMap = P.buildSource(project).lineMap; runVersion = version;       // R4: the lines of that build
+  runKeys = new Map(runLineMap.map((at, i) => [`${at.file}:${at.line}`, i + 1]));
+  refreshBreakpoints();
   meter.reset();
   variablesTool?.render();
   updateRunUi();
@@ -927,12 +939,114 @@ function downloadDck() {
 function onEmulatorState(state, detail) {
   emuState = state;
   emuMessage = detail?.message ?? '';
-  if (state !== 'cartridge' && emulator?.held) emulator.holdFrames(false);   // the game is gone (Stop, Reset): nothing to hold
+  if (state !== 'cartridge' && state !== 'paused' && emulator?.held) emulator.holdFrames(false);   // the game is gone (Stop, Reset): nothing to hold
+  debugStateChanged(state, detail);
   updateRunUi();
   $('btn-stop').disabled = state !== 'cartridge' && state !== 'paused';
   $('btn-run').disabled = !lang;
   if (state === 'cartridge') statusOverride = null;
   refreshStatus();
+}
+
+
+// ── Source debugger (stage 6, R4): breakpoints on source lines, Step line / Step over, over src/tools/source-debug.js ──────────────────
+// The gutter marks are the editor's (src/editor.js; CodeMirror keeps them through edits and P3's saved state keeps them per file). `bpLines` is every file's
+// marks (the open file's are read back from the editor at each change) and is remembered in localStorage by project name (not in the .leapgame file).
+// A mark applies to the RUNNING build when the source is as it was at Run (`runVersion === version`): it becomes the address of its line's first statement and
+// the emulator pauses before that instruction (setWatch). Otherwise it is drawn hollow and applies at the next Run; so is a line with no code on or after it.
+const BP_KEY = 'leap-studio.breakpoints';
+const bpLines = new Map();         // file -> 1-based lines
+let bpStore = (() => { try { return JSON.parse(localStorage.getItem(BP_KEY)) ?? {}; } catch { return {}; } })();
+const dbgAddrs = new Set();        // the addresses of the marked lines in the running build (watchFor holds this very Set)
+let runLineMap = null, runKeys = null, runVersion = -1;      // the joined-source line map of the build Run started: {file, line} per joined line, and "file:line" -> joined line
+
+function loadBreakpointsFor(name) {
+  bpLines.clear();
+  for (const [f, lines] of Object.entries(bpStore[name] ?? {})) if (Array.isArray(lines) && lines.length) bpLines.set(f, lines.filter(Number.isInteger));
+}
+loadBreakpointsFor(project.name);
+function saveBreakpoints() {
+  const mine = Object.fromEntries([...bpLines].filter(([, l]) => l.length));
+  if (Object.keys(mine).length) bpStore[project.name] = mine; else delete bpStore[project.name];
+  try { localStorage.setItem(BP_KEY, JSON.stringify(bpStore)); } catch { /* storage blocked: the marks last for this page only */ }
+}
+function applyBreakpoints(lines) {
+  const n = window.leapEditor.getSource().split('\n').length;
+  for (const l of lines) { try { if (l >= 1 && l <= n) window.leapEditor.toggleBreakpoint(l); } catch { /* a line that is gone */ } }
+}
+function onBreakpointsChanged() {
+  if (loading || !booted) return;
+  const lines = window.leapEditor.getBreakpoints();
+  if (lines.length) bpLines.set(activeFile, lines); else bpLines.delete(activeFile);
+  saveBreakpoints();
+  refreshBreakpoints();
+}
+
+/** Put the marks of every file into the running build's addresses (and the emulator's watch), and draw the unresolved ones of the open file hollow. */
+function refreshBreakpoints() {
+  if (!window.leapEditor?.setHollowBreakpoints) return;
+  const live = !!(emulator && gameLive() && runBuild?.map && runLineMap);
+  const fresh = live && runVersion === version;
+  dbgAddrs.clear();
+  const hollow = [];
+  if (fresh) {
+    const asked = [];
+    for (const [file, lines] of bpLines) for (const l of lines) {
+      const j = runKeys.get(`${file}:${l}`);
+      if (j) asked.push(j); else if (file === activeFile) hollow.push(l);
+    }
+    const r = breakpointAddresses(runBuild.map, asked);
+    for (const a of r.addrs) dbgAddrs.add(a);
+    for (const j of r.hollow) { const at = runLineMap[j - 1]; if (at && at.file === activeFile) hollow.push(at.line); }
+  } else if (live) hollow.push(...(bpLines.get(activeFile) ?? []));      // the source changed since Run: the marks wait for the next Run
+  window.leapEditor.setHollowBreakpoints(hollow);
+  emulator?.setWatch(dbgAddrs.size ? watchFor(dbgAddrs, () => {}) : null);
+}
+
+function showExecLine() {
+  const ed = window.leapEditor;
+  if (!ed?.setExecutionLine) return;
+  if (dbg && dbg.file === activeFile && dbg.line) ed.setExecutionLine(dbg.line); else ed.setExecutionLine(null);
+}
+
+/** The game is stopped at pc (a breakpoint, or a Step line / Step over that ended): name the line, show it, refresh the values. */
+function enterDebugStop(pc, reason) {
+  const e = runBuild?.map ? lineOf(runBuild.map, pc) : null;
+  const at = e && runLineMap ? runLineMap[e.line - 1] ?? null : null;
+  dbg = { pc, reason, file: at?.file ?? null, line: at?.line ?? null, text: describePause({ pc, line: at?.line ?? null, file: at?.file, reason }) };
+  if (at && at.file !== activeFile && (Object.hasOwn(project.files, at.file) || P.isGeneratedFile(at.file))) switchFile(at.file);
+  showExecLine();
+  variablesTool?.setPaused(true); variablesTool?.refresh();
+  updateRunUi();
+  refreshStatus();
+}
+function leaveDebugStop() {
+  dbg = null;
+  showExecLine();
+  variablesTool?.setPaused(false);
+}
+/** The emulator's state changed (onEmulatorState): a pause is a stop at a breakpoint; anything else ends a stop. */
+function debugStateChanged(state, detail) {
+  if (state === 'paused') enterDebugStop(detail?.pc ?? emulator?.machine.cpu.pc ?? 0, 'breakpoint');
+  else {
+    if (dbg) leaveDebugStop();
+    if (state !== 'cartridge') { runLineMap = null; runKeys = null; refreshBreakpoints(); }      // the game is gone
+  }
+}
+/** F8 / Continue at a stop. The keys held across the stop are let go (as at the end of a hold), then the frame goes on where it stopped. */
+function continueFromBreakpoint() {
+  if (!emulator || emuState !== 'paused') return;
+  emulator.holdFrames(true); emulator.holdFrames(false);
+  joyHeld.clear(); syncJoystick();
+  emulator.resume();
+}
+/** F11 / Shift+F11 at a stop: run to the next source statement (over: calls run through). */
+function stepSource(over) {
+  if (!emulator || emuState !== 'paused' || !runBuild?.map) { say('Step line works at a breakpoint: set one in the gutter, then Run', 'idle', 4000); return; }
+  const moves = emulator.debugMoves;
+  const r = stepLine(emulator.machine, runBuild.map, { step: moves.step, onFrameEnd: moves.frameEnd, over, breakpoints: dbgAddrs });
+  enterDebugStop(r.pc, r.stopped === 'breakpoint' ? 'breakpoint' : 'step');
+  if (r.stopped === 'limit') say(`The step ran ${r.instructions.toLocaleString('en')} instructions without reaching a source line (the game is waiting in the runtime): F8 continues`, 'run', 6000);
 }
 
 // ── Run controls and the frame budget (R1, R2, R5, N3) ───────────
@@ -990,7 +1104,7 @@ const meter = (() => {
   }
   function render() {
     const box = $('run-meter');
-    const show = emuState === 'cartridge';
+    const show = gameLive();
     box.hidden = !show;
     if (!show) return;
     const st = stats();
@@ -1014,11 +1128,15 @@ function setPaused(on) {
   updateRunUi();
   refreshStatus();
 }
-function togglePause() { if (emuState === 'cartridge') setPaused(!emulator.held); }
+function togglePause() {
+  if (emuState === 'paused') continueFromBreakpoint();
+  else if (emuState === 'cartridge') setPaused(!emulator.held);
+}
 
 /** F10: hold, then run frames (silently) until the game completes a tick, at most 120 refreshes. */
 function stepTick() {
-  if (!emulator || emuState !== 'cartridge') return;
+  if (!emulator || !gameLive()) return;
+  if (emuState === 'paused') continueFromBreakpoint();       // (R4) leave the stop first; the tick step then holds at the next tick's end
   setPaused(true);
   const before = ticksNow();
   let n = 0;
@@ -1035,10 +1153,11 @@ function setSpeed(f) {
 
 /** The buttons, the meter and the first-run line follow the emulator's state. */
 function updateRunUi() {
-  const running = emuState === 'cartridge';
-  const held = !!emulator?.held;
+  const running = gameLive();
+  const held = !!emulator?.held || emuState === 'paused';
   $('btn-pause').disabled = !running;
   $('btn-pause').textContent = held ? 'Continue' : 'Pause';
+  $('btn-stepline').hidden = $('btn-stepover').hidden = emuState !== 'paused';
   $('btn-pause').title = held ? 'Continue the game (F8)' : 'Pause the game (F8); again to continue';
   $('btn-step').disabled = !running;
   for (const b of document.querySelectorAll('.speed-btn')) b.disabled = !running;
@@ -1078,10 +1197,12 @@ async function saveScreen() {
 
 $('btn-pause').addEventListener('click', togglePause);
 $('btn-step').addEventListener('click', stepTick);
+$('btn-stepline').addEventListener('click', () => stepSource(false));
+$('btn-stepover').addEventListener('click', () => stepSource(true));
 $('btn-save-screen').addEventListener('click', saveScreen);
 for (const b of document.querySelectorAll('.speed-btn')) b.addEventListener('click', () => setSpeed(Number(b.dataset.speed)));
 // (the buttons do not take the focus from the screen, so the joystick keeps working after a click)
-for (const id of ['btn-pause', 'btn-step', 'btn-save-screen']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
+for (const id of ['btn-pause', 'btn-step', 'btn-stepline', 'btn-stepover', 'btn-save-screen']) $(id).addEventListener('mousedown', (e) => e.preventDefault());
 for (const b of document.querySelectorAll('.speed-btn')) b.addEventListener('mousedown', (e) => e.preventDefault());
 
 // ── Files: new, open, save, examples ─────────────────────────────
@@ -1517,6 +1638,7 @@ $('ts-bezel').addEventListener('blur', () => { joyHeld.clear(); syncJoystick(); 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'F5') { e.preventDefault(); runProject(); }
   if (e.key === 'F6') { e.preventDefault(); stopProject(); }
+  if (e.key === 'F11' && !e.target.closest?.('input, textarea, select')) { e.preventDefault(); stepSource(e.shiftKey); }
   if ((e.key === 'F8' || e.key === 'F10') && !e.target.closest?.('input, textarea, select')) {
     e.preventDefault();
     if (e.key === 'F8') togglePause(); else stepTick();
@@ -1571,6 +1693,7 @@ $('btn-tidy').addEventListener('click', () => window.leapEditor.tidy());
 window.leapEditor.onHistoryChanged(({ undo, redo }) => { $('btn-undo').disabled = undo === 0; $('btn-redo').disabled = redo === 0; });
 window.leapEditor.onMessage((text, mode) => say(text, mode));
 window.leapEditor.onChange(() => { if (loading) return; changed({ type: 'source', source: 'studio' }); });
+window.leapEditor.onBreakpointsChanged(onBreakpointsChanged);       // R4: the gutter marks
 setAssetSource((kind) => P.listAssets(project, kind));
 // The project is kept in this browser (and reopens after a reload), so leaving the page needs no "discard?" question.
 window.addEventListener('beforeunload', autosaveNow);
@@ -1667,6 +1790,9 @@ window.leapStudio = {
   get project() { return project; },
   get activeFile() { return activeFile; },
   get selected() { return selected; },
+  get debug() { return dbg; },                       // R4: the stop (pc, file, line, reason, text) or null
+  get emuState() { return emuState; },
+  get breakpoints() { return Object.fromEntries(bpLines); },
   get emulator() { return emulator; },
   get lang() { return lang; },
   get lastCompile() { return lastCompile; },

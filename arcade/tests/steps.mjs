@@ -75,6 +75,7 @@ export const SUITES = [
   'tests/arcade-m19-compiler.mjs',              // fine colour F3a: the scenes setting, plan, errors, descriptor and RT_FINEMODE calls, finePicture, the interpreter's fine records, byte identity of every non-fine program
   'tests/arcade-m19-differential.mjs',          // fine colour F3b: the compiled game on the real v2 runtime against the interpreter, state and picture after every tick, switches fine <-> two-buffer in every direction, the frames around a switch (contract 4.3)
   'tests/arcade-k-warnings.mjs',                 // stage 1 K1 / K2: the two-blacks warnings (and that they fire on today's games)
+  'tests/arcade-c1-words.mjs',                  // stage 6 C1: END TAB FLASH PEEK POKE against the interpreter on the real v2 runtime; the six removed words
   'tests/arcade-orbit.mjs',                      // the wireframe sample game "Orbit Gates" on the reference interpreter (the runtime part is a TODO in the file)
   'tests/arcade-emitter-opt.mjs',               // compiler size pass: the emitter's F2 / F4 / F5 (sjasmplus on every example, the F4 path check)
   'tests/arcade-codegen-exhaustive.mjs',        // compiler size pass: F1 / F3 / F6 / F8 / F9 for every 16-bit value
@@ -158,6 +159,11 @@ export const MUTATION_SUITES = [
   { file: 'arcade/tests/m15c-mutations.mjs', shards: 2, src: ['src/lang/arcade/'], tests: ['tests/arcade-m15-compiler.mjs', 'tests/arcade-m15-differential.mjs', 'tests/arcade-m10-compiler.mjs'] },
   { file: 'arcade/tests/m16c-mutations.mjs', shards: 8, src: ['src/lang/arcade/'], tests: ['tests/arcade-emitter-opt.mjs', 'tests/arcade-codegen-exhaustive.mjs', 'tests/arcade-m9-differential.mjs', 'tests/arcade-m5.mjs'] },
   { file: 'arcade/tests/m18c-mutations.mjs', shards: 4, src: ['src/lang/arcade/'], tests: ['tests/arcade-k-warnings.mjs', 'tests/arcade-assetcheck.mjs'] },
+  { file: 'tests/m20-floorplan-mutations.mjs', shards: 1, runtimes: ['v4'], tests: ['tests/floorplan-view.mjs'] },     // stage 6 C3
+  { file: 'tests/m20-thumbs-mutations.mjs', shards: 3, tests: ['tests/asset-thumbs.mjs'] },
+  { file: 'tests/m20-variables-mutations.mjs', shards: 2, runtimes: ['v2'], tests: ['tests/variables-panel.mjs'] },
+  { file: 'tests/m20-picture-mutations.mjs', shards: 4, tests: ['tests/picture-import.mjs'] },
+  { file: 'tests/source-debug-mutations.mjs', shards: 4, src: ['src/tools/source-debug.js'], tests: ['tests/source-debug-model.mjs', 'tests/source-debug-runtime.mjs'] },   // stage 6 R4
   { file: 'arcade/tests/m19c-mutations.mjs', shards: 8, src: ['src/lang/arcade/', 'arcade/tools/arcadec.mjs'], tests: ['tests/arcade-m19-compiler.mjs', 'tests/arcade-display.mjs', 'tests/arcade-m17-interp.mjs'] },
 ];
 
@@ -166,6 +172,8 @@ export const BROWSER_GROUP = 'browser';
 
 /** The suites outside run-all (the owner's hand-run checklist, 2026-11-13), each a plain `node <file>`. */
 export const OTHER_SUITES = [
+  { file: 'tests/source-debug-model.mjs' },                       // stage 6 R4: the source debugger's pure half
+  { file: 'tests/source-debug-runtime.mjs' },                     // stage 6 R4: breakpoints, stepping and non-perturbation on the real runtimes
   { file: 'tests/studio-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/sprite-editor-smoke.mjs', group: BROWSER_GROUP },
   { file: 'tests/tile-editor-smoke.mjs', group: BROWSER_GROUP },

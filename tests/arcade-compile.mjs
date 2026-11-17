@@ -1025,11 +1025,9 @@ console.log('\n5. Errors for statements outside the M2 subset');
     ['PRINT', '    PRINT AT 0, 0; "hi"', 'PRINT', 4],
     ['TILE', '    TILE 1, 2 = 3', 'TILE', 4],
     ['PLAY', '    PLAY beep', 'PLAY', 4, 'SFX beep = "beep"\n'],
-    ['PLOT', '    PLOT 1, 2', 'PLOT', 4],
     ['CLS', '    CLS', 'CLS', 4],
     ['BORDER', '    BORDER 2', 'BORDER', 4],
     ['INK', '    INK 2', 'INK', 4],
-    ['POKE', '    POKE 40000, 1', 'POKE', 4],
     ['SILENCE', '    SILENCE', 'SILENCE', 4],
     ['RANDOMISE', '    RANDOMISE 5', 'RANDOMISE', 4],
     ['END', '    END', 'END', 4],
@@ -1037,8 +1035,6 @@ console.log('\n5. Errors for statements outside the M2 subset');
     ['SHOW ... FRAME', '    SHOW ball AT 1, 2 FRAME 1', 'SHOW ... FRAME', 28],
     ['HIT()', '    a = HIT(ball, ball)', 'HIT(', 8],
     ['KEYDOWN()', '    a = KEYDOWN(5)', 'KEYDOWN(', 8],
-    ['PEEK()', '    a = PEEK(5)', 'PEEK(', 8],
-    ['LEN()', '    a = LEN("x")', 'LEN(', 8],
   ];
   for (const [name, body, word, col, decl] of cases) {
     const r = compileGame(wrapG(body, decl));
@@ -1046,6 +1042,14 @@ console.log('\n5. Errors for statements outside the M2 subset');
     const hit = r.errors.find((e) => e.line === line && /not supported yet in M2/.test(e.message));
     check_(`${name}: "not supported yet in M2" at line ${line}, column ${col}`, !!hit && hit.col === col && hit.message.startsWith(word) && !r.dck,
       hit ? `${hit.message} @${hit.line}:${hit.col}` : JSON.stringify(r.errors.slice(0, 2)));
+  }
+  { // language batch 8: POKE and PEEK compile (plain stores / loads), PLOT and LEN are not part of the language
+    const okp = compileGame(wrapG('    POKE 40000, 1\n    a = PEEK(5)'));
+    check_('POKE and PEEK compile in M2 (language batch 8)', okp.errors.length === 0 && !!okp.dck, JSON.stringify(okp.errors.slice(0, 2)));
+    for (const [w, body] of [['PLOT', '    PLOT 1, 2'], ['LEN', '    a = LEN("x")']]) {
+      const r = compileGame(wrapG(body));
+      check_(`${w} is not part of Leap Arcade (a parse error at line 8)`, r.errors.some((e) => e.line === 8 && e.message.startsWith(`${w} is not part of Leap Arcade: `)) && !r.dck, JSON.stringify(r.errors.slice(0, 2)));
+    }
   }
   { // LINE is a wireframe statement now (docs/ARCADE_WIREFRAME_CONTRACT.md 1.5): without a WIRE3D the checker says so, at the word, and there is no cartridge
     const r = compileGame(wrapG('    LINE 1, 2 TO 3, 4'));

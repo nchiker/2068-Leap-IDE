@@ -223,6 +223,52 @@ try {
   const again = await waitFor(`leapStudio.emulator.cartridge && leapStudio.ticks() >= 8 && leapStudio.ticks() < ${t2} && leapStudio.ticks()`, 20000);
   check('Run again restarts the game from tick 0', !!again && again < t2, `${again} (was ${t2})`);
 
+  // ── R4: the source debugger (stage 6): a breakpoint in PROC FRAME stops the game at its line ──
+  await evaluate("document.getElementById('btn-stop').click()");
+  await waitFor("!leapStudio.emulator.cartridge", 5000);
+  const bpLine = await evaluate(`(() => { const L = leapEditor.getSource().split('\\n'); let f = L.findIndex((l) => /^\\s*PROC\\s+FRAME/i.test(l)); if (f < 0) return 0;
+    for (let i = f + 1; i < L.length; i++) if (L[i].trim() && !/^\\s*(REM|')/i.test(L[i])) return i + 1; return 0; })()`);
+  check('R4: the template has a statement in PROC FRAME to stop at', bpLine > 0, String(bpLine));
+  await evaluate(`leapEditor.toggleBreakpoint(${bpLine})`);
+  check('R4: a gutter mark is remembered per file', JSON.stringify(await evaluate('leapStudio.breakpoints')) === JSON.stringify({ 'main.arc': [bpLine] }), JSON.stringify(await evaluate('leapStudio.breakpoints')));
+  await evaluate("document.getElementById('btn-run').click()");
+  const hit = await waitFor("leapStudio.emuState === 'paused' && leapStudio.debug && leapStudio.debug.line", 25000);
+  check('R4: Run stops at the breakpoint, on its line in main.arc', hit === bpLine && (await evaluate('leapStudio.debug.file')) === 'main.arc' && (await evaluate('leapStudio.debug.reason')) === 'breakpoint', `${hit} vs ${bpLine}; ${await status()}`);
+  check('R4: the status line names the line and the reason', (await status()) === `Paused at line ${bpLine} of main.arc (breakpoint)`, await status());
+  check('R4: the stopped line is marked in the editor and Step line / Step over show', (await evaluate("document.querySelectorAll('.cm-exec-line').length")) === 1
+    && !(await evaluate("document.getElementById('btn-stepline').hidden")) && !(await evaluate("document.getElementById('btn-stepover').hidden"))
+    && (await evaluate("document.getElementById('btn-pause').textContent")) === 'Continue');
+  const tickAt = await evaluate('leapStudio.ticks()');
+  await evaluate("document.getElementById('btn-stepline').click()");
+  const stepped = await evaluate('JSON.stringify([leapStudio.debug.reason, leapStudio.debug.line])');
+  const [sr, sl] = JSON.parse(stepped);
+  check('R4: Step line moves to a later source line (or the next tick) and says "step"', sr === 'step' && sl > 0 && sl !== bpLine || sr === 'breakpoint', stepped);
+  check('R4: Step line leaves the game stopped (the tick count has not moved)', (await evaluate('leapStudio.ticks()')) === tickAt && (await evaluate("leapStudio.emuState")) === 'paused');
+  await evaluate("document.getElementById('btn-stepover').click()");
+  check('R4: Step over stops again, still at a source line', (await evaluate('leapStudio.debug && leapStudio.debug.line > 0')) === true, await status());
+  await evaluate("document.getElementById('btn-pause').click()");                           // Continue
+  const again2 = await waitFor(`leapStudio.emuState === 'paused' && leapStudio.debug && leapStudio.ticks() === ${tickAt} + 1`, 15000);
+  check('R4: Continue runs on to the breakpoint of the next tick (one tick later)', !!again2, `${await evaluate('leapStudio.ticks()')} vs ${tickAt} + 1; ${await status()}`);
+  await evaluate("document.getElementById('btn-step').click()");                              // Step tick leaves the stop first, then holds at the next tick's end
+  await sleep(300);
+  check('R4: F10 at a stop leaves it (the game is held at a tick boundary, no stop)', (await evaluate('leapStudio.debug')) === null || (await evaluate("leapStudio.emuState")) === 'paused', await status());
+  await evaluate(`leapEditor.toggleBreakpoint(${bpLine})`);                                   // the mark off
+  if ((await evaluate('leapStudio.emuState')) === 'paused') await evaluate("document.getElementById('btn-pause').click()");
+  await evaluate("leapStudio.emulator.holdFrames(false)");
+  const runs = await waitFor("leapStudio.emuState === 'cartridge' && !leapStudio.emulator.held && leapStudio.debug === null", 8000);
+  const tk = await evaluate('leapStudio.ticks()');
+  await sleep(500);
+  check('R4: with the mark removed the game runs on and ticks again', !!runs && (await evaluate('leapStudio.ticks()')) > tk, `${tk} -> ${await evaluate('leapStudio.ticks()')}`);
+  await evaluate(`leapEditor.insertLines('REM edited after Run')`);                           // the source changed since Run: a new mark waits for the next Run (hollow)
+  await evaluate(`leapEditor.toggleBreakpoint(${bpLine})`);
+  await sleep(200);
+  check('R4: a mark made after the source changed is drawn hollow and does not stop the running game', (await evaluate("document.querySelectorAll('.bp-gutter-dot.hollow').length")) === 1 && (await evaluate("leapStudio.emuState")) === 'cartridge');
+  await evaluate("document.getElementById('btn-stop').click()");
+  await sleep(300);
+  check('R4: Stop leaves no stop, no exec mark, no stepping buttons', (await evaluate('leapStudio.debug')) === null && (await evaluate("document.querySelectorAll('.cm-exec-line').length")) === 0 && (await evaluate("document.getElementById('btn-stepline').hidden")));
+  await evaluate(`leapEditor.toggleBreakpoint(${bpLine})`);
+  await evaluate("leapEditor.undo()");
+
   // ── Diagnostics ──
   await setSource('GAME "x"\nFRAMERATE 30\nSCENE play\n  DIM a\n  PROC INIT():\n    a = = 1\n  ENDP\n  PROC FRAME():\n  ENDP\nENDSCENE\n');
   const diag = await evaluate(`(() => {
@@ -570,6 +616,9 @@ try {
     check('S1: a click on another picture switches the sprite editor to it',
       (await evaluate("document.querySelector('#tool-sprites .sprited-select').value")) === other
       && (await evaluate("document.querySelector('#tool-sprites [data-role=gallery-item].current').dataset.asset")) === other, other);
+    check('C2: a gallery click moves the project panel\'s selection too (leapStudio.selected and the highlighted row)',
+      (await evaluate('JSON.stringify(leapStudio.selected)')) === JSON.stringify({ kind: 'sprites', name: other })
+      && (await evaluate("document.querySelector('.proj-row.asset-row.active')?.textContent.includes(" + JSON.stringify(other) + ")")) === true, other);
     await evaluate(`document.querySelector('#tool-sprites [data-role=gallery-item][data-asset="ship"]').click()`);
     // an edit through the host reaches the project, and the editor is told about a change made elsewhere
     const roundTrip = await evaluate(`(() => { const h = leapStudio.makeHost('smoke2'); const a = h.getAsset('sprites', 'ship'); a.frames[0].rows[0].bits = '00FF';
@@ -914,6 +963,15 @@ try {
   await sleep(300);
   const rn = await evaluate("({ main: leapEditor.getSource().includes('CALL helper2(1)'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper2(a):'), old: /helper\\(|helper\\b/.test(leapStudio.project.files['extra.arc'].replace(/helper2/g, '')) })");
   check('P4: rename changes the call in main.arc and the definition in extra.arc, and no old name is left', rn.main && rn.extra && !rn.old, JSON.stringify(rn));
+  // C2: one Ctrl+Z of the open editor takes the whole rename back, other files included; Ctrl+Y does it again; an edited file is never overwritten
+  await evaluate('leapEditor.undo()');
+  await sleep(300);
+  const un = await evaluate("({ main: leapEditor.getSource().includes('CALL helper(1)') && !leapEditor.getSource().includes('helper2'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper(a):') && !leapStudio.project.files['extra.arc'].includes('helper2') })");
+  check('C2: undo of a cross-file rename restores the open file and the other file in one step', un.main && un.extra, JSON.stringify(un));
+  await evaluate('leapEditor.redo()');
+  await sleep(300);
+  const reDone = await evaluate("({ main: leapEditor.getSource().includes('CALL helper2(1)'), extra: leapStudio.project.files['extra.arc'].includes('PROC helper2(a):') })");
+  check('C2: redo renames both again', reDone.main && reDone.extra, JSON.stringify(reDone));
   await waitFor('leapStudio.compileSettled', 20000);
   await sleep(300);
   check('P4: the renamed project still compiles', await evaluate('leapStudio.lastCompile.ok'), await evaluate("JSON.stringify(leapStudio.lastCompile.errors.slice(0, 1))"));

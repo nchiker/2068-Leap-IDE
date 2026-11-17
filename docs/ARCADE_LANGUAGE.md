@@ -18,8 +18,9 @@ Version 0 below is the minimum for **A**. B and C add words (marked *later*) whe
 ## Kept from Leap V2 (unchanged meaning)
 Assignment without `LET`; `IF`/`ELSE`/`ENDIF`; `FOR`/`NEXT`/`STEP`/`EXIT FOR`; `PROC name(p):`...`ENDP`, `CALL`;
 `DEF FN`; `DIM a(n)` (one dimension, literal size); `REM`; `END`; operators `AND` `OR` `NOT`, `MOD`, `DIV`; `ABS`
-`SGN` `RND` `RANDOMISE` `PEEK` `POKE` `IN` `OUT` `USR`; `PRINT` with `AT` and `TAB`; `INK` `PAPER` `BRIGHT` `FLASH`
-`BORDER` `CLS` `PLOT` `LINE` `POINT`. Identifiers: letter then letters/digits, no underscore, case-insensitive.
+`SGN` `RND` `RANDOMISE` `PEEK` `POKE`; `PRINT` with `AT` and `TAB`; `INK` `PAPER` `BRIGHT` `FLASH`
+`BORDER` `CLS` `LINE` (in a wireframe play area). `LEN` `USR` `OUT` `IN` `PLOT` `POINT` are not part of Leap Arcade
+(see "Words of Leap V2 that are not part of Leap Arcade" below). Identifiers: letter then letters/digits, no underscore, case-insensitive.
 
 ## Changed or dropped
 * **Integers only** (16-bit signed). Sub-pixel movement is done by scaling (positions in 1/8 pixel). Fixed-point
@@ -28,7 +29,7 @@ Assignment without `LET`; `IF`/`ELSE`/`ENDIF`; `FOR`/`NEXT`/`STEP`/`EXIT FOR`; `
   shows otherwise.
 * **No editor/tape words:** `LIST` `NEW` `RUN` `LOAD` `SAVE` `INPUT` `STOP` `CLEAR` `FREE` and the printer words.
 * **No hardware-mode words and no `PALETTE`/`ULAPLUS`.** The build chooses the display setup per scene.
-* Strings: `STR$(n)`, `+`, `LEN` only (for score and message text); the rest *later*.
+* Strings: `STR$(n)` and `+` only, as `PRINT` items (for score and message text); there are no string variables and no `LEN`; the rest *later*.
 
 ## New in version 0 (for game A)
 ```
@@ -107,6 +108,60 @@ A `WIRE3D` game needs the **v2 runtime** (`requiredRuntime` says so; v3 and v4 r
 v4 runtime** with the same values (8.8 fixed point, -256..256), so a game moves along its heading with `x = x + FXMUL(speed, SINA(a))` and `z = z + FXMUL(speed, COSA(a))`; the v3 runtime refuses them. New reserved words: WIRE3D MODEL EYE
 DRAWMODEL (LINE was reserved already); they may still name an asset as MUSIC does. ROWS YAW PITCH SCALE are contextual (a variable `yaw` keeps working). The sample game is `arcade/examples/orbit.arc` ("Orbit Gates").
 
+## END, TAB, FLASH, PEEK and POKE (language batch 8)
+Studio completion stage 6, item C1 (contract `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` section 4; tests `tests/arcade-c1-words.mjs`, `tests/arcade-help-data.mjs`). These five words were in the table and
+refused by the compiler ("not supported yet"); they are built now in the code generator and the reference interpreter, with no change to any runtime (v2, v3 and v4 are byte for byte what they were,
+and so is every game that does not use the words).
+| Word | Meaning |
+|---|---|
+| `END` | stop the game: no PROC runs again, the screen stays as it is |
+| `PRINT [AT r, c;] TAB col; item ...` | the print column (0..31): AT with the row kept |
+| `FLASH n` | flash 0 or 1 for the text printed after it, like `BRIGHT` |
+| `PEEK(addr)` | the byte (0..255) at a memory address (taken AND 65535) |
+| `POKE addr, value` | store a byte at an address (AND 65535, value AND 255) |
+
+**END.** `END` ends the tick it is in, as if the PROC and every PROC that called it had returned, and the game then runs no more of its own code: `PROC FRAME`, the `TIMER` countdown and the
+`KEYPRESS` / `JOYPRESS` snapshots all stop, so keys and the joystick are ignored and no variable changes again. The tick that ran `END` finishes as every tick does: the runtime draws what the game
+changed (text, tiles, sprites) into the hidden display file and shows it, so the last picture is complete, never half drawn; the next tick draws the same into the other file and nothing is drawn after
+that (both files are equal and stay so). The interrupt is not touched: a sound effect or song that is playing goes on to its end (a song that loops goes on looping; write `SILENCE` and `NOMUSIC` before `END`
+to be quiet). `END` in `PROC INIT` ends the game before its first `FRAME`. In a game with scenes `END` ends the whole game, not the scene (use `ENTER` for another scene). Exception: in a `WIRE3D` game the
+runtime clears the wireframe play area at the start of every tick and only `FRAME` draws into it, so after `END` the play area is blank (the checker warns). The statement after `END` in a block is unreachable (a
+warning). Compiled: `END` stores a flag in a hidden variable slot (each use is `LD A,1 / LD (flag),A / LD SP,(saved) / RET`, 10 bytes), the stack pointer the runtime called `INIT` with is saved at the start,
+and the frame entry (a small stub the compiler adds only to a game that uses `END`) tests the flag first (6 bytes and 25 T-states a tick). Needs the v2 runtime or a later one.
+
+**TAB.** `PRINT TAB col; ...` sets the text cursor's column to `col` (0..31; a constant outside is an error, a run-time value is clamped as `AT` does) and keeps its row; the items that follow print from there.
+`PRINT AT r, c; TAB col; item` is allowed (AT first, then TAB); a second `TAB` in one PRINT is an error; `TAB` is not a statement of its own. It is a store of one byte into the cursor column (no runtime call).
+
+**FLASH.** `FLASH n` is `BRIGHT` for bit 7 of the text attribute (n AND 1): the cells printed (and `FILLC`ed) after it flash on the TS2068 (ink and paper swap about twice a second). `CLS` clears the cells
+with the paper only, so a cleared cell does not flash. `ENTER` puts flash (like ink, paper and bright) back to 0, and a game starts with 0. Cells made by `TILE`, `FILL` and `LOADMAP` take the tile's or the map's own
+attribute, not the text attribute. (Flash with fine colour is not covered by a test.)
+
+**PEEK and POKE.** Plain loads and stores of one byte, `PEEK(addr)` giving 0..255. `addr` is taken AND 65535 (so `-1` is `$FFFF`), `value` AND 255 (so 256 stores 0 and 300 stores 44); `POKE` evaluates the
+address, then the value. They do not know the memory map: nearly all of the 64 KB belongs to the runtime or the game, so **the checker warns (a warning, never an error, and the code is the same) when the
+address is a constant** (a number, or a CONST expression) in any of these ranges, the same for the v2, v3 and v4 runtimes:
+| Range | What it is | POKE | PEEK |
+|---|---|---|---|
+| `$0000-$3FFF` | the runtime, in the cartridge (read-only) | the write is lost | reads the build's own bytes |
+| `$4000-$7FFF` | the two display files and the runtime's tables | corrupts the picture or a table | its layout changes from build to build |
+| `$8000-$BFFF` | the game and its data, in the cartridge (read-only) | the write is lost | reads the build's own bytes |
+| `$C000-$FFFF` | the runtime's RAM: tables, the screen cells, its variables, the game's variables, the sprite pool, the stack | corrupts the game | its layout changes from build to build |
+So every constant address is reported; an address computed at run time is not (nothing can be known). A `PEEK` warning also says that the **reference interpreter** (the Studio's model of the game, used by the tests) has
+only the bytes the game itself POKEd, in a 64 KB array of zeros, and reads 0 anywhere else; it ignores a POKE into the two read-only ranges, as the cartridge does. On the real machine the games' own data is
+better kept in `DIM` variables and arrays; use `PEEK` / `POKE` for the rare case that needs the machine's memory itself.
+
+## Words of Leap V2 that are not part of Leap Arcade
+`LEN` `USR` `OUT` `IN` `PLOT` `POINT` were in the word table of language version 0 and the compiler never took them. They are out of the table and Help now, and they will not come back: each stays a reserved
+word (a program cannot use one as a variable name by accident) and says why when it is used, as `X is not part of Leap Arcade: <reason>`:
+| Word | Why it is not part of Leap Arcade |
+|---|---|
+| `LEN(s$)` | the language has no strings to measure (text is only printed) |
+| `USR(addr)` | it would let a game call machine code, but the runtime owns the stack and the screen |
+| `OUT port, value` | it would let a game write to a port, but the runtime owns the ULA, the border and the AY chip |
+| `IN(port)` | it would let a game read a port, but the runtime owns the keyboard and the joysticks (use `KEYDOWN` and `STICK`) |
+| `PLOT x, y` | a pixel written to the screen is lost by the runtime's erase and redraw of every tick (draw a sprite or a tile instead) |
+| `POINT(x, y)` | a pixel read from the screen is wrong while the runtime redraws two display files (read a tile with `TILEAT` or keep your own map) |
+The table is `REMOVED_WORDS` in `src/lang/arcade/arcade-words.js`; the message comes from the parser, so it appears in the editor as an error on the word.
+
 ## Rules the compiler enforces
 Static names (no run-time name lookup); 16-bit arithmetic with defined wrap; array bounds checked in the
 debug build only; a `FRAME` that overruns its refresh budget is reported in the Studio's profile, not by stopping.
@@ -162,3 +217,7 @@ debug build only; a `FRAME` that overruns its refresh budget is reported in the 
   start at `PAPER 7 BRIGHT 0` (the state `ENTER` sets); any other PROC starts with both unknown, because a caller can leave any colours. `WIRE3D` warns for `PAPER 0` (explicit or the default) with `BRIGHT 1`,
   `VIEW3D` for `BRIGHT 1` with a black `CEIL` or `FLOOR`. The defaults changed: `WIRE3D` is now `BRIGHT 0` (was 1) and `VIEW3D` is now `BRIGHT 0` (was 1), so a program that relied on either default
   gets different bytes (attribute `$07` / `$0F` instead of `$47` / `$4F`). Warnings never change generated code.
+* 0.10 (2026-11-16, language batch 8, Studio completion stage 6 item C1; tests `tests/arcade-c1-words.mjs`, `tests/arcade-help-data.mjs`): `END`, `PRINT ... TAB col`, `FLASH n`, `PEEK(addr)` and `POKE addr, value` are built (the code generator
+  and the reference interpreter agree tick by tick on the real v2 runtime; no runtime change, every other game's bytes unchanged); the checker warns about a constant PEEK / POKE address (the ranges are in "END, TAB, FLASH, PEEK and POKE"); `LEN` `USR` `OUT` `IN` `PLOT`
+  `POINT` left the word table and Help and stay reserved with the message `X is not part of Leap Arcade: <reason>`. A program that used `FLASH`, `PEEK` or the others got "not supported yet" before and compiles now; a game that did
+  not use them is unchanged.

@@ -28,7 +28,7 @@ const MUTANTS = [
   // ---- the driver: frame dispatch, ENTER, scene start ----
   ['frame dispatch: the first test is DEC A instead of OR A (scene 0 is entered at index 1)', [E(CG, "for (let k = 0; k < n - 1; k++) { if (k === 0) e.or('a'); else e.dec('a'); e.jp('z', target(k)); }", "for (let k = 0; k < n - 1; k++) { e.dec('a'); e.jp('z', target(k)); }")]],
   ['frame dispatch: the last scene is the fall-through of scene 0', [E(CG, "    e.jp(target(n - 1));", "    e.jp(target(0));")]],
-  ['frame dispatch: the stack pointer is not saved at the frame entry (ENTER from FRAME returns to a stale SP)', [E(CG, "    e.label('frame$entry');\n    e.ld(M(spAddr), 'sp');", "    e.label('frame$entry');")]],
+  ['frame dispatch: the stack pointer is not saved at the frame entry (ENTER from FRAME returns to a stale SP)', [E(CG, "    e.ld(M(spAddr), 'sp');\n    if (hasPrologue) emitTickPrologue();", "    if (hasPrologue) emitTickPrologue();")]],
   ['entry$init: the stack pointer is not saved (ENTER from the first INIT)', [E(CG, "else { e.ld(M(sceneSpSlot), 'sp'); e.jp(labelOf('P', 'INIT', 0)); }", "else { e.jp(labelOf('P', 'INIT', 0)); }")]],
   ['scn$enter: the stack is not cut back (the abandoned PROCs stay on it)', [E(CG, "e.ld('sp', M(spAddr)); e.push('af'); e.call('scn$reset');", "e.push('af'); e.call('scn$reset');")]],
   ['scn$enter: the current scene is not stored', [E(CG, "    e.ld(M(curAddr), 'a');\n    for (let k = 0; k < n; k++) {", "    for (let k = 0; k < n; k++) {")]],
@@ -63,7 +63,7 @@ const MUTANTS = [
   ['interpreter: the sound keeps playing', [E(IN, "    sfx.active = false; playCall(); if (chip) chip.silence();", "    playCall(); if (chip) chip.silence();")]],
   ['interpreter: sprites are not hidden', [E(IN, "    for (let i = 0; i < spr.length; i++) spr[i] = V3 ?", "    for (let i = 0; i < 0; i++) spr[i] = V3 ?")]],
   ['interpreter: a v3 sprite keeps its frame', [E(IN, "{ visible: 0, asset: instAsset[i] ?? 0, x: 0, y: 0, frame: 0 } : { ...spr[i], visible: 0 };", "{ ...spr[i], visible: 0 } : { ...spr[i], visible: 0 };")]],
-  ['interpreter: the text state is not reset', [E(IN, "    textAttr = (textAttr & ~0x7F) | BG_ATTR;                                                  // INK 0, PAPER 7, BRIGHT 0\n", "")]],
+  ['interpreter: the text state is not reset', [E(IN, "    textAttr = BG_ATTR;                                                                       // INK 0, PAPER 7, BRIGHT 0, FLASH 0\n", "")]],
   ['interpreter: the scene scope is not rebuilt (variables keep their values)', [E(IN, "    info.scope = new Scope(globalScope);\n    collect(info.scope, info.node, info.fns, info.procs, 'scene', k);\n", "")]],
   ['interpreter: the switch does not run INIT', [E(IN, "      resetMachine(); enterScene(k); execute('INIT');", "      resetMachine(); enterScene(k);")]],
   ['interpreter: ENTER does not abandon the rest of the PROC (it only notes the target)', [E(IN, "case 'Enter': throw new SceneSwitch(sceneIndex.get(up(s.scene.name)), s);", "case 'Enter': pending = sceneIndex.get(up(s.scene.name)); return null;")]],

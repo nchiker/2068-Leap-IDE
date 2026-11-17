@@ -9,7 +9,7 @@
  *   readValue(v, readByte)            -> number[] | null     the element values (1 for a variable), or null when memory is not readable
  *   snapshot(variables, readByte)     -> Map(id -> number[])  every variable's values (ids that cannot be read are left out)
  *   variableId(v)                     -> string               a stable id: the address and the name
- *   changedIds(prev, cur)             -> Set(id)              ids whose values differ (or are new) between two snapshots; an empty `prev` marks nothing
+ *   changedIds(prev, cur)             -> Set(id)              ids whose values differ between two snapshots (an id absent from `prev` is not marked; an empty `prev` marks nothing)
  *   formatNumber(n, {hex, signed})    -> '-5' | '$FFFB'       decimal, or 4-digit hex of the 16-bit pattern
  *   formatValues(values, opts)        -> string               one value, or `[0, 3, 7, ...]` (the first `limit` elements, default 16, then `, ... (N more)`; `all: true` shows every one)
  *   filterVariables(variables, text)  -> variables[]          names and scopes that contain every word of `text` (case-insensitive); empty text keeps all

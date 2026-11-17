@@ -66,6 +66,9 @@
  *   - (language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md) scenes: any number; ENTER does not return, so a statement after it in the same block is "unreachable statement"; a scene
  *     (not the first) that no ENTER names is a warning; the "FOR variable declared later" check looks at the game level plus the PROC's own scene only (another scene's DIM is not visible to it).
  *     (A runtime older than v2 refuses a second scene and ENTER in the code generator, which knows the runtime.)
+ *   - (language batch 8, docs/ARCADE_LANGUAGE.md "END, TAB, FLASH, PEEK and POKE") PEEK and POKE with a constant address (a literal or CONST expression, AND 65535) are a WARNING by range (memoryWarn: the cartridge's two
+ *     read-only chunks, the display files, the runtime's RAM); TAB takes a number 0..31 (an error outside, as AT's column); END in a WIRE3D game warns that the play area stays blank. Nothing else is new: END ends a block
+ *     for the "unreachable statement" warning as before.
  *   - (language batch 7, docs/ARCADE_LANGUAGE_BATCH7.md) `SCENE name NOWINDOW` needs a WINDOW in the game and `NOVIEW` a VIEW3D; the wrong one of the two (NOVIEW in a WINDOW game, NOWINDOW in a VIEW3D game) is an error.
  *   - (language batch 5, docs/ARCADE_LANGUAGE_BATCH5.md) TIMER a, b (a Dim node with `timer: true`) declares ordinary variables like DIM, at the top level or directly in a SCENE (not in a PROC); a
  *     `$` name, an array size and an initialiser are errors; an unused timer gets the usual "variable never used" warning. KEYPRESS(c) takes a key written out exactly as KEYDOWN does;
@@ -913,7 +916,10 @@ class Checker {
           this.range(s.at.col, 0, LIMITS.maxCol, 'the AT column');
           this.wireRowWarn(s.at.row, 'PRINT AT', ctx);
         }
-        if (s.tab) this.numArg(s.tab, ctx, 'the TAB column');
+        if (s.tab) {
+          this.numArg(s.tab, ctx, 'the TAB column');
+          this.range(s.tab, 0, LIMITS.maxCol, 'the TAB column');
+        }
         (s.items ?? []).forEach((it, i) => {
           const t = this.ex(it, ctx); this.printable(it);
           const u = s.usings?.[i];
@@ -990,7 +996,6 @@ class Checker {
       }
       case 'Border': this.numArg(s.value, ctx, 'the value'); this.range(s.value, 0, 7, 'BORDER (0..7)'); return;
       case 'Randomise': if (s.value) this.numArg(s.value, ctx, 'the value'); return;
-      case 'Plot': this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); return;
       case 'Eye':
         if (!this.hasWire) this.err(s, 'EYE needs a WIRE3D: declare the play area first, e.g. WIRE3D ROWS 2 TO 21');
         this.numArg(s.x, ctx, 'x'); this.numArg(s.y, ctx, 'y'); this.numArg(s.z, ctx, 'z'); this.numArg(s.a, ctx, 'the heading');
@@ -1011,8 +1016,10 @@ class Checker {
         this.wireInitWarn(s, 'LINE', ctx);
         this.numArg(s.x0, ctx, 'x0'); this.numArg(s.y0, ctx, 'y0'); this.numArg(s.x1, ctx, 'x1'); this.numArg(s.y1, ctx, 'y1');
         return;
-      case 'Poke': this.numArg(s.addr, ctx, 'the address'); this.numArg(s.value, ctx, 'the value'); return;
-      case 'Out': this.numArg(s.port, ctx, 'the port'); this.numArg(s.value, ctx, 'the value'); return;
+      case 'Poke': this.numArg(s.addr, ctx, 'the address'); this.numArg(s.value, ctx, 'the value'); this.memoryWarn(s.addr, 'POKE'); return;
+      case 'End':
+        if (this.hasWire) this.warn(s, 'END in a WIRE3D game: the runtime clears the play area at the start of every tick and only FRAME draws into it, so after END the play area stays blank (the text, tiles and sprites stay)');
+        return;
       case 'Exit':
         if (s.kind === 'FOR' && ctx.forDepth === 0) this.err(s, 'EXIT FOR outside a FOR loop');
         if (s.kind === 'WHILE' && ctx.whileDepth === 0) this.err(s, 'EXIT WHILE outside a WHILE loop');
@@ -1284,6 +1291,24 @@ class Checker {
     else if (!isKnownKey(k)) this.warn(a, `${fn}(${k}): the runtime scans only A-Z (65..90), 0-9 (48..57), space (32), enter (13), 1 (CAPS SHIFT) and 2 (SYMBOL SHIFT); this key is never held`);
   }
 
+  /**
+   * PEEK / POKE (language batch 8): a constant address (a literal or a CONST expression, taken AND 65535) in memory the runtime owns is a WARNING, never an error, and never changes the code.
+   * The rule is by address range, the same for the v2, v3 and v4 runtimes (docs/ARCADE_LANGUAGE.md "PEEK and POKE"): $0000-$3FFF and $8000-$BFFF are the cartridge (the runtime, and the game
+   * with its data): a POKE is lost and a PEEK reads the build's own bytes; $4000-$7FFF are the display files and tables; $C000-$FFFF the runtime's tables, the cell map, its variables, the game's
+   * variables, the sprite pool and the stack. Every constant address is therefore reported; an address that is not a constant is not. A PEEK also says that the reference interpreter, which has only
+   * the bytes the game itself POKEd, reads 0 anywhere else.
+   */
+  memoryWarn(addrExpr, word) {
+    const k = this.lit(addrExpr);
+    if (k === undefined) return;
+    const a = k & 0xFFFF, hex = `$${a.toString(16).toUpperCase().padStart(4, '0')}`;
+    const fixed = a < 0x4000 || (a >= 0x8000 && a < 0xC000);                      // the cartridge's read-only chunks
+    const what = a < 0x4000 ? 'the runtime in the cartridge (read-only)' : a < 0x8000 ? 'the two display files and the runtime\'s tables'
+      : a < 0xC000 ? 'the game and its data in the cartridge (read-only)' : 'the runtime\'s RAM: its tables, the screen cells, its variables, the game\'s variables, the sprite pool and the stack';
+    if (word === 'POKE') this.warn(addrExpr, fixed ? `POKE ${hex}: this is ${what}; the write is lost` : `POKE ${hex}: this is ${what}; a write corrupts the running game (the layout changes from one runtime build to the next)`);
+    else this.warn(addrExpr, `PEEK(${hex}): this is ${what}; ${fixed ? 'it reads the build\'s own bytes' : 'its layout changes from one runtime build to the next'}, and the reference interpreter, which has only the bytes the game POKEd itself, reads 0 here`);
+  }
+
   func(e, ctx) {
     const entry = FUNCTIONS.get(e.name);
     if (!entry) { for (const a of e.args ?? []) this.ex(a, ctx); return '?'; }
@@ -1321,6 +1346,7 @@ class Checker {
         if (t !== '?' && t !== spec.type) this.err(a, `argument ${i + 1} of ${entry.name} must be ${typeWord(spec.type)}, not ${typeWord(t)}`);
       } else this.assetRef(a, spec.type, { ...ctx, hitCtx: entry.name === 'HIT' });
     });
+    if (entry.name === 'PEEK' && args.length === 1) this.memoryWarn(args[0], 'PEEK');
     if (entry.name === 'TILEAT') {
       this.range(args[0], 0, LIMITS.maxCol, 'TILEAT x (the column)');
       this.range(args[1], 0, LIMITS.maxRow, 'TILEAT y (the row)');

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import * as A from '../src/tools/asset-thumbs.js';
 import * as S from '../src/tools/sprite-model.js';
 import * as T from '../src/tools/tile-model.js';
+import * as M from '../src/tools/map-model.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -178,6 +179,208 @@ console.log('5  deterministic, no side effects');
   ].map((t) => `${t.w}x${t.h}:${Buffer.from(t.rgba).toString('base64')}`).join('|');
   check('the same assets give byte-identical pictures twice', run() === run());
   check('the assets are not modified', J(assets) === before);
+}
+
+// ── 6 ──
+// Added with the mutation suite tests/m20-thumbs-mutations.mjs. A reference built only from the header's description (a picture of w x h source pixels, scaled to fit the box: a whole-number
+// enlargement or nearest-neighbour sampling at pixel centres; the colours of sprite-model / tile-model / map-model through the palette) and compared byte for byte with the module on
+// many sizes, boxes, palettes, roles and random contents.
+console.log('6  against a reference built from the header');
+{
+  let seed = 987654321;
+  const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff;
+  const ri = (n) => Math.floor(rnd() * n);
+  const rgbN = (c) => (c[0] << 16) | (c[1] << 8) | c[2];
+  const sameBytes = (a, b) => !!a && !!b && a.w === b.w && a.h === b.h && !!a.placeholder === !!b.placeholder && !!a.noTileset === !!b.noTileset && Buffer.compare(Buffer.from(a.rgba), Buffer.from(b.rgba)) === 0;
+  const bad = (a, b) => { if (!a || !b) return 'missing'; if (a.w !== b.w || a.h !== b.h) return `size ${a.w}x${a.h} against ${b.w}x${b.h}`; let n = 0; for (let i = 0; i < a.rgba.length; i++) if (a.rgba[i] !== b.rgba[i]) n++; return `${n} bytes differ, noTileset ${a.noTileset} / ${b.noTileset}`; };
+  /** sample(x, y) -> packed 0xRRGGBB or -1 (transparent) */
+  function refRender(sw, sh, sample, box) {
+    const m = Math.max(sw, sh), s = box / m, k = Math.floor(s);
+    const ow = k >= 1 ? sw * k : Math.max(1, Math.round(sw * s)), oh = k >= 1 ? sh * k : Math.max(1, Math.round(sh * s));
+    const rgba = new Uint8ClampedArray(ow * oh * 4);
+    for (let oy = 0; oy < oh; oy++) for (let ox = 0; ox < ow; ox++) {
+      const v = sample(Math.min(sw - 1, Math.floor((ox + 0.5) * sw / ow)), Math.min(sh - 1, Math.floor((oy + 0.5) * sh / oh)));
+      if (v >= 0) rgba.set([(v >> 16) & 255, (v >> 8) & 255, v & 255, 255], (oy * ow + ox) * 4);
+    }
+    return { w: ow, h: oh, rgba };
+  }
+  const palettes = [undefined, Array.from({ length: 16 }, (_, i) => ({ name: 'c' + i, rgb: [(i * 37 + 11) & 255, (i * 53 + 5) & 255, (i * 91 + 3) & 255] }))];
+  const colourOf = (key, pal) => rgbN(S.keyRGB(S.normKey(key), pal));
+  const hex = (n, bytes) => Array.from({ length: bytes }, () => ri(256).toString(16).padStart(2, '0')).join('').toUpperCase().slice(0, bytes * 2) || '00';
+
+  // ---- the box: clamped and rounded (every kind of picture) ----
+  {
+    const cubeM = { points: [[-20, -20, -20], [20, 20, 20]], edges: [[0, 1]] };
+    const w = (box) => A.thumbModel(cubeM, { box }).w;                                // a model's picture is exactly box x box
+    check('box: rounded to the nearest whole number (4.4 is 4, 4.6 is 5, 19.5 is 20) and clamped to 4 .. 256 (255 stays 255, 257 is 256)', w(4.4) === 4 && w(4.6) === 5 && w(19.5) === 20 && w(255) === 255 && w(256) === 256 && w(257) === 256 && w(2) === 4 && w(0) === 4 && w(-5) === 4 && w(1e9) === 256 && w(undefined) === 48 && w('64') === 64);
+    const pl = A.placeholder;
+    check('placeholder(box): the default is 48, a zero or non-number is 48, the box is rounded and clamped to 4 .. 256 (255 stays 255, 300 is 256, 2 is 4)', pl().w === 48 && pl(0).w === 48 && pl('x').w === 48 && pl(NaN).w === 48 && pl(4.4).w === 4 && pl(4.6).w === 5 && pl(255).w === 255 && pl(300).w === 256 && pl(2).w === 4 && pl(100).h === 100);
+    // the picture: a 1-pixel outline and both diagonals in [120, 128, 140], everything else transparent
+    const odd = [4, 5, 9, 10, 31];
+    const wrong = odd.filter((n) => { const t = pl(n); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const on = x === 0 || y === 0 || x === n - 1 || y === n - 1 || x === y || x + y === n - 1; const px = pixelAt(t, x, y); if (J(px) !== J(on ? [120, 128, 140, 255] : [0, 0, 0, 0])) return true; } return t.placeholder !== true; });
+    check('placeholder: the outline, both diagonals and nothing else, in [120, 128, 140, 255], for even and odd boxes', wrong.length === 0, wrong.join());
+  }
+
+  // ---- sprites ----
+  {
+    const sizes = [[8, 1], [8, 8], [16, 16], [24, 7], [32, 32], [32, 40], [8, 33], [16, 3], [32, 5]];
+    const boxes = [4, 7, 20, 36, 48, 100, 256];
+    let bad1 = 0, first = '', n = 0, fcyc = 0;
+    for (const [w, h] of sizes) {
+      const frames = [0, 1, 2].map(() => ({ rows: Array.from({ length: h }, () => ({ bits: hex(0, 0) || '', mask: '', ink: ri(8), paper: ri(8), bright: ri(2) })) }));
+      for (const fr of frames) for (const r of fr.rows) { r.bits = hex(0, w / 8); r.mask = ri(3) === 0 ? 'FF'.repeat(w / 8) : hex(0, w / 8); }
+      const asset = { w, h, phases: 8, frames };
+      const sprite = S.fromAsset(asset);
+      for (const box of boxes) for (const pal of palettes) for (const frame of [[undefined, 0, 1, 2], [3, 99, -1, 1.5]][fcyc++ % 2]) {
+        n++;
+        const f = Math.max(0, Math.min(sprite.frames.length - 1, Number.isInteger(frame) ? frame : 0)), keys = S.framePixels(sprite, f);
+        const ref = refRender(w, h, (x, y) => { const k = keys[y * w + x]; return k < 0 ? -1 : colourOf(k, pal); }, box);
+        const got = A.thumbSprite(asset, { box, frame, palette: pal });
+        if (!sameBytes(got, ref)) { bad1++; first ||= `${w}x${h} box ${box} frame ${frame}: ${bad(got, ref)}`; }
+      }
+    }
+    check(`thumbSprite equals the reference on ${n} (size, box, palette, frame) cases: frames 0..2 chosen, 3, 99 and -1 clamped, 1.5 and undefined are frame 0`, bad1 === 0, first);
+    const tr = { w: 8, h: 1, phases: 8, frames: [{ rows: [{ bits: '00', mask: 'FF', ink: 7, paper: 0, bright: 0 }] }] };
+    const p0 = pixelAt(A.thumbSprite(tr, { box: 8 }), 0, 0);
+    check('a pixel of palette colour 0 (black) is opaque black; only a clear mask is transparent', J(p0) === J([0, 0, 0, 255]));
+    const bright = { w: 8, h: 1, phases: 8, frames: [{ rows: [{ bits: '80', mask: 'FF', ink: 7, paper: 7, bright: 1 }] }] };
+    check('BRIGHT white is key 15 (the last palette entry) and shows as such', J(pixelAt(A.thumbSprite(bright, { box: 8 }), 0, 0)) === J([...S.keyRGB(15), 255]) && J(pixelAt(A.thumbSprite(bright, { box: 8, palette: palettes[1] }), 0, 0)) === J([...palettes[1][15].rgb, 255]));
+  }
+
+  // ---- tile sets ----
+  {
+    const mkTile = (colourRows) => { const base = { ink: ri(8), paper: ri(8), bright: ri(2) }; return { rows: Array.from({ length: 8 }, () => ({ bits: hex(0, 1), ...(colourRows ? { ink: ri(8), paper: ri(8), bright: ri(2) } : base) })), flags: 0 }; };
+    let bad2 = 0, first = '', n = 0;
+    for (const count of [1, 2, 3, 4, 5, 9, 17, 50, 127, 128, 129, 140]) for (const rowColours of [false, true]) {
+      if (count > 128) { const big = { tiles: Array.from({ length: count }, () => mkTile(false)) }; if (!A.thumbTileset(big).placeholder) { bad2++; first ||= `${count} tiles are over the limit of a set (128): a placeholder expected`; } continue; }
+      const asset = { tiles: Array.from({ length: count }, () => mkTile(rowColours)) };
+      const set = T.fromAsset(asset);
+      for (const box of [4, 16, 48, 100, 256]) for (const pal of palettes) for (const fine of [[undefined, true, false][n % 3]]) {
+        n++;
+        const n_ = set.tiles.length, cols = Math.min(16, Math.ceil(Math.sqrt(n_))), rows = Math.ceil(n_ / cols);
+        const px = set.tiles.map((t) => Array.from(T.tilePixels(t, { fine: T.hasRowColours(t) }), (k) => colourOf(k, pal)));
+        const ref = refRender(cols * 8, rows * 8, (x, y) => { const i = (y >> 3) * cols + (x >> 3); return i < n_ ? px[i][(y & 7) * 8 + (x & 7)] : -1; }, box);
+        const got = A.thumbTileset(asset, { box, palette: pal, fine });
+        if (!sameBytes(got, ref)) { bad2++; first ||= `${count} tiles rowColours ${rowColours} box ${box}: ${bad(got, ref)}`; }
+      }
+    }
+    check(`thumbTileset equals the reference on ${n} (tile count 1..128, row colours or not, box, palette, opts.fine) cases; 129 tiles is a placeholder`, bad2 === 0, first);
+    const t127 = { tiles: Array.from({ length: 128 }, (_, i) => ({ rows: Array.from({ length: 8 }, () => ({ bits: '00', ink: 0, paper: (i % 7) + 1, bright: 0 })), flags: 0 })) };
+    const g = A.thumbTileset(t127, { box: 256 }), cols = 12, rows = 11;
+    check('128 tiles: a 12 x 11 grid, the last tile (127) is drawn in its place and the cell after it is transparent, 16 columns at most', g.w === 12 * 8 * 2 && g.h === 11 * 8 * 2 && J(pixelAt(g, 7 * 16 + 4, 10 * 16 + 4)) === J([...S.keyRGB((127 % 7) + 1), 255]) && pixelAt(g, 8 * 16 + 4, 10 * 16 + 4)[3] === 0 && A.thumbTileset({ tiles: t127.tiles.slice(0, 17) }, { box: 256 }).w === 5 * 8 * 6 && cols * rows >= 128);
+    check('opts.fine changes nothing (a map\'s ctx.fine neither): a tile with a colour of its own in each row is always drawn row by row, one without has the same colour in every row',
+      (() => { const a = { tiles: [mkTile(true), mkTile(false)] }; return sameBytes(A.thumbTileset(a, { box: 32, fine: true }), A.thumbTileset(a, { box: 32, fine: false })) && sameBytes(A.thumbTileset(a, { box: 32 }), A.thumbTileset(a, { box: 32, fine: true })); })());
+  }
+
+  // ---- maps ----
+  {
+    const FP = [null, 13, 12, 9, 11];
+    const mapEditorSrc = readFileSync(join(ROOT, 'src/tools/map-editor.js'), 'utf8');
+    check('the floor plan colours are the map editor\'s own (FP_COLOURS, empty #14161c, odd code #7a3cff)', mapEditorSrc.includes('FP_COLOURS = [null, 13, 12, 9, 11]') && mapEditorSrc.includes("'#14161c'") && mapEditorSrc.includes("'#7a3cff'"));
+    const BLANKC = rgbN([38, 42, 49]), UNDEF = rgbN([58, 29, 29]), EMPTY = rgbN([20, 22, 28]), ODD = rgbN([122, 60, 255]);
+    const grey = (t) => { const v = Math.min(235, 85 + ((t * 37) % 120)); return (v << 16) | (v << 8) | v; };
+    const mkTile = () => ({ rows: Array.from({ length: 8 }, () => ({ bits: hex(0, 1), ink: ri(8), paper: ri(8), bright: ri(2) })), flags: 0 });
+    function refMap(asset, ctx, opts) {
+      const m = M.fromAsset(asset), role = ctx?.role === 'world' || ctx?.role === 'floorplan' ? ctx.role : 'cell';
+      const pal = opts.palette ?? ctx?.palette;
+      let tiles = null;
+      if (role !== 'floorplan' && ctx?.tileset) { try { tiles = T.fromAsset(ctx.tileset).tiles.map((t) => Array.from(T.tilePixels(t, { fine: T.hasRowColours(t) }), (k) => colourOf(k, pal))); } catch { tiles = null; } }
+      const avg = tiles && tiles.map((px) => [16, 8, 0].map((sh) => Math.round(px.reduce((s, v) => s + ((v >> sh) & 255), 0) / 64))).map((c) => (c[0] << 16) | (c[1] << 8) | c[2]);
+      const cellT = (v) => (v === -1 ? (role === 'world' ? 0 : null) : v);
+      const flat = (v) => {
+        if (role === 'floorplan') { const code = v < 0 ? 0 : v; return code === 0 ? EMPTY : code <= 4 ? rgbN(S.keyRGB(FP[code], pal)) : ODD; }
+        const t = cellT(v);
+        if (t === null) return BLANKC;
+        if (!tiles) return grey(t);
+        return t < tiles.length ? avg[t] : UNDEF;
+      };
+      const sw = m.w * 8, sh = m.h * 8, cellOut = 8 * (opts.box ?? 48) / Math.max(sw, sh);
+      const useAvg = cellOut < 3 || role === 'floorplan' || !tiles;
+      const out = refRender(sw, sh, (x, y) => {
+        const v = m.cells[(y >> 3) * m.w + (x >> 3)];
+        if (useAvg) return flat(v);
+        const t = cellT(v);
+        return t !== null && t < tiles.length ? tiles[t][(y & 7) * 8 + (x & 7)] : flat(v);
+      }, opts.box ?? 48);
+      if (role !== 'floorplan' && !tiles) out.noTileset = true;
+      return out;
+    }
+    const tsets = [null, { tiles: Array.from({ length: 1 }, mkTile) }, { tiles: Array.from({ length: 5 }, mkTile) }, { tiles: Array.from({ length: 128 }, mkTile) }];
+    const shapes = [[1, 1], [3, 2], [4, 4], [12, 12], [16, 4], [16, 16], [32, 24], [13, 7], [7, 13], [40, 3], [3, 40], [100, 1], [1, 100], [32, 32]];
+    const boxes = [4, 12, 20, 36, 48, 64, 100];
+    let cyc = 0;
+    let bad3 = 0, first = '', n = 0;
+    for (const [w, h] of shapes) for (const role of ['cell', 'world', 'floorplan', undefined, 'other']) for (const ts of tsets.filter((t) => !t || t.tiles.length < 128 || w * h <= 64)) {
+      const cells = Array.from({ length: w * h }, () => { const r = rnd(); return r < 0.15 ? 255 : r < 0.25 ? 5 + ri(5) : r < 0.3 ? 0 : ri(role === 'floorplan' ? 6 : 8); });
+      const asset = { w, h, cells };
+      for (const box of boxes) for (const palIn of [['none', 'ctx', 'opts'][cyc++ % 3]]) {
+        const pal = palettes[palIn === 'none' ? 0 : 1];
+        const ctx = { tileset: ts, role, ...(palIn === 'ctx' ? { palette: pal } : {}) }, opts = { box, ...(palIn === 'opts' ? { palette: pal } : {}) };
+        n++;
+        const got = A.thumbMap(asset, ctx, opts), ref = refMap(asset, ctx, opts);
+        if (!sameBytes(got, ref)) { bad3++; first ||= `${w}x${h} role ${role} tiles ${ts?.tiles.length ?? 0} box ${box} palette ${palIn}: ${bad(got, ref)}`; }
+      }
+    }
+    check(`thumbMap equals the reference on ${n} (shape, role, tile set, box, palette in the context or in the options) cases, noTileset included`, bad3 === 0, first);
+    const rcSet = { tiles: Array.from({ length: 3 }, () => ({ rows: Array.from({ length: 8 }, () => ({ bits: hex(0, 1), ink: ri(8), paper: ri(8), bright: ri(2) })), flags: 0 })) };
+    const fm = { w: 3, h: 2, cells: [0, 1, 2, 1, 0, 255] };
+    check('ctx.fine and opts.fine change nothing in a map either (a tile with a colour of its own in each row is always drawn row by row)', sameBytes(A.thumbMap(fm, { tileset: rcSet, fine: true }, { box: 48, fine: true }), A.thumbMap(fm, { tileset: rcSet, fine: false }, { box: 48 })) && colours(A.thumbMap(fm, { tileset: rcSet }, { box: 48 })).size > 3);
+    // the decision between textured and flat cells is made on the size of one cell in the picture: exactly 3 pixels is textured, 2 is flat
+    const ts1 = { tiles: [{ rows: Array.from({ length: 8 }, (_, y) => ({ bits: 'CC', ink: 2, paper: 5, bright: 0 })), flags: 0 }] };      // columns 0, 1, 4, 5 set: any 3 or 4 samples of a cell see both colours
+    const textured = (w, h, box) => { const t = A.thumbMap({ w, h, cells: new Array(w * h).fill(0) }, { tileset: ts1 }, { box }); return colours(t).size > 1; };
+    check('a cell of 3 pixels in the picture shows the tile\'s pixels, a cell of 2 pixels its average colour (one colour), a cell of 4 pixels the tile', textured(16, 4, 48) && !textured(16, 4, 32) && textured(16, 4, 64) && textured(12, 12, 36) && !textured(12, 12, 35));
+    check('a floor plan with a tile set given is still the wall colours, and its wall codes 1..4 are the map editor\'s palette entries', J(pixelAt(A.thumbMap({ w: 5, h: 1, cells: [0, 1, 2, 3, 4] }, { role: 'floorplan', tileset: ts1 }, { box: 40 }), 9, 4)) === J([...S.keyRGB(13), 255]) &&
+      [1, 2, 3, 4].every((c) => J(pixelAt(A.thumbMap({ w: 5, h: 1, cells: [0, 1, 2, 3, 4] }, { role: 'floorplan' }, { box: 40 }), c * 8 + 4, 4)) === J([...S.keyRGB(FP[c]), 255])) &&
+      J(pixelAt(A.thumbMap({ w: 2, h: 1, cells: [0, 9] }, { role: 'floorplan' }, { box: 16 }), 12, 4)) === J([122, 60, 255, 255]) && J(pixelAt(A.thumbMap({ w: 2, h: 1, cells: [255, 0] }, { role: 'floorplan' }, { box: 16 }), 4, 4)) === J([20, 22, 28, 255]));
+    const g1 = A.thumbMap({ w: 3, h: 1, cells: [1, 2, 254] }, {}, { box: 24 });
+    check('without a tile set the cell of tile t is the grey 85 + (t * 37 mod 120)(t = 1: 122, t = 2: 159, t = 254: 85 + 38 = 123)', J(pixelAt(g1, 4, 4)) === J([122, 122, 122, 255]) && J(pixelAt(g1, 12, 4)) === J([159, 159, 159, 255]) && J(pixelAt(g1, 20, 4)) === J([123, 123, 123, 255]));
+  }
+
+  // ---- models: the standard integer line (Bresenham, both ends) over the preview's own segments ----
+  {
+    const { previewSegments } = await import('../src/tools/model-preview.js');
+    const FG = [140, 200, 255], BG = [24, 28, 36];
+    const refModel = (asset, box, fg = FG, bg = BG) => {
+      const rgba = new Uint8ClampedArray(box * box * 4);
+      for (let i = 0; i < box * box; i++) rgba.set([...bg, 255], i * 4);
+      const st = { outside: 0, onEdge: 0, drawn: 0 };
+      const set = (x, y) => { if (x < 0 || x >= box || y < 0 || y >= box) { st.outside++; return; } if (x === 0 || y === 0 || x === box - 1 || y === box - 1) st.onEdge++; st.drawn++; rgba.set([...fg, 255], (y * box + x) * 4); };
+      for (const seg of previewSegments(asset, 0.6, box, box)) {
+        if (!seg.every(Number.isFinite)) continue;
+        let [x0, y0, x1, y1] = seg.map(Math.round);
+        const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        let err = dx - dy;
+        for (;;) {
+          set(x0, y0);
+          if (x0 === x1 && y0 === y1) break;
+          const e2 = 2 * err;
+          if (e2 >= -dy) { err -= dy; x0 += sx; }        // ties step both axes (the module's own rule)
+          if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+      }
+      return { img: { w: box, h: box, rgba }, ...st };
+    };
+    const models = [];
+    const cube = (r) => ({ points: [[-r, -r, -r], [r, -r, -r], [r, r, -r], [-r, r, -r], [-r, -r, r], [r, -r, r], [r, r, r], [-r, r, r]], edges: [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]] });
+    models.push(cube(20), cube(1), { points: [[0, 0, 0], [0, 40, 0]], edges: [[0, 1]] }, { points: [[-30, 0, 0], [30, 0, 0]], edges: [[0, 1]] }, { points: [[-30, -2, -30], [30, 3, 30]], edges: [[0, 1]] },
+      { points: [[0, 0, -40], [0, 0, 40], [40, 0, 0], [-40, 0, 0]], edges: [[0, 1], [2, 3], [0, 2], [1, 3]] }, { points: [[1, 2, 3], [4, 5, 6], [1e300, 0, 0]], edges: [[0, 1], [1, 2]] });
+    for (let i = 0; i < 40; i++) {
+      const np = 2 + ri(8), pts = Array.from({ length: np }, () => [ri(80) - 40, ri(80) - 40, ri(80) - 40]), ne = 1 + ri(12);
+      models.push({ points: pts, edges: Array.from({ length: ne }, () => [ri(np), ri(np)]) });
+    }
+    let bad4 = 0, first = '', n = 0, outsideTotal = 0, edgeTotal = 0, drawnTotal = 0;
+    for (const model of models) for (const box of [4, 5, 9, 16, 36, 48, 100, 256]) for (const colours_ of [undefined, { fg: [250, 10, 20], bg: [1, 2, 3] }]) {
+      n++;
+      const ref = refModel(model, box, colours_?.fg, colours_?.bg), got = A.thumbModel(model, { box, ...(colours_ ?? {}) });
+      outsideTotal += ref.outside; edgeTotal += ref.onEdge; drawnTotal += ref.drawn;
+      const r = previewSegments(model, 0.6, box, box).length ? ref.img : A.placeholder(box);
+      if (!sameBytes(got, r)) { bad4++; first ||= `box ${box} model ${J(model).slice(0, 60)}: ${bad(got, r)}`; }
+    }
+    check(`thumbModel equals the standard integer line over previewSegments(model, 0.6, box, box) on ${n} (model, box, colours) cases (${drawnTotal} pixels drawn)`, bad4 === 0, first);
+    check('no line reaches the border of the box or leaves it (previewSegments keeps every end within 0.89 * (box / 2 - 2) of the centre), so the bounds test of the module\'s plot() is only a guard', edgeTotal === 0 && outsideTotal === 0, `${edgeTotal} border pixels, ${outsideTotal} outside`);
+    const longLine = A.thumbModel({ points: [[-30, 0, 0], [30, 0, 0]], edges: [[0, 1]] }, { box: 256 });
+    check('a long line (over 120 pixels) is drawn whole', Array.from(longLine.rgba).filter((_, i) => i % 4 === 0 && longLine.rgba[i] > 100).length > 120);
+  }
 }
 
 console.log(`\n${failed ? failed + ' FAILED, ' : ''}${passed} passed`);

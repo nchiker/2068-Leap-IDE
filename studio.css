@@ -72,8 +72,7 @@
 .problem.warning .p-sev { color: var(--amber-fg); }
 .problem .p-where { color: var(--fg-muted); white-space: nowrap; }
 .problem .p-msg { color: var(--fg); }
-/* No debugger yet: the breakpoint gutter would do nothing */
-.studio-root .cm-breakpoint-gutter { display: none; }
+/* R4: the breakpoint gutter is the source debugger's (stage 6) */
 
 /* Right: display, symbols, asset editors */
 .panel-right { flex: 0 0 auto; min-width: 340px; background: var(--bg); }

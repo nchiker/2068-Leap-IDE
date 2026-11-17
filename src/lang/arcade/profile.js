@@ -58,8 +58,8 @@ const help = {
     { title: 'Operators', test: (e) => e.kind === 'operator' },
   ],
   shortcuts: {
-    step: 'Not available yet (the Arcade debugger comes later)',
-    pause: 'Not available yet',
+    step: 'F10: run one tick and hold; F11 steps a source line and Shift+F11 steps over a call, at a breakpoint (click the gutter)',
+    pause: 'F8: pause or continue the game (at a breakpoint: continue)',
     open: 'Open a .leapgame project or a .arc source file',
     definition: 'Go to where a procedure, function, variable or scene is defined',
     rename: 'Rename the procedure, function or variable at the cursor everywhere (in this file)',
@@ -154,7 +154,7 @@ export function compileWithBuilds(builds, project, { replace = null, onBuild = n
   const at = (d) => locate(src.lineMap, d);
   return {
     ok: res.errors.length === 0 && !!res.dck,
-    dck: res.dck, map: res.map, usage: res.usage, scenes: res.scenes ?? null, variables: res.variables ?? null,      // (variables: where every DIM'd name lives, the Variables tab)
+    dck: res.dck, map: res.map && res.gen ? { ...res.map, codeEnd: res.gen.base + res.gen.code.length } : res.map, usage: res.usage, scenes: res.scenes ?? null, variables: res.variables ?? null,      // (variables: where every DIM'd name lives, the Variables tab)
     errors: res.errors.map(at), warnings: res.warnings.map(at),
     order: src.order, lineCount: src.lineMap.length, ms, build,
   };
