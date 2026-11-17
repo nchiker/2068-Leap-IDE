@@ -141,7 +141,7 @@ console.log('\n2. sceneDisplayPlan: built');
   eq('version 2 explicitly: fine', plan(TWO, FINE('a'), 2)[0].built, 'fine');
   const w = plan(WIREG, FINE('x'));
   check_('a WIRE3D game: built "buffers"', w[0].built === 'buffers' && w[0].setting === 'fine', JSON.stringify(w[0]));
-  check_('the entries have exactly the keys they had', Object.keys(p[0]).join() === 'name,line,col,auto,reason,override,setting,built,notes');
+  check_('the entries have exactly the keys they had', Object.keys(p[0]).join() === 'name,line,col,auto,reason,override,setting,built,spriteColour,notes');
 }
 
 // =================================================================================================================
@@ -189,7 +189,7 @@ console.log('\n3. compile(): fine colour needs v2 and no WIRE3D');
   check_('a tile row 3 with ink 9 and a sprite row with ink 12: both build without a fine scene', build(TWO, FAKE2, badTile).errors.length === 0 && build(TWO, FAKE2, badSp).errors.length === 0);
   eq('... and in a fine game the tile is an error on the TILESET line', build(TWO, FAKE2, badTile, FINE('a')).errors.map((e) => [e.line, e.message]), [[lineOf(TWO, 'TILESET'), 'tileset "ts": tile 0 row 3 ink must be a whole number 0..7, got 9']]);
   eq('... and the sprite is an error on the SPRITE line', build(TWO, FAKE2, badSp, FINE('a')).errors.map((e) => [e.line, e.message]), [[lineOf(TWO, 'SPRITE'), 'sprite "sp": row 2 ink must be a whole number 0..7, got 12']]);
-  eq('requiredRuntime is unaffected (a game with a fine scene is v2 unless it uses a v3 word)', [requiredRuntime(TWO, FA), requiredRuntime(flip, FA).version], [{ version: 2, reasons: [] }, 3]);
+  eq('requiredRuntime is unaffected (a game with a fine scene is v2 unless it uses a v3 word)', [requiredRuntime(TWO, FA), requiredRuntime(flip, FA).version], [{ version: 2, reasons: [], ink: false }, 3]);
 }
 
 // =================================================================================================================

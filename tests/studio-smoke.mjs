@@ -387,7 +387,7 @@ try {
     'SCENE play\n  DIM x\n  PROC INIT()\n  ENDP\n  PROC FRAME()\n    SHOW ball AT x, 8\n  ENDP\nENDSCENE\n';
   check('a one-scene game hides the Scenes group', await evaluate("document.getElementById('scene-section').hidden && document.querySelectorAll('#scene-list .scene-row').length === 0"));
   await setSource(TWO);
-  const rows = await waitFor(`(() => { const r = [...document.querySelectorAll('#scene-list .scene-row')]; return r.length === 2 ? r.map((x) => ({ name: x.dataset.scene, start: x.querySelector('.scene-start').textContent, plan: x.querySelector('.scene-plan').textContent, value: x.querySelector('select').value, opts: [...x.querySelectorAll('option')].map((o) => o.value + (o.disabled ? '!' : '')).join() })) : null; })()`, 8000);
+  const rows = await waitFor(`(() => { const r = [...document.querySelectorAll('#scene-list .scene-row')]; return r.length === 2 ? r.map((x) => ({ name: x.dataset.scene, start: x.querySelector('.scene-start').textContent, plan: x.querySelector('.scene-plan').textContent, value: x.querySelector('select').value, opts: [...x.querySelectorAll('select.scene-select option')].map((o) => o.value + (o.disabled ? '!' : '')).join() })) : null; })()`, 8000);
   check('a two-scene game shows the Scenes group with two rows (the plan is there although code generation may refuse two scenes)', !!rows && !(await evaluate("document.getElementById('scene-section').hidden")), JSON.stringify(rows));
   check('the first scene carries the start marker, the second none', rows && rows[0].name === 'title' && rows[0].start === '▶' && rows[1].name === 'play' && rows[1].start === '', JSON.stringify(rows));
   check('E4: the plan text is plain words: "Drawn with two screen buffers, swapped every tick, because sprites move." for play; the text-only title says it is drawn with two buffers for now',
@@ -411,6 +411,20 @@ try {
   check('it is auto-saved with the project', JSON.stringify(savedScenes) === '{"play":{"display":"buffers"}}', JSON.stringify(savedScenes));
   const after = await evaluate(`({ value: document.querySelector('#scene-list select[data-scene="play"]').value, rows: document.querySelectorAll('#scene-list .scene-row').length, fine: !!document.querySelector('#scene-list select[data-scene="play"] option[value="fine"]') })`);
   check('after the recompile the group is rebuilt with the choice kept (finer colour is offered: the game builds on runtime v2)', after.value === 'buffers' && after.rows === 2 && after.fine === true, JSON.stringify(after));
+  // sprite colour (SC step 8): the "Sprite colour: off / ink" select under each scene's display select
+  const inkSel = await evaluate(`[...document.querySelectorAll('#scene-list .scene-row')].map((r) => ({ scene: r.dataset.scene, label: r.querySelector('.scene-ink span')?.textContent, value: r.querySelector('.scene-ink-select')?.value, opts: [...r.querySelectorAll('.scene-ink-select option')].map((o) => o.value + ':' + o.textContent).join(), displaySelects: r.querySelectorAll('select.scene-select').length }))`);
+  check('SC: each scene of a runtime v2 game has a "Sprite colour: off / ink" select, off chosen, next to (not instead of) the display select', inkSel.length === 2 && inkSel.every((r) => r.label === 'Sprite colour: ' && r.value === 'none' && r.opts === 'none:off,ink:ink' && r.displaySelects === 1), JSON.stringify(inkSel));
+  await evaluate(`(() => { const s = document.querySelector('#scene-list .scene-ink-select[data-ink-scene="play"]'); s.value = 'ink'; s.dispatchEvent(new Event('change')); return true; })()`);
+  const inkOn = await waitFor(`(() => { const l = document.getElementById('sb-runtime').textContent; return l === 'runtime v2 (sprite colour)' ? { scenes: JSON.stringify(leapStudio.project.scenes), dirty: !document.getElementById('dirty-mark').hidden, label: l, display: document.querySelector('#scene-list select.scene-select[data-scene="play"]').value, ink: document.querySelector('#scene-list .scene-ink-select[data-ink-scene="play"]').value, plan: [...document.querySelectorAll('#scene-list .scene-row')].find((r) => r.dataset.scene === 'play').querySelector('.scene-plan').textContent, ok: leapStudio.lastCompile.ok, rt: leapStudio.lang.runtimeLabel() } : null; })()`, 12000);
+  check('SC: choosing "ink" writes scenes.play.spriteColour beside the display, marks the project changed, and the status bar says "runtime v2 (sprite colour)"',
+    !!inkOn && inkOn.scenes === '{"play":{"display":"buffers","spriteColour":"ink"}}' && inkOn.dirty && inkOn.display === 'buffers' && inkOn.ink === 'ink', JSON.stringify(inkOn));
+  check('SC: the scene\'s plan text says sprite colour is on', !!inkOn && /Sprite colour is on/.test(inkOn.plan), inkOn?.plan);
+  await sleep(1200);
+  const inkSaved = await evaluate(`JSON.parse(localStorage.getItem('leap-studio.project')).scenes`);
+  check('SC: it is auto-saved with the project', JSON.stringify(inkSaved) === '{"play":{"display":"buffers","spriteColour":"ink"}}', JSON.stringify(inkSaved));
+  await evaluate(`(() => { const s = document.querySelector('#scene-list .scene-ink-select[data-ink-scene="play"]'); s.value = 'none'; s.dispatchEvent(new Event('change')); return true; })()`);
+  const inkOff = await waitFor(`(() => { const l = document.getElementById('sb-runtime').textContent; return l === 'runtime v2' ? JSON.stringify(leapStudio.project.scenes) : null; })()`, 12000);
+  check('SC: choosing "off" removes the key again and the label goes back to "runtime v2"', inkOff === '{"play":{"display":"buffers"}}', String(inkOff));
   // a project that carries "fine" (loaded from a file): the option is shown and selectable; fine is built, so only the unknown 'q' warns
   await evaluate(`(() => { const p = JSON.parse(JSON.stringify(leapStudio.project)); p.scenes.play.display = 'fine'; p.scenes.title = { display: 'q' }; leapStudio.openProject(p, {saved: false}); return true; })()`);
   const fineRow = await waitFor(`(() => { const s = document.querySelector('#scene-list select[data-scene="play"]'); return s ? [s.value, s.querySelector('option[value="fine"]').disabled, document.querySelector('#scene-list select[data-scene="title"]').value].join() : null; })()`, 8000);
@@ -1026,7 +1040,7 @@ try {
   // host: exampleEffects()
   const fx = await evaluate(`(async () => { const h = leapStudio.makeHost('smoke-fx'); const a = h.exampleEffects(), b = h.exampleEffects(); const list = await a;
     return { same: a === b, n: list.length, games: [...new Set(list.map((x) => x.game))].length, shape: list.every((x) => typeof x.game === 'string' && typeof x.name === 'string' && Array.isArray(x.sfx?.ticks)), one: list[0] && Object.keys(list[0]).join() }; })()`);
-  check('host: exampleEffects() lists the 52 sound effects of the 9 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 52 && fx.games === 9 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
+  check('host: exampleEffects() lists the 59 sound effects of the 10 examples that have any (Bounce has none) as {game, name, sfx}, fetched once', fx.same && fx.n === 59 && fx.games === 10 && fx.shape && fx.one === 'game,name,sfx', JSON.stringify(fx));
 
   // P2: Save in place with the File System Access API where there is one; the download otherwise
   await evaluate(`(() => { window.__saves = []; window.__pickerCalls = 0; window.__written = null; window.__downloads = [];

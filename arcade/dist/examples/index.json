@@ -54,6 +54,12 @@
   "file": "lumen.leapgame"
  },
  {
+  "id": "crabsmash",
+  "title": "Crabsmash (arena)",
+  "about": "A single-screen arena game in fine colour: jump into the underside of a platform to stun the crabs and flies standing on it, walk into a stunned one to smash it, grab the coins, clear phase after phase (more, quicker enemies); the screen wraps left and right; title and in-game songs (MUSIC). Keys: O P move, Q or Space jump; Space or fire starts the game.",
+  "file": "crabsmash.leapgame"
+ },
+ {
   "id": "orbit",
   "title": "Orbit Gates (wireframe 3D)",
   "about": "A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.",

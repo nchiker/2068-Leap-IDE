@@ -2,7 +2,7 @@
  * src/lang/arcade/arcade-display.js — the per-scene display plan (pure; no DOM, no CodeMirror; Node can import it).
  * Language batch 4, docs/ARCADE_LANGUAGE_BATCH4.md section 10 (and docs/ARCADE_PLAN.md section 4).
  *
- *   sceneDisplayPlan(ast, {scenes, version}) -> [{name, line, col, auto, reason, override, setting, built, notes}]   (one per SCENE, source order; never throws)
+ *   sceneDisplayPlan(ast, {scenes, version}) -> [{name, line, col, auto, reason, override, setting, built, spriteColour: {setting, built: 'ink'|'none', note}, notes}]   (one per SCENE, source order; never throws)
  *
  * The compiler reads what each scene does and says which of the plan's three display setups suits it, and why. The two-buffer 8 x 8 colour setup and, in a runtime v2 game,
  * the 8 x 1 colour setup ('fine') are built into the runtimes, so an override can only pin one of those; the rest is reported (`notes` holds the warnings the compiler puts on the scene's line).
@@ -114,15 +114,35 @@ export function wireLayer(rec, bits, attrs) {
   return { bits: outBits, attrs: outAttrs, stale: !w.fresh };
 }
 
-/** The project's override for a scene: the raw `display` of the entry (exact name first, then ignoring case), or undefined. */
-function overrideOf(scenes, name) {
+export const SPRITE_COLOURS = Object.freeze(['none', 'ink']);
+
+/** The project's entry for a scene (exact name first, then ignoring case), or undefined. */
+function entryOf(scenes, name) {
   if (!isObj(scenes)) return undefined;
   let entry = Object.hasOwn(scenes, name) ? scenes[name] : undefined;
   if (entry === undefined) {
     const key = Object.keys(scenes).find((k) => up(k) === up(name));
     if (key !== undefined) entry = scenes[key];
   }
-  return isObj(entry) ? entry.display : undefined;
+  return isObj(entry) ? entry : undefined;
+}
+/** The project's override for a scene: the raw `display` of the entry, or undefined. */
+const overrideOf = (scenes, name) => entryOf(scenes, name)?.display;
+
+/**
+ * Sprite colour of a scene (SC, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md): `scenes.<name>.spriteColour` = 'none' | 'ink' (any case; default 'none').
+ * Returns {setting, built, note}: `setting` is what the project asks ('none' for a value that is not one), `built` is 'ink' only for setting 'ink' in a scene built with two buffers
+ * (a classic scene) of a game for runtime v2; `note` is the warning text (or '') for an ignored setting: not a sprite colour, a fine scene, a runtime other than v2.
+ */
+function spriteColourOf(scenes, name, built, version) {
+  const raw = entryOf(scenes, name)?.spriteColour;
+  if (raw === undefined || raw === null) return { setting: 'none', built: 'none', note: '' };
+  const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (!SPRITE_COLOURS.includes(v)) return { setting: 'none', built: 'none', note: `scenes.${name}.spriteColour: '${raw}' is not a sprite colour setting (none, ink); ignored` };
+  if (v === 'none') return { setting: 'none', built: 'none', note: '' };
+  if (built === 'fine') return { setting: 'ink', built: 'none', note: `scene '${name}': spriteColour 'ink' is ignored: a fine scene already has an ink per sprite row` };
+  if (version !== 2) return { setting: 'ink', built: 'none', note: `scene '${name}': spriteColour 'ink' is ignored: sprite colour is built into runtime v2 only (this game is built for runtime v${version})` };
+  return { setting: 'ink', built: 'ink', note: '' };
 }
 
 /**
@@ -168,9 +188,12 @@ export function sceneDisplayPlan(ast, { scenes, version = 2 } = {}) {
       if (chosen === 'hires') {
         notes.push(`scene '${name}': display '${chosen}' (${WHAT[chosen]}) is not built into any runtime yet; the scene is built with two buffers`);
       }
+      const built = chosen === 'fine' && fineOk ? 'fine' : 'buffers';
+      const spriteColour = spriteColourOf(scenes, name, built, version);
+      if (spriteColour.note) notes.push(spriteColour.note);
       out.push({
         name, line: at.line ?? 1, col: at.col ?? 0, auto, reason, override,
-        setting: chosen === 'auto' ? auto : chosen, built: chosen === 'fine' && fineOk ? 'fine' : 'buffers', notes,
+        setting: chosen === 'auto' ? auto : chosen, built, spriteColour, notes,
         ...(sc.mode ? { mode: sc.mode } : {}),
       });
     }

@@ -13,7 +13,7 @@
  *   response  {id, ok, errors, warnings, usage, scenes, order, lineCount, ms, runtimeVersion, runtimeLabel, workerMs}
  *               ok, errors, warnings, usage, scenes, order, lineCount, ms   exactly what compileProject() returns, minus `dck` and `map`
  *               (the cartridge bytes and the symbol map are not sent: the page's panels read neither; `dck` is only needed by Run / DCK)
- *               runtimeVersion  the runtime build the compile used (2, 3 or 4); runtimeLabel  `runtime vN`, the text of lang.runtimeLabel()
+ *               runtimeVersion  the runtime build the compile used (2, 3 or 4); runtimeLabel  `runtime vN` (`runtime v2 (sprite colour)` for the ink build), the text of lang.runtimeLabel()
  *               ms        the compile alone (the number the page shows as "N ms" and as "Compile time"); workerMs  the whole request in the worker
  *             or, when the compile threw (not a diagnostic: a bug, or the runtime images could not be loaded), {id, error: message}.
  *
@@ -51,7 +51,7 @@ export async function handleCheck(request, getBuilds) {
     const builds = await getBuilds();
     const { dck, map, build, ...res } = compileWithBuilds(builds, request.project, { replace: request.replace ?? null });
     const runtimeVersion = build.runtime.version ?? 0;
-    return { id, ...res, runtimeVersion, runtimeLabel: `runtime v${runtimeVersion}`, workerMs: performance.now() - t0 };
+    return { id, ...res, runtimeVersion, runtimeLabel: `runtime v${runtimeVersion}${build.runtime.variant === 'ink' ? ' (sprite colour)' : ''}`, workerMs: performance.now() - t0 };
   } catch (e) {
     return { id, error: e && e.message ? e.message : String(e) };
   }

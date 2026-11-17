@@ -334,7 +334,7 @@ export function createMapEditor(container, host) {
   presetSel.dataset.role = 'preset-select';
   const sizeNote = el('span', 'mapd-label', '');
   sizeNote.dataset.role = 'size-note';
-  const zoomSel = selectEl([[0, 'Fit width'], [1, '1x'], [2, '2x'], [3, '3x'], [4, '4x']], zoom, (v) => { zoom = +v; keepPrefs(); renderAll(); }, 'Zoom: cells of 8 pixels x 1..4, or fit the width');
+  const zoomSel = selectEl([[0, 'Fit width (min 2x)'], [1, '1x'], [2, '2x'], [3, '3x'], [4, '4x']], zoom, (v) => { zoom = +v; keepPrefs(); renderAll(); }, 'Zoom: cells of 8 pixels x 1..4, or fit the width');
   zoomSel.dataset.role = 'zoom-select';
   const [gridLabel, gridChk] = checkbox('Grid', 'Show the cell grid (G)', (on) => { showGrid = on; keepPrefs(); drawMap(); });
   gridChk.dataset.role = 'grid-check';
@@ -574,11 +574,12 @@ export function createMapEditor(container, host) {
   }
 
   // ── geometry ──
+  const MIN_FIT_CELL = 16;               // 'Fit width' never goes below 2x: the tile art stays readable and the map scrolls
   function cellPx() {
     if (zoom > 0) return 8 * zoom;
     const avail = scroll.clientWidth;
     if (!(avail > 0) || !map) return 16;
-    return Math.max(2, Math.min(32, Math.floor((avail - 2) / map.w)));
+    return Math.max(MIN_FIT_CELL, Math.min(32, Math.floor((avail - 2) / map.w)));      // a wide map (Leap Runner: 128 cells) scrolls sideways at a readable size instead of shrinking to a few pixels a cell
   }
   function cellAt(e, clamp = false) {
     const r = canvas.getBoundingClientRect(), sx = canvas.width / (r.width || 1), sy = canvas.height / (r.height || 1), cp = lastCellPx || cellPx();

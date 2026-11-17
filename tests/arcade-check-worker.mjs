@@ -69,8 +69,21 @@ for (const [name, project] of corpus) {
   check(`${name}: same runtime label, id echoed, ms numbers, no dck / map, structured-cloneable and equal after a clone`,
     got.runtimeLabel === label && got.id === n && typeof got.ms === 'number' && typeof got.workerMs === 'number' && !('dck' in got) && !('map' in got) && isDeepStrictEqual(structuredClone(got), got), `${got.runtimeLabel} vs ${label}`);
 }
-check('the corpus has the ten examples, the starters, the template and the broken sources', corpus.filter(([n]) => n.startsWith('example ')).length === 10 && corpus.length === 10 + STARTERS_B.length + 1 + 6, String(corpus.length));
+check('the corpus has the eleven examples, the starters, the template and the broken sources', corpus.filter(([n]) => n.startsWith('example ')).length === 11 && corpus.length === 11 + STARTERS_B.length + 1 + 6, String(corpus.length));
 check('some corpus entries compile and some do not (the comparison is not vacuous)', corpus.some(([, p]) => page.compileProject(p).ok) && corpus.some(([, p]) => !page.compileProject(p).ok));
+
+// the status label of the ink build (SC step 8): "runtime v2 (sprite colour)" for a game with a scene whose spriteColour is 'ink' (Breakout and Shooter classic carry it), plain "runtime v2" for the rest
+{
+  const labelOf = async (project) => (await handleCheck({ id: 1, project: clone(project) }, getBuilds)).runtimeLabel;
+  const named = Object.fromEntries(corpus.filter(([n]) => n.startsWith('example ')).map(([n, p]) => [n.slice(8), p]));
+  check('Breakout and Shooter (classic): the label says "runtime v2 (sprite colour)", as the page\'s lang.runtimeLabel() does', await labelOf(named.breakout) === 'runtime v2 (sprite colour)' && await labelOf(named['shooter-classic']) === 'runtime v2 (sprite colour)');
+  check('Bounce, Starfall (fine colour) and Lumen: plain "runtime v2"; Vaults "runtime v4"', await labelOf(named.bounce) === 'runtime v2' && await labelOf(named.shooter) === 'runtime v2' && await labelOf(named.lumen) === 'runtime v2' && await labelOf(named.vaults) === 'runtime v4');
+  const off = clone(named.breakout); P.setSceneSpriteColour(off, 'play', 'none');
+  check('Breakout with the setting switched off: plain "runtime v2" again', await labelOf(off) === 'runtime v2');
+  const on = clone(named.bounce); P.setSceneSpriteColour(on, 'play', 'ink');
+  const onRes = await handleCheck({ id: 1, project: on }, getBuilds), onPage = page.compileProject(on);
+  check('Bounce with the setting switched on: the worker and the page both build the ink variant (label, no error)', onRes.runtimeLabel === 'runtime v2 (sprite colour)' && page.runtimeLabel() === 'runtime v2 (sprite colour)' && onRes.ok && onPage.ok, JSON.stringify(onRes.errors));
+}
 
 // replace: one file's unsaved text
 {
@@ -97,7 +110,7 @@ check('some corpus entries compile and some do not (the comparison is not vacuou
   const r2 = await handleCheck({ id: 2, project: P.newProject('F') }, flaky);
   check('runtime images that cannot be loaded answer {id, error}; the next request loads them again', r1.error === 'offline' && r2.error === undefined && r2.ok === true, JSON.stringify(r1).slice(0, 100));
   const r3 = await handleCheck({ id: 3, project: P.newProject('F') }, flaky);
-  check('the builds are loaded once (the loader is memoised: one failed fetch + the six files of v2, v3 and v4)', r3.ok && calls === 7, String(calls));
+  check('the builds are loaded once (the loader is memoised: one failed fetch + the six files of v2, v3 and v4 + the two of the v2 ink build)', r3.ok && calls === 9, String(calls));
 }
 
 // ── 2. the client on a fake Worker ──

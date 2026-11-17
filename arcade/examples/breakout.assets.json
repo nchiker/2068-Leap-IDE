@@ -473,6 +473,11 @@
    ]
   }
  },
+ "scenes": {
+  "play": {
+   "spriteColour": "ink"
+  }
+ },
  "music": {
   "theme": {
    "patterns": [

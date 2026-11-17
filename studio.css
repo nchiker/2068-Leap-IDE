@@ -43,6 +43,12 @@
   background: var(--bg-panel); color: var(--fg); font: 11px var(--font-ui);
 }
 
+.scene-row .scene-ink { display: flex; align-items: center; gap: 4px; margin-top: 3px; font: 10px var(--font-ui); color: var(--fg-muted); }
+.scene-row .scene-ink-select {
+  flex: 1; padding: 2px 4px; border-radius: 3px; border: 1px solid var(--border);
+  background: var(--bg-panel); color: var(--fg); font: 11px var(--font-ui);
+}
+
 /* Centre: the editor, with the problems list under it (E3: a drag handle on its top edge, a fold button with the count) */
 .studio-root .panel-editor { min-width: 320px; }
 .problems {

@@ -21062,5 +21062,10 @@
    ],
    "loop": 0
   }
+ },
+ "scenes": {
+  "play": {
+   "spriteColour": "ink"
+  }
  }
 }

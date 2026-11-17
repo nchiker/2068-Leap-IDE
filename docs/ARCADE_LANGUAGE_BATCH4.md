@@ -117,6 +117,7 @@ The compiler reads each scene and reports which of the plan's three setups suits
   (the section 1 errors of the contract, `arcade-compile.js`): `scene 'x': fine colour (display 'fine') needs runtime v2; this game uses WINDOW | VIEW3D (runtime v3 | v4)` (or `... this game is built for runtime vN` when no
   word decides), and `scene 'x': fine colour (display 'fine') cannot be used in a WIRE3D game`. The setting comes from the assets file's top-level `"scenes"` key or `arcadec --scenes <file.json>`
   (which wins). The scene's source does not change. A report line "would suit fine" when `auto` is not `buffers` is advice and gives no warning.
+* **`spriteColour`** (sprite colour, `docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md` "As built (stage 6B)"): `scenes.<name>.spriteColour` is `'none'` (default) or `'ink'` (any case): in that classic scene a sprite recolours the ink of the 8 x 8 cells it covers. `sceneDisplayPlan` adds `spriteColour: {setting, built: 'ink' | 'none', note}`; a fine scene, a game for runtime v3 / v4 and an unknown value are ignored with a note. A game with an ink scene is built on the ink variant of runtime v2 (`requiredRuntime(..).ink`); the Studio offers it as "Sprite colour: off / ink" under the display select.
 * `src/arcade-project.js`: `validateProject` keeps `scenes` as an object `{name: {display?: 'auto'|'buffers'|'fine'|'hires', ...}}`, dropping a non-object entry with a warning; `setSceneDisplay(project,
   name, value)` (`auto` removes the key).
 

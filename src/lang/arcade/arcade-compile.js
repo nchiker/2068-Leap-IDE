@@ -32,6 +32,7 @@ import { parse } from './arcade-parse.js';
 import { check } from './arcade-check.js';
 import { generate } from './arcade-codegen.js';
 import { link } from './arcade-link.js';
+import { inkClashes } from './arcade-spriteink.js';
 import { assetTables, lookupAsset } from './arcade-assets.js';
 import { sceneDisplayPlan } from './arcade-display.js';
 import { completeSource, shiftDiagnostic } from '../../arcade-objects.js';
@@ -44,16 +45,17 @@ const V4_WORDS = new Set(['WALL', 'SEEN', 'DEPTH']);        // language batch 3 
  * or a FRAME other than the literal 0; language batch 3, raycaster contract section 6: v4 when it uses VIEW3D, VIEW, SETWALL, WALL, SEEN or DEPTH. Wireframe 3D
  * (docs/ARCADE_WIREFRAME_CONTRACT.md item 10): WIRE3D, MODEL, EYE, DRAWMODEL and LINE are v2 (the least there is, so they add no reason), and COSA, SINA and FXMUL no longer force v4:
  * v2 and v4 have them, so a program that uses them alone is v2; with a v3 word the program is v3 and the checker refuses them ("needs the v2 or v4 runtime"), as it refuses WIRE3D next to a v3 or v4 word.)
- * Returns {version: 2 | 3 | 4, reasons: string[]} (the reasons of the version chosen); v2 is the least the language needs now. A program that mixes the words of v3 (WINDOW ...)
+ * Returns {version: 2 | 3 | 4, reasons: string[], ink: boolean} (`ink`: the game needs the ink variant of runtime v2, `variant: 'ink'` in its runtime.json: a built scene has scenes.<name>.spriteColour 'ink'; `scenes` is the project's scenes object; the reasons of the version chosen); v2 is the least the language needs now. A program that mixes the words of v3 (WINDOW ...)
  * and of v4 gets version 4 and the checker refuses it. A caller that has both
  * runtimes (the CLI's --runtime auto, the Studio) compiles with the one this names. Parse errors are ignored (the program is read as far as it goes).
  * @param {string} text
  * @param {object} [assets]  the project's assets (the sprites' sizes decide)
+ * @param {object} [scenes]  the project's scenes object (the sprite colour setting decides `ink`)
  */
-export function requiredRuntime(text, assets) {
+export function requiredRuntime(text, assets, scenes) {
   const reasons = [], reasons4 = [];
   let ast;
-  try { ast = parse(text).ast; } catch { return { version: 2, reasons }; }
+  try { ast = parse(text).ast; } catch { return { version: 2, reasons, ink: false }; }
   const note = (r) => { if (!reasons.includes(r)) reasons.push(r); };
   const note4 = (r) => { if (!reasons4.includes(r)) reasons4.push(r); };
   const visit = (n) => {
@@ -86,8 +88,11 @@ export function requiredRuntime(text, assets) {
     if (w > 16) note(`sprite "${a.asset}" is ${w} pixels wide`);
     if (h > 16) note(`sprite "${a.asset}" is ${h} pixels tall`);
   }
-  if (reasons4.length) return { version: 4, reasons: reasons4 };
-  return { version: reasons.length ? 3 : 2, reasons };
+  if (reasons4.length) return { version: 4, reasons: reasons4, ink: false };
+  const version = reasons.length ? 3 : 2;
+  // sprite colour (SC): a v2 game with a built scene whose spriteColour is 'ink' needs the ink variant of runtime v2 (the version stays 2; v3 and v4 ignore the setting)
+  const ink = version === 2 && sceneDisplayPlan(ast, { scenes, version }).some((sc) => sc.spriteColour.built === 'ink');
+  return { version, reasons, ink };
 }
 
 /**
@@ -207,14 +212,33 @@ function compileText(text, { runtime, image, assets, scenes, bankAll = false, em
     out.errors.push({ line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'error', message });
   }
   if (out.errors.length) { sort(out.errors); return out; }
+  // sprite colour (SC): a built 'ink' scene needs the ink variant of runtime v2 (an ink runtime may run any v2 game; the reverse is an error)
+  if (runtime && runtime.variant !== 'ink') {
+    for (const sc of out.scenes) {
+      if (sc.spriteColour.built !== 'ink') continue;
+      out.errors.push({ line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'error', message: `scene '${sc.name}': spriteColour 'ink' needs the ink variant of runtime v2 (variant 'ink'); this runtime is not one` });
+    }
+    if (out.errors.length) { sort(out.errors); return out; }
+  }
   if (!runtime || !image) {
     out.errors.push({ line: 1, col: 0, endCol: 0, severity: 'error', message: 'no runtime image: build the runtime first (arcade/build/runtime.json and runtime.bin)' });
     return out;
   }
 
-  const gen = generate(ast, runtime, assets, { bankAll, emit, cg, ...(out.scenes.some((sc) => sc.built === 'fine') ? { fine: out.scenes.map((sc) => sc.built === 'fine') } : {}) });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
+  const gen = generate(ast, runtime, assets, { bankAll, emit, cg, ...(out.scenes.some((sc) => sc.built === 'fine') ? { fine: out.scenes.map((sc) => sc.built === 'fine') } : {}), ...(out.scenes.some((sc) => sc.spriteColour.built === 'ink') ? { ink: out.scenes.map((sc) => sc.spriteColour.built === 'ink') } : {}) });      // emit {hl, ret, jr}: the emitter's optimisations (all on unless switched off; tests and measurements)
   take(gen.errors ?? []);
   take(gen.warnings ?? []);
+  // sprite colour (SC): in an ink scene a cell takes one ink, so a sprite whose 8 x 8 block holds more than one ink loses that detail (a warning, once per ink scene and sprite asset)
+  if (gen.ink) {
+    for (const [k, sc] of out.scenes.entries()) {
+      if (!gen.ink.scenes[k]) continue;
+      for (const sp of gen.sprites ?? []) {
+        for (const b of inkClashes(sp)) {
+          out.warnings.push({ id: 'sprite-ink-clash', line: sc.line, col: sc.col, endCol: sc.col + sc.name.length, severity: 'warning', message: `scene '${sc.name}': sprite "${sp.asset}" block (row ${b.row}, column ${b.col}) has inks ${b.inks.join(' and ')}: the cell is drawn in one ink (the most used), the finer colour detail is lost` });
+        }
+      }
+    }
+  }
   if (out.errors.length || !gen.code) { sort(out.errors); sort(out.warnings); return out; }
 
   const linked = link(gen, runtime, image);

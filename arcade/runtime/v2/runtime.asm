@@ -19,6 +19,9 @@ M_FONT_E:
     INCLUDE "wire.asm"          ; wireframe 3D (WIRE3D): lines, clear, projection, RT_EYE / RT_DRAWMODEL / RT_LINE / RT_COSA / RT_SINA / RT_FXMUL (after everything: no address moves)
     INCLUDE "wiretick.asm"      ; wireframe 3D in the tick (slice W2): wire_boot, wire_tick, RT_WIREMODE
     INCLUDE "fine.asm"          ; fine colour (SCLD mode 2) scenes (slice F2): RT_FINEMODE, the fine tick (publish, compose)
+    IFDEF SPRITE_INK
+    INCLUDE "spritecol.asm"     ; classic-scene sprite ink (the separate "ink" build only, -DSPRITE_INK): RT_SPRITEINK, sc_erase, sc_draw2
+    ENDIF
 RT_END:
     INCLUDE "game_placeholder.asm"      ; $8000 game image slot                    (DOCK chunks 4-5)
     SAVEBIN "mem.bin", 0, 65536

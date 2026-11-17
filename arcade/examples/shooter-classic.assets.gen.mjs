@@ -124,6 +124,7 @@ const assets = {
   sfx,
   maps: { sky: { w: 32, h: 24, cells } },
   music,
+  scenes: { play: { spriteColour: 'ink' } },      // sprite colour (SC): the ship, the bullets and the enemies keep their own ink over the sky (the ink build of runtime v2)
 };
 writeFileSync(join(HERE, 'shooter-classic.assets.json'), JSON.stringify(assets, null, 1) + '\n');
 console.log(`shooter-classic.assets.json: ${Object.keys(assets.sprites).length} sprites, ${tiles.length} tiles, ${Object.keys(sfx).length} sound effects, a 32 x 24 sky; ${Object.entries(music).map(([k, v]) => describe(k, v)).join('; ')}`);

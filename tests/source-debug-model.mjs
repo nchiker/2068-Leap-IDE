@@ -33,6 +33,10 @@ console.log('1. breakpointAddresses');
   check('a line with two statements: the lowest address (0x8003, not 0x8010)', eq(sorted(r.addrs), [0x8003]) && r.resolved.get(7).addr === 0x8003);
   r = S.breakpointAddresses({ lines: [{ addr: 0x8010, line: 7 }, { addr: 0x8003, line: 7 }] }, [7]);
   check('... whatever order the entries are in', eq(sorted(r.addrs), [0x8003]));
+  // entries in ADDRESS order whose lines are not ascending (a PROC written late in the source but placed early in memory): the snap must still go to the next greater LINE
+  const shuffled = { lines: [{ addr: 0x8000, line: 20 }, { addr: 0x8004, line: 5 }, { addr: 0x8008, line: 12 }, { addr: 0x800C, line: 9 }] };
+  r = S.breakpointAddresses(shuffled, [6, 10, 13, 1]);
+  check('lines not in ascending order in the map: 6 -> 9, 10 -> 12, 13 -> 20, 1 -> 5', eq(r.resolved.get(6), { line: 9, addr: 0x800C }) && eq(r.resolved.get(10), { line: 12, addr: 0x8008 }) && eq(r.resolved.get(13), { line: 20, addr: 0x8000 }) && eq(r.resolved.get(1), { line: 5, addr: 0x8004 }) && r.hollow.length === 0);
   r = S.breakpointAddresses(map, [6]);
   check('a line without code snaps to the next line with code (6 -> 7)', eq(r.resolved.get(6), { line: 7, addr: 0x8003 }) && eq(sorted(r.addrs), [0x8003]));
   r = S.breakpointAddresses(map, [1]);

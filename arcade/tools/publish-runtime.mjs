@@ -7,6 +7,7 @@
 // (studio.html) loads what this script puts in arcade/dist/:
 //   arcade/dist/v2/runtime.json, runtime.bin   <- arcade/build/v2/ (build it first: node arcade/tools/build-runtime-v2.mjs)
 //   arcade/dist/v3/runtime.json, runtime.bin   <- arcade/build/v3/ (node arcade/tools/build-runtime-v3.mjs); the Studio picks v2, v3 or v4 per program (requiredRuntime)
+//   arcade/dist/v2ink/runtime.json, runtime.bin <- arcade/build/v2ink/ (node arcade/tools/build-runtime-v2ink.mjs: v2 with sprite colour, SC)
 //   arcade/dist/v4/runtime.json, runtime.bin   <- arcade/build/v4/ (node arcade/tools/build-runtime-v4.mjs: the raycaster)
 //   arcade/dist/examples/<id>.leapgame         <- arcade/examples/<id>.arc + <id>.assets.json, as Studio projects
 //   arcade/dist/examples/index.json            the Examples menu: [{id, title, about, file}]
@@ -16,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exampleProject, serializeProject } from '../../src/arcade-project.js';
 import { compile, requiredRuntime } from '../../src/lang/arcade/arcade-compile.js';
+import { pickBuild } from '../../src/lang/arcade/profile.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCADE = join(HERE, '..');
@@ -31,6 +33,7 @@ const EXAMPLES = [
   { id: 'vaults', title: 'Vaults (3D maze)', about: 'A Wolfenstein-style raycaster: a 32x32 maze, a locked door, a key, gems and five wraiths you shoot; a title song (MUSIC). Keys: O P turn, Q A walk, Space shoots. Needs the v4 runtime.' },
   { id: 'blockfall', title: 'Blockfall', about: 'A falling-blocks puzzle: tiles and text only, no sprites; a three-channel song plays during the game (MUSIC: the effects borrow its drum channel). Keys: O P left / right, Q rotate, A soft drop, Space hard drop, H pause.' },
   { id: 'lumen', title: 'Lumen (maze chase)', about: 'A maze chase in fine colour (8 x 1 colour): eat every light orb, take a prism to turn the four shades pale and send them home for 200 to 1600 points, clear caves that get faster and alternate between two mazes; title and in-game songs (MUSIC). Keys: Q A O P move; Space or fire starts the game.' },
+  { id: 'crabsmash', title: 'Crabsmash (arena)', about: 'A single-screen arena game in fine colour: jump into the underside of a platform to stun the crabs and flies standing on it, walk into a stunned one to smash it, grab the coins, clear phase after phase (more, quicker enemies); the screen wraps left and right; title and in-game songs (MUSIC). Keys: O P move, Q or Space jump; Space or fire starts the game.' },
   { id: 'orbit', title: 'Orbit Gates (wireframe 3D)', about: 'A first-person flight through wireframe gates (WIRE3D: MODEL, EYE, DRAWMODEL, LINE) with a laser: steer through the gates, shoot the tumbling rocks into debris, watch the fuel and the shields; the course gets harder with every gate; a title song (MUSIC). Keys: O P turn, Q A faster / slower, Space fires. Needs the v2 runtime with the wireframe mode.' },
 ];
 
@@ -58,15 +61,16 @@ function loadBuild(version) {
   put(join(ARCADE, `dist/v${version}/runtime.bin`), bytes);
   return { runtime: JSON.parse(text), image: new Uint8Array(bytes) };
 }
-const builds = { 2: loadBuild(2), 3: loadBuild(3), 4: loadBuild(4) };
+const builds = { 2: loadBuild(2), 3: loadBuild(3), 4: loadBuild(4), '2ink': loadBuild('2ink') };      // '2ink': the sprite-colour variant of v2 (SC), picked by pickBuild for a game with a scene whose spriteColour is 'ink'
 const index = [];
 for (const ex of EXAMPLES) {
   const arc = readFileSync(join(ARCADE, 'examples', `${ex.id}.arc`), 'utf8');
   const assets = JSON.parse(readFileSync(join(ARCADE, 'examples', `${ex.id}.assets.json`), 'utf8'));
   const project = exampleProject(ex.title, arc, assets);
-  const v = requiredRuntime(arc, assets).version, need = v >= 2 && v <= 4 ? v : 2;
-  const res = compile(arc, { runtime: builds[need].runtime, image: builds[need].image, assets, scenes: assets.scenes });
-  if (res.errors.length) { console.error(`${ex.id}: does not compile with the v${need} runtime: ${res.errors[0].message}`); process.exit(1); }
+  const need = requiredRuntime(arc, assets, assets.scenes), v = need.version;
+  const build = pickBuild(builds, v >= 2 && v <= 4 ? need : { ...need, version: 2 }), label = build.runtime.variant === 'ink' ? 'v2 ink' : `v${build.runtime.version}`;
+  const res = compile(arc, { runtime: build.runtime, image: build.image, assets, scenes: assets.scenes });
+  if (res.errors.length) { console.error(`${ex.id}: does not compile with the ${label} runtime: ${res.errors[0].message}`); process.exit(1); }
   // Any warning is fatal: every example opens with no warnings.
   if (res.warnings.length) { console.error(`${ex.id}: warning: ${res.warnings[0].message}`); process.exit(1); }
   put(join(ARCADE, 'dist/examples', `${ex.id}.leapgame`), serializeProject(project));

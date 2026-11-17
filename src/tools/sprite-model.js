@@ -543,6 +543,35 @@ export function finePixels(s, f, { paper = 0, bright = 0 } = {}) {
 }
 
 /**
+ * What a classic scene with SPRITE COLOUR ON (`scenes.<name>.spriteColour = 'ink'`, SC; arcade-spriteink.js is the reference) draws for the sprite, shown at an 8-aligned position over a
+ * background of `bgInk` on `bgPaper` (BRIGHT `bright`) with a 2-pixel checker bitmap: every 8 x 8 cell the sprite covers (a covered pixel is one whose mask bit is set, whatever its image bit)
+ * takes ONE ink, the most used among its covered pixels (a tie goes to the lower ink), and the cell's background pixels are drawn in it too. Returns {pixels, clashes, lostPixels, warning}: one colour key
+ * per pixel (row-major, w * h; never transparent); `clashes` the blocks [{row, col, inks}] holding more than one ink; `lostPixels` the covered image pixels whose row ink differs from their cell's;
+ * `warning` is null when nothing is lost. The sprite's authored paper and BRIGHT are not used (the background's stay).
+ */
+export function inkPixels(s, f, { bgInk = 7, bgPaper = 1, bright = 0 } = {}) {
+  const w = s.w, h = s.h, fr = frameOf(s, f), out = new Int8Array(w * h);
+  const ik = (c) => colourKey(c & 7, bright ? 1 : 0);
+  const clashes = [];
+  let lostPixels = 0;
+  for (let cy = 0; cy < h; cy += 8) for (let cx = 0; cx < w; cx += 8) {
+    const count = new Array(8).fill(0);
+    for (let y = cy; y < Math.min(h, cy + 8); y++) for (let x = cx; x < Math.min(w, cx + 8); x++) if (bitAt(fr.rows[y].mask, w, x)) count[fr.rows[y].ink & 7]++;
+    const seen = count.map((n, i) => (n ? i : -1)).filter((i) => i >= 0);
+    let cell = bgInk & 7;
+    if (seen.length) { let best = seen[0]; for (const i of seen) if (count[i] > count[best]) best = i; cell = best; }
+    if (seen.length > 1) clashes.push({ row: cy >> 3, col: cx >> 3, inks: seen });
+    for (let y = cy; y < Math.min(h, cy + 8); y++) for (let x = cx; x < Math.min(w, cx + 8); x++) {
+      const r = fr.rows[y], covered = bitAt(r.mask, w, x);
+      const set = covered ? bitAt(r.bits, w, x) : ((x >> 1) + (y >> 1)) % 2 === 0;
+      out[y * w + x] = set ? ik(cell) : ik(bgPaper);
+      if (covered && set && (r.ink & 7) !== cell) lostPixels++;
+    }
+  }
+  return { pixels: out, clashes, lostPixels, warning: clashes.length ? `sprite colour: ${clashes.length} 8 x 8 block${clashes.length === 1 ? '' : 's'} hold more than one ink; each is drawn in its most used ink (${lostPixels} pixel${lostPixels === 1 ? '' : 's'} change colour).` : null };
+}
+
+/**
  * The frame as one display family shows it (docs/ARCADE_ASSETS.md, "Colour model"):
  *   ecm    as authored (8x1 colour)
  *   flip   each 8x8 cell (aligned to the sprite's top-left corner) keeps two colours of ONE brightness: the two most used hues

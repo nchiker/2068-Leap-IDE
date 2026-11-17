@@ -80,6 +80,13 @@ for (const id of EX) {
   const project = P.exampleProject('lumen', arc, assets);
   examples.lumen = { arc, assets, project, text: P.buildSource(project).text };
 }
+// Crabsmash (fine colour in every scene, runtime v2: symmetric sprites, one ink per row)
+{
+  const arc = readFileSync(ROOT + 'arcade/examples/crabsmash.arc', 'utf8').replace(/\r\n?/g, '\n');
+  const assets = JSON.parse(readFileSync(ROOT + 'arcade/examples/crabsmash.assets.json', 'utf8'));
+  const project = P.exampleProject('crabsmash', arc, assets);
+  examples.crabsmash = { arc, assets, project, text: P.buildSource(project).text };
+}
 {
   const r = (id) => scanRoles(examples[id].text);
   check('scanRoles shooter (Starfall): four cell maps (sky, logo, press, gameover), tile set gfx, no world, no floor plan, no view; scenes title, play, over', eq(r('shooter'), { tileset: 'gfx', maps: { sky: 'sky', logo: 'logo', press: 'press', gameover: 'gameover' }, world: null, worlds: [], floorplans: [], view: null, scenes: ['title', 'play', 'over'] }), JSON.stringify(r('shooter')));
@@ -402,7 +409,7 @@ const usesBlackRaw = (t) => { const r = raw(t); return (r.paper === 0 && r.clear
 const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map((x) => parseInt(x, 16)) : m.cells);
 {
   const out = {};
-  const ALL = ['bounce', 'breakout', 'shooter', 'shooter-classic', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit'];      // all ten examples
+  const ALL = ['bounce', 'breakout', 'shooter', 'shooter-classic', 'platformer', 'runner', 'vaults', 'blockfall', 'lumen', 'orbit', 'crabsmash'];      // all eleven examples
   for (const id of ALL) {
     const { project, text } = examples[id];
     const rl = scanRoles(text);
@@ -417,7 +424,7 @@ const cellsRaw = (m) => (typeof m.cells === 'string' ? m.cells.match(/../g).map(
   const summary = ALL.flatMap((id) => out[id].map((f) => `${id}: ${f.id} ${f.asset}`));
   // Stage 3 (K4, E5) fixed every example: BRIGHT 0 on black paper, tiles marked fg or colours unified. No example gives a finding of any kind. The rules themselves are
   // tested on hand-built projects in section 3 (black-bright-mix, bright-black-paper, background-attr-mix and the per-row rules), not on the examples.
-  check('all ten examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
+  check('all eleven examples produce no finding at all (no warning, no error, no tile0-not-blank, no shape or undefined-tile finding)', eq(summary, []), JSON.stringify(summary));
   check('no example finding is an error or a compilerAlso finding', ALL.every((id) => out[id].every((f) => f.severity === 'warning' && !f.compilerAlso)));
 
   // each one is TRUE, recomputed from the raw JSON
@@ -642,6 +649,25 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'v3/runtime.json')
     && cm({ points: [[0, 0, 0], [100, 0, 0]], edges: [[0, 0]] }).every((f) => f.compilerAlso === (f.severity === 'error') && f.kind === 'models' && f.asset === 'm')
     && cm({ points: [...sq.points, [5, 5, 5]], edges: sq.edges }).every((f) => f.compilerAlso === false));
   check('models: checkAssets never throws on junk', (() => { try { for (const m of [null, 5, 'x', [], { points: null }, { points: [null], edges: [null] }]) checkAssets(mkProject({ models: { m } }), null); return true; } catch { return false; } })());
+}
+
+// ── sprites: sprite-ink-clash (SC step 8) ──
+{
+  const rows = (inks) => inks.map((ink) => ({ bits: 'ff', mask: 'ff', ink, paper: 0, bright: 0 }));
+  const sprite = (inks) => ({ w: 8, h: inks.length, rows: rows(inks) });
+  const withScenes = (scenes, sprites) => ({ ...mkProject({ sprites }), scenes });
+  const sp = (project) => checkAssets(project, null).filter((f) => f.id === 'sprite-ink-clash');
+  const clash = sprite([2, 2, 2, 2, 2, 4, 4, 4]), clean = sprite([2, 2, 2, 2, 2, 2, 2, 2]);
+  const f = sp(withScenes({ play: { spriteColour: 'ink' } }, { ship: clash, dot: clean }));
+  check('sprite-ink-clash: one warning for the sprite with two inks in a block, none for the one-ink sprite; kind sprites, asset name, the block, compilerAlso (the compiler says it per scene)',
+    f.length === 1 && f[0].severity === 'warning' && f[0].kind === 'sprites' && f[0].asset === 'ship' && f[0].compilerAlso === true && eq(f[0].blocks, [{ row: 0, col: 0, inks: [2, 4] }]) && /more than one ink/.test(f[0].message), JSON.stringify(f));
+  check('sprite-ink-clash: nothing when no scene has sprite colour (off, absent, "none")', sp(withScenes({}, { ship: clash })).length === 0 && sp(withScenes({ play: { spriteColour: 'none' } }, { ship: clash })).length === 0 && sp(mkProject({ sprites: { ship: clash } })).length === 0);
+  check('sprite-ink-clash: the setting is read in any case and with white space; a fine scene does not count (it has an ink per sprite row already)',
+    sp(withScenes({ a: { spriteColour: '  INK ' } }, { ship: clash })).length === 1 && sp(withScenes({ a: { spriteColour: 'ink', display: 'fine' } }, { ship: clash })).length === 0 && sp(withScenes({ a: { spriteColour: 'ink', display: 'fine' }, b: { spriteColour: 'ink' } }, { ship: clash })).length === 1);
+  const two = sp(withScenes({ a: { spriteColour: 'ink' } }, { b: clash, a: sprite([1, 1, 1, 1, 6, 6, 6, 6]) }));
+  check('sprite-ink-clash: one finding per sprite, in name order', two.map((x) => x.asset).join() === 'a,b');
+  check('sprite-ink-clash: the frames form and a sprite too wide for the classic runtime are read without a throw (the wide one is skipped)',
+    sp(withScenes({ a: { spriteColour: 'ink' } }, { fr: { w: 8, h: 8, frames: [{ rows: rows([2, 2, 2, 2, 2, 4, 4, 4]) }] }, wide: { w: 24, h: 8, rows: rows([2, 2, 2, 2, 2, 4, 4, 4]) }, junk: { rows: 5 } })).map((x) => x.asset).join() === 'fr');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');

@@ -26,6 +26,8 @@ The build reduces it to the scene's display family:
 * `hires`: one ink/paper pair for the whole screen; art is reduced to 1-bit.
 The Studio's editors enforce the two-colours-per-row rule while drawing and preview the result in each family.
 
+**Sprite colour (`scenes.<name>.spriteColour = 'ink'`, a classic scene of a runtime v2 game).** A sprite then recolours the ink of every 8 x 8 cell it covers, in the ink of the sprite's rows: the most used ink of that 8 x 8 block of the art (a tie: the lower ink); paper and BRIGHT stay the background's, and background pixels inside the cell take the new ink. Two inks in one block therefore lose the finer detail: the asset check warns (`sprite-ink-clash`, once per sprite) and the sprite editor's "Sprite colour" preview shows the result over a background. A fine scene needs none of this (every pixel row carries its own ink).
+
 ## Sprites
 `{ "w": 16, "h": 16, "frames": [ { "rows": [ { "bits": "FFFF", "mask": "FFFF", "ink": 7, "paper": 0, "bright": 1 }, ... ] } ], "hot": [x, y, w, h] }`
 * `w` is 8, 16, 24 or 32 (more later); `h` 1-48; `bits` and `mask` are hex, MSB = leftmost pixel; `mask` 1 = sprite

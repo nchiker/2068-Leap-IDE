@@ -216,6 +216,7 @@ import { areaOf as wireAreaOf, SCALES as WIRE_SCALES } from './arcade-wire.js';
 import { ratioCode, camMax as camMaxOf, buildTileRows, buildScrollTables, buildTileFlags, convertWorldMap, scanSpriteUse, planPhasePool, poolPieces, noviewPoolPieces, buildFrameT } from './arcade-window.js';
 import { convertViewMap, viewAttr, VIEW_DEFAULTS, VIEW_PATTERN_BYTES } from './arcade-view.js';
 import { LIMITS } from './arcade-words.js';
+import { inkTables, TABLE_BYTES } from './arcade-spriteink.js';
 import { layoutOf, bankOrder, assignAt, rleOf, n3, BANK_BYTES, GAME_AREA_BYTES } from './arcade-bank.js';
 
 const up = (s) => String(s).toUpperCase();
@@ -1097,6 +1098,15 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     if (tileset?.rowAttrsProblem) err(tileset.node, `tileset "${tileset.node.asset}": ${tileset.rowAttrsProblem}`);
     for (const sp of sprites) if (sp.inkProblem) err(sp.node, `sprite "${sp.asset}": ${sp.inkProblem}`);
     scenes.forEach((sc, k) => { if (fineScenes[k] && sym.RT_FINEMODE === undefined) err(sc.namePos ?? sc, `scene '${sc.name}': fine colour needs RT_FINEMODE, which this runtime does not provide (rebuild the v2 runtime)`); });
+  }
+  // sprite colour (SC, docs/ARCADE_STUDIO_COMPLETION_CONTRACT.md): `opts.ink` (set by compile() when the plan builds a classic scene with spriteColour 'ink') is one boolean per scene. In a program with an ink scene (and at least
+  // one sprite asset) the game image ends with the ink table (a page-aligned word table, then 81 bytes per asset: arcade-spriteink.js) and every ENTER sequence (after the reset and the mode calls, before the target's INIT) and the
+  // start of init_entry (an ink first scene) call RT_SPRITEINK (A = 1 ink / 0 not, HL = the table); a program without one emits nothing of it and is byte for byte what it was.
+  const inkScenes = scenes.map((_, k) => !!opts.ink?.[k]);
+  const hasInk = inkScenes.some(Boolean) && sprites.length > 0;
+  if (hasInk) {
+    if (!v2 || v3 || wireDecl) err(scenes[inkScenes.indexOf(true)], 'sprite colour needs the v2 runtime and no WIRE3D');
+    else if (sym.RT_SPRITEINK === undefined) err(scenes[inkScenes.indexOf(true)], `scene '${scenes[inkScenes.indexOf(true)].name}': spriteColour 'ink' needs RT_SPRITEINK, which this runtime does not provide (the ink variant of runtime v2)`);
   }
   if (cst.MAX_MAPS !== undefined && mapList.length > cst.MAX_MAPS) err(mapList[cst.MAX_MAPS].node, `this runtime build holds at most ${cst.MAX_MAPS} maps in its map table (MAX_MAPS); the game has ${mapList.length}`);
   const bankedMaps = plan ? mapList.filter((m) => plan.at.has(up(m.node.name))).length : 0;
@@ -2617,6 +2627,14 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     e.call(need('RT_FINEMODE'));
   }
 
+  /** Sprite colour: A = 1 (the scene is an ink scene) or 0, HL = the ink table, then RT_SPRITEINK. Nothing at all in a program without an ink scene. */
+  function emitInkMode(k) {
+    if (!hasInk) return;
+    e.ld('a', inkScenes[k] ? 1 : 0);
+    e.ld('hl', L('ink$table'));
+    e.call(need('RT_SPRITEINK'));
+  }
+
   /** Language batch 4, contract section 5: the frame entry that dispatches on the current scene, scn$enter (the switch) and scn$reset (the machine back to the game start state). */
   function emitDriver() {
     const n = scenes.length, curAddr = sceneCurSlot, spAddr = sceneSpSlot;
@@ -2642,6 +2660,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       for (const seg of initSegments) if (seg.scene === k) { e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
       emitSceneMode(k);                                                          // batch 7: the target's display mode, after the reset, before its INIT
       emitFineMode(k);                                                           // fine colour: the same place (a fine game has no window, view or play area)
+      emitInkMode(k);                                                            // sprite colour: the same place
       e.jp(labelOf('P', 'INIT', k));
     }
     e.label('scn$reset');
@@ -2669,6 +2688,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     // init_entry: clear the variable slots, then PROC INIT (tail jump)
     e.label('entry$init');
     if (hasFine && fineScenes[0]) emitFineMode(0);                               // fine colour: a fine first scene switches before anything else of init_entry
+    if (hasInk && inkScenes[0]) emitInkMode(0);                                  // sprite colour: likewise (the runtime's boot has it off)
     e.ld('hl', L('vars$base')); e.ld('de', L('vars$base', 1)); e.ld('bc', L('vars$len1'));
     e.ld('(hl)', 0); e.ldir();
     for (const seg of initSegments) { if (driver && seg.scene > 0) continue; e.ld('hl', L(seg.label)); e.ld('de', slotAddr(seg.slot)); e.ld('bc', 2 * seg.values.length); e.ldir(); }
@@ -2925,7 +2945,19 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
       throw new GenError(ast, `too many variables: ${nSlots} slots need ${2 * nSlots} bytes, the runtime allows ${VARS_LIMIT - VARS_BASE + 1}`);
     }
     e.slots = [VARS_BASE, VARS_BASE + 2 * nSlots];  // F4 tracks the game's variable slots and nothing else (never a runtime variable)
+    if (hasInk) e.endAlign(256, 'ink$table');       // sprite colour: the table starts on a page boundary (spritecol.asm) just after the code, so its bytes are appended below
     var code = e.finish();
+    var inkTableAt = 0;
+    if (hasInk) {
+      inkTableAt = e.addressOf('ink$table');
+      const tabs = inkTables(sprites), n = sprites.length, grids = inkTableAt + 2 * n;
+      const tbl = new Uint8Array(2 * n + TABLE_BYTES * n);
+      tabs.forEach((t, a) => { tbl[2 * a] = (grids + TABLE_BYTES * a) & 0xFF; tbl[2 * a + 1] = (grids + TABLE_BYTES * a) >> 8; tbl.set(t, 2 * n + TABLE_BYTES * a); });
+      const all = new Uint8Array(code.length + tbl.length);
+      all.set(code); all.set(tbl, code.length);
+      code = all;
+      dataSize.ink = tbl.length;
+    }
     for (const [from, to, use] of spans) use(e.finalSize(from, to));
     {                                               // the source map in final addresses; entries whose code now starts at the same address: the last one stands (as mark() does)
       const final = [];
@@ -3030,6 +3062,7 @@ function generateOnce(ast, runtime, assets = {}, opts = {}, plan = null) {
     window: win,
     view,
     ...(hasFine ? { fine: { scenes: fineScenes, descAt: e.addressOf('fine$desc') } } : {}),
+    ...(hasInk ? { ink: { scenes: inkScenes, tableAt: inkTableAt } } : {}),
     ...(wire ? { wire: { r0: wire.r0, r1: wire.r1, attr: wire.attr, ink: wire.ink, paper: wire.paper, bright: wire.bright, descAt: e.addressOf('wire$desc'), models: modelList.map((m, i) => ({ name: m.name, at: e.addressOf(`model$${i}`), points: m.points.length, edges: m.edges.length, bytes: m.bytes.length })) } } : {}),
     sprites,
     symbols,

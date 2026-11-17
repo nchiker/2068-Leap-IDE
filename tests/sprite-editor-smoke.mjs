@@ -251,6 +251,8 @@ try {
   check('the ecm preview never warns', fam.ecm.startsWith('0|'), fam.ecm);
   check('the flip family warns about lost colour detail when an 8x8 cell has more than two hues', fam.flip.startsWith('1|') && /change colour/.test(fam.flip), fam.flip);
   check('the hires family says two colours remain', fam.hires.includes('hires') || fam.hires.includes('two colours'), fam.hires);
+  const inkv = await evaluate("(() => { const b = document.querySelector('[data-role=inkpreview]'); const c = b?.querySelector('canvas'), n = b?.querySelector('span'); return b ? { w: c.width, h: c.height, warn: n.dataset.warning, clashes: n.dataset.clashes, text: n.textContent, title: b.querySelector('b').textContent } : null; })()");
+  check('SC: a "Sprite colour" preview shows the sprite as a classic ink scene draws it, and names the 8x8 block with three inks (one ink per cell)', !!inkv && inkv.title === 'Sprite colour' && inkv.w > 0 && inkv.h > 0 && inkv.warn === '1' && Number(inkv.clashes) >= 1 && /more than one ink/.test(inkv.text), JSON.stringify(inkv));
   await shot('03-families');
 
   // ── size, phases, validation ──

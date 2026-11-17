@@ -1,6 +1,8 @@
 "use strict";
 // regen-baselines.mjs -- regenerate the hash baselines of arcade/tests/fixtures (batch1-, batch2-, batch3-baseline.json). Two modes.
 //
+//   node arcade/tools/regen-baselines.mjs --build v2ink [--old <git ref>]   (SC step 7: a check on the ink build of runtime v2, writes nothing; see the code)
+//
 //   node arcade/tools/regen-baselines.mjs [--old <git ref>]
 //     DEFAULT (a RUNTIME change moved the RT_* / variable addresses that compiled games embed): every baseline program is compiled by a PREVIOUS compiler
 //     (the src/ of a git ref, default HEAD) and by the working-tree compiler; the two must agree byte for byte, and only then are the hashes rewritten.
@@ -56,7 +58,9 @@ if (!ref || ref.startsWith('--')) { console.error('usage: regen-baselines.mjs [-
 const FIX = opt('--fixtures') ? resolve(process.cwd(), opt('--fixtures')) : join(ROOT, 'arcade/tests/fixtures');
 const TICKS = Number(opt('--ticks') ?? 300);
 const ONLY = opt('--only');
-const DRY = args.includes('--dry-run') || ONLY !== null;
+const BUILD = opt('--build');                      // 'v2ink': the ink build of runtime v2 (sprite colour, SC step 7); a check, never writes
+if (BUILD !== null && (BUILD !== 'v2ink' || accept)) { console.error('--build takes v2ink only, and not with --accept-codegen-change'); process.exit(2); }
+const DRY = args.includes('--dry-run') || ONLY !== null || BUILD !== null;
 const PERTURB = process.env.REGEN_PERTURB ?? null;
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 
@@ -143,6 +147,24 @@ try {
       programs++;
       const src = readFileSync(join(ROOT, e.src), 'utf8'), assets = JSON.parse(readFileSync(join(ROOT, e.assets), 'utf8'));
       const label = `${f} ${e.src} (runtime ${e.runtime})`;
+      if (BUILD === 'v2ink') {
+        // The ink build of runtime v2 puts the ink code among the runtime's modules, so every RT_* address a game embeds moves and the recorded area / DCK hashes cannot hold for it (the
+        // records are those of the default build).  What must hold, and is checked: against the ink runtime, the compiler of <ref> and the working tree's give the same bytes
+        // (the DCK, the game area, the code length) for every game of the baselines that runs on v2, so the SC compiler work moved no existing game; the code length is the recorded one and
+        // the one of the default build (a game with no ink scene is the same program); and no recorded hash is touched (nothing is written).
+        if (f === 'batch1' || e.runtime !== 2) continue;
+        programs++;
+        const RD = load('v2'), RK = load('v2ink');
+        const ro = oldCompile(src, { runtime: RK.rt, image: RK.image, assets }), rn = newCompile(src, { runtime: RK.rt, image: RK.image, assets }), rd = newCompile(src, { runtime: RD.rt, image: RD.image, assets });
+        if (ro.errors.length || rn.errors.length || rd.errors.length) { console.log('FAIL compile errors', label, ro.errors[0]?.message, '|', rn.errors[0]?.message, '|', rd.errors[0]?.message); bad++; continue; }
+        const key = (r) => [sha(r.dck), sha(r.memory.slice(0x8000, 0xC000)), r.gen.code.length];
+        const problems = [];
+        if (!same(key(ro), key(rn))) problems.push(`the working-tree compiler differs from ${ref} on the ink runtime`);
+        if (rn.gen.code.length !== e.bytes || rd.gen.code.length !== e.bytes) problems.push(`code length ${rn.gen.code.length} (ink) / ${rd.gen.code.length} (default), the record says ${e.bytes}`);
+        if (rn.gen.code.length !== rd.gen.code.length || rn.memory[0x8004] !== rd.memory[0x8004]) problems.push('the ink build gives another code length or tick divisor than the default build');
+        if (problems.length) { console.log(`FAIL ${label}: ${problems.join('; ')}`); bad++; } else console.log(`ok   ${label}: ${ref} and the working tree agree on the ink runtime, code ${e.bytes} B as recorded`);
+        continue;
+      }
       const R = f === 'batch1' ? fake(e.runtime) : load('v' + e.runtime);
       const a = oldCompile(src, { runtime: R.rt, image: R.image, assets }), b = newCompile(src, { runtime: R.rt, image: R.image, assets });
       if (a.errors.length || b.errors.length) { console.log('compile errors', label, a.errors[0]?.message, '|', b.errors[0]?.message); bad++; continue; }
@@ -213,6 +235,7 @@ try {
     else if (DRY) console.log('dry run: nothing was written');
     else console.log(`records rewritten in ${FIX} (prev* fields keep the old hashes, acceptedFrom = ${ref})`);
     console.log('REMINDER: condition (a) of docs/ARCADE_COMPILER_SIZE_CONTRACT.md section 8 is not checked here: run `node arcade/tests/run-all.mjs` and the game suites with the new compiler (all must pass except the hash-baseline checks), then run tests/arcade-m5.mjs section 8 and the batch 2 / 3 checks again after this rewrite.');
-  } else console.log(bad ? `FAILED (${bad})` : `baselines regenerated (${changed} hash(es) changed)`);
+  } else if (BUILD) console.log(bad ? `FAILED (${bad})` : `build ${BUILD}: ${programs} v2 program(s) of the baselines agree with ${ref} on the ink runtime; 0 hashes changed, nothing written`);
+  else console.log(bad ? `FAILED (${bad})` : `baselines regenerated (${changed} hash(es) changed)`);
   process.exitCode = bad ? 1 : 0;                  // (not process.exit(): the finally below must remove the temporary copy of the old compiler)
 } finally { rmSync(tmp, { recursive: true, force: true }); }

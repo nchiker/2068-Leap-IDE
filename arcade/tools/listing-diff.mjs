@@ -100,7 +100,7 @@ async function loadCompiler(dir) {
       const af = join(ROOT, 'arcade/examples', game + '.assets.json');
       const assets = existsSync(af) ? JSON.parse(readFileSync(af, 'utf8')) : { sprites: {} };
       seen.length = 0;
-      const res = compile(text, { ...rt(requiredRuntime(text, assets).version), assets, ...(emit ? { emit } : {}) });
+      const res = compile(text, { ...rt(requiredRuntime(text, assets, assets.scenes).version), assets, ...(emit ? { emit } : {}) });
       if (res.errors.length) throw new Error(`${game} (${dir}): ${JSON.stringify(res.errors.slice(0, 3))}`);
       const gen = res.gen;
       let items;

@@ -23,6 +23,7 @@ import * as M from '../src/tools/sprite-model.js';
 import { compile } from '../src/lang/arcade/arcade-compile.js';
 import { convertSprite } from '../src/lang/arcade/arcade-codegen.js';
 import { finePicture, rowOff } from '../src/lang/arcade/arcade-fine.js';
+import { applySpriteInk, inkClashes } from '../src/lang/arcade/arcade-spriteink.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -319,6 +320,43 @@ console.log('\n6b. The fine (ecm) preview is what a fine scene draws (arcade-fin
     d.pixels[0] === 2 && d.pixels[1] === 1 && [...d.pixels].slice(2).every((k) => k === 1) && d.warning === null, JSON.stringify([...d.pixels]));
   const as = M.familyPixels(demo, 0, 'ecm');
   ok('without onto, ecm is still the sprite as authored (bright red ink 10, green-cyan paper 13)', as.pixels[0] === 10 && as.pixels[1] === 13 && as.pixels[2] === -1);
+}
+
+console.log('\n6c. The sprite colour (ink) preview is what a classic ink scene draws (arcade-spriteink.js applySpriteInk is the reference)');
+{
+  const r = rng(77);
+  let bad = 0, n = 0, badClash = 0, sample = '';
+  for (let i = 0; i < (QUICK ? 60 : 300); i++) {
+    const w = [8, 16][(r() * 2) | 0], h = 1 + ((r() * 16) | 0);
+    const s = M.newSprite(w, h);
+    for (let y = 0; y < h; y++) {
+      M.setRowColours(s, 0, y, { ink: (r() * 8) | 0 });
+      for (let x = 0; x < w; x++) { M.setPixel(s, 0, x, y, 'mask', r() < 0.7 ? 1 : 0); M.setPixel(s, 0, x, y, 'image', r() < 0.5 ? 1 : 0); }
+    }
+    const bgInk = 1 + ((r() * 7) | 0), bgPaper = (r() * 8) | 0;
+    const c = convertSprite(M.toAsset(s)), asset = { h: c.h, data: c.data, inks: c.inks, phases: 8 };
+    const attrs = applySpriteInk(new Uint8Array(768).fill((bgPaper << 3) | bgInk), [{ visible: true, x: 0, y: 0 }], [0], [asset]);
+    const got = M.inkPixels(s, 0, { bgInk, bgPaper });
+    // the picture the Z80 leaves: a covered pixel shows the image bit, an uncovered one the background checker; a set bit takes the cell's ink, a clear one the paper
+    let differs = false;
+    for (let y = 0; y < h && !differs; y++) for (let x = 0; x < w; x++) {
+      const covered = M.getPixel(s, 0, x, y, 'mask') === 1, set = covered ? M.getPixel(s, 0, x, y, 'image') === 1 : ((x >> 1) + (y >> 1)) % 2 === 0;
+      const a = attrs[(y >> 3) * 32 + (x >> 3)], want = M.colourKey(set ? a & 7 : (a >> 3) & 7, 0);
+      if (got.pixels[y * w + x] !== want) { differs = true; sample = `${w}x${h} at ${x},${y}: ${got.pixels[y * w + x]} vs ${want}`; break; }
+    }
+    n++; if (differs) bad++;
+    if (!same(got.clashes, inkClashes(asset))) badClash++;
+  }
+  ok('inkPixels equals the picture applySpriteInk leaves (cell inks, background shown through) for random sprites, row inks and backgrounds', bad === 0 && n > 0, `${bad} of ${n} differ ${sample}`);
+  ok('inkPixels.clashes equals inkClashes of the compiled sprite', badClash === 0, `${badClash} differ`);
+  const two = M.newSprite(8, 8); for (let y = 0; y < 8; y++) { M.setRowColours(two, 0, y, { ink: y < 5 ? 2 : 4 }); for (let x = 0; x < 8; x++) { M.setPixel(two, 0, x, y, 'mask', 1); M.setPixel(two, 0, x, y, 'image', 1); } }
+  const t = M.inkPixels(two, 0);
+  ok('hand case: an 8 x 8 block with five rows of red and three of green is all red (the most used ink), with one clash and a warning', t.pixels.every((k) => k === 2) && t.clashes.length === 1 && same(t.clashes[0].inks, [2, 4]) && t.lostPixels === 24 && /more than one ink/.test(t.warning), JSON.stringify([t.clashes, t.lostPixels]));
+  const tie = M.newSprite(8, 8); for (let y = 0; y < 8; y++) { M.setRowColours(tie, 0, y, { ink: y < 4 ? 6 : 3 }); for (let x = 0; x < 8; x++) { M.setPixel(tie, 0, x, y, 'mask', 1); M.setPixel(tie, 0, x, y, 'image', 1); } }
+  ok('hand case: a tie goes to the lower ink (3, magenta)', M.inkPixels(tie, 0).pixels.every((k) => k === 3));
+  const one = M.newSprite(8, 8); for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { M.setPixel(one, 0, x, y, 'mask', 1); M.setPixel(one, 0, x, y, 'image', 1); }
+  const o = M.inkPixels(one, 0);
+  ok('a sprite of one ink has no clash and no warning', o.clashes.length === 0 && o.warning === null && o.lostPixels === 0);
 }
 
 console.log('\n7. Image import');

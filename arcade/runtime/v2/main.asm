@@ -114,6 +114,22 @@ stack_dead:
         inc hl
         push hl
         push bc
+    IFDEF SPRITE_INK
+        ld b,a
+        ld a,(SC_ON)
+        or a
+        jr z,.noink
+        ld a,b
+        push de
+        push af
+        call sc_erase           ; spritecol.asm: the attributes of the cells back from the cell map
+        pop af
+        pop de
+        jr .go
+.noink:
+        ld a,b
+.go:
+    ENDIF
         call erase_cells        ; E, D = the screen address, A = N
         pop bc
         pop hl
@@ -211,6 +227,9 @@ draw_all:
     and l                       ; x rounded down to the phase granularity
     ld c,a                      ; C = xd
     and 7                       ; the shift (a multiple of the granularity)
+    IFDEF SPRITE_INK
+    ld (SC_SH),a
+    ENDIF
     ld l,a
     ld a,h
     jr z,.wb                    ; aligned: WB bytes, else one more
@@ -222,6 +241,9 @@ draw_all:
     rlca
     rlca
     rlca                        ; 16 * asset
+    IFDEF SPRITE_INK
+    ld (SC_A16),a
+    ENDIF
     ld h,a
     ld a,l
     add a,a
@@ -287,6 +309,11 @@ draw_all:
     call blit2
 .done:
     pop bc
+    IFDEF SPRITE_INK
+    ld a,(SC_ON)
+    or a
+    call nz,sc_draw2            ; spritecol.asm: recolour the ink of the cells just drawn
+    ENDIF
 .next:
     ld a,b
     add a,4

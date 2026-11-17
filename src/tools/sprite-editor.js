@@ -403,6 +403,16 @@ export function createSpriteEditor(container, host) {
     famBox.append(box);
     famView[f] = { c, note };
   }
+  // the sprite as a classic scene with sprite colour on draws it (SC): one ink per 8 x 8 cell, over a checker background
+  const inkBox = el('div', 'sprited-fams');
+  inkBox.dataset.role = 'inkpreview';
+  const inkFam = el('div', 'sprited-fam');
+  const inkTitle = el('b', null, 'Sprite colour');
+  inkTitle.title = 'A classic scene with "Sprite colour: ink" (scenes.<name>.spriteColour) gives every 8 x 8 cell the sprite covers ONE ink, the most used; the background pixels of that cell take it too. Shown over a checker background.';
+  const inkCanvas = el('canvas');
+  const inkNote = el('span');
+  inkFam.append(inkTitle, inkCanvas, inkNote);
+  inkBox.append(inkFam);
   const hotBox = el('div', 'sprited-row');
   hotBox.dataset.role = 'hot';
   const hotChk = el('input', null, null, { type: 'checkbox' });
@@ -411,7 +421,7 @@ export function createSpriteEditor(container, host) {
   hotBox.append(lbl(hotChk, 'hot box', 'The collision box [x, y, w, h]; without it the whole sprite collides'), ...hotIn);
   const sizeInfoEl = el('pre', 'sprited-size');
   sizeInfoEl.dataset.role = 'size';
-  right.append(el('div', 'sprited-label', 'Animation'), prevCanvas, prevBar, el('div', 'sprited-label', 'Display families (this frame)'), famBox, hotBox, el('div', 'sprited-label', 'Size'), sizeInfoEl);
+  right.append(el('div', 'sprited-label', 'Animation'), prevCanvas, prevBar, el('div', 'sprited-label', 'Display families (this frame)'), famBox, inkBox, hotBox, el('div', 'sprited-label', 'Size'), sizeInfoEl);
 
   // ── messages ──
   function say(text, kind = '') {
@@ -758,7 +768,18 @@ export function createSpriteEditor(container, host) {
       note.dataset.warning = r.warning ? '1' : '0';
     }
   }
-  const drawPreviews = () => { drawAnim(); drawFamilies(); };
+  function drawInk() {
+    if (!sprite) return;
+    const sc = Math.max(1, Math.floor(96 / Math.max(sprite.w, sprite.h)));
+    const r = S.inkPixels(sprite, frame);
+    inkCanvas.width = sprite.w * sc; inkCanvas.height = sprite.h * sc;
+    paintPixels(inkCanvas.getContext('2d'), r.pixels, sprite.w, sprite.h, sc, 'black');
+    inkNote.textContent = r.warning ?? 'one ink per cell: no colour detail lost';
+    inkNote.className = r.warning ? 'bad' : '';
+    inkNote.dataset.warning = r.warning ? '1' : '0';
+    inkNote.dataset.clashes = String(r.clashes.length);
+  }
+  const drawPreviews = () => { drawAnim(); drawFamilies(); drawInk(); };
   function drawLive() {                  // while drawing: the cheap views only
     drawThumbsOne(); drawAnim();
   }

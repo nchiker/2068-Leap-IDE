@@ -158,6 +158,7 @@ const CHANGE_RULES = [
   [['index.html'], 'steps:^tests/browser-smoke\\.mjs$', 'the IDE entry page'],
   [['tools/stamp-modules.py'], 'steps:stamp-modules', 'the fingerprint tool'],
   [['tools/gen-*.py', 'tools/*-rom-entry.py', 'tools/pre-commit', 'cartridge-build/**'], 'none', 'generators / cartridge build tooling: their output is checked in and tested as output'],
+  [['arcade/examples/*.assets.gen.mjs'], 'none', 'example asset generators: their output (<id>.assets.json) is checked in and selects what reads it'],
   [['arcade/spike/codegen/perf-reference.json'], 'steps:arcade-codegen-perf', 'the saved tick costs the codegen perf check compares with'],
   [['arcade/tools/{gen-font,listing-diff,regen-baselines,song-wav}.mjs', 'arcade/tools/xemu/**', 'arcade/spike/**'], 'none', 'developer tools and spikes no test runs'],
   [['tools/verify.mjs', 'arcade/tests/steps.mjs', 'arcade/tests/run-all.mjs'], 'none', 'the drivers themselves (run --list to see what they select)'],

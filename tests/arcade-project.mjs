@@ -97,6 +97,27 @@ check('parseProject: invalid JSON gives an error, not a throw', !P.parseProject(
   check('scenes: a removed display stays removed after a round trip', back2.ok && !('play' in back2.project.scenes));
 }
 
+// ── Sprite colour (SC step 8): scenes.<name>.spriteColour ──
+{
+  const pj = P.newProject('SC');
+  check('setSceneSpriteColour returns the project and sets scenes.play.spriteColour', P.setSceneSpriteColour(pj, 'play', 'ink') === pj && eq(pj.scenes, { play: { spriteColour: 'ink' } }));
+  P.setSceneDisplay(pj, 'play', 'buffers');
+  check('it lives beside the display setting', eq(pj.scenes, { play: { spriteColour: 'ink', display: 'buffers' } }));
+  P.setSceneDisplay(pj, 'play', 'auto');
+  check('removing the display keeps the sprite colour', eq(pj.scenes, { play: { spriteColour: 'ink' } }));
+  P.setSceneSpriteColour(pj, 'play', 'none');
+  check('"none" removes the key and the empty entry', eq(pj.scenes, {}));
+  P.setSceneSpriteColour(pj, 'a', 'ink'); pj.scenes.a.display = 'buffers'; P.setSceneSpriteColour(pj, 'a', '');
+  check('off keeps the entry while it has other keys; "none" in any case counts as off', eq(pj.scenes, { a: { display: 'buffers' } }) && eq(P.setSceneSpriteColour(P.setSceneSpriteColour(pj, 'b', 'ink'), 'b', 'NONE').scenes, { a: { display: 'buffers' } }));
+  const legacy = { ...P.newProject(), scenes: undefined };
+  P.setSceneSpriteColour(legacy, 'x', 'ink');
+  check('it makes scenes when the project has none; off on a scene without an entry is a no-op', eq(legacy.scenes, { x: { spriteColour: 'ink' } }) && eq(P.setSceneSpriteColour(P.newProject(), 'nothing', 'none').scenes, {}));
+  const back = P.parseProject(P.serializeProject(P.setSceneSpriteColour(P.newProject('R'), 'play', 'ink')));
+  check('serialize / parse round trip keeps spriteColour', back.ok && eq(back.project.scenes, { play: { spriteColour: 'ink' } }) && back.warnings.length === 0);
+  const bad = P.validateProject({ format: 1, files: { 'main.arc': '' }, scenes: { a: { spriteColour: 5, k: 1 }, b: { spriteColour: 'rainbow' } } });
+  check('a non-text spriteColour is dropped with a warning; an unknown text is kept (the compiler notes it)', bad.ok && eq(bad.project.scenes, { a: { k: 1 }, b: { spriteColour: 'rainbow' } }) && bad.warnings.length === 1 && /spriteColour is not text/.test(bad.warnings[0]), JSON.stringify(bad.warnings));
+}
+
 // ── Maps: the banking override (docs/ARCADE_BANKING_CONTRACT.md section 5) ──
 {
   const mk = (bank) => {
@@ -379,7 +400,7 @@ if (existsSync(dist + 'v2/runtime.json') && existsSync(dist + 'examples/index.js
     check('empty ticksB / ticksC compile to exactly the one-channel size and image', sfxBytes(empties) === sfxBytes(one) && Buffer.compare(Buffer.from(empties.dck), Buffer.from(one.dck)) === 0);
   }
   const index = JSON.parse(readFileSync(dist + 'examples/index.json', 'utf8'));
-  check('the examples index lists bounce, breakout, shooter, shooter-classic, blockfall, platformer, runner, vaults, orbit, lumen', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'lumen', 'orbit', 'platformer', 'runner', 'shooter', 'shooter-classic', 'vaults']));
+  check('the examples index lists bounce, breakout, shooter, shooter-classic, blockfall, platformer, runner, vaults, orbit, lumen, crabsmash', eq(index.map((e) => e.id).sort(), ['blockfall', 'bounce', 'breakout', 'crabsmash', 'lumen', 'orbit', 'platformer', 'runner', 'shooter', 'shooter-classic', 'vaults']));
   for (const ex of index) {
     const doc = P.parseProject(readFileSync(dist + 'examples/' + ex.file, 'utf8'));
     const res = doc.ok ? build(doc.project) : null;

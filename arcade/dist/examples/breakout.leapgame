@@ -9728,5 +9728,9 @@
   },
   "models": {}
  },
- "scenes": {}
+ "scenes": {
+  "play": {
+   "spriteColour": "ink"
+  }
+ }
 }
