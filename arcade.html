@@ -54,8 +54,14 @@ pre code { background: none; padding: 0; }
 .hero h1 { font-size: clamp(38px, 6vw, 62px); line-height: 1.05; margin: 0 0 16px; letter-spacing: -.02em; }
 .hero p.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; }
 .cta { display: flex; gap: 12px; flex-wrap: wrap; }
-.screen { background: #000; border-radius: 14px; padding: 14px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.screen { display: block; background: #000; border-radius: 14px; padding: 14px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .screen img { width: 100%; border-radius: 4px; }
+.rot-cap { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 15px; color: var(--muted); align-items: baseline; }
+.rot-cap b { color: var(--ink); font-size: 17px; }
+.rot-cap a { font-weight: 700; text-decoration: none; white-space: nowrap; }
+.rot-dots { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+.rot-dots button { width: 12px; height: 12px; border-radius: 50%; border: 0; padding: 0; background: var(--line); cursor: pointer; }
+.rot-dots button[aria-selected="true"] { background: var(--accent); transform: scale(1.25); }
 .fine { font-size: 14px; color: var(--muted); margin-top: 16px; }
 
 /* sections */
@@ -134,7 +140,11 @@ footer a { color: var(--muted); }
     </div>
     <p class="fine">Nothing to install: it runs entirely in your browser. Every game below is made with Leap Arcade and opens in the Studio with its code, art and music.</p>
   </div>
-  <a class="screen" href="studio.html?example=crabsmash&amp;run" title="Play Crabsmash"><img class="px" src="docs/img/arcade/crabsmash.gif" width="320" height="240" alt="Crabsmash, an arena game made with Leap Arcade, running"></a>
+  <div class="rot">
+    <a class="screen" id="rot-link" href="studio.html?example=crabsmash&amp;run" title="Play this game"><img id="rot-img" class="px" src="docs/img/arcade/crabsmash.gif" width="320" height="240" alt="Crabsmash, a game made with Leap Arcade, running"></a>
+    <div class="rot-cap"><span><b id="rot-name">Crabsmash</b> <span id="rot-about">arena game</span></span><a id="rot-play" href="studio.html?example=crabsmash&amp;run">▶ Play it</a></div>
+    <div class="rot-dots" id="rot-dots" role="tablist" aria-label="Choose a game"></div>
+  </div>
 </div></div>
 
 <section id="getting-started"><div class="wrap steps">
@@ -318,6 +328,36 @@ ENDSCENE</code></pre>
   Leap Arcade · part of <a href="https://github.com/nchiker/2068-Leap-IDE">2068-Leap-IDE</a> on GitHub · runs on <a href="https://github.com/nchiker/TSRun">TSRun</a>, a TS2068 emulator. Emulator-tested; real hardware untried.
 </div></footer>
 
+<script>
+(function () {
+  var G = [
+    ['crabsmash', 'Crabsmash', 'arena game, fine colour'], ['breakout', 'Breakout', 'bricks, tiles and sound'],
+    ['shooter', 'Starfall', 'vertical shooter'], ['platformer', 'Leap Runner', 'scrolling platformer'],
+    ['vaults', 'Vaults', 'first-person 3D maze'], ['lumen', 'Lumen', 'maze chase, fine colour'],
+    ['blockfall', 'Blockfall', 'falling-blocks puzzle'], ['orbit', 'Orbit Gates', 'wireframe 3D'], ['bounce', 'Bounce', 'the simplest game']
+  ];
+  var img = document.getElementById('rot-img'), link = document.getElementById('rot-link'), play = document.getElementById('rot-play'),
+      nameEl = document.getElementById('rot-name'), about = document.getElementById('rot-about'), dots = document.getElementById('rot-dots');
+  var cur = 0, timer = null, held = false, buttons = [];
+  G.forEach(function (g, i) {
+    var b = document.createElement('button'); b.setAttribute('role', 'tab'); b.title = g[1]; b.setAttribute('aria-label', g[1]);
+    b.addEventListener('click', function () { show(i); restart(); });
+    dots.appendChild(b); buttons.push(b);
+  });
+  function show(i) {
+    cur = (i + G.length) % G.length; var g = G[cur];
+    img.src = 'docs/img/arcade/' + g[0] + '.gif'; img.alt = g[1] + ', a game made with Leap Arcade, running';
+    link.href = play.href = 'studio.html?example=' + g[0] + '&run';
+    nameEl.textContent = g[1]; about.textContent = g[2];
+    buttons.forEach(function (b, k) { b.setAttribute('aria-selected', String(k === cur)); });
+  }
+  function restart() { clearInterval(timer); if (!matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(function () { if (!held && !document.hidden) show(cur + 1); }, 7000); }
+  var box = document.querySelector('.rot');
+  box.addEventListener('mouseenter', function () { held = true; }); box.addEventListener('mouseleave', function () { held = false; });
+  G.forEach(function (g) { new Image().src = 'docs/img/arcade/' + g[0] + '.gif'; });   // warm the cache so a change is instant
+  show(0); restart();
+})();
+</script>
 <script>
 (function () {
   var b = document.getElementById('theme'), root = document.documentElement;
