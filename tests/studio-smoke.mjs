@@ -1219,6 +1219,9 @@ try {
   const z1 = await evaluate(`(() => { const w = () => Math.round(document.getElementById('right-panel').getBoundingClientRect().width), tab = (t) => document.querySelector('#right-panel .panel-tab[data-tab=' + t + ']').click();
     const label = document.getElementById('zoom-label').textContent, display = w(); tab('sprites'); const sprites = w(); tab('display'); return { label, display, sprites, back: w() }; })()`);
   check('Z1: at a large zoom the panel is wide on Display and at most 600 px on the Sprites tab', z1.label === '1×' || (z1.sprites <= 600 && z1.back === z1.display && z1.display > z1.sprites), JSON.stringify(z1));
+  const z2 = await evaluate(`(() => { const body = document.querySelector('#right-panel .display-body'); body.scrollTop = 99999; const bt = document.getElementById('btn-zoom-out').getBoundingClientRect(), pt = document.getElementById('right-panel').getBoundingClientRect();
+    return { scrollable: body.scrollHeight > body.clientHeight, btnTop: Math.round(bt.top), panelTop: Math.round(pt.top), visible: bt.top >= pt.top && bt.bottom <= innerHeight }; })()`);
+  check('Z1: with the tab scrolled down the Screen size buttons stay in view', !z2.scrollable || z2.visible, JSON.stringify(z2));
   await evaluate("(() => { for (let i = 0; i < 3; i++) document.getElementById('btn-zoom-out').click(); })()");
   check('Z1: Smaller takes the screen back to 1×', (await evaluate("document.getElementById('zoom-label').textContent")) === '1×');
 

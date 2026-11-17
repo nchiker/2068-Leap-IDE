@@ -93,7 +93,8 @@
 .panel-right .panel-tabs { gap: 0; }
 .panel-right .panel-tabs::-webkit-scrollbar { display: none; }
 .panel-right .panel-tab { padding: 0 3px; letter-spacing: .03em; white-space: nowrap; flex: none; }      /* (eight names since the Variables tab: tightened to keep them in one row at 1280 px) */
-.display-tools { display: flex; align-items: center; gap: 4px; padding: 6px 12px 0; flex: none; }
+/* sticky: an enlarged screen makes the Display tab taller than the window and it scrolls; the size buttons must not scroll away with it */
+.display-tools { display: flex; align-items: center; gap: 4px; padding: 6px 12px 6px; flex: none; position: sticky; top: 0; z-index: 3; background: var(--bg); }
 .display-tools-label { margin-right: auto; font: 700 10px var(--font-ui); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-muted); }
 
 /* R2: run controls; R1: the budget meter; N3: the first-run line. Colours from the ide.css variables. */

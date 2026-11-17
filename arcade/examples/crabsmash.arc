@@ -1,7 +1,7 @@
 REM Crabsmash: a single-screen arena game for Leap Arcade (runtime v2, every scene in fine colour).  Design: crabsmash.md.
 REM You are the hero in the arena.  Crabs and flies come out of the two pipes at the top and wander down the platforms.  Jump into the UNDERSIDE of a platform to stun everything standing
 REM within reach on it, then walk into a stunned one to smash it (200 points for a crab, 300 for a fly; a bump on a stunned one wakes it, angry and faster).  Touch a live one and you lose a life
-REM (3 lives).  Smashed enemies leave a coin: grab it for 500.  Smash every enemy of a phase to clear it; each phase has more enemies, flies, quicker legs and shorter stuns.  The left and right
+REM (3 lives).  Smashed enemies leave a coin: grab it for 500.  Smash every enemy of a phase to clear it (phase 1 is easier and shows a hint); each phase has more enemies, flies, quicker legs and shorter stuns.  The left and right
 REM edges wrap round; an enemy that walks off the floor goes back into the pipes.
 REM   Keyboard: O left, P right, Q or SPACE jump.   Joystick 1: left, right, up or fire jump.   Fire starts the game and restarts it after GAME OVER.
 REM The scenes are fine colour (8 x 1 colour): the assets file's "scenes" key says so (crabsmash.assets.gen.mjs); the source is ordinary.  Positions are pixels (y from the top, a sprite's top left);
@@ -79,7 +79,7 @@ SCENE play
   REM the enemies, slots 0..2 are crabs and 3..4 flies: state (0 away, 1 walking, 2 stunned), position, direction (-1 / 1), in the air, vertical speed, timer (stun left; hop wait for a fly),
   REM angry (recovered from a stun), platform they stand on, form shown
   DIM est(4), ex(4), ey(4), ed(4), eair(4), evy(4), etm(4), efast(4), ep(4), efm(4)
-  DIM lives, sp, stp, eo, isf, fnew, tk, pz, bn, cn, cph, cx, cy, todo, alive, nsp, spt, spgap, stt, pfast, kk, sd
+  DIM lives, sp, stp, eo, isf, fnew, tk, pz, bn, cn, cph, cx, cy, todo, alive, nsp, spt, spgap, stt, pfast, kk, sd, hn
 
   PROC INIT():
     BORDER 0
@@ -99,6 +99,9 @@ SCENE play
     todo = 4 + phase : IF todo > 12 THEN todo = 12 ENDIF
     stt = 170 - 14 * phase : IF stt < 60 THEN stt = 60 ENDIF
     spgap = 64 - 6 * phase : IF spgap < 26 THEN spgap = 26 ENDIF
+    REM Phase 1 is the lesson: 3 crabs, a long stun (15 seconds) and a slow pipe (4.5 seconds between crabs), with a hint on the screen until phase 2.
+    IF phase = 1 THEN todo = 3 : stt = 300 : spgap = 90 : hn = 1 ENDIF
+    IF phase = 2 AND hn = 5 THEN hn = 6 ENDIF
     pfast = 0 : IF phase >= 3 THEN pfast = 1 ENDIF
     spt = 60 : alive = 0 : nsp = 0
     IF cn > 0 THEN CALL TAKECOIN() ENDIF
@@ -112,6 +115,7 @@ SCENE play
     tk = BAND(tk + 1, 1023)
     REM the HUD numbers that changed last tick are printed first thing in this one (the tick of a smash is already heavy)
     IF hs + hl + hp + hh > 0 THEN CALL SHOWHUD() ENDIF
+    IF hn > 0 AND hn <> 5 THEN CALL HINT() ENDIF
     IF pz > 0 THEN
       CALL PAUSED()
     ELSE
@@ -134,6 +138,21 @@ SCENE play
     FOR k = 0 TO 4
       IF est(k) > 0 THEN CALL SHOWE(k) ENDIF
     NEXT k
+  ENDP
+
+  REM The hint of phase 1, a few characters a tick (a text cell costs about 1,800 T): steps 1 to 4 print it on rows 9 and 10, step 5 is it standing, steps 6 to 9 (from phase 2) take it away
+  REM and put the stars back that it covered (tiles 9, 22, 9, 23 and 24 of the arena map).
+  PROC HINT():
+    PAPER 0 : BRIGHT 0
+    IF hn = 1 THEN INK 6 : PRINT AT 9, 2; "JUMP UP UNDER A "; ENDIF
+    IF hn = 2 THEN INK 6 : PRINT AT 9, 18; "PLATFORM TO"; ENDIF
+    IF hn = 3 THEN INK 6 : PRINT AT 10, 2; "STUN A CRAB, "; ENDIF
+    IF hn = 4 THEN INK 6 : PRINT AT 10, 15; "THEN TOUCH IT!"; ENDIF
+    IF hn = 6 THEN INK 7 : FILLC 2, 9, 16, 1 = 32 : TILE 4, 9 = 9 : TILE 16, 9 = 22 ENDIF
+    IF hn = 7 THEN INK 7 : FILLC 18, 9, 11, 1 = 32 : TILE 24, 9 = 9 ENDIF
+    IF hn = 8 THEN INK 7 : FILLC 2, 10, 13, 1 = 32 : TILE 12, 10 = 23 ENDIF
+    IF hn = 9 THEN INK 7 : FILLC 15, 10, 14, 1 = 32 : TILE 20, 10 = 24 ENDIF
+    hn = hn + 1 : IF hn = 10 THEN hn = 0 ENDIF
   ENDP
 
   REM The numbers that changed (INK / PAPER are set again: ENTER and the banner leave other colours).

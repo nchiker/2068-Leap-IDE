@@ -118,7 +118,7 @@ function rules(label, run, covers) {
   const v = (t, n) => T[t].vars[n], a = (t, n, i) => T[t].arrays[n][i];
   const bad = [], st = { hero: 0, jumps: 0, bumps: 0, stuns: 0, wakes: 0, smash: [0, 0], coins: 0, coinTaken: 0, coinFaded: 0, deaths: 0, phases: 0, spawns: 0, pipes: 0, wraps: 0, falls: 0, maxOut: 0, hops: 0, landed: 0 };
   const fail = (s) => { if (bad.length < 8) bad.push(s); };
-  const stt = (ph) => Math.max(60, 170 - 14 * ph), tile = (t, r, c) => T[t].cells[r * 32 + c] - 128;
+  const stt = (ph) => ph === 1 ? 300 : Math.max(60, 170 - 14 * ph), tile = (t, r, c) => T[t].cells[r * 32 + c] - 128;
   for (let t = 3; t < T.length; t++) {
     if (!(want.ticks[t].scene === playIdx && want.ticks[t - 1].scene === playIdx && want.ticks[t - 2].scene === playIdx)) continue;
     const at = `tick ${t + 1}`, ph = v(t - 1, 'PHASE');
@@ -206,9 +206,23 @@ function rules(label, run, covers) {
     if (v(t, 'PHASE') !== v(t - 1, 'PHASE')) {
       st.phases++;
       if (v(t, 'PHASE') !== v(t - 1, 'PHASE') + 1 || v(t - 1, 'PLAY.TODO') !== 0 || v(t, 'PLAY.ALIVE') !== 0) fail(`${at}: phase ${v(t - 1, 'PHASE')} -> ${v(t, 'PHASE')} with TODO ${v(t - 1, 'PLAY.TODO')}`);
-      if (v(t, 'PLAY.TODO') !== Math.min(12, 4 + v(t, 'PHASE'))) fail(`${at}: phase ${v(t, 'PHASE')} brings ${v(t, 'PLAY.TODO')} enemies`);
+      if (v(t, 'PLAY.TODO') !== (v(t, 'PHASE') === 1 ? 3 : Math.min(12, 4 + v(t, 'PHASE')))) fail(`${at}: phase ${v(t, 'PHASE')} brings ${v(t, 'PLAY.TODO')} enemies`);
     }
     if (dScore < 0) fail(`${at}: the score fell`);
+  }
+  if (label === 'phase 1 start') {
+    // the phase 1 hint: printed in the first ticks of the play scene (a few characters a tick), standing until phase 2, then taken away with the stars put back
+    const txt = (t, r, c0, n) => String.fromCharCode(...Array.from({ length: n }, (_, i) => T[t].cells[r * 32 + c0 + i]));
+    const full = (t) => txt(t, 9, 2, 16) === 'JUMP UP UNDER A ' && txt(t, 9, 18, 11) === 'PLATFORM TO' && txt(t, 10, 2, 13) === 'STUN A CRAB, ' && txt(t, 10, 15, 14) === 'THEN TOUCH IT!';
+    const firstPlay = want.ticks.findIndex((x) => x.scene === playIdx), shown = T.findIndex((_, t) => want.ticks[t].scene === playIdx && full(t));
+    check_(`${label}: the hint is on the screen within 8 ticks of the play scene starting`, shown >= 0 && shown - firstPlay <= 8, `first play tick ${firstPlay}, hint complete at ${shown}`);
+    const p2 = T.findIndex((_, t) => t > 0 && v(t, 'PHASE') === 2 && v(t - 1, 'PHASE') === 1);
+    if (p2 > 0 && p2 + 14 < T.length) {
+      const blank = (t, r, c0, n) => Array.from({ length: n }, (_, i) => T[t].cells[r * 32 + c0 + i]).every((c) => c === 32 || c === 0 || c >= 128);
+      const gone = !full(p2 + 14) && blank(p2 + 14, 9, 2, 27) && blank(p2 + 14, 10, 2, 27);
+      const stars = [[4, 9, 9], [16, 9, 22], [24, 9, 9], [12, 10, 23], [20, 10, 24]].every(([c, r, id]) => tile(p2 + 14, r, c) === id);
+      check_(`${label}: the hint stands until phase 2, then it is gone and the five stars are back`, full(p2 - 1) && gone && stars, `standing at phase 2: ${full(p2 - 1)}, gone ${gone}, stars ${stars}`);
+    } else check_(`${label}: the run reached phase 2, so the hint's removal could be checked`, false, `phase 2 at tick ${p2} of ${T.length}`);
   }
   info(`${st.hero} grounded hero ticks, ${st.jumps} jumps, ${st.landed} landings, ${st.bumps} bumps, ${st.stuns} stuns, ${st.wakes} wakes, ${st.smash[0]} crabs and ${st.smash[1]} flies smashed, ${st.coins} coins (${st.coinTaken} taken, ${st.coinFaded} faded), ${st.deaths} lives lost, ${st.phases} phases cleared, ${st.spawns} spawns, ${st.pipes} returns through a pipe, ${st.wraps} wraps, at most ${st.maxOut} enemies out`);
   check_(`${label}: the hero, the bumps, the stuns, the smashes, the coins, the lives and the phases follow the rules on every tick`, bad.length === 0, bad.join(' | '));

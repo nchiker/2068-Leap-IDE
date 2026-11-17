@@ -204,7 +204,7 @@ check('on the plain v2 runtime the ink game is still refused', run(GAME, v2, { a
 
 // ── 5. games without an ink scene are unchanged (the DCKs the compiler gave before SC step 5, plain runtimes) ──
 const INK_SAMPLES = ['breakout', 'shooter-classic'];      // the examples that turn sprite colour on (stage 6B)
-const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', breakout: '700debd686c0d95a', crabsmash: '01d88c36e79087a8', lumen: '7f7b5072820e56d0', orbit: 'f7188341691f3065', platformer: '0ef02a7821ac945d',
+const BASELINE = { blockfall: 'ac044a1a20b9083e', bounce: 'c02dea0f00130105', breakout: '700debd686c0d95a', crabsmash: '25549cf6b8361762', lumen: '7f7b5072820e56d0', orbit: 'f7188341691f3065', platformer: '0ef02a7821ac945d',
   runner: 'e9372c6d0dd0be34', 'shooter-classic': '78c997df68d55ed9', shooter: 'b9e154a15704dee5', vaults: 'eacfe20b943c4a1b' };
 {
   const rts = { 2: v2, 3: load('v3'), 4: load('v4') };

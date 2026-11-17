@@ -16,6 +16,10 @@ colour), **every sprite is drawn mirror symmetric**: the hero is seen from the f
 * **Phases.** Smash every enemy of a phase to clear it (1000 points) and the next begins: more enemies (4 + the phase number, at most 12), flies from
   phase 2 (every fourth), quicker legs from phase 3 (4 pixels on every other tick), shorter stuns (170 - 14 x phase ticks, at least 60), a quicker pipe
   (64 - 6 x phase ticks between enemies, at least 26). Never more than 3 enemies are out at once.
+  **Phase 1 is the lesson** (added after the owner could not get through it): 3 crabs (not 5), a stun of 300 ticks (15 seconds), a pipe every 90 ticks (4.5 seconds),
+  and a **hint** on the screen, "JUMP UP UNDER A PLATFORM TO STUN A CRAB, THEN TOUCH IT!" on text rows 9 and 10. The hint is printed a few characters a tick in the first
+  four ticks of the scene (a text cell costs about 1,800 T), and taken away in four ticks when phase 2 begins (`PROC HINT`, `hn` 1 to 9), which also puts back the five stars of the
+  arena map it covered. From phase 2 the numbers are as before.
 * The left and right edges wrap round for the hero and the enemies; an enemy that walks off the end of the floor goes back into the pipe on that
   side, and one that walks off a platform's end falls to the platform below.
 * **The goal:** the best score (kept for the session; shown in the HUD and on the title and the game over). The game has no end: the phases only
