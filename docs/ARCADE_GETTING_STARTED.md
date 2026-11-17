@@ -29,7 +29,7 @@ Open <http://localhost:8080/studio.html>. (The published copy is at
 | Area | What it does |
 |---|---|
 | **Toolbar** | New, Projects, Open, Examples ▾, Save, ▶ Run (F5), ■ Stop (F6), ⬇ DCK, ? Help (F1), light / dark theme |
-| **Left: project panel** | your source files (`main.arc` is the entry; **+ File** adds more), the assets (sprites, tilesets, maps, sounds, songs, models) and, for a game with several scenes, a Scenes group |
+| **Left: project panel** | **Source files** (`main.arc` is the entry; **+ File** adds more), **Assets** (Sprites, Tile sets, Maps, Sound effects, Songs, Models, each with a **+** to add one) and **Scenes** (one row per scene: how it is drawn, and a *Sprite colour* choice) |
 | **Middle: code editor** | highlighting, completion, hover help, error marks. Keywords are upper-cased as you type. Buttons: Undo, Redo, Cut, Copy, Paste, Find, Tidy, Lint |
 | **Right: tabs** | **Display** (the TS2068 screen, Zoom, Reset, Save screen, Pause, Step tick, and the *size table* showing how much memory the game uses), **Symbols**, **Sprites**, **Tiles**, **Maps**, **Sounds**, **Models**, **Vars** (the game's variables, live) |
 
@@ -42,7 +42,7 @@ kept in this browser.
 
 ## 3. Try an example first
 
-Open **Examples ▾** and pick **Bounce**. Press **▶ Run** (F5). Click the emulator screen to give it the keyboard:
+Open **Examples ▾** and pick **Bounce**. Press **▶ Run** (F5). The title screen appears. Click the emulator screen to give it the keyboard:
 
 - **SPACE** (or the joystick's fire button) starts the game from the title.
 - **O** and **P** move the paddle left and right. The arrow keys and Space also act as joystick 1.
@@ -62,36 +62,27 @@ The examples worth reading, roughly from simplest to most advanced:
 
 ## 4. Start a new game
 
-Press **New**. The dialog offers starters: *Blank game*, *Sprites and tiles*, *Scenes and music*, *Fine colour*, *Ring Run*
-(wireframe 3D), *Coin Hop* (platformer) and *Gem Maze* (first-person). Pick *Blank game* for a first game. Without a
-starter, a new project is a small game that moves a ball:
+Press **New**. Every new project starts from a *starter*: a small, complete game with its own sprites and sounds and
+comments that say what to change. The dialog shows a picture of each:
 
-```
-REM A ball you move with the joystick, or O P Q A on the keyboard.
-GAME "Untitled"
-FRAMERATE 30
+| Starter | Runtime | What it teaches |
+|---|---|---|
+| Blank game ("Star Dash") | v2 | the smallest game that still has a point: steer a ball, catch stars against a clock |
+| Sprites and tiles | v2 | gems in a tiled mine, pooled bats, sound, score |
+| Scenes and music | v2 | title, play and game-over scenes, a song, a session best score |
+| Fine colour | v2 | 8 x 1 colour scenes with row-by-row shaded art |
+| Coin Hop | v3 | a scrolling platformer (`WINDOW`, `SOLID`, `CAMERA`) |
+| Gem Maze | v4 | a first-person maze (`VIEW3D`) |
+| Ring Run | v2 | wireframe 3D (`WIRE3D`, `MODEL`, `EYE`) |
 
-SPRITE ball = "ball"
+Pick **Blank game** for a first game and press **Run**. Use **O P Q A** (or the arrow keys, which act as joystick 1) to
+steer the ball onto the star. The comment at the top lists what to change first. Try these:
 
-SCENE play
-  DIM x, y
+- Change `CONST SPEED = 3` to `5` and run again: the ball moves faster.
+- Change `clock = 300` in `NEWGAME` (30 ticks a second, so 300 is 10 seconds) to `150`.
+- Change the `"*"` in `NEWSTAR` to another character.
 
-  PROC INIT():
-    x = 120
-    y = 88
-  ENDP
-
-  PROC FRAME():
-    IF KEYDOWN("O") OR BIT(STICK(1), 2) THEN
-      x = x - 2
-    ENDIF
-    ...
-    SHOW ball AT x, y
-  ENDP
-ENDSCENE
-```
-
-Press **Run**. Then change `x = x - 2` to `x = x - 4` and run again to see the ball move faster.
+The program is organised as the next section describes.
 
 ## 5. The shape of a program
 
