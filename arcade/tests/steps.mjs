@@ -19,6 +19,7 @@ export const RUNTIME_BUILDS = [
   { id: 'v0', file: 'arcade/tools/build-runtime.mjs', dir: 'arcade/runtime/v0', out: 'arcade/build', frozen: true },
   { id: 'v1', file: 'arcade/tools/build-runtime-v1.mjs', dir: 'arcade/runtime/v1', out: 'arcade/build/v1', frozen: true },
   { id: 'v2', file: 'arcade/tools/build-runtime-v2.mjs', dir: 'arcade/runtime/v2', out: 'arcade/build/v2' },
+  { id: 'v2ink', file: 'arcade/tools/build-runtime-v2ink.mjs', dir: 'arcade/runtime/v2', out: 'arcade/build/v2ink' },
   { id: 'v3', file: 'arcade/tools/build-runtime-v3.mjs', dir: 'arcade/runtime/v3', out: 'arcade/build/v3' },
   { id: 'v4', file: 'arcade/tools/build-runtime-v4.mjs', dir: 'arcade/runtime/v4', out: 'arcade/build/v4' },
 ];
@@ -38,6 +39,7 @@ export const SLOW_FIRST = ['tests/arcade-m10-differential.mjs', 'tests/arcade-m9
   'arcade/tests/m7-runtime.mjs', 'tests/arcade-m15-differential.mjs'];
 
 export const SUITES = [
+  'arcade/tests/sc-runtime-ink.mjs',
   'tests/arcade-parse.mjs',
   'tests/arcade-compile.mjs',
   'tests/arcade-m3.mjs',

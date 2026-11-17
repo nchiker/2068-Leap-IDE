@@ -63,7 +63,7 @@ function chunkUsage(syms) {
 }
 
 /** Constants the contract names (docs/ARCADE_RUNTIME_API.md) plus the ones tests and the linker need. */
-const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITES', 'STACK_TOP', 'STACK_CANARY', 'CANARY_VALUE',
+export const CONSTANTS = ['GAME_BASE', 'GAME_VARS_BASE', 'GAME_VARS_LIMIT', 'MAX_SPRITES', 'STACK_TOP', 'STACK_CANARY', 'CANARY_VALUE',
   'SPR_XMAX', 'SPR_YMAX', 'SPR_W', 'SPR_H', 'RT_SEED_INIT', 'F4_PLAY', 'F4_BANK', 'BANK_LO', 'BANK_HI', 'DFILE0', 'DFILE1', 'DATTR0', 'DATTR1', 'ROW_TAB',
   'PHASE_LEN', 'BG_ATTR', 'GAME_HEADER_LEN', 'SD_LEN', 'GAME_INIT',
   'GAME_FRAME', 'GAME_DIV', 'GAME_NSPR', 'GAME_SPRTAB', 'GAME_TILESET', 'GAME_SFX', 'GAME_MAP', 'SD_DATA', 'SD_HOT',

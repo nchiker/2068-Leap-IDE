@@ -224,6 +224,10 @@ ENTRY:
     ; otherwise feed the ISR: see E4's $A5 trap; and compiled variables start at 0) ----
     ld hl,FILL_EARLY
     call fill_tab               ; the variables to 0, and the keyboard state: nothing scanned yet = every key up ($FF), which must follow the clear
+    IFDEF SPRITE_INK
+    xor a
+    ld (SC_ON),a                ; sprite ink off until RT_SPRITEINK (T2_FREE is not cleared by the variables fill)
+    ENDIF
     ld a,BORDER_COLOUR
     ld (V_BORDER),a             ; RT_BORDER's shadow of the border colour written above
     ld hl,CANARY_VALUE

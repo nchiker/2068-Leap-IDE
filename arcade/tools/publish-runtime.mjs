@@ -7,6 +7,7 @@
 // (studio.html) loads what this script puts in arcade/dist/:
 //   arcade/dist/v2/runtime.json, runtime.bin   <- arcade/build/v2/ (build it first: node arcade/tools/build-runtime-v2.mjs)
 //   arcade/dist/v3/runtime.json, runtime.bin   <- arcade/build/v3/ (node arcade/tools/build-runtime-v3.mjs); the Studio picks v2, v3 or v4 per program (requiredRuntime)
+//   arcade/dist/v2ink/runtime.json, runtime.bin <- arcade/build/v2ink/ (node arcade/tools/build-runtime-v2ink.mjs: v2 with sprite colour, SC)
 //   arcade/dist/v4/runtime.json, runtime.bin   <- arcade/build/v4/ (node arcade/tools/build-runtime-v4.mjs: the raycaster)
 //   arcade/dist/examples/<id>.leapgame         <- arcade/examples/<id>.arc + <id>.assets.json, as Studio projects
 //   arcade/dist/examples/index.json            the Examples menu: [{id, title, about, file}]
@@ -59,6 +60,7 @@ function loadBuild(version) {
   return { runtime: JSON.parse(text), image: new Uint8Array(bytes) };
 }
 const builds = { 2: loadBuild(2), 3: loadBuild(3), 4: loadBuild(4) };
+loadBuild('2ink');                                   // the sprite-colour variant of v2 (SC): only copied; the compiler selects it by `variant`
 const index = [];
 for (const ex of EXAMPLES) {
   const arc = readFileSync(join(ARCADE, 'examples', `${ex.id}.arc`), 'utf8');
